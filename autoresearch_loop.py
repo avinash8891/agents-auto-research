@@ -162,8 +162,37 @@ class AutoresearchController:
         self.baseline_tracker = BaselineTracker(
             root / f"{self.family.name}_baseline_checkpoints.json"
         )
+        # Sync ExperimentDB from JSONL in case a crash left them out of sync
+        # (write_entries succeeds but experiment_db.add never ran).
+        self._sync_db_from_jsonl()
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()
+
+    def _sync_db_from_jsonl(self) -> None:
+        """Recover ExperimentDB entries that exist in JSONL but not in the DB.
+
+        This self-heals the crash window between write_entries() (JSONL write,
+        canonical) and experiment_db.add() (DB write, derived).  If they are
+        already in sync the call is a no-op because backfill_from_jsonl uses
+        ExperimentDB.add which deduplicates by experiment_id.
+        """
+        if not self.jsonl_path.exists():
+            return
+        entries = _state_read_entries(self.jsonl_path)
+        jsonl_exp_count = sum(
+            1 for e in entries if e.get("type") not in ("config", "research_round")
+        )
+        db_count = len(self.experiment_db.all())
+        if jsonl_exp_count > db_count:
+            from experiment_db import backfill_from_jsonl
+
+            added = backfill_from_jsonl(self.jsonl_path, self.experiment_db)
+            if added:
+                log.warning(
+                    f"DB_SYNC recovered {added} experiment(s) from JSONL "
+                    f"(crash between write_entries and experiment_db.add) "
+                    f"| hint=this is self-healing; no action needed"
+                )
 
     def read_state(self) -> dict[str, Any]:
         return _state_read_state(self.state_path)
