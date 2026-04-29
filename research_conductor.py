@@ -28,6 +28,14 @@ from research_infra import (
     _ensure_oauth_proxy,
     _parse_json,
 )
+from research_memory import (
+    _palace_search,
+    _palace_status,
+)
+from research_memory import list_past_theses as list_past_theses_for_root
+from research_memory import (
+    save_research_finding,
+)
 from research_usage import _accumulate_usage, get_round_usage, reset_round_usage
 from trace_logger import trace, trace_agent_prompt, trace_agent_response
 
@@ -37,84 +45,6 @@ __all__ = [
     "reset_round_usage",
     "get_round_usage",
 ]
-
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
-_PALACE_DIR = str(_ROOT / "palace")
-
-# ---------------------------------------------------------------------------
-# Native mempalace access — uses only documented public APIs:
-#   mempalace.palace.get_collection  (ChromaDB collection access)
-#   mempalace.searcher.search_memories  (semantic search)
-#   mempalace.layers.MemoryStack  (status)
-# ---------------------------------------------------------------------------
-
-
-def _palace_add(
-    wing: str, room: str, content: str, added_by: str = "conductor"
-) -> dict:
-    """Add a drawer to the palace via palace.get_collection + ChromaDB upsert."""
-    import hashlib
-    from datetime import datetime
-
-    try:
-        from mempalace.palace import get_collection
-
-        col = get_collection(_PALACE_DIR, create=True)
-        drawer_id = (
-            f"drawer_{wing}_{room}_"
-            f"{hashlib.sha256((wing + room + content).encode()).hexdigest()[:24]}"
-        )
-        col.upsert(
-            ids=[drawer_id],
-            documents=[content],
-            metadatas=[
-                {
-                    "wing": wing,
-                    "room": room,
-                    "source_file": "",
-                    "chunk_index": 0,
-                    "added_by": added_by,
-                    "filed_at": datetime.now().isoformat(),
-                }
-            ],
-        )
-        return {"success": True, "drawer_id": drawer_id}
-    except Exception as exc:
-        return {"success": False, "error": str(exc)}
-
-
-def _palace_search(
-    query: str, wing: str | None = None, room: str | None = None, n_results: int = 10
-) -> list[dict]:
-    """Search the palace via mempalace.searcher.search_memories."""
-    try:
-        from mempalace.searcher import search_memories
-
-        result = search_memories(
-            query=query,
-            palace_path=_PALACE_DIR,
-            wing=wing,
-            room=room,
-            n_results=n_results,
-        )
-        return result.get("results", [])
-    except Exception as exc:
-        return [{"error": str(exc)}]
-
-
-def _palace_status() -> dict:
-    """Get palace overview via mempalace.layers.MemoryStack."""
-    try:
-        from mempalace.layers import MemoryStack
-
-        stack = MemoryStack(palace_path=_PALACE_DIR)
-        return stack.status()
-    except Exception as exc:
-        return {"error": str(exc)}
-
 
 # ---------------------------------------------------------------------------
 # Codex analyst agent (called by the MCP tool)
@@ -475,69 +405,32 @@ def _build_research_tools_mcp(
             scope: What data this applies to (e.g. "train_2020-2023", "full_sample", "SPY_only")
             expires_if: Condition that invalidates this (e.g. "fails on validation split", "baseline drift >5%")
         """
-        VALID_TYPES = {
-            "observation",
-            "hypothesis",
-            "validated_finding",
-            "rejected_finding",
-            "open_question",
-            "implementation_note",
-        }
-        VALID_STATUSES = {"unvalidated", "validated", "rejected", "stale"}
-
         trace(
             "CONDUCTOR",
             f"save_finding type={finding_type} status={status} finding='{finding[:80]}'",
         )
-
-        if finding_type not in VALID_TYPES:
-            trace("CONDUCTOR", f"save_finding REJECTED: bad type '{finding_type}'")
-            return f"REJECTED: finding_type must be one of {VALID_TYPES}, got '{finding_type}'"
-        if status not in VALID_STATUSES:
-            trace("CONDUCTOR", f"save_finding REJECTED: bad status '{status}'")
-            return f"REJECTED: status must be one of {VALID_STATUSES}, got '{status}''"
-        if not evidence.strip():
-            return "REJECTED: evidence cannot be empty — cite which round/experiment"
-        if not scope.strip():
-            return "REJECTED: scope cannot be empty — specify what data period this applies to"
-        if not expires_if.strip():
-            return "REJECTED: expires_if cannot be empty — what would invalidate this?"
-
-        # Format as structured content for mempalace
-        content = (
-            f"TYPE:{finding_type} | STATUS:{status} | "
-            f"EVIDENCE:{evidence} | SCOPE:{scope} | "
-            f"EXPIRES_IF:{expires_if}\n"
-            f"{finding}"
+        result = save_research_finding(
+            finding=finding,
+            finding_type=finding_type,
+            status=status,
+            evidence=evidence,
+            scope=scope,
+            expires_if=expires_if,
         )
-
-        result = _palace_add(
-            wing="research_findings",
-            room=finding_type,
-            content=content,
-        )
-        if result.get("success"):
-            trace("CONDUCTOR", f"save_finding OK: {finding_type}/{status}")
-            return f"SAVED: {finding_type}/{status} — {finding[:80]}"
-
-        # Palace write failed — log error and fall back to JSONL
-        trace("CONDUCTOR", f"save_finding palace error: {result}")
-        findings_log = _ROOT / "research_findings.jsonl"
-        import json as _json
-
-        entry = {
-            "finding": finding,
-            "type": finding_type,
-            "status": status,
-            "evidence": evidence,
-            "scope": scope,
-            "expires_if": expires_if,
-            "timestamp": __import__("time").time(),
-        }
-        with open(findings_log, "a") as f:
-            f.write(_json.dumps(entry) + "\n")
-        trace("CONDUCTOR", f"save_finding OK (local fallback): {finding_type}/{status}")
-        return f"SAVED (local): {finding_type}/{status} — {finding[:80]}"
+        if result.startswith("REJECTED"):
+            if "finding_type" in result:
+                trace("CONDUCTOR", f"save_finding REJECTED: bad type '{finding_type}'")
+            elif "status must" in result:
+                trace("CONDUCTOR", f"save_finding REJECTED: bad status '{status}'")
+            return result
+        if result.startswith("SAVED (local):"):
+            trace(
+                "CONDUCTOR",
+                f"save_finding OK (local fallback): {finding_type}/{status}",
+            )
+            return result
+        trace("CONDUCTOR", f"save_finding OK: {finding_type}/{status}")
+        return result
 
     @mcp.tool()
     async def search_findings(query: str, finding_type: str = "") -> str:
@@ -582,31 +475,7 @@ def _build_research_tools_mcp(
         rejected by validator, halted (needs code), or failed.
         Check this BEFORE proposing a new thesis to avoid duplicates.
         """
-        jsonl_files = sorted(_ROOT.glob("*_autoresearch.jsonl"))
-        entries = []
-        for jf in jsonl_files:
-            for line in jf.read_text().splitlines():
-                try:
-                    e = json.loads(line)
-                except (json.JSONDecodeError, ValueError):
-                    continue
-                if e.get("type") != "research_round":
-                    continue
-                entries.append(
-                    {
-                        "thesis_id": e.get("thesis_id", "unknown"),
-                        "outcome": e.get("outcome", "unknown"),
-                        "mechanism_dimension": e.get("mechanism_dimension", ""),
-                        "config_changes": e.get("config_changes", {}),
-                        "hypothesis": e.get("hypothesis", "")[:150],
-                        "rejection_reason": e.get("rejection_reason", "")[:100],
-                        "round": e.get("round"),
-                        "job": e.get("job"),
-                    }
-                )
-        if not entries:
-            return "No previous theses found."
-        return json.dumps(entries, indent=2)
+        return list_past_theses_for_root(_ROOT)
 
     return mcp
 
