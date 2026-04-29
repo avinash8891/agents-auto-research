@@ -1,6 +1,26 @@
 """State, JSONL log, results, and current.md rendering for autoresearch.
 
 Pure functions. The controller composes these with its own paths.
+
+Persistent-state surfaces and their canonical roles
+----------------------------------------------------
+Each surface has a single owner; others are derived or display-only:
+
+  autoresearch.<family>.next.json   — CANONICAL machine state (current phase,
+                                      next action, job counter, usage totals).
+                                      Written only by controller.write_state().
+  autoresearch.<family>.jsonl       — CANONICAL experiment log (one entry per
+                                      run + one config header + research-round
+                                      entries). Append-only via write_entries().
+  autoresearch.<family>.current.md  — DERIVED display snapshot regenerated from
+                                      state + JSONL on every state write.
+  experiments_db.json               — DERIVED structured index of kept/discarded
+                                      experiments, rebuilt from JSONL entries.
+  baseline_checkpoints.json         — CANONICAL baseline-rerun schedule; written
+                                      only when a baseline experiment completes.
+
+Rule 8: never write to more than one canonical surface in a single operation
+without a compensating read that can detect partial failure.
 """
 
 from __future__ import annotations
