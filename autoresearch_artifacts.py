@@ -4,6 +4,7 @@ Wraps artifact_store.read_json_artifacts so that the returned `artifact_path`
 fields are made relative to the controller root, then exposes the family-
 specific lookups (research artifacts, thesis proposals, run-queue artifacts).
 """
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -9,72 +9,78 @@ from typing import Any
 
 from autoresearch_artifacts import (
     queue_from_thesis_artifacts as _artifacts_queue_from_thesis_artifacts,
+)
+from autoresearch_artifacts import (
     read_artifacts_relative_to_root as _artifacts_read_artifacts_relative_to_root,
-    read_research_artifacts as _artifacts_read_research_artifacts,
-    read_run_queue as _artifacts_read_run_queue,
-    read_thesis_artifacts as _artifacts_read_thesis_artifacts,
 )
+from autoresearch_artifacts import read_research_artifacts as _artifacts_read_research_artifacts
+from autoresearch_artifacts import read_run_queue as _artifacts_read_run_queue
+from autoresearch_artifacts import read_thesis_artifacts as _artifacts_read_thesis_artifacts
+from autoresearch_experiment import artifact_dir_for as _experiment_artifact_dir_for
+from autoresearch_experiment import derive_trade_analysis as _experiment_derive_trade_analysis
+from autoresearch_experiment import evaluate_metric as _experiment_evaluate_metric
+from autoresearch_experiment import log_experiment_result as _experiment_log_experiment_result
+from autoresearch_experiment import parse_benchmark_details as _experiment_parse_benchmark_details
 from autoresearch_experiment import (
-    artifact_dir_for as _experiment_artifact_dir_for,
-    derive_trade_analysis as _experiment_derive_trade_analysis,
-    evaluate_metric as _experiment_evaluate_metric,
-    log_experiment_result as _experiment_log_experiment_result,
-    parse_benchmark_details as _experiment_parse_benchmark_details,
     parse_benchmark_details_legacy as _experiment_parse_benchmark_details_legacy,
-    parse_metric as _experiment_parse_metric,
-    parse_result_json as _experiment_parse_result_json,
-    primary_metric_name as _experiment_primary_metric_name,
-    run_command as _experiment_run_command,
-    run_experiment as _experiment_run_experiment,
-    sanitize_duplicate_entries as _experiment_sanitize_duplicate_entries,
 )
-from autoresearch_research import (
-    accumulate_job_usage as _research_accumulate_job_usage,
-    execute_research_one as _research_execute_research_one,
-    execute_research_sdk as _research_execute_research_sdk,
-    load_baseline_config as _research_load_baseline_config,
-    log_research_round as _research_log_research_round,
-    notify_discord as _notify_discord,
-    queue_variants as _research_queue_variants,
-    results_to_dicts as _research_results_to_dicts,
-    run_research as _research_run_research,
+from autoresearch_experiment import parse_metric as _experiment_parse_metric
+from autoresearch_experiment import parse_result_json as _experiment_parse_result_json
+from autoresearch_experiment import primary_metric_name as _experiment_primary_metric_name
+from autoresearch_experiment import run_command as _experiment_run_command
+from autoresearch_experiment import run_experiment as _experiment_run_experiment
+from autoresearch_experiment import (
+    sanitize_duplicate_entries as _experiment_sanitize_duplicate_entries,
 )
 from autoresearch_planning import (
     COMBINATION_RULES,
     DEFAULT_CONFIG_ORDER,
     THESIS_FAMILY,
-    check_baseline_rerun as _planning_check_baseline_rerun,
-    generate_combination_candidates as _planning_generate_combination_candidates,
-    generate_theses_from_ideas as _planning_generate_theses_from_ideas,
-    list_known_variant_configs as _planning_list_known_variant_configs,
-    parse_ideas_backlog as _planning_parse_ideas_backlog,
-    pending_configs as _planning_pending_configs,
-    plan_next_action as _planning_plan_next_action,
-    select_research_next_action as _planning_select_research_next_action,
-    should_terminate as _planning_should_terminate,
-    thesis_family_for as _planning_thesis_family_for,
-    thesis_statuses as _planning_thesis_statuses,
 )
+from autoresearch_planning import check_baseline_rerun as _planning_check_baseline_rerun
+from autoresearch_planning import (
+    generate_combination_candidates as _planning_generate_combination_candidates,
+)
+from autoresearch_planning import generate_theses_from_ideas as _planning_generate_theses_from_ideas
+from autoresearch_planning import list_known_variant_configs as _planning_list_known_variant_configs
+from autoresearch_planning import parse_ideas_backlog as _planning_parse_ideas_backlog
+from autoresearch_planning import pending_configs as _planning_pending_configs
+from autoresearch_planning import plan_next_action as _planning_plan_next_action
+from autoresearch_planning import (
+    select_research_next_action as _planning_select_research_next_action,
+)
+from autoresearch_planning import should_terminate as _planning_should_terminate
+from autoresearch_planning import thesis_family_for as _planning_thesis_family_for
+from autoresearch_planning import thesis_statuses as _planning_thesis_statuses
+from autoresearch_research import accumulate_job_usage as _research_accumulate_job_usage
+from autoresearch_research import execute_research_one as _research_execute_research_one
+from autoresearch_research import execute_research_sdk as _research_execute_research_sdk
+from autoresearch_research import load_baseline_config as _research_load_baseline_config
+from autoresearch_research import log_research_round as _research_log_research_round
+from autoresearch_research import notify_discord as _notify_discord
+from autoresearch_research import queue_variants as _research_queue_variants
+from autoresearch_research import results_to_dicts as _research_results_to_dicts
+from autoresearch_research import run_research as _research_run_research
 from autoresearch_state import (
     ExperimentRecord,
     RunContext,
-    deduplicate_entries as _state_deduplicate_entries,
-    direction as _state_direction,
-    is_better as _state_is_better,
-    best_result as _state_best_result,
-    latest_result as _state_latest_result,
-    promote_missing_known_results as _state_promote_missing_known_results,
-    read_entries as _state_read_entries,
-    read_results as _state_read_results,
-    read_state as _state_read_state,
-    render_current_md as _state_render_current_md,
-    write_current_md as _state_write_current_md,
-    write_entries as _state_write_entries,
-    write_state as _state_write_state,
 )
-from trace_logger import trace
-from experiment_db import ExperimentDB, BaselineTracker
+from autoresearch_state import best_result as _state_best_result
+from autoresearch_state import deduplicate_entries as _state_deduplicate_entries
+from autoresearch_state import direction as _state_direction
+from autoresearch_state import is_better as _state_is_better
+from autoresearch_state import latest_result as _state_latest_result
+from autoresearch_state import promote_missing_known_results as _state_promote_missing_known_results
+from autoresearch_state import read_entries as _state_read_entries
+from autoresearch_state import read_results as _state_read_results
+from autoresearch_state import read_state as _state_read_state
+from autoresearch_state import render_current_md as _state_render_current_md
+from autoresearch_state import write_current_md as _state_write_current_md
+from autoresearch_state import write_entries as _state_write_entries
+from autoresearch_state import write_state as _state_write_state
+from experiment_db import BaselineTracker, ExperimentDB
 from strategy_family import StrategyFamily, load_family
+from trace_logger import trace
 
 ROOT = Path(__file__).resolve().parent
 STATE_PATH = ROOT / "autoresearch.next.json"
@@ -83,7 +89,9 @@ CURRENT_MD_PATH = ROOT / "autoresearch.current.md"
 IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
 
 
-def default_controller_paths(root: Path, family: StrategyFamily) -> tuple[Path, Path, Path, Path, Path]:
+def default_controller_paths(
+    root: Path, family: StrategyFamily
+) -> tuple[Path, Path, Path, Path, Path]:
     prefix = family.name
     return (
         root / f"{prefix}_autoresearch.next.json",
@@ -140,7 +148,9 @@ class AutoresearchController:
         self.contracts_dir = root / self.family.contracts_dirname
         self.run_queue_dir = root / self.family.run_queue_dirname
         self.experiment_db = ExperimentDB(root / f"{self.family.name}_experiments_db.json")
-        self.baseline_tracker = BaselineTracker(root / f"{self.family.name}_baseline_checkpoints.json")
+        self.baseline_tracker = BaselineTracker(
+            root / f"{self.family.name}_baseline_checkpoints.json"
+        )
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()
 
@@ -219,7 +229,11 @@ class AutoresearchController:
 
     def generate_theses_from_ideas(self, results: list[ExperimentRecord]) -> list[str]:
         return _planning_generate_theses_from_ideas(
-            self.root, self.ideas_md_path, self.run_queue_dir, self.proposals_dir, results,
+            self.root,
+            self.ideas_md_path,
+            self.run_queue_dir,
+            self.proposals_dir,
+            results,
         )
 
     # ── WS-5: Combination phase ───────────────────────────────────────
@@ -241,18 +255,33 @@ class AutoresearchController:
 
     def select_research_next_action(self, results: list[ExperimentRecord]) -> dict[str, Any]:
         return _planning_select_research_next_action(
-            self.root, self.family, self.run_queue_dir, self.proposals_dir,
-            self.ideas_md_path, self.research_dir, results,
+            self.root,
+            self.family,
+            self.run_queue_dir,
+            self.proposals_dir,
+            self.ideas_md_path,
+            self.research_dir,
+            results,
         )
 
     def should_terminate(self, results: list[ExperimentRecord] | None = None) -> bool:
         current_results = results if results is not None else self.read_results()
-        return _planning_should_terminate(self.root, self.run_queue_dir, self.research_dir, current_results)
+        return _planning_should_terminate(
+            self.root, self.run_queue_dir, self.research_dir, current_results
+        )
 
-    def plan_next_action(self, state: dict[str, Any], results: list[ExperimentRecord]) -> dict[str, Any]:
+    def plan_next_action(
+        self, state: dict[str, Any], results: list[ExperimentRecord]
+    ) -> dict[str, Any]:
         return _planning_plan_next_action(
-            state, results, self.root, self.family, self.run_queue_dir,
-            self.proposals_dir, self.ideas_md_path, self.research_dir,
+            state,
+            results,
+            self.root,
+            self.family,
+            self.run_queue_dir,
+            self.proposals_dir,
+            self.ideas_md_path,
+            self.research_dir,
         )
 
     def render_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> str:
@@ -288,7 +317,10 @@ class AutoresearchController:
         self.write_state(state)
         self.write_current_md(state, results)
         next_action = state.get("next_action", {})
-        trace("RECONCILE", f"state={old_state_val} best={best} next_action_type={next_action.get('type')}")
+        trace(
+            "RECONCILE",
+            f"state={old_state_val} best={best} next_action_type={next_action.get('type')}",
+        )
         return state
 
     def artifact_dir_for(self, config: str) -> Path:
@@ -314,11 +346,17 @@ class AutoresearchController:
         usage: dict[str, Any] | None = None,
     ) -> None:
         _research_log_research_round(
-            self.jsonl_path, self.state_path,
-            round_number=round_number, thesis_id=thesis_id, outcome=outcome,
-            config_changes=config_changes, hypothesis=hypothesis,
-            mechanism=mechanism, mechanism_dimension=mechanism_dimension,
-            rejection_reason=rejection_reason, usage=usage,
+            self.jsonl_path,
+            self.state_path,
+            round_number=round_number,
+            thesis_id=thesis_id,
+            outcome=outcome,
+            config_changes=config_changes,
+            hypothesis=hypothesis,
+            mechanism=mechanism,
+            mechanism_dimension=mechanism_dimension,
+            rejection_reason=rejection_reason,
+            usage=usage,
         )
 
     def log_experiment_result(
@@ -331,8 +369,12 @@ class AutoresearchController:
         analysis: dict[str, Any],
     ) -> None:
         _experiment_log_experiment_result(
-            self, config=config, metric=metric, decision=decision,
-            output=output, analysis=analysis,
+            self,
+            config=config,
+            metric=metric,
+            decision=decision,
+            output=output,
+            analysis=analysis,
         )
 
     def run_command(self, command: str) -> tuple[int, str]:
@@ -366,8 +408,12 @@ class AutoresearchController:
         baseline_config: dict[str, Any],
     ) -> None:
         _research_queue_variants(
-            self.root, self.run_queue_dir,
-            variants, thesis, primary_contract, baseline_config,
+            self.root,
+            self.run_queue_dir,
+            variants,
+            thesis,
+            primary_contract,
+            baseline_config,
         )
 
     def _results_to_dicts(self, results: list) -> list[dict[str, Any]]:
@@ -378,8 +424,11 @@ class AutoresearchController:
 
     def _check_baseline_rerun(self) -> dict[str, Any] | None:
         return _planning_check_baseline_rerun(
-            self.root, self.family, self.baseline_tracker,
-            self.current_commit(), self.read_results(),
+            self.root,
+            self.family,
+            self.baseline_tracker,
+            self.current_commit(),
+            self.read_results(),
         )
 
     def _resolve_next_action(self) -> dict[str, Any]:
@@ -399,7 +448,10 @@ class AutoresearchController:
             config_changes = raw_thesis.get("config_changes", {})
             if config_changes:
                 import yaml as _yaml
-                base = _yaml.safe_load((self.root / "configs" / self.family.base_config_filename).read_text())
+
+                base = _yaml.safe_load(
+                    (self.root / "configs" / self.family.base_config_filename).read_text()
+                )
                 missing = set(config_changes) - set(base)
                 if not missing:
                     runtime = {**base, **config_changes}
@@ -423,7 +475,6 @@ class AutoresearchController:
                     self.write_state(state)
                     trace("LOOP", f"resumed halted thesis={halted_id}")
                     return state
-
 
         baseline_action = self._check_baseline_rerun()
         if baseline_action:
@@ -453,7 +504,10 @@ class AutoresearchController:
         trace("LOOP", "=== execute_once START ===")
 
         state = self._resolve_next_action()
-        trace("LOOP", f"state={state.get('state')} blockers={[b.get('kind') for b in state.get('blockers', [])]}")
+        trace(
+            "LOOP",
+            f"state={state.get('state')} blockers={[b.get('kind') for b in state.get('blockers', [])]}",
+        )
 
         # Handle blocked state: invoke research conductor
         if state.get("state") == "blocked":
@@ -476,7 +530,9 @@ def main() -> int:
     args = parser.parse_args()
 
     family = load_family(args.family)
-    state_path, jsonl_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(ROOT, family)
+    state_path, jsonl_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(
+        ROOT, family
+    )
     controller = AutoresearchController(
         family=family,
         state_path=state_path,
@@ -490,12 +546,16 @@ def main() -> int:
     job = state.get("job", 0) + 1
     state["job"] = job
     state["research_round"] = 0  # reset round counter for clean job isolation
-    state["job_usage"] = None    # reset token usage for new job
+    state["job_usage"] = None  # reset token usage for new job
     controller.write_state(state)
 
     from trace_logger import get_log_file, get_session_id, set_family
+
     set_family(args.family, job=job)
-    trace("MAIN", f"Autoresearch loop starting family={args.family} job={job} session={get_session_id()} log={get_log_file()}")
+    trace(
+        "MAIN",
+        f"Autoresearch loop starting family={args.family} job={job} session={get_session_id()} log={get_log_file()}",
+    )
     while True:
         code = controller.execute_once()
         if code != 0:
