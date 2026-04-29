@@ -3,17 +3,31 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from artifact_store import read_json_artifacts
+from autoresearch_state import (
+    ExperimentRecord,
+    deduplicate_entries as _state_deduplicate_entries,
+    direction as _state_direction,
+    is_better as _state_is_better,
+    best_result as _state_best_result,
+    latest_result as _state_latest_result,
+    promote_missing_known_results as _state_promote_missing_known_results,
+    read_entries as _state_read_entries,
+    read_results as _state_read_results,
+    read_state as _state_read_state,
+    render_current_md as _state_render_current_md,
+    write_current_md as _state_write_current_md,
+    write_entries as _state_write_entries,
+    write_state as _state_write_state,
+)
 from trace_logger import (
     trace, trace_benchmark, trace_state_change, trace_ssh,
     begin_hypothesis, end_hypothesis, current_hypothesis_id, get_run_id,
@@ -110,16 +124,6 @@ COMBINATION_RULES: dict[tuple[str, str], str] = {
 }
 
 
-@dataclass
-class ExperimentRecord:
-    config: str
-    metric: float
-    status: str
-    description: str
-    timestamp: int
-    asi: dict[str, Any]
-
-
 class AutoresearchController:
     def __init__(
         self,
@@ -148,32 +152,16 @@ class AutoresearchController:
         self.baseline_tracker = BaselineTracker(root / f"{self.family.name}_baseline_checkpoints.json")
 
     def read_state(self) -> dict[str, Any]:
-        if not self.state_path.exists():
-            return {"state": "running"}
-        return json.loads(self.state_path.read_text())
+        return _state_read_state(self.state_path)
 
     def write_state(self, state: dict[str, Any]) -> None:
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self.state_path.with_name(f"{self.state_path.name}.tmp")
-        payload = json.dumps(state, indent=2) + "\n"
-        with tmp_path.open("w") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        tmp_path.replace(self.state_path)
+        _state_write_state(self.state_path, state)
 
     def read_entries(self) -> list[dict[str, Any]]:
-        if not self.jsonl_path.exists():
-            return []
-        entries: list[dict[str, Any]] = []
-        for line in self.jsonl_path.read_text().splitlines():
-            line = line.strip()
-            if line:
-                entries.append(json.loads(line))
-        return entries
+        return _state_read_entries(self.jsonl_path)
 
     def write_entries(self, entries: list[dict[str, Any]]) -> None:
-        self.jsonl_path.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+        _state_write_entries(self.jsonl_path, entries)
 
     def current_commit(self) -> str:
         result = subprocess.run(
@@ -187,28 +175,10 @@ class AutoresearchController:
         return commit or "unknown"
 
     def direction(self) -> str:
-        for entry in self.read_entries():
-            if entry.get("type") == "config":
-                return entry.get("bestDirection", "higher")
-        return "higher"
+        return _state_direction(self.read_entries())
 
     def read_results(self) -> list[ExperimentRecord]:
-        results: list[ExperimentRecord] = []
-        for entry in self.read_entries():
-            if entry.get("type") in ("config", "research_round"):
-                continue
-            asi = entry.get("asi") or {}
-            results.append(
-                ExperimentRecord(
-                    config=asi.get("config", ""),
-                    metric=entry["metric"],
-                    status=entry["status"],
-                    description=entry.get("description", ""),
-                    timestamp=entry.get("timestamp", 0),
-                    asi=asi,
-                )
-            )
-        return results
+        return _state_read_results(self.read_entries())
 
     def read_json_artifacts(self, directory: Path) -> list[dict[str, Any]]:
         artifacts = read_json_artifacts(directory)
@@ -225,23 +195,13 @@ class AutoresearchController:
         return self.read_json_artifacts(self.proposals_dir)
 
     def is_better(self, candidate: float, current: float | None) -> bool:
-        if current is None:
-            return True
-        return candidate > current if self.direction() == "higher" else candidate < current
+        return _state_is_better(self.direction(), candidate, current)
 
     def best_result(self, results: list[ExperimentRecord]) -> dict[str, Any]:
-        best: dict[str, Any] | None = None
-        for result in results:
-            if result.status != "keep":
-                continue
-            if best is None or self.is_better(result.metric, best["metric"]):
-                best = {"config": result.config, "metric": result.metric}
-        return best or {}
+        return _state_best_result(results, self.direction())
 
     def latest_result(self, results: list[ExperimentRecord]) -> ExperimentRecord | None:
-        if not results:
-            return None
-        return max(results, key=lambda result: result.timestamp)
+        return _state_latest_result(results)
 
     def list_known_variant_configs(self) -> list[str]:
         known: list[str] = []
@@ -309,49 +269,10 @@ class AutoresearchController:
         return queued
 
     def promote_missing_known_results(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        # One-time reconciliation disabled for clean runs.
-        # Previously auto-promoted stocks_in_play from known session context.
-        # Now all variants are discovered through the benchmark loop.
-        return entries
+        return _state_promote_missing_known_results(entries)
 
     def deduplicate_entries(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Keep only the richest entry per config. Drop low-info duplicates."""
-        config_entries: dict[str, list[tuple[int, dict[str, Any]]]] = {}
-        config_order: list[str] = []
-        non_experiment: list[dict[str, Any]] = []
-
-        for idx, entry in enumerate(entries):
-            if entry.get("type") == "config":
-                non_experiment.append(entry)
-                continue
-            asi = entry.get("asi") or {}
-            config = asi.get("config", "")
-            if not config:
-                non_experiment.append(entry)
-                continue
-            if config not in config_entries:
-                config_entries[config] = []
-                config_order.append(config)
-            config_entries[config].append((idx, entry))
-
-        deduped: list[dict[str, Any]] = list(non_experiment)
-        for config in config_order:
-            group = config_entries[config]
-            if len(group) == 1:
-                deduped.append(group[0][1])
-                continue
-            # Pick the richest entry: most ASI keys, prefer entries with trade_analysis
-            def richness(item: tuple[int, dict[str, Any]]) -> tuple[int, int, int]:
-                _idx, e = item
-                asi = e.get("asi") or {}
-                has_trade = 1 if asi.get("trade_analysis") else 0
-                has_insights = 1 if asi.get("insights") else 0
-                return (has_trade, len(asi), has_insights)
-
-            best_item = max(group, key=richness)
-            deduped.append(best_item[1])
-
-        return deduped
+        return _state_deduplicate_entries(entries)
 
     # ── WS-2: Thesis generation from ideas backlog ──────────────────────
 
@@ -819,70 +740,10 @@ class AutoresearchController:
         return state
 
     def render_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> str:
-        best = state.get("current_best", {})
-        latest = self.latest_result(results)
-        next_action = state.get("next_action", {})
-        pending = state.get("pending_configs", [])
-        blockers = state.get("blockers", [])
-        statuses = state.get("thesis_statuses", {})
-
-        latest_lines: list[str] = []
-        if latest is not None:
-            latest_lines.append(f"- Last completed thesis: `{latest.config}`")
-            latest_lines.append(f"- Last result: `{latest.status}` at `{latest.metric}`")
-        if best:
-            latest_lines.append(f"- Current best: `{best.get('config')}` at `{best.get('metric')}`")
-        if not latest_lines:
-            latest_lines.append("- No experiments logged yet.")
-
-        if pending:
-            next_candidates = [f"- `{config}`" for config in pending]
-        elif next_action.get("type") == "research":
-            next_candidates = ["- Research pass required before new thesis generation."]
-        elif next_action.get("type") == "generate_theses":
-            next_candidates = ["- Research exists; controller synthesis required before queuing new variants."]
-        else:
-            next_candidates = ["- None"]
-
-        thesis_status_lines = [
-            f"- `{config}`: `{meta.get('status', 'unknown')}`"
-            for config, meta in statuses.items()
-        ] or ["- None"]
-
-        blocker_lines = [f"- {blocker['kind']}: {blocker.get('detail', '')}".rstrip() for blocker in blockers] or ["- None"]
-        chosen = next_action.get("config", next_action.get("type", "none"))
-
-        lines = [
-            "# ORB Autoresearch Current State",
-            "",
-            "## Current Best",
-            f"- `{best.get('config', 'unknown') if best else 'none'}`",
-            f"- median_expectancy: `{best.get('metric', 'unknown') if best else 'none'}`",
-            "",
-            "## Latest Insights",
-            *latest_lines,
-            "",
-            "## Next-Thesis Candidates",
-            *next_candidates,
-            "",
-            "## Thesis Statuses",
-            *thesis_status_lines,
-            "",
-            "## Chosen Next Thesis",
-            f"- `{chosen}`",
-            "",
-            "## Blockers",
-            *blocker_lines,
-            "",
-            "## Execution Control",
-            "- Machine-readable controller: `autoresearch.next.json`",
-            f"- Current controller state: `{state.get('state')}`",
-            "- Experiment outcomes are heartbeats, not stopping points.",
-        ]
-        return "\n".join(lines) + "\n"
+        return _state_render_current_md(state, results)
 
     def write_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> None:
-        self.current_md_path.write_text(self.render_current_md(state, results))
+        _state_write_current_md(self.current_md_path, state, results)
 
     def reconcile_state(self) -> dict[str, Any]:
         entries = self.read_entries()
