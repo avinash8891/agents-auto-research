@@ -28,6 +28,7 @@ from claude_agent_sdk import (
 )
 
 import agent_infra
+import agent_memory
 from trace_logger import (
     trace,
     trace_agent_prompt,
@@ -37,83 +38,6 @@ from trace_logger import (
 # ---------------------------------------------------------------------------
 # Mempalace CLI u2014 orchestrator reads/writes memory on behalf of agents
 # ---------------------------------------------------------------------------
-
-MEMPALACE_CMD = "/Users/avinashvankadaru/.local/bin/mempalace-mcp"
-MEMPALACE_PALACE = "/Users/avinashvankadaru/.codex/mempalace/palace"
-
-
-def _mempalace_search(query_text: str, wing: str = "autoresearch", n: int = 3) -> str:
-    """Search mempalace via CLI subprocess. Returns formatted results."""
-    try:
-        # Use the mempalace CLI directly
-        result = subprocess.run(
-            [
-                "mempalace",
-                "search",
-                query_text,
-                "--palace",
-                MEMPALACE_PALACE,
-                "--wing",
-                wing,
-                "-n",
-                str(n),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        output = result.stdout.strip()
-        return output if output else "(no prior memory found)"
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        return "(memory search unavailable)"
-
-
-def _mempalace_write(wing: str, room: str, content: str) -> bool:
-    """Write to mempalace via CLI subprocess."""
-    try:
-        subprocess.run(
-            [
-                "mempalace",
-                "add",
-                content,
-                "--palace",
-                MEMPALACE_PALACE,
-                "--wing",
-                wing,
-                "--room",
-                room,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        return True
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        return False
-
-
-def _mempalace_diary(agent_name: str, topic: str, entry: str) -> bool:
-    """Write agent diary entry via CLI subprocess."""
-    try:
-        subprocess.run(
-            [
-                "mempalace",
-                "diary",
-                entry,
-                "--palace",
-                MEMPALACE_PALACE,
-                "--agent",
-                agent_name,
-                "--topic",
-                topic,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        return True
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -418,7 +342,7 @@ async def run_diagnostic_analysis(
         f"run_diagnostic_analysis config={config} metric={metric} trades={trades_file}",
     )
     # READ: get prior diagnostics from mempalace
-    prior = _mempalace_search("diagnostic anomalies patterns", wing="autoresearch")
+    prior = agent_memory._mempalace_search("diagnostic anomalies patterns", wing="autoresearch")
 
     config_str = json.dumps(config_contents, indent=2) if config_contents else "unknown"
     results_str = json.dumps(
@@ -458,8 +382,8 @@ async def run_diagnostic_analysis(
                 for a in anomalies
             )
         )
-        _mempalace_write("autoresearch", f"{family}-diagnostics", content)
-        _mempalace_diary(
+        agent_memory._mempalace_write("autoresearch", f"{family}-diagnostics", content)
+        agent_memory._mempalace_diary(
             "diagnostic-analyst",
             f"{family}-analysis",
             f"CONFIG:{config}|PF:{metric}|ANOMALIES:{len(anomalies)}|{summary[:100]}",
@@ -481,7 +405,7 @@ async def run_web_research(
         f"run_web_research round={research_round} family={family} strategy={strategy_label}",
     )
     # READ: get prior web findings
-    prior = _mempalace_search("web research findings strategy", wing="autoresearch")
+    prior = agent_memory._mempalace_search("web research findings strategy", wing="autoresearch")
 
     user_prompt = (
         f"Strategy: {strategy_label}, round {research_round}\n\n"
@@ -506,8 +430,8 @@ async def run_web_research(
             )
             + (f"\nGAPS: {gaps}" if gaps else "")
         )
-        _mempalace_write("autoresearch", f"{family}-web-research", content)
-        _mempalace_diary(
+        agent_memory._mempalace_write("autoresearch", f"{family}-web-research", content)
+        agent_memory._mempalace_diary(
             "web-researcher",
             f"{family}-research",
             f"ROUND:{research_round}|FINDINGS:{len(findings)}|{summary[:100]}",
@@ -535,7 +459,7 @@ async def run_research_agent(
     web_findings = context.get("web_findings", "")
 
     # READ: get prior theses from mempalace
-    prior_theses = _mempalace_search("research thesis proposed", wing="autoresearch")
+    prior_theses = agent_memory._mempalace_search("research thesis proposed", wing="autoresearch")
 
     best_config = best.get("config_contents", {})
     best_config_str = json.dumps(best_config, indent=2) if best_config else "unknown"
@@ -615,8 +539,8 @@ async def run_research_agent(
                     f"MECHANISM: {thesis.get('mechanism', '')}\n"
                     f"REASONING: {parsed.get('reasoning', '')}"
                 )
-                _mempalace_write("autoresearch", f"{family_name}-theses", content)
-                _mempalace_diary(
+                agent_memory._mempalace_write("autoresearch", f"{family_name}-theses", content)
+                agent_memory._mempalace_diary(
                     "research-agent",
                     f"{family_name}-thesis",
                     f"ROUND:{research_round}|THESIS:{thesis.get('thesis_id', '?')}|"

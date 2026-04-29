@@ -12,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import agent_infra
+import agent_memory
 import agent_orchestrator as ao
 
 
@@ -33,7 +34,7 @@ def test_run_diagnostic_analysis_returns_validated_result_and_writes_memory(monk
     diary_entries: list[tuple[str, str, str]] = []
 
     monkeypatch.setattr(ao, "trace", lambda *a, **k: None)
-    monkeypatch.setattr(ao, "_mempalace_search", lambda *a, **k: "prior memory")
+    monkeypatch.setattr(agent_memory, "_mempalace_search", lambda *a, **k: "prior memory")
 
     async def fake_run(prompt: str):
         assert "RAW TRADES FILE: /tmp/trades.csv" in prompt
@@ -41,12 +42,12 @@ def test_run_diagnostic_analysis_returns_validated_result_and_writes_memory(monk
 
     monkeypatch.setattr(ao, "_run_diagnostic_analyst_openai", fake_run)
     monkeypatch.setattr(
-        ao,
+        agent_memory,
         "_mempalace_write",
         lambda wing, room, content: writes.append((wing, room, content)) or True,
     )
     monkeypatch.setattr(
-        ao,
+        agent_memory,
         "_mempalace_diary",
         lambda agent_name, topic, entry: diary_entries.append((agent_name, topic, entry)) or True,
     )
@@ -100,7 +101,7 @@ def test_run_web_research_returns_findings_and_writes_memory(monkeypatch):
     diary_entries: list[tuple[str, str, str]] = []
 
     monkeypatch.setattr(ao, "trace", lambda *a, **k: None)
-    monkeypatch.setattr(ao, "_mempalace_search", lambda *a, **k: "prior research")
+    monkeypatch.setattr(agent_memory, "_mempalace_search", lambda *a, **k: "prior research")
 
     async def fake_run(prompt: str):
         assert "DIAGNOSTIC INSIGHTS:" in prompt
@@ -108,12 +109,12 @@ def test_run_web_research_returns_findings_and_writes_memory(monkeypatch):
 
     monkeypatch.setattr(ao, "_run_web_research_openai", fake_run)
     monkeypatch.setattr(
-        ao,
+        agent_memory,
         "_mempalace_write",
         lambda wing, room, content: writes.append((wing, room, content)) or True,
     )
     monkeypatch.setattr(
-        ao,
+        agent_memory,
         "_mempalace_diary",
         lambda agent_name, topic, entry: diary_entries.append((agent_name, topic, entry)) or True,
     )
@@ -149,9 +150,9 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
     monkeypatch.setattr(ao, "trace", lambda *a, **k: None)
     monkeypatch.setattr(ao, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(ao, "trace_agent_response", lambda *a, **k: None)
-    monkeypatch.setattr(ao, "_mempalace_search", lambda *a, **k: "prior theses")
-    monkeypatch.setattr(ao, "_mempalace_write", lambda *a, **k: True)
-    monkeypatch.setattr(ao, "_mempalace_diary", lambda *a, **k: True)
+    monkeypatch.setattr(agent_memory, "_mempalace_search", lambda *a, **k: "prior theses")
+    monkeypatch.setattr(agent_memory, "_mempalace_write", lambda *a, **k: True)
+    monkeypatch.setattr(agent_memory, "_mempalace_diary", lambda *a, **k: True)
     monkeypatch.setattr(ao, "MAX_RETRIES", 2)
     monkeypatch.setattr(agent_infra, "SDK_TIMEOUT_SECONDS", 300)
 
