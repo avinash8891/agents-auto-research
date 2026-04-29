@@ -5,6 +5,7 @@ proposed theses, compiling them, queueing multi-variant probes, logging
 research-round outcomes, and translating the conductor result into the
 next state for the controller.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -15,6 +16,17 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from autoresearch_constants import (
+    CONFIG_HASH_LENGTH,
+    DISCORD_BODY_MAX_CHARS,
+    DISCORD_COLOR_DISCARD,
+    DISCORD_COLOR_ERROR,
+    DISCORD_COLOR_SUCCESS,
+    DISCORD_HTTP_TIMEOUT_SECONDS,
+    MAX_RESEARCH_ROUNDS,
+    MAX_VALIDATION_RETRIES,
+    MILLISECONDS_PER_SECOND,
+)
 from autoresearch_state import (
     ExperimentRecord,
     read_entries,
@@ -35,32 +47,36 @@ if TYPE_CHECKING:
     from autoresearch_loop import AutoresearchController
 
 
-MAX_RESEARCH_ROUNDS = 100
-MAX_VALIDATION_RETRIES = 3
-
-
 # ── Discord notification ──────────────────────────────────────────
 
-def notify_discord(title: str, body: str, *, webhook: str = "", color: int = 0xFF0000) -> None:
+
+def notify_discord(
+    title: str, body: str, *, webhook: str = "", color: int = DISCORD_COLOR_ERROR
+) -> None:
     """Send a Discord embed notification. Fire-and-forget, never raises."""
     if not webhook:
         return
     try:
         import urllib.request
-        payload = json.dumps({
-            "embeds": [{
-                "title": title,
-                "description": body[:4000],
-                "color": color,
-            }]
-        }).encode()
+
+        payload = json.dumps(
+            {
+                "embeds": [
+                    {
+                        "title": title,
+                        "description": body[:DISCORD_BODY_MAX_CHARS],
+                        "color": color,
+                    }
+                ]
+            }
+        ).encode()
         req = urllib.request.Request(
             webhook,
             data=payload,
             headers={"Content-Type": "application/json", "User-Agent": "AutoresearchBot/1.0"},
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=10)
+        urllib.request.urlopen(req, timeout=DISCORD_HTTP_TIMEOUT_SECONDS)
         trace("DISCORD", f"OK title='{title[:60]}'")
     except Exception as exc:
         trace("DISCORD", f"FAILED title='{title[:60]}' error={exc}")
@@ -68,11 +84,16 @@ def notify_discord(title: str, body: str, *, webhook: str = "", color: int = 0xF
 
 # ── JSONL + state mutators ────────────────────────────────────────
 
+
 def accumulate_job_usage(state_path: Path, round_usage: dict[str, Any]) -> None:
     """Accumulate round token usage into job totals in state JSON."""
     state = read_state(state_path)
     job_usage = state.get("job_usage") or {
-        "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0, "rounds": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "cost_usd": 0.0,
+        "rounds": 0,
     }
     total = round_usage.get("total", {})
     job_usage["input_tokens"] += total.get("input_tokens", 0)
@@ -115,13 +136,14 @@ def log_research_round(
         "mechanism_dimension": mechanism_dimension,
         "rejection_reason": rejection_reason,
         "usage": usage,
-        "timestamp": int(time.time() * 1000),
+        "timestamp": int(time.time() * MILLISECONDS_PER_SECOND),
     }
     entries.append(entry)
     write_entries(jsonl_path, entries)
 
 
 # ── Pure helpers ──────────────────────────────────────────────────
+
 
 def results_to_dicts(results: list[ExperimentRecord]) -> list[dict[str, Any]]:
     """Convert ExperimentRecords to plain dicts for formatting."""
@@ -135,11 +157,20 @@ def results_to_dicts(results: list[ExperimentRecord]) -> list[dict[str, Any]]:
         }
         ta = r.asi.get("trade_analysis", {})
         if ta:
-            for key in ("trade_count", "profit_factor", "max_drawdown",
-                        "pct_profitable_windows", "avg_sharpe_across_windows",
-                        "win_rate", "exit_mix", "regime_expectancy",
-                        "why", "regime_insight", "trade_count_insight",
-                        "mechanism_analysis"):
+            for key in (
+                "trade_count",
+                "profit_factor",
+                "max_drawdown",
+                "pct_profitable_windows",
+                "avg_sharpe_across_windows",
+                "win_rate",
+                "exit_mix",
+                "regime_expectancy",
+                "why",
+                "regime_insight",
+                "trade_count_insight",
+                "mechanism_analysis",
+            ):
                 if ta.get(key) is not None:
                     d[key] = ta[key]
         if r.asi.get("thesis_id"):
@@ -186,25 +217,21 @@ def queue_variants(
             continue  # skip the proposed value — it's already the primary
 
         runtime = {**baseline_config, **variant}
-        config_hash = hashlib.sha256(
-            json.dumps(runtime, sort_keys=True).encode()
-        ).hexdigest()[:12]
+        config_hash = hashlib.sha256(json.dumps(runtime, sort_keys=True).encode()).hexdigest()[
+            :CONFIG_HASH_LENGTH
+        ]
         variant_id = f"{thesis.thesis_id}_{label}"
         exp_dir = root / "experiments" / config_hash
         exp_dir.mkdir(parents=True, exist_ok=True)
 
-        (exp_dir / "runtime_config.json").write_text(
-            json.dumps(runtime, indent=2) + "\n"
-        )
+        (exp_dir / "runtime_config.json").write_text(json.dumps(runtime, indent=2) + "\n")
         variant_thesis = thesis.model_dump()
         variant_thesis["thesis_id"] = variant_id
         variant_thesis["_variant_of"] = primary_contract.experiment_id
         variant_thesis["_variant_label"] = label
         variant_thesis["_variant_factor"] = factor
         variant_thesis["config_changes"] = variant
-        (exp_dir / "thesis.json").write_text(
-            json.dumps(variant_thesis, indent=2) + "\n"
-        )
+        (exp_dir / "thesis.json").write_text(json.dumps(variant_thesis, indent=2) + "\n")
 
         run_queue_dir.mkdir(parents=True, exist_ok=True)
         queue_artifact = {
@@ -224,6 +251,7 @@ def queue_variants(
 
 # ── Conductor invocation ──────────────────────────────────────────
 
+
 def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]:
     """Drive research using the research conductor.
 
@@ -231,13 +259,15 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     If validation rejects the thesis, calls the conductor AGAIN with
     the rejection reason so it can propose something different.
     """
-    from research_conductor import run_research_conductor_sync
     from agent_orchestrator import format_result_history
-    from thesis_validator import (
-        validate_thesis_dict, ThesisValidationError,
-        load_prior_theses, generate_variants,
-    )
     from compiler_pipeline import compile_research_thesis
+    from research_conductor import run_research_conductor_sync
+    from thesis_validator import (
+        ThesisValidationError,
+        generate_variants,
+        load_prior_theses,
+        validate_thesis_dict,
+    )
 
     state = controller.read_state()
     research_round = state.get("research_round", 0) + 1
@@ -259,7 +289,9 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             csvs = list(artifact_dir.glob("*trades.csv"))
             if csvs:
                 trades_file = str(csvs[0])
-            events_files = list(artifact_dir.glob("*strategy_events.parquet")) or list(artifact_dir.glob("*strategy_events.csv"))
+            events_files = list(artifact_dir.glob("*strategy_events.parquet")) or list(
+                artifact_dir.glob("*strategy_events.csv")
+            )
             if events_files:
                 strategy_events_file = str(events_files[0])
             diag_jsons = list(artifact_dir.glob("*diagnostics.json"))
@@ -272,8 +304,13 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         latest_outcome["metric"] = latest.metric
         latest_outcome["decision"] = latest.status
         ta = latest.asi.get("trade_analysis", {})
-        for key in ("trade_count", "profit_factor", "max_drawdown",
-                    "pct_profitable_windows", "avg_sharpe_across_windows"):
+        for key in (
+            "trade_count",
+            "profit_factor",
+            "max_drawdown",
+            "pct_profitable_windows",
+            "avg_sharpe_across_windows",
+        ):
             if ta.get(key) is not None:
                 latest_outcome[key] = ta[key]
 
@@ -285,7 +322,9 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     parsed: dict[str, Any] | None = None
 
     for attempt in range(MAX_VALIDATION_RETRIES):
-        label = f"round={research_round}" + (f" attempt={attempt+1} (retry with feedback)" if attempt else "")
+        label = f"round={research_round}" + (
+            f" attempt={attempt+1} (retry with feedback)" if attempt else ""
+        )
         print(f"CONDUCTOR starting {label} trades={'YES' if trades_file else 'NO'}")
         trace("CONDUCTOR", f"START {label}")
 
@@ -331,7 +370,9 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         raw_thesis = theses[0]
         raw_thesis["strategy_family"] = controller.family.name
         thesis_id = raw_thesis.get("thesis_id", "unknown")
-        print(f"RESEARCH_RAW thesis_id={thesis_id} config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}")
+        print(
+            f"RESEARCH_RAW thesis_id={thesis_id} config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
+        )
 
         try:
             validated = validate_thesis_dict(raw_thesis, prior_theses=prior_theses)
@@ -378,8 +419,12 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
                 )
                 if len(variants) > 1:
                     queue_variants(
-                        controller.root, controller.run_queue_dir,
-                        variants, validated, contract, baseline_config,
+                        controller.root,
+                        controller.run_queue_dir,
+                        variants,
+                        validated,
+                        contract,
+                        baseline_config,
                     )
                     trace("LOOP", f"queued {len(variants)-1} variant(s) for {thesis_id}")
 
@@ -428,10 +473,12 @@ def execute_research_one(controller: "AutoresearchController") -> dict[str, Any]
 
 # ── Round orchestration ──────────────────────────────────────────
 
+
 def run_research(controller: "AutoresearchController", state: dict[str, Any]) -> dict[str, Any]:
     """Run one research round. Returns updated state dict."""
     research_round = state.get("research_round", 0) + 1
     from trace_logger import begin_round
+
     begin_round(research_round)
     if research_round > MAX_RESEARCH_ROUNDS:
         state["state"] = "finished"
@@ -443,13 +490,15 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         notify_discord(
             f"✅ {controller.family.name.upper()} FINISHED u2014 max rounds",
             f"**Rounds:** {MAX_RESEARCH_ROUNDS}\n**Best config:** `{best.get('config', '?')}`\n**Best PF:** {best.get('metric', '?')}",
-            webhook=controller.family.discord_webhook, color=0x00CC00,
+            webhook=controller.family.discord_webhook,
+            color=DISCORD_COLOR_SUCCESS,
         )
         return state
 
     print(f"HEARTBEAT research_blocked round={research_round}, invoking research subagent")
     begin_hypothesis(f"research-round-{research_round}")
-    from research_conductor import reset_round_usage, get_round_usage
+    from research_conductor import get_round_usage, reset_round_usage
+
     reset_round_usage()
     result = controller.execute_research_one()
     round_usage = get_round_usage()
@@ -495,7 +544,8 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         notify_discord(
             f"✅ {controller.family.name.upper()} FINISHED — conductor says stop",
             f"**Best config:** `{best.get('config', '?')}`\n**Best PF:** {best.get('metric', '?')}\n\nResearch conductor recommends stopping.",
-            webhook=controller.family.discord_webhook, color=0x00CC00,
+            webhook=controller.family.discord_webhook,
+            color=DISCORD_COLOR_SUCCESS,
         )
         return state
 
@@ -518,7 +568,8 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
             f"**Hypothesis:** {hyp}\n\n"
             f"**Mechanism:** {mech}\n\n"
             f"**Config changes:** `{json.dumps(thesis.get('config_changes', {}))}`",
-            webhook=controller.family.discord_webhook, color=0xFF4500,
+            webhook=controller.family.discord_webhook,
+            color=DISCORD_COLOR_DISCARD,
         )
         return state
 
@@ -546,7 +597,8 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
     print(f"HEARTBEAT research round {research_round} failed: {reason}")
     state["research_round"] = research_round
     state["state"] = "blocked"
-    state["blockers"] = [{"kind": "research_required",
-                          "detail": f"round {research_round} failed: {reason}"}]
+    state["blockers"] = [
+        {"kind": "research_required", "detail": f"round {research_round} failed: {reason}"}
+    ]
     controller.write_state(state)
     return state

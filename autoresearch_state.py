@@ -2,6 +2,7 @@
 
 Pure functions. The controller composes these with its own paths.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,6 +38,7 @@ class RunContext:
       the next research round): latest_trades_file, latest_strategy_events_file,
       latest_diagnostics_file, latest_config_contents.
     """
+
     current_contract: Any = None
     parent_experiment_id: str = ""
     current_artifact_dir: Path | None = None
@@ -47,6 +49,7 @@ class RunContext:
 
 
 # ── State JSON ─────────────────────────────────────────────────────
+
 
 def read_state(state_path: Path) -> dict[str, Any]:
     if not state_path.exists():
@@ -67,6 +70,7 @@ def write_state(state_path: Path, state: dict[str, Any]) -> None:
 
 # ── JSONL log ──────────────────────────────────────────────────────
 
+
 def read_entries(jsonl_path: Path) -> list[dict[str, Any]]:
     if not jsonl_path.exists():
         return []
@@ -83,6 +87,7 @@ def write_entries(jsonl_path: Path, entries: list[dict[str, Any]]) -> None:
 
 
 # ── Results ────────────────────────────────────────────────────────
+
 
 def read_results(entries: list[dict[str, Any]]) -> list[ExperimentRecord]:
     results: list[ExperimentRecord] = []
@@ -134,6 +139,7 @@ def latest_result(results: list[ExperimentRecord]) -> ExperimentRecord | None:
 
 # ── Entry reconciliation ──────────────────────────────────────────
 
+
 def promote_missing_known_results(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     # One-time reconciliation disabled for clean runs.
     # Previously auto-promoted stocks_in_play from known session context.
@@ -183,6 +189,7 @@ def deduplicate_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 # ── current.md rendering ──────────────────────────────────────────
 
+
 def render_current_md(state: dict[str, Any], results: list[ExperimentRecord]) -> str:
     best = state.get("current_best", {})
     latest = latest_result(results)
@@ -205,16 +212,19 @@ def render_current_md(state: dict[str, Any], results: list[ExperimentRecord]) ->
     elif next_action.get("type") == "research":
         next_candidates = ["- Research pass required before new thesis generation."]
     elif next_action.get("type") == "generate_theses":
-        next_candidates = ["- Research exists; controller synthesis required before queuing new variants."]
+        next_candidates = [
+            "- Research exists; controller synthesis required before queuing new variants."
+        ]
     else:
         next_candidates = ["- None"]
 
     thesis_status_lines = [
-        f"- `{config}`: `{meta.get('status', 'unknown')}`"
-        for config, meta in statuses.items()
+        f"- `{config}`: `{meta.get('status', 'unknown')}`" for config, meta in statuses.items()
     ] or ["- None"]
 
-    blocker_lines = [f"- {blocker['kind']}: {blocker.get('detail', '')}".rstrip() for blocker in blockers] or ["- None"]
+    blocker_lines = [
+        f"- {blocker['kind']}: {blocker.get('detail', '')}".rstrip() for blocker in blockers
+    ] or ["- None"]
     chosen = next_action.get("config", next_action.get("type", "none"))
 
     lines = [
@@ -247,5 +257,7 @@ def render_current_md(state: dict[str, Any], results: list[ExperimentRecord]) ->
     return "\n".join(lines) + "\n"
 
 
-def write_current_md(current_md_path: Path, state: dict[str, Any], results: list[ExperimentRecord]) -> None:
+def write_current_md(
+    current_md_path: Path, state: dict[str, Any], results: list[ExperimentRecord]
+) -> None:
     current_md_path.write_text(render_current_md(state, results))

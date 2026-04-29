@@ -5,6 +5,7 @@ shell out via run_command, parse RESULT_JSON / metrics, decide keep/discard,
 optionally evaluate against a thesis contract, and persist to JSONL plus
 the structured ExperimentDB.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -19,6 +20,17 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from autoresearch_constants import (
+    COMMAND_NOTIFICATION_TRUNCATION,
+    COMMAND_PREVIEW_TRUNCATION,
+    COMMAND_TIMEOUT_SECONDS,
+    COMMAND_TIMEOUT_TRUNCATION,
+    CONFIG_HASH_LENGTH,
+    DISCORD_COLOR_DISCARD,
+    DISCORD_COLOR_SUCCESS,
+    DISCORD_COLOR_WARNING,
+    MILLISECONDS_PER_SECOND,
+)
 from autoresearch_state import (
     read_entries,
     read_state,
@@ -45,19 +57,21 @@ if TYPE_CHECKING:
     from autoresearch_loop import AutoresearchController
 
 
-COMMAND_TIMEOUT_SECONDS = 1800
-
-
 # ── Shell out ─────────────────────────────────────────────────────
+
 
 def run_command(root: Path, command: str) -> tuple[int, str]:
     try:
         trace("COMMAND", f"START: {command}")
-        print(f"RUN_COMMAND start: {command[:80]}", flush=True)
+        print(f"RUN_COMMAND start: {command[:COMMAND_PREVIEW_TRUNCATION]}", flush=True)
         sys.stdout.flush()
         result = subprocess.run(
-            command, shell=True, cwd=root,
-            capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS,
+            command,
+            shell=True,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=COMMAND_TIMEOUT_SECONDS,
             stdin=subprocess.DEVNULL,
         )
         stdout = result.stdout or ""
@@ -67,8 +81,14 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         sys.stdout.flush()
         return int(result.returncode), stdout + stderr
     except subprocess.TimeoutExpired:
-        trace("COMMAND", f"TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): {command[:100]}")
-        print(f"COMMAND TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): {command[:100]}", flush=True)
+        trace(
+            "COMMAND",
+            f"TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): {command[:COMMAND_TIMEOUT_TRUNCATION]}",
+        )
+        print(
+            f"COMMAND TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): {command[:COMMAND_TIMEOUT_TRUNCATION]}",
+            flush=True,
+        )
         return 1, "TIMEOUT"
     except Exception as exc:
         trace("COMMAND", f"ERROR: {exc}")
@@ -77,6 +97,7 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
 
 
 # ── Output parsing ────────────────────────────────────────────────
+
 
 def parse_result_json(output: str) -> dict[str, Any] | None:
     """Find RESULT_JSON line in output, read and return the JSON file."""
@@ -98,13 +119,25 @@ def parse_benchmark_details(output: str) -> dict[str, Any]:
     if result_json:
         details: dict[str, Any] = {}
         metrics = result_json.get("metrics", {})
-        for key in ("trade_count", "profit_factor", "max_drawdown",
-                    "pct_profitable_windows", "avg_sharpe_across_windows",
-                    "win_rate"):
+        for key in (
+            "trade_count",
+            "profit_factor",
+            "max_drawdown",
+            "pct_profitable_windows",
+            "avg_sharpe_across_windows",
+            "win_rate",
+        ):
             if key in metrics:
                 details[key] = metrics[key]
-        for key in ("diagnostics", "trades_file", "strategy_events_file",
-                    "diagnostics_file", "strategy_diagnostics", "git_sha", "config_hash"):
+        for key in (
+            "diagnostics",
+            "trades_file",
+            "strategy_events_file",
+            "diagnostics_file",
+            "strategy_diagnostics",
+            "git_sha",
+            "config_hash",
+        ):
             if result_json.get(key):
                 details[key] = result_json[key]
         return details
@@ -161,10 +194,15 @@ def parse_metric(output: str, name: str = "median_expectancy") -> float | None:
 def evaluate_metric(root: Path, jsonl_name: str, metric: float) -> str:
     result = subprocess.run(
         [
-            "python3", "autoresearch_helper.py", "evaluate",
-            "--jsonl", jsonl_name,
-            "--metric", str(metric),
-            "--direction", "higher",
+            "python3",
+            "autoresearch_helper.py",
+            "evaluate",
+            "--jsonl",
+            jsonl_name,
+            "--metric",
+            str(metric),
+            "--direction",
+            "higher",
         ],
         cwd=root,
         capture_output=True,
@@ -177,9 +215,13 @@ def evaluate_metric(root: Path, jsonl_name: str, metric: float) -> str:
 
 # ── Trade analysis (sets transient controller fields) ────────────
 
+
 def derive_trade_analysis(
     controller: "AutoresearchController",
-    config: str, metric: float, decision: str, output: str = "",
+    config: str,
+    metric: float,
+    decision: str,
+    output: str = "",
 ) -> dict[str, Any]:
     details = parse_benchmark_details(output)
 
@@ -197,6 +239,7 @@ def derive_trade_analysis(
                 config_contents = raw
             else:
                 from ema_contract import compile_ema_contract
+
                 config_contents = compile_ema_contract(raw).runtime_config
         except Exception:
             pass
@@ -220,6 +263,7 @@ def derive_trade_analysis(
 
 
 # ── Artifact + JSONL helpers ─────────────────────────────────────
+
 
 def artifact_dir_for(state_path: Path, runs_dir: Path, config: str) -> Path:
     state = read_state(state_path)
@@ -256,7 +300,9 @@ def log_experiment_result(
 ) -> None:
     sanitize_duplicate_entries(controller.jsonl_path, config)
     artifact_dir = controller.ctx.current_artifact_dir or artifact_dir_for(
-        controller.state_path, controller.runs_dir, config,
+        controller.state_path,
+        controller.runs_dir,
+        config,
     )
     controller.ctx.current_artifact_dir = None  # reset for next hypothesis
     (artifact_dir / "benchmark_output.txt").write_text(output)
@@ -265,9 +311,12 @@ def log_experiment_result(
     contract = controller.ctx.current_contract
     thesis_id = contract.thesis_id if contract else Path(config).stem
     config_changes: dict[str, Any] = {}
-    thesis_json_path = controller.root / "experiments" / (
-        contract.experiment_id if contract else Path(config).stem
-    ) / "thesis.json"
+    thesis_json_path = (
+        controller.root
+        / "experiments"
+        / (contract.experiment_id if contract else Path(config).stem)
+        / "thesis.json"
+    )
     if thesis_json_path.exists():
         try:
             tj = json.loads(thesis_json_path.read_text())
@@ -309,7 +358,7 @@ def log_experiment_result(
         "metrics": details,
         "status": decision,
         "description": f"strict-native loop: {Path(config).stem}",
-        "timestamp": int(time.time() * 1000),
+        "timestamp": int(time.time() * MILLISECONDS_PER_SECOND),
         "segment": 0,
         "confidence": None,
         "asi": asi,
@@ -321,35 +370,38 @@ def log_experiment_result(
     contract = controller.ctx.current_contract
     verdict = analysis.get("trade_analysis", {}).get("verdict", {})
     runtime_config = controller.ctx.latest_config_contents or {}
-    controller.experiment_db.add(ExperimentResult(
-        experiment_id=contract.experiment_id if contract else entry["run_id"],
-        thesis_id=contract.thesis_id if contract else Path(config).stem,
-        config_path=config,
-        runtime_config=runtime_config,
-        code_commit=controller.current_commit(),
-        data_hash=build_data_hash(runtime_config),
-        train_metrics={},
-        validation_metrics=details,
-        trade_count=details.get("trade_count", 0),
-        trades_file=details.get("trades_file", ""),
-        strategy_events_file=details.get("strategy_events_file", ""),
-        diagnostics_file=details.get("diagnostics_file", ""),
-        strategy_diagnostics=details.get("strategy_diagnostics", {}),
-        accepted=decision == "keep",
-        rejection_reason=verdict.get("summary", "") if decision != "keep" else "",
-        verdict_status=verdict.get("status", "none"),
-        verdict_summary=verdict.get("summary", ""),
-        parent_experiment_id=controller.ctx.parent_experiment_id,
-        timestamp=int(time.time() * 1000),
-        family=controller.family.name,
-        hypothesis=contract.hypothesis if contract else "",
-        mechanism=contract.mechanism if contract else "",
-        job=state.get("job", 0),
-        usage=state.get("_last_round_usage", {}),
-    ))
+    controller.experiment_db.add(
+        ExperimentResult(
+            experiment_id=contract.experiment_id if contract else entry["run_id"],
+            thesis_id=contract.thesis_id if contract else Path(config).stem,
+            config_path=config,
+            runtime_config=runtime_config,
+            code_commit=controller.current_commit(),
+            data_hash=build_data_hash(runtime_config),
+            train_metrics={},
+            validation_metrics=details,
+            trade_count=details.get("trade_count", 0),
+            trades_file=details.get("trades_file", ""),
+            strategy_events_file=details.get("strategy_events_file", ""),
+            diagnostics_file=details.get("diagnostics_file", ""),
+            strategy_diagnostics=details.get("strategy_diagnostics", {}),
+            accepted=decision == "keep",
+            rejection_reason=verdict.get("summary", "") if decision != "keep" else "",
+            verdict_status=verdict.get("status", "none"),
+            verdict_summary=verdict.get("summary", ""),
+            parent_experiment_id=controller.ctx.parent_experiment_id,
+            timestamp=int(time.time() * MILLISECONDS_PER_SECOND),
+            family=controller.family.name,
+            hypothesis=contract.hypothesis if contract else "",
+            mechanism=contract.mechanism if contract else "",
+            job=state.get("job", 0),
+            usage=state.get("_last_round_usage", {}),
+        )
+    )
 
 
 # ── Run experiment orchestrator ──────────────────────────────────
+
 
 def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) -> int:
     """Run a single experiment (backtest + evaluate + log). Returns exit code."""
@@ -366,11 +418,11 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             _cfg = json.loads(config_path_full.read_text())
         if isinstance(_cfg, dict) and "runtime_config" in _cfg:
             _cfg = _cfg["runtime_config"]
-        config_hash = hashlib.sha256(
-            json.dumps(_cfg, sort_keys=True).encode()
-        ).hexdigest()[:12]
+        config_hash = hashlib.sha256(json.dumps(_cfg, sort_keys=True).encode()).hexdigest()[
+            :CONFIG_HASH_LENGTH
+        ]
     else:
-        config_hash = hashlib.sha256(config.encode()).hexdigest()[:12]
+        config_hash = hashlib.sha256(config.encode()).hexdigest()[:CONFIG_HASH_LENGTH]
 
     state = controller.read_state()
     job = state.get("job", 0)
@@ -400,8 +452,9 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         print(f"LOOP_STOP state=blocked exit_code={code}")
         notify_discord(
             f"⚠️ {controller.family.name.upper()} BLOCKED — backtest failed",
-            f"**Command:** `{command[:200]}`\n**Exit code:** {code}",
-            webhook=controller.family.discord_webhook, color=0xFFA500,
+            f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\n**Exit code:** {code}",
+            webhook=controller.family.discord_webhook,
+            color=DISCORD_COLOR_WARNING,
         )
         return code
 
@@ -414,8 +467,9 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         print("LOOP_STOP state=blocked metric_parse_failed")
         notify_discord(
             f"⚠️ {controller.family.name.upper()} BLOCKED — metric parse failed",
-            f"**Command:** `{command[:200]}`\nCould not extract metric from output.",
-            webhook=controller.family.discord_webhook, color=0xFFA500,
+            f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\nCould not extract metric from output.",
+            webhook=controller.family.discord_webhook,
+            color=DISCORD_COLOR_WARNING,
         )
         return 1
 
@@ -435,9 +489,14 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             baseline_metrics: dict[str, Any] = {}
             if baseline_result:
                 bta = baseline_result.asi.get("trade_analysis", {})
-                for k in ("trade_count", "profit_factor", "max_drawdown",
-                          "pct_profitable_windows", "avg_sharpe_across_windows",
-                          "median_expectancy"):
+                for k in (
+                    "trade_count",
+                    "profit_factor",
+                    "max_drawdown",
+                    "pct_profitable_windows",
+                    "avg_sharpe_across_windows",
+                    "median_expectancy",
+                ):
                     if bta.get(k) is not None:
                         baseline_metrics[k] = bta[k]
 
@@ -461,7 +520,10 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
                 experiment_id=contract.experiment_id,
                 strategy_diagnostics=details.get("strategy_diagnostics"),
             )
-            trace("EVAL", f"verdict={verdict.status} passed={verdict.passed_effects} failed={verdict.failed_effects} dq={verdict.triggered_disqualifiers}")
+            trace(
+                "EVAL",
+                f"verdict={verdict.status} passed={verdict.passed_effects} failed={verdict.failed_effects} dq={verdict.triggered_disqualifiers}",
+            )
             print(f"VERDICT {verdict.status}: {verdict.summary}")
 
             experiment_dir = controller.root / "experiments" / contract.experiment_id
@@ -484,7 +546,9 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
     if verdict:
         analysis["trade_analysis"]["verdict"] = verdict.model_dump()
-    controller.log_experiment_result(config=config, metric=metric, decision=decision, output=output, analysis=analysis)
+    controller.log_experiment_result(
+        config=config, metric=metric, decision=decision, output=output, analysis=analysis
+    )
 
     is_baseline_run = next_action.get("source") == "baseline"
     if is_baseline_run:
@@ -494,7 +558,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             data_hash=build_data_hash(runtime_cfg),
             config_hash=build_config_hash(runtime_cfg),
             metrics=details,
-            timestamp=int(time.time() * 1000),
+            timestamp=int(time.time() * MILLISECONDS_PER_SECOND),
             round_number=len(controller.baseline_tracker.all_checkpoints()),
         )
         drift = controller.baseline_tracker.check_drift(new_checkpoint)
@@ -517,7 +581,10 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     end_hypothesis(decision=decision, metric=metric)
 
     state = controller.reconcile_state()
-    trace("LOOP", f"ITERATION DONE thesis={config} metric={metric} decision={decision} verdict={verdict.status if verdict else 'none'} next={state.get('next_action', {}).get('type')}")
+    trace(
+        "LOOP",
+        f"ITERATION DONE thesis={config} metric={metric} decision={decision} verdict={verdict.status if verdict else 'none'} next={state.get('next_action', {}).get('type')}",
+    )
     best = state.get("current_best", {})
     verdict_str = verdict.status if verdict else "none"
     emoji = "✅" if decision == "keep" else "❌" if decision == "discard" else "🔄"
@@ -525,7 +592,8 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         f"{emoji} {controller.family.name.upper()} — {Path(config).stem}",
         f"**PF:** {metric}  |  **Decision:** {decision}  |  **Verdict:** {verdict_str}\n"
         f"**Best so far:** `{Path(best.get('config', '?')).stem}` PF={best.get('metric', '?')}",
-        webhook=controller.family.discord_webhook, color=0x00CC00 if decision == "keep" else 0xFF4500,
+        webhook=controller.family.discord_webhook,
+        color=DISCORD_COLOR_SUCCESS if decision == "keep" else DISCORD_COLOR_DISCARD,
     )
     print(
         f"HEARTBEAT complete thesis={config} result={decision} metric={metric} "

@@ -84,7 +84,11 @@ def compute_confidence(results, segment, direction):
 
     Returns None if fewer than 3 data points or MAD is 0.
     """
-    cur = [r for r in current_segment_results(results, segment) if r.get("status") not in ("crash", "checks_failed")]
+    cur = [
+        r
+        for r in current_segment_results(results, segment)
+        if r.get("status") not in ("crash", "checks_failed")
+    ]
     if len(cur) < 3:
         return None
 
@@ -153,7 +157,9 @@ def cmd_init(args):
     mode = "a" if os.path.exists(args.jsonl) else "w"
     with open(args.jsonl, mode) as f:
         f.write(json.dumps(config) + "\n")
-    print(f"Initialized: {args.name} (metric: {args.metric_name}, direction: {args.direction or 'lower'})")
+    print(
+        f"Initialized: {args.name} (metric: {args.metric_name}, direction: {args.direction or 'lower'})"
+    )
 
 
 def cmd_log(args):
@@ -214,7 +220,11 @@ def cmd_log(args):
         delta_pct = ((best - baseline) / baseline) * 100
         print(f"  Best kept: {best} ({delta_pct:+.1f}%)")
     if confidence is not None:
-        label = "likely real" if confidence >= 2.0 else "marginal" if confidence >= 1.0 else "within noise"
+        label = (
+            "likely real"
+            if confidence >= 2.0
+            else "marginal" if confidence >= 1.0 else "within noise"
+        )
         print(f"  Confidence: {confidence}x ({label})")
 
 
@@ -252,12 +262,18 @@ def cmd_evaluate(args):
         print(f"DECISION: discard")
 
     print(f"  Metric: {args.metric}")
-    print(f"  Compare against: {compare_against} ({'best kept' if best is not None else 'baseline'})")
+    print(
+        f"  Compare against: {compare_against} ({'best kept' if best is not None else 'baseline'})"
+    )
     print(f"  Delta: {delta:+.4f} ({delta_pct:+.1f}%)")
     print(f"  Direction: {direction} is better")
 
     if confidence is not None:
-        label = "likely real" if confidence >= 2.0 else "marginal" if confidence >= 1.0 else "within noise"
+        label = (
+            "likely real"
+            if confidence >= 2.0
+            else "marginal" if confidence >= 1.0 else "within noise"
+        )
         print(f"  Confidence: {confidence}x ({label})")
         if confidence < 1.0 and improved:
             print(f"  Warning: improvement is within noise floor. Consider re-running to confirm.")
@@ -285,8 +301,12 @@ def cmd_summary(args):
     confidence = compute_confidence(results, segment, direction)
 
     print(f"Session: {config.get('name', 'unnamed')}")
-    print(f"Metric: {config.get('metricName', 'metric')} ({config.get('metricUnit', '')}), {direction} is better")
-    print(f"Experiments: {total} total, {len(kept)} kept, {len(discarded)} discarded, {len(crashed)} crashed")
+    print(
+        f"Metric: {config.get('metricName', 'metric')} ({config.get('metricUnit', '')}), {direction} is better"
+    )
+    print(
+        f"Experiments: {total} total, {len(kept)} kept, {len(discarded)} discarded, {len(crashed)} crashed"
+    )
     print()
 
     if baseline is not None:
@@ -295,7 +315,11 @@ def cmd_summary(args):
         delta_pct = ((best - baseline) / baseline) * 100
         print(f"Best kept: {best} ({delta_pct:+.1f}% from baseline)")
     if confidence is not None:
-        label = "likely real" if confidence >= 2.0 else "marginal" if confidence >= 1.0 else "within noise"
+        label = (
+            "likely real"
+            if confidence >= 2.0
+            else "marginal" if confidence >= 1.0 else "within noise"
+        )
         print(f"Confidence: {confidence}x ({label})")
 
     print()
@@ -304,7 +328,9 @@ def cmd_summary(args):
         desc = r.get("description", "")
         metric = r.get("metric", 0)
         commit = r.get("commit", "?")
-        print(f"  #{r.get('run', '?')} [{commit}] {config.get('metricName', 'metric')}={metric}  {desc}")
+        print(
+            f"  #{r.get('run', '?')} [{commit}] {config.get('metricName', 'metric')}={metric}  {desc}"
+        )
 
     if crashed:
         print()
@@ -340,7 +366,11 @@ def cmd_status(args):
         "baseline": baseline,
         "bestKept": best,
         "confidence": confidence,
-        "deltaPercent": round(((best - baseline) / baseline) * 100, 2) if best is not None and baseline is not None and baseline != 0 else None,
+        "deltaPercent": (
+            round(((best - baseline) / baseline) * 100, 2)
+            if best is not None and baseline is not None and baseline != 0
+            else None
+        ),
     }
     print(json.dumps(status, indent=2))
 
@@ -362,9 +392,13 @@ def main():
     p_log.add_argument("--jsonl", required=True, help="Path to autoresearch.jsonl")
     p_log.add_argument("--commit", required=True, help="Git commit hash")
     p_log.add_argument("--metric", required=True, type=float, help="Primary metric value")
-    p_log.add_argument("--status", required=True, choices=["keep", "discard", "crash", "checks_failed"])
+    p_log.add_argument(
+        "--status", required=True, choices=["keep", "discard", "crash", "checks_failed"]
+    )
     p_log.add_argument("--description", required=True, help="What was tried")
-    p_log.add_argument("--direction", choices=["lower", "higher"], help="Override direction from config")
+    p_log.add_argument(
+        "--direction", choices=["lower", "higher"], help="Override direction from config"
+    )
     p_log.add_argument("--metrics", help="Additional metrics as JSON object")
     p_log.add_argument("--asi", help="Actionable Side Information as JSON object")
 
@@ -372,7 +406,9 @@ def main():
     p_eval = subparsers.add_parser("evaluate", help="Evaluate whether to keep or discard")
     p_eval.add_argument("--jsonl", required=True, help="Path to autoresearch.jsonl")
     p_eval.add_argument("--metric", required=True, type=float, help="New metric value to evaluate")
-    p_eval.add_argument("--direction", choices=["lower", "higher"], help="Override direction from config")
+    p_eval.add_argument(
+        "--direction", choices=["lower", "higher"], help="Override direction from config"
+    )
 
     # summary
     p_summary = subparsers.add_parser("summary", help="Print experiment summary")

@@ -4,6 +4,7 @@ Decides what experiment runs next: variant configs, thesis-queue artifacts,
 combinations of independent winners, ideas-backlog candidates, baseline
 reruns, or research blocking.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,6 +19,7 @@ from autoresearch_artifacts import (
     read_run_queue,
     read_thesis_artifacts,
 )
+from autoresearch_constants import BASELINE_RERUN_INTERVAL
 from autoresearch_state import ExperimentRecord
 from compiler_pipeline import compile_proposal_artifact
 from strategy_family import StrategyFamily
@@ -64,6 +66,7 @@ COMBINATION_RULES: dict[tuple[str, str], str] = {
 
 
 # ── Variant discovery ─────────────────────────────────────────────
+
 
 def list_known_variant_configs(root: Path) -> list[str]:
     known: list[str] = []
@@ -122,6 +125,7 @@ def thesis_statuses(
 
 # ── Ideas backlog ─────────────────────────────────────────────────
 
+
 def parse_ideas_backlog(ideas_md_path: Path) -> list[dict[str, Any]]:
     """Parse autoresearch.ideas.md and return candidate thesis dicts."""
     if not ideas_md_path.exists():
@@ -139,14 +143,16 @@ def parse_ideas_backlog(ideas_md_path: Path) -> list[dict[str, Any]]:
                     break
             continue
         if line.startswith("- `") and "`" in line[3:]:
-            slug = line[3:line.index("`", 3)]
+            slug = line[3 : line.index("`", 3)]
             config_path = f"configs/variants/orb_{slug}.yaml"
-            candidates.append({
-                "slug": slug,
-                "config": config_path,
-                "family": current_family or THESIS_FAMILY.get(slug, "unknown"),
-                "source": "ideas_backlog",
-            })
+            candidates.append(
+                {
+                    "slug": slug,
+                    "config": config_path,
+                    "family": current_family or THESIS_FAMILY.get(slug, "unknown"),
+                    "source": "ideas_backlog",
+                }
+            )
     return candidates
 
 
@@ -194,6 +200,7 @@ def generate_theses_from_ideas(
 
 # ── Combinations ──────────────────────────────────────────────────
 
+
 def thesis_family_for(config: str, proposals_dir: Path, root: Path) -> str:
     """Determine the thesis family for a config path."""
     slug = Path(config).stem.removeprefix("orb_")
@@ -219,7 +226,7 @@ def generate_combination_candidates(
     generated: list[str] = []
 
     for i, a in enumerate(kept):
-        for b in kept[i + 1:]:
+        for b in kept[i + 1 :]:
             family_a = thesis_family_for(a.config, proposals_dir, root)
             family_b = thesis_family_for(b.config, proposals_dir, root)
             pair = (family_a, family_b)
@@ -281,9 +288,7 @@ def generate_combination_candidates(
                 "primitive_contract": merged if isinstance(merged, list) else [],
             }
             proposals_dir.mkdir(parents=True, exist_ok=True)
-            (proposals_dir / f"{combo_slug}.json").write_text(
-                json.dumps(proposal, indent=2) + "\n"
-            )
+            (proposals_dir / f"{combo_slug}.json").write_text(json.dumps(proposal, indent=2) + "\n")
             if isinstance(merged, list):
                 compile_proposal_artifact(proposal, root)
             generated.append(combo_config)
@@ -292,6 +297,7 @@ def generate_combination_candidates(
 
 
 # ── Termination + finish summary ─────────────────────────────────
+
 
 def should_terminate(
     root: Path,
@@ -320,6 +326,7 @@ def should_terminate(
 
 
 # ── Research-next-action waterfall + plan_next_action ────────────
+
 
 def select_research_next_action(
     root: Path,
@@ -455,9 +462,17 @@ def plan_next_action(
         state["blockers"] = []
         return state
 
-    state.update(select_research_next_action(
-        root, family, run_queue_dir, proposals_dir, ideas_md_path, research_dir, results,
-    ))
+    state.update(
+        select_research_next_action(
+            root,
+            family,
+            run_queue_dir,
+            proposals_dir,
+            ideas_md_path,
+            research_dir,
+            results,
+        )
+    )
     if state.get("state") == "running":
         state.pop("finished_reason", None)
         state.pop("research_stop_reasoning", None)
@@ -465,8 +480,6 @@ def plan_next_action(
 
 
 # ── Forced baseline rerun ────────────────────────────────────────
-
-BASELINE_RERUN_INTERVAL = 5
 
 
 def check_baseline_rerun(
@@ -487,9 +500,7 @@ def check_baseline_rerun(
         needs_rerun = True
         reason = f"code changed {last_checkpoint.code_commit} -> {current_commit}"
     else:
-        experiments_since = sum(
-            1 for r in results if r.timestamp > last_checkpoint.timestamp
-        )
+        experiments_since = sum(1 for r in results if r.timestamp > last_checkpoint.timestamp)
         if experiments_since >= BASELINE_RERUN_INTERVAL:
             needs_rerun = True
             reason = f"periodic rerun ({experiments_since} experiments since last baseline)"

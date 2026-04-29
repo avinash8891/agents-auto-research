@@ -4,6 +4,7 @@ These tests pin the current observable behavior of the loop so that the
 upcoming refactor (extracting helpers into separate modules) can be
 verified to be a pure structural move with no behavior change.
 """
+
 from __future__ import annotations
 
 import json
@@ -21,7 +22,6 @@ import autoresearch_loop as loop_mod
 import autoresearch_research as research_mod
 from autoresearch_loop import AutoresearchController
 from strategy_family import load_family
-
 
 BASELINE_CONFIG = "configs/ema_base.yaml"
 
@@ -62,18 +62,22 @@ def controller(tmp_path, monkeypatch):
     return controller
 
 
-def _seed_existing_result(controller: AutoresearchController, config: str = "configs/variants/some_prior.yaml") -> None:
+def _seed_existing_result(
+    controller: AutoresearchController, config: str = "configs/variants/some_prior.yaml"
+) -> None:
     """Append one keep-result so the loop is past the 'no results' branch."""
-    entries = [{
-        "run": 1,
-        "job": 1,
-        "metric": 1.0,
-        "metrics": {},
-        "status": "keep",
-        "description": f"strict-native loop: {Path(config).stem}",
-        "timestamp": 1,
-        "asi": {"config": config, "thesis_id": Path(config).stem},
-    }]
+    entries = [
+        {
+            "run": 1,
+            "job": 1,
+            "metric": 1.0,
+            "metrics": {},
+            "status": "keep",
+            "description": f"strict-native loop: {Path(config).stem}",
+            "timestamp": 1,
+            "asi": {"config": config, "thesis_id": Path(config).stem},
+        }
+    ]
     controller.write_entries(entries)
 
 
@@ -122,7 +126,9 @@ def test_execute_once_runs_baseline_when_no_results(controller, monkeypatch, tmp
     assert "configs/ema_base.yaml" in captured["command"]
     # The baseline path must have been the one selected.
     entries = controller.read_entries()
-    metric_entries = [e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")]
+    metric_entries = [
+        e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
+    ]
     assert len(metric_entries) == 1
     assert metric_entries[0]["asi"]["config"] == BASELINE_CONFIG
 
@@ -147,16 +153,17 @@ def test_execute_once_runs_pending_queue_before_research(controller, monkeypatch
         "source": "multi_variant_probe",
     }
     controller.run_queue_dir.mkdir(parents=True, exist_ok=True)
-    (controller.run_queue_dir / "queued-thesis-001.json").write_text(
-        json.dumps(queue_artifact)
-    )
+    (controller.run_queue_dir / "queued-thesis-001.json").write_text(json.dumps(queue_artifact))
 
     captured = _patch_run_command_success(controller, monkeypatch, tmp_path)
 
     # Research should NOT be called — fail loudly if it is.
     def _research_should_not_be_called(self):  # pragma: no cover - guard
         raise AssertionError("research conductor invoked when run-queue artifact was pending")
-    monkeypatch.setattr(AutoresearchController, "execute_research_one", _research_should_not_be_called)
+
+    monkeypatch.setattr(
+        AutoresearchController, "execute_research_one", _research_should_not_be_called
+    )
 
     rc = controller.execute_once()
 
@@ -187,11 +194,13 @@ def test_execute_once_blocked_research_generates_config(controller, monkeypatch,
             "should_stop": False,
             "reasoning": "fake",
         }
+
     monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
 
     # research_conductor.reset_round_usage / get_round_usage are imported lazily;
     # patch them on the imported module to avoid real LLM round bookkeeping.
     import research_conductor
+
     monkeypatch.setattr(research_conductor, "reset_round_usage", lambda: None)
     monkeypatch.setattr(research_conductor, "get_round_usage", lambda: {"total": {}})
 
@@ -230,9 +239,11 @@ def test_execute_once_research_needs_code_halts(controller, monkeypatch):
                 "config_changes": {"new_param": 1},
             },
         }
+
     monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
 
     import research_conductor
+
     monkeypatch.setattr(research_conductor, "reset_round_usage", lambda: None)
     monkeypatch.setattr(research_conductor, "get_round_usage", lambda: {"total": {}})
 
@@ -291,9 +302,11 @@ def test_execute_once_success_preserves_artifacts_and_db_write(controller, monke
 
     db_calls: list[Any] = []
     original_add = controller.experiment_db.add
+
     def spy_add(result):
         db_calls.append(result)
         return original_add(result)
+
     monkeypatch.setattr(controller.experiment_db, "add", spy_add)
 
     rc = controller.execute_once()
@@ -302,7 +315,9 @@ def test_execute_once_success_preserves_artifacts_and_db_write(controller, monke
 
     # JSONL has a metric entry tagged for the baseline config.
     entries = controller.read_entries()
-    metric_entries = [e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")]
+    metric_entries = [
+        e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
+    ]
     assert len(metric_entries) == 1
     metric_entry = metric_entries[0]
     assert metric_entry["asi"]["config"] == BASELINE_CONFIG
