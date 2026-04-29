@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -59,9 +61,6 @@ def notify_discord(
     if not webhook:
         return
     try:
-        import urllib.error
-        import urllib.request
-
         payload = json.dumps(
             {
                 "embeds": [
