@@ -612,10 +612,9 @@ def check_baseline_rerun(
     if not last_checkpoint:
         return None
 
-    # Coerce the checkpoint timestamp to int epoch-ms for comparison with
-    # ExperimentRecord.timestamp (which read_results normalizes to int).
-    # Post-rule-J the checkpoint stores ISO strings; coerce here so the
-    # comparison stays valid for both legacy and new files.
+    # Coerce both timestamps to epoch-ms for comparison.
+    # ExperimentRecord.timestamp is now ISO-8601 UTC str (rule J).
+    # checkpoint.timestamp may be ISO string or legacy int; coerce both.
     from autoresearch_state import coerce_timestamp_to_epoch_ms
 
     checkpoint_ts_ms = coerce_timestamp_to_epoch_ms(last_checkpoint.timestamp)
@@ -625,7 +624,9 @@ def check_baseline_rerun(
         needs_rerun = True
         reason = f"code changed {last_checkpoint.code_commit} -> {current_commit}"
     else:
-        experiments_since = sum(1 for r in results if r.timestamp > checkpoint_ts_ms)
+        experiments_since = sum(
+            1 for r in results if coerce_timestamp_to_epoch_ms(r.timestamp) > checkpoint_ts_ms
+        )
         if experiments_since >= BASELINE_RERUN_INTERVAL:
             needs_rerun = True
             reason = f"periodic rerun ({experiments_since} experiments since last baseline)"
@@ -634,7 +635,8 @@ def check_baseline_rerun(
         return None
 
     already_reran = any(
-        r.asi.get("baseline_rerun_for_commit") == current_commit and r.timestamp > checkpoint_ts_ms
+        r.asi.get("baseline_rerun_for_commit") == current_commit
+        and coerce_timestamp_to_epoch_ms(r.timestamp) > checkpoint_ts_ms
         for r in results
     )
     if already_reran:
