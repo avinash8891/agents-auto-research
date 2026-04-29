@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import agent_infra
 import agent_orchestrator as ao
 
 
@@ -152,7 +153,7 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
     monkeypatch.setattr(ao, "_mempalace_write", lambda *a, **k: True)
     monkeypatch.setattr(ao, "_mempalace_diary", lambda *a, **k: True)
     monkeypatch.setattr(ao, "MAX_RETRIES", 2)
-    monkeypatch.setattr(ao, "SDK_TIMEOUT_SECONDS", 300)
+    monkeypatch.setattr(agent_infra, "SDK_TIMEOUT_SECONDS", 300)
 
     class FakeSpec:
         strategy_label = "EMA strategy"
@@ -256,7 +257,7 @@ def test_parse_json_extracts_from_fenced_block():
 ```
 After"""
 
-    assert ao._parse_json(text) == {"answer": 42}
+    assert agent_infra._parse_json(text) == {"answer": 42}
 
 
 def test_format_result_history_renders_thesis_with_changes():

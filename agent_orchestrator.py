@@ -11,27 +11,13 @@ Agents are stateless workers. The orchestrator owns memory:
   - Validates the agent's JSON output
   - Writes validated results to mempalace AFTER each run
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import subprocess
-from pathlib import Path
 from typing import Any
-
-from trace_logger import (
-    trace,
-    trace_agent_prompt,
-    trace_agent_response,
-    trace_agent_tool_call,
-    trace_ssh,
-)
-
-# Load Claude OAuth token if not already set (bypasses keychain)
-_OAUTH_TOKEN_FILE = Path.home() / ".claude_oauth_token"
-if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") and _OAUTH_TOKEN_FILE.exists():
-    os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = _OAUTH_TOKEN_FILE.read_text().strip()
 
 from claude_agent_sdk import (
     AgentDefinition,
@@ -39,6 +25,13 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ResultMessage,
     query,
+)
+
+import agent_infra
+from trace_logger import (
+    trace,
+    trace_agent_prompt,
+    trace_agent_response,
 )
 
 # ---------------------------------------------------------------------------
@@ -54,10 +47,20 @@ def _mempalace_search(query_text: str, wing: str = "autoresearch", n: int = 3) -
     try:
         # Use the mempalace CLI directly
         result = subprocess.run(
-            ["mempalace", "search", query_text,
-             "--palace", MEMPALACE_PALACE,
-             "--wing", wing, "-n", str(n)],
-            capture_output=True, text=True, timeout=15,
+            [
+                "mempalace",
+                "search",
+                query_text,
+                "--palace",
+                MEMPALACE_PALACE,
+                "--wing",
+                wing,
+                "-n",
+                str(n),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         output = result.stdout.strip()
         return output if output else "(no prior memory found)"
@@ -69,10 +72,20 @@ def _mempalace_write(wing: str, room: str, content: str) -> bool:
     """Write to mempalace via CLI subprocess."""
     try:
         subprocess.run(
-            ["mempalace", "add", content,
-             "--palace", MEMPALACE_PALACE,
-             "--wing", wing, "--room", room],
-            capture_output=True, text=True, timeout=15,
+            [
+                "mempalace",
+                "add",
+                content,
+                "--palace",
+                MEMPALACE_PALACE,
+                "--wing",
+                wing,
+                "--room",
+                room,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         return True
     except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
@@ -83,10 +96,20 @@ def _mempalace_diary(agent_name: str, topic: str, entry: str) -> bool:
     """Write agent diary entry via CLI subprocess."""
     try:
         subprocess.run(
-            ["mempalace", "diary", entry,
-             "--palace", MEMPALACE_PALACE,
-             "--agent", agent_name, "--topic", topic],
-            capture_output=True, text=True, timeout=15,
+            [
+                "mempalace",
+                "diary",
+                entry,
+                "--palace",
+                MEMPALACE_PALACE,
+                "--agent",
+                agent_name,
+                "--topic",
+                topic,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         return True
     except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
@@ -97,15 +120,13 @@ def _mempalace_diary(agent_name: str, topic: str, entry: str) -> bool:
 # CLI-based agent runner (for tools not available in SDK subprocesses)
 # ---------------------------------------------------------------------------
 
-CLI_TIMEOUT_SECONDS = 180  # Max seconds for a CLI agent call
-
 
 def _run_cli_agent(
     name: str,
     system_prompt: str,
     user_prompt: str,
     retries: int = 2,
-    timeout: int = CLI_TIMEOUT_SECONDS,
+    timeout: int = agent_infra.CLI_TIMEOUT_SECONDS,
 ) -> dict[str, Any] | None:
     """Run an agent via `claude --print` CLI subprocess.
 
@@ -117,11 +138,20 @@ def _run_cli_agent(
         trace("CLI_AGENT", f"{name} attempt={attempt}/{retries} timeout={timeout}s")
         try:
             result = subprocess.run(
-                ["claude", "-p", user_prompt,
-                 "--model", "sonnet",
-                 "--system-prompt", system_prompt,
-                 "--max-turns", "10"],
-                capture_output=True, text=True, timeout=timeout,
+                [
+                    "claude",
+                    "-p",
+                    user_prompt,
+                    "--model",
+                    "sonnet",
+                    "--system-prompt",
+                    system_prompt,
+                    "--max-turns",
+                    "10",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
             )
             output = result.stdout.strip()
             if result.returncode != 0:
@@ -132,7 +162,7 @@ def _run_cli_agent(
                     continue
                 return None
 
-            parsed = _parse_json(output)
+            parsed = agent_infra._parse_json(output)
             trace_agent_response(f"cli-{name}", trace_id, output, parsed)
             if parsed is not None:
                 if _validate_output(name, parsed):
@@ -373,6 +403,7 @@ Return ONLY the JSON object.""",
 # Public API u2014 orchestrator handles memory on behalf of agents
 # ---------------------------------------------------------------------------
 
+
 async def run_diagnostic_analysis(
     trades_file: str,
     config: str,
@@ -382,13 +413,20 @@ async def run_diagnostic_analysis(
     family: str = "ema",
 ) -> dict[str, Any] | None:
     """Run the diagnostic analyst on raw trades. Orchestrator manages memory."""
-    trace("ORCHESTRATOR", f"run_diagnostic_analysis config={config} metric={metric} trades={trades_file}")
+    trace(
+        "ORCHESTRATOR",
+        f"run_diagnostic_analysis config={config} metric={metric} trades={trades_file}",
+    )
     # READ: get prior diagnostics from mempalace
     prior = _mempalace_search("diagnostic anomalies patterns", wing="autoresearch")
 
     config_str = json.dumps(config_contents, indent=2) if config_contents else "unknown"
     results_str = json.dumps(
-        {k: v for k, v in (baseline_results or {}).items() if k != "diagnostics" and k != "trades_file"},
+        {
+            k: v
+            for k, v in (baseline_results or {}).items()
+            if k != "diagnostics" and k != "trades_file"
+        },
         indent=2,
     )
 
@@ -422,7 +460,8 @@ async def run_diagnostic_analysis(
         )
         _mempalace_write("autoresearch", f"{family}-diagnostics", content)
         _mempalace_diary(
-            "diagnostic-analyst", f"{family}-analysis",
+            "diagnostic-analyst",
+            f"{family}-analysis",
             f"CONFIG:{config}|PF:{metric}|ANOMALIES:{len(anomalies)}|{summary[:100]}",
         )
 
@@ -437,7 +476,10 @@ async def run_web_research(
     family: str = "ema",
 ) -> dict[str, Any] | None:
     """Run the web researcher via Claude SDK (builds prompt, delegates to OpenAI for search)."""
-    trace("ORCHESTRATOR", f"run_web_research round={research_round} family={family} strategy={strategy_label}")
+    trace(
+        "ORCHESTRATOR",
+        f"run_web_research round={research_round} family={family} strategy={strategy_label}",
+    )
     # READ: get prior web findings
     prior = _mempalace_search("web research findings strategy", wing="autoresearch")
 
@@ -466,7 +508,8 @@ async def run_web_research(
         )
         _mempalace_write("autoresearch", f"{family}-web-research", content)
         _mempalace_diary(
-            "web-researcher", f"{family}-research",
+            "web-researcher",
+            f"{family}-research",
             f"ROUND:{research_round}|FINDINGS:{len(findings)}|{summary[:100]}",
         )
 
@@ -478,7 +521,10 @@ async def run_research_agent(
     family_name: str = "orb",
 ) -> dict[str, Any] | None:
     """Run the research agent. Orchestrator manages memory."""
-    trace("ORCHESTRATOR", f"run_research_agent family={family_name} round={context.get('research_round')}")
+    trace(
+        "ORCHESTRATOR",
+        f"run_research_agent family={family_name} round={context.get('research_round')}",
+    )
     from family_research import get_family_research_spec
 
     spec = get_family_research_spec(family_name)
@@ -491,7 +537,7 @@ async def run_research_agent(
     # READ: get prior theses from mempalace
     prior_theses = _mempalace_search("research thesis proposed", wing="autoresearch")
 
-    best_config = best.get('config_contents', {})
+    best_config = best.get("config_contents", {})
     best_config_str = json.dumps(best_config, indent=2) if best_config else "unknown"
 
     prompt = (
@@ -515,10 +561,13 @@ async def run_research_agent(
     # Main query with supervision (timeout prevents hanging on rate limits)
     for attempt in range(1, MAX_RETRIES + 1):
         trace_id = trace_agent_prompt("sdk-research-agent", prompt, research_def.prompt)
-        trace("AGENT_SDK", f"research_agent attempt={attempt}/{MAX_RETRIES} model={research_def.model} round={research_round}")
+        trace(
+            "AGENT_SDK",
+            f"research_agent attempt={attempt}/{MAX_RETRIES} model={research_def.model} round={research_round}",
+        )
         result_text = ""
         try:
-            deadline = asyncio.get_event_loop().time() + SDK_TIMEOUT_SECONDS
+            deadline = asyncio.get_event_loop().time() + agent_infra.SDK_TIMEOUT_SECONDS
             async for message in query(
                 prompt=prompt,
                 options=ClaudeAgentOptions(
@@ -541,7 +590,7 @@ async def run_research_agent(
                     if not result_text and hasattr(message, "result") and message.result:
                         result_text = str(message.result)
         except asyncio.TimeoutError:
-            trace("AGENT_SDK", f"research_agent TIMEOUT after {SDK_TIMEOUT_SECONDS}s")
+            trace("AGENT_SDK", f"research_agent TIMEOUT after {agent_infra.SDK_TIMEOUT_SECONDS}s")
             print(f"AGENT_SDK research_agent timeout (attempt {attempt})")
             if attempt < MAX_RETRIES:
                 continue
@@ -553,7 +602,7 @@ async def run_research_agent(
                 continue
             return None
 
-        parsed = _parse_json(result_text)
+        parsed = agent_infra._parse_json(result_text)
         trace_agent_response("sdk-research-agent", trace_id, result_text, parsed)
         if parsed and _validate_output("research-agent", parsed):
             # WRITE: persist validated thesis to mempalace
@@ -568,7 +617,8 @@ async def run_research_agent(
                 )
                 _mempalace_write("autoresearch", f"{family_name}-theses", content)
                 _mempalace_diary(
-                    "research-agent", f"{family_name}-thesis",
+                    "research-agent",
+                    f"{family_name}-thesis",
                     f"ROUND:{research_round}|THESIS:{thesis.get('thesis_id', '?')}|"
                     f"{parsed.get('reasoning', '')[:100]}",
                 )
@@ -587,6 +637,7 @@ async def run_research_agent(
 # ---------------------------------------------------------------------------
 # Result formatting (moved from research_subagent.py)
 # ---------------------------------------------------------------------------
+
 
 def format_result_history(results: list[dict[str, Any]]) -> str:
     """Format experiment results into a readable history for prompts."""
@@ -629,7 +680,7 @@ def format_result_history(results: list[dict[str, Any]]) -> str:
         if r.get("next_thesis_suggestion"):
             lines.append(f"    NEXT: {r['next_thesis_suggestion']}")
         if r.get("insight_brief"):
-            lines.append(f"    ANALYST INSIGHTS:")
+            lines.append("    ANALYST INSIGHTS:")
             for bl in r["insight_brief"].split("\n")[:8]:
                 lines.append(f"      {bl}")
     return "\n".join(lines)
@@ -638,34 +689,6 @@ def format_result_history(results: list[dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 # Web research via OpenAI Agents SDK + openai-oauth proxy (Codex subscription)
 # ---------------------------------------------------------------------------
-
-_OAUTH_PROXY_PORT = 10531
-_OAUTH_PROXY_URL = f"http://127.0.0.1:{_OAUTH_PROXY_PORT}/v1"
-_oauth_proxy_proc: subprocess.Popen | None = None
-
-
-def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
-    """Require the system-managed openai-oauth proxy to be reachable."""
-    import socket
-    import time
-
-    deadline = time.monotonic() + timeout_seconds
-    last_error: OSError | None = None
-    while True:
-        try:
-            with socket.create_connection(("127.0.0.1", _OAUTH_PROXY_PORT), timeout=1):
-                return
-        except OSError as exc:
-            last_error = exc
-        if time.monotonic() >= deadline:
-            break
-        time.sleep(0.5)
-
-    raise RuntimeError(
-        f"openai-oauth proxy is not listening at {_OAUTH_PROXY_URL}. "
-        "Start openai-oauth.service before running research jobs. "
-        f"Last error: {last_error}"
-    )
 
 
 async def _run_web_research_openai(
@@ -678,16 +701,19 @@ async def _run_web_research_openai(
     hosted tool that requires it. store=False is fine here because web search
     is single-turn (no local function tools needing multi-turn).
     """
-    from openai import AsyncOpenAI
-    from agents import Agent as OAIAgent, Runner as OAIRunner, WebSearchTool
-    from agents import RunConfig as OAIRunConfig, ModelSettings as OAIModelSettings
+    from agents import Agent as OAIAgent
+    from agents import ModelSettings as OAIModelSettings
+    from agents import RunConfig as OAIRunConfig
+    from agents import Runner as OAIRunner
+    from agents import WebSearchTool
     from agents.models.openai_provider import OpenAIProvider
+    from openai import AsyncOpenAI
 
-    _ensure_oauth_proxy()
+    agent_infra._ensure_oauth_proxy()
 
     client = AsyncOpenAI(
         api_key="unused",  # proxy handles auth
-        base_url=_OAUTH_PROXY_URL,
+        base_url=agent_infra._OAUTH_PROXY_URL,
     )
     provider = OpenAIProvider(openai_client=client)
 
@@ -700,7 +726,10 @@ async def _run_web_research_openai(
 
     for attempt in range(1, retries + 1):
         trace_id = trace_agent_prompt("openai-web-researcher", prompt, WEB_RESEARCHER_SYSTEM_PROMPT)
-        trace("OPENAI_AGENT", f"web-researcher attempt={attempt}/{retries} model=gpt-5.5 api=responses")
+        trace(
+            "OPENAI_AGENT",
+            f"web-researcher attempt={attempt}/{retries} model=gpt-5.5 api=responses",
+        )
         try:
             result = OAIRunner.run_streamed(
                 agent,
@@ -715,21 +744,19 @@ async def _run_web_research_openai(
                 pass
 
             output = result.final_output or ""
-            parsed = _parse_json(output)
+            parsed = agent_infra._parse_json(output)
             trace_agent_response("openai-web-researcher", trace_id, output, parsed)
             if parsed is not None and _validate_output("web-researcher", parsed):
                 trace("OPENAI_AGENT", "web-researcher VALIDATED OK")
                 return parsed
-            trace("OPENAI_AGENT", f"web-researcher validate FAILED")
+            trace("OPENAI_AGENT", "web-researcher validate FAILED")
             print(f"WEB_RESEARCH parse/validate failed (attempt {attempt}): {output[:200]}")
         except Exception as exc:
             trace("OPENAI_AGENT", f"web-researcher ERROR: {exc}")
             print(f"WEB_RESEARCH error (attempt {attempt}): {exc}")
 
         if attempt < retries:
-            prompt = (
-                f"RETRY: Return valid JSON with 'findings' array and 'summary'. {prompt}"
-            )
+            prompt = f"RETRY: Return valid JSON with 'findings' array and 'summary'. {prompt}"
 
     return None
 
@@ -816,12 +843,15 @@ async def _run_diagnostic_analyst_openai(
     instead of the Claude SDK analyst that spawns a crash-prone CLI subprocess.
     """
     import sys as _sys
-    from openai import AsyncOpenAI
-    from agents import Agent as OAIAgent, Runner as OAIRunner, function_tool
-    from agents import RunConfig as OAIRunConfig
-    from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 
-    _ensure_oauth_proxy()
+    from agents import Agent as OAIAgent
+    from agents import RunConfig as OAIRunConfig
+    from agents import Runner as OAIRunner
+    from agents import function_tool
+    from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+    from openai import AsyncOpenAI
+
+    agent_infra._ensure_oauth_proxy()
 
     # --- Local function tools ---
     @function_tool
@@ -860,14 +890,14 @@ async def _run_diagnostic_analyst_openai(
             if result.returncode != 0:
                 output += f"\nEXIT CODE: {result.returncode}"
             if len(output) > 30000:
-                output = output[:30000] + f"\n... (truncated)"
+                output = output[:30000] + "\n... (truncated)"
             return output
         except subprocess.TimeoutExpired:
             return "ERROR: Code execution timed out (60s limit)"
         except Exception as e:
             return f"ERROR: {e}"
 
-    client = AsyncOpenAI(api_key="unused", base_url=_OAUTH_PROXY_URL)
+    client = AsyncOpenAI(api_key="unused", base_url=agent_infra._OAUTH_PROXY_URL)
     model = OpenAIChatCompletionsModel(model="gpt-5.5", openai_client=client)
 
     agent = OAIAgent(
@@ -879,7 +909,9 @@ async def _run_diagnostic_analyst_openai(
 
     for attempt in range(1, retries + 1):
         trace_id = trace_agent_prompt("codex-analyst", prompt, DIAGNOSTIC_ANALYST_PROMPT)
-        trace("OPENAI_AGENT", f"codex-analyst attempt={attempt}/{retries} model=gpt-5.5 api=chatcmpl")
+        trace(
+            "OPENAI_AGENT", f"codex-analyst attempt={attempt}/{retries} model=gpt-5.5 api=chatcmpl"
+        )
         try:
             result = OAIRunner.run_streamed(
                 agent,
@@ -892,12 +924,12 @@ async def _run_diagnostic_analyst_openai(
                 pass
 
             output = result.final_output or ""
-            parsed = _parse_json(output)
+            parsed = agent_infra._parse_json(output)
             trace_agent_response("codex-analyst", trace_id, output, parsed)
             if parsed is not None and _validate_output("diagnostic-analyst", parsed):
                 trace("OPENAI_AGENT", "codex-analyst VALIDATED OK")
                 return parsed
-            trace("OPENAI_AGENT", f"codex-analyst validate FAILED")
+            trace("OPENAI_AGENT", "codex-analyst validate FAILED")
             print(f"CODEX_ANALYST parse/validate failed (attempt {attempt}): {output[:200]}")
         except Exception as exc:
             trace("OPENAI_AGENT", f"codex-analyst ERROR: {exc}")
@@ -915,6 +947,7 @@ async def _run_diagnostic_analyst_openai(
 # Sync wrappers
 # ---------------------------------------------------------------------------
 
+
 def analyze_diagnostics_sync(
     trades_file: str,
     config: str,
@@ -923,9 +956,16 @@ def analyze_diagnostics_sync(
     baseline_results: dict[str, Any] | None = None,
     family: str = "ema",
 ) -> dict[str, Any] | None:
-    return asyncio.run(run_diagnostic_analysis(
-        trades_file, config, metric, config_contents, baseline_results, family,
-    ))
+    return asyncio.run(
+        run_diagnostic_analysis(
+            trades_file,
+            config,
+            metric,
+            config_contents,
+            baseline_results,
+            family,
+        )
+    )
 
 
 def run_web_research_sync(
@@ -935,9 +975,15 @@ def run_web_research_sync(
     research_round: int = 1,
     family: str = "ema",
 ) -> dict[str, Any] | None:
-    return asyncio.run(run_web_research(
-        strategy_label, analyst_brief, result_summary, research_round, family,
-    ))
+    return asyncio.run(
+        run_web_research(
+            strategy_label,
+            analyst_brief,
+            result_summary,
+            research_round,
+            family,
+        )
+    )
 
 
 def run_research_agent_sync(
@@ -951,11 +997,11 @@ def run_research_agent_sync(
 # Helpers
 # ---------------------------------------------------------------------------
 
-SDK_TIMEOUT_SECONDS = 300  # Max seconds for a single SDK agent call (analyst needs Execute time)
-
 
 async def _query_with_timeout(
-    prompt: str, agent_def: AgentDefinition, timeout: int,
+    prompt: str,
+    agent_def: AgentDefinition,
+    timeout: int,
 ):
     """Async generator: yield text chunks from the agent with a deadline."""
     deadline = asyncio.get_event_loop().time() + timeout
@@ -989,7 +1035,7 @@ async def _run_single_agent(
     prompt: str,
     agent_def: AgentDefinition,
     retries: int = MAX_RETRIES,
-    timeout: int = SDK_TIMEOUT_SECONDS,
+    timeout: int = agent_infra.SDK_TIMEOUT_SECONDS,
 ) -> dict[str, Any] | None:
     """Run a single agent directly with its system prompt.
 
@@ -998,7 +1044,10 @@ async def _run_single_agent(
     """
     for attempt in range(1, retries + 1):
         trace_id = trace_agent_prompt(f"sdk-{name}", prompt, agent_def.prompt)
-        trace("AGENT_SDK", f"{name} attempt={attempt}/{retries} model={agent_def.model} tools={agent_def.tools}")
+        trace(
+            "AGENT_SDK",
+            f"{name} attempt={attempt}/{retries} model={agent_def.model} tools={agent_def.tools}",
+        )
         result_text = ""
         try:
             async for chunk in _query_with_timeout(prompt, agent_def, timeout):
@@ -1016,7 +1065,7 @@ async def _run_single_agent(
                 continue
             return None
 
-        parsed = _parse_json(result_text)
+        parsed = agent_infra._parse_json(result_text)
         trace_agent_response(f"sdk-{name}", trace_id, result_text, parsed)
         if parsed is not None:
             if _validate_output(name, parsed):
@@ -1087,35 +1136,6 @@ def _validate_output(agent_name: str, parsed: dict[str, Any]) -> bool:
         return True
 
     return True
-
-
-def _parse_json(text: str) -> dict[str, Any] | None:
-    """Extract JSON from agent output."""
-    text = text.strip()
-    if "```json" in text:
-        start = text.index("```json") + 7
-        end = text.index("```", start)
-        text = text[start:end].strip()
-    elif "```" in text:
-        start = text.index("```") + 3
-        end = text.index("```", start)
-        text = text[start:end].strip()
-
-    brace_start = text.find("{")
-    if brace_start == -1:
-        return None
-    depth = 0
-    for i in range(brace_start, len(text)):
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-            if depth == 0:
-                try:
-                    return json.loads(text[brace_start:i + 1])
-                except json.JSONDecodeError:
-                    return None
-    return None
 
 
 def format_insight_brief(analysis: dict[str, Any]) -> str:

@@ -8,6 +8,7 @@ Converts raw research theses into executable config artifacts:
 
 Migrated from research_subagent.py — all thesis-to-config logic lives here.
 """
+
 from __future__ import annotations
 
 import json
@@ -22,13 +23,12 @@ from family_research import (
     infer_family_from_dir_name,
     validate_family_config_changes,
 )
-from strategy_family import load_family
 from orb_contract import (
     compile_contract,
     render_contract_to_runtime_config,
     resolve_contract_support,
 )
-
+from strategy_family import load_family
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -47,6 +47,7 @@ def _load_ema_defaults() -> dict[str, Any]:
     thesis compilation — no whitelist to keep in sync.
     """
     import yaml
+
     base_path = Path(__file__).resolve().parent / "configs" / "ema_base.yaml"
     with open(base_path) as f:
         raw = yaml.safe_load(f)
@@ -74,6 +75,7 @@ def _load_orb_defaults() -> dict[str, Any]:
     Returns ALL keys from the yaml except metadata keys.
     """
     import yaml
+
     base_path = Path(__file__).resolve().parent / "configs" / "orb_base.yaml"
     with open(base_path) as f:
         raw = yaml.safe_load(f)
@@ -128,7 +130,9 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
     rr = config.get("rr_ratio")
     if rr is not None:
         if not isinstance(rr, (int, float)) or float(rr) < 0.5:
-            violations.append(f"rr_ratio={rr}: must be >= 0.5 (below 0.5 is guaranteed negative edge)")
+            violations.append(
+                f"rr_ratio={rr}: must be >= 0.5 (below 0.5 is guaranteed negative edge)"
+            )
         if isinstance(rr, (int, float)) and float(rr) > 20:
             violations.append(f"rr_ratio={rr}: must be <= 20 (unreachable targets waste entries)")
 
@@ -177,16 +181,12 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
             parts = cutoff.split(":")
             hour, minute = int(parts[0]), int(parts[1])
             cutoff_minutes = hour * 60 + minute
-            market_open = 9 * 60 + 30   # 09:30
-            market_close = 16 * 60       # 16:00
+            market_open = 9 * 60 + 30  # 09:30
+            market_close = 16 * 60  # 16:00
             if cutoff_minutes < market_open:
-                violations.append(
-                    f"entry_cutoff_time='{cutoff}': before market open (09:30)"
-                )
+                violations.append(f"entry_cutoff_time='{cutoff}': before market open (09:30)")
             if cutoff_minutes >= market_close:
-                violations.append(
-                    f"entry_cutoff_time='{cutoff}': at or after market close (16:00)"
-                )
+                violations.append(f"entry_cutoff_time='{cutoff}': at or after market close (16:00)")
         except (ValueError, IndexError):
             violations.append(f"entry_cutoff_time='{cutoff}': invalid time format (use HH:MM)")
 
@@ -196,7 +196,9 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
         if float(gap_pct) <= 0:
             violations.append(f"gap_pct={gap_pct}: must be > 0")
         if float(gap_pct) > 0.20:
-            violations.append(f"gap_pct={gap_pct}: must be <= 0.20 (20%; higher filters out everything)")
+            violations.append(
+                f"gap_pct={gap_pct}: must be <= 0.20 (20%; higher filters out everything)"
+            )
 
     # --- Range shift ---
     rsl = config.get("range_shift_lookback")
@@ -218,9 +220,11 @@ def _get_ema_defaults() -> dict[str, Any]:
 # Core compilation: proposal → compilation artifact → contract + queue
 # ---------------------------------------------------------------------------
 
+
 def _config_content_hash(config: dict[str, Any]) -> str:
     """Deterministic hash of a config dict. Used as run_id and filename."""
     import hashlib
+
     blob = json.dumps(config, sort_keys=True).encode()
     return hashlib.sha256(blob).hexdigest()[:12]
 
@@ -279,13 +283,16 @@ def compile_ema_thesis(
     # Write queue entry (also keyed by hash)
     run_queue_dir = root / family.run_queue_dirname
     run_queue_dir.mkdir(parents=True, exist_ok=True)
-    write_json_artifact(run_queue_dir / f"{config_hash}.json", {
-        "queue_id": config_hash,
-        "thesis_id": thesis_id,
-        "status": "pending",
-        "config": config_path.relative_to(root).as_posix(),
-        "timestamp": timestamp_ms(),
-    })
+    write_json_artifact(
+        run_queue_dir / f"{config_hash}.json",
+        {
+            "queue_id": config_hash,
+            "thesis_id": thesis_id,
+            "status": "pending",
+            "config": config_path.relative_to(root).as_posix(),
+            "timestamp": timestamp_ms(),
+        },
+    )
     return {
         "status": "ready_to_run",
         "config_path": config_path.relative_to(root).as_posix(),
@@ -305,6 +312,7 @@ def compile_proposal_artifact(
     contract = proposal.get("primitive_contract", [])
     if family_name == "ema":
         from ema_contract import compile_ema_contract
+
         result = compile_ema_contract(contract)
     else:
         result = compile_contract(contract)
@@ -346,11 +354,10 @@ def compile_proposal_artifact(
 # Operationalization: ambiguous thesis → exact contract
 # ---------------------------------------------------------------------------
 
+
 def thesis_needs_operationalization(thesis: dict[str, Any]) -> bool:
     """Check if a thesis contains ambiguous terms needing resolution."""
-    haystack = " ".join(
-        str(thesis.get(key, "")) for key in ("hypothesis", "mechanism")
-    ).lower()
+    haystack = " ".join(str(thesis.get(key, "")) for key in ("hypothesis", "mechanism")).lower()
     return any(term in haystack for terms in AMBIGUOUS_PATTERNS.values() for term in terms)
 
 
@@ -391,7 +398,9 @@ def finalize_thesis_config_changes(
     if clarification.get("requires_code_change"):
         finalized["requires_code_change"] = True
         finalized["config_changes"] = {}
-        finalized["missing_primitives"] = clarification.get("missing_primitives") or support["missing_primitive_types"]
+        finalized["missing_primitives"] = (
+            clarification.get("missing_primitives") or support["missing_primitive_types"]
+        )
         finalized["code_change_idea"] = clarification.get("code_change_idea")
         return finalized
 
@@ -413,25 +422,41 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
     For clear theses with primitive_contract, renders to runtime config directly.
     """
     # Direct config_changes → primitive_contract mapping
-    print(f"OPERATIONALIZE: config_changes={bool(thesis.get('config_changes'))} needs_op={thesis_needs_operationalization(thesis)} has_pc={bool(thesis.get('primitive_contract'))}")
+    print(
+        f"OPERATIONALIZE: config_changes={bool(thesis.get('config_changes'))} needs_op={thesis_needs_operationalization(thesis)} has_pc={bool(thesis.get('primitive_contract'))}"
+    )
     if thesis.get("config_changes"):
         if thesis.get("strategy_family") == "ema":
             config_changes = {**_get_ema_defaults(), **thesis["config_changes"]}
             primitive_contract: list[dict[str, Any]] = []
             if "ema_length" in config_changes:
-                primitive_contract.append({"type": "ema_length", "value": config_changes["ema_length"]})
+                primitive_contract.append(
+                    {"type": "ema_length", "value": config_changes["ema_length"]}
+                )
             if "timeframe_long" in config_changes:
-                primitive_contract.append({"type": "timeframe_long", "minutes": config_changes["timeframe_long"]})
+                primitive_contract.append(
+                    {"type": "timeframe_long", "minutes": config_changes["timeframe_long"]}
+                )
             if "timeframe_short" in config_changes:
-                primitive_contract.append({"type": "timeframe_short", "minutes": config_changes["timeframe_short"]})
+                primitive_contract.append(
+                    {"type": "timeframe_short", "minutes": config_changes["timeframe_short"]}
+                )
             if "rr_ratio" in config_changes:
-                primitive_contract.append({"type": "risk_reward", "rr_ratio": config_changes["rr_ratio"]})
+                primitive_contract.append(
+                    {"type": "risk_reward", "rr_ratio": config_changes["rr_ratio"]}
+                )
             if "direction_bias" in config_changes:
-                primitive_contract.append({"type": "direction_bias", "value": config_changes["direction_bias"]})
+                primitive_contract.append(
+                    {"type": "direction_bias", "value": config_changes["direction_bias"]}
+                )
             if "entry_cutoff_time" in config_changes:
-                primitive_contract.append({"type": "entry_cutoff", "time": config_changes["entry_cutoff_time"]})
+                primitive_contract.append(
+                    {"type": "entry_cutoff", "time": config_changes["entry_cutoff_time"]}
+                )
             if "max_trades_per_day" in config_changes:
-                primitive_contract.append({"type": "max_trades_per_day", "value": config_changes["max_trades_per_day"]})
+                primitive_contract.append(
+                    {"type": "max_trades_per_day", "value": config_changes["max_trades_per_day"]}
+                )
             thesis["primitive_contract"] = thesis.get("primitive_contract") or primitive_contract
         else:
             thesis["primitive_contract"] = thesis.get("primitive_contract") or [
@@ -458,9 +483,11 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
     Falls back to empty resolution if agent unavailable.
     """
     try:
-        from agent_orchestrator import _run_single_agent, _parse_json
-        from claude_agent_sdk import AgentDefinition
         import asyncio
+
+        from claude_agent_sdk import AgentDefinition
+
+        from agent_orchestrator import _run_single_agent
 
         agent_def = AgentDefinition(
             description="Resolves ambiguous trading theses into exact executable contracts.",
@@ -470,25 +497,33 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
             maxTurns=3,
         )
 
-        result = asyncio.run(_run_single_agent(
-            "operationalization-agent",
-            f"Operationalize this thesis: {json.dumps(thesis, indent=2)}",
-            agent_def,
-        ))
+        result = asyncio.run(
+            _run_single_agent(
+                "operationalization-agent",
+                f"Operationalize this thesis: {json.dumps(thesis, indent=2)}",
+                agent_def,
+            )
+        )
 
         if result:
             return result
 
         print(f"OPERATIONALIZE: agent returned None for {thesis.get('thesis_id')}")
-        return {"resolved_changes": {}, "requires_code_change": True,
-                "missing_primitives": ["operationalization_failed"],
-                "code_change_idea": f"Agent could not operationalize '{thesis.get('thesis_id')}'"}
+        return {
+            "resolved_changes": {},
+            "requires_code_change": True,
+            "missing_primitives": ["operationalization_failed"],
+            "code_change_idea": f"Agent could not operationalize '{thesis.get('thesis_id')}'",
+        }
 
     except Exception as exc:
         print(f"OPERATIONALIZE: SDK error for {thesis.get('thesis_id')}: {exc}")
-        return {"resolved_changes": {}, "requires_code_change": True,
-                "missing_primitives": ["operationalization_error"],
-                "code_change_idea": str(exc)}
+        return {
+            "resolved_changes": {},
+            "requires_code_change": True,
+            "missing_primitives": ["operationalization_error"],
+            "code_change_idea": str(exc),
+        }
 
 
 def _build_operationalization_prompt(thesis: dict[str, Any]) -> str:
@@ -562,9 +597,7 @@ def compile_research_thesis(
         experiment_id = thesis.thesis_id
         experiment_dir = root / "experiments" / experiment_id
         experiment_dir.mkdir(parents=True, exist_ok=True)
-        (experiment_dir / "thesis.json").write_text(
-            thesis.model_dump_json(indent=2) + "\n"
-        )
+        (experiment_dir / "thesis.json").write_text(thesis.model_dump_json(indent=2) + "\n")
         contract = ExperimentContract(
             experiment_id=experiment_id,
             thesis_id=thesis.thesis_id,
@@ -578,9 +611,7 @@ def compile_research_thesis(
             required_diagnostics=thesis.required_diagnostics,
             status="needs_code",
         )
-        (experiment_dir / "contract.json").write_text(
-            contract.model_dump_json(indent=2) + "\n"
-        )
+        (experiment_dir / "contract.json").write_text(contract.model_dump_json(indent=2) + "\n")
         return contract
 
     if family_name == "ema":
@@ -592,9 +623,7 @@ def compile_research_thesis(
             experiment_id = thesis.thesis_id
             experiment_dir = root / "experiments" / experiment_id
             experiment_dir.mkdir(parents=True, exist_ok=True)
-            (experiment_dir / "thesis.json").write_text(
-                thesis.model_dump_json(indent=2) + "\n"
-            )
+            (experiment_dir / "thesis.json").write_text(thesis.model_dump_json(indent=2) + "\n")
             contract = ExperimentContract(
                 experiment_id=experiment_id,
                 thesis_id=thesis.thesis_id,
@@ -608,9 +637,7 @@ def compile_research_thesis(
                 required_diagnostics=thesis.required_diagnostics,
                 status="needs_code",
             )
-            (experiment_dir / "contract.json").write_text(
-                contract.model_dump_json(indent=2) + "\n"
-            )
+            (experiment_dir / "contract.json").write_text(contract.model_dump_json(indent=2) + "\n")
             return contract
 
         runtime_config = {**defaults, **thesis.config_changes}
@@ -627,9 +654,7 @@ def compile_research_thesis(
         experiment_dir = root / "experiments" / experiment_id
         experiment_dir.mkdir(parents=True, exist_ok=True)
 
-        (experiment_dir / "thesis.json").write_text(
-            thesis.model_dump_json(indent=2) + "\n"
-        )
+        (experiment_dir / "thesis.json").write_text(thesis.model_dump_json(indent=2) + "\n")
         (experiment_dir / "runtime_config.json").write_text(
             json.dumps(runtime_config, indent=2) + "\n"
         )
@@ -646,9 +671,7 @@ def compile_research_thesis(
             required_diagnostics=thesis.required_diagnostics,
             status="ready_to_run",
         )
-        (experiment_dir / "contract.json").write_text(
-            contract.model_dump_json(indent=2) + "\n"
-        )
+        (experiment_dir / "contract.json").write_text(contract.model_dump_json(indent=2) + "\n")
         return contract
 
     if family_name == "orb":
@@ -660,9 +683,7 @@ def compile_research_thesis(
             experiment_id = thesis.thesis_id
             experiment_dir = root / "experiments" / experiment_id
             experiment_dir.mkdir(parents=True, exist_ok=True)
-            (experiment_dir / "thesis.json").write_text(
-                thesis.model_dump_json(indent=2) + "\n"
-            )
+            (experiment_dir / "thesis.json").write_text(thesis.model_dump_json(indent=2) + "\n")
             contract = ExperimentContract(
                 experiment_id=experiment_id,
                 thesis_id=thesis.thesis_id,
@@ -676,9 +697,7 @@ def compile_research_thesis(
                 required_diagnostics=thesis.required_diagnostics,
                 status="needs_code",
             )
-            (experiment_dir / "contract.json").write_text(
-                contract.model_dump_json(indent=2) + "\n"
-            )
+            (experiment_dir / "contract.json").write_text(contract.model_dump_json(indent=2) + "\n")
             return contract
 
         runtime_config = {**defaults, **thesis.config_changes}
@@ -694,9 +713,7 @@ def compile_research_thesis(
         experiment_dir = root / "experiments" / experiment_id
         experiment_dir.mkdir(parents=True, exist_ok=True)
 
-        (experiment_dir / "thesis.json").write_text(
-            thesis.model_dump_json(indent=2) + "\n"
-        )
+        (experiment_dir / "thesis.json").write_text(thesis.model_dump_json(indent=2) + "\n")
         (experiment_dir / "runtime_config.json").write_text(
             json.dumps(runtime_config, indent=2) + "\n"
         )
@@ -713,9 +730,7 @@ def compile_research_thesis(
             required_diagnostics=thesis.required_diagnostics,
             status="ready_to_run",
         )
-        (experiment_dir / "contract.json").write_text(
-            contract.model_dump_json(indent=2) + "\n"
-        )
+        (experiment_dir / "contract.json").write_text(contract.model_dump_json(indent=2) + "\n")
         return contract
 
     raise ValueError(f"compile_research_thesis does not support family '{family_name}' yet")
@@ -724,6 +739,7 @@ def compile_research_thesis(
 # ---------------------------------------------------------------------------
 # Legacy artifact creation (kept for ORB compatibility)
 # ---------------------------------------------------------------------------
+
 
 def create_executable_artifact(
     thesis_dir: Path,
@@ -738,7 +754,9 @@ def create_executable_artifact(
 
     Returns {"generated_config": str|None, "generated_config_needs_build": bool, ...}.
     """
-    thesis["strategy_family"] = thesis.get("strategy_family") or infer_family_from_dir_name(thesis_dir.name)
+    thesis["strategy_family"] = thesis.get("strategy_family") or infer_family_from_dir_name(
+        thesis_dir.name
+    )
     thesis_id = thesis.get("thesis_id", "")
     family_name = thesis["strategy_family"]
 
@@ -747,16 +765,19 @@ def create_executable_artifact(
     if thesis.get("requires_code_change"):
         # Save proposal for human review (use thesis_id here since no config to hash)
         proposals_dir = root / family.proposals_dirname
-        write_json_artifact(proposals_dir / f"{thesis_id}.json", {
-            "thesis_id": thesis_id,
-            "hypothesis": thesis.get("hypothesis", ""),
-            "strategy_family": family_name,
-            "mechanism": thesis.get("mechanism", ""),
-            "config_changes": thesis.get("config_changes", {}),
-            "requires_code_change": True,
-            "evidence": thesis.get("evidence", []),
-            "timestamp": timestamp_ms(),
-        })
+        write_json_artifact(
+            proposals_dir / f"{thesis_id}.json",
+            {
+                "thesis_id": thesis_id,
+                "hypothesis": thesis.get("hypothesis", ""),
+                "strategy_family": family_name,
+                "mechanism": thesis.get("mechanism", ""),
+                "config_changes": thesis.get("config_changes", {}),
+                "requires_code_change": True,
+                "evidence": thesis.get("evidence", []),
+                "timestamp": timestamp_ms(),
+            },
+        )
         return {
             "generated_config": None,
             "generated_config_needs_build": True,
@@ -776,16 +797,19 @@ def create_executable_artifact(
         # Save proposal keyed by config_hash (not thesis_id)
         config_hash = result["config_hash"]
         proposals_dir = root / family.proposals_dirname
-        write_json_artifact(proposals_dir / f"{config_hash}.json", {
-            "thesis_id": thesis_id,
-            "config_hash": config_hash,
-            "hypothesis": thesis.get("hypothesis", ""),
-            "strategy_family": family_name,
-            "mechanism": thesis.get("mechanism", ""),
-            "config_changes": thesis.get("config_changes", {}),
-            "evidence": thesis.get("evidence", []),
-            "timestamp": timestamp_ms(),
-        })
+        write_json_artifact(
+            proposals_dir / f"{config_hash}.json",
+            {
+                "thesis_id": thesis_id,
+                "config_hash": config_hash,
+                "hypothesis": thesis.get("hypothesis", ""),
+                "strategy_family": family_name,
+                "mechanism": thesis.get("mechanism", ""),
+                "config_changes": thesis.get("config_changes", {}),
+                "evidence": thesis.get("evidence", []),
+                "timestamp": timestamp_ms(),
+            },
+        )
         return {
             "generated_config": result["config_path"],
             "generated_config_needs_build": False,
@@ -845,6 +869,7 @@ def derive_thesis_artifacts(
 # Research artifact I/O
 # ---------------------------------------------------------------------------
 
+
 def write_research_artifact(
     research_dir: Path,
     request: dict[str, Any],
@@ -894,6 +919,7 @@ def mark_request_completed(request_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Builder dispatch: implements missing primitives via CLI
 # ---------------------------------------------------------------------------
+
 
 def _find_cli() -> str | None:
     """Find claude or codex CLI."""
@@ -1006,9 +1032,12 @@ Constraints:
 
     if cli == "claude":
         cmd = [
-            "claude", "-p",
-            "--model", "claude-opus-4-6",
-            "--allowedTools", "Read,LS,Grep,Glob,ApplyPatch,Execute",
+            "claude",
+            "-p",
+            "--model",
+            "claude-opus-4-6",
+            "--allowedTools",
+            "Read,LS,Grep,Glob,ApplyPatch,Execute",
             "--no-session-persistence",
             prompt,
         ]
