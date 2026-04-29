@@ -48,6 +48,22 @@ def controller(tmp_path, monkeypatch):
     ideas_md_path = tmp_path / "ema_autoresearch.ideas.md"
     runs_dir = tmp_path / family.runs_dirname
 
+    # Write the JSONL config header that autoresearch_helper.py evaluate requires.
+    # Without this, `cmd_evaluate` exits with code 1 ("No config found") and
+    # evaluate_metric would always return "discard".
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "type": "config",
+                "name": "ema",
+                "metricName": "median_expectancy",
+                "metricUnit": "",
+                "bestDirection": "higher",
+            }
+        )
+        + "\n"
+    )
+
     controller = AutoresearchController(
         root=tmp_path,
         state_path=state_path,
@@ -98,19 +114,20 @@ def _success_output(result_path: Path, metric: float = 1.5) -> str:
 
 
 def _patch_run_command_success(controller, monkeypatch, tmp_path) -> dict[str, Any]:
-    """Patch run_command and evaluate_metric for a passing experiment.
+    """Patch run_command for a passing experiment.
 
     Returns a dict capturing the last command invoked.
     """
     captured: dict[str, Any] = {}
     result_json_path = tmp_path / "result.json"
 
+    # run_command invokes an external subprocess (the backtest binary).
+    # Mocking it is allowed under rule G; we return a captured real-fixture output.
     def fake_run_command(self, command: str):
         captured["command"] = command
         return 0, _success_output(result_json_path, metric=1.5)
 
     monkeypatch.setattr(AutoresearchController, "run_command", fake_run_command)
-    monkeypatch.setattr(AutoresearchController, "evaluate_metric", lambda self, metric: "keep")
     return captured
 
 
@@ -195,6 +212,8 @@ def test_execute_once_blocked_research_generates_config(controller, monkeypatch,
             "reasoning": "fake",
         }
 
+    # execute_research_one calls the LLM research conductor — an external service.
+    # Mocking it is allowed under rule G.
     monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
 
     # research_conductor.reset_round_usage / get_round_usage are imported lazily;
@@ -240,6 +259,8 @@ def test_execute_once_research_needs_code_halts(controller, monkeypatch):
             },
         }
 
+    # execute_research_one calls the LLM research conductor — an external service.
+    # Mocking it is allowed under rule G.
     monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
 
     import research_conductor
