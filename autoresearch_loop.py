@@ -11,7 +11,13 @@ from typing import Any
 
 import yaml
 
-from artifact_store import read_json_artifacts
+from autoresearch_artifacts import (
+    queue_from_thesis_artifacts as _artifacts_queue_from_thesis_artifacts,
+    read_artifacts_relative_to_root as _artifacts_read_artifacts_relative_to_root,
+    read_research_artifacts as _artifacts_read_research_artifacts,
+    read_run_queue as _artifacts_read_run_queue,
+    read_thesis_artifacts as _artifacts_read_thesis_artifacts,
+)
 from autoresearch_state import (
     ExperimentRecord,
     deduplicate_entries as _state_deduplicate_entries,
@@ -181,18 +187,13 @@ class AutoresearchController:
         return _state_read_results(self.read_entries())
 
     def read_json_artifacts(self, directory: Path) -> list[dict[str, Any]]:
-        artifacts = read_json_artifacts(directory)
-        for payload in artifacts:
-            artifact_path = payload.get("artifact_path")
-            if artifact_path:
-                payload["artifact_path"] = Path(artifact_path).relative_to(self.root).as_posix()
-        return artifacts
+        return _artifacts_read_artifacts_relative_to_root(directory, self.root)
 
     def read_research_artifacts(self) -> list[dict[str, Any]]:
-        return self.read_json_artifacts(self.research_dir)
+        return _artifacts_read_research_artifacts(self.research_dir, self.root)
 
     def read_thesis_artifacts(self) -> list[dict[str, Any]]:
-        return self.read_json_artifacts(self.proposals_dir)
+        return _artifacts_read_thesis_artifacts(self.proposals_dir, self.root)
 
     def is_better(self, candidate: float, current: float | None) -> bool:
         return _state_is_better(self.direction(), candidate, current)
@@ -252,21 +253,10 @@ class AutoresearchController:
         return statuses
 
     def read_run_queue(self) -> list[dict[str, Any]]:
-        return self.read_json_artifacts(self.run_queue_dir)
+        return _artifacts_read_run_queue(self.run_queue_dir, self.root)
 
     def queue_from_thesis_artifacts(self, results: list[ExperimentRecord]) -> list[str]:
-        attempted = {result.config for result in results if result.config}
-        queued: list[str] = []
-        for artifact in self.read_run_queue():
-            if artifact.get("status") != "pending":
-                continue
-            config = artifact.get("config")
-            if not config or config in attempted or config in queued:
-                continue
-            if not (self.root / config).exists():
-                continue
-            queued.append(config)
-        return queued
+        return _artifacts_queue_from_thesis_artifacts(self.run_queue_dir, self.root, results)
 
     def promote_missing_known_results(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return _state_promote_missing_known_results(entries)
