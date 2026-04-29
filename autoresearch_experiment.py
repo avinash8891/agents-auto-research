@@ -487,13 +487,9 @@ def log_experiment_result(
 # ── Run experiment orchestrator ──────────────────────────────────
 
 
-def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) -> int:
-    """Run a single experiment (backtest + evaluate + log). Returns exit code."""
-    from autoresearch_research import notify_discord
-
-    next_action = state["next_action"]
-    config = next_action["config"]
-
+def _compute_run_output_dir(controller: "AutoresearchController", config: str) -> tuple[Path, Path]:
+    """Compute the per-job output directory using a config-content hash.
+    Returns (run_output_dir, config_path_full)."""
     config_path_full = controller.root / config
     if config_path_full.exists():
         if config_path_full.suffix in (".yaml", ".yml"):
@@ -507,124 +503,237 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         ]
     else:
         config_hash = hashlib.sha256(config.encode()).hexdigest()[:CONFIG_HASH_LENGTH]
-
     state = controller.read_state()
     job = state.get("job", 0)
     run_output_dir = controller.runs_dir.resolve() / f"job-{job}" / config_hash
     run_output_dir.mkdir(parents=True, exist_ok=True)
-    controller.ctx.current_artifact_dir = run_output_dir
+    return run_output_dir, config_path_full
 
+
+def _block_with_command_failed(
+    controller: "AutoresearchController",
+    state: dict[str, Any],
+    command: str,
+    code: int,
+) -> int:
+    from autoresearch_research import notify_discord
+
+    state["state"] = "blocked"
+    state["blockers"] = [{"kind": "command_failed", "detail": command, "exit_code": code}]
+    controller.write_state(state)
+    controller.write_current_md(state, controller.read_results())
+    print(f"LOOP_STOP state=blocked exit_code={code}")
+    notify_discord(
+        f"⚠️ {controller.family.name.upper()} BLOCKED — backtest failed",
+        f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\n**Exit code:** {code}",
+        webhook=controller.family.discord_webhook,
+        color=DISCORD_COLOR_WARNING,
+    )
+    return code
+
+
+def _block_with_metric_parse_failed(
+    controller: "AutoresearchController",
+    state: dict[str, Any],
+    command: str,
+) -> int:
+    from autoresearch_research import notify_discord
+
+    state["state"] = "blocked"
+    state["blockers"] = [{"kind": "metric_parse_failed", "detail": command}]
+    controller.write_state(state)
+    controller.write_current_md(state, controller.read_results())
+    print("LOOP_STOP state=blocked metric_parse_failed")
+    notify_discord(
+        f"⚠️ {controller.family.name.upper()} BLOCKED — metric parse failed",
+        f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\n"
+        "Could not extract metric from output.",
+        webhook=controller.family.discord_webhook,
+        color=DISCORD_COLOR_WARNING,
+    )
+    return 1
+
+
+def _baseline_metrics_from_first_result(controller: "AutoresearchController") -> dict[str, Any]:
+    results = controller.read_results()
+    baseline_result = results[0] if results else None
+    if not baseline_result:
+        return {}
+    bta = baseline_result.asi.get("trade_analysis", {})
+    out: dict[str, Any] = {}
+    for k in (
+        "trade_count",
+        "profit_factor",
+        "max_drawdown",
+        "pct_profitable_windows",
+        "avg_sharpe_across_windows",
+        "median_expectancy",
+    ):
+        if bta.get(k) is not None:
+            out[k] = bta[k]
+    return out
+
+
+def _build_thesis_for_eval(contract: Any) -> Any:
+    from research_types import ResearchThesis
+
+    return ResearchThesis(
+        thesis_id=contract.thesis_id,
+        strategy_family=contract.strategy_family,
+        hypothesis=contract.hypothesis,
+        mechanism=contract.mechanism,
+        expected_effects=contract.expected_effects,
+        disqualifiers=contract.disqualifiers,
+        required_diagnostics=contract.required_diagnostics,
+    )
+
+
+def _persist_verdict(controller: "AutoresearchController", contract: Any, verdict: Any) -> None:
+    experiment_dir = controller.root / "experiments" / contract.experiment_id
+    if experiment_dir.exists():
+        (experiment_dir / "verdict.json").write_text(verdict.model_dump_json(indent=2) + "\n")
+
+
+def _evaluate_against_thesis(
+    controller: "AutoresearchController",
+    contract: Any,
+    metric: float,
+    decision: str,
+    details: dict[str, Any],
+) -> tuple[Any | None, str]:
+    """Run the thesis-contract evaluator against the result. Returns
+    (verdict_or_None, possibly_overridden_decision). Fail-open: any
+    evaluator exception is logged and the decision passes through
+    unchanged."""
+    try:
+        from experiment_evaluator import evaluate_experiment
+
+        candidate_metrics = dict(details)
+        candidate_metrics["median_expectancy"] = metric
+        verdict = evaluate_experiment(
+            thesis=_build_thesis_for_eval(contract),
+            baseline_metrics=_baseline_metrics_from_first_result(controller),
+            candidate_metrics=candidate_metrics,
+            experiment_id=contract.experiment_id,
+            strategy_diagnostics=details.get("strategy_diagnostics"),
+        )
+        trace(
+            "EVAL",
+            f"verdict={verdict.status} passed={verdict.passed_effects} "
+            f"failed={verdict.failed_effects} dq={verdict.triggered_disqualifiers}",
+        )
+        print(f"VERDICT {verdict.status}: {verdict.summary}")
+        _persist_verdict(controller, contract, verdict)
+        if verdict.status == "rejected":
+            return verdict, "discard"
+        if verdict.status == "accepted" and decision == "discard":
+            trace("EVAL", "thesis accepted despite metric threshold")
+        return verdict, decision
+    except Exception as exc:
+        trace("EVAL", f"evaluation error: {exc}")
+        print(f"EVAL error (non-fatal): {exc}")
+        return None, decision
+
+
+def _record_baseline_checkpoint(
+    controller: "AutoresearchController", details: dict[str, Any]
+) -> None:
+    runtime_cfg = controller.ctx.latest_config_contents or {}
+    new_checkpoint = BaselineCheckpoint(
+        code_commit=controller.current_commit(),
+        data_hash=build_data_hash(runtime_cfg),
+        config_hash=build_config_hash(runtime_cfg),
+        metrics=details,
+        timestamp=int(time.time() * MILLISECONDS_PER_SECOND),
+        round_number=len(controller.baseline_tracker.all_checkpoints()),
+    )
+    drift = controller.baseline_tracker.check_drift(new_checkpoint)
+    controller.baseline_tracker.record(new_checkpoint)
+    trace("BASELINE", f"checkpoint recorded commit={controller.current_commit()}")
+    if drift["drifted"]:
+        drift_details = [d for d in drift["details"] if d.get("severity") == "critical"]
+        trace("BASELINE", f"DRIFT DETECTED: {drift_details}")
+        state = controller.read_state()
+        state["baseline_drift"] = drift
+        controller.write_state(state)
+    persisted = controller.read_state()
+    na = persisted.get("next_action", {})
+    if na.get("baseline_rerun_for_commit"):
+        na.pop("baseline_rerun_for_commit", None)
+        persisted["next_action"] = na
+        write_state(controller.state_path, persisted)
+
+
+def _send_completion_notification(
+    controller: "AutoresearchController",
+    config: str,
+    metric: float,
+    decision: str,
+    verdict: Any | None,
+    state: dict[str, Any],
+) -> None:
+    from autoresearch_research import notify_discord
+
+    best = state.get("current_best", {})
+    verdict_str = verdict.status if verdict else "none"
+    emoji = "✅" if decision == "keep" else "❌" if decision == "discard" else "🔄"
+    notify_discord(
+        f"{emoji} {controller.family.name.upper()} — {Path(config).stem}",
+        f"**PF:** {metric}  |  **Decision:** {decision}  |  **Verdict:** {verdict_str}\n"
+        f"**Best so far:** `{Path(best.get('config', '?')).stem}` "
+        f"PF={best.get('metric', '?')}",
+        webhook=controller.family.discord_webhook,
+        color=DISCORD_COLOR_SUCCESS if decision == "keep" else DISCORD_COLOR_DISCARD,
+    )
+    print(
+        f"HEARTBEAT complete thesis={config} result={decision} metric={metric} "
+        f"verdict={verdict_str} next_action={state.get('next_action', {}).get('type')}"
+    )
+
+
+def _setup_run(controller: "AutoresearchController", config: str) -> tuple[Path, str | None]:
+    """Compute the per-run output dir, copy the source config into it,
+    and build the benchmark command. Returns (run_output_dir, command);
+    command is None if the family did not produce one."""
+    run_output_dir, config_path_full = _compute_run_output_dir(controller, config)
+    controller.ctx.current_artifact_dir = run_output_dir
     if config_path_full.exists():
         shutil.copy2(config_path_full, run_output_dir / "config.json")
-
     command = controller.family.benchmark_command(config, output_dir=str(run_output_dir))
+    return run_output_dir, command if command else None
+
+
+def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) -> int:
+    """Run a single experiment (backtest + evaluate + log). Returns exit code."""
+    next_action = state["next_action"]
+    config = next_action["config"]
+
+    _, command = _setup_run(controller, config)
     if not command:
         print("LOOP_STOP missing_benchmark_command")
         return 1
 
-    hyp_name = Path(config).stem if config else "unknown"
-    begin_hypothesis(hyp_name)
+    begin_hypothesis(Path(config).stem if config else "unknown")
     trace("LOOP", f"BENCHMARK START: {command}")
     print(f"HEARTBEAT running {command}")
     code, output = controller.run_command(command)
-
     if code != 0:
-        state["state"] = "blocked"
-        state["blockers"] = [{"kind": "command_failed", "detail": command, "exit_code": code}]
-        controller.write_state(state)
-        controller.write_current_md(state, controller.read_results())
-        print(f"LOOP_STOP state=blocked exit_code={code}")
-        notify_discord(
-            f"⚠️ {controller.family.name.upper()} BLOCKED — backtest failed",
-            f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\n**Exit code:** {code}",
-            webhook=controller.family.discord_webhook,
-            color=DISCORD_COLOR_WARNING,
-        )
-        return code
+        return _block_with_command_failed(controller, controller.read_state(), command, code)
 
     metric = controller.parse_metric(output, name=controller.primary_metric_name())
     if metric is None:
-        state["state"] = "blocked"
-        state["blockers"] = [{"kind": "metric_parse_failed", "detail": command}]
-        controller.write_state(state)
-        controller.write_current_md(state, controller.read_results())
-        print("LOOP_STOP state=blocked metric_parse_failed")
-        notify_discord(
-            f"⚠️ {controller.family.name.upper()} BLOCKED — metric parse failed",
-            f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\nCould not extract metric from output.",
-            webhook=controller.family.discord_webhook,
-            color=DISCORD_COLOR_WARNING,
-        )
-        return 1
+        return _block_with_metric_parse_failed(controller, controller.read_state(), command)
 
     details = controller.parse_benchmark_details(output)
     decision = controller.evaluate_metric(metric)
     trace("LOOP", f"METRIC parsed: {metric} decision={decision} config={config}")
 
-    verdict = None
+    verdict: Any | None = None
     contract = controller.ctx.current_contract
     if contract and contract.expected_effects:
-        try:
-            from experiment_evaluator import evaluate_experiment
-            from research_types import ResearchThesis
-
-            results = controller.read_results()
-            baseline_result = results[0] if results else None
-            baseline_metrics: dict[str, Any] = {}
-            if baseline_result:
-                bta = baseline_result.asi.get("trade_analysis", {})
-                for k in (
-                    "trade_count",
-                    "profit_factor",
-                    "max_drawdown",
-                    "pct_profitable_windows",
-                    "avg_sharpe_across_windows",
-                    "median_expectancy",
-                ):
-                    if bta.get(k) is not None:
-                        baseline_metrics[k] = bta[k]
-
-            candidate_metrics = dict(details)
-            candidate_metrics["median_expectancy"] = metric
-
-            thesis_for_eval = ResearchThesis(
-                thesis_id=contract.thesis_id,
-                strategy_family=contract.strategy_family,
-                hypothesis=contract.hypothesis,
-                mechanism=contract.mechanism,
-                expected_effects=contract.expected_effects,
-                disqualifiers=contract.disqualifiers,
-                required_diagnostics=contract.required_diagnostics,
-            )
-
-            verdict = evaluate_experiment(
-                thesis=thesis_for_eval,
-                baseline_metrics=baseline_metrics,
-                candidate_metrics=candidate_metrics,
-                experiment_id=contract.experiment_id,
-                strategy_diagnostics=details.get("strategy_diagnostics"),
-            )
-            trace(
-                "EVAL",
-                f"verdict={verdict.status} passed={verdict.passed_effects} failed={verdict.failed_effects} dq={verdict.triggered_disqualifiers}",
-            )
-            print(f"VERDICT {verdict.status}: {verdict.summary}")
-
-            experiment_dir = controller.root / "experiments" / contract.experiment_id
-            if experiment_dir.exists():
-                (experiment_dir / "verdict.json").write_text(
-                    verdict.model_dump_json(indent=2) + "\n"
-                )
-
-            if verdict.status == "rejected":
-                decision = "discard"
-            elif verdict.status == "accepted" and decision == "discard":
-                trace("EVAL", "thesis accepted despite metric threshold")
-
-        except Exception as exc:
-            trace("EVAL", f"evaluation error: {exc}")
-            print(f"EVAL error (non-fatal): {exc}")
-
+        verdict, decision = _evaluate_against_thesis(
+            controller, contract, metric, decision, details
+        )
     controller.ctx.current_contract = None
 
     analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
@@ -634,54 +743,27 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         config=config, metric=metric, decision=decision, output=output, analysis=analysis
     )
 
-    is_baseline_run = next_action.get("source") == "baseline"
-    if is_baseline_run:
-        runtime_cfg = controller.ctx.latest_config_contents or {}
-        new_checkpoint = BaselineCheckpoint(
-            code_commit=controller.current_commit(),
-            data_hash=build_data_hash(runtime_cfg),
-            config_hash=build_config_hash(runtime_cfg),
-            metrics=details,
-            timestamp=int(time.time() * MILLISECONDS_PER_SECOND),
-            round_number=len(controller.baseline_tracker.all_checkpoints()),
-        )
-        drift = controller.baseline_tracker.check_drift(new_checkpoint)
-        controller.baseline_tracker.record(new_checkpoint)
-        trace("BASELINE", f"checkpoint recorded commit={controller.current_commit()}")
-        if drift["drifted"]:
-            drift_details = [d for d in drift["details"] if d.get("severity") == "critical"]
-            trace("BASELINE", f"DRIFT DETECTED: {drift_details}")
-            state = controller.read_state()
-            state["baseline_drift"] = drift
-            controller.write_state(state)
+    if next_action.get("source") == "baseline":
+        _record_baseline_checkpoint(controller, details)
+    _finalize_experiment(controller, config, metric, decision, verdict)
+    return 0
 
-        persisted = controller.read_state()
-        na = persisted.get("next_action", {})
-        if na.get("baseline_rerun_for_commit"):
-            na.pop("baseline_rerun_for_commit", None)
-            persisted["next_action"] = na
-            write_state(controller.state_path, persisted)
 
+def _finalize_experiment(
+    controller: "AutoresearchController",
+    config: str,
+    metric: float,
+    decision: str,
+    verdict: Any | None,
+) -> None:
+    """End the hypothesis, reconcile state, log the iteration trace, and
+    send the completion notification."""
     end_hypothesis(decision=decision, metric=metric)
-
     state = controller.reconcile_state()
     trace(
         "LOOP",
-        f"ITERATION DONE thesis={config} metric={metric} decision={decision} verdict={verdict.status if verdict else 'none'} next={state.get('next_action', {}).get('type')}",
-    )
-    best = state.get("current_best", {})
-    verdict_str = verdict.status if verdict else "none"
-    emoji = "✅" if decision == "keep" else "❌" if decision == "discard" else "🔄"
-    notify_discord(
-        f"{emoji} {controller.family.name.upper()} — {Path(config).stem}",
-        f"**PF:** {metric}  |  **Decision:** {decision}  |  **Verdict:** {verdict_str}\n"
-        f"**Best so far:** `{Path(best.get('config', '?')).stem}` PF={best.get('metric', '?')}",
-        webhook=controller.family.discord_webhook,
-        color=DISCORD_COLOR_SUCCESS if decision == "keep" else DISCORD_COLOR_DISCARD,
-    )
-    print(
-        f"HEARTBEAT complete thesis={config} result={decision} metric={metric} "
+        f"ITERATION DONE thesis={config} metric={metric} decision={decision} "
         f"verdict={verdict.status if verdict else 'none'} "
-        f"next_action={state.get('next_action', {}).get('type')}"
+        f"next={state.get('next_action', {}).get('type')}",
     )
-    return 0
+    _send_completion_notification(controller, config, metric, decision, verdict, state)
