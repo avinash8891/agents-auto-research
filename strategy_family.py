@@ -25,7 +25,11 @@ class StrategyFamily:
     discord_webhook: str = ""
 
     def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
-        script = self.vps_benchmark_script if IS_VPS and self.vps_benchmark_script else self.benchmark_script
+        script = (
+            self.vps_benchmark_script
+            if IS_VPS and self.vps_benchmark_script
+            else self.benchmark_script
+        )
         # On VPS, use venv python to ensure all deps are available
         python = "./venv/bin/python3" if IS_VPS else "python3"
         if script.endswith(".py"):
@@ -43,6 +47,16 @@ class StrategyFamily:
         return get_family_research_spec(self.name)
 
 
+def _discord_webhook_for(family_name: str) -> str:
+    """Read the Discord webhook URL for a family from the environment.
+
+    Variable name convention: AUTORESEARCH_DISCORD_WEBHOOK_<FAMILY_UPPER>.
+    Returns "" if unset, which makes notify_discord a no-op (rule 2:
+    secrets must never live in source).
+    """
+    return os.environ.get(f"AUTORESEARCH_DISCORD_WEBHOOK_{family_name.upper()}", "")
+
+
 FAMILIES: dict[str, StrategyFamily] = {
     "orb": StrategyFamily(
         name="orb",
@@ -56,7 +70,7 @@ FAMILIES: dict[str, StrategyFamily] = {
         builder_requests_dirname="orb-builder-requests",
         base_config_filename="orb_base.yaml",
         runs_dirname="orb_autoresearch-runs",
-        discord_webhook="https://discord.com/api/webhooks/1498190524606316725/8te44ljBeskS2jdlEEEAy5mvORW5IaiOhsH6-3fjfhh6xf-HvncCa86MfBLehXKwWX3R",
+        discord_webhook=_discord_webhook_for("orb"),
     ),
     "ema": StrategyFamily(
         name="ema",
@@ -70,7 +84,7 @@ FAMILIES: dict[str, StrategyFamily] = {
         builder_requests_dirname="ema-builder-requests",
         base_config_filename="ema_base.yaml",
         runs_dirname="ema_autoresearch-runs",
-        discord_webhook="https://discord.com/api/webhooks/1498191248144465960/FkBLmVdPQtBuXXJE63xuZqJ4JemtWflgWE3ioGT_Dtb1yb_8hlBe1XY54PRRL5GE9LD7",
+        discord_webhook=_discord_webhook_for("ema"),
     ),
 }
 

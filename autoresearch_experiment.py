@@ -32,6 +32,7 @@ from autoresearch_constants import (
     MILLISECONDS_PER_SECOND,
 )
 from autoresearch_state import (
+    iso8601_utc_now,
     read_entries,
     read_state,
     write_entries,
@@ -358,7 +359,7 @@ def log_experiment_result(
         "metrics": details,
         "status": decision,
         "description": f"strict-native loop: {Path(config).stem}",
-        "timestamp": int(time.time() * MILLISECONDS_PER_SECOND),
+        "timestamp": iso8601_utc_now(),
         "segment": 0,
         "confidence": None,
         "asi": asi,

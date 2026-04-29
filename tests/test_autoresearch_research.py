@@ -142,8 +142,11 @@ def test_log_research_round_appends_entry_with_required_fields(tmp_path: Path) -
     assert row["config_changes"] == {"trailing_stop": 0.5}
     assert row["hypothesis"] == "add a trailing stop"
     assert row["usage"] == {"total": {"total_tokens": 1234}}
+    # Rule J: persisted timestamps are ISO-8601 UTC strings, not naive ints.
     assert "timestamp" in row
-    assert isinstance(row["timestamp"], int)
+    assert isinstance(row["timestamp"], str)
+    # ISO-8601 with timezone marker (`+00:00` or `Z`).
+    assert row["timestamp"].endswith("+00:00") or row["timestamp"].endswith("Z")
 
 
 def test_log_research_round_appends_to_existing_jsonl(tmp_path: Path) -> None:

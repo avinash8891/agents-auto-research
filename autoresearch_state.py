@@ -6,10 +6,62 @@ Pure functions. The controller composes these with its own paths.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+_log = logging.getLogger(__name__)
+
+
+# ── Time helpers (rule J: UTC in persistent state) ───────────────
+
+
+def iso8601_utc_now() -> str:
+    """Current time as an ISO-8601 string with explicit UTC offset.
+
+    Project rule J: stored timestamps must be UTC with timezone. Naive
+    datetimes (and naive epoch-ms ints) are banned from persistent state.
+    """
+    return datetime.now(timezone.utc).isoformat()
+
+
+def coerce_timestamp_to_iso8601_utc(value: Any) -> str | None:
+    """Normalize a stored timestamp to ISO-8601 UTC, or None if unparseable.
+
+    Accepts:
+      - ISO-8601 string with timezone (already correct shape — passthrough)
+      - int / float treated as epoch milliseconds (legacy format, pre-rule-J)
+    Returns the ISO-8601 string or None if neither shape applies.
+    """
+    if isinstance(value, str):
+        # Trust the string shape; we want the read path to be cheap.
+        return value
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc).isoformat()
+    return None
+
+
+def coerce_timestamp_to_epoch_ms(value: Any) -> int:
+    """Inverse coercion for ordering / comparison code paths that still
+    use integer math (e.g. baseline rerun, latest_result).
+
+    Accepts ISO-8601 strings or epoch-ms ints. Returns 0 if unparseable so
+    that downstream code that does `max(..., key=lambda r: r.timestamp)`
+    cannot crash on a bad row.
+    """
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(datetime.fromisoformat(value).timestamp() * 1000)
+        except ValueError:
+            return 0
+    return 0
 
 
 @dataclass
@@ -68,17 +120,108 @@ def write_state(state_path: Path, state: dict[str, Any]) -> None:
     tmp_path.replace(state_path)
 
 
+# ── JSONL row schemas (rule 5: validate at every layer boundary) ──
+
+
+class JsonlConfigEntry(BaseModel):
+    """The metadata header row at the top of each JSONL file."""
+
+    model_config = ConfigDict(extra="allow")
+    type: Literal["config"]
+    metricName: str | None = None
+    bestDirection: Literal["higher", "lower"] = "higher"
+
+
+class JsonlResearchRoundEntry(BaseModel):
+    """One conductor-round outcome row."""
+
+    model_config = ConfigDict(extra="allow")
+    type: Literal["research_round"]
+    outcome: str
+    round: int | None = None
+    thesis_id: str | None = None
+
+
+class JsonlExperimentEntry(BaseModel):
+    """One backtest-result row. Identified by absence of `type`."""
+
+    model_config = ConfigDict(extra="allow")
+    metric: float
+    status: Literal["keep", "discard"]
+    asi: dict[str, Any] | None = None
+
+
+def _validate_jsonl_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Validate a single JSONL row against its source-specific schema.
+
+    Returns the validated dict (round-trip through pydantic, preserving
+    extra fields). Raises ValidationError on schema mismatch.
+    """
+    row_type = row.get("type")
+    if row_type == "config":
+        JsonlConfigEntry.model_validate(row)
+    elif row_type == "research_round":
+        JsonlResearchRoundEntry.model_validate(row)
+    else:
+        JsonlExperimentEntry.model_validate(row)
+    # Validation only — return the original dict so default-valued fields
+    # are not silently inserted on read.
+    return row
+
+
+def _quarantine_row(jsonl_path: Path, raw_line: str, reason: str) -> None:
+    """Append a malformed row to <jsonl_path>.quarantine.jsonl with reason.
+
+    Project rule I: malformed rows go to a quarantine file plus a log line
+    that names the problem; the read continues so the loop is not killed
+    by one bad row.
+    """
+    quarantine = jsonl_path.with_suffix(jsonl_path.suffix + ".quarantine.jsonl")
+    quarantine.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps({"reason": reason, "raw": raw_line}) + "\n"
+    with quarantine.open("a") as handle:
+        handle.write(payload)
+    _log.warning(
+        "JSONL_QUARANTINE jsonl=%s reason=%s row_preview=%s",
+        jsonl_path.name,
+        reason,
+        raw_line[:120],
+    )
+
+
 # ── JSONL log ──────────────────────────────────────────────────────
 
 
 def read_entries(jsonl_path: Path) -> list[dict[str, Any]]:
+    """Read validated JSONL rows. Malformed rows go to quarantine.
+
+    Project rule 5: validate at every layer boundary. Source-specific
+    pydantic models (JsonlConfigEntry / JsonlResearchRoundEntry /
+    JsonlExperimentEntry) gate every row before it enters the rest of
+    the system. Project rule I: bad rows quarantine and log; the read
+    continues so one malformed row does not kill the loop.
+    """
     if not jsonl_path.exists():
         return []
     entries: list[dict[str, Any]] = []
     for line in jsonl_path.read_text().splitlines():
-        line = line.strip()
-        if line:
-            entries.append(json.loads(line))
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            row = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            _quarantine_row(jsonl_path, stripped, f"json_decode_error: {exc}")
+            continue
+        if not isinstance(row, dict):
+            _quarantine_row(jsonl_path, stripped, f"not_a_json_object: {type(row).__name__}")
+            continue
+        try:
+            entries.append(_validate_jsonl_row(row))
+        except ValidationError as exc:
+            _quarantine_row(
+                jsonl_path, stripped, f"schema_validation_failed: {exc.error_count()} errors"
+            )
     return entries
 
 
@@ -95,13 +238,17 @@ def read_results(entries: list[dict[str, Any]]) -> list[ExperimentRecord]:
         if entry.get("type") in ("config", "research_round"):
             continue
         asi = entry.get("asi") or {}
+        # Rule J back-compat: entries written before the ISO-8601 migration
+        # store timestamp as int epoch ms; new entries store ISO-8601 UTC.
+        # ExperimentRecord.timestamp keeps the int contract for downstream
+        # ordering/comparison code; coerce both formats here.
         results.append(
             ExperimentRecord(
                 config=asi.get("config", ""),
                 metric=entry["metric"],
                 status=entry["status"],
                 description=entry.get("description", ""),
-                timestamp=entry.get("timestamp", 0),
+                timestamp=coerce_timestamp_to_epoch_ms(entry.get("timestamp", 0)),
                 asi=asi,
             )
         )
