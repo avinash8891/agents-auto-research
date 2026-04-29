@@ -4,20 +4,29 @@ Each experiment is a complete record with lineage, config, metrics, evidence
 files, and verdict. The conductor queries this instead of loose jsonl blobs.
 
 Storage: single JSON file (experiments_db.json) — append-friendly, human-readable.
+
+Timestamp format (rule J): both ExperimentResult.timestamp and
+BaselineCheckpoint.timestamp are ISO-8601 UTC strings (e.g.
+"2026-04-29T12:00:00+00:00"). The dataclass fields default to the empty
+string. Reads coerce legacy int-epoch-ms values (pre-rule-J files) on
+load so existing experiments_db.json files keep working.
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
-import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
+from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
 
 
 @dataclass
 class ExperimentResult:
     """One complete experiment record."""
+
     experiment_id: str
     thesis_id: str
     config_path: str
@@ -41,7 +50,9 @@ class ExperimentResult:
     verdict_summary: str
 
     parent_experiment_id: str = ""
-    timestamp: int = 0
+    # ISO-8601 UTC string. Legacy DB files with int epoch-ms timestamps
+    # are coerced to ISO on load (see ExperimentDB._load).
+    timestamp: str = ""
     family: str = "ema"
     hypothesis: str = ""
     mechanism: str = ""
@@ -67,6 +78,12 @@ class ExperimentDB:
             self._records = []
             return self._records
         raw = json.loads(text)
+        # Rule J back-compat: pre-migration DB files have int epoch-ms
+        # timestamps; coerce to ISO-8601 UTC strings on load so the
+        # in-memory contract is uniform.
+        for row in raw:
+            if "timestamp" in row:
+                row["timestamp"] = coerce_timestamp_to_iso8601_utc(row["timestamp"]) or ""
         self._records = [ExperimentResult(**r) for r in raw]
         return self._records
 
@@ -98,7 +115,11 @@ class ExperimentDB:
 
     def latest(self, n: int = 1) -> list[ExperimentResult]:
         records = self._load()
-        return sorted(records, key=lambda r: r.timestamp, reverse=True)[:n]
+        # Sort by epoch-ms equivalent so a mixed-format DB (legacy int
+        # rows that have not been re-saved yet) still orders correctly.
+        return sorted(
+            records, key=lambda r: coerce_timestamp_to_epoch_ms(r.timestamp), reverse=True
+        )[:n]
 
     def accepted_experiments(self) -> list[ExperimentResult]:
         return [r for r in self._load() if r.accepted]
@@ -160,14 +181,18 @@ class ExperimentDB:
 # Baseline checkpoint — detect environment drift
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BaselineCheckpoint:
     """Snapshot of baseline metrics at a point in time."""
+
     code_commit: str
     data_hash: str
     config_hash: str
     metrics: dict[str, Any]
-    timestamp: int = 0
+    # ISO-8601 UTC string. Legacy checkpoint files with int epoch-ms
+    # timestamps are coerced to ISO on load (see BaselineTracker._load).
+    timestamp: str = ""
     round_number: int = 0
 
 
@@ -189,6 +214,11 @@ class BaselineTracker:
             self._checkpoints = []
             return self._checkpoints
         raw = json.loads(text)
+        # Rule J back-compat: pre-migration checkpoint files have int
+        # epoch-ms timestamps; coerce to ISO-8601 UTC on load.
+        for row in raw:
+            if "timestamp" in row:
+                row["timestamp"] = coerce_timestamp_to_iso8601_utc(row["timestamp"]) or ""
         self._checkpoints = [BaselineCheckpoint(**c) for c in raw]
         return self._checkpoints
 
@@ -223,27 +253,33 @@ class BaselineTracker:
 
         # Check code/data/config changes
         if current.code_commit != prev.code_commit:
-            details.append({
-                "field": "code_commit",
-                "previous": prev.code_commit,
-                "current": current.code_commit,
-                "severity": "info",
-            })
+            details.append(
+                {
+                    "field": "code_commit",
+                    "previous": prev.code_commit,
+                    "current": current.code_commit,
+                    "severity": "info",
+                }
+            )
         if current.data_hash != prev.data_hash:
-            details.append({
-                "field": "data_hash",
-                "previous": prev.data_hash,
-                "current": current.data_hash,
-                "severity": "critical",
-            })
+            details.append(
+                {
+                    "field": "data_hash",
+                    "previous": prev.data_hash,
+                    "current": current.data_hash,
+                    "severity": "critical",
+                }
+            )
             drifted = True
         if current.config_hash != prev.config_hash:
-            details.append({
-                "field": "config_hash",
-                "previous": prev.config_hash,
-                "current": current.config_hash,
-                "severity": "critical",
-            })
+            details.append(
+                {
+                    "field": "config_hash",
+                    "previous": prev.config_hash,
+                    "current": current.config_hash,
+                    "severity": "critical",
+                }
+            )
             drifted = True
 
         # Check metric drift
@@ -263,14 +299,16 @@ class BaselineTracker:
             metric_drifted = pct_change > tolerance_pct
             if metric_drifted:
                 drifted = True
-            details.append({
-                "field": metric,
-                "previous": prev_val,
-                "current": cur_val,
-                "pct_change": round(pct_change, 2),
-                "drifted": metric_drifted,
-                "severity": "critical" if metric_drifted else "ok",
-            })
+            details.append(
+                {
+                    "field": metric,
+                    "previous": prev_val,
+                    "current": cur_val,
+                    "pct_change": round(pct_change, 2),
+                    "drifted": metric_drifted,
+                    "severity": "critical" if metric_drifted else "ok",
+                }
+            )
 
         return {"drifted": drifted, "details": details}
 
@@ -319,36 +357,44 @@ def backfill_from_jsonl(jsonl_path: Path, db: ExperimentDB) -> int:
         exp_id = hashlib.sha256(exp_id_src.encode()).hexdigest()[:16]
 
         train_metrics: dict[str, Any] = dict(metrics)
-        for k in ("trade_count", "profit_factor", "max_drawdown",
-                  "pct_profitable_windows", "avg_sharpe_across_windows",
-                  "win_rate", "median_expectancy"):
+        for k in (
+            "trade_count",
+            "profit_factor",
+            "max_drawdown",
+            "pct_profitable_windows",
+            "avg_sharpe_across_windows",
+            "win_rate",
+            "median_expectancy",
+        ):
             if ta.get(k) is not None:
                 train_metrics[k] = ta[k]
         if "median_expectancy" not in train_metrics:
             train_metrics["median_expectancy"] = entry.get("metric")
 
-        db.add(ExperimentResult(
-            experiment_id=exp_id,
-            thesis_id=Path(config).stem if config else "unknown",
-            config_path=config,
-            runtime_config={},  # not available in legacy entries
-            code_commit=commit,
-            data_hash="",
-            train_metrics=train_metrics,
-            validation_metrics={},
-            trade_count=ta.get("trade_count", 0),
-            trades_file="",
-            strategy_events_file="",
-            diagnostics_file="",
-            strategy_diagnostics={},
-            accepted=decision == "keep",
-            rejection_reason=ta.get("why", "") if decision != "keep" else "",
-            verdict_status="none",
-            verdict_summary="",
-            timestamp=entry.get("timestamp", 0),
-            family=entry.get("family", "unknown"),
-            hypothesis=asi.get("hypothesis", ""),
-            mechanism="",
-        ))
+        db.add(
+            ExperimentResult(
+                experiment_id=exp_id,
+                thesis_id=Path(config).stem if config else "unknown",
+                config_path=config,
+                runtime_config={},  # not available in legacy entries
+                code_commit=commit,
+                data_hash="",
+                train_metrics=train_metrics,
+                validation_metrics={},
+                trade_count=ta.get("trade_count", 0),
+                trades_file="",
+                strategy_events_file="",
+                diagnostics_file="",
+                strategy_diagnostics={},
+                accepted=decision == "keep",
+                rejection_reason=ta.get("why", "") if decision != "keep" else "",
+                verdict_status="none",
+                verdict_summary="",
+                timestamp=coerce_timestamp_to_iso8601_utc(entry.get("timestamp", 0)) or "",
+                family=entry.get("family", "unknown"),
+                hypothesis=asi.get("hypothesis", ""),
+                mechanism="",
+            )
+        )
         count += 1
     return count
