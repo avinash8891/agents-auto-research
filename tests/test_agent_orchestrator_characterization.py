@@ -15,6 +15,7 @@ import agent_definitions
 import agent_infra
 import agent_memory
 import agent_orchestrator as ao
+import agent_runners
 
 
 def test_run_diagnostic_analysis_returns_validated_result_and_writes_memory(monkeypatch):
@@ -172,7 +173,7 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
     monkeypatch.setattr(
         agent_definitions,
         "_research_agent",
-        lambda **kwargs: SimpleNamespace(prompt="system", model="claude", maxTurns=15),
+        lambda **kwargs: SimpleNamespace(prompt="system", model="claude", maxTurns=15, tools=[]),
     )
 
     payloads = iter(
@@ -199,19 +200,11 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
         ]
     )
 
-    AssistantMessage = type("AssistantMessage", (), {})
-    ResultMessage = type("ResultMessage", (), {})
-
-    async def fake_query(*args, **kwargs):
+    async def fake_query_with_timeout(prompt, agent_def, timeout):
         payload = next(payloads)
-        message = AssistantMessage()
-        message.content = [SimpleNamespace(text=json.dumps(payload))]
-        yield message
+        yield json.dumps(payload)
 
-    monkeypatch.setattr(ao, "query", fake_query)
-    monkeypatch.setattr(ao, "AssistantMessage", AssistantMessage)
-    monkeypatch.setattr(ao, "ResultMessage", ResultMessage)
-    monkeypatch.setattr(ao, "ClaudeAgentOptions", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(agent_runners, "_query_with_timeout", fake_query_with_timeout)
 
     result = ao.run_research_agent_sync(
         {
@@ -244,7 +237,7 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
 
 def test_validate_output_rejects_diagnostic_without_pattern():
     assert (
-        ao._validate_output(
+        agent_runners._validate_output(
             "diagnostic-analyst",
             {"key_anomalies": [{}], "overall_diagnosis": "x"},
         )
