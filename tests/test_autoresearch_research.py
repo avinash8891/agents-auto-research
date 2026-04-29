@@ -31,11 +31,12 @@ def test_notify_discord_no_op_when_webhook_empty() -> None:
 
 
 def test_notify_discord_swallows_exceptions(monkeypatch) -> None:
-    # If urllib raises, notify_discord must NOT propagate (fail-open).
+    # If urllib raises a network error, notify_discord must NOT propagate (fail-open).
+    import urllib.error
     import urllib.request
 
     def boom(*a, **kw):
-        raise RuntimeError("simulated network failure")
+        raise urllib.error.URLError("simulated network failure")
 
     monkeypatch.setattr(urllib.request, "urlopen", boom)
     # Must complete cleanly even though urllib raised.

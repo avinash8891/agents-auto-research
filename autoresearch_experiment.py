@@ -99,7 +99,7 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
             f"or address the slow path"
         )
         return 1, "TIMEOUT"
-    except Exception as exc:
+    except (subprocess.SubprocessError, OSError) as exc:
         trace("COMMAND", f"ERROR: {exc}")
         log.error(
             f"RUN_COMMAND error: {exc} "
@@ -651,7 +651,15 @@ def _evaluate_against_thesis(
         if verdict.status == "accepted" and decision == "discard":
             trace("EVAL", "thesis accepted despite metric threshold")
         return verdict, decision
-    except Exception as exc:
+    except (
+        ImportError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        ValueError,
+        ZeroDivisionError,
+        IndexError,
+    ) as exc:
         trace("EVAL", f"evaluation error: {exc}")
         log.warning(f"EVAL error (non-fatal): {exc}")
         return None, decision
