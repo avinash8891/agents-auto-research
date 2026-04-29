@@ -69,7 +69,11 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         trace("COMMAND", f"START: {command}")
         log.info(f"RUN_COMMAND start: {command[:COMMAND_PREVIEW_TRUNCATION]}")
         sys.stdout.flush()
-        result = subprocess.run(
+        # shell=True is required: `command` is a composed string built by
+        # family.benchmark_command() that includes flags and may include
+        # shell-interpreted metacharacters. Inputs come from project-internal
+        # config — never from user input or the network.
+        result = subprocess.run(  # noqa: S602  # nosec B602
             command,
             shell=True,
             cwd=root,
