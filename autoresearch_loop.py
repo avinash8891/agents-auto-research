@@ -18,6 +18,23 @@ from autoresearch_artifacts import (
     read_run_queue as _artifacts_read_run_queue,
     read_thesis_artifacts as _artifacts_read_thesis_artifacts,
 )
+from autoresearch_planning import (
+    COMBINATION_RULES,
+    DEFAULT_CONFIG_ORDER,
+    THESIS_FAMILY,
+    build_finish_summary as _planning_build_finish_summary,
+    check_baseline_rerun as _planning_check_baseline_rerun,
+    generate_combination_candidates as _planning_generate_combination_candidates,
+    generate_theses_from_ideas as _planning_generate_theses_from_ideas,
+    list_known_variant_configs as _planning_list_known_variant_configs,
+    parse_ideas_backlog as _planning_parse_ideas_backlog,
+    pending_configs as _planning_pending_configs,
+    plan_next_action as _planning_plan_next_action,
+    select_research_next_action as _planning_select_research_next_action,
+    should_terminate as _planning_should_terminate,
+    thesis_family_for as _planning_thesis_family_for,
+    thesis_statuses as _planning_thesis_statuses,
+)
 from autoresearch_state import (
     ExperimentRecord,
     deduplicate_entries as _state_deduplicate_entries,
@@ -38,7 +55,6 @@ from trace_logger import (
     trace, trace_benchmark, trace_state_change, trace_ssh,
     begin_hypothesis, end_hypothesis, current_hypothesis_id, get_run_id,
 )
-from compiler_pipeline import compile_proposal_artifact
 from experiment_db import (
     ExperimentDB, ExperimentResult, BaselineTracker, BaselineCheckpoint,
     build_data_hash, build_config_hash,
@@ -78,12 +94,6 @@ IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
 RUNS_DIR = ROOT / "autoresearch-runs"
 RESEARCH_DIR = ROOT / "research"
 THESIS_DIR = ROOT / "theses"
-DEFAULT_CONFIG_ORDER = [
-    "configs/variants/orb_spy_only.yaml",
-    "configs/variants/orb_stocks_in_play.yaml",
-    "configs/variants/orb_trailing_stop.yaml",
-    "configs/variants/orb_trend_filter.yaml",
-]
 
 
 def default_controller_paths(root: Path, family: StrategyFamily) -> tuple[Path, Path, Path, Path, Path]:
@@ -96,38 +106,10 @@ def default_controller_paths(root: Path, family: StrategyFamily) -> tuple[Path, 
         root / family.runs_dirname,
     )
 
-# Thesis family categories for combination compatibility
-THESIS_FAMILY: dict[str, str] = {
-    "spy_only": "universe",
-    "stocks_in_play": "universe",
-    "stocks_in_play_universe": "universe",
-    "relative_volume_stocks_in_play": "universe",
-    "top_10_dollar_volume_stocks_in_play": "universe",
-    "high_relative_volume_filter": "entry",
-    "trend_alignment_filter": "entry",
-    "follow_through": "entry",
-    "trailing_stop": "exit",
-    "time_stop": "exit",
-    "failed_breakout_exit": "exit",
-    "volatility_trail": "exit",
-    "trend_filter": "regime",
-    "skip_chop": "regime",
-    "skip_low_vol": "regime",
-    "trend_day_only": "regime",
-}
 
-COMBINATION_RULES: dict[tuple[str, str], str] = {
-    ("universe", "exit"): "allowed",
-    ("universe", "entry"): "allowed",
-    ("universe", "regime"): "allowed",
-    ("entry", "exit"): "allowed",
-    ("entry", "regime"): "allowed",
-    ("exit", "regime"): "allowed",
-    ("universe", "universe"): "disallowed",
-    ("entry", "entry"): "disallowed",
-    ("exit", "exit"): "review_required",
-    ("regime", "regime"): "review_required",
-}
+# Re-exports for any external callers that historically imported these names
+# from autoresearch_loop. Keep this near the top so they remain discoverable.
+__all__ = ("DEFAULT_CONFIG_ORDER", "THESIS_FAMILY", "COMBINATION_RULES")
 
 
 class AutoresearchController:
@@ -205,52 +187,13 @@ class AutoresearchController:
         return _state_latest_result(results)
 
     def list_known_variant_configs(self) -> list[str]:
-        known: list[str] = []
-        for config in DEFAULT_CONFIG_ORDER:
-            if (self.root / config).exists():
-                known.append(config)
-        variants_dir = self.root / "configs" / "variants"
-        if variants_dir.exists():
-            for path in sorted(variants_dir.glob("*.yaml")):
-                rel = path.relative_to(self.root).as_posix()
-                if rel not in known and path.name != "README.keep":
-                    known.append(rel)
-        return known
+        return _planning_list_known_variant_configs(self.root)
 
     def pending_configs(self, results: list[ExperimentRecord]) -> list[str]:
-        attempted = {result.config for result in results if result.config}
-        return [config for config in self.list_known_variant_configs() if config not in attempted]
+        return _planning_pending_configs(self.root, results)
 
     def thesis_statuses(self, results: list[ExperimentRecord]) -> dict[str, dict[str, Any]]:
-        statuses: dict[str, dict[str, Any]] = {}
-        for config in self.list_known_variant_configs():
-            statuses[config] = {"status": "pending", "source": "variants_dir"}
-        for artifact in self.read_run_queue():
-            config = artifact.get("config")
-            if not config:
-                continue
-            statuses.setdefault(config, {})
-            statuses[config].update(
-                {
-                    "status": artifact.get("status", statuses[config].get("status", "pending")),
-                    "source": "run_queue",
-                    "thesis_id": artifact.get("thesis_id"),
-                    "artifact_path": artifact.get("artifact_path"),
-                }
-            )
-        for result in results:
-            if not result.config:
-                continue
-            statuses.setdefault(result.config, {})
-            statuses[result.config].update(
-                {
-                    "status": result.status,
-                    "last_metric": result.metric,
-                    "last_timestamp": result.timestamp,
-                    "description": result.description,
-                }
-            )
-        return statuses
+        return _planning_thesis_statuses(self.root, self.run_queue_dir, results)
 
     def read_run_queue(self) -> list[dict[str, Any]]:
         return _artifacts_read_run_queue(self.run_queue_dir, self.root)
@@ -267,170 +210,20 @@ class AutoresearchController:
     # ── WS-2: Thesis generation from ideas backlog ──────────────────────
 
     def parse_ideas_backlog(self) -> list[dict[str, Any]]:
-        """Parse autoresearch.ideas.md and return candidate thesis dicts."""
-        if not self.ideas_md_path.exists():
-            return []
-        text = self.ideas_md_path.read_text()
-        candidates: list[dict[str, Any]] = []
-        current_family: str = ""
-        for line in text.splitlines():
-            line = line.strip()
-            # Detect family headers like "### Universe theses"
-            if line.startswith("### ") and "thes" in line.lower():
-                family_name = line.replace("### ", "").strip().lower()
-                for key in ("universe", "entry", "exit", "regime"):
-                    if key in family_name:
-                        current_family = key
-                        break
-                continue
-            # Detect candidate bullets like "- `spy_only`"
-            if line.startswith("- `") and "`" in line[3:]:
-                slug = line[3:line.index("`", 3)]
-                config_path = f"configs/variants/orb_{slug}.yaml"
-                candidates.append({
-                    "slug": slug,
-                    "config": config_path,
-                    "family": current_family or THESIS_FAMILY.get(slug, "unknown"),
-                    "source": "ideas_backlog",
-                })
-        return candidates
+        return _planning_parse_ideas_backlog(self.ideas_md_path)
 
     def generate_theses_from_ideas(self, results: list[ExperimentRecord]) -> list[str]:
-        """Generate thesis artifacts for untested candidates from ideas backlog.
-
-        Returns list of config paths for newly generated theses.
-        """
-        attempted = {r.config for r in results if r.config}
-        existing_thesis_configs = {a.get("config") for a in self.read_run_queue()}
-        candidates = self.parse_ideas_backlog()
-
-        kept = [r for r in results if r.status == "keep"]
-        discarded = [r for r in results if r.status == "discard"]
-
-        generated: list[str] = []
-        for candidate in candidates:
-            config = candidate["config"]
-            if config in attempted or config in existing_thesis_configs:
-                continue
-            if not (self.root / config).exists():
-                continue
-            proposal = {
-                "thesis_id": candidate["slug"],
-                "hypothesis": f"{candidate['slug']} ({candidate['family']} thesis)",
-                "family": candidate["family"],
-                "source": "controller_synthesis",
-                "evidence": [
-                    f"Kept: {[r.config for r in kept]}",
-                    f"Discarded: {[r.config for r in discarded]}",
-                    f"Candidate from ideas backlog, family={candidate['family']}",
-                ],
-                "primitive_contract": [],
-            }
-            self.proposals_dir.mkdir(parents=True, exist_ok=True)
-            path = self.proposals_dir / f"{candidate['slug']}.json"
-            path.write_text(json.dumps(proposal, indent=2) + "\n")
-            compile_proposal_artifact(proposal, self.root)
-            generated.append(config)
-        return generated
+        return _planning_generate_theses_from_ideas(
+            self.root, self.ideas_md_path, self.run_queue_dir, self.proposals_dir, results,
+        )
 
     # ── WS-5: Combination phase ───────────────────────────────────────
 
     def thesis_family_for(self, config: str) -> str:
-        """Determine the thesis family for a config path."""
-        slug = Path(config).stem.removeprefix("orb_")
-        if slug in THESIS_FAMILY:
-            return THESIS_FAMILY[slug]
-        # Check proposal artifacts for family metadata
-        for artifact in self.read_thesis_artifacts():
-            if artifact.get("thesis_id") == slug:
-                return artifact.get("family", "unknown")
-        return "unknown"
+        return _planning_thesis_family_for(config, self.proposals_dir, self.root)
 
     def generate_combination_candidates(self, results: list[ExperimentRecord]) -> list[str]:
-        """Generate combination configs from 2+ independent winners.
-
-        Only combines candidates from compatible thesis families.
-        Returns list of config paths for newly generated combinations.
-        """
-        kept = [r for r in results if r.status == "keep" and r.config != "configs/orb_base.yaml"]
-        if len(kept) < 2:
-            return []
-
-        attempted = {r.config for r in results if r.config}
-        generated: list[str] = []
-
-        for i, a in enumerate(kept):
-            for b in kept[i + 1:]:
-                family_a = self.thesis_family_for(a.config)
-                family_b = self.thesis_family_for(b.config)
-                pair = (family_a, family_b)
-                rule = COMBINATION_RULES.get(pair) or COMBINATION_RULES.get(
-                    (family_b, family_a), "disallowed"
-                )
-                if rule != "allowed":
-                    continue
-
-                slug_a = Path(a.config).stem.removeprefix("orb_")
-                slug_b = Path(b.config).stem.removeprefix("orb_")
-                combo_slug = f"{slug_a}_x_{slug_b}"
-                combo_config = f"configs/variants/orb_{combo_slug}.yaml"
-
-                if combo_config in attempted:
-                    continue
-                if (self.root / combo_config).exists():
-                    continue  # already exists, will be picked up by list_known_variant_configs
-
-                # Merge configs: load both YAMLs, overlay b onto a
-                path_a = self.root / a.config
-                path_b = self.root / b.config
-                if not path_a.exists() or not path_b.exists():
-                    continue
-                try:
-                    cfg_a = yaml.safe_load(path_a.read_text()) or {}
-                    cfg_b = yaml.safe_load(path_b.read_text()) or {}
-                except Exception:
-                    continue
-
-                combo_path = self.root / combo_config
-                combo_path.parent.mkdir(parents=True, exist_ok=True)
-
-                if isinstance(cfg_a, list) and isinstance(cfg_b, list):
-                    merged = [*cfg_a, *cfg_b]
-                    combo_config = f"contracts/{combo_slug}.json"
-                    combo_path = self.root / combo_config
-                    combo_path.parent.mkdir(parents=True, exist_ok=True)
-                    combo_path.write_text(json.dumps(merged, indent=2) + "\n")
-                else:
-                    merged = {**cfg_a, **cfg_b}
-                    merged["_combination"] = {
-                        "source_a": a.config,
-                        "source_b": b.config,
-                        "family_a": family_a,
-                        "family_b": family_b,
-                    }
-                    combo_path.write_text(yaml.dump(merged, default_flow_style=False))
-
-                proposal = {
-                    "thesis_id": combo_slug,
-                    "hypothesis": f"Combination of {slug_a} ({family_a}) + {slug_b} ({family_b})",
-                    "family": "combination",
-                    "source": "combination_phase",
-                    "evidence": [
-                        f"{a.config} kept at {a.metric}",
-                        f"{b.config} kept at {b.metric}",
-                        f"Families {family_a}+{family_b} are compatible (orthogonal mechanisms)",
-                    ],
-                    "primitive_contract": merged if isinstance(merged, list) else [],
-                }
-                self.proposals_dir.mkdir(parents=True, exist_ok=True)
-                (self.proposals_dir / f"{combo_slug}.json").write_text(
-                    json.dumps(proposal, indent=2) + "\n"
-                )
-                if isinstance(merged, list):
-                    compile_proposal_artifact(proposal, self.root)
-                generated.append(combo_config)
-
-        return generated
+        return _planning_generate_combination_candidates(self.root, self.proposals_dir, results)
 
     # ── WS-3: Research stage hook ─────────────────────────────────────
 
@@ -568,166 +361,23 @@ class AutoresearchController:
         return details
 
     def select_research_next_action(self, results: list[ExperimentRecord]) -> dict[str, Any]:
-        # 0. No results at all -> run baseline first
-        if not results:
-            baseline_config = f"configs/{self.family.base_config_filename}"
-            baseline_path = self.root / baseline_config
-            if baseline_path.exists():
-                return {
-                    "state": "running",
-                    "current_thesis": {"config": baseline_config, "status": "ready_to_run"},
-                    "next_action": {
-                        "type": "run_experiment",
-                        "config": baseline_config,
-                        "benchmark_command": self.family.benchmark_command(baseline_config),
-                        "requires_trade_analysis": True,
-                        "source": "baseline",
-                    },
-                    "blockers": [],
-                }
-
-        # 1. Check existing thesis artifact queue
-        thesis_queue = self.queue_from_thesis_artifacts(results)
-        if thesis_queue:
-            next_config = thesis_queue[0]
-            return {
-                "state": "running",
-                "current_thesis": {"config": next_config, "status": "ready_to_run"},
-                "next_action": {
-                    "type": "run_experiment",
-                    "config": next_config,
-                    "benchmark_command": self.family.benchmark_command(next_config),
-                    "requires_trade_analysis": True,
-                    "source": "thesis_artifact",
-                },
-                "blockers": [],
-            }
-
-        # 2. Try generating combination candidates from independent winners
-        combo_configs = self.generate_combination_candidates(results)
-        if combo_configs:
-            next_config = combo_configs[0]
-            return {
-                "state": "running",
-                "current_thesis": {"config": next_config, "status": "ready_to_run"},
-                "next_action": {
-                    "type": "run_experiment",
-                    "config": next_config,
-                    "benchmark_command": self.family.benchmark_command(next_config),
-                    "requires_trade_analysis": True,
-                    "source": "combination_phase",
-                },
-                "blockers": [],
-            }
-
-        # 3. Try generating theses from ideas backlog
-        ideas_configs = self.generate_theses_from_ideas(results)
-        if ideas_configs:
-            next_config = ideas_configs[0]
-            return {
-                "state": "running",
-                "current_thesis": {"config": next_config, "status": "ready_to_run"},
-                "next_action": {
-                    "type": "run_experiment",
-                    "config": next_config,
-                    "benchmark_command": self.family.benchmark_command(next_config),
-                    "requires_trade_analysis": True,
-                    "source": "ideas_backlog",
-                },
-                "blockers": [],
-            }
-
-        # 4. All sources exhausted -> finish only after a completed research pass
-        if self.should_terminate(results):
-            return {
-                "state": "finished",
-                "next_action": {
-                    "type": "terminated",
-                    "reason": "Research completed with no further justified theses.",
-                },
-                "blockers": [],
-                "finished_reason": "research_completed_no_new_theses",
-            }
-
-        # 5. Otherwise blocked for research
-        # Termination decisions (should_stop, max_rounds, no thesis) are handled
-        # by execute_once, not here. This just signals that research is needed.
-        return {
-            "state": "blocked",
-            "next_action": {
-                "type": "research",
-                "reason": "All candidates and ideas exhausted; research subagent will generate next thesis.",
-                "requires_subagent": True,
-                "artifact_dir": self.research_dir.relative_to(self.root).as_posix(),
-            },
-            "blockers": [
-                {
-                    "kind": "research_required",
-                    "detail": "Research subagent will generate the next thesis one at a time.",
-                }
-            ],
-        }
+        return _planning_select_research_next_action(
+            self.root, self.family, self.run_queue_dir, self.proposals_dir,
+            self.ideas_md_path, self.research_dir, results,
+        )
 
     def should_terminate(self, results: list[ExperimentRecord] | None = None) -> bool:
         current_results = results if results is not None else self.read_results()
-        if self.pending_configs(current_results):
-            return False
-        if self.queue_from_thesis_artifacts(current_results):
-            return False
-        research = self.read_research_artifacts()
-        if not research:
-            return False
-        latest = research[-1]
-        if latest.get("status") != "completed":
-            return False
-        generated = latest.get("generated_configs")
-        if generated:
-            return False
-        if latest.get("new_theses_generated", 0):
-            return False
-        if latest.get("suggested_theses"):
-            return False
-        return bool(latest.get("findings"))
+        return _planning_should_terminate(self.root, self.run_queue_dir, self.research_dir, current_results)
 
     def _build_finish_summary(self, results: list[ExperimentRecord]) -> dict[str, Any]:
-        kept = [r.config for r in results if r.status == "keep" and r.config != "configs/orb_base.yaml"]
-        discarded = [r.config for r in results if r.status == "discard"]
-        combos = [r.config for r in results if "_x_" in Path(r.config).stem]
-        research_passes = len(self.check_research_completion())
-        return {
-            "total_experiments": len(results),
-            "kept": kept,
-            "discarded": discarded,
-            "combinations_tested": combos,
-            "research_passes": research_passes,
-        }
+        return _planning_build_finish_summary(results, self.check_research_completion())
 
     def plan_next_action(self, state: dict[str, Any], results: list[ExperimentRecord]) -> dict[str, Any]:
-        # Respect forced baseline reruns — don't overwrite them
-        if state.get("next_action", {}).get("baseline_rerun_for_commit"):
-            return state
-        pending = state.get("pending_configs", [])
-        if pending:
-            state.pop("finished_reason", None)
-            state.pop("research_stop_reasoning", None)
-        if pending:
-            next_config = pending[0]
-            state["state"] = "running"
-            state["current_thesis"] = {"config": next_config, "status": "ready_to_run"}
-            state["next_action"] = {
-                "type": "run_experiment",
-                "config": next_config,
-                "benchmark_command": self.family.benchmark_command(next_config),
-                "requires_trade_analysis": True,
-            }
-            state["blockers"] = []
-            return state
-
-        state.update(self.select_research_next_action(results))
-        if state.get("state") == "running":
-            state.pop("finished_reason", None)
-            state.pop("research_stop_reasoning", None)
-        return state
+        return _planning_plan_next_action(
+            state, results, self.root, self.family, self.run_queue_dir,
+            self.proposals_dir, self.ideas_md_path, self.research_dir,
+        )
 
     def render_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> str:
         return _state_render_current_md(state, results)
@@ -1365,52 +1015,10 @@ class AutoresearchController:
         return self.execute_research_sdk()
 
     def _check_baseline_rerun(self) -> dict[str, Any] | None:
-        """Check if baseline needs rerunning. Returns next_action dict or None."""
-        BASELINE_RERUN_INTERVAL = 5
-        last_checkpoint = self.baseline_tracker.latest()
-        current_commit = self.current_commit()
-
-        if not last_checkpoint:
-            return None
-
-        needs_rerun = False
-        reason = ""
-        if last_checkpoint.code_commit != current_commit:
-            needs_rerun = True
-            reason = f"code changed {last_checkpoint.code_commit} -> {current_commit}"
-        else:
-            _results = self.read_results()
-            experiments_since = sum(
-                1 for r in _results if r.timestamp > last_checkpoint.timestamp
-            )
-            if experiments_since >= BASELINE_RERUN_INTERVAL:
-                needs_rerun = True
-                reason = f"periodic rerun ({experiments_since} experiments since last baseline)"
-
-        if not needs_rerun:
-            return None
-
-        results = self.read_results()
-        already_reran = any(
-            r.asi.get("baseline_rerun_for_commit") == current_commit
-            and r.timestamp > last_checkpoint.timestamp
-            for r in results
+        return _planning_check_baseline_rerun(
+            self.root, self.family, self.baseline_tracker,
+            self.current_commit(), self.read_results(),
         )
-        if already_reran:
-            return None
-
-        baseline_config = f"configs/{self.family.base_config_filename}"
-        trace("BASELINE", f"forcing rerun: {reason}")
-        print(f"BASELINE_RERUN {reason}")
-        return {
-            "type": "run_experiment",
-            "config": baseline_config,
-            "benchmark_command": self.family.benchmark_command(baseline_config),
-            "requires_trade_analysis": True,
-            "source": "baseline",
-            "baseline_rerun_for_commit": current_commit,
-            "rerun_reason": reason,
-        }
 
     def _resolve_next_action(self) -> dict[str, Any]:
         """Decide what to do next. Returns a state dict with state/next_action/blockers.
