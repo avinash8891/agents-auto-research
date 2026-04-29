@@ -16,7 +16,6 @@ CLI_TIMEOUT_SECONDS = 180  # Max seconds for a CLI agent call
 
 _OAUTH_PROXY_PORT = 10531
 _OAUTH_PROXY_URL = f"http://127.0.0.1:{_OAUTH_PROXY_PORT}/v1"
-_oauth_proxy_proc = None
 
 
 def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:

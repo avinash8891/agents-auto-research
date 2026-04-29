@@ -561,7 +561,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     If validation rejects the thesis, calls the conductor AGAIN with
     the rejection reason so it can propose something different.
     """
-    from agent_formatters import format_result_history
+    from agent_orchestrator import format_result_history
     from thesis_validator import load_prior_theses
 
     state = controller.read_state()

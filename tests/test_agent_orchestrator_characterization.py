@@ -235,11 +235,15 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
     }
 
 
-def test_orchestrator_public_surface_is_sync_wrappers_and_agent_runner(monkeypatch):
+def test_orchestrator_public_surface_matches_plan():
     assert hasattr(ao, "analyze_diagnostics_sync")
     assert hasattr(ao, "run_web_research_sync")
     assert hasattr(ao, "run_research_agent_sync")
+    assert hasattr(ao, "format_result_history")
+    assert hasattr(ao, "format_insight_brief")
+    assert hasattr(ao, "format_web_findings")
     assert hasattr(ao, "_run_single_agent")
+    assert hasattr(ao, "_parse_json")
 
 
 def test_openai_helper_calls_move_to_agent_codex_calls(monkeypatch):
