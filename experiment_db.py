@@ -352,9 +352,16 @@ def backfill_from_jsonl(jsonl_path: Path, db: ExperimentDB) -> int:
         metrics = entry.get("metrics", {})
         decision = entry.get("status", "discard")
 
-        # Build a stable experiment_id from config + commit
-        exp_id_src = f"{config}:{commit}:{entry.get('timestamp', 0)}"
-        exp_id = hashlib.sha256(exp_id_src.encode()).hexdigest()[:16]
+        # Use run_id from the entry if present (matches _build_db_record's
+        # fallback_experiment_id).  Fall back to a content hash only for
+        # legacy entries that predate run_id so deduplication via
+        # ExperimentDB.add still works on healthy databases.
+        exp_id = (
+            entry.get("run_id")
+            or hashlib.sha256(
+                f"{config}:{commit}:{entry.get('timestamp', 0)}".encode()
+            ).hexdigest()[:16]
+        )
 
         train_metrics: dict[str, Any] = dict(metrics)
         for k in (
@@ -374,7 +381,7 @@ def backfill_from_jsonl(jsonl_path: Path, db: ExperimentDB) -> int:
         db.add(
             ExperimentResult(
                 experiment_id=exp_id,
-                thesis_id=Path(config).stem if config else "unknown",
+                thesis_id=asi.get("thesis_id") or (Path(config).stem if config else "unknown"),
                 config_path=config,
                 runtime_config={},  # not available in legacy entries
                 code_commit=commit,

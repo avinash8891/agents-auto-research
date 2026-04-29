@@ -678,6 +678,10 @@ def _record_baseline_checkpoint(
         round_number=len(controller.baseline_tracker.all_checkpoints()),
     )
     drift = controller.baseline_tracker.check_drift(new_checkpoint)
+    # Window 2 crash safety: if the process dies after baseline_tracker.record()
+    # but before write_state(), the next startup will see an extra checkpoint
+    # and redundantly rerun the baseline. This is benign — no data is lost and
+    # the rerun produces a valid new checkpoint.
     controller.baseline_tracker.record(new_checkpoint)
     trace("BASELINE", f"checkpoint recorded commit={controller.current_commit()}")
     if drift["drifted"]:
