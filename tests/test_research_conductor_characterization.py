@@ -1,0 +1,201 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+# ruff: noqa: E402
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import research_conductor as rc
+
+
+def _assistant_message(text: str):
+    return SimpleNamespace(content=[SimpleNamespace(text=text)])
+
+
+def _result_message(*, usage=None, model_usage=None, result=None, total_cost_usd=None):
+    return SimpleNamespace(
+        usage=usage,
+        model_usage=model_usage,
+        result=result,
+        total_cost_usd=total_cost_usd,
+    )
+
+
+async def _async_empty_iter():
+    if False:
+        yield None
+
+
+def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeypatch):
+    parsed_payload = {
+        "reasoning": "grounded",
+        "suggested_theses": [
+            {
+                "thesis_id": "entry_window_test",
+                "config_changes": {"entry_start_time": "09:35"},
+            }
+        ],
+        "should_stop": False,
+    }
+
+    monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(rc, "_build_research_tools_mcp", lambda **kwargs: SimpleNamespace(_mcp_server=object()))
+    monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
+
+    class AssistantMessage:
+        def __init__(self, text):
+            self.content = [SimpleNamespace(text=text)]
+
+    class ResultMessage:
+        def __init__(self, usage=None, model_usage=None, result=None, total_cost_usd=None):
+            self.usage = usage
+            self.model_usage = model_usage
+            self.result = result
+            self.total_cost_usd = total_cost_usd
+
+    async def fake_query(*args, **kwargs):
+        yield AssistantMessage("```json\n" + json.dumps(parsed_payload) + "\n```")
+        yield ResultMessage(usage={"input_tokens": 5, "output_tokens": 7, "total_tokens": 12}, total_cost_usd=0.25)
+
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", SimpleNamespace(
+        AssistantMessage=AssistantMessage,
+        ClaudeAgentOptions=lambda **kwargs: SimpleNamespace(**kwargs),
+        ResultMessage=ResultMessage,
+        query=fake_query,
+    ))
+
+    rc.reset_round_usage()
+    result = rc.run_research_conductor_sync(
+        trades_file="/tmp/trades.csv",
+        experiment_results="results",
+        latest_outcome={"profit_factor": 1.2},
+        research_round=3,
+    )
+
+    assert result == parsed_payload
+
+
+def test_run_research_conductor_sync_returns_conductor_error_on_timeout(monkeypatch):
+    monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(rc, "_build_research_tools_mcp", lambda **kwargs: SimpleNamespace(_mcp_server=object()))
+    monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
+
+    class AssistantMessage:
+        pass
+
+    class ResultMessage:
+        pass
+
+    async def fake_query(*args, **kwargs):
+        raise asyncio.TimeoutError
+        yield  # pragma: no cover
+
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", SimpleNamespace(
+        AssistantMessage=AssistantMessage,
+        ClaudeAgentOptions=lambda **kwargs: SimpleNamespace(**kwargs),
+        ResultMessage=ResultMessage,
+        query=fake_query,
+    ))
+
+    result = rc.run_research_conductor_sync(
+        trades_file="/tmp/trades.csv",
+        experiment_results="results",
+        latest_outcome={},
+        research_round=4,
+    )
+
+    assert result == {
+        "status": "conductor_error",
+        "error": "timeout",
+        "suggested_theses": [],
+        "should_stop": False,
+    }
+
+
+def test_accumulate_usage_tracks_tokens_across_agents():
+    rc.reset_round_usage()
+
+    rc._accumulate_usage("analyst", {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13}, cost_usd=0.11)
+    rc._accumulate_usage("web_researcher", {"input": 7, "output": 2, "total": 9}, cost_usd=0.05)
+    rc._accumulate_usage("conductor", {"input_tokens": 5, "output_tokens": 4, "total_tokens": 9})
+
+    usage = rc.get_round_usage()
+
+    assert usage["total"] == {
+        "input_tokens": 22,
+        "output_tokens": 9,
+        "total_tokens": 31,
+        "cost_usd": pytest.approx(0.16),
+        "calls": 3,
+    }
+    assert usage["by_agent"]["analyst"]["calls"] == 1
+    assert usage["by_agent"]["web_researcher"]["total_tokens"] == 9
+    assert usage["by_agent"]["conductor"]["output_tokens"] == 4
+
+    rc.reset_round_usage()
+    assert rc.get_round_usage() == {
+        "by_agent": {},
+        "total": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cost_usd": 0.0,
+            "calls": 0,
+        },
+    }
+
+
+def test_save_research_finding_rejects_bad_type(monkeypatch):
+    monkeypatch.setattr(rc, "_call_analyst", lambda *a, **k: _async_empty_iter())
+    monkeypatch.setattr(rc, "_call_web_researcher", lambda *a, **k: _async_empty_iter())
+
+    mcp = rc._build_research_tools_mcp(trades_file="/tmp/trades.csv")
+    tool = next(tool for tool in mcp._tool_manager.list_tools() if tool.name == "save_finding")
+
+    result = asyncio.run(tool.fn(
+        finding="test finding",
+        finding_type="garbage",
+        status="validated",
+        evidence="round_001",
+        scope="full_sample",
+        expires_if="baseline changes",
+    ))
+
+    assert "REJECTED" in result
+
+
+def test_list_past_theses_parses_autoresearch_jsonl(monkeypatch, tmp_path):
+    file_one = tmp_path / "ema_autoresearch.jsonl"
+    file_two = tmp_path / "orb_autoresearch.jsonl"
+    file_one.write_text("\n".join([
+        json.dumps({"type": "research_round", "thesis_id": "ema_one", "outcome": "compiled", "round": 1}),
+        json.dumps({"type": "other", "thesis_id": "ignored"}),
+    ]))
+    file_two.write_text(json.dumps({
+        "type": "research_round",
+        "thesis_id": "orb_two",
+        "outcome": "rejected",
+        "round": 2,
+    }))
+
+    monkeypatch.setattr(rc, "_ROOT", tmp_path)
+    mcp = rc._build_research_tools_mcp(trades_file="/tmp/trades.csv")
+    tool = next(tool for tool in mcp._tool_manager.list_tools() if tool.name == "list_past_theses")
+
+    payload = asyncio.run(tool.fn())
+    parsed = json.loads(payload)
+
+    assert {entry["thesis_id"] for entry in parsed} == {"ema_one", "orb_two"}
