@@ -52,3 +52,6 @@ exclude_lines = [
 ]
 show_missing = true
 skip_covered = false
+# Initial gate set to 70% on the union of autoresearch_* modules. Will
+# ratchet to 80% once integration test fixtures land in PR 5.
+fail_under = 70
