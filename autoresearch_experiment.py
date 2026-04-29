@@ -14,7 +14,6 @@ import re
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -29,7 +28,6 @@ from autoresearch_constants import (
     DISCORD_COLOR_DISCARD,
     DISCORD_COLOR_SUCCESS,
     DISCORD_COLOR_WARNING,
-    MILLISECONDS_PER_SECOND,
 )
 from autoresearch_logging import get_logger
 from autoresearch_state import (
@@ -397,7 +395,7 @@ def _build_db_record(
         verdict_status=verdict.get("status", "none"),
         verdict_summary=verdict.get("summary", ""),
         parent_experiment_id=controller.ctx.parent_experiment_id,
-        timestamp=int(time.time() * MILLISECONDS_PER_SECOND),
+        timestamp=iso8601_utc_now(),
         family=controller.family.name,
         hypothesis=contract.hypothesis if contract else "",
         mechanism=contract.mechanism if contract else "",
@@ -651,7 +649,7 @@ def _record_baseline_checkpoint(
         data_hash=build_data_hash(runtime_cfg),
         config_hash=build_config_hash(runtime_cfg),
         metrics=details,
-        timestamp=int(time.time() * MILLISECONDS_PER_SECOND),
+        timestamp=iso8601_utc_now(),
         round_number=len(controller.baseline_tracker.all_checkpoints()),
     )
     drift = controller.baseline_tracker.check_drift(new_checkpoint)
