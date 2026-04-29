@@ -254,7 +254,7 @@ def derive_trade_analysis(
                 from ema_contract import compile_ema_contract
 
                 config_contents = compile_ema_contract(raw).runtime_config
-        except (yaml.YAMLError, json.JSONDecodeError, OSError, ValueError):
+        except OSError:
             pass
 
     controller.ctx.latest_trades_file = details.get("trades_file", "")
@@ -334,7 +334,7 @@ def _read_thesis_metadata(
             tj = json.loads(thesis_json_path.read_text())
             thesis_id = tj.get("thesis_id", thesis_id)
             config_changes = tj.get("config_changes", {})
-        except (json.JSONDecodeError, OSError):
+        except OSError:
             pass
     return thesis_id, config_changes
 
@@ -453,7 +453,7 @@ def log_experiment_result(
     output: str,
     analysis: dict[str, Any],
 ) -> None:
-    sanitize_duplicate_entries(controller.jsonl_path, config)
+    controller.sanitize_duplicate_entries(config)
     artifact_dir = _resolve_artifact_dir(controller, config)
     _write_run_artifacts(artifact_dir, output, analysis)
 
@@ -768,7 +768,6 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         verdict, decision = _evaluate_against_thesis(
             controller, contract, metric, decision, details
         )
-    controller.ctx.current_contract = None
 
     analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
     if verdict:
@@ -776,6 +775,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     controller.log_experiment_result(
         config=config, metric=metric, decision=decision, output=output, analysis=analysis
     )
+    controller.ctx.current_contract = None  # cleared AFTER log so _build_db_record can read it
 
     if next_action.get("source") == "baseline":
         _record_baseline_checkpoint(controller, details)
