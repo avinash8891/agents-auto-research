@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import agent_codex_calls
 import agent_definitions
 import agent_infra
 import agent_memory
@@ -42,7 +43,7 @@ def test_run_diagnostic_analysis_returns_validated_result_and_writes_memory(monk
         assert "RAW TRADES FILE: /tmp/trades.csv" in prompt
         return result_payload
 
-    monkeypatch.setattr(ao, "_run_diagnostic_analyst_openai", fake_run)
+    monkeypatch.setattr(agent_codex_calls, "_run_diagnostic_analyst_openai", fake_run)
     monkeypatch.setattr(
         agent_memory,
         "_mempalace_write",
@@ -109,7 +110,7 @@ def test_run_web_research_returns_findings_and_writes_memory(monkeypatch):
         assert "DIAGNOSTIC INSIGHTS:" in prompt
         return result_payload
 
-    monkeypatch.setattr(ao, "_run_web_research_openai", fake_run)
+    monkeypatch.setattr(agent_codex_calls, "_run_web_research_openai", fake_run)
     monkeypatch.setattr(
         agent_memory,
         "_mempalace_write",
@@ -150,8 +151,6 @@ def test_run_web_research_returns_findings_and_writes_memory(monkeypatch):
 
 def test_run_research_agent_validates_thesis_structure(monkeypatch):
     monkeypatch.setattr(ao, "trace", lambda *a, **k: None)
-    monkeypatch.setattr(ao, "trace_agent_prompt", lambda *a, **k: "trace-id")
-    monkeypatch.setattr(ao, "trace_agent_response", lambda *a, **k: None)
     monkeypatch.setattr(agent_memory, "_mempalace_search", lambda *a, **k: "prior theses")
     monkeypatch.setattr(agent_memory, "_mempalace_write", lambda *a, **k: True)
     monkeypatch.setattr(agent_memory, "_mempalace_diary", lambda *a, **k: True)
@@ -233,6 +232,22 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
         ],
         "should_stop": False,
     }
+
+
+def test_openai_helper_calls_move_to_agent_codex_calls(monkeypatch):
+    async def fake_web(prompt: str):
+        return {"summary": "ok", "findings": [{"topic": "t", "finding": "f"}]}
+
+    async def fake_diag(prompt: str):
+        return {"overall_diagnosis": "ok", "key_anomalies": [{"pattern": "p", "numbers": "n"}]}
+
+    monkeypatch.setattr(agent_codex_calls, "_run_web_research_openai", fake_web, raising=False)
+    monkeypatch.setattr(
+        agent_codex_calls, "_run_diagnostic_analyst_openai", fake_diag, raising=False
+    )
+
+    assert callable(getattr(agent_codex_calls, "_run_web_research_openai"))
+    assert callable(getattr(agent_codex_calls, "_run_diagnostic_analyst_openai"))
 
 
 def test_validate_output_rejects_diagnostic_without_pattern():
