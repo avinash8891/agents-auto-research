@@ -15,11 +15,6 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import research_conductor as rc
-import research_infra as infra
-import research_memory as memory
-import research_subagents as subagents
-import research_tools_mcp as tools_mcp
-import research_usage as usage
 
 
 def _assistant_message(text: str):
@@ -53,6 +48,7 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
     }
 
     monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(rc, "_build_research_tools_mcp", lambda **kwargs: SimpleNamespace(_mcp_server=object()))
     monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
     monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
@@ -62,9 +58,7 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
             self.content = [SimpleNamespace(text=text)]
 
     class ResultMessage:
-        def __init__(
-            self, usage=None, model_usage=None, result=None, total_cost_usd=None
-        ):
+        def __init__(self, usage=None, model_usage=None, result=None, total_cost_usd=None):
             self.usage = usage
             self.model_usage = model_usage
             self.result = result
@@ -72,29 +66,14 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
 
     async def fake_query(*args, **kwargs):
         yield AssistantMessage("```json\n" + json.dumps(parsed_payload) + "\n```")
-        yield ResultMessage(
-            usage={"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
-            total_cost_usd=0.25,
-        )
+        yield ResultMessage(usage={"input_tokens": 5, "output_tokens": 7, "total_tokens": 12}, total_cost_usd=0.25)
 
-    monkeypatch.setitem(
-        sys.modules,
-        "claude_agent_sdk",
-        SimpleNamespace(
-            AssistantMessage=AssistantMessage,
-            ClaudeAgentOptions=lambda **kwargs: SimpleNamespace(**kwargs),
-            ResultMessage=ResultMessage,
-            query=fake_query,
-        ),
-    )
-
-    captured = {}
-
-    def fake_build_research_tools_mcp(**kwargs):
-        captured.update(kwargs)
-        return SimpleNamespace(_mcp_server=object())
-
-    monkeypatch.setattr(rc, "_build_research_tools_mcp", fake_build_research_tools_mcp)
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", SimpleNamespace(
+        AssistantMessage=AssistantMessage,
+        ClaudeAgentOptions=lambda **kwargs: SimpleNamespace(**kwargs),
+        ResultMessage=ResultMessage,
+        query=fake_query,
+    ))
 
     rc.reset_round_usage()
     result = rc.run_research_conductor_sync(
@@ -105,17 +84,11 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
     )
 
     assert result == parsed_payload
-    assert rc.run_research_conductor.__code__.co_names.count("_ROOT") == 1
-    assert "__globals__" not in rc.run_research_conductor.__code__.co_names
 
 
 def test_run_research_conductor_sync_returns_conductor_error_on_timeout(monkeypatch):
     monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
-    monkeypatch.setattr(
-        rc,
-        "_build_research_tools_mcp",
-        lambda **kwargs: SimpleNamespace(_mcp_server=object()),
-    )
+    monkeypatch.setattr(rc, "_build_research_tools_mcp", lambda **kwargs: SimpleNamespace(_mcp_server=object()))
     monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
     monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
@@ -130,16 +103,12 @@ def test_run_research_conductor_sync_returns_conductor_error_on_timeout(monkeypa
         raise asyncio.TimeoutError
         yield  # pragma: no cover
 
-    monkeypatch.setitem(
-        sys.modules,
-        "claude_agent_sdk",
-        SimpleNamespace(
-            AssistantMessage=AssistantMessage,
-            ClaudeAgentOptions=lambda **kwargs: SimpleNamespace(**kwargs),
-            ResultMessage=ResultMessage,
-            query=fake_query,
-        ),
-    )
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", SimpleNamespace(
+        AssistantMessage=AssistantMessage,
+        ClaudeAgentOptions=lambda **kwargs: SimpleNamespace(**kwargs),
+        ResultMessage=ResultMessage,
+        query=fake_query,
+    ))
 
     result = rc.run_research_conductor_sync(
         trades_file="/tmp/trades.csv",
@@ -157,35 +126,27 @@ def test_run_research_conductor_sync_returns_conductor_error_on_timeout(monkeypa
 
 
 def test_accumulate_usage_tracks_tokens_across_agents():
-    usage.reset_round_usage()
+    rc.reset_round_usage()
 
-    usage._accumulate_usage(
-        "analyst",
-        {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13},
-        cost_usd=0.11,
-    )
-    usage._accumulate_usage(
-        "web_researcher", {"input": 7, "output": 2, "total": 9}, cost_usd=0.05
-    )
-    usage._accumulate_usage(
-        "conductor", {"input_tokens": 5, "output_tokens": 4, "total_tokens": 9}
-    )
+    rc._accumulate_usage("analyst", {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13}, cost_usd=0.11)
+    rc._accumulate_usage("web_researcher", {"input": 7, "output": 2, "total": 9}, cost_usd=0.05)
+    rc._accumulate_usage("conductor", {"input_tokens": 5, "output_tokens": 4, "total_tokens": 9})
 
-    round_usage = usage.get_round_usage()
+    usage = rc.get_round_usage()
 
-    assert round_usage["total"] == {
+    assert usage["total"] == {
         "input_tokens": 22,
         "output_tokens": 9,
         "total_tokens": 31,
         "cost_usd": pytest.approx(0.16),
         "calls": 3,
     }
-    assert round_usage["by_agent"]["analyst"]["calls"] == 1
-    assert round_usage["by_agent"]["web_researcher"]["total_tokens"] == 9
-    assert round_usage["by_agent"]["conductor"]["output_tokens"] == 4
+    assert usage["by_agent"]["analyst"]["calls"] == 1
+    assert usage["by_agent"]["web_researcher"]["total_tokens"] == 9
+    assert usage["by_agent"]["conductor"]["output_tokens"] == 4
 
-    usage.reset_round_usage()
-    assert usage.get_round_usage() == {
+    rc.reset_round_usage()
+    assert rc.get_round_usage() == {
         "by_agent": {},
         "total": {
             "input_tokens": 0,
@@ -198,30 +159,20 @@ def test_accumulate_usage_tracks_tokens_across_agents():
 
 
 def test_save_research_finding_rejects_bad_type(monkeypatch):
-    mcp = tools_mcp._build_research_tools_mcp(
-        trades_file="/tmp/trades.csv",
-        call_analyst=subagents._call_analyst,
-        call_web_researcher=subagents._call_web_researcher,
-        save_research_finding=memory.save_research_finding,
-        palace_search=memory._palace_search,
-        palace_status=memory._palace_status,
-        root=infra._ROOT,
-        list_past_theses_for_root=memory.list_past_theses,
-    )
-    tool = next(
-        tool for tool in mcp._tool_manager.list_tools() if tool.name == "save_finding"
-    )
+    monkeypatch.setattr(rc, "_call_analyst", lambda *a, **k: _async_empty_iter())
+    monkeypatch.setattr(rc, "_call_web_researcher", lambda *a, **k: _async_empty_iter())
 
-    result = asyncio.run(
-        tool.fn(
-            finding="test finding",
-            finding_type="garbage",
-            status="validated",
-            evidence="round_001",
-            scope="full_sample",
-            expires_if="baseline changes",
-        )
-    )
+    mcp = rc._build_research_tools_mcp(trades_file="/tmp/trades.csv")
+    tool = next(tool for tool in mcp._tool_manager.list_tools() if tool.name == "save_finding")
+
+    result = asyncio.run(tool.fn(
+        finding="test finding",
+        finding_type="garbage",
+        status="validated",
+        evidence="round_001",
+        scope="full_sample",
+        expires_if="baseline changes",
+    ))
 
     assert "REJECTED" in result
 
@@ -229,47 +180,20 @@ def test_save_research_finding_rejects_bad_type(monkeypatch):
 def test_list_past_theses_parses_autoresearch_jsonl(monkeypatch, tmp_path):
     file_one = tmp_path / "ema_autoresearch.jsonl"
     file_two = tmp_path / "orb_autoresearch.jsonl"
-    file_one.write_text(
-        "\n".join(
-            [
-                json.dumps(
-                    {
-                        "type": "research_round",
-                        "thesis_id": "ema_one",
-                        "outcome": "compiled",
-                        "round": 1,
-                    }
-                ),
-                json.dumps({"type": "other", "thesis_id": "ignored"}),
-            ]
-        )
-    )
-    file_two.write_text(
-        json.dumps(
-            {
-                "type": "research_round",
-                "thesis_id": "orb_two",
-                "outcome": "rejected",
-                "round": 2,
-            }
-        )
-    )
+    file_one.write_text("\n".join([
+        json.dumps({"type": "research_round", "thesis_id": "ema_one", "outcome": "compiled", "round": 1}),
+        json.dumps({"type": "other", "thesis_id": "ignored"}),
+    ]))
+    file_two.write_text(json.dumps({
+        "type": "research_round",
+        "thesis_id": "orb_two",
+        "outcome": "rejected",
+        "round": 2,
+    }))
 
-    mcp = tools_mcp._build_research_tools_mcp(
-        trades_file="/tmp/trades.csv",
-        call_analyst=subagents._call_analyst,
-        call_web_researcher=subagents._call_web_researcher,
-        save_research_finding=memory.save_research_finding,
-        palace_search=memory._palace_search,
-        palace_status=memory._palace_status,
-        root=tmp_path,
-        list_past_theses_for_root=memory.list_past_theses,
-    )
-    tool = next(
-        tool
-        for tool in mcp._tool_manager.list_tools()
-        if tool.name == "list_past_theses"
-    )
+    monkeypatch.setattr(rc, "_ROOT", tmp_path)
+    mcp = rc._build_research_tools_mcp(trades_file="/tmp/trades.csv")
+    tool = next(tool for tool in mcp._tool_manager.list_tools() if tool.name == "list_past_theses")
 
     payload = asyncio.run(tool.fn())
     parsed = json.loads(payload)
