@@ -332,3 +332,50 @@ def test_execute_once_success_preserves_artifacts_and_db_write(controller, monke
     # ExperimentDB.add was called once.
     assert len(db_calls) == 1
     assert db_calls[0].config_path == BASELINE_CONFIG
+
+
+# ────────────────────────────────────────────────────────────────────
+# 8. Halted thesis with no missing config keys -> resumes as running
+# ────────────────────────────────────────────────────────────────────
+def test_execute_once_resumes_halted_thesis_when_keys_now_exist(controller, monkeypatch, tmp_path):
+    """Audit reproduction: corrupting the resume branch passed all 7 prior
+    tests, proving this path was untested. This regression test fires on the
+    halted-resume branch in _resolve_next_action."""
+    halted_thesis_id = "resume-this-thesis"
+    # ema_length already exists in the real ema_base.yaml fixture, so the
+    # `missing` set is empty and the resume path fires.
+    halted_thesis = {
+        "thesis_id": halted_thesis_id,
+        "hypothesis": "tighten ema length",
+        "config_changes": {"ema_length": 7},
+    }
+    controller.write_state(
+        {
+            "state": "halted",
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": halted_thesis_id,
+            "halted_thesis": halted_thesis,
+            "job": 1,
+            "research_round": 0,
+        }
+    )
+    captured = _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    rc = controller.execute_once()
+    assert rc == 0
+
+    expected_config = f"experiments/{halted_thesis_id}/runtime_config.json"
+    # The resume branch must have written the runtime config to disk.
+    written_runtime = controller.root / expected_config
+    assert written_runtime.exists()
+    runtime_payload = json.loads(written_runtime.read_text())
+    assert runtime_payload.get("ema_length") == 7
+    # And invoked the backtest with the resumed config.
+    assert expected_config in captured["command"]
+
+    # State should have advanced past `halted` and cleared the halted_* keys.
+    state = controller.read_state()
+    assert state["state"] in ("running", "blocked")
+    assert "halted_thesis_id" not in state
+    assert "halted_reason" not in state
+    assert "halted_thesis" not in state

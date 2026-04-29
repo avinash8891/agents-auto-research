@@ -1,0 +1,21 @@
+{
+  "metrics": {
+    "median_expectancy": 1.42,
+    "trade_count": 287,
+    "profit_factor": 1.61,
+    "max_drawdown": 0.184,
+    "pct_profitable_windows": 0.62,
+    "avg_sharpe_across_windows": 0.91,
+    "win_rate": 0.541
+  },
+  "trades_file": "trades.csv",
+  "strategy_events_file": "strategy_events.parquet",
+  "diagnostics_file": "diagnostics.json",
+  "strategy_diagnostics": {
+    "exits_at_target": 102,
+    "exits_at_stop": 78,
+    "exits_at_close": 107
+  },
+  "git_sha": "b96e64e",
+  "config_hash": "ab12cd34ef56"
+}
