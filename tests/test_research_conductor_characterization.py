@@ -53,11 +53,6 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
     }
 
     monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
-    monkeypatch.setattr(
-        rc,
-        "_build_research_tools_mcp",
-        lambda **kwargs: SimpleNamespace(_mcp_server=object()),
-    )
     monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
     monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
@@ -93,6 +88,14 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
         ),
     )
 
+    captured = {}
+
+    def fake_build_research_tools_mcp(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(_mcp_server=object())
+
+    monkeypatch.setattr(rc, "_build_research_tools_mcp", fake_build_research_tools_mcp)
+
     rc.reset_round_usage()
     result = rc.run_research_conductor_sync(
         trades_file="/tmp/trades.csv",
@@ -102,6 +105,8 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
     )
 
     assert result == parsed_payload
+    assert rc.run_research_conductor.__code__.co_names.count("_ROOT") == 1
+    assert "__globals__" not in rc.run_research_conductor.__code__.co_names
 
 
 def test_run_research_conductor_sync_returns_conductor_error_on_timeout(monkeypatch):

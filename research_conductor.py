@@ -4,7 +4,7 @@ import asyncio
 import json
 from typing import Any
 
-from research_infra import _ensure_oauth_proxy, _parse_json
+from research_infra import _ROOT, _ensure_oauth_proxy, _parse_json
 from research_memory import _palace_search, _palace_status
 from research_memory import list_past_theses as list_past_theses_for_root
 from research_memory import save_research_finding
@@ -54,7 +54,7 @@ async def run_research_conductor(
         save_research_finding=save_research_finding,
         palace_search=_palace_search,
         palace_status=_palace_status,
-        root=list_past_theses_for_root.__globals__["_ROOT"],
+        root=_ROOT,
         list_past_theses_for_root=list_past_theses_for_root,
     )
 
