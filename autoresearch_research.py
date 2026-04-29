@@ -251,52 +251,52 @@ def queue_variants(
 # ── Conductor invocation ──────────────────────────────────────────
 
 
-def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]:
-    """Drive research using the research conductor.
+def _backfill_artifact_files_from_latest_dir(
+    controller: "AutoresearchController",
+    latest: ExperimentRecord,
+    trades_file: str,
+    strategy_events_file: str,
+    diagnostics_file: str,
+) -> tuple[str, str, str]:
+    """If ctx didn't carry the latest run's artifact files, look for them
+    inside the latest result's artifact_dir on disk."""
+    artifact_dir = controller.root / latest.asi.get("artifact_dir", "")
+    if not artifact_dir.exists():
+        return trades_file, strategy_events_file, diagnostics_file
+    if not trades_file:
+        csvs = list(artifact_dir.glob("*trades.csv"))
+        if csvs:
+            trades_file = str(csvs[0])
+    if not strategy_events_file:
+        events_files = list(artifact_dir.glob("*strategy_events.parquet")) or list(
+            artifact_dir.glob("*strategy_events.csv")
+        )
+        if events_files:
+            strategy_events_file = str(events_files[0])
+    if not diagnostics_file:
+        diag_jsons = list(artifact_dir.glob("*diagnostics.json"))
+        if diag_jsons:
+            diagnostics_file = str(diag_jsons[0])
+    return trades_file, strategy_events_file, diagnostics_file
 
-    Calls the conductor, validates the proposed thesis, compiles it.
-    If validation rejects the thesis, calls the conductor AGAIN with
-    the rejection reason so it can propose something different.
-    """
-    from agent_orchestrator import format_result_history
-    from compiler_pipeline import compile_research_thesis
-    from research_conductor import run_research_conductor_sync
-    from thesis_validator import (
-        ThesisValidationError,
-        generate_variants,
-        load_prior_theses,
-        validate_thesis_dict,
-    )
 
-    state = controller.read_state()
-    research_round = state.get("research_round", 0) + 1
-    results = controller.read_results()
-
-    result_dicts = results_to_dicts(results)
-    experiment_results = format_result_history(result_dicts)
-
-    prior_theses = load_prior_theses(controller.root)
-    trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
-
+def _resolve_conductor_inputs(
+    controller: "AutoresearchController",
+    results: list[ExperimentRecord],
+) -> tuple[str, str, str, dict[str, Any]]:
+    """Gather the four inputs the conductor needs from the most recent
+    experiment: trades file, strategy events file, diagnostics file, and
+    a small `latest_outcome` dict the prompt templates use."""
     trades_file = controller.ctx.latest_trades_file
     strategy_events_file = controller.ctx.latest_strategy_events_file
     diagnostics_file = controller.ctx.latest_diagnostics_file
     latest = controller.latest_result(results)
     if not trades_file and latest:
-        artifact_dir = controller.root / latest.asi.get("artifact_dir", "")
-        if artifact_dir.exists():
-            csvs = list(artifact_dir.glob("*trades.csv"))
-            if csvs:
-                trades_file = str(csvs[0])
-            events_files = list(artifact_dir.glob("*strategy_events.parquet")) or list(
-                artifact_dir.glob("*strategy_events.csv")
+        trades_file, strategy_events_file, diagnostics_file = (
+            _backfill_artifact_files_from_latest_dir(
+                controller, latest, trades_file, strategy_events_file, diagnostics_file
             )
-            if events_files:
-                strategy_events_file = str(events_files[0])
-            diag_jsons = list(artifact_dir.glob("*diagnostics.json"))
-            if diag_jsons:
-                diagnostics_file = str(diag_jsons[0])
-
+        )
     latest_outcome: dict[str, Any] = {}
     if latest:
         latest_outcome["thesis_id"] = Path(latest.config).stem
@@ -312,148 +312,192 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         ):
             if ta.get(key) is not None:
                 latest_outcome[key] = ta[key]
+    return trades_file, strategy_events_file, diagnostics_file, latest_outcome
 
-    state["research_round"] = research_round
-    controller.write_state(state)
 
-    rejection_feedback = ""
-    thesis_id = "unknown"
-    parsed: dict[str, Any] | None = None
+def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Inspect the conductor response for terminal conditions before any
+    thesis validation. Returns a result dict if the response should
+    short-circuit out of the validation-retry loop, else None."""
+    if not parsed:
+        return {
+            "status": "parse_failed",
+            "generated_config": None,
+            "should_stop": False,
+            "rejection_reason": "research conductor returned no parseable thesis",
+        }
+    if parsed.get("status") == "conductor_error":
+        error = parsed.get("error") or parsed.get("reasoning") or "unknown conductor error"
+        return {
+            "status": "conductor_error",
+            "generated_config": None,
+            "should_stop": False,
+            "rejection_reason": f"research conductor failed: {error}",
+        }
+    if not parsed.get("suggested_theses"):
+        reasoning = parsed.get("reasoning") or "research conductor returned no suggested_theses"
+        return {
+            "status": "completed",
+            "generated_config": None,
+            "should_stop": parsed.get("should_stop", False),
+            "reasoning": reasoning,
+        }
+    return None
 
-    for attempt in range(MAX_VALIDATION_RETRIES):
-        label = f"round={research_round}" + (
-            f" attempt={attempt+1} (retry with feedback)" if attempt else ""
-        )
-        print(f"CONDUCTOR starting {label} trades={'YES' if trades_file else 'NO'}")
-        trace("CONDUCTOR", f"START {label}")
 
-        parsed = run_research_conductor_sync(
-            trades_file=trades_file,
-            experiment_results=experiment_results,
-            latest_outcome=latest_outcome,
-            research_round=research_round,
-            family_name=controller.family.name,
-            strategy_events_file=strategy_events_file,
-            diagnostics_file=diagnostics_file,
-            rejection_feedback=rejection_feedback,
-        )
+def _log_validation_rejection(
+    controller: "AutoresearchController",
+    research_round: int,
+    attempt: int,
+    raw_thesis: dict[str, Any],
+    thesis_id: str,
+    reason: str,
+) -> None:
+    rejection_feedback = f"Thesis '{thesis_id}' rejected by validator: {reason}"
+    print(f"THESIS REJECTED (will retry with feedback): {rejection_feedback}")
+    trace("LOOP", f"thesis rejected, retrying: {rejection_feedback}")
+    controller.log_research_round(
+        round_number=research_round,
+        thesis_id=thesis_id,
+        outcome=f"rejected_attempt_{attempt+1}",
+        config_changes=raw_thesis.get("config_changes"),
+        hypothesis=raw_thesis.get("hypothesis", ""),
+        mechanism=raw_thesis.get("mechanism", ""),
+        mechanism_dimension=raw_thesis.get("mechanism_dimension", ""),
+        rejection_reason=reason,
+    )
 
-        if not parsed:
-            return {
-                "status": "parse_failed",
-                "generated_config": None,
-                "should_stop": False,
-                "rejection_reason": "research conductor returned no parseable thesis",
-            }
 
-        if parsed.get("status") == "conductor_error":
-            error = parsed.get("error") or parsed.get("reasoning") or "unknown conductor error"
-            return {
-                "status": "conductor_error",
-                "generated_config": None,
-                "should_stop": False,
-                "rejection_reason": f"research conductor failed: {error}",
-            }
+def _on_ready_to_run(
+    controller: "AutoresearchController",
+    contract: Any,
+    raw_thesis: dict[str, Any],
+    validated: Any,
+    thesis_id: str,
+    parsed: dict[str, Any],
+    should_stop: bool,
+) -> dict[str, Any]:
+    """Wire the contract into the controller and queue any multi-variant
+    probes; return the success result dict."""
+    from thesis_validator import generate_variants
 
-        should_stop = parsed.get("should_stop", False)
-        theses = parsed.get("suggested_theses", [])
-        if not theses:
-            reasoning = parsed.get("reasoning") or "research conductor returned no suggested_theses"
-            return {
-                "status": "completed",
-                "generated_config": None,
-                "should_stop": should_stop,
-                "reasoning": reasoning,
-            }
+    config_path = f"experiments/{contract.experiment_id}/runtime_config.json"
+    controller.ctx.current_contract = contract
+    latest_db = controller.experiment_db.latest(1)
+    controller.ctx.parent_experiment_id = latest_db[0].experiment_id if latest_db else ""
 
-        raw_thesis = theses[0]
-        raw_thesis["strategy_family"] = controller.family.name
-        thesis_id = raw_thesis.get("thesis_id", "unknown")
-        print(
-            f"RESEARCH_RAW thesis_id={thesis_id} config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
-        )
-
-        try:
-            validated = validate_thesis_dict(raw_thesis, prior_theses=prior_theses)
-            contract = compile_research_thesis(validated, controller.root)
-        except (ThesisValidationError, ValueError) as exc:
-            rejection_feedback = f"Thesis '{thesis_id}' rejected by validator: {exc}"
-            print(f"THESIS REJECTED (will retry with feedback): {rejection_feedback}")
-            trace("LOOP", f"thesis rejected, retrying: {rejection_feedback}")
-            controller.log_research_round(
-                round_number=research_round,
-                thesis_id=thesis_id,
-                outcome=f"rejected_attempt_{attempt+1}",
-                config_changes=raw_thesis.get("config_changes"),
-                hypothesis=raw_thesis.get("hypothesis", ""),
-                mechanism=raw_thesis.get("mechanism", ""),
-                mechanism_dimension=raw_thesis.get("mechanism_dimension", ""),
-                rejection_reason=str(exc),
+    baseline_config = load_baseline_config(controller.root, controller.family)
+    if baseline_config:
+        variants = generate_variants(raw_thesis.get("config_changes", {}), baseline_config)
+        if len(variants) > 1:
+            queue_variants(
+                controller.root,
+                controller.run_queue_dir,
+                variants,
+                validated,
+                contract,
+                baseline_config,
             )
-            continue
+            trace("LOOP", f"queued {len(variants)-1} variant(s) for {thesis_id}")
+    return {
+        "status": "completed",
+        "generated_config": config_path,
+        "generated_config_needs_build": False,
+        "generated_thesis_id": thesis_id,
+        "experiment_id": contract.experiment_id,
+        "thesis_id": thesis_id,
+        "should_stop": should_stop,
+        "reasoning": parsed.get("reasoning", ""),
+    }
 
-        if contract.status == "needs_code":
-            return {
-                "status": "completed",
-                "generated_config": None,
-                "generated_config_needs_build": True,
-                "generated_thesis_id": thesis_id,
-                "thesis_id": thesis_id,
-                "should_stop": should_stop,
-                "reasoning": parsed.get("reasoning", ""),
-                "thesis": raw_thesis,
-            }
 
-        if contract.status == "ready_to_run":
-            config_path = f"experiments/{contract.experiment_id}/runtime_config.json"
-            controller.ctx.current_contract = contract
-            latest_db = controller.experiment_db.latest(1)
-            controller.ctx.parent_experiment_id = latest_db[0].experiment_id if latest_db else ""
+def _try_one_validation_attempt(
+    controller: "AutoresearchController",
+    research_round: int,
+    attempt: int,
+    parsed: dict[str, Any],
+    prior_theses: Any,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """One pass of the conductor-validate-compile retry loop.
 
-            baseline_config = load_baseline_config(controller.root, controller.family)
-            if baseline_config:
-                variants = generate_variants(
-                    raw_thesis.get("config_changes", {}),
-                    baseline_config,
-                )
-                if len(variants) > 1:
-                    queue_variants(
-                        controller.root,
-                        controller.run_queue_dir,
-                        variants,
-                        validated,
-                        contract,
-                        baseline_config,
-                    )
-                    trace("LOOP", f"queued {len(variants)-1} variant(s) for {thesis_id}")
+    Returns (result, retry_feedback). If `result` is not None, exit the
+    loop with that result. If `retry_feedback` is not None, retry the
+    conductor with that feedback string.
+    """
+    from compiler_pipeline import compile_research_thesis
+    from thesis_validator import ThesisValidationError, validate_thesis_dict
 
-            return {
-                "status": "completed",
-                "generated_config": config_path,
-                "generated_config_needs_build": False,
-                "generated_thesis_id": thesis_id,
-                "experiment_id": contract.experiment_id,
-                "thesis_id": thesis_id,
-                "should_stop": should_stop,
-                "reasoning": parsed.get("reasoning", ""),
-            }
+    raw_thesis = parsed["suggested_theses"][0]
+    raw_thesis["strategy_family"] = controller.family.name
+    thesis_id = raw_thesis.get("thesis_id", "unknown")
+    print(
+        f"RESEARCH_RAW thesis_id={thesis_id} "
+        f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
+    )
 
-        rejection_feedback = f"Thesis '{thesis_id}' rejected: status={contract.status}, missing={contract.missing_primitives}"
-        print(f"THESIS REJECTED (will retry with feedback): {rejection_feedback}")
-        trace("LOOP", f"thesis rejected, retrying: {rejection_feedback}")
-        controller.log_research_round(
-            round_number=research_round,
-            thesis_id=thesis_id,
-            outcome=f"rejected_attempt_{attempt+1}",
-            config_changes=raw_thesis.get("config_changes"),
-            hypothesis=raw_thesis.get("hypothesis", ""),
-            mechanism=raw_thesis.get("mechanism", ""),
-            mechanism_dimension=raw_thesis.get("mechanism_dimension", ""),
-            rejection_reason=rejection_feedback,
+    try:
+        validated = validate_thesis_dict(raw_thesis, prior_theses=prior_theses)
+        contract = compile_research_thesis(validated, controller.root)
+    except (ThesisValidationError, ValueError) as exc:
+        _log_validation_rejection(
+            controller, research_round, attempt, raw_thesis, thesis_id, str(exc)
         )
+        return None, f"Thesis '{thesis_id}' rejected by validator: {exc}"
+    return _dispatch_compiled_contract(
+        controller, research_round, attempt, parsed, raw_thesis, validated, contract, thesis_id
+    )
 
+
+def _dispatch_compiled_contract(
+    controller: "AutoresearchController",
+    research_round: int,
+    attempt: int,
+    parsed: dict[str, Any],
+    raw_thesis: dict[str, Any],
+    validated: Any,
+    contract: Any,
+    thesis_id: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    should_stop = parsed.get("should_stop", False)
+    if contract.status == "needs_code":
+        return {
+            "status": "completed",
+            "generated_config": None,
+            "generated_config_needs_build": True,
+            "generated_thesis_id": thesis_id,
+            "thesis_id": thesis_id,
+            "should_stop": should_stop,
+            "reasoning": parsed.get("reasoning", ""),
+            "thesis": raw_thesis,
+        }, None
+    if contract.status == "ready_to_run":
+        return (
+            _on_ready_to_run(
+                controller, contract, raw_thesis, validated, thesis_id, parsed, should_stop
+            ),
+            None,
+        )
+    feedback = (
+        f"Thesis '{thesis_id}' rejected: status={contract.status}, "
+        f"missing={contract.missing_primitives}"
+    )
+    _log_validation_rejection(controller, research_round, attempt, raw_thesis, thesis_id, feedback)
+    return None, feedback
+
+
+def _exhausted_retries_result(
+    parsed: dict[str, Any] | None, rejection_feedback: str
+) -> dict[str, Any]:
+    thesis_id = (
+        parsed["suggested_theses"][0].get("thesis_id", "unknown")
+        if parsed and parsed.get("suggested_theses")
+        else "unknown"
+    )
     print(f"THESIS REJECTED after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback}")
-    trace("LOOP", f"thesis rejected after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback}")
+    trace(
+        "LOOP",
+        f"thesis rejected after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback}",
+    )
     return {
         "status": "thesis_rejected",
         "generated_config": None,
@@ -465,6 +509,86 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     }
 
 
+def _call_conductor(
+    research_round: int,
+    attempt: int,
+    *,
+    trades_file: str,
+    strategy_events_file: str,
+    diagnostics_file: str,
+    experiment_results: Any,
+    latest_outcome: dict[str, Any],
+    family_name: str,
+    rejection_feedback: str,
+) -> dict[str, Any] | None:
+    """One conductor HTTP/SDK call with the per-attempt log preamble."""
+    from research_conductor import run_research_conductor_sync
+
+    label = f"round={research_round}" + (
+        f" attempt={attempt+1} (retry with feedback)" if attempt else ""
+    )
+    print(f"CONDUCTOR starting {label} trades={'YES' if trades_file else 'NO'}")
+    trace("CONDUCTOR", f"START {label}")
+    return run_research_conductor_sync(
+        trades_file=trades_file,
+        experiment_results=experiment_results,
+        latest_outcome=latest_outcome,
+        research_round=research_round,
+        family_name=family_name,
+        strategy_events_file=strategy_events_file,
+        diagnostics_file=diagnostics_file,
+        rejection_feedback=rejection_feedback,
+    )
+
+
+def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]:
+    """Drive research using the research conductor.
+
+    Calls the conductor, validates the proposed thesis, compiles it.
+    If validation rejects the thesis, calls the conductor AGAIN with
+    the rejection reason so it can propose something different.
+    """
+    from agent_orchestrator import format_result_history
+    from thesis_validator import load_prior_theses
+
+    state = controller.read_state()
+    research_round = state.get("research_round", 0) + 1
+    results = controller.read_results()
+    experiment_results = format_result_history(results_to_dicts(results))
+    prior_theses = load_prior_theses(controller.root)
+    trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
+    trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
+        controller, results
+    )
+    state["research_round"] = research_round
+    controller.write_state(state)
+
+    rejection_feedback = ""
+    parsed: dict[str, Any] | None = None
+    for attempt in range(MAX_VALIDATION_RETRIES):
+        parsed = _call_conductor(
+            research_round,
+            attempt,
+            trades_file=trades_file,
+            strategy_events_file=strategy_events_file,
+            diagnostics_file=diagnostics_file,
+            experiment_results=experiment_results,
+            latest_outcome=latest_outcome,
+            family_name=controller.family.name,
+            rejection_feedback=rejection_feedback,
+        )
+        terminal = _check_parsed_for_terminal(parsed)
+        if terminal is not None:
+            return terminal
+        result, retry_feedback = _try_one_validation_attempt(
+            controller, research_round, attempt, parsed, prior_theses
+        )
+        if result is not None:
+            return result
+        rejection_feedback = retry_feedback or rejection_feedback
+    return _exhausted_retries_result(parsed, rejection_feedback)
+
+
 def execute_research_one(controller: "AutoresearchController") -> dict[str, Any]:
     """Drive research using SDK agents."""
     return execute_research_sdk(controller)
@@ -473,124 +597,116 @@ def execute_research_one(controller: "AutoresearchController") -> dict[str, Any]
 # ── Round orchestration ──────────────────────────────────────────
 
 
-def run_research(controller: "AutoresearchController", state: dict[str, Any]) -> dict[str, Any]:
-    """Run one research round. Returns updated state dict."""
-    research_round = state.get("research_round", 0) + 1
-    from trace_logger import begin_round
-
-    begin_round(research_round)
-    if research_round > MAX_RESEARCH_ROUNDS:
-        state["state"] = "finished"
-        state["finished_reason"] = "max_research_rounds_reached"
-        controller.write_state(state)
-        controller.write_current_md(state, controller.read_results())
-        print(f"LOOP_STOP finished: max research rounds ({MAX_RESEARCH_ROUNDS}) reached")
-        best = state.get("current_best", {})
-        notify_discord(
-            f"✅ {controller.family.name.upper()} FINISHED u2014 max rounds",
-            f"**Rounds:** {MAX_RESEARCH_ROUNDS}\n**Best config:** `{best.get('config', '?')}`\n**Best PF:** {best.get('metric', '?')}",
-            webhook=controller.family.discord_webhook,
-            color=DISCORD_COLOR_SUCCESS,
-        )
-        return state
-
-    print(f"HEARTBEAT research_blocked round={research_round}, invoking research subagent")
-    begin_hypothesis(f"research-round-{research_round}")
-    from research_conductor import get_round_usage, reset_round_usage
-
-    reset_round_usage()
-    result = controller.execute_research_one()
-    round_usage = get_round_usage()
-    trace("USAGE", f"round={research_round} {json.dumps(round_usage)}")
-    controller._accumulate_job_usage(round_usage)
-    state = controller.read_state()
-    state["_last_round_usage"] = round_usage
-    controller.write_state(state)
-    end_hypothesis(decision="research_complete")
-
-    _thesis = result.get("thesis", {})
-    _thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
+def _classify_round_outcome(result: dict[str, Any]) -> str:
     if result.get("should_stop"):
-        _outcome = "stopped"
-    elif result.get("generated_config_needs_build"):
-        _outcome = "needs_code"
-    elif result.get("generated_config"):
-        _outcome = "compiled"
-    elif result.get("rejection_reason"):
-        _outcome = "rejected"
-    else:
-        _outcome = "conductor_error"
-    controller.log_research_round(
-        round_number=research_round,
-        thesis_id=_thesis_id,
-        outcome=_outcome,
-        config_changes=_thesis.get("config_changes"),
-        hypothesis=_thesis.get("hypothesis", ""),
-        mechanism=_thesis.get("mechanism", ""),
-        mechanism_dimension=_thesis.get("mechanism_dimension", ""),
-        rejection_reason=result.get("rejection_reason") or result.get("reasoning", ""),
-        usage=round_usage,
-    )
-
-    if result.get("should_stop"):
-        state["state"] = "finished"
-        state["finished_reason"] = "research_recommends_stop"
-        state["research_stop_reasoning"] = result.get("reasoning", "")
-        controller.write_state(state)
-        controller.write_current_md(state, controller.read_results())
-        print("LOOP_STOP finished: research recommends stop")
-        best = state.get("current_best", {})
-        notify_discord(
-            f"✅ {controller.family.name.upper()} FINISHED — conductor says stop",
-            f"**Best config:** `{best.get('config', '?')}`\n**Best PF:** {best.get('metric', '?')}\n\nResearch conductor recommends stopping.",
-            webhook=controller.family.discord_webhook,
-            color=DISCORD_COLOR_SUCCESS,
-        )
-        return state
-
+        return "stopped"
     if result.get("generated_config_needs_build"):
-        thesis_id = result.get("generated_thesis_id", "unknown")
-        thesis = result.get("thesis", {})
-        print(f"LOOP_HALT thesis={thesis_id} requires code change")
-        state["state"] = "halted"
-        state["halted_reason"] = "requires_code_change"
-        state["halted_thesis_id"] = thesis_id
-        state["halted_thesis"] = thesis
-        controller.write_state(state)
-        controller.write_current_md(state, controller.read_results())
-        best = state.get("current_best", {})
-        hyp = thesis.get("hypothesis", "(no details captured)")
-        mech = thesis.get("mechanism", "")
-        notify_discord(
-            f"\U0001f6d1 {controller.family.name.upper()} HALTED — needs code change",
-            f"**Thesis:** `{thesis_id}`\n**Best PF:** {best.get('metric', '?')}\n\n"
-            f"**Hypothesis:** {hyp}\n\n"
-            f"**Mechanism:** {mech}\n\n"
-            f"**Config changes:** `{json.dumps(thesis.get('config_changes', {}))}`",
-            webhook=controller.family.discord_webhook,
-            color=DISCORD_COLOR_DISCARD,
-        )
-        return state
+        return "needs_code"
+    if result.get("generated_config"):
+        return "compiled"
+    if result.get("rejection_reason"):
+        return "rejected"
+    return "conductor_error"
 
-    gen_config = result.get("generated_config")
-    if gen_config:
-        thesis_id = result.get("thesis_id", "unknown")
-        trace("LOOP", f"research produced config: {gen_config} thesis={thesis_id}")
-        state["state"] = "running"
-        state["research_round"] = research_round
-        state["current_thesis"] = {"config": gen_config, "status": "ready_to_run"}
-        state["next_action"] = {
-            "type": "run_experiment",
-            "config": gen_config,
-            "benchmark_command": controller.family.benchmark_command(gen_config),
-            "requires_trade_analysis": True,
-            "source": "research_conductor",
-        }
-        state["blockers"] = []
-        controller.write_state(state)
-        print(f"HEARTBEAT research generated {thesis_id} -> {gen_config}")
-        return state
 
+def _handle_max_rounds_reached(
+    controller: "AutoresearchController", state: dict[str, Any]
+) -> dict[str, Any]:
+    state["state"] = "finished"
+    state["finished_reason"] = "max_research_rounds_reached"
+    controller.write_state(state)
+    controller.write_current_md(state, controller.read_results())
+    print(f"LOOP_STOP finished: max research rounds ({MAX_RESEARCH_ROUNDS}) reached")
+    best = state.get("current_best", {})
+    notify_discord(
+        f"✅ {controller.family.name.upper()} FINISHED — max rounds",
+        f"**Rounds:** {MAX_RESEARCH_ROUNDS}\n"
+        f"**Best config:** `{best.get('config', '?')}`\n"
+        f"**Best PF:** {best.get('metric', '?')}",
+        webhook=controller.family.discord_webhook,
+        color=DISCORD_COLOR_SUCCESS,
+    )
+    return state
+
+
+def _handle_should_stop(
+    controller: "AutoresearchController", state: dict[str, Any], result: dict[str, Any]
+) -> dict[str, Any]:
+    state["state"] = "finished"
+    state["finished_reason"] = "research_recommends_stop"
+    state["research_stop_reasoning"] = result.get("reasoning", "")
+    controller.write_state(state)
+    controller.write_current_md(state, controller.read_results())
+    print("LOOP_STOP finished: research recommends stop")
+    best = state.get("current_best", {})
+    notify_discord(
+        f"✅ {controller.family.name.upper()} FINISHED — conductor says stop",
+        f"**Best config:** `{best.get('config', '?')}`\n"
+        f"**Best PF:** {best.get('metric', '?')}\n\n"
+        "Research conductor recommends stopping.",
+        webhook=controller.family.discord_webhook,
+        color=DISCORD_COLOR_SUCCESS,
+    )
+    return state
+
+
+def _handle_needs_code(
+    controller: "AutoresearchController", state: dict[str, Any], result: dict[str, Any]
+) -> dict[str, Any]:
+    thesis_id = result.get("generated_thesis_id", "unknown")
+    thesis = result.get("thesis", {})
+    print(f"LOOP_HALT thesis={thesis_id} requires code change")
+    state["state"] = "halted"
+    state["halted_reason"] = "requires_code_change"
+    state["halted_thesis_id"] = thesis_id
+    state["halted_thesis"] = thesis
+    controller.write_state(state)
+    controller.write_current_md(state, controller.read_results())
+    best = state.get("current_best", {})
+    notify_discord(
+        f"\U0001f6d1 {controller.family.name.upper()} HALTED — needs code change",
+        f"**Thesis:** `{thesis_id}`\n"
+        f"**Best PF:** {best.get('metric', '?')}\n\n"
+        f"**Hypothesis:** {thesis.get('hypothesis', '(no details captured)')}\n\n"
+        f"**Mechanism:** {thesis.get('mechanism', '')}\n\n"
+        f"**Config changes:** `{json.dumps(thesis.get('config_changes', {}))}`",
+        webhook=controller.family.discord_webhook,
+        color=DISCORD_COLOR_DISCARD,
+    )
+    return state
+
+
+def _handle_success(
+    controller: "AutoresearchController",
+    state: dict[str, Any],
+    result: dict[str, Any],
+    research_round: int,
+) -> dict[str, Any]:
+    gen_config = result["generated_config"]
+    thesis_id = result.get("thesis_id", "unknown")
+    trace("LOOP", f"research produced config: {gen_config} thesis={thesis_id}")
+    state["state"] = "running"
+    state["research_round"] = research_round
+    state["current_thesis"] = {"config": gen_config, "status": "ready_to_run"}
+    state["next_action"] = {
+        "type": "run_experiment",
+        "config": gen_config,
+        "benchmark_command": controller.family.benchmark_command(gen_config),
+        "requires_trade_analysis": True,
+        "source": "research_conductor",
+    }
+    state["blockers"] = []
+    controller.write_state(state)
+    print(f"HEARTBEAT research generated {thesis_id} -> {gen_config}")
+    return state
+
+
+def _handle_round_failure(
+    controller: "AutoresearchController",
+    state: dict[str, Any],
+    result: dict[str, Any],
+    research_round: int,
+) -> dict[str, Any]:
     reason = result.get("rejection_reason") or result.get("reasoning") or "no thesis generated"
     trace("LOOP", f"research round {research_round} produced no config: {reason}")
     print(f"HEARTBEAT research round {research_round} failed: {reason}")
@@ -601,3 +717,58 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
     ]
     controller.write_state(state)
     return state
+
+
+def _invoke_conductor_round(
+    controller: "AutoresearchController", research_round: int
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run one conductor pass. Returns (result, round_usage). Also writes
+    round-usage into state for downstream log_experiment_result use."""
+    from research_conductor import get_round_usage, reset_round_usage
+
+    print(f"HEARTBEAT research_blocked round={research_round}, invoking research subagent")
+    begin_hypothesis(f"research-round-{research_round}")
+    reset_round_usage()
+    result = controller.execute_research_one()
+    round_usage = get_round_usage()
+    trace("USAGE", f"round={research_round} {json.dumps(round_usage)}")
+    controller._accumulate_job_usage(round_usage)
+    state = controller.read_state()
+    state["_last_round_usage"] = round_usage
+    controller.write_state(state)
+    end_hypothesis(decision="research_complete")
+    return result, round_usage
+
+
+def run_research(controller: "AutoresearchController", state: dict[str, Any]) -> dict[str, Any]:
+    """Run one research round. Returns updated state dict."""
+    from trace_logger import begin_round
+
+    research_round = state.get("research_round", 0) + 1
+    begin_round(research_round)
+    if research_round > MAX_RESEARCH_ROUNDS:
+        return _handle_max_rounds_reached(controller, state)
+
+    result, round_usage = _invoke_conductor_round(controller, research_round)
+    state = controller.read_state()  # refresh after _invoke_conductor_round mutated state
+
+    thesis_meta = result.get("thesis", {})
+    controller.log_research_round(
+        round_number=research_round,
+        thesis_id=result.get("generated_thesis_id") or result.get("thesis_id") or "none",
+        outcome=_classify_round_outcome(result),
+        config_changes=thesis_meta.get("config_changes"),
+        hypothesis=thesis_meta.get("hypothesis", ""),
+        mechanism=thesis_meta.get("mechanism", ""),
+        mechanism_dimension=thesis_meta.get("mechanism_dimension", ""),
+        rejection_reason=result.get("rejection_reason") or result.get("reasoning", ""),
+        usage=round_usage,
+    )
+
+    if result.get("should_stop"):
+        return _handle_should_stop(controller, state, result)
+    if result.get("generated_config_needs_build"):
+        return _handle_needs_code(controller, state, result)
+    if result.get("generated_config"):
+        return _handle_success(controller, state, result, research_round)
+    return _handle_round_failure(controller, state, result, research_round)
