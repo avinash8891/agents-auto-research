@@ -337,43 +337,44 @@ def deduplicate_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # ── current.md rendering ──────────────────────────────────────────
 
 
-def render_current_md(state: dict[str, Any], results: list[ExperimentRecord]) -> str:
-    best = state.get("current_best", {})
-    latest = latest_result(results)
-    next_action = state.get("next_action", {})
-    pending = state.get("pending_configs", [])
-    blockers = state.get("blockers", [])
-    statuses = state.get("thesis_statuses", {})
-
-    latest_lines: list[str] = []
+def _format_latest_lines(latest: ExperimentRecord | None, best: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
     if latest is not None:
-        latest_lines.append(f"- Last completed thesis: `{latest.config}`")
-        latest_lines.append(f"- Last result: `{latest.status}` at `{latest.metric}`")
+        lines.append(f"- Last completed thesis: `{latest.config}`")
+        lines.append(f"- Last result: `{latest.status}` at `{latest.metric}`")
     if best:
-        latest_lines.append(f"- Current best: `{best.get('config')}` at `{best.get('metric')}`")
-    if not latest_lines:
-        latest_lines.append("- No experiments logged yet.")
+        lines.append(f"- Current best: `{best.get('config')}` at `{best.get('metric')}`")
+    if not lines:
+        lines.append("- No experiments logged yet.")
+    return lines
 
+
+def _format_next_candidates(pending: list[str], next_action: dict[str, Any]) -> list[str]:
     if pending:
-        next_candidates = [f"- `{config}`" for config in pending]
-    elif next_action.get("type") == "research":
-        next_candidates = ["- Research pass required before new thesis generation."]
-    elif next_action.get("type") == "generate_theses":
-        next_candidates = [
-            "- Research exists; controller synthesis required before queuing new variants."
-        ]
-    else:
-        next_candidates = ["- None"]
+        return [f"- `{config}`" for config in pending]
+    if next_action.get("type") == "research":
+        return ["- Research pass required before new thesis generation."]
+    if next_action.get("type") == "generate_theses":
+        return ["- Research exists; controller synthesis required before queuing new variants."]
+    return ["- None"]
 
-    thesis_status_lines = [
+
+def _format_thesis_status_lines(statuses: dict[str, dict[str, Any]]) -> list[str]:
+    return [
         f"- `{config}`: `{meta.get('status', 'unknown')}`" for config, meta in statuses.items()
     ] or ["- None"]
 
-    blocker_lines = [
+
+def _format_blocker_lines(blockers: list[dict[str, Any]]) -> list[str]:
+    return [
         f"- {blocker['kind']}: {blocker.get('detail', '')}".rstrip() for blocker in blockers
     ] or ["- None"]
-    chosen = next_action.get("config", next_action.get("type", "none"))
 
+
+def render_current_md(state: dict[str, Any], results: list[ExperimentRecord]) -> str:
+    best = state.get("current_best", {})
+    next_action = state.get("next_action", {})
+    chosen = next_action.get("config", next_action.get("type", "none"))
     lines = [
         "# ORB Autoresearch Current State",
         "",
@@ -382,19 +383,19 @@ def render_current_md(state: dict[str, Any], results: list[ExperimentRecord]) ->
         f"- median_expectancy: `{best.get('metric', 'unknown') if best else 'none'}`",
         "",
         "## Latest Insights",
-        *latest_lines,
+        *_format_latest_lines(latest_result(results), best),
         "",
         "## Next-Thesis Candidates",
-        *next_candidates,
+        *_format_next_candidates(state.get("pending_configs", []), next_action),
         "",
         "## Thesis Statuses",
-        *thesis_status_lines,
+        *_format_thesis_status_lines(state.get("thesis_statuses", {})),
         "",
         "## Chosen Next Thesis",
         f"- `{chosen}`",
         "",
         "## Blockers",
-        *blocker_lines,
+        *_format_blocker_lines(state.get("blockers", [])),
         "",
         "## Execution Control",
         "- Machine-readable controller: `autoresearch.next.json`",
