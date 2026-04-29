@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -25,10 +24,10 @@ from autoresearch_constants import (
     DISCORD_HTTP_TIMEOUT_SECONDS,
     MAX_RESEARCH_ROUNDS,
     MAX_VALIDATION_RETRIES,
-    MILLISECONDS_PER_SECOND,
 )
 from autoresearch_state import (
     ExperimentRecord,
+    iso8601_utc_now,
     read_entries,
     read_state,
     write_entries,
@@ -136,7 +135,7 @@ def log_research_round(
         "mechanism_dimension": mechanism_dimension,
         "rejection_reason": rejection_reason,
         "usage": usage,
-        "timestamp": int(time.time() * MILLISECONDS_PER_SECOND),
+        "timestamp": iso8601_utc_now(),
     }
     entries.append(entry)
     write_entries(jsonl_path, entries)

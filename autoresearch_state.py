@@ -9,12 +9,59 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 _log = logging.getLogger(__name__)
+
+
+# ── Time helpers (rule J: UTC in persistent state) ───────────────
+
+
+def iso8601_utc_now() -> str:
+    """Current time as an ISO-8601 string with explicit UTC offset.
+
+    Project rule J: stored timestamps must be UTC with timezone. Naive
+    datetimes (and naive epoch-ms ints) are banned from persistent state.
+    """
+    return datetime.now(timezone.utc).isoformat()
+
+
+def coerce_timestamp_to_iso8601_utc(value: Any) -> str | None:
+    """Normalize a stored timestamp to ISO-8601 UTC, or None if unparseable.
+
+    Accepts:
+      - ISO-8601 string with timezone (already correct shape — passthrough)
+      - int / float treated as epoch milliseconds (legacy format, pre-rule-J)
+    Returns the ISO-8601 string or None if neither shape applies.
+    """
+    if isinstance(value, str):
+        # Trust the string shape; we want the read path to be cheap.
+        return value
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc).isoformat()
+    return None
+
+
+def coerce_timestamp_to_epoch_ms(value: Any) -> int:
+    """Inverse coercion for ordering / comparison code paths that still
+    use integer math (e.g. baseline rerun, latest_result).
+
+    Accepts ISO-8601 strings or epoch-ms ints. Returns 0 if unparseable so
+    that downstream code that does `max(..., key=lambda r: r.timestamp)`
+    cannot crash on a bad row.
+    """
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(datetime.fromisoformat(value).timestamp() * 1000)
+        except ValueError:
+            return 0
+    return 0
 
 
 @dataclass
@@ -191,13 +238,17 @@ def read_results(entries: list[dict[str, Any]]) -> list[ExperimentRecord]:
         if entry.get("type") in ("config", "research_round"):
             continue
         asi = entry.get("asi") or {}
+        # Rule J back-compat: entries written before the ISO-8601 migration
+        # store timestamp as int epoch ms; new entries store ISO-8601 UTC.
+        # ExperimentRecord.timestamp keeps the int contract for downstream
+        # ordering/comparison code; coerce both formats here.
         results.append(
             ExperimentRecord(
                 config=asi.get("config", ""),
                 metric=entry["metric"],
                 status=entry["status"],
                 description=entry.get("description", ""),
-                timestamp=entry.get("timestamp", 0),
+                timestamp=coerce_timestamp_to_epoch_ms(entry.get("timestamp", 0)),
                 asi=asi,
             )
         )

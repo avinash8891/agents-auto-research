@@ -12,9 +12,12 @@ from autoresearch_state import (
     ExperimentRecord,
     RunContext,
     best_result,
+    coerce_timestamp_to_epoch_ms,
+    coerce_timestamp_to_iso8601_utc,
     deduplicate_entries,
     direction,
     is_better,
+    iso8601_utc_now,
     latest_result,
     promote_missing_known_results,
     read_entries,
@@ -271,6 +274,73 @@ def test_write_current_md_writes_file_to_disk(tmp_path: Path) -> None:
 
 
 # ── RunContext defaults ──────────────────────────────────────────
+
+
+def test_iso8601_utc_now_includes_timezone_marker() -> None:
+    """Rule J: stored timestamps must be UTC with timezone."""
+    now = iso8601_utc_now()
+    # Python's datetime.isoformat() emits +00:00 for UTC offset.
+    assert now.endswith("+00:00")
+    # Parseable back to datetime.
+    from datetime import datetime
+
+    parsed = datetime.fromisoformat(now)
+    assert parsed.tzinfo is not None
+
+
+def test_coerce_timestamp_to_iso8601_passes_string_through() -> None:
+    iso = "2026-04-29T12:00:00+00:00"
+    assert coerce_timestamp_to_iso8601_utc(iso) == iso
+
+
+def test_coerce_timestamp_to_iso8601_converts_epoch_ms() -> None:
+    # 2024-01-01 00:00:00 UTC == 1704067200000 ms.
+    iso = coerce_timestamp_to_iso8601_utc(1704067200000)
+    assert iso == "2024-01-01T00:00:00+00:00"
+
+
+def test_coerce_timestamp_to_iso8601_returns_none_for_unknown_type() -> None:
+    assert coerce_timestamp_to_iso8601_utc(None) is None
+    assert coerce_timestamp_to_iso8601_utc({"not": "a timestamp"}) is None
+
+
+def test_coerce_timestamp_to_epoch_ms_passes_int_through() -> None:
+    assert coerce_timestamp_to_epoch_ms(1700000000000) == 1700000000000
+
+
+def test_coerce_timestamp_to_epoch_ms_parses_iso_string() -> None:
+    assert coerce_timestamp_to_epoch_ms("2024-01-01T00:00:00+00:00") == 1704067200000
+
+
+def test_coerce_timestamp_to_epoch_ms_returns_zero_for_unparseable() -> None:
+    assert coerce_timestamp_to_epoch_ms("not an iso string") == 0
+    assert coerce_timestamp_to_epoch_ms(None) == 0
+
+
+def test_read_results_handles_both_legacy_int_and_iso_timestamps() -> None:
+    """Back-compat: pre-rule-J files have int epoch ms; new files have ISO
+    strings. read_results must order them correctly via the int contract
+    on ExperimentRecord.timestamp."""
+    legacy_entry = {
+        "run": 1,
+        "metric": 1.0,
+        "status": "keep",
+        "timestamp": 1700000000000,  # Nov 14 2023
+        "asi": {"config": "configs/legacy.yaml"},
+    }
+    new_entry = {
+        "run": 2,
+        "metric": 2.0,
+        "status": "keep",
+        "timestamp": "2024-01-01T00:00:00+00:00",  # 1704067200000 ms
+        "asi": {"config": "configs/new.yaml"},
+    }
+    results = read_results([legacy_entry, new_entry])
+    assert len(results) == 2
+    assert results[0].timestamp == 1700000000000
+    assert results[1].timestamp == 1704067200000
+    # Ordering by timestamp must work across the two formats.
+    assert latest_result(results).config == "configs/new.yaml"
 
 
 def test_run_context_defaults_are_empty_and_isolate_per_instance() -> None:
