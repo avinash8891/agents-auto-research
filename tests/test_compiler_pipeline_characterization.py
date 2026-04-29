@@ -118,12 +118,12 @@ def test_build_missing_primitives_returns_error_when_no_cli(
         json.dumps({"normalized_contract": [], "missing_primitives": ["x"]}) + "\n"
     )
 
-    monkeypatch.setattr("compiler_pipeline.shutil.which", lambda _: None)
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: None)
 
     def _fail_subprocess_run(*args, **kwargs):
         raise AssertionError("subprocess.run should not be called when no CLI is available")
 
-    monkeypatch.setattr("compiler_pipeline.subprocess.run", _fail_subprocess_run)
+    monkeypatch.setattr("compiler_builder.subprocess.run", _fail_subprocess_run)
 
     result = build_missing_primitives(root, thesis_id)
 
