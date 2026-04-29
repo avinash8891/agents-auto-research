@@ -32,6 +32,7 @@ from autoresearch_experiment import run_experiment as _experiment_run_experiment
 from autoresearch_experiment import (
     sanitize_duplicate_entries as _experiment_sanitize_duplicate_entries,
 )
+from autoresearch_logging import get_logger
 from autoresearch_planning import (
     COMBINATION_RULES,
     DEFAULT_CONFIG_ORDER,
@@ -81,6 +82,8 @@ from autoresearch_state import write_state as _state_write_state
 from experiment_db import BaselineTracker, ExperimentDB
 from strategy_family import StrategyFamily, load_family
 from trace_logger import trace
+
+log = get_logger(__name__)
 
 ROOT = Path(__file__).resolve().parent
 STATE_PATH = ROOT / "autoresearch.next.json"
@@ -431,6 +434,58 @@ class AutoresearchController:
             self.read_results(),
         )
 
+    def _try_resume_halted_thesis(self) -> dict[str, Any] | None:
+        """If a halted thesis's missing config keys now exist in base yaml,
+        materialize the runtime config and return the resumed-running state.
+        Returns None if no halted thesis is present or its keys are still
+        missing.
+        """
+        state = self.read_state()
+        halted_id = state.get("halted_thesis_id")
+        if not halted_id or state.get("halted_reason") != "requires_code_change":
+            return None
+        raw_thesis = state.get("halted_thesis", {})
+        config_changes = raw_thesis.get("config_changes", {})
+        if not config_changes:
+            return None
+        import yaml as _yaml
+
+        base = _yaml.safe_load(
+            (self.root / "configs" / self.family.base_config_filename).read_text()
+        )
+        if set(config_changes) - set(base):
+            return None
+        runtime = {**base, **config_changes}
+        exp_dir = self.root / "experiments" / halted_id
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        config_path = f"experiments/{halted_id}/runtime_config.json"
+        (self.root / config_path).write_text(json.dumps(runtime, indent=2) + "\n")
+        state["state"] = "running"
+        state["current_thesis"] = {"config": config_path, "status": "ready_to_run"}
+        state["next_action"] = {
+            "type": "run_experiment",
+            "config": config_path,
+            "benchmark_command": self.family.benchmark_command(config_path),
+            "requires_trade_analysis": True,
+            "source": "resumed_halted_thesis",
+        }
+        state["blockers"] = []
+        state.pop("halted_thesis_id", None)
+        state.pop("halted_reason", None)
+        state.pop("halted_thesis", None)
+        self.write_state(state)
+        trace("LOOP", f"resumed halted thesis={halted_id}")
+        return state
+
+    def _apply_forced_baseline_rerun(self, baseline_action: dict[str, Any]) -> dict[str, Any]:
+        """Persist a forced-baseline-rerun next_action and return the updated state."""
+        state = self.read_state()
+        state["state"] = "running"
+        state["next_action"] = baseline_action
+        state["blockers"] = []
+        self.write_state(state)
+        return state
+
     def _resolve_next_action(self) -> dict[str, Any]:
         """Decide what to do next. Returns a state dict with state/next_action/blockers.
 
@@ -438,52 +493,14 @@ class AutoresearchController:
         0. Resume halted thesis (code was implemented, runtime_config now exists)
         1. Forced baseline rerun (code changed or periodic)
         2. reconcile_state() discovery (pending configs, thesis queue, combos, ideas)
-        3. Blocked for research
         """
-        # Resume a halted thesis if the missing config keys now exist in base yaml
-        state = self.read_state()
-        halted_id = state.get("halted_thesis_id")
-        if halted_id and state.get("halted_reason") == "requires_code_change":
-            raw_thesis = state.get("halted_thesis", {})
-            config_changes = raw_thesis.get("config_changes", {})
-            if config_changes:
-                import yaml as _yaml
-
-                base = _yaml.safe_load(
-                    (self.root / "configs" / self.family.base_config_filename).read_text()
-                )
-                missing = set(config_changes) - set(base)
-                if not missing:
-                    runtime = {**base, **config_changes}
-                    exp_dir = self.root / "experiments" / halted_id
-                    exp_dir.mkdir(parents=True, exist_ok=True)
-                    config_path = f"experiments/{halted_id}/runtime_config.json"
-                    (self.root / config_path).write_text(json.dumps(runtime, indent=2) + "\n")
-                    state["state"] = "running"
-                    state["current_thesis"] = {"config": config_path, "status": "ready_to_run"}
-                    state["next_action"] = {
-                        "type": "run_experiment",
-                        "config": config_path,
-                        "benchmark_command": self.family.benchmark_command(config_path),
-                        "requires_trade_analysis": True,
-                        "source": "resumed_halted_thesis",
-                    }
-                    state["blockers"] = []
-                    state.pop("halted_thesis_id", None)
-                    state.pop("halted_reason", None)
-                    state.pop("halted_thesis", None)
-                    self.write_state(state)
-                    trace("LOOP", f"resumed halted thesis={halted_id}")
-                    return state
+        resumed = self._try_resume_halted_thesis()
+        if resumed is not None:
+            return resumed
 
         baseline_action = self._check_baseline_rerun()
         if baseline_action:
-            state = self.read_state()
-            state["state"] = "running"
-            state["next_action"] = baseline_action
-            state["blockers"] = []
-            self.write_state(state)
-            return state
+            return self._apply_forced_baseline_rerun(baseline_action)
 
         return self.reconcile_state()
 
@@ -517,7 +534,7 @@ class AutoresearchController:
 
         # Terminal states
         if state.get("state") != "running":
-            print(f"LOOP_STOP state={state.get('state')}")
+            log.info(f"LOOP_STOP state={state.get('state')}")
             return 0
 
         # We have a config to run
