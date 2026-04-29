@@ -16,6 +16,17 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from autoresearch_constants import (
+    CONFIG_HASH_LENGTH,
+    DISCORD_BODY_MAX_CHARS,
+    DISCORD_COLOR_DISCARD,
+    DISCORD_COLOR_ERROR,
+    DISCORD_COLOR_SUCCESS,
+    DISCORD_HTTP_TIMEOUT_SECONDS,
+    MAX_RESEARCH_ROUNDS,
+    MAX_VALIDATION_RETRIES,
+    MILLISECONDS_PER_SECOND,
+)
 from autoresearch_state import (
     ExperimentRecord,
     read_entries,
@@ -36,14 +47,12 @@ if TYPE_CHECKING:
     from autoresearch_loop import AutoresearchController
 
 
-MAX_RESEARCH_ROUNDS = 100
-MAX_VALIDATION_RETRIES = 3
-
-
 # ── Discord notification ──────────────────────────────────────────
 
 
-def notify_discord(title: str, body: str, *, webhook: str = "", color: int = 0xFF0000) -> None:
+def notify_discord(
+    title: str, body: str, *, webhook: str = "", color: int = DISCORD_COLOR_ERROR
+) -> None:
     """Send a Discord embed notification. Fire-and-forget, never raises."""
     if not webhook:
         return
@@ -55,7 +64,7 @@ def notify_discord(title: str, body: str, *, webhook: str = "", color: int = 0xF
                 "embeds": [
                     {
                         "title": title,
-                        "description": body[:4000],
+                        "description": body[:DISCORD_BODY_MAX_CHARS],
                         "color": color,
                     }
                 ]
@@ -67,7 +76,7 @@ def notify_discord(title: str, body: str, *, webhook: str = "", color: int = 0xF
             headers={"Content-Type": "application/json", "User-Agent": "AutoresearchBot/1.0"},
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=10)
+        urllib.request.urlopen(req, timeout=DISCORD_HTTP_TIMEOUT_SECONDS)
         trace("DISCORD", f"OK title='{title[:60]}'")
     except Exception as exc:
         trace("DISCORD", f"FAILED title='{title[:60]}' error={exc}")
@@ -127,7 +136,7 @@ def log_research_round(
         "mechanism_dimension": mechanism_dimension,
         "rejection_reason": rejection_reason,
         "usage": usage,
-        "timestamp": int(time.time() * 1000),
+        "timestamp": int(time.time() * MILLISECONDS_PER_SECOND),
     }
     entries.append(entry)
     write_entries(jsonl_path, entries)
@@ -208,7 +217,9 @@ def queue_variants(
             continue  # skip the proposed value — it's already the primary
 
         runtime = {**baseline_config, **variant}
-        config_hash = hashlib.sha256(json.dumps(runtime, sort_keys=True).encode()).hexdigest()[:12]
+        config_hash = hashlib.sha256(json.dumps(runtime, sort_keys=True).encode()).hexdigest()[
+            :CONFIG_HASH_LENGTH
+        ]
         variant_id = f"{thesis.thesis_id}_{label}"
         exp_dir = root / "experiments" / config_hash
         exp_dir.mkdir(parents=True, exist_ok=True)
@@ -480,7 +491,7 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
             f"✅ {controller.family.name.upper()} FINISHED u2014 max rounds",
             f"**Rounds:** {MAX_RESEARCH_ROUNDS}\n**Best config:** `{best.get('config', '?')}`\n**Best PF:** {best.get('metric', '?')}",
             webhook=controller.family.discord_webhook,
-            color=0x00CC00,
+            color=DISCORD_COLOR_SUCCESS,
         )
         return state
 
@@ -534,7 +545,7 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
             f"✅ {controller.family.name.upper()} FINISHED — conductor says stop",
             f"**Best config:** `{best.get('config', '?')}`\n**Best PF:** {best.get('metric', '?')}\n\nResearch conductor recommends stopping.",
             webhook=controller.family.discord_webhook,
-            color=0x00CC00,
+            color=DISCORD_COLOR_SUCCESS,
         )
         return state
 
@@ -558,7 +569,7 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
             f"**Mechanism:** {mech}\n\n"
             f"**Config changes:** `{json.dumps(thesis.get('config_changes', {}))}`",
             webhook=controller.family.discord_webhook,
-            color=0xFF4500,
+            color=DISCORD_COLOR_DISCARD,
         )
         return state
 

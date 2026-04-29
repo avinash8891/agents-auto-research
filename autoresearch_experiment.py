@@ -20,6 +20,17 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from autoresearch_constants import (
+    COMMAND_NOTIFICATION_TRUNCATION,
+    COMMAND_PREVIEW_TRUNCATION,
+    COMMAND_TIMEOUT_SECONDS,
+    COMMAND_TIMEOUT_TRUNCATION,
+    CONFIG_HASH_LENGTH,
+    DISCORD_COLOR_DISCARD,
+    DISCORD_COLOR_SUCCESS,
+    DISCORD_COLOR_WARNING,
+    MILLISECONDS_PER_SECOND,
+)
 from autoresearch_state import (
     read_entries,
     read_state,
@@ -46,16 +57,13 @@ if TYPE_CHECKING:
     from autoresearch_loop import AutoresearchController
 
 
-COMMAND_TIMEOUT_SECONDS = 1800
-
-
 # ── Shell out ─────────────────────────────────────────────────────
 
 
 def run_command(root: Path, command: str) -> tuple[int, str]:
     try:
         trace("COMMAND", f"START: {command}")
-        print(f"RUN_COMMAND start: {command[:80]}", flush=True)
+        print(f"RUN_COMMAND start: {command[:COMMAND_PREVIEW_TRUNCATION]}", flush=True)
         sys.stdout.flush()
         result = subprocess.run(
             command,
@@ -73,8 +81,14 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         sys.stdout.flush()
         return int(result.returncode), stdout + stderr
     except subprocess.TimeoutExpired:
-        trace("COMMAND", f"TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): {command[:100]}")
-        print(f"COMMAND TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): {command[:100]}", flush=True)
+        trace(
+            "COMMAND",
+            f"TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): {command[:COMMAND_TIMEOUT_TRUNCATION]}",
+        )
+        print(
+            f"COMMAND TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): {command[:COMMAND_TIMEOUT_TRUNCATION]}",
+            flush=True,
+        )
         return 1, "TIMEOUT"
     except Exception as exc:
         trace("COMMAND", f"ERROR: {exc}")
@@ -344,7 +358,7 @@ def log_experiment_result(
         "metrics": details,
         "status": decision,
         "description": f"strict-native loop: {Path(config).stem}",
-        "timestamp": int(time.time() * 1000),
+        "timestamp": int(time.time() * MILLISECONDS_PER_SECOND),
         "segment": 0,
         "confidence": None,
         "asi": asi,
@@ -376,7 +390,7 @@ def log_experiment_result(
             verdict_status=verdict.get("status", "none"),
             verdict_summary=verdict.get("summary", ""),
             parent_experiment_id=controller.ctx.parent_experiment_id,
-            timestamp=int(time.time() * 1000),
+            timestamp=int(time.time() * MILLISECONDS_PER_SECOND),
             family=controller.family.name,
             hypothesis=contract.hypothesis if contract else "",
             mechanism=contract.mechanism if contract else "",
@@ -404,9 +418,11 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             _cfg = json.loads(config_path_full.read_text())
         if isinstance(_cfg, dict) and "runtime_config" in _cfg:
             _cfg = _cfg["runtime_config"]
-        config_hash = hashlib.sha256(json.dumps(_cfg, sort_keys=True).encode()).hexdigest()[:12]
+        config_hash = hashlib.sha256(json.dumps(_cfg, sort_keys=True).encode()).hexdigest()[
+            :CONFIG_HASH_LENGTH
+        ]
     else:
-        config_hash = hashlib.sha256(config.encode()).hexdigest()[:12]
+        config_hash = hashlib.sha256(config.encode()).hexdigest()[:CONFIG_HASH_LENGTH]
 
     state = controller.read_state()
     job = state.get("job", 0)
@@ -436,9 +452,9 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         print(f"LOOP_STOP state=blocked exit_code={code}")
         notify_discord(
             f"⚠️ {controller.family.name.upper()} BLOCKED — backtest failed",
-            f"**Command:** `{command[:200]}`\n**Exit code:** {code}",
+            f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\n**Exit code:** {code}",
             webhook=controller.family.discord_webhook,
-            color=0xFFA500,
+            color=DISCORD_COLOR_WARNING,
         )
         return code
 
@@ -451,9 +467,9 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         print("LOOP_STOP state=blocked metric_parse_failed")
         notify_discord(
             f"⚠️ {controller.family.name.upper()} BLOCKED — metric parse failed",
-            f"**Command:** `{command[:200]}`\nCould not extract metric from output.",
+            f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\nCould not extract metric from output.",
             webhook=controller.family.discord_webhook,
-            color=0xFFA500,
+            color=DISCORD_COLOR_WARNING,
         )
         return 1
 
@@ -542,7 +558,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             data_hash=build_data_hash(runtime_cfg),
             config_hash=build_config_hash(runtime_cfg),
             metrics=details,
-            timestamp=int(time.time() * 1000),
+            timestamp=int(time.time() * MILLISECONDS_PER_SECOND),
             round_number=len(controller.baseline_tracker.all_checkpoints()),
         )
         drift = controller.baseline_tracker.check_drift(new_checkpoint)
@@ -577,7 +593,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         f"**PF:** {metric}  |  **Decision:** {decision}  |  **Verdict:** {verdict_str}\n"
         f"**Best so far:** `{Path(best.get('config', '?')).stem}` PF={best.get('metric', '?')}",
         webhook=controller.family.discord_webhook,
-        color=0x00CC00 if decision == "keep" else 0xFF4500,
+        color=DISCORD_COLOR_SUCCESS if decision == "keep" else DISCORD_COLOR_DISCARD,
     )
     print(
         f"HEARTBEAT complete thesis={config} result={decision} metric={metric} "

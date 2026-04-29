@@ -19,6 +19,7 @@ from autoresearch_artifacts import (
     read_run_queue,
     read_thesis_artifacts,
 )
+from autoresearch_constants import BASELINE_RERUN_INTERVAL
 from autoresearch_state import ExperimentRecord
 from compiler_pipeline import compile_proposal_artifact
 from strategy_family import StrategyFamily
@@ -479,8 +480,6 @@ def plan_next_action(
 
 
 # ── Forced baseline rerun ────────────────────────────────────────
-
-BASELINE_RERUN_INTERVAL = 5
 
 
 def check_baseline_rerun(
