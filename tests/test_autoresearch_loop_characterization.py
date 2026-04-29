@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import autoresearch_loop as loop_mod
+import autoresearch_research as research_mod
 from autoresearch_loop import AutoresearchController
 from strategy_family import load_family
 
@@ -32,6 +33,7 @@ def controller(tmp_path, monkeypatch):
     # Replace the discord webhook so notifications are no-ops without
     # patching the family object itself.
     monkeypatch.setattr(loop_mod, "_notify_discord", lambda *a, **k: None)
+    monkeypatch.setattr(research_mod, "notify_discord", lambda *a, **k: None)
 
     # Mirror ema_base.yaml from the repo into the temp root so derive_trade_analysis
     # and _run_experiment can load it.
