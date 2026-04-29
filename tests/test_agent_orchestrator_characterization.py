@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import agent_definitions
 import agent_infra
 import agent_memory
 import agent_orchestrator as ao
@@ -153,7 +154,7 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
     monkeypatch.setattr(agent_memory, "_mempalace_search", lambda *a, **k: "prior theses")
     monkeypatch.setattr(agent_memory, "_mempalace_write", lambda *a, **k: True)
     monkeypatch.setattr(agent_memory, "_mempalace_diary", lambda *a, **k: True)
-    monkeypatch.setattr(ao, "MAX_RETRIES", 2)
+    monkeypatch.setattr(agent_definitions, "MAX_RETRIES", 2)
     monkeypatch.setattr(agent_infra, "SDK_TIMEOUT_SECONDS", 300)
 
     class FakeSpec:
@@ -169,7 +170,7 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
     )
 
     monkeypatch.setattr(
-        ao,
+        agent_definitions,
         "_research_agent",
         lambda **kwargs: SimpleNamespace(prompt="system", model="claude", maxTurns=15),
     )
