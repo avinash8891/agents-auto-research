@@ -77,7 +77,6 @@ from experiment_db import ExperimentDB, BaselineTracker
 from strategy_family import StrategyFamily, load_family
 
 ROOT = Path(__file__).resolve().parent
-MAX_RESEARCH_ROUNDS = 100  # safeguard: max single-thesis research iterations
 STATE_PATH = ROOT / "autoresearch.next.json"
 JSONL_PATH = ROOT / "autoresearch.jsonl"
 CURRENT_MD_PATH = ROOT / "autoresearch.current.md"
@@ -95,9 +94,26 @@ def default_controller_paths(root: Path, family: StrategyFamily) -> tuple[Path, 
     )
 
 
-# Re-exports for any external callers that historically imported these names
-# from autoresearch_loop. Keep this near the top so they remain discoverable.
-__all__ = ("DEFAULT_CONFIG_ORDER", "THESIS_FAMILY", "COMBINATION_RULES")
+# Public API and historical re-exports. `_notify_discord` is intentionally
+# included as a back-compat alias of autoresearch_research.notify_discord so
+# tests that monkeypatch `loop_mod._notify_discord` continue to work and
+# linters do not silently remove the import.
+__all__ = (
+    "AutoresearchController",
+    "ExperimentRecord",
+    "RunContext",
+    "default_controller_paths",
+    "main",
+    "ROOT",
+    "STATE_PATH",
+    "JSONL_PATH",
+    "CURRENT_MD_PATH",
+    "IDEAS_MD_PATH",
+    "DEFAULT_CONFIG_ORDER",
+    "THESIS_FAMILY",
+    "COMBINATION_RULES",
+    "_notify_discord",
+)
 
 
 class AutoresearchController:
