@@ -290,25 +290,24 @@ def sanitize_duplicate_entries(jsonl_path: Path, config: str) -> None:
     write_entries(jsonl_path, filtered)
 
 
-def log_experiment_result(
-    controller: "AutoresearchController",
-    *,
-    config: str,
-    metric: float,
-    decision: str,
-    output: str,
-    analysis: dict[str, Any],
-) -> None:
-    sanitize_duplicate_entries(controller.jsonl_path, config)
+def _resolve_artifact_dir(controller: "AutoresearchController", config: str) -> Path:
+    """Pick the run-output directory: the one set in run_experiment if
+    present, otherwise compute a fresh per-job dir. Reset ctx so a
+    subsequent log call recomputes."""
     artifact_dir = controller.ctx.current_artifact_dir or artifact_dir_for(
         controller.state_path,
         controller.runs_dir,
         config,
     )
-    controller.ctx.current_artifact_dir = None  # reset for next hypothesis
-    (artifact_dir / "benchmark_output.txt").write_text(output)
-    (artifact_dir / "analysis.json").write_text(json.dumps(analysis, indent=2) + "\n")
+    controller.ctx.current_artifact_dir = None
+    return artifact_dir
 
+
+def _read_thesis_metadata(
+    controller: "AutoresearchController", config: str
+) -> tuple[str, dict[str, Any]]:
+    """Look for an experiments/<id>/thesis.json sidecar and return the
+    (thesis_id, config_changes) override pair. Falls back to (config-stem, {})."""
     contract = controller.ctx.current_contract
     thesis_id = contract.thesis_id if contract else Path(config).stem
     config_changes: dict[str, Any] = {}
@@ -323,9 +322,20 @@ def log_experiment_result(
             tj = json.loads(thesis_json_path.read_text())
             thesis_id = tj.get("thesis_id", thesis_id)
             config_changes = tj.get("config_changes", {})
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             pass
+    return thesis_id, config_changes
 
+
+def _build_asi_dict(
+    controller: "AutoresearchController",
+    *,
+    config: str,
+    artifact_dir: Path,
+    analysis: dict[str, Any],
+    thesis_id: str,
+    config_changes: dict[str, Any],
+) -> dict[str, Any]:
     asi = {
         "job": controller.read_state().get("job"),
         "run_id": get_run_id(),
@@ -345,11 +355,62 @@ def log_experiment_result(
     rerun_commit = controller.read_state().get("next_action", {}).get("baseline_rerun_for_commit")
     if rerun_commit:
         asi["baseline_rerun_for_commit"] = rerun_commit
-    details = parse_benchmark_details(output)
-    entries = controller.read_entries()
-    next_run = 1 + len([entry for entry in entries if entry.get("type") != "config"])
-    state = controller.read_state()
-    entry = {
+    return asi
+
+
+def _build_db_record(
+    controller: "AutoresearchController",
+    *,
+    config: str,
+    decision: str,
+    details: dict[str, Any],
+    analysis: dict[str, Any],
+    fallback_experiment_id: str,
+    state: dict[str, Any],
+) -> ExperimentResult:
+    contract = controller.ctx.current_contract
+    verdict = analysis.get("trade_analysis", {}).get("verdict", {})
+    runtime_config = controller.ctx.latest_config_contents or {}
+    return ExperimentResult(
+        experiment_id=contract.experiment_id if contract else fallback_experiment_id,
+        thesis_id=contract.thesis_id if contract else Path(config).stem,
+        config_path=config,
+        runtime_config=runtime_config,
+        code_commit=controller.current_commit(),
+        data_hash=build_data_hash(runtime_config),
+        train_metrics={},
+        validation_metrics=details,
+        trade_count=details.get("trade_count", 0),
+        trades_file=details.get("trades_file", ""),
+        strategy_events_file=details.get("strategy_events_file", ""),
+        diagnostics_file=details.get("diagnostics_file", ""),
+        strategy_diagnostics=details.get("strategy_diagnostics", {}),
+        accepted=decision == "keep",
+        rejection_reason=verdict.get("summary", "") if decision != "keep" else "",
+        verdict_status=verdict.get("status", "none"),
+        verdict_summary=verdict.get("summary", ""),
+        parent_experiment_id=controller.ctx.parent_experiment_id,
+        timestamp=int(time.time() * MILLISECONDS_PER_SECOND),
+        family=controller.family.name,
+        hypothesis=contract.hypothesis if contract else "",
+        mechanism=contract.mechanism if contract else "",
+        job=state.get("job", 0),
+        usage=state.get("_last_round_usage", {}),
+    )
+
+
+def _build_jsonl_entry(
+    controller: "AutoresearchController",
+    *,
+    config: str,
+    metric: float,
+    decision: str,
+    details: dict[str, Any],
+    asi: dict[str, Any],
+    next_run: int,
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    return {
         "run": next_run,
         "job": state.get("job"),
         "run_id": get_run_id(),
@@ -364,39 +425,61 @@ def log_experiment_result(
         "confidence": None,
         "asi": asi,
     }
+
+
+def _write_run_artifacts(artifact_dir: Path, output: str, analysis: dict[str, Any]) -> None:
+    (artifact_dir / "benchmark_output.txt").write_text(output)
+    (artifact_dir / "analysis.json").write_text(json.dumps(analysis, indent=2) + "\n")
+
+
+def log_experiment_result(
+    controller: "AutoresearchController",
+    *,
+    config: str,
+    metric: float,
+    decision: str,
+    output: str,
+    analysis: dict[str, Any],
+) -> None:
+    sanitize_duplicate_entries(controller.jsonl_path, config)
+    artifact_dir = _resolve_artifact_dir(controller, config)
+    _write_run_artifacts(artifact_dir, output, analysis)
+
+    thesis_id, config_changes = _read_thesis_metadata(controller, config)
+    asi = _build_asi_dict(
+        controller,
+        config=config,
+        artifact_dir=artifact_dir,
+        analysis=analysis,
+        thesis_id=thesis_id,
+        config_changes=config_changes,
+    )
+    details = parse_benchmark_details(output)
+    entries = controller.read_entries()
+    next_run = 1 + len([entry for entry in entries if entry.get("type") != "config"])
+    state = controller.read_state()
+    entry = _build_jsonl_entry(
+        controller,
+        config=config,
+        metric=metric,
+        decision=decision,
+        details=details,
+        asi=asi,
+        next_run=next_run,
+        state=state,
+    )
     entries.append(entry)
     controller.write_entries(entries)
     trace_benchmark(config, metric, decision, details)
-
-    contract = controller.ctx.current_contract
-    verdict = analysis.get("trade_analysis", {}).get("verdict", {})
-    runtime_config = controller.ctx.latest_config_contents or {}
     controller.experiment_db.add(
-        ExperimentResult(
-            experiment_id=contract.experiment_id if contract else entry["run_id"],
-            thesis_id=contract.thesis_id if contract else Path(config).stem,
-            config_path=config,
-            runtime_config=runtime_config,
-            code_commit=controller.current_commit(),
-            data_hash=build_data_hash(runtime_config),
-            train_metrics={},
-            validation_metrics=details,
-            trade_count=details.get("trade_count", 0),
-            trades_file=details.get("trades_file", ""),
-            strategy_events_file=details.get("strategy_events_file", ""),
-            diagnostics_file=details.get("diagnostics_file", ""),
-            strategy_diagnostics=details.get("strategy_diagnostics", {}),
-            accepted=decision == "keep",
-            rejection_reason=verdict.get("summary", "") if decision != "keep" else "",
-            verdict_status=verdict.get("status", "none"),
-            verdict_summary=verdict.get("summary", ""),
-            parent_experiment_id=controller.ctx.parent_experiment_id,
-            timestamp=int(time.time() * MILLISECONDS_PER_SECOND),
-            family=controller.family.name,
-            hypothesis=contract.hypothesis if contract else "",
-            mechanism=contract.mechanism if contract else "",
-            job=state.get("job", 0),
-            usage=state.get("_last_round_usage", {}),
+        _build_db_record(
+            controller,
+            config=config,
+            decision=decision,
+            details=details,
+            analysis=analysis,
+            fallback_experiment_id=entry["run_id"],
+            state=state,
         )
     )
 
