@@ -59,6 +59,7 @@ from autoresearch_planning import (
 )
 from autoresearch_state import (
     ExperimentRecord,
+    RunContext,
     deduplicate_entries as _state_deduplicate_entries,
     direction as _state_direction,
     is_better as _state_is_better,
@@ -130,6 +131,8 @@ class AutoresearchController:
         self.run_queue_dir = root / self.family.run_queue_dirname
         self.experiment_db = ExperimentDB(root / f"{self.family.name}_experiments_db.json")
         self.baseline_tracker = BaselineTracker(root / f"{self.family.name}_baseline_checkpoints.json")
+        # Transient cross-method state (formerly scattered self._* fields).
+        self.ctx = RunContext()
 
     def read_state(self) -> dict[str, Any]:
         return _state_read_state(self.state_path)

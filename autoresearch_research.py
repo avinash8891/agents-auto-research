@@ -249,9 +249,9 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     prior_theses = load_prior_theses(controller.root)
     trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
 
-    trades_file = getattr(controller, "_latest_trades_file", "") or ""
-    strategy_events_file = getattr(controller, "_latest_strategy_events_file", "") or ""
-    diagnostics_file = getattr(controller, "_latest_diagnostics_file", "") or ""
+    trades_file = controller.ctx.latest_trades_file
+    strategy_events_file = controller.ctx.latest_strategy_events_file
+    diagnostics_file = controller.ctx.latest_diagnostics_file
     latest = controller.latest_result(results)
     if not trades_file and latest:
         artifact_dir = controller.root / latest.asi.get("artifact_dir", "")
@@ -366,9 +366,9 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
 
         if contract.status == "ready_to_run":
             config_path = f"experiments/{contract.experiment_id}/runtime_config.json"
-            controller._current_contract = contract
+            controller.ctx.current_contract = contract
             latest_db = controller.experiment_db.latest(1)
-            controller._parent_experiment_id = latest_db[0].experiment_id if latest_db else ""
+            controller.ctx.parent_experiment_id = latest_db[0].experiment_id if latest_db else ""
 
             baseline_config = load_baseline_config(controller.root, controller.family)
             if baseline_config:

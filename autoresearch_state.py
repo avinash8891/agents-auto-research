@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,31 @@ class ExperimentRecord:
     description: str
     timestamp: int
     asi: dict[str, Any]
+
+
+@dataclass
+class RunContext:
+    """Transient cross-method state carried by the controller.
+
+    Replaces the legacy `self._current_*` / `self._latest_*` fields. Fields
+    fall into three lifecycles:
+
+    - Per-experiment (set in run_experiment, consumed by log_experiment_result,
+      then cleared): current_artifact_dir.
+    - Per-research-round (set in execute_research_sdk, consumed by run_experiment
+      and log_experiment_result, then cleared): current_contract,
+      parent_experiment_id.
+    - Cross-iteration (overwritten by each derive_trade_analysis call, read by
+      the next research round): latest_trades_file, latest_strategy_events_file,
+      latest_diagnostics_file, latest_config_contents.
+    """
+    current_contract: Any = None
+    parent_experiment_id: str = ""
+    current_artifact_dir: Path | None = None
+    latest_trades_file: str = ""
+    latest_strategy_events_file: str = ""
+    latest_diagnostics_file: str = ""
+    latest_config_contents: dict[str, Any] = field(default_factory=dict)
 
 
 # ── State JSON ─────────────────────────────────────────────────────

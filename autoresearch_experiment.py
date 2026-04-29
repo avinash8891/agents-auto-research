@@ -201,10 +201,10 @@ def derive_trade_analysis(
         except Exception:
             pass
 
-    controller._latest_trades_file = details.get("trades_file", "")
-    controller._latest_strategy_events_file = details.get("strategy_events_file", "")
-    controller._latest_diagnostics_file = details.get("diagnostics_file", "")
-    controller._latest_config_contents = config_contents
+    controller.ctx.latest_trades_file = details.get("trades_file", "")
+    controller.ctx.latest_strategy_events_file = details.get("strategy_events_file", "")
+    controller.ctx.latest_diagnostics_file = details.get("diagnostics_file", "")
+    controller.ctx.latest_config_contents = config_contents
 
     trade_analysis: dict[str, Any] = {
         "what_changed_vs_baseline": f"{Path(config).stem} evaluated independently.",
@@ -255,14 +255,14 @@ def log_experiment_result(
     analysis: dict[str, Any],
 ) -> None:
     sanitize_duplicate_entries(controller.jsonl_path, config)
-    artifact_dir = getattr(controller, "_current_artifact_dir", None) or artifact_dir_for(
+    artifact_dir = controller.ctx.current_artifact_dir or artifact_dir_for(
         controller.state_path, controller.runs_dir, config,
     )
-    controller._current_artifact_dir = None  # reset for next hypothesis
+    controller.ctx.current_artifact_dir = None  # reset for next hypothesis
     (artifact_dir / "benchmark_output.txt").write_text(output)
     (artifact_dir / "analysis.json").write_text(json.dumps(analysis, indent=2) + "\n")
 
-    contract = getattr(controller, "_current_contract", None)
+    contract = controller.ctx.current_contract
     thesis_id = contract.thesis_id if contract else Path(config).stem
     config_changes: dict[str, Any] = {}
     thesis_json_path = controller.root / "experiments" / (
@@ -318,9 +318,9 @@ def log_experiment_result(
     controller.write_entries(entries)
     trace_benchmark(config, metric, decision, details)
 
-    contract = getattr(controller, "_current_contract", None)
+    contract = controller.ctx.current_contract
     verdict = analysis.get("trade_analysis", {}).get("verdict", {})
-    runtime_config = getattr(controller, "_latest_config_contents", {}) or {}
+    runtime_config = controller.ctx.latest_config_contents or {}
     controller.experiment_db.add(ExperimentResult(
         experiment_id=contract.experiment_id if contract else entry["run_id"],
         thesis_id=contract.thesis_id if contract else Path(config).stem,
@@ -339,7 +339,7 @@ def log_experiment_result(
         rejection_reason=verdict.get("summary", "") if decision != "keep" else "",
         verdict_status=verdict.get("status", "none"),
         verdict_summary=verdict.get("summary", ""),
-        parent_experiment_id=getattr(controller, "_parent_experiment_id", ""),
+        parent_experiment_id=controller.ctx.parent_experiment_id,
         timestamp=int(time.time() * 1000),
         family=controller.family.name,
         hypothesis=contract.hypothesis if contract else "",
@@ -376,7 +376,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     job = state.get("job", 0)
     run_output_dir = controller.runs_dir.resolve() / f"job-{job}" / config_hash
     run_output_dir.mkdir(parents=True, exist_ok=True)
-    controller._current_artifact_dir = run_output_dir
+    controller.ctx.current_artifact_dir = run_output_dir
 
     if config_path_full.exists():
         shutil.copy2(config_path_full, run_output_dir / "config.json")
@@ -424,7 +424,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     trace("LOOP", f"METRIC parsed: {metric} decision={decision} config={config}")
 
     verdict = None
-    contract = getattr(controller, "_current_contract", None)
+    contract = controller.ctx.current_contract
     if contract and contract.expected_effects:
         try:
             from experiment_evaluator import evaluate_experiment
@@ -479,7 +479,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             trace("EVAL", f"evaluation error: {exc}")
             print(f"EVAL error (non-fatal): {exc}")
 
-    controller._current_contract = None
+    controller.ctx.current_contract = None
 
     analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
     if verdict:
@@ -488,7 +488,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
 
     is_baseline_run = next_action.get("source") == "baseline"
     if is_baseline_run:
-        runtime_cfg = getattr(controller, "_latest_config_contents", {}) or {}
+        runtime_cfg = controller.ctx.latest_config_contents or {}
         new_checkpoint = BaselineCheckpoint(
             code_commit=controller.current_commit(),
             data_hash=build_data_hash(runtime_cfg),
