@@ -15,6 +15,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import research_conductor as rc
+import research_infra as infra
+import research_memory as memory
+import research_subagents as subagents
+import research_tools_mcp as tools_mcp
+import research_usage as usage
 
 
 def _assistant_message(text: str):
@@ -147,35 +152,35 @@ def test_run_research_conductor_sync_returns_conductor_error_on_timeout(monkeypa
 
 
 def test_accumulate_usage_tracks_tokens_across_agents():
-    rc.reset_round_usage()
+    usage.reset_round_usage()
 
-    rc._accumulate_usage(
+    usage._accumulate_usage(
         "analyst",
         {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13},
         cost_usd=0.11,
     )
-    rc._accumulate_usage(
+    usage._accumulate_usage(
         "web_researcher", {"input": 7, "output": 2, "total": 9}, cost_usd=0.05
     )
-    rc._accumulate_usage(
+    usage._accumulate_usage(
         "conductor", {"input_tokens": 5, "output_tokens": 4, "total_tokens": 9}
     )
 
-    usage = rc.get_round_usage()
+    round_usage = usage.get_round_usage()
 
-    assert usage["total"] == {
+    assert round_usage["total"] == {
         "input_tokens": 22,
         "output_tokens": 9,
         "total_tokens": 31,
         "cost_usd": pytest.approx(0.16),
         "calls": 3,
     }
-    assert usage["by_agent"]["analyst"]["calls"] == 1
-    assert usage["by_agent"]["web_researcher"]["total_tokens"] == 9
-    assert usage["by_agent"]["conductor"]["output_tokens"] == 4
+    assert round_usage["by_agent"]["analyst"]["calls"] == 1
+    assert round_usage["by_agent"]["web_researcher"]["total_tokens"] == 9
+    assert round_usage["by_agent"]["conductor"]["output_tokens"] == 4
 
-    rc.reset_round_usage()
-    assert rc.get_round_usage() == {
+    usage.reset_round_usage()
+    assert usage.get_round_usage() == {
         "by_agent": {},
         "total": {
             "input_tokens": 0,
@@ -188,10 +193,16 @@ def test_accumulate_usage_tracks_tokens_across_agents():
 
 
 def test_save_research_finding_rejects_bad_type(monkeypatch):
-    monkeypatch.setattr(rc, "_call_analyst", lambda *a, **k: _async_empty_iter())
-    monkeypatch.setattr(rc, "_call_web_researcher", lambda *a, **k: _async_empty_iter())
-
-    mcp = rc._build_research_tools_mcp(trades_file="/tmp/trades.csv")
+    mcp = tools_mcp._build_research_tools_mcp(
+        trades_file="/tmp/trades.csv",
+        call_analyst=subagents._call_analyst,
+        call_web_researcher=subagents._call_web_researcher,
+        save_research_finding=memory.save_research_finding,
+        palace_search=memory._palace_search,
+        palace_status=memory._palace_status,
+        root=infra._ROOT,
+        list_past_theses_for_root=memory.list_past_theses,
+    )
     tool = next(
         tool for tool in mcp._tool_manager.list_tools() if tool.name == "save_finding"
     )
@@ -239,8 +250,16 @@ def test_list_past_theses_parses_autoresearch_jsonl(monkeypatch, tmp_path):
         )
     )
 
-    monkeypatch.setattr(rc, "_ROOT", tmp_path)
-    mcp = rc._build_research_tools_mcp(trades_file="/tmp/trades.csv")
+    mcp = tools_mcp._build_research_tools_mcp(
+        trades_file="/tmp/trades.csv",
+        call_analyst=subagents._call_analyst,
+        call_web_researcher=subagents._call_web_researcher,
+        save_research_finding=memory.save_research_finding,
+        palace_search=memory._palace_search,
+        palace_status=memory._palace_status,
+        root=tmp_path,
+        list_past_theses_for_root=memory.list_past_theses,
+    )
     tool = next(
         tool
         for tool in mcp._tool_manager.list_tools()
