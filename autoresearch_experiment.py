@@ -95,12 +95,19 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         )
         log.error(
             f"COMMAND TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): "
-            f"{command[:COMMAND_TIMEOUT_TRUNCATION]}"
+            f"{command[:COMMAND_TIMEOUT_TRUNCATION]} "
+            f"| hint=run the command manually with /usr/bin/time and either "
+            f"raise COMMAND_TIMEOUT_SECONDS in autoresearch_constants.py "
+            f"or address the slow path"
         )
         return 1, "TIMEOUT"
     except Exception as exc:
         trace("COMMAND", f"ERROR: {exc}")
-        log.error(f"RUN_COMMAND error: {exc}")
+        log.error(
+            f"RUN_COMMAND error: {exc} "
+            f"| hint=verify the cwd, shell, and that the script path is reachable; "
+            f"see TRACE COMMAND for the failing line"
+        )
         return 1, str(exc)
 
 
@@ -529,7 +536,12 @@ def _block_with_command_failed(
     state["blockers"] = [{"kind": "command_failed", "detail": command, "exit_code": code}]
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
-    log.error(f"LOOP_STOP state=blocked exit_code={code}")
+    log.error(
+        f"LOOP_STOP state=blocked exit_code={code} "
+        f"| hint=the backtest exited non-zero; inspect the run-output dir "
+        f"under runs/job-N/ for stderr, fix the failing command, then "
+        f"re-run the loop (state will resume from blocked)"
+    )
     notify_discord(
         f"⚠️ {controller.family.name.upper()} BLOCKED — backtest failed",
         f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\n**Exit code:** {code}",
@@ -550,7 +562,12 @@ def _block_with_metric_parse_failed(
     state["blockers"] = [{"kind": "metric_parse_failed", "detail": command}]
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
-    log.error("LOOP_STOP state=blocked metric_parse_failed")
+    log.error(
+        "LOOP_STOP state=blocked metric_parse_failed "
+        "| hint=the backtest exited 0 but did not emit a `RESULT_JSON <path>` "
+        "line on stdout; check that the backtest script writes its result.json "
+        "and prints the marker line — see autoresearch_experiment.parse_result_json"
+    )
     notify_discord(
         f"⚠️ {controller.family.name.upper()} BLOCKED — metric parse failed",
         f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\n"
@@ -717,7 +734,11 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
 
     _, command = _setup_run(controller, config)
     if not command:
-        log.error("LOOP_STOP missing_benchmark_command")
+        log.error(
+            "LOOP_STOP missing_benchmark_command "
+            "| hint=family.benchmark_command() returned an empty string; "
+            "check StrategyFamily wiring for this family in strategy_family.py"
+        )
         return 1
 
     begin_hypothesis(Path(config).stem if config else "unknown")

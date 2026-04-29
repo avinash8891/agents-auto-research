@@ -501,7 +501,12 @@ def _exhausted_retries_result(
         if parsed and parsed.get("suggested_theses")
         else "unknown"
     )
-    log.error(f"THESIS REJECTED after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback}")
+    log.error(
+        f"THESIS REJECTED after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback} "
+        f"| hint=the conductor produced a thesis that failed validation 3 times in a row; "
+        f"review the rejection_reason above and refine the conductor system prompt or "
+        f"add a counterexample to thesis_validator.load_prior_theses"
+    )
     trace(
         "LOOP",
         f"thesis rejected after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback}",
