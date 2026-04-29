@@ -23,6 +23,11 @@ from compiler_defaults import (
     _get_ema_defaults,
     _get_orb_defaults,
 )
+from compiler_validate import (
+    _config_content_hash,
+    validate_ema_runtime_config,
+    validate_orb_runtime_config,
+)
 from family_research import (
     infer_family_from_dir_name,
     validate_family_config_changes,
@@ -48,138 +53,9 @@ AMBIGUOUS_PATTERNS = {
     "wide_or": ("wide or", "wide-or", "wide_or", "wide opening range"),
 }
 
-
-def validate_orb_runtime_config(config: dict[str, Any]) -> list[str]:
-    """Validate ORB runtime config. Returns list of violations (empty = OK)."""
-    violations: list[str] = []
-    or_min = config.get("or_minutes", 30)
-    if not (5 <= or_min <= 120):
-        violations.append(f"or_minutes={or_min} out of range [5, 120]")
-    tf = config.get("timeframe_minutes", 5)
-    if tf not in (1, 2, 5, 10, 15, 30):
-        violations.append(f"timeframe_minutes={tf} not in {{1,2,5,10,15,30}}")
-    rr = config.get("rr_ratio", 2.0)
-    if not (0.5 <= rr <= 20):
-        violations.append(f"rr_ratio={rr} out of range [0.5, 20]")
-    mhb = config.get("max_hold_bars", 78)
-    if not (1 <= mhb <= 200):
-        violations.append(f"max_hold_bars={mhb} out of range [1, 200]")
-    slip = config.get("slippage_pct", 0.05)
-    if not (0 <= slip <= 1.0):
-        violations.append(f"slippage_pct={slip} out of range [0, 1.0]")
-    return violations
-
-
-def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
-    """Validate EMA runtime config values. Returns list of violations (empty = OK).
-
-    Hard constraints: reject strategically nonsensical configs before they
-    waste a backtest run. Grounded in transcript rules and market structure.
-    """
-    violations: list[str] = []
-
-    # --- EMA length ---
-    ema = config.get("ema_length")
-    if ema is not None:
-        if not isinstance(ema, (int, float)) or int(ema) < 2:
-            violations.append(f"ema_length={ema}: must be >= 2 (EMA of 1 is just price)")
-        if isinstance(ema, (int, float)) and int(ema) > 200:
-            violations.append(f"ema_length={ema}: must be <= 200 (intraday bars, not daily)")
-
-    # --- Risk-reward ratio ---
-    rr = config.get("rr_ratio")
-    if rr is not None:
-        if not isinstance(rr, (int, float)) or float(rr) < 0.5:
-            violations.append(
-                f"rr_ratio={rr}: must be >= 0.5 (below 0.5 is guaranteed negative edge)"
-            )
-        if isinstance(rr, (int, float)) and float(rr) > 20:
-            violations.append(f"rr_ratio={rr}: must be <= 20 (unreachable targets waste entries)")
-
-    # --- Timeframes ---
-    tf_short = config.get("timeframe_short")
-    tf_long = config.get("timeframe_long")
-    if tf_short is not None:
-        if not isinstance(tf_short, (int, float)) or int(tf_short) < 1:
-            violations.append(f"timeframe_short={tf_short}: must be >= 1 minute")
-        if isinstance(tf_short, (int, float)) and int(tf_short) > 60:
-            violations.append(f"timeframe_short={tf_short}: must be <= 60 minutes for intraday")
-    if tf_long is not None:
-        if not isinstance(tf_long, (int, float)) or int(tf_long) < 1:
-            violations.append(f"timeframe_long={tf_long}: must be >= 1 minute")
-        if isinstance(tf_long, (int, float)) and int(tf_long) > 60:
-            violations.append(f"timeframe_long={tf_long}: must be <= 60 minutes for intraday")
-    if tf_short is not None and tf_long is not None:
-        if isinstance(tf_short, (int, float)) and isinstance(tf_long, (int, float)):
-            if int(tf_short) > int(tf_long):
-                violations.append(
-                    f"timeframe_short={tf_short} > timeframe_long={tf_long}: "
-                    f"short TF must be <= long TF"
-                )
-
-    # --- Max trades per day ---
-    mtpd = config.get("max_trades_per_day")
-    if mtpd is not None:
-        if isinstance(mtpd, (int, float)) and int(mtpd) < 1:
-            violations.append(f"max_trades_per_day={mtpd}: must be >= 1 (0 disables trading)")
-        if isinstance(mtpd, (int, float)) and int(mtpd) > 20:
-            violations.append(
-                f"max_trades_per_day={mtpd}: must be <= 20 "
-                f"(transcript says 3-5; >20 effectively disables the cap)"
-            )
-
-    # --- Direction bias ---
-    bias = config.get("direction_bias")
-    VALID_BIASES = {"long_only", "short_only", "both"}
-    if bias is not None and bias not in VALID_BIASES:
-        violations.append(f"direction_bias='{bias}': must be one of {sorted(VALID_BIASES)}")
-
-    # --- Entry cutoff time ---
-    cutoff = config.get("entry_cutoff_time")
-    if cutoff is not None and isinstance(cutoff, str):
-        try:
-            parts = cutoff.split(":")
-            hour, minute = int(parts[0]), int(parts[1])
-            cutoff_minutes = hour * 60 + minute
-            market_open = 9 * 60 + 30  # 09:30
-            market_close = 16 * 60  # 16:00
-            if cutoff_minutes < market_open:
-                violations.append(f"entry_cutoff_time='{cutoff}': before market open (09:30)")
-            if cutoff_minutes >= market_close:
-                violations.append(f"entry_cutoff_time='{cutoff}': at or after market close (16:00)")
-        except (ValueError, IndexError):
-            violations.append(f"entry_cutoff_time='{cutoff}': invalid time format (use HH:MM)")
-
-    # --- Gap filter ---
-    gap_pct = config.get("gap_pct")
-    if gap_pct is not None and isinstance(gap_pct, (int, float)):
-        if float(gap_pct) <= 0:
-            violations.append(f"gap_pct={gap_pct}: must be > 0")
-        if float(gap_pct) > 0.20:
-            violations.append(
-                f"gap_pct={gap_pct}: must be <= 0.20 (20%; higher filters out everything)"
-            )
-
-    # --- Range shift ---
-    rsl = config.get("range_shift_lookback")
-    if rsl is not None:
-        if not (5 <= int(rsl) <= 100):
-            violations.append(f"range_shift_lookback={rsl}: must be between 5 and 100")
-
-    return violations
-
-
 # ---------------------------------------------------------------------------
 # Core compilation: proposal → compilation artifact → contract + queue
 # ---------------------------------------------------------------------------
-
-
-def _config_content_hash(config: dict[str, Any]) -> str:
-    """Deterministic hash of a config dict. Used as run_id and filename."""
-    import hashlib
-
-    blob = json.dumps(config, sort_keys=True).encode()
-    return hashlib.sha256(blob).hexdigest()[:12]
 
 
 def compile_ema_thesis(
