@@ -13,52 +13,25 @@ Architecture:
          ├─ search_findings → searches mempalace via Python API
          └─ memory_status → palace overview via Python API
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from research_usage import _accumulate_usage, get_round_usage, reset_round_usage
 from trace_logger import trace, trace_agent_prompt, trace_agent_response
 
-# ---------------------------------------------------------------------------
-# Token usage tracking
-# ---------------------------------------------------------------------------
-
-_ROUND_USAGE: dict[str, dict[str, float]] = {}
-
-
-def _accumulate_usage(agent_type: str, usage: dict[str, Any] | None, cost_usd: float | None = None) -> None:
-    """Accumulate token usage for the current round."""
-    if agent_type not in _ROUND_USAGE:
-        _ROUND_USAGE[agent_type] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0, "calls": 0}
-    entry = _ROUND_USAGE[agent_type]
-    entry["calls"] += 1
-    if usage:
-        entry["input_tokens"] += usage.get("input_tokens") or usage.get("input") or 0
-        entry["output_tokens"] += usage.get("output_tokens") or usage.get("output") or 0
-        entry["total_tokens"] += usage.get("total_tokens") or usage.get("total") or 0
-    if cost_usd:
-        entry["cost_usd"] += cost_usd
-
-
-def reset_round_usage() -> None:
-    """Reset usage counters at the start of a new round."""
-    _ROUND_USAGE.clear()
-
-
-def get_round_usage() -> dict[str, Any]:
-    """Get accumulated usage for the current round."""
-    total = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0, "calls": 0}
-    for agent_usage in _ROUND_USAGE.values():
-        for k in total:
-            total[k] += agent_usage[k]
-    return {"by_agent": dict(_ROUND_USAGE), "total": total}
-
+__all__ = [
+    "run_research_conductor",
+    "run_research_conductor_sync",
+    "reset_round_usage",
+    "get_round_usage",
+]
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -75,12 +48,16 @@ _PALACE_DIR = str(_ROOT / "palace")
 # ---------------------------------------------------------------------------
 
 
-def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor") -> dict:
+def _palace_add(
+    wing: str, room: str, content: str, added_by: str = "conductor"
+) -> dict:
     """Add a drawer to the palace via palace.get_collection + ChromaDB upsert."""
     import hashlib
     from datetime import datetime
+
     try:
         from mempalace.palace import get_collection
+
         col = get_collection(_PALACE_DIR, create=True)
         drawer_id = (
             f"drawer_{wing}_{room}_"
@@ -89,25 +66,29 @@ def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor")
         col.upsert(
             ids=[drawer_id],
             documents=[content],
-            metadatas=[{
-                "wing": wing,
-                "room": room,
-                "source_file": "",
-                "chunk_index": 0,
-                "added_by": added_by,
-                "filed_at": datetime.now().isoformat(),
-            }],
+            metadatas=[
+                {
+                    "wing": wing,
+                    "room": room,
+                    "source_file": "",
+                    "chunk_index": 0,
+                    "added_by": added_by,
+                    "filed_at": datetime.now().isoformat(),
+                }
+            ],
         )
         return {"success": True, "drawer_id": drawer_id}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
 
-def _palace_search(query: str, wing: str | None = None, room: str | None = None,
-                   n_results: int = 10) -> list[dict]:
+def _palace_search(
+    query: str, wing: str | None = None, room: str | None = None, n_results: int = 10
+) -> list[dict]:
     """Search the palace via mempalace.searcher.search_memories."""
     try:
         from mempalace.searcher import search_memories
+
         result = search_memories(
             query=query,
             palace_path=_PALACE_DIR,
@@ -124,10 +105,12 @@ def _palace_status() -> dict:
     """Get palace overview via mempalace.layers.MemoryStack."""
     try:
         from mempalace.layers import MemoryStack
+
         stack = MemoryStack(palace_path=_PALACE_DIR)
         return stack.status()
     except Exception as exc:
         return {"error": str(exc)}
+
 
 # ---------------------------------------------------------------------------
 # OAuth proxy for Codex agents
@@ -164,6 +147,7 @@ def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
 # JSON parser
 # ---------------------------------------------------------------------------
 
+
 def _parse_json(text: str) -> dict[str, Any] | None:
     text = text.strip()
     # Strip markdown code fences if present (use find, not index, to avoid crash).
@@ -189,7 +173,7 @@ def _parse_json(text: str) -> dict[str, Any] | None:
             depth -= 1
             if depth == 0:
                 try:
-                    return json.loads(text[brace:i + 1])
+                    return json.loads(text[brace : i + 1])
                 except json.JSONDecodeError:
                     return None
     return None
@@ -199,16 +183,19 @@ def _parse_json(text: str) -> dict[str, Any] | None:
 # Codex analyst agent (called by the MCP tool)
 # ---------------------------------------------------------------------------
 
+
 async def _call_analyst(
     trades_file: str,
     focus_question: str,
     strategy_events_file: str = "",
     diagnostics_file: str = "",
 ) -> str:
-    from openai import AsyncOpenAI
-    from agents import Agent as OAIAgent, Runner as OAIRunner, function_tool
+    from agents import Agent as OAIAgent
     from agents import RunConfig as OAIRunConfig
+    from agents import Runner as OAIRunner
+    from agents import function_tool
     from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+    from openai import AsyncOpenAI
 
     _ensure_oauth_proxy()
 
@@ -223,7 +210,9 @@ async def _call_analyst(
             with open(file_path) as f:
                 content = f.read()
             if len(content) > 50000:
-                return content[:50000] + f"\n... (truncated, {len(content)} total chars)"
+                return (
+                    content[:50000] + f"\n... (truncated, {len(content)} total chars)"
+                )
             return content
         except Exception as e:
             return f"ERROR: {e}"
@@ -238,7 +227,9 @@ async def _call_analyst(
         try:
             result = subprocess.run(
                 [sys.executable, "-c", code],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             output = result.stdout
             if result.stderr:
@@ -350,7 +341,8 @@ Be brutally honest."""
     trace("CONDUCTOR", f"analyst dispatch focus='{focus_question[:80]}'")
     try:
         result = OAIRunner.run_streamed(
-            agent, user_prompt,
+            agent,
+            user_prompt,
             run_config=OAIRunConfig(tracing_disabled=True),
             max_turns=25,
         )
@@ -359,11 +351,18 @@ Be brutally honest."""
         # Track analyst token usage
         for resp in result.raw_responses:
             u = resp.usage
-            _accumulate_usage("analyst", {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens, "total_tokens": u.total_tokens})
+            _accumulate_usage(
+                "analyst",
+                {
+                    "input_tokens": u.input_tokens,
+                    "output_tokens": u.output_tokens,
+                    "total_tokens": u.total_tokens,
+                },
+            )
         output = result.final_output or ""
         parsed = _parse_json(output)
         if parsed:
-            n_anomalies = len(parsed.get('key_anomalies', []))
+            n_anomalies = len(parsed.get("key_anomalies", []))
             trace("CONDUCTOR", f"analyst OK anomalies={n_anomalies}")
             trace_agent_response(
                 "analyst",
@@ -380,10 +379,13 @@ Be brutally honest."""
 
 
 async def _call_web_researcher(query: str, context: str) -> str:
-    from openai import AsyncOpenAI
-    from agents import Agent as OAIAgent, Runner as OAIRunner, WebSearchTool
-    from agents import RunConfig as OAIRunConfig, ModelSettings as OAIModelSettings
+    from agents import Agent as OAIAgent
+    from agents import ModelSettings as OAIModelSettings
+    from agents import RunConfig as OAIRunConfig
+    from agents import Runner as OAIRunner
+    from agents import WebSearchTool
     from agents.models.openai_provider import OpenAIProvider
+    from openai import AsyncOpenAI
 
     _ensure_oauth_proxy()
 
@@ -425,7 +427,8 @@ Return ONLY the JSON object."""
     trace("CONDUCTOR", f"web_search dispatch query='{query[:80]}'")
     try:
         result = OAIRunner.run_streamed(
-            agent, user_prompt,
+            agent,
+            user_prompt,
             run_config=OAIRunConfig(
                 model_provider=provider,
                 model_settings=OAIModelSettings(store=False),
@@ -437,11 +440,18 @@ Return ONLY the JSON object."""
         # Track web researcher token usage
         for resp in result.raw_responses:
             u = resp.usage
-            _accumulate_usage("web_researcher", {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens, "total_tokens": u.total_tokens})
+            _accumulate_usage(
+                "web_researcher",
+                {
+                    "input_tokens": u.input_tokens,
+                    "output_tokens": u.output_tokens,
+                    "total_tokens": u.total_tokens,
+                },
+            )
         output = result.final_output or ""
         parsed = _parse_json(output)
         if parsed:
-            n_findings = len(parsed.get('findings', []))
+            n_findings = len(parsed.get("findings", []))
             trace("CONDUCTOR", f"web_search OK findings={n_findings}")
             trace_agent_response(
                 "web-researcher",
@@ -460,6 +470,7 @@ Return ONLY the JSON object."""
 # ---------------------------------------------------------------------------
 # In-process MCP server: exposes analyze_trades + web_search to Claude SDK
 # ---------------------------------------------------------------------------
+
 
 def _build_research_tools_mcp(
     trades_file: str,
@@ -489,7 +500,8 @@ def _build_research_tools_mcp(
         if not trades_file:
             return "ERROR: No trades file available for this round."
         return await _call_analyst(
-            trades_file, focus_question,
+            trades_file,
+            focus_question,
             strategy_events_file=strategy_events_file,
             diagnostics_file=diagnostics_file,
         )
@@ -526,11 +538,20 @@ def _build_research_tools_mcp(
             scope: What data this applies to (e.g. "train_2020-2023", "full_sample", "SPY_only")
             expires_if: Condition that invalidates this (e.g. "fails on validation split", "baseline drift >5%")
         """
-        VALID_TYPES = {"observation", "hypothesis", "validated_finding",
-                       "rejected_finding", "open_question", "implementation_note"}
+        VALID_TYPES = {
+            "observation",
+            "hypothesis",
+            "validated_finding",
+            "rejected_finding",
+            "open_question",
+            "implementation_note",
+        }
         VALID_STATUSES = {"unvalidated", "validated", "rejected", "stale"}
 
-        trace("CONDUCTOR", f"save_finding type={finding_type} status={status} finding='{finding[:80]}'")
+        trace(
+            "CONDUCTOR",
+            f"save_finding type={finding_type} status={status} finding='{finding[:80]}'",
+        )
 
         if finding_type not in VALID_TYPES:
             trace("CONDUCTOR", f"save_finding REJECTED: bad type '{finding_type}'")
@@ -566,6 +587,7 @@ def _build_research_tools_mcp(
         trace("CONDUCTOR", f"save_finding palace error: {result}")
         findings_log = _ROOT / "research_findings.jsonl"
         import json as _json
+
         entry = {
             "finding": finding,
             "type": finding_type,
@@ -633,16 +655,18 @@ def _build_research_tools_mcp(
                     continue
                 if e.get("type") != "research_round":
                     continue
-                entries.append({
-                    "thesis_id": e.get("thesis_id", "unknown"),
-                    "outcome": e.get("outcome", "unknown"),
-                    "mechanism_dimension": e.get("mechanism_dimension", ""),
-                    "config_changes": e.get("config_changes", {}),
-                    "hypothesis": e.get("hypothesis", "")[:150],
-                    "rejection_reason": e.get("rejection_reason", "")[:100],
-                    "round": e.get("round"),
-                    "job": e.get("job"),
-                })
+                entries.append(
+                    {
+                        "thesis_id": e.get("thesis_id", "unknown"),
+                        "outcome": e.get("outcome", "unknown"),
+                        "mechanism_dimension": e.get("mechanism_dimension", ""),
+                        "config_changes": e.get("config_changes", {}),
+                        "hypothesis": e.get("hypothesis", "")[:150],
+                        "rejection_reason": e.get("rejection_reason", "")[:100],
+                        "round": e.get("round"),
+                        "job": e.get("job"),
+                    }
+                )
         if not entries:
             return "No previous theses found."
         return json.dumps(entries, indent=2)
@@ -710,6 +734,7 @@ Source code for signal mechanics (use these to verify hypotheses):
 # ---------------------------------------------------------------------------
 # Conductor system prompt
 # ---------------------------------------------------------------------------
+
 
 def _build_conductor_system_prompt(strategy_description: str) -> str:
     return f"""You are a trading strategy research conductor.
@@ -1002,6 +1027,7 @@ Return ONLY the JSON object as your final response."""
 # Run the conductor
 # ---------------------------------------------------------------------------
 
+
 async def run_research_conductor(
     trades_file: str,
     experiment_results: str,
@@ -1030,7 +1056,9 @@ async def run_research_conductor(
         query,
     )
 
-    strategy_desc = STRATEGY_DESCRIPTIONS.get(family_name, f"Strategy family: {family_name}")
+    strategy_desc = STRATEGY_DESCRIPTIONS.get(
+        family_name, f"Strategy family: {family_name}"
+    )
 
     # Build in-process MCP server with research tools
     _ensure_oauth_proxy()
@@ -1052,7 +1080,9 @@ async def run_research_conductor(
     system_prompt = _build_conductor_system_prompt(strategy_desc)
 
     # Build user prompt with experiment results table
-    outcome_lines = json.dumps(latest_outcome, indent=2) if latest_outcome else "(no results yet)"
+    outcome_lines = (
+        json.dumps(latest_outcome, indent=2) if latest_outcome else "(no results yet)"
+    )
 
     if trades_file:
         evidence_lines = f"Trades file for analysis: {trades_file}"
@@ -1091,7 +1121,10 @@ async def run_research_conductor(
             f"Read the source code to understand what the strategy does."
         )
 
-    trace("CONDUCTOR", f"START round={research_round} trades={'YES' if trades_file else 'NO'}")
+    trace(
+        "CONDUCTOR",
+        f"START round={research_round} trades={'YES' if trades_file else 'NO'}",
+    )
     trace_id = trace_agent_prompt("research-conductor", user_prompt, system_prompt)
 
     result_text = ""
@@ -1121,14 +1154,26 @@ async def run_research_conductor(
                         got_assistant_text = True
                         result_text += block.text
             elif isinstance(message, ResultMessage):
-                if not got_assistant_text and hasattr(message, "result") and message.result:
+                if (
+                    not got_assistant_text
+                    and hasattr(message, "result")
+                    and message.result
+                ):
                     result_text = str(message.result)
                 # Capture conductor token usage
                 if message.usage:
-                    trace("CONDUCTOR", f"USAGE conductor raw_keys={list(message.usage.keys())} usage={message.usage}")
-                    _accumulate_usage("conductor", message.usage, message.total_cost_usd)
+                    trace(
+                        "CONDUCTOR",
+                        f"USAGE conductor raw_keys={list(message.usage.keys())} usage={message.usage}",
+                    )
+                    _accumulate_usage(
+                        "conductor", message.usage, message.total_cost_usd
+                    )
                 if message.model_usage:
-                    trace("CONDUCTOR", f"USAGE conductor model_usage_keys={list(message.model_usage.keys())} model_usage={message.model_usage}")
+                    trace(
+                        "CONDUCTOR",
+                        f"USAGE conductor model_usage_keys={list(message.model_usage.keys())} model_usage={message.model_usage}",
+                    )
                     _accumulate_usage("conductor", message.model_usage)
     except asyncio.TimeoutError:
         trace("CONDUCTOR", "TIMEOUT")
@@ -1158,7 +1203,9 @@ async def run_research_conductor(
             return parsed
         if theses and isinstance(theses[0], dict):
             t = theses[0]
-            if t.get("thesis_id") and (t.get("config_changes") or t.get("requires_code_change")):
+            if t.get("thesis_id") and (
+                t.get("config_changes") or t.get("requires_code_change")
+            ):
                 trace("CONDUCTOR", f"OK thesis={t['thesis_id']}")
                 return parsed
         trace("CONDUCTOR", f"validate failed: {result_text[:200]}")
@@ -1178,10 +1225,15 @@ def run_research_conductor_sync(
     diagnostics_file: str = "",
     rejection_feedback: str = "",
 ) -> dict[str, Any] | None:
-    return asyncio.run(run_research_conductor(
-        trades_file, experiment_results, latest_outcome,
-        research_round, family_name,
-        strategy_events_file=strategy_events_file,
-        diagnostics_file=diagnostics_file,
-        rejection_feedback=rejection_feedback,
-    ))
+    return asyncio.run(
+        run_research_conductor(
+            trades_file,
+            experiment_results,
+            latest_outcome,
+            research_round,
+            family_name,
+            strategy_events_file=strategy_events_file,
+            diagnostics_file=diagnostics_file,
+            rejection_feedback=rejection_feedback,
+        )
+    )
