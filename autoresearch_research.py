@@ -196,7 +196,7 @@ def load_baseline_config(root: Path, family: StrategyFamily) -> dict[str, Any] |
         return None
     try:
         return yaml.safe_load(base_path.read_text())
-    except Exception:
+    except (yaml.YAMLError, OSError):
         return None
 
 

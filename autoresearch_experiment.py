@@ -242,7 +242,7 @@ def derive_trade_analysis(
                 from ema_contract import compile_ema_contract
 
                 config_contents = compile_ema_contract(raw).runtime_config
-        except Exception:
+        except (yaml.YAMLError, json.JSONDecodeError, OSError, ValueError):
             pass
 
     controller.ctx.latest_trades_file = details.get("trades_file", "")
