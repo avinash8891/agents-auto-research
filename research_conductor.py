@@ -1,19 +1,3 @@
-"""Research conductor — Claude SDK (opus) agent with MCP tools.
-
-The conductor drives the investigation:
-  - mempalace (native Python API) for persistent memory (data facts only)
-  - Custom in-process MCP server exposing all tools to the conductor
-
-Architecture:
-  Conductor (claude-opus, Claude SDK)
-    └─ research-tools MCP (in-process SDK)
-         ├─ analyze_trades → calls Codex analyst agent (gpt-5.5 + FunctionTools)
-         ├─ web_search → calls Codex web researcher agent (gpt-5.5 + WebSearchTool)
-         ├─ save_finding → validates + writes to mempalace via Python API
-         ├─ search_findings → searches mempalace via Python API
-         └─ memory_status → palace overview via Python API
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -68,15 +52,6 @@ def _build_research_tools_mcp(
     )
 
 
-# ---------------------------------------------------------------------------
-# Strategy descriptions (what the strategy IS, not parameter values)
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Run the conductor
-# ---------------------------------------------------------------------------
-
-
 async def run_research_conductor(
     trades_file: str,
     experiment_results: str,
@@ -87,17 +62,6 @@ async def run_research_conductor(
     diagnostics_file: str = "",
     rejection_feedback: str = "",
 ) -> dict[str, Any] | None:
-    """Run the research conductor.
-
-    Args:
-        trades_file: Path to latest trades CSV (empty if no trades yet).
-        experiment_results: Formatted table of all experiment results.
-        latest_outcome: Metrics from the most recent experiment.
-        research_round: Current round number.
-        family_name: Strategy family name.
-        strategy_events_file: Path to strategy_events.parquet (optional).
-        diagnostics_file: Path to diagnostics.json (optional).
-    """
     from claude_agent_sdk import (
         AssistantMessage,
         ClaudeAgentOptions,
