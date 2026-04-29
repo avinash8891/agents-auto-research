@@ -4,6 +4,7 @@ These tests pin the current observable behavior of the loop so that the
 upcoming refactor (extracting helpers into separate modules) can be
 verified to be a pure structural move with no behavior change.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,9 +19,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import autoresearch_loop as loop_mod
+import autoresearch_research as research_mod
 from autoresearch_loop import AutoresearchController
 from strategy_family import load_family
-
 
 BASELINE_CONFIG = "configs/ema_base.yaml"
 
@@ -32,6 +33,7 @@ def controller(tmp_path, monkeypatch):
     # Replace the discord webhook so notifications are no-ops without
     # patching the family object itself.
     monkeypatch.setattr(loop_mod, "_notify_discord", lambda *a, **k: None)
+    monkeypatch.setattr(research_mod, "notify_discord", lambda *a, **k: None)
 
     # Mirror ema_base.yaml from the repo into the temp root so derive_trade_analysis
     # and _run_experiment can load it.
@@ -45,6 +47,22 @@ def controller(tmp_path, monkeypatch):
     current_md_path = tmp_path / "ema_autoresearch.current.md"
     ideas_md_path = tmp_path / "ema_autoresearch.ideas.md"
     runs_dir = tmp_path / family.runs_dirname
+
+    # Write the JSONL config header that autoresearch_helper.py evaluate requires.
+    # Without this, `cmd_evaluate` exits with code 1 ("No config found") and
+    # evaluate_metric would always return "discard".
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "type": "config",
+                "name": "ema",
+                "metricName": "median_expectancy",
+                "metricUnit": "",
+                "bestDirection": "higher",
+            }
+        )
+        + "\n"
+    )
 
     controller = AutoresearchController(
         root=tmp_path,
@@ -60,18 +78,22 @@ def controller(tmp_path, monkeypatch):
     return controller
 
 
-def _seed_existing_result(controller: AutoresearchController, config: str = "configs/variants/some_prior.yaml") -> None:
+def _seed_existing_result(
+    controller: AutoresearchController, config: str = "configs/variants/some_prior.yaml"
+) -> None:
     """Append one keep-result so the loop is past the 'no results' branch."""
-    entries = [{
-        "run": 1,
-        "job": 1,
-        "metric": 1.0,
-        "metrics": {},
-        "status": "keep",
-        "description": f"strict-native loop: {Path(config).stem}",
-        "timestamp": 1,
-        "asi": {"config": config, "thesis_id": Path(config).stem},
-    }]
+    entries = [
+        {
+            "run": 1,
+            "job": 1,
+            "metric": 1.0,
+            "metrics": {},
+            "status": "keep",
+            "description": f"strict-native loop: {Path(config).stem}",
+            "timestamp": 1,
+            "asi": {"config": config, "thesis_id": Path(config).stem},
+        }
+    ]
     controller.write_entries(entries)
 
 
@@ -92,19 +114,20 @@ def _success_output(result_path: Path, metric: float = 1.5) -> str:
 
 
 def _patch_run_command_success(controller, monkeypatch, tmp_path) -> dict[str, Any]:
-    """Patch run_command and evaluate_metric for a passing experiment.
+    """Patch run_command for a passing experiment.
 
     Returns a dict capturing the last command invoked.
     """
     captured: dict[str, Any] = {}
     result_json_path = tmp_path / "result.json"
 
+    # run_command invokes an external subprocess (the backtest binary).
+    # Mocking it is allowed under rule G; we return a captured real-fixture output.
     def fake_run_command(self, command: str):
         captured["command"] = command
         return 0, _success_output(result_json_path, metric=1.5)
 
     monkeypatch.setattr(AutoresearchController, "run_command", fake_run_command)
-    monkeypatch.setattr(AutoresearchController, "evaluate_metric", lambda self, metric: "keep")
     return captured
 
 
@@ -120,7 +143,9 @@ def test_execute_once_runs_baseline_when_no_results(controller, monkeypatch, tmp
     assert "configs/ema_base.yaml" in captured["command"]
     # The baseline path must have been the one selected.
     entries = controller.read_entries()
-    metric_entries = [e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")]
+    metric_entries = [
+        e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
+    ]
     assert len(metric_entries) == 1
     assert metric_entries[0]["asi"]["config"] == BASELINE_CONFIG
 
@@ -145,16 +170,17 @@ def test_execute_once_runs_pending_queue_before_research(controller, monkeypatch
         "source": "multi_variant_probe",
     }
     controller.run_queue_dir.mkdir(parents=True, exist_ok=True)
-    (controller.run_queue_dir / "queued-thesis-001.json").write_text(
-        json.dumps(queue_artifact)
-    )
+    (controller.run_queue_dir / "queued-thesis-001.json").write_text(json.dumps(queue_artifact))
 
     captured = _patch_run_command_success(controller, monkeypatch, tmp_path)
 
     # Research should NOT be called — fail loudly if it is.
     def _research_should_not_be_called(self):  # pragma: no cover - guard
         raise AssertionError("research conductor invoked when run-queue artifact was pending")
-    monkeypatch.setattr(AutoresearchController, "execute_research_one", _research_should_not_be_called)
+
+    monkeypatch.setattr(
+        AutoresearchController, "execute_research_one", _research_should_not_be_called
+    )
 
     rc = controller.execute_once()
 
@@ -185,11 +211,15 @@ def test_execute_once_blocked_research_generates_config(controller, monkeypatch,
             "should_stop": False,
             "reasoning": "fake",
         }
+
+    # execute_research_one calls the LLM research conductor — an external service.
+    # Mocking it is allowed under rule G.
     monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
 
     # research_conductor.reset_round_usage / get_round_usage are imported lazily;
     # patch them on the imported module to avoid real LLM round bookkeeping.
     import research_conductor
+
     monkeypatch.setattr(research_conductor, "reset_round_usage", lambda: None)
     monkeypatch.setattr(research_conductor, "get_round_usage", lambda: {"total": {}})
 
@@ -228,9 +258,13 @@ def test_execute_once_research_needs_code_halts(controller, monkeypatch):
                 "config_changes": {"new_param": 1},
             },
         }
+
+    # execute_research_one calls the LLM research conductor — an external service.
+    # Mocking it is allowed under rule G.
     monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
 
     import research_conductor
+
     monkeypatch.setattr(research_conductor, "reset_round_usage", lambda: None)
     monkeypatch.setattr(research_conductor, "get_round_usage", lambda: {"total": {}})
 
@@ -289,9 +323,11 @@ def test_execute_once_success_preserves_artifacts_and_db_write(controller, monke
 
     db_calls: list[Any] = []
     original_add = controller.experiment_db.add
+
     def spy_add(result):
         db_calls.append(result)
         return original_add(result)
+
     monkeypatch.setattr(controller.experiment_db, "add", spy_add)
 
     rc = controller.execute_once()
@@ -300,7 +336,9 @@ def test_execute_once_success_preserves_artifacts_and_db_write(controller, monke
 
     # JSONL has a metric entry tagged for the baseline config.
     entries = controller.read_entries()
-    metric_entries = [e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")]
+    metric_entries = [
+        e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
+    ]
     assert len(metric_entries) == 1
     metric_entry = metric_entries[0]
     assert metric_entry["asi"]["config"] == BASELINE_CONFIG
@@ -315,3 +353,50 @@ def test_execute_once_success_preserves_artifacts_and_db_write(controller, monke
     # ExperimentDB.add was called once.
     assert len(db_calls) == 1
     assert db_calls[0].config_path == BASELINE_CONFIG
+
+
+# ────────────────────────────────────────────────────────────────────
+# 8. Halted thesis with no missing config keys -> resumes as running
+# ────────────────────────────────────────────────────────────────────
+def test_execute_once_resumes_halted_thesis_when_keys_now_exist(controller, monkeypatch, tmp_path):
+    """Audit reproduction: corrupting the resume branch passed all 7 prior
+    tests, proving this path was untested. This regression test fires on the
+    halted-resume branch in _resolve_next_action."""
+    halted_thesis_id = "resume-this-thesis"
+    # ema_length already exists in the real ema_base.yaml fixture, so the
+    # `missing` set is empty and the resume path fires.
+    halted_thesis = {
+        "thesis_id": halted_thesis_id,
+        "hypothesis": "tighten ema length",
+        "config_changes": {"ema_length": 7},
+    }
+    controller.write_state(
+        {
+            "state": "halted",
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": halted_thesis_id,
+            "halted_thesis": halted_thesis,
+            "job": 1,
+            "research_round": 0,
+        }
+    )
+    captured = _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    rc = controller.execute_once()
+    assert rc == 0
+
+    expected_config = f"experiments/{halted_thesis_id}/runtime_config.json"
+    # The resume branch must have written the runtime config to disk.
+    written_runtime = controller.root / expected_config
+    assert written_runtime.exists()
+    runtime_payload = json.loads(written_runtime.read_text())
+    assert runtime_payload.get("ema_length") == 7
+    # And invoked the backtest with the resumed config.
+    assert expected_config in captured["command"]
+
+    # State should have advanced past `halted` and cleared the halted_* keys.
+    state = controller.read_state()
+    assert state["state"] in ("running", "blocked")
+    assert "halted_thesis_id" not in state
+    assert "halted_reason" not in state
+    assert "halted_thesis" not in state
