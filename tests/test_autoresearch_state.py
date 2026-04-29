@@ -319,26 +319,27 @@ def test_coerce_timestamp_to_epoch_ms_returns_zero_for_unparseable() -> None:
 
 def test_read_results_handles_both_legacy_int_and_iso_timestamps() -> None:
     """Back-compat: pre-rule-J files have int epoch ms; new files have ISO
-    strings. read_results must order them correctly via the int contract
-    on ExperimentRecord.timestamp."""
+    strings. read_results must normalise both to ISO-8601 UTC strings and
+    order them correctly via coerce_timestamp_to_epoch_ms in latest_result."""
     legacy_entry = {
         "run": 1,
         "metric": 1.0,
         "status": "keep",
-        "timestamp": 1700000000000,  # Nov 14 2023
+        "timestamp": 1700000000000,  # Nov 14 2023 → 2023-11-14T22:13:20+00:00
         "asi": {"config": "configs/legacy.yaml"},
     }
     new_entry = {
         "run": 2,
         "metric": 2.0,
         "status": "keep",
-        "timestamp": "2024-01-01T00:00:00+00:00",  # 1704067200000 ms
+        "timestamp": "2024-01-01T00:00:00+00:00",
         "asi": {"config": "configs/new.yaml"},
     }
     results = read_results([legacy_entry, new_entry])
     assert len(results) == 2
-    assert results[0].timestamp == 1700000000000
-    assert results[1].timestamp == 1704067200000
+    # Both timestamps are now ISO-8601 UTC strings (rule J).
+    assert results[0].timestamp == "2023-11-14T22:13:20+00:00"
+    assert results[1].timestamp == "2024-01-01T00:00:00+00:00"
     # Ordering by timestamp must work across the two formats.
     assert latest_result(results).config == "configs/new.yaml"
 

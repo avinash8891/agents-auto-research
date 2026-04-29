@@ -70,7 +70,7 @@ class ExperimentRecord:
     metric: float
     status: str
     description: str
-    timestamp: int
+    timestamp: str
     asi: dict[str, Any]
 
 
@@ -238,17 +238,14 @@ def read_results(entries: list[dict[str, Any]]) -> list[ExperimentRecord]:
         if entry.get("type") in ("config", "research_round"):
             continue
         asi = entry.get("asi") or {}
-        # Rule J back-compat: entries written before the ISO-8601 migration
-        # store timestamp as int epoch ms; new entries store ISO-8601 UTC.
-        # ExperimentRecord.timestamp keeps the int contract for downstream
-        # ordering/comparison code; coerce both formats here.
         results.append(
             ExperimentRecord(
                 config=asi.get("config", ""),
                 metric=entry["metric"],
                 status=entry["status"],
                 description=entry.get("description", ""),
-                timestamp=coerce_timestamp_to_epoch_ms(entry.get("timestamp", 0)),
+                timestamp=coerce_timestamp_to_iso8601_utc(entry.get("timestamp", 0))
+                or "1970-01-01T00:00:00+00:00",
                 asi=asi,
             )
         )
@@ -281,7 +278,7 @@ def best_result(results: list[ExperimentRecord], direction_str: str) -> dict[str
 def latest_result(results: list[ExperimentRecord]) -> ExperimentRecord | None:
     if not results:
         return None
-    return max(results, key=lambda result: result.timestamp)
+    return max(results, key=lambda result: coerce_timestamp_to_epoch_ms(result.timestamp))
 
 
 # ── Entry reconciliation ──────────────────────────────────────────

@@ -7,6 +7,14 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+# ── Module-function backing store ───────────────────────────────────────────
+# The _artifacts_* and _experiment_* aliases below are the module-level
+# implementations for AutoresearchController instance methods defined later in
+# this file. They are NOT wrapper-only renames: they adapt module functions
+# (which take explicit path/root parameters) to instance methods (which read
+# those parameters from self). The aliases are private by convention (_prefix)
+# because callers should always go through the controller, never the module
+# functions directly.
 from autoresearch_artifacts import (
     queue_from_thesis_artifacts as _artifacts_queue_from_thesis_artifacts,
 )
