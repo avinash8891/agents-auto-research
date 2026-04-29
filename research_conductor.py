@@ -4,24 +4,13 @@ import asyncio
 import json
 from typing import Any
 
-from research_infra import (
-    _ROOT,
-    _ensure_oauth_proxy,
-    _parse_json,
-)
-from research_memory import (
-    _palace_search,
-    _palace_status,
-)
+from research_infra import _ensure_oauth_proxy, _parse_json
+from research_memory import _palace_search, _palace_status
 from research_memory import list_past_theses as list_past_theses_for_root
-from research_memory import (
-    save_research_finding,
-)
+from research_memory import save_research_finding
 from research_prompts import STRATEGY_DESCRIPTIONS, _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
-from research_tools_mcp import (
-    _build_research_tools_mcp as _build_research_tools_mcp_impl,
-)
+from research_tools_mcp import _build_research_tools_mcp
 from research_usage import _accumulate_usage, get_round_usage, reset_round_usage
 from trace_logger import trace, trace_agent_prompt, trace_agent_response
 
@@ -31,25 +20,6 @@ __all__ = [
     "reset_round_usage",
     "get_round_usage",
 ]
-
-
-def _build_research_tools_mcp(
-    trades_file: str,
-    strategy_events_file: str = "",
-    diagnostics_file: str = "",
-):
-    return _build_research_tools_mcp_impl(
-        trades_file=trades_file,
-        strategy_events_file=strategy_events_file,
-        diagnostics_file=diagnostics_file,
-        call_analyst=_call_analyst,
-        call_web_researcher=_call_web_researcher,
-        save_research_finding=save_research_finding,
-        palace_search=_palace_search,
-        palace_status=_palace_status,
-        root=_ROOT,
-        list_past_theses_for_root=list_past_theses_for_root,
-    )
 
 
 async def run_research_conductor(
@@ -79,6 +49,13 @@ async def run_research_conductor(
         trades_file=trades_file,
         strategy_events_file=strategy_events_file,
         diagnostics_file=diagnostics_file,
+        call_analyst=_call_analyst,
+        call_web_researcher=_call_web_researcher,
+        save_research_finding=save_research_finding,
+        palace_search=_palace_search,
+        palace_status=_palace_status,
+        root=list_past_theses_for_root.__globals__["_ROOT"],
+        list_past_theses_for_root=list_past_theses_for_root,
     )
 
     # Single MCP server with all tools (no external mempalace process)
