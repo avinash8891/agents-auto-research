@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import agent_codex_calls
 import agent_definitions
+import agent_formatters
 import agent_infra
 import agent_memory
 import agent_orchestrator as ao
@@ -250,6 +251,12 @@ def test_openai_helper_calls_move_to_agent_codex_calls(monkeypatch):
     assert callable(getattr(agent_codex_calls, "_run_diagnostic_analyst_openai"))
 
 
+def test_formatters_move_to_agent_formatters():
+    assert callable(getattr(agent_formatters, "format_result_history"))
+    assert callable(getattr(agent_formatters, "format_insight_brief"))
+    assert callable(getattr(agent_formatters, "format_web_findings"))
+
+
 def test_validate_output_rejects_diagnostic_without_pattern():
     assert (
         agent_runners._validate_output(
@@ -271,7 +278,7 @@ After"""
 
 
 def test_format_result_history_renders_thesis_with_changes():
-    rendered = ao.format_result_history(
+    rendered = agent_formatters.format_result_history(
         [
             {
                 "config": "baseline",
