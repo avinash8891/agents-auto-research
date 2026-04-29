@@ -235,6 +235,13 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
     }
 
 
+def test_orchestrator_public_surface_is_sync_wrappers_and_agent_runner(monkeypatch):
+    assert hasattr(ao, "analyze_diagnostics_sync")
+    assert hasattr(ao, "run_web_research_sync")
+    assert hasattr(ao, "run_research_agent_sync")
+    assert hasattr(ao, "_run_single_agent")
+
+
 def test_openai_helper_calls_move_to_agent_codex_calls(monkeypatch):
     async def fake_web(prompt: str):
         return {"summary": "ok", "findings": [{"topic": "t", "finding": "f"}]}

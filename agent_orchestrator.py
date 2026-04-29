@@ -1,16 +1,4 @@
-"""Agent orchestrator using Claude Agent SDK + OpenAI Agents SDK.
-
-Three stateless sub-agents:
-  1. diagnostic_analyst (Claude SDK) u2014 reads trade breakdowns, finds anomalies
-  2. web_researcher (OpenAI Agents SDK + Codex auth) u2014 web search for evidence
-  3. research_agent (Claude SDK) u2014 proposes hypotheses
-
-Agents are stateless workers. The orchestrator owns memory:
-  - Reads from mempalace BEFORE each agent run (via subprocess CLI)
-  - Injects context into the agent's prompt
-  - Validates the agent's JSON output
-  - Writes validated results to mempalace AFTER each run
-"""
+"""Public orchestrator API for diagnostics, web research, and thesis generation."""
 
 from __future__ import annotations
 
@@ -24,25 +12,6 @@ import agent_infra
 import agent_memory
 from agent_runners import _run_single_agent
 from trace_logger import trace
-
-# ---------------------------------------------------------------------------
-# Mempalace CLI u2014 orchestrator reads/writes memory on behalf of agents
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# CLI-based agent runner (for tools not available in SDK subprocesses)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Sub-agent definitions u2014 stateless, no memory access
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Public API u2014 orchestrator handles memory on behalf of agents
-# ---------------------------------------------------------------------------
 
 
 async def run_diagnostic_analysis(
@@ -228,21 +197,6 @@ async def run_research_agent(
     return parsed
 
 
-# ---------------------------------------------------------------------------
-# Result formatting (moved from research_subagent.py)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Web research via OpenAI Agents SDK + openai-oauth proxy (Codex subscription)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Sync wrappers
-# ---------------------------------------------------------------------------
-
-
 def analyze_diagnostics_sync(
     trades_file: str,
     config: str,
@@ -286,8 +240,3 @@ def run_research_agent_sync(
     family_name: str = "orb",
 ) -> dict[str, Any] | None:
     return asyncio.run(run_research_agent(context, family_name))
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
