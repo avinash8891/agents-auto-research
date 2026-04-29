@@ -41,30 +41,32 @@ def orb_family():
 # ── list_known_variant_configs / pending_configs ────────────────
 
 
-def test_list_known_variant_configs_returns_empty_when_no_files(tmp_path: Path) -> None:
-    assert list_known_variant_configs(tmp_path) == []
+def test_list_known_variant_configs_returns_empty_when_no_files(tmp_path: Path, ema_family) -> None:
+    assert list_known_variant_configs(tmp_path, ema_family) == []
 
 
-def test_list_known_variant_configs_picks_up_yaml_files_in_variants_dir(tmp_path: Path) -> None:
+def test_list_known_variant_configs_picks_up_yaml_files_in_variants_dir(
+    tmp_path: Path, ema_family
+) -> None:
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
     (variants / "ema_aggressive.yaml").write_text("ema_length: 3\n")
     (variants / "ema_conservative.yaml").write_text("ema_length: 7\n")
-    out = list_known_variant_configs(tmp_path)
+    out = list_known_variant_configs(tmp_path, ema_family)
     assert "configs/variants/ema_aggressive.yaml" in out
     assert "configs/variants/ema_conservative.yaml" in out
 
 
-def test_list_known_variant_configs_skips_readme_keep(tmp_path: Path) -> None:
+def test_list_known_variant_configs_skips_readme_keep(tmp_path: Path, ema_family) -> None:
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
     (variants / "real.yaml").write_text("k: v\n")
     (variants / "README.keep").write_text("keepalive\n")
-    out = list_known_variant_configs(tmp_path)
+    out = list_known_variant_configs(tmp_path, ema_family)
     assert out == ["configs/variants/real.yaml"]
 
 
-def test_pending_configs_excludes_already_attempted(tmp_path: Path) -> None:
+def test_pending_configs_excludes_already_attempted(tmp_path: Path, ema_family) -> None:
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
     (variants / "ema_a.yaml").write_text("k: v\n")
@@ -72,13 +74,13 @@ def test_pending_configs_excludes_already_attempted(tmp_path: Path) -> None:
     results = [
         ExperimentRecord("configs/variants/ema_a.yaml", 1.0, "keep", "", 1, {}),
     ]
-    assert pending_configs(tmp_path, results) == ["configs/variants/ema_b.yaml"]
+    assert pending_configs(tmp_path, ema_family, results) == ["configs/variants/ema_b.yaml"]
 
 
 # ── thesis_statuses overlay precedence ──────────────────────────
 
 
-def test_thesis_statuses_run_queue_overlays_pending_default(tmp_path: Path) -> None:
+def test_thesis_statuses_run_queue_overlays_pending_default(tmp_path: Path, ema_family) -> None:
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
     (variants / "ema_a.yaml").write_text("k: v\n")
@@ -95,12 +97,12 @@ def test_thesis_statuses_run_queue_overlays_pending_default(tmp_path: Path) -> N
         )
     )
 
-    statuses = thesis_statuses(tmp_path, queue_dir, [])
+    statuses = thesis_statuses(tmp_path, ema_family, queue_dir, [])
     assert statuses["configs/variants/ema_a.yaml"]["source"] == "run_queue"
     assert statuses["configs/variants/ema_a.yaml"]["thesis_id"] == "ema_a"
 
 
-def test_thesis_statuses_result_overlays_run_queue(tmp_path: Path) -> None:
+def test_thesis_statuses_result_overlays_run_queue(tmp_path: Path, ema_family) -> None:
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir()
     (queue_dir / "x.json").write_text(
@@ -109,7 +111,7 @@ def test_thesis_statuses_result_overlays_run_queue(tmp_path: Path) -> None:
     results = [
         ExperimentRecord("configs/variants/ema_x.yaml", 1.42, "keep", "kept x", 100, {}),
     ]
-    statuses = thesis_statuses(tmp_path, queue_dir, results)
+    statuses = thesis_statuses(tmp_path, ema_family, queue_dir, results)
     s = statuses["configs/variants/ema_x.yaml"]
     assert s["status"] == "keep"
     assert s["last_metric"] == 1.42
@@ -119,12 +121,14 @@ def test_thesis_statuses_result_overlays_run_queue(tmp_path: Path) -> None:
 # ── parse_ideas_backlog ─────────────────────────────────────────
 
 
-def test_parse_ideas_backlog_returns_empty_when_file_missing(tmp_path: Path) -> None:
-    assert parse_ideas_backlog(tmp_path / "missing.md") == []
+def test_parse_ideas_backlog_returns_empty_when_file_missing(tmp_path: Path, ema_family) -> None:
+    assert parse_ideas_backlog(tmp_path / "missing.md", ema_family) == []
 
 
-def test_parse_ideas_backlog_extracts_real_thesis_slugs(real_ideas_backlog_path: Path) -> None:
-    candidates = parse_ideas_backlog(real_ideas_backlog_path)
+def test_parse_ideas_backlog_extracts_real_thesis_slugs(
+    real_ideas_backlog_path: Path, orb_family
+) -> None:
+    candidates = parse_ideas_backlog(real_ideas_backlog_path, orb_family)
     slugs = [c["slug"] for c in candidates]
     assert "spy_only" in slugs
     assert "trailing_stop" in slugs
@@ -136,47 +140,67 @@ def test_parse_ideas_backlog_extracts_real_thesis_slugs(real_ideas_backlog_path:
     assert by_slug["skip_chop"]["family"] == "regime"
 
 
-def test_parse_ideas_backlog_emits_orb_prefixed_config_path(real_ideas_backlog_path: Path) -> None:
-    # NOTE: this is a known limitation captured in the audit — the
-    # ideas-backlog parser hardcodes the orb_ prefix. PR 5 will fix it.
-    # The test pins current behavior so the fix is visible.
-    candidates = parse_ideas_backlog(real_ideas_backlog_path)
+def test_parse_ideas_backlog_uses_orb_prefix_for_orb_family(
+    real_ideas_backlog_path: Path, orb_family
+) -> None:
+    """For the orb family, ideas backlog candidates emit orb_-prefixed paths."""
+    candidates = parse_ideas_backlog(real_ideas_backlog_path, orb_family)
     by_slug = {c["slug"]: c for c in candidates}
     assert by_slug["spy_only"]["config"] == "configs/variants/orb_spy_only.yaml"
+    assert by_slug["trailing_stop"]["config"] == "configs/variants/orb_trailing_stop.yaml"
+
+
+def test_parse_ideas_backlog_uses_ema_prefix_for_ema_family(
+    real_ideas_backlog_path: Path, ema_family
+) -> None:
+    """PR 5 fix: for the ema family, ideas backlog candidates now emit
+    ema_-prefixed paths instead of orb_-prefixed (the audit's family-
+    correctness bug)."""
+    candidates = parse_ideas_backlog(real_ideas_backlog_path, ema_family)
+    by_slug = {c["slug"]: c for c in candidates}
+    assert by_slug["spy_only"]["config"] == "configs/variants/ema_spy_only.yaml"
+    assert by_slug["trailing_stop"]["config"] == "configs/variants/ema_trailing_stop.yaml"
 
 
 # ── thesis_family_for ───────────────────────────────────────────
 
 
-def test_thesis_family_for_known_slug_uses_thesis_family_map(tmp_path: Path) -> None:
+def test_thesis_family_for_known_slug_uses_thesis_family_map(tmp_path: Path, orb_family) -> None:
     assert (
-        thesis_family_for("configs/variants/orb_spy_only.yaml", tmp_path / "p", tmp_path)
+        thesis_family_for(
+            "configs/variants/orb_spy_only.yaml", orb_family, tmp_path / "p", tmp_path
+        )
         == "universe"
     )
     assert (
-        thesis_family_for("configs/variants/orb_trailing_stop.yaml", tmp_path / "p", tmp_path)
+        thesis_family_for(
+            "configs/variants/orb_trailing_stop.yaml", orb_family, tmp_path / "p", tmp_path
+        )
         == "exit"
     )
     assert (
-        thesis_family_for("configs/variants/orb_skip_chop.yaml", tmp_path / "p", tmp_path)
+        thesis_family_for(
+            "configs/variants/orb_skip_chop.yaml", orb_family, tmp_path / "p", tmp_path
+        )
         == "regime"
     )
 
 
-def test_thesis_family_for_falls_back_to_proposal_artifact(tmp_path: Path) -> None:
+def test_thesis_family_for_falls_back_to_proposal_artifact(tmp_path: Path, orb_family) -> None:
     proposals = tmp_path / "ema-proposals"
     proposals.mkdir()
     (proposals / "novel_thesis.json").write_text(
         json.dumps({"thesis_id": "novel_thesis", "family": "entry"})
     )
     assert (
-        thesis_family_for("configs/variants/orb_novel_thesis.yaml", proposals, tmp_path) == "entry"
+        thesis_family_for("configs/variants/orb_novel_thesis.yaml", orb_family, proposals, tmp_path)
+        == "entry"
     )
 
 
-def test_thesis_family_for_returns_unknown_when_neither_match(tmp_path: Path) -> None:
+def test_thesis_family_for_returns_unknown_when_neither_match(tmp_path: Path, orb_family) -> None:
     assert (
-        thesis_family_for("configs/variants/orb_mystery.yaml", tmp_path / "p", tmp_path)
+        thesis_family_for("configs/variants/orb_mystery.yaml", orb_family, tmp_path / "p", tmp_path)
         == "unknown"
     )
 
@@ -207,13 +231,15 @@ def test_thesis_family_map_covers_known_slugs() -> None:
 # ── generate_combination_candidates ─────────────────────────────
 
 
-def test_generate_combination_candidates_requires_at_least_two_keeps(tmp_path: Path) -> None:
+def test_generate_combination_candidates_requires_at_least_two_keeps(
+    tmp_path: Path, orb_family
+) -> None:
     proposals_dir = tmp_path / "p"
     one_keep = [ExperimentRecord("configs/variants/orb_spy_only.yaml", 1.0, "keep", "", 1, {})]
-    assert generate_combination_candidates(tmp_path, proposals_dir, one_keep) == []
+    assert generate_combination_candidates(tmp_path, orb_family, proposals_dir, one_keep) == []
 
 
-def test_generate_combination_candidates_skips_disallowed_pairs(tmp_path: Path) -> None:
+def test_generate_combination_candidates_skips_disallowed_pairs(tmp_path: Path, orb_family) -> None:
     """Two universe-family configs cannot combine (rule = disallowed)."""
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
@@ -225,11 +251,13 @@ def test_generate_combination_candidates_skips_disallowed_pairs(tmp_path: Path) 
         ExperimentRecord("configs/variants/orb_spy_only.yaml", 1.0, "keep", "", 1, {}),
         ExperimentRecord("configs/variants/orb_stocks_in_play.yaml", 1.1, "keep", "", 2, {}),
     ]
-    out = generate_combination_candidates(tmp_path, proposals_dir, results)
+    out = generate_combination_candidates(tmp_path, orb_family, proposals_dir, results)
     assert out == []
 
 
-def test_generate_combination_candidates_creates_yaml_for_allowed_pair(tmp_path: Path) -> None:
+def test_generate_combination_candidates_creates_yaml_for_allowed_pair(
+    tmp_path: Path, orb_family
+) -> None:
     """Allowed pair (universe + exit) produces a merged YAML and a proposal JSON."""
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
@@ -241,7 +269,7 @@ def test_generate_combination_candidates_creates_yaml_for_allowed_pair(tmp_path:
         ExperimentRecord("configs/variants/orb_spy_only.yaml", 1.0, "keep", "", 1, {}),
         ExperimentRecord("configs/variants/orb_trailing_stop.yaml", 1.2, "keep", "", 2, {}),
     ]
-    out = generate_combination_candidates(tmp_path, proposals_dir, results)
+    out = generate_combination_candidates(tmp_path, orb_family, proposals_dir, results)
     assert out == ["configs/variants/orb_spy_only_x_trailing_stop.yaml"]
     combo_path = tmp_path / out[0]
     assert combo_path.exists()
@@ -254,39 +282,43 @@ def test_generate_combination_candidates_creates_yaml_for_allowed_pair(tmp_path:
 # ── should_terminate ────────────────────────────────────────────
 
 
-def test_should_terminate_false_when_pending_configs_exist(tmp_path: Path) -> None:
+def test_should_terminate_false_when_pending_configs_exist(tmp_path: Path, ema_family) -> None:
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
     (variants / "ema_x.yaml").write_text("k: v\n")
     queue_dir = tmp_path / "queue"
     research_dir = tmp_path / "research"
-    assert should_terminate(tmp_path, queue_dir, research_dir, []) is False
+    assert should_terminate(tmp_path, ema_family, queue_dir, research_dir, []) is False
 
 
-def test_should_terminate_false_when_no_research_artifacts(tmp_path: Path) -> None:
+def test_should_terminate_false_when_no_research_artifacts(tmp_path: Path, ema_family) -> None:
     queue_dir = tmp_path / "queue"
     research_dir = tmp_path / "research"
-    assert should_terminate(tmp_path, queue_dir, research_dir, []) is False
+    assert should_terminate(tmp_path, ema_family, queue_dir, research_dir, []) is False
 
 
-def test_should_terminate_false_when_research_status_not_completed(tmp_path: Path) -> None:
+def test_should_terminate_false_when_research_status_not_completed(
+    tmp_path: Path, ema_family
+) -> None:
     research_dir = tmp_path / "research"
     research_dir.mkdir()
     (research_dir / "r.json").write_text(json.dumps({"status": "pending"}))
-    assert should_terminate(tmp_path, tmp_path / "queue", research_dir, []) is False
+    assert should_terminate(tmp_path, ema_family, tmp_path / "queue", research_dir, []) is False
 
 
-def test_should_terminate_true_only_with_completed_research_and_findings(tmp_path: Path) -> None:
+def test_should_terminate_true_only_with_completed_research_and_findings(
+    tmp_path: Path, ema_family
+) -> None:
     research_dir = tmp_path / "research"
     research_dir.mkdir()
     (research_dir / "r.json").write_text(
         json.dumps({"status": "completed", "findings": ["no further structural ideas"]})
     )
-    assert should_terminate(tmp_path, tmp_path / "queue", research_dir, []) is True
+    assert should_terminate(tmp_path, ema_family, tmp_path / "queue", research_dir, []) is True
 
 
 def test_should_terminate_false_when_research_completed_but_suggested_theses_present(
-    tmp_path: Path,
+    tmp_path: Path, ema_family
 ) -> None:
     research_dir = tmp_path / "research"
     research_dir.mkdir()
@@ -299,7 +331,7 @@ def test_should_terminate_false_when_research_completed_but_suggested_theses_pre
             }
         )
     )
-    assert should_terminate(tmp_path, tmp_path / "queue", research_dir, []) is False
+    assert should_terminate(tmp_path, ema_family, tmp_path / "queue", research_dir, []) is False
 
 
 # ── check_baseline_rerun ────────────────────────────────────────

@@ -205,13 +205,13 @@ class AutoresearchController:
         return _state_latest_result(results)
 
     def list_known_variant_configs(self) -> list[str]:
-        return _planning_list_known_variant_configs(self.root)
+        return _planning_list_known_variant_configs(self.root, self.family)
 
     def pending_configs(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_pending_configs(self.root, results)
+        return _planning_pending_configs(self.root, self.family, results)
 
     def thesis_statuses(self, results: list[ExperimentRecord]) -> dict[str, dict[str, Any]]:
-        return _planning_thesis_statuses(self.root, self.run_queue_dir, results)
+        return _planning_thesis_statuses(self.root, self.family, self.run_queue_dir, results)
 
     def read_run_queue(self) -> list[dict[str, Any]]:
         return _artifacts_read_run_queue(self.run_queue_dir, self.root)
@@ -228,11 +228,12 @@ class AutoresearchController:
     # ── WS-2: Thesis generation from ideas backlog ──────────────────────
 
     def parse_ideas_backlog(self) -> list[dict[str, Any]]:
-        return _planning_parse_ideas_backlog(self.ideas_md_path)
+        return _planning_parse_ideas_backlog(self.ideas_md_path, self.family)
 
     def generate_theses_from_ideas(self, results: list[ExperimentRecord]) -> list[str]:
         return _planning_generate_theses_from_ideas(
             self.root,
+            self.family,
             self.ideas_md_path,
             self.run_queue_dir,
             self.proposals_dir,
@@ -242,10 +243,12 @@ class AutoresearchController:
     # ── WS-5: Combination phase ───────────────────────────────────────
 
     def thesis_family_for(self, config: str) -> str:
-        return _planning_thesis_family_for(config, self.proposals_dir, self.root)
+        return _planning_thesis_family_for(config, self.family, self.proposals_dir, self.root)
 
     def generate_combination_candidates(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_generate_combination_candidates(self.root, self.proposals_dir, results)
+        return _planning_generate_combination_candidates(
+            self.root, self.family, self.proposals_dir, results
+        )
 
     def parse_result_json(self, output: str) -> dict[str, Any] | None:
         return _experiment_parse_result_json(output)
@@ -270,7 +273,7 @@ class AutoresearchController:
     def should_terminate(self, results: list[ExperimentRecord] | None = None) -> bool:
         current_results = results if results is not None else self.read_results()
         return _planning_should_terminate(
-            self.root, self.run_queue_dir, self.research_dir, current_results
+            self.root, self.family, self.run_queue_dir, self.research_dir, current_results
         )
 
     def plan_next_action(
