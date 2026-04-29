@@ -15,10 +15,31 @@ Usage:
 
 import argparse
 import json
+import logging
 import os
 import statistics
 import sys
 import time
+
+
+def _make_stdout_logger() -> logging.Logger:
+    """Stdlib-only logger that emits %(message)s to stdout, byte-identical
+    to print() output. Preserves the `DECISION: keep` / `DECISION: discard`
+    stdout contract that autoresearch_experiment.evaluate_metric parses."""
+    logger = logging.getLogger("autoresearch_helper")
+    if not any(
+        isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stdout
+        for h in logger.handlers
+    ):
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+    return logger
+
+
+_log = _make_stdout_logger()
 
 
 def read_jsonl(path):
@@ -157,7 +178,7 @@ def cmd_init(args):
     mode = "a" if os.path.exists(args.jsonl) else "w"
     with open(args.jsonl, mode) as f:
         f.write(json.dumps(config) + "\n")
-    print(
+    _log.info(
         f"Initialized: {args.name} (metric: {args.metric_name}, direction: {args.direction or 'lower'})"
     )
 
@@ -167,7 +188,7 @@ def cmd_log(args):
     config, results = read_jsonl(args.jsonl)
 
     if config is None:
-        print("Error: No config found. Run 'init' first.", file=sys.stderr)
+        _log.error("Error: No config found. Run 'init' first.")
         sys.exit(1)
 
     segment = config.get("_segment", 0) if config else 0
@@ -178,14 +199,14 @@ def cmd_log(args):
         try:
             extra_metrics = json.loads(args.metrics)
         except json.JSONDecodeError:
-            print(f"Warning: could not parse --metrics JSON: {args.metrics}", file=sys.stderr)
+            _log.error(f"Warning: could not parse --metrics JSON: {args.metrics}")
 
     asi = None
     if args.asi:
         try:
             asi = json.loads(args.asi)
         except json.JSONDecodeError:
-            print(f"Warning: could not parse --asi JSON: {args.asi}", file=sys.stderr)
+            _log.error(f"Warning: could not parse --asi JSON: {args.asi}")
 
     entry = {
         "run": len(results) + 1,
@@ -212,20 +233,20 @@ def cmd_log(args):
     baseline = find_baseline(results, segment)
     best = find_best_kept(results, segment, direction)
 
-    print(f"Logged #{entry['run']}: {args.status} — {args.description}")
-    print(f"  Metric: {args.metric}")
+    _log.info(f"Logged #{entry['run']}: {args.status} — {args.description}")
+    _log.info(f"  Metric: {args.metric}")
     if baseline is not None:
-        print(f"  Baseline: {baseline}")
+        _log.info(f"  Baseline: {baseline}")
     if best is not None and baseline is not None and baseline != 0:
         delta_pct = ((best - baseline) / baseline) * 100
-        print(f"  Best kept: {best} ({delta_pct:+.1f}%)")
+        _log.info(f"  Best kept: {best} ({delta_pct:+.1f}%)")
     if confidence is not None:
         label = (
             "likely real"
             if confidence >= 2.0
             else "marginal" if confidence >= 1.0 else "within noise"
         )
-        print(f"  Confidence: {confidence}x ({label})")
+        _log.info(f"  Confidence: {confidence}x ({label})")
 
 
 def cmd_evaluate(args):
@@ -233,7 +254,7 @@ def cmd_evaluate(args):
     config, results = read_jsonl(args.jsonl)
 
     if not config:
-        print("No config found in JSONL. Run init first.", file=sys.stderr)
+        _log.info("No config found in JSONL. Run init first.")
         sys.exit(1)
 
     segment = config.get("_segment", 0)
@@ -244,8 +265,8 @@ def cmd_evaluate(args):
     compare_against = best if best is not None else baseline
 
     if compare_against is None:
-        print("DECISION: keep (first experiment — this is the baseline)")
-        print(f"  Metric: {args.metric}")
+        _log.info("DECISION: keep (first experiment — this is the baseline)")
+        _log.info(f"  Metric: {args.metric}")
         sys.exit(0)
 
     improved = is_better(args.metric, compare_against, direction)
@@ -257,16 +278,16 @@ def cmd_evaluate(args):
     delta_pct = (delta / compare_against) * 100 if compare_against != 0 else 0
 
     if improved:
-        print(f"DECISION: keep")
+        _log.info(f"DECISION: keep")
     else:
-        print(f"DECISION: discard")
+        _log.info(f"DECISION: discard")
 
-    print(f"  Metric: {args.metric}")
-    print(
+    _log.info(f"  Metric: {args.metric}")
+    _log.info(
         f"  Compare against: {compare_against} ({'best kept' if best is not None else 'baseline'})"
     )
-    print(f"  Delta: {delta:+.4f} ({delta_pct:+.1f}%)")
-    print(f"  Direction: {direction} is better")
+    _log.info(f"  Delta: {delta:+.4f} ({delta_pct:+.1f}%)")
+    _log.info(f"  Direction: {direction} is better")
 
     if confidence is not None:
         label = (
@@ -274,9 +295,11 @@ def cmd_evaluate(args):
             if confidence >= 2.0
             else "marginal" if confidence >= 1.0 else "within noise"
         )
-        print(f"  Confidence: {confidence}x ({label})")
+        _log.info(f"  Confidence: {confidence}x ({label})")
         if confidence < 1.0 and improved:
-            print(f"  Warning: improvement is within noise floor. Consider re-running to confirm.")
+            _log.info(
+                f"  Warning: improvement is within noise floor. Consider re-running to confirm."
+            )
 
 
 def cmd_summary(args):
@@ -284,7 +307,7 @@ def cmd_summary(args):
     config, results = read_jsonl(args.jsonl)
 
     if not config:
-        print("No experiments found.")
+        _log.info("No experiments found.")
         return
 
     segment = config.get("_segment", 0)
@@ -300,45 +323,45 @@ def cmd_summary(args):
     best = find_best_kept(results, segment, direction)
     confidence = compute_confidence(results, segment, direction)
 
-    print(f"Session: {config.get('name', 'unnamed')}")
-    print(
+    _log.info(f"Session: {config.get('name', 'unnamed')}")
+    _log.info(
         f"Metric: {config.get('metricName', 'metric')} ({config.get('metricUnit', '')}), {direction} is better"
     )
-    print(
+    _log.info(
         f"Experiments: {total} total, {len(kept)} kept, {len(discarded)} discarded, {len(crashed)} crashed"
     )
-    print()
+    _log.info("")
 
     if baseline is not None:
-        print(f"Baseline: {baseline}")
+        _log.info(f"Baseline: {baseline}")
     if best is not None and baseline is not None and baseline != 0:
         delta_pct = ((best - baseline) / baseline) * 100
-        print(f"Best kept: {best} ({delta_pct:+.1f}% from baseline)")
+        _log.info(f"Best kept: {best} ({delta_pct:+.1f}% from baseline)")
     if confidence is not None:
         label = (
             "likely real"
             if confidence >= 2.0
             else "marginal" if confidence >= 1.0 else "within noise"
         )
-        print(f"Confidence: {confidence}x ({label})")
+        _log.info(f"Confidence: {confidence}x ({label})")
 
-    print()
-    print("Kept experiments:")
+    _log.info("")
+    _log.info("Kept experiments:")
     for r in kept:
         desc = r.get("description", "")
         metric = r.get("metric", 0)
         commit = r.get("commit", "?")
-        print(
+        _log.info(
             f"  #{r.get('run', '?')} [{commit}] {config.get('metricName', 'metric')}={metric}  {desc}"
         )
 
     if crashed:
-        print()
-        print("Crashed/failed:")
+        _log.info("")
+        _log.info("Crashed/failed:")
         for r in crashed:
             desc = r.get("description", "")
             status = r.get("status", "crash")
-            print(f"  #{r.get('run', '?')} [{status}] {desc}")
+            _log.info(f"  #{r.get('run', '?')} [{status}] {desc}")
 
 
 def cmd_status(args):
@@ -346,7 +369,7 @@ def cmd_status(args):
     config, results = read_jsonl(args.jsonl)
 
     if not config:
-        print(json.dumps({"error": "no config found"}))
+        _log.info(json.dumps({"error": "no config found"}))
         return
 
     segment = config.get("_segment", 0)
@@ -372,7 +395,7 @@ def cmd_status(args):
             else None
         ),
     }
-    print(json.dumps(status, indent=2))
+    _log.info(json.dumps(status, indent=2))
 
 
 def main():
