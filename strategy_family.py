@@ -23,6 +23,31 @@ class StrategyFamily:
     base_config_filename: str = "orb_base.yaml"
     runs_dirname: str = "autoresearch-runs"
     discord_webhook: str = ""
+    # Family-aware variant config conventions. Variant config files live
+    # at `configs/variants/{variant_prefix}{slug}.yaml`. Default variants
+    # are the seed list of well-known thesis paths checked at loop start.
+    # Pre-rule-PR-5, these were hardcoded as `orb_*.yaml` in the planner;
+    # now they derive from the family. See planning.list_known_variant_configs.
+    variant_prefix: str = "orb_"
+    default_variants: tuple[str, ...] = ()
+
+    @property
+    def baseline_config_path(self) -> str:
+        """`configs/{base_config_filename}` — the baseline thesis path
+        that the loop compares against when computing kept/discarded."""
+        return f"configs/{self.base_config_filename}"
+
+    def variant_config_path(self, slug: str) -> str:
+        """Build a `configs/variants/{prefix}{slug}.yaml` path."""
+        return f"configs/variants/{self.variant_prefix}{slug}.yaml"
+
+    def slug_from_config(self, config_path: str) -> str:
+        """Strip the family's variant prefix from a config-path stem.
+        Returns the slug with the prefix removed if present, or the bare
+        stem otherwise."""
+        from pathlib import Path as _Path
+
+        return _Path(config_path).stem.removeprefix(self.variant_prefix)
 
     def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
         script = (
@@ -71,6 +96,13 @@ FAMILIES: dict[str, StrategyFamily] = {
         base_config_filename="orb_base.yaml",
         runs_dirname="orb_autoresearch-runs",
         discord_webhook=_discord_webhook_for("orb"),
+        variant_prefix="orb_",
+        default_variants=(
+            "configs/variants/orb_spy_only.yaml",
+            "configs/variants/orb_stocks_in_play.yaml",
+            "configs/variants/orb_trailing_stop.yaml",
+            "configs/variants/orb_trend_filter.yaml",
+        ),
     ),
     "ema": StrategyFamily(
         name="ema",
@@ -85,6 +117,8 @@ FAMILIES: dict[str, StrategyFamily] = {
         base_config_filename="ema_base.yaml",
         runs_dirname="ema_autoresearch-runs",
         discord_webhook=_discord_webhook_for("ema"),
+        variant_prefix="ema_",
+        default_variants=(),  # No seed list yet for EMA family.
     ),
 }
 

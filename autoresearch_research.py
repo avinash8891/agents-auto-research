@@ -78,7 +78,12 @@ def notify_discord(
             headers={"Content-Type": "application/json", "User-Agent": "AutoresearchBot/1.0"},
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=DISCORD_HTTP_TIMEOUT_SECONDS)
+        # webhook URL comes from AUTORESEARCH_DISCORD_WEBHOOK_<FAMILY>
+        # env var (rule 2). The operator controls the env, so url-scheme
+        # exposure is bounded by the deployment surface, not user input.
+        urllib.request.urlopen(
+            req, timeout=DISCORD_HTTP_TIMEOUT_SECONDS
+        )  # noqa: S310  # nosec B310
         trace("DISCORD", f"OK title='{title[:60]}'")
     except Exception as exc:
         trace("DISCORD", f"FAILED title='{title[:60]}' error={exc}")

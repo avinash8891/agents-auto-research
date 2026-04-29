@@ -28,6 +28,8 @@ from trace_logger import trace
 
 log = get_logger(__name__)
 
+# DEFAULT_CONFIG_ORDER is kept for backward compatibility with any
+# external imports — the live path now reads from family.default_variants.
 DEFAULT_CONFIG_ORDER = [
     "configs/variants/orb_spy_only.yaml",
     "configs/variants/orb_stocks_in_play.yaml",
@@ -71,9 +73,11 @@ COMBINATION_RULES: dict[tuple[str, str], str] = {
 # ── Variant discovery ─────────────────────────────────────────────
 
 
-def list_known_variant_configs(root: Path) -> list[str]:
+def list_known_variant_configs(root: Path, family: StrategyFamily) -> list[str]:
+    """Variant configs for this family: the family's seed list (those
+    that exist on disk) followed by every other yaml in configs/variants/."""
     known: list[str] = []
-    for config in DEFAULT_CONFIG_ORDER:
+    for config in family.default_variants:
         if (root / config).exists():
             known.append(config)
     variants_dir = root / "configs" / "variants"
@@ -85,18 +89,23 @@ def list_known_variant_configs(root: Path) -> list[str]:
     return known
 
 
-def pending_configs(root: Path, results: list[ExperimentRecord]) -> list[str]:
+def pending_configs(
+    root: Path, family: StrategyFamily, results: list[ExperimentRecord]
+) -> list[str]:
     attempted = {result.config for result in results if result.config}
-    return [config for config in list_known_variant_configs(root) if config not in attempted]
+    return [
+        config for config in list_known_variant_configs(root, family) if config not in attempted
+    ]
 
 
 def thesis_statuses(
     root: Path,
+    family: StrategyFamily,
     run_queue_dir: Path,
     results: list[ExperimentRecord],
 ) -> dict[str, dict[str, Any]]:
     statuses: dict[str, dict[str, Any]] = {}
-    for config in list_known_variant_configs(root):
+    for config in list_known_variant_configs(root, family):
         statuses[config] = {"status": "pending", "source": "variants_dir"}
     for artifact in read_run_queue(run_queue_dir, root):
         config = artifact.get("config")
@@ -129,8 +138,10 @@ def thesis_statuses(
 # ── Ideas backlog ─────────────────────────────────────────────────
 
 
-def parse_ideas_backlog(ideas_md_path: Path) -> list[dict[str, Any]]:
-    """Parse autoresearch.ideas.md and return candidate thesis dicts."""
+def parse_ideas_backlog(ideas_md_path: Path, family: StrategyFamily) -> list[dict[str, Any]]:
+    """Parse autoresearch.ideas.md and return candidate thesis dicts.
+    Variant config paths are built from family.variant_config_path so
+    each family gets its own prefix."""
     if not ideas_md_path.exists():
         return []
     text = ideas_md_path.read_text()
@@ -147,11 +158,10 @@ def parse_ideas_backlog(ideas_md_path: Path) -> list[dict[str, Any]]:
             continue
         if line.startswith("- `") and "`" in line[3:]:
             slug = line[3 : line.index("`", 3)]
-            config_path = f"configs/variants/orb_{slug}.yaml"
             candidates.append(
                 {
                     "slug": slug,
-                    "config": config_path,
+                    "config": family.variant_config_path(slug),
                     "family": current_family or THESIS_FAMILY.get(slug, "unknown"),
                     "source": "ideas_backlog",
                 }
@@ -161,6 +171,7 @@ def parse_ideas_backlog(ideas_md_path: Path) -> list[dict[str, Any]]:
 
 def generate_theses_from_ideas(
     root: Path,
+    family: StrategyFamily,
     ideas_md_path: Path,
     run_queue_dir: Path,
     proposals_dir: Path,
@@ -169,7 +180,7 @@ def generate_theses_from_ideas(
     """Generate thesis artifacts for untested candidates from ideas backlog."""
     attempted = {r.config for r in results if r.config}
     existing_thesis_configs = {a.get("config") for a in read_run_queue(run_queue_dir, root)}
-    candidates = parse_ideas_backlog(ideas_md_path)
+    candidates = parse_ideas_backlog(ideas_md_path, family)
 
     kept = [r for r in results if r.status == "keep"]
     discarded = [r for r in results if r.status == "discard"]
@@ -204,9 +215,9 @@ def generate_theses_from_ideas(
 # ── Combinations ──────────────────────────────────────────────────
 
 
-def thesis_family_for(config: str, proposals_dir: Path, root: Path) -> str:
+def thesis_family_for(config: str, family: StrategyFamily, proposals_dir: Path, root: Path) -> str:
     """Determine the thesis family for a config path."""
-    slug = Path(config).stem.removeprefix("orb_")
+    slug = family.slug_from_config(config)
     if slug in THESIS_FAMILY:
         return THESIS_FAMILY[slug]
     for artifact in read_thesis_artifacts(proposals_dir, root):
@@ -271,6 +282,7 @@ def _merge_combo_configs(
 def _write_combination_proposal(
     proposals_dir: Path,
     *,
+    family: StrategyFamily,
     combo_slug: str,
     a: ExperimentRecord,
     b: ExperimentRecord,
@@ -281,8 +293,10 @@ def _write_combination_proposal(
 ) -> None:
     proposal = {
         "thesis_id": combo_slug,
-        "hypothesis": f"Combination of {Path(a.config).stem.removeprefix('orb_')} ({family_a}) + "
-        f"{Path(b.config).stem.removeprefix('orb_')} ({family_b})",
+        "hypothesis": (
+            f"Combination of {family.slug_from_config(a.config)} ({family_a}) + "
+            f"{family.slug_from_config(b.config)} ({family_b})"
+        ),
         "family": "combination",
         "source": "combination_phase",
         "evidence": [
@@ -300,6 +314,7 @@ def _write_combination_proposal(
 
 def _try_combine_pair(
     root: Path,
+    family: StrategyFamily,
     proposals_dir: Path,
     a: ExperimentRecord,
     b: ExperimentRecord,
@@ -309,17 +324,17 @@ def _try_combine_pair(
     Returns the combo config path on success, None if the pair is
     incompatible or the combo already exists.
     """
-    family_a = thesis_family_for(a.config, proposals_dir, root)
-    family_b = thesis_family_for(b.config, proposals_dir, root)
+    family_a = thesis_family_for(a.config, family, proposals_dir, root)
+    family_b = thesis_family_for(b.config, family, proposals_dir, root)
     rule = COMBINATION_RULES.get((family_a, family_b)) or COMBINATION_RULES.get(
         (family_b, family_a), "disallowed"
     )
     if rule != "allowed":
         return None
-    slug_a = Path(a.config).stem.removeprefix("orb_")
-    slug_b = Path(b.config).stem.removeprefix("orb_")
+    slug_a = family.slug_from_config(a.config)
+    slug_b = family.slug_from_config(b.config)
     combo_slug = f"{slug_a}_x_{slug_b}"
-    combo_config_yaml = f"configs/variants/orb_{combo_slug}.yaml"
+    combo_config_yaml = family.variant_config_path(combo_slug)
     if combo_config_yaml in attempted or (root / combo_config_yaml).exists():
         return None
     cfgs = _load_two_configs(root, a.config, b.config)
@@ -337,6 +352,7 @@ def _try_combine_pair(
     )
     _write_combination_proposal(
         proposals_dir,
+        family=family,
         combo_slug=combo_slug,
         a=a,
         b=b,
@@ -350,18 +366,22 @@ def _try_combine_pair(
 
 def generate_combination_candidates(
     root: Path,
+    family: StrategyFamily,
     proposals_dir: Path,
     results: list[ExperimentRecord],
 ) -> list[str]:
-    """Generate combination configs from 2+ independent winners."""
-    kept = [r for r in results if r.status == "keep" and r.config != "configs/orb_base.yaml"]
+    """Generate combination configs from 2+ independent winners.
+    Excludes the family's baseline config from the kept set so that
+    the baseline is not treated as one of the two thesis winners."""
+    baseline = family.baseline_config_path
+    kept = [r for r in results if r.status == "keep" and r.config != baseline]
     if len(kept) < 2:
         return []
     attempted = {r.config for r in results if r.config}
     generated: list[str] = []
     for i, a in enumerate(kept):
         for b in kept[i + 1 :]:
-            combo = _try_combine_pair(root, proposals_dir, a, b, attempted)
+            combo = _try_combine_pair(root, family, proposals_dir, a, b, attempted)
             if combo is not None:
                 generated.append(combo)
     return generated
@@ -372,11 +392,12 @@ def generate_combination_candidates(
 
 def should_terminate(
     root: Path,
+    family: StrategyFamily,
     run_queue_dir: Path,
     research_dir: Path,
     results: list[ExperimentRecord],
 ) -> bool:
-    if pending_configs(root, results):
+    if pending_configs(root, family, results):
         return False
     if queue_from_thesis_artifacts(run_queue_dir, root, results):
         return False
@@ -446,7 +467,7 @@ def _combination_branch(
     proposals_dir: Path,
     results: list[ExperimentRecord],
 ) -> dict[str, Any] | None:
-    combos = generate_combination_candidates(root, proposals_dir, results)
+    combos = generate_combination_candidates(root, family, proposals_dir, results)
     if not combos:
         return None
     return _running_state(combos[0], family, source="combination_phase")
@@ -460,7 +481,9 @@ def _ideas_branch(
     proposals_dir: Path,
     results: list[ExperimentRecord],
 ) -> dict[str, Any] | None:
-    configs = generate_theses_from_ideas(root, ideas_md_path, run_queue_dir, proposals_dir, results)
+    configs = generate_theses_from_ideas(
+        root, family, ideas_md_path, run_queue_dir, proposals_dir, results
+    )
     if not configs:
         return None
     return _running_state(configs[0], family, source="ideas_backlog")
@@ -492,7 +515,7 @@ def select_research_next_action(
     ):
         if branch is not None:
             return branch
-    if should_terminate(root, run_queue_dir, research_dir, results):
+    if should_terminate(root, family, run_queue_dir, research_dir, results):
         return _finished_state()
     return _blocked_for_research_state(root, research_dir)
 
