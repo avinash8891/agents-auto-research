@@ -25,6 +25,7 @@ from autoresearch_constants import (
     MAX_RESEARCH_ROUNDS,
     MAX_VALIDATION_RETRIES,
 )
+from autoresearch_logging import get_logger
 from autoresearch_state import (
     ExperimentRecord,
     iso8601_utc_now,
@@ -44,6 +45,8 @@ from trace_logger import (
 
 if TYPE_CHECKING:
     from autoresearch_loop import AutoresearchController
+
+log = get_logger(__name__)
 
 
 # ── Discord notification ──────────────────────────────────────────
@@ -354,7 +357,7 @@ def _log_validation_rejection(
     reason: str,
 ) -> None:
     rejection_feedback = f"Thesis '{thesis_id}' rejected by validator: {reason}"
-    print(f"THESIS REJECTED (will retry with feedback): {rejection_feedback}")
+    log.warning(f"THESIS REJECTED (will retry with feedback): {rejection_feedback}")
     trace("LOOP", f"thesis rejected, retrying: {rejection_feedback}")
     controller.log_research_round(
         round_number=research_round,
@@ -430,7 +433,7 @@ def _try_one_validation_attempt(
     raw_thesis = parsed["suggested_theses"][0]
     raw_thesis["strategy_family"] = controller.family.name
     thesis_id = raw_thesis.get("thesis_id", "unknown")
-    print(
+    log.info(
         f"RESEARCH_RAW thesis_id={thesis_id} "
         f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
     )
@@ -493,7 +496,7 @@ def _exhausted_retries_result(
         if parsed and parsed.get("suggested_theses")
         else "unknown"
     )
-    print(f"THESIS REJECTED after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback}")
+    log.error(f"THESIS REJECTED after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback}")
     trace(
         "LOOP",
         f"thesis rejected after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback}",
@@ -527,7 +530,7 @@ def _call_conductor(
     label = f"round={research_round}" + (
         f" attempt={attempt+1} (retry with feedback)" if attempt else ""
     )
-    print(f"CONDUCTOR starting {label} trades={'YES' if trades_file else 'NO'}")
+    log.info(f"CONDUCTOR starting {label} trades={'YES' if trades_file else 'NO'}")
     trace("CONDUCTOR", f"START {label}")
     return run_research_conductor_sync(
         trades_file=trades_file,
@@ -616,7 +619,7 @@ def _handle_max_rounds_reached(
     state["finished_reason"] = "max_research_rounds_reached"
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
-    print(f"LOOP_STOP finished: max research rounds ({MAX_RESEARCH_ROUNDS}) reached")
+    log.info(f"LOOP_STOP finished: max research rounds ({MAX_RESEARCH_ROUNDS}) reached")
     best = state.get("current_best", {})
     notify_discord(
         f"✅ {controller.family.name.upper()} FINISHED — max rounds",
@@ -637,7 +640,7 @@ def _handle_should_stop(
     state["research_stop_reasoning"] = result.get("reasoning", "")
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
-    print("LOOP_STOP finished: research recommends stop")
+    log.info("LOOP_STOP finished: research recommends stop")
     best = state.get("current_best", {})
     notify_discord(
         f"✅ {controller.family.name.upper()} FINISHED — conductor says stop",
@@ -655,7 +658,7 @@ def _handle_needs_code(
 ) -> dict[str, Any]:
     thesis_id = result.get("generated_thesis_id", "unknown")
     thesis = result.get("thesis", {})
-    print(f"LOOP_HALT thesis={thesis_id} requires code change")
+    log.warning(f"LOOP_HALT thesis={thesis_id} requires code change")
     state["state"] = "halted"
     state["halted_reason"] = "requires_code_change"
     state["halted_thesis_id"] = thesis_id
@@ -697,7 +700,7 @@ def _handle_success(
     }
     state["blockers"] = []
     controller.write_state(state)
-    print(f"HEARTBEAT research generated {thesis_id} -> {gen_config}")
+    log.info(f"HEARTBEAT research generated {thesis_id} -> {gen_config}")
     return state
 
 
@@ -709,7 +712,7 @@ def _handle_round_failure(
 ) -> dict[str, Any]:
     reason = result.get("rejection_reason") or result.get("reasoning") or "no thesis generated"
     trace("LOOP", f"research round {research_round} produced no config: {reason}")
-    print(f"HEARTBEAT research round {research_round} failed: {reason}")
+    log.warning(f"HEARTBEAT research round {research_round} failed: {reason}")
     state["research_round"] = research_round
     state["state"] = "blocked"
     state["blockers"] = [
@@ -726,7 +729,7 @@ def _invoke_conductor_round(
     round-usage into state for downstream log_experiment_result use."""
     from research_conductor import get_round_usage, reset_round_usage
 
-    print(f"HEARTBEAT research_blocked round={research_round}, invoking research subagent")
+    log.info(f"HEARTBEAT research_blocked round={research_round}, invoking research subagent")
     begin_hypothesis(f"research-round-{research_round}")
     reset_round_usage()
     result = controller.execute_research_one()

@@ -20,10 +20,13 @@ from autoresearch_artifacts import (
     read_thesis_artifacts,
 )
 from autoresearch_constants import BASELINE_RERUN_INTERVAL
+from autoresearch_logging import get_logger
 from autoresearch_state import ExperimentRecord
 from compiler_pipeline import compile_proposal_artifact
 from strategy_family import StrategyFamily
 from trace_logger import trace
+
+log = get_logger(__name__)
 
 DEFAULT_CONFIG_ORDER = [
     "configs/variants/orb_spy_only.yaml",
@@ -610,7 +613,7 @@ def check_baseline_rerun(
 
     baseline_config = f"configs/{family.base_config_filename}"
     trace("BASELINE", f"forcing rerun: {reason}")
-    print(f"BASELINE_RERUN {reason}")
+    log.info(f"BASELINE_RERUN {reason}")
     return {
         "type": "run_experiment",
         "config": baseline_config,

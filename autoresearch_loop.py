@@ -32,6 +32,7 @@ from autoresearch_experiment import run_experiment as _experiment_run_experiment
 from autoresearch_experiment import (
     sanitize_duplicate_entries as _experiment_sanitize_duplicate_entries,
 )
+from autoresearch_logging import get_logger
 from autoresearch_planning import (
     COMBINATION_RULES,
     DEFAULT_CONFIG_ORDER,
@@ -81,6 +82,8 @@ from autoresearch_state import write_state as _state_write_state
 from experiment_db import BaselineTracker, ExperimentDB
 from strategy_family import StrategyFamily, load_family
 from trace_logger import trace
+
+log = get_logger(__name__)
 
 ROOT = Path(__file__).resolve().parent
 STATE_PATH = ROOT / "autoresearch.next.json"
@@ -531,7 +534,7 @@ class AutoresearchController:
 
         # Terminal states
         if state.get("state") != "running":
-            print(f"LOOP_STOP state={state.get('state')}")
+            log.info(f"LOOP_STOP state={state.get('state')}")
             return 0
 
         # We have a config to run

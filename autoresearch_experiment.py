@@ -31,6 +31,7 @@ from autoresearch_constants import (
     DISCORD_COLOR_WARNING,
     MILLISECONDS_PER_SECOND,
 )
+from autoresearch_logging import get_logger
 from autoresearch_state import (
     iso8601_utc_now,
     read_entries,
@@ -57,6 +58,8 @@ from trace_logger import (
 if TYPE_CHECKING:
     from autoresearch_loop import AutoresearchController
 
+log = get_logger(__name__)
+
 
 # ── Shell out ─────────────────────────────────────────────────────
 
@@ -64,7 +67,7 @@ if TYPE_CHECKING:
 def run_command(root: Path, command: str) -> tuple[int, str]:
     try:
         trace("COMMAND", f"START: {command}")
-        print(f"RUN_COMMAND start: {command[:COMMAND_PREVIEW_TRUNCATION]}", flush=True)
+        log.info(f"RUN_COMMAND start: {command[:COMMAND_PREVIEW_TRUNCATION]}")
         sys.stdout.flush()
         result = subprocess.run(
             command,
@@ -78,7 +81,7 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         stdout = result.stdout or ""
         stderr = result.stderr or ""
         trace_ssh(command, result.returncode, stdout, stderr)
-        print(f"RUN_COMMAND done: exit={result.returncode}", flush=True)
+        log.info(f"RUN_COMMAND done: exit={result.returncode}")
         sys.stdout.flush()
         return int(result.returncode), stdout + stderr
     except subprocess.TimeoutExpired:
@@ -86,14 +89,14 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
             "COMMAND",
             f"TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): {command[:COMMAND_TIMEOUT_TRUNCATION]}",
         )
-        print(
-            f"COMMAND TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): {command[:COMMAND_TIMEOUT_TRUNCATION]}",
-            flush=True,
+        log.error(
+            f"COMMAND TIMEOUT ({COMMAND_TIMEOUT_SECONDS}s): "
+            f"{command[:COMMAND_TIMEOUT_TRUNCATION]}"
         )
         return 1, "TIMEOUT"
     except Exception as exc:
         trace("COMMAND", f"ERROR: {exc}")
-        print(f"RUN_COMMAND error: {exc}", flush=True)
+        log.error(f"RUN_COMMAND error: {exc}")
         return 1, str(exc)
 
 
@@ -522,7 +525,7 @@ def _block_with_command_failed(
     state["blockers"] = [{"kind": "command_failed", "detail": command, "exit_code": code}]
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
-    print(f"LOOP_STOP state=blocked exit_code={code}")
+    log.error(f"LOOP_STOP state=blocked exit_code={code}")
     notify_discord(
         f"⚠️ {controller.family.name.upper()} BLOCKED — backtest failed",
         f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\n**Exit code:** {code}",
@@ -543,7 +546,7 @@ def _block_with_metric_parse_failed(
     state["blockers"] = [{"kind": "metric_parse_failed", "detail": command}]
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
-    print("LOOP_STOP state=blocked metric_parse_failed")
+    log.error("LOOP_STOP state=blocked metric_parse_failed")
     notify_discord(
         f"⚠️ {controller.family.name.upper()} BLOCKED — metric parse failed",
         f"**Command:** `{command[:COMMAND_NOTIFICATION_TRUNCATION]}`\n"
@@ -622,7 +625,7 @@ def _evaluate_against_thesis(
             f"verdict={verdict.status} passed={verdict.passed_effects} "
             f"failed={verdict.failed_effects} dq={verdict.triggered_disqualifiers}",
         )
-        print(f"VERDICT {verdict.status}: {verdict.summary}")
+        log.info(f"VERDICT {verdict.status}: {verdict.summary}")
         _persist_verdict(controller, contract, verdict)
         if verdict.status == "rejected":
             return verdict, "discard"
@@ -631,7 +634,7 @@ def _evaluate_against_thesis(
         return verdict, decision
     except Exception as exc:
         trace("EVAL", f"evaluation error: {exc}")
-        print(f"EVAL error (non-fatal): {exc}")
+        log.warning(f"EVAL error (non-fatal): {exc}")
         return None, decision
 
 
@@ -685,7 +688,7 @@ def _send_completion_notification(
         webhook=controller.family.discord_webhook,
         color=DISCORD_COLOR_SUCCESS if decision == "keep" else DISCORD_COLOR_DISCARD,
     )
-    print(
+    log.info(
         f"HEARTBEAT complete thesis={config} result={decision} metric={metric} "
         f"verdict={verdict_str} next_action={state.get('next_action', {}).get('type')}"
     )
@@ -710,12 +713,12 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
 
     _, command = _setup_run(controller, config)
     if not command:
-        print("LOOP_STOP missing_benchmark_command")
+        log.error("LOOP_STOP missing_benchmark_command")
         return 1
 
     begin_hypothesis(Path(config).stem if config else "unknown")
     trace("LOOP", f"BENCHMARK START: {command}")
-    print(f"HEARTBEAT running {command}")
+    log.info(f"HEARTBEAT running {command}")
     code, output = controller.run_command(command)
     if code != 0:
         return _block_with_command_failed(controller, controller.read_state(), command, code)
