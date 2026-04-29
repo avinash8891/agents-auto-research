@@ -3,13 +3,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 from autoresearch_artifacts import (
     queue_from_thesis_artifacts as _artifacts_queue_from_thesis_artifacts,
@@ -17,6 +14,20 @@ from autoresearch_artifacts import (
     read_research_artifacts as _artifacts_read_research_artifacts,
     read_run_queue as _artifacts_read_run_queue,
     read_thesis_artifacts as _artifacts_read_thesis_artifacts,
+)
+from autoresearch_experiment import (
+    artifact_dir_for as _experiment_artifact_dir_for,
+    derive_trade_analysis as _experiment_derive_trade_analysis,
+    evaluate_metric as _experiment_evaluate_metric,
+    log_experiment_result as _experiment_log_experiment_result,
+    parse_benchmark_details as _experiment_parse_benchmark_details,
+    parse_benchmark_details_legacy as _experiment_parse_benchmark_details_legacy,
+    parse_metric as _experiment_parse_metric,
+    parse_result_json as _experiment_parse_result_json,
+    primary_metric_name as _experiment_primary_metric_name,
+    run_command as _experiment_run_command,
+    run_experiment as _experiment_run_experiment,
+    sanitize_duplicate_entries as _experiment_sanitize_duplicate_entries,
 )
 from autoresearch_research import (
     accumulate_job_usage as _research_accumulate_job_usage,
@@ -62,14 +73,8 @@ from autoresearch_state import (
     write_entries as _state_write_entries,
     write_state as _state_write_state,
 )
-from trace_logger import (
-    trace, trace_benchmark, trace_ssh,
-    begin_hypothesis, end_hypothesis, current_hypothesis_id, get_run_id,
-)
-from experiment_db import (
-    ExperimentDB, ExperimentResult, BaselineTracker, BaselineCheckpoint,
-    build_data_hash, build_config_hash,
-)
+from trace_logger import trace
+from experiment_db import ExperimentDB, BaselineTracker
 from strategy_family import StrategyFamily, load_family
 
 ROOT = Path(__file__).resolve().parent
@@ -277,75 +282,13 @@ class AutoresearchController:
     # ── WS-4: Parse real benchmark output ─────────────────────────────
 
     def parse_result_json(self, output: str) -> dict[str, Any] | None:
-        """Find RESULT_JSON line in output, read and return the JSON file."""
-        match = re.search(r"^RESULT_JSON (.+)$", output, flags=re.MULTILINE)
-        if not match:
-            return None
-        result_path = Path(match.group(1).strip())
-        if not result_path.exists():
-            return None
-        try:
-            return json.loads(result_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            return None
+        return _experiment_parse_result_json(output)
 
     def parse_benchmark_details(self, output: str) -> dict[str, Any]:
-        """Extract metrics from result.json written by backtest."""
-        result_json = self.parse_result_json(output)
-        if result_json:
-            details: dict[str, Any] = {}
-            metrics = result_json.get("metrics", {})
-            for key in ("trade_count", "profit_factor", "max_drawdown",
-                        "pct_profitable_windows", "avg_sharpe_across_windows",
-                        "win_rate"):
-                if key in metrics:
-                    details[key] = metrics[key]
-            if result_json.get("diagnostics"):
-                details["diagnostics"] = result_json["diagnostics"]
-            if result_json.get("trades_file"):
-                details["trades_file"] = result_json["trades_file"]
-            if result_json.get("strategy_events_file"):
-                details["strategy_events_file"] = result_json["strategy_events_file"]
-            if result_json.get("diagnostics_file"):
-                details["diagnostics_file"] = result_json["diagnostics_file"]
-            if result_json.get("strategy_diagnostics"):
-                details["strategy_diagnostics"] = result_json["strategy_diagnostics"]
-            if result_json.get("git_sha"):
-                details["git_sha"] = result_json["git_sha"]
-            if result_json.get("config_hash"):
-                details["config_hash"] = result_json["config_hash"]
-            return details
-
-        # Fallback: should not happen with new backtest, but keeps old runs working
-        trace("LOOP", "WARNING: no RESULT_JSON found, falling back to stdout parsing")
-        return self._parse_benchmark_details_legacy(output)
+        return _experiment_parse_benchmark_details(output)
 
     def _parse_benchmark_details_legacy(self, output: str) -> dict[str, Any]:
-        """Legacy stdout parsing u2014 only used if result.json is missing."""
-        details: dict[str, Any] = {}
-        patterns = {
-            "trade_count": r"^METRIC trade_count=(\d+)",
-            "profit_factor": r"^METRIC profit_factor=([-+]?\d*\.?\d+)",
-            "max_drawdown": r"^METRIC max_drawdown=([-+]?\d*\.?\d+)",
-            "pct_profitable_windows": r"^METRIC pct_profitable_windows=([-+]?\d*\.?\d+)",
-            "avg_sharpe_across_windows": r"^METRIC avg_sharpe_across_windows=([-+]?\d*\.?\d+)",
-            "win_rate": r"^METRIC win_rate=([-+]?\d*\.?\d+)",
-        }
-        for key, pattern in patterns.items():
-            match = re.search(pattern, output, flags=re.MULTILINE)
-            if match:
-                val = match.group(1)
-                details[key] = int(val) if key == "trade_count" else float(val)
-        diag_match = re.search(r"^DIAGNOSTICS (.+)$", output, flags=re.MULTILINE)
-        if diag_match:
-            try:
-                details["diagnostics"] = json.loads(diag_match.group(1))
-            except json.JSONDecodeError:
-                pass
-        trades_match = re.search(r"^TRADES_FILE (.+)$", output, flags=re.MULTILINE)
-        if trades_match:
-            details["trades_file"] = trades_match.group(1).strip()
-        return details
+        return _experiment_parse_benchmark_details_legacy(output)
 
     def select_research_next_action(self, results: list[ExperimentRecord]) -> dict[str, Any]:
         return _planning_select_research_next_action(
@@ -403,26 +346,10 @@ class AutoresearchController:
         return state
 
     def artifact_dir_for(self, config: str) -> Path:
-        state = self.read_state()
-        job = state.get("job", 0)
-        path = self.runs_dir.resolve() / f"job-{job}" / Path(config).stem
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+        return _experiment_artifact_dir_for(self.state_path, self.runs_dir, config)
 
     def sanitize_duplicate_entries(self, config: str) -> None:
-        filtered: list[dict[str, Any]] = []
-        slug = Path(config).stem
-        for entry in self.read_entries():
-            if entry.get("type") == "config":
-                filtered.append(entry)
-                continue
-            asi = entry.get("asi") or {}
-            same_config = asi.get("config") == config
-            low_information = entry.get("description") == f"loop: {slug}"
-            if same_config and low_information:
-                continue
-            filtered.append(entry)
-        self.write_entries(filtered)
+        _experiment_sanitize_duplicate_entries(self.jsonl_path, config)
 
     def _accumulate_job_usage(self, round_usage: dict[str, Any]) -> None:
         _research_accumulate_job_usage(self.state_path, round_usage)
@@ -457,211 +384,27 @@ class AutoresearchController:
         output: str,
         analysis: dict[str, Any],
     ) -> None:
-        self.sanitize_duplicate_entries(config)
-        # Reuse artifact dir from derive_trade_analysis if available
-        artifact_dir = getattr(self, "_current_artifact_dir", None) or self.artifact_dir_for(config)
-        self._current_artifact_dir = None  # reset for next hypothesis
-        (artifact_dir / "benchmark_output.txt").write_text(output)
-        (artifact_dir / "analysis.json").write_text(json.dumps(analysis, indent=2) + "\n")
-
-        # Load thesis metadata (thesis_id, config_changes) from the
-        # experiment directory so the results table shows WHAT was tried.
-        contract = getattr(self, "_current_contract", None)
-        thesis_id = contract.thesis_id if contract else Path(config).stem
-        config_changes: dict[str, Any] = {}
-        thesis_json_path = self.root / "experiments" / (contract.experiment_id if contract else Path(config).stem) / "thesis.json"
-        if thesis_json_path.exists():
-            try:
-                tj = json.loads(thesis_json_path.read_text())
-                thesis_id = tj.get("thesis_id", thesis_id)
-                config_changes = tj.get("config_changes", {})
-            except Exception:
-                pass
-
-        asi = {
-            "job": self.read_state().get("job"),
-            "run_id": get_run_id(),
-            "hypothesis_id": current_hypothesis_id(),
-            "hypothesis": Path(config).stem,
-            "config": config,
-            "artifact_dir": artifact_dir.relative_to(self.root).as_posix(),
-            "trade_analysis": analysis.get("trade_analysis", {}),
-            "insights": analysis.get("insights", []),
-            "next_candidates": analysis.get("next_candidates", []),
-            "next_thesis_suggestion": analysis.get("next_thesis_suggestion", ""),
-            "why_not_data_fit": analysis.get("why_not_data_fit"),
-            "insight_brief": analysis.get("insight_brief", ""),
-            "thesis_id": thesis_id,
-            "config_changes": config_changes,
-        }
-        # Tag baseline reruns for drift detection
-        rerun_commit = self.read_state().get("next_action", {}).get("baseline_rerun_for_commit")
-        if rerun_commit:
-            asi["baseline_rerun_for_commit"] = rerun_commit
-        details = self.parse_benchmark_details(output)
-        entries = self.read_entries()
-        next_run = 1 + len([entry for entry in entries if entry.get("type") != "config"])
-        state = self.read_state()
-        entry = {
-            "run": next_run,
-            "job": state.get("job"),
-            "run_id": get_run_id(),
-            "hypothesis_id": current_hypothesis_id(),
-            "commit": self.current_commit(),
-            "metric": metric,
-            "metrics": details,
-            "status": decision,
-            "description": f"strict-native loop: {Path(config).stem}",
-            "timestamp": int(time.time() * 1000),
-            "segment": 0,
-            "confidence": None,
-            "asi": asi,
-        }
-        entries.append(entry)
-        self.write_entries(entries)
-        trace_benchmark(config, metric, decision, details)
-
-        # Write to structured experiment database
-        contract = getattr(self, "_current_contract", None)
-        verdict = analysis.get("trade_analysis", {}).get("verdict", {})
-        runtime_config = getattr(self, "_latest_config_contents", {}) or {}
-        self.experiment_db.add(ExperimentResult(
-            experiment_id=contract.experiment_id if contract else entry["run_id"],
-            thesis_id=contract.thesis_id if contract else Path(config).stem,
-            config_path=config,
-            runtime_config=runtime_config,
-            code_commit=self.current_commit(),
-            data_hash=build_data_hash(runtime_config),
-            train_metrics={},
-            validation_metrics=details,
-            trade_count=details.get("trade_count", 0),
-            trades_file=details.get("trades_file", ""),
-            strategy_events_file=details.get("strategy_events_file", ""),
-            diagnostics_file=details.get("diagnostics_file", ""),
-            strategy_diagnostics=details.get("strategy_diagnostics", {}),
-            accepted=decision == "keep",
-            rejection_reason=verdict.get("summary", "") if decision != "keep" else "",
-            verdict_status=verdict.get("status", "none"),
-            verdict_summary=verdict.get("summary", ""),
-            parent_experiment_id=getattr(self, "_parent_experiment_id", ""),
-            timestamp=int(time.time() * 1000),
-            family=self.family.name,
-            hypothesis=contract.hypothesis if contract else "",
-            mechanism=contract.mechanism if contract else "",
-            job=state.get("job", 0),
-            usage=state.get("_last_round_usage", {}),
-        ))
+        _experiment_log_experiment_result(
+            self, config=config, metric=metric, decision=decision,
+            output=output, analysis=analysis,
+        )
 
     def run_command(self, command: str) -> tuple[int, str]:
-        import sys
-        try:
-            trace("COMMAND", f"START: {command}")
-            print(f"RUN_COMMAND start: {command[:80]}", flush=True)
-            sys.stdout.flush()
-            result = subprocess.run(
-                command, shell=True, cwd=self.root,
-                capture_output=True, text=True, timeout=1800,
-                stdin=subprocess.DEVNULL,
-            )
-            stdout = result.stdout or ""
-            stderr = result.stderr or ""
-            trace_ssh(command, result.returncode, stdout, stderr)
-            print(f"RUN_COMMAND done: exit={result.returncode}", flush=True)
-            sys.stdout.flush()
-            output = stdout + stderr
-            return int(result.returncode), output
-        except subprocess.TimeoutExpired:
-            trace("COMMAND", f"TIMEOUT (1800s): {command[:100]}")
-            print(f"COMMAND TIMEOUT (1800s): {command[:100]}", flush=True)
-            return 1, "TIMEOUT"
-        except Exception as exc:
-            trace("COMMAND", f"ERROR: {exc}")
-            print(f"RUN_COMMAND error: {exc}", flush=True)
-            return 1, str(exc)
+        return _experiment_run_command(self.root, command)
 
     def primary_metric_name(self) -> str:
-        """Read the primary metric name from the JSONL config header."""
-        for entry in self.read_entries():
-            if entry.get("type") == "config":
-                return entry.get("metricName", "median_expectancy")
-        return "median_expectancy"
+        return _experiment_primary_metric_name(self.read_entries())
 
     def parse_metric(self, output: str, name: str = "median_expectancy") -> float | None:
-        result_json = self.parse_result_json(output)
-        if result_json:
-            val = result_json.get("metrics", {}).get(name)
-            return float(val) if val is not None else None
-        # Legacy fallback
-        match = re.search(rf"^METRIC {re.escape(name)}=([-+]?\d*\.?\d+)", output, flags=re.MULTILINE)
-        return float(match.group(1)) if match else None
+        return _experiment_parse_metric(output, name)
 
     def evaluate_metric(self, metric: float) -> str:
-        result = subprocess.run(
-            [
-                "python3",
-                "autoresearch_helper.py",
-                "evaluate",
-                "--jsonl",
-                self.jsonl_path.name,
-                "--metric",
-                str(metric),
-                "--direction",
-                "higher",
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        text = (result.stdout or "") + (result.stderr or "")
-        return "keep" if "DECISION: keep" in text else "discard"
+        return _experiment_evaluate_metric(self.root, self.jsonl_path.name, metric)
 
     def derive_trade_analysis(
         self, config: str, metric: float, decision: str, output: str = ""
     ) -> dict[str, Any]:
-        best = self.best_result(self.read_results())
-        details = self.parse_benchmark_details(output)
-
-        # Load full config contents for analyst context
-        config_contents: dict[str, Any] = {}
-        config_path = self.root / config
-        if config_path.exists():
-            try:
-                if config_path.suffix in (".yaml", ".yml"):
-                    import yaml
-                    raw = yaml.safe_load(config_path.read_text())
-                else:
-                    raw = json.loads(config_path.read_text())
-                if isinstance(raw, dict) and "runtime_config" in raw:
-                    config_contents = raw["runtime_config"]
-                elif isinstance(raw, dict):
-                    config_contents = raw
-                else:
-                    from ema_contract import compile_ema_contract
-                    config_contents = compile_ema_contract(raw).runtime_config
-            except Exception:
-                pass
-
-        # Trades file path comes from result.json (backtest writes it to the run dir)
-        trades_file = details.get("trades_file", "")
-        self._latest_trades_file = trades_file
-        self._latest_strategy_events_file = details.get("strategy_events_file", "")
-        self._latest_diagnostics_file = details.get("diagnostics_file", "")
-        self._latest_config_contents = config_contents
-
-        # Build analysis record
-        trade_analysis: dict[str, Any] = {
-            "what_changed_vs_baseline": f"{Path(config).stem} evaluated independently.",
-            "primary_metric_improved": decision == "keep",
-            **details,
-        }
-        result = {
-            "trade_analysis": trade_analysis,
-            "insights": [f"metric={metric}", f"decision={decision}"],
-            "next_candidates": [],
-            "why_not_data_fit": "Independent thesis evaluation only.",
-        }
-        return result
+        return _experiment_derive_trade_analysis(self, config, metric, decision, output)
 
     def execute_research_sdk(self) -> dict[str, Any]:
         return _research_execute_research_sdk(self)
@@ -751,194 +494,7 @@ class AutoresearchController:
         return _research_run_research(self, state)
 
     def _run_experiment(self, state: dict[str, Any]) -> int:
-        """Run a single experiment (backtest + evaluate + log). Returns exit code."""
-        next_action = state["next_action"]
-        config = next_action["config"]
-
-        # Compute config hash and create per-run output dir
-        import hashlib
-        config_path_full = self.root / config
-        if config_path_full.exists():
-            if config_path_full.suffix in (".yaml", ".yml"):
-                import yaml
-                _cfg = yaml.safe_load(config_path_full.read_text())
-            else:
-                _cfg = json.loads(config_path_full.read_text())
-            if isinstance(_cfg, dict) and "runtime_config" in _cfg:
-                _cfg = _cfg["runtime_config"]
-            config_hash = hashlib.sha256(
-                json.dumps(_cfg, sort_keys=True).encode()
-            ).hexdigest()[:12]
-        else:
-            config_hash = hashlib.sha256(config.encode()).hexdigest()[:12]
-
-        state = self.read_state()
-        job = state.get("job", 0)
-        run_output_dir = self.runs_dir.resolve() / f"job-{job}" / config_hash
-        run_output_dir.mkdir(parents=True, exist_ok=True)
-        self._current_artifact_dir = run_output_dir
-
-        if config_path_full.exists():
-            import shutil
-            shutil.copy2(config_path_full, run_output_dir / "config.json")
-
-        command = self.family.benchmark_command(config, output_dir=str(run_output_dir))
-        if not command:
-            print("LOOP_STOP missing_benchmark_command")
-            return 1
-
-        hyp_name = Path(config).stem if config else "unknown"
-        begin_hypothesis(hyp_name)
-        trace("LOOP", f"BENCHMARK START: {command}")
-        print(f"HEARTBEAT running {command}")
-        code, output = self.run_command(command)
-
-        if code != 0:
-            state["state"] = "blocked"
-            state["blockers"] = [{"kind": "command_failed", "detail": command, "exit_code": code}]
-            self.write_state(state)
-            self.write_current_md(state, self.read_results())
-            print(f"LOOP_STOP state=blocked exit_code={code}")
-            _notify_discord(
-                f"\u26a0\ufe0f {self.family.name.upper()} BLOCKED \u2014 backtest failed",
-                f"**Command:** `{command[:200]}`\n**Exit code:** {code}",
-                webhook=self.family.discord_webhook, color=0xFFA500,
-            )
-            return code
-
-        metric = self.parse_metric(output, name=self.primary_metric_name())
-        if metric is None:
-            state["state"] = "blocked"
-            state["blockers"] = [{"kind": "metric_parse_failed", "detail": command}]
-            self.write_state(state)
-            self.write_current_md(state, self.read_results())
-            print("LOOP_STOP state=blocked metric_parse_failed")
-            _notify_discord(
-                f"\u26a0\ufe0f {self.family.name.upper()} BLOCKED \u2014 metric parse failed",
-                f"**Command:** `{command[:200]}`\nCould not extract metric from output.",
-                webhook=self.family.discord_webhook, color=0xFFA500,
-            )
-            return 1
-
-        details = self.parse_benchmark_details(output)
-        decision = self.evaluate_metric(metric)
-        trace("LOOP", f"METRIC parsed: {metric} decision={decision} config={config}")
-
-        # Evaluate against thesis predictions (if we have a contract)
-        verdict = None
-        contract = getattr(self, "_current_contract", None)
-        if contract and contract.expected_effects:
-            try:
-                from experiment_evaluator import evaluate_experiment
-                from research_types import ResearchThesis
-
-                results = self.read_results()
-                baseline_result = results[0] if results else None
-                baseline_metrics: dict[str, Any] = {}
-                if baseline_result:
-                    bta = baseline_result.asi.get("trade_analysis", {})
-                    for k in ("trade_count", "profit_factor", "max_drawdown",
-                              "pct_profitable_windows", "avg_sharpe_across_windows",
-                              "median_expectancy"):
-                        if bta.get(k) is not None:
-                            baseline_metrics[k] = bta[k]
-
-                candidate_metrics = dict(details)
-                candidate_metrics["median_expectancy"] = metric
-
-                thesis_for_eval = ResearchThesis(
-                    thesis_id=contract.thesis_id,
-                    strategy_family=contract.strategy_family,
-                    hypothesis=contract.hypothesis,
-                    mechanism=contract.mechanism,
-                    expected_effects=contract.expected_effects,
-                    disqualifiers=contract.disqualifiers,
-                    required_diagnostics=contract.required_diagnostics,
-                )
-
-                verdict = evaluate_experiment(
-                    thesis=thesis_for_eval,
-                    baseline_metrics=baseline_metrics,
-                    candidate_metrics=candidate_metrics,
-                    experiment_id=contract.experiment_id,
-                    strategy_diagnostics=details.get("strategy_diagnostics"),
-                )
-                trace("EVAL", f"verdict={verdict.status} passed={verdict.passed_effects} failed={verdict.failed_effects} dq={verdict.triggered_disqualifiers}")
-                print(f"VERDICT {verdict.status}: {verdict.summary}")
-
-                experiment_dir = self.root / "experiments" / contract.experiment_id
-                if experiment_dir.exists():
-                    (experiment_dir / "verdict.json").write_text(
-                        verdict.model_dump_json(indent=2) + "\n"
-                    )
-
-                if verdict.status == "rejected":
-                    decision = "discard"
-                elif verdict.status == "accepted" and decision == "discard":
-                    trace("EVAL", "thesis accepted despite metric threshold")
-
-            except Exception as exc:
-                trace("EVAL", f"evaluation error: {exc}")
-                print(f"EVAL error (non-fatal): {exc}")
-
-        self._current_contract = None
-
-        analysis = self.derive_trade_analysis(config, metric, decision, output=output)
-        if verdict:
-            analysis["trade_analysis"]["verdict"] = verdict.model_dump()
-        self.log_experiment_result(config=config, metric=metric, decision=decision, output=output, analysis=analysis)
-
-        # Record baseline checkpoint
-        is_baseline_run = next_action.get("source") == "baseline"
-        if is_baseline_run:
-            runtime_cfg = getattr(self, "_latest_config_contents", {}) or {}
-            new_checkpoint = BaselineCheckpoint(
-                code_commit=self.current_commit(),
-                data_hash=build_data_hash(runtime_cfg),
-                config_hash=build_config_hash(runtime_cfg),
-                metrics=details,
-                timestamp=int(time.time() * 1000),
-                round_number=len(self.baseline_tracker.all_checkpoints()),
-            )
-            drift = self.baseline_tracker.check_drift(new_checkpoint)
-            self.baseline_tracker.record(new_checkpoint)
-            trace("BASELINE", f"checkpoint recorded commit={self.current_commit()}")
-            if drift["drifted"]:
-                drift_details = [d for d in drift["details"] if d.get("severity") == "critical"]
-                trace("BASELINE", f"DRIFT DETECTED: {drift_details}")
-                state = self.read_state()
-                state["baseline_drift"] = drift
-                self.write_state(state)
-
-            # Clear the baseline_rerun_for_commit flag so plan_next_action
-            # doesn't short-circuit on the stale flag and loop forever.
-            persisted = self.read_state()
-            na = persisted.get("next_action", {})
-            if na.get("baseline_rerun_for_commit"):
-                na.pop("baseline_rerun_for_commit", None)
-                persisted["next_action"] = na
-                self.write_state(persisted)
-
-        end_hypothesis(decision=decision, metric=metric)
-
-        # After experiment, reconcile to find next work
-        state = self.reconcile_state()
-        trace("LOOP", f"ITERATION DONE thesis={config} metric={metric} decision={decision} verdict={verdict.status if verdict else 'none'} next={state.get('next_action', {}).get('type')}")
-        best = state.get("current_best", {})
-        verdict_str = verdict.status if verdict else "none"
-        emoji = "\u2705" if decision == "keep" else "\u274c" if decision == "discard" else "\U0001f504"
-        _notify_discord(
-            f"{emoji} {self.family.name.upper()} \u2014 {Path(config).stem}",
-            f"**PF:** {metric}  |  **Decision:** {decision}  |  **Verdict:** {verdict_str}\n"
-            f"**Best so far:** `{Path(best.get('config', '?')).stem}` PF={best.get('metric', '?')}",
-            webhook=self.family.discord_webhook, color=0x00CC00 if decision == "keep" else 0xFF4500,
-        )
-        print(
-            f"HEARTBEAT complete thesis={config} result={decision} metric={metric} "
-            f"verdict={verdict.status if verdict else 'none'} "
-            f"next_action={state.get('next_action', {}).get('type')}"
-        )
-        return 0
+        return _experiment_run_experiment(self, state)
 
     def execute_once(self) -> int:
         """Run one iteration of the autoresearch loop.
