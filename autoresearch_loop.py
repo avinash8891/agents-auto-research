@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import time
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +43,6 @@ from autoresearch_planning import (
     COMBINATION_RULES,
     DEFAULT_CONFIG_ORDER,
     THESIS_FAMILY,
-    build_finish_summary as _planning_build_finish_summary,
     check_baseline_rerun as _planning_check_baseline_rerun,
     generate_combination_candidates as _planning_generate_combination_candidates,
     generate_theses_from_ideas as _planning_generate_theses_from_ideas,
@@ -84,9 +82,6 @@ STATE_PATH = ROOT / "autoresearch.next.json"
 JSONL_PATH = ROOT / "autoresearch.jsonl"
 CURRENT_MD_PATH = ROOT / "autoresearch.current.md"
 IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
-RUNS_DIR = ROOT / "autoresearch-runs"
-RESEARCH_DIR = ROOT / "research"
-THESIS_DIR = ROOT / "theses"
 
 
 def default_controller_paths(root: Path, family: StrategyFamily) -> tuple[Path, Path, Path, Path, Path]:
@@ -124,7 +119,6 @@ class AutoresearchController:
         self.family = family or load_family("orb")
         self.runs_dir = runs_dir or (root / self.family.runs_dirname)
         self.research_dir = root / self.family.research_dirname
-        self.thesis_dir = root / "theses"
         self.proposals_dir = root / self.family.proposals_dirname
         self.compilations_dir = root / self.family.compilations_dirname
         self.contracts_dir = root / self.family.contracts_dirname
@@ -220,70 +214,6 @@ class AutoresearchController:
     def generate_combination_candidates(self, results: list[ExperimentRecord]) -> list[str]:
         return _planning_generate_combination_candidates(self.root, self.proposals_dir, results)
 
-    # ── WS-3: Research stage hook ─────────────────────────────────────
-
-    def emit_research_request(self, results: list[ExperimentRecord]) -> Path:
-        """Write a research request artifact for external execution."""
-        requests_dir = self.research_dir / "requests"
-        requests_dir.mkdir(parents=True, exist_ok=True)
-        request_id = f"research-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
-        best = self.best_result(results)
-        kept = [r.config for r in results if r.status == "keep"]
-        discarded = [r.config for r in results if r.status == "discard"]
-
-        request = {
-            "request_id": f"{self.family.name}-{request_id}",
-            "type": "wide_scan",
-            "status": "pending",
-            "family": self.family.name,
-            "context": {
-                "strategy": self.family.name.upper(),
-                "current_best": best,
-                "kept_theses": kept,
-                "discarded_theses": discarded,
-            },
-            "questions": [
-                "What structural improvements to opening range breakout strategies are documented in literature?",
-                "What regime filters have been shown to improve mean-reversion or breakout strategies?",
-                "What exit mechanisms beyond fixed stop/target improve intraday momentum strategies?",
-                "What universe selection methods improve intraday breakout strategy performance?",
-            ],
-        }
-        path = requests_dir / f"{request_id}.json"
-        path.write_text(json.dumps(request, indent=2) + "\n")
-        return path
-
-    def check_research_completion(self) -> list[dict[str, Any]]:
-        """Return completed research artifacts (status=completed)."""
-        completed: list[dict[str, Any]] = []
-        if not self.research_dir.exists():
-            return completed
-        for path in sorted(self.research_dir.glob("*.json")):
-            try:
-                payload = json.loads(path.read_text())
-            except json.JSONDecodeError:
-                continue
-            if payload.get("status") == "completed":
-                payload["artifact_path"] = path.relative_to(self.root).as_posix()
-                completed.append(payload)
-        return completed
-
-    def has_pending_research_request(self) -> bool:
-        """Check if there is already a pending research request."""
-        requests_dir = self.research_dir / "requests"
-        if not requests_dir.exists():
-            return False
-        for path in requests_dir.glob("*.json"):
-            try:
-                payload = json.loads(path.read_text())
-            except json.JSONDecodeError:
-                continue
-            if payload.get("status") == "pending":
-                return True
-        return False
-
-    # ── WS-4: Parse real benchmark output ─────────────────────────────
-
     def parse_result_json(self, output: str) -> dict[str, Any] | None:
         return _experiment_parse_result_json(output)
 
@@ -302,9 +232,6 @@ class AutoresearchController:
     def should_terminate(self, results: list[ExperimentRecord] | None = None) -> bool:
         current_results = results if results is not None else self.read_results()
         return _planning_should_terminate(self.root, self.run_queue_dir, self.research_dir, current_results)
-
-    def _build_finish_summary(self, results: list[ExperimentRecord]) -> dict[str, Any]:
-        return _planning_build_finish_summary(results, self.check_research_completion())
 
     def plan_next_action(self, state: dict[str, Any], results: list[ExperimentRecord]) -> dict[str, Any]:
         return _planning_plan_next_action(

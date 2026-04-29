@@ -319,22 +319,6 @@ def should_terminate(
     return bool(latest.get("findings"))
 
 
-def build_finish_summary(
-    results: list[ExperimentRecord],
-    completed_research: list[dict[str, Any]],
-) -> dict[str, Any]:
-    kept = [r.config for r in results if r.status == "keep" and r.config != "configs/orb_base.yaml"]
-    discarded = [r.config for r in results if r.status == "discard"]
-    combos = [r.config for r in results if "_x_" in Path(r.config).stem]
-    return {
-        "total_experiments": len(results),
-        "kept": kept,
-        "discarded": discarded,
-        "combinations_tested": combos,
-        "research_passes": len(completed_research),
-    }
-
-
 # ── Research-next-action waterfall + plan_next_action ────────────
 
 def select_research_next_action(
