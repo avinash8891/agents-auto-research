@@ -36,6 +36,15 @@ from autoresearch_state import (
     write_state,
 )
 from strategy_family import StrategyFamily
+from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
+from trace_adapters.halo import build_halo_payload
+from trace_adapters.halo import build_halo_export_package
+from trace_adapters.recursive_improve import build_recursive_improve_payload
+from trace_adapters.recursive_improve import build_recursive_improve_export_package
+from trace_adapters.reflexio import build_reflexio_payload
+from trace_adapters.reflexio import build_reflexio_export_package
+from trace_quality_history import QualityHistory
+from trace_rule_proposals import RuleProposalRegistry
 from trace_logger import (
     begin_hypothesis,
     end_hypothesis,
@@ -46,6 +55,8 @@ if TYPE_CHECKING:
     from autoresearch_controller import AutoresearchController
 
 log = get_logger(__name__)
+_QUALITY_HISTORY = QualityHistory()
+_RULE_PROPOSALS = RuleProposalRegistry()
 
 
 # ── Discord notification ──────────────────────────────────────────
@@ -129,6 +140,12 @@ def log_research_round(
 
     db = ExperimentDB(db_path)
     state = read_state(state_path)
+    attempt_number = 1
+    if outcome.startswith("rejected_attempt_"):
+        try:
+            attempt_number = int(outcome.rsplit("_", 1)[-1])
+        except ValueError:
+            attempt_number = 1
     db.log_research_round(
         state_path,
         round_number=round_number,
@@ -140,7 +157,7 @@ def log_research_round(
     db.add_research_thesis_attempt(
         {
             "research_round_id": f"job-{state.get('job', 0)}-round-{round_number}",
-            "attempt_number": 1,
+            "attempt_number": attempt_number,
             "thesis_id": thesis_id,
             "strategy_family": state.get("family", ""),
             "config_changes": config_changes or {},
@@ -384,6 +401,15 @@ def _log_validation_rejection(
         mechanism=raw_thesis.get("mechanism", ""),
         mechanism_dimension=raw_thesis.get("mechanism_dimension", ""),
         rejection_reason=reason,
+    )
+    _RULE_PROPOSALS.create_proposal(
+        title=f"Round {research_round} rejected thesis {thesis_id}",
+        rationale=reason,
+        evidence_event_ids=[],
+        expected_impact="reduce repeated validator failures",
+        proposed_rule=(
+            f"Reject or revise theses matching validator failure pattern for {thesis_id}"
+        ),
     )
 
 
@@ -633,6 +659,141 @@ def _classify_round_outcome(result: dict[str, Any]) -> str:
     return "conductor_error"
 
 
+def _record_round_quality_and_bridges(
+    controller: "AutoresearchController",
+    research_round: int,
+    result: dict[str, Any],
+    round_usage: dict[str, Any],
+) -> None:
+    outcome = _classify_round_outcome(result)
+    thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
+    dimension_scores = {
+        "compiled": 1.0 if outcome == "compiled" else 0.0,
+        "needs_code": 1.0 if outcome == "needs_code" else 0.0,
+        "stopped": 1.0 if outcome == "stopped" else 0.0,
+        "rejected": 1.0 if outcome == "rejected" else 0.0,
+        "conductor_error": 1.0 if outcome == "conductor_error" else 0.0,
+    }
+    overall_score = 1.0 if outcome in {"compiled", "stopped"} else 0.0
+    artifact_paths = []
+    if result.get("generated_config"):
+        artifact_paths.append(str(controller.root / result["generated_config"]))
+    quality_event = _QUALITY_HISTORY.append_run(
+        summary=f"research round {research_round} outcome={outcome}",
+        run_label=f"round-{research_round}",
+        dimension_scores=dimension_scores,
+        overall_score=overall_score,
+        artifact_paths=artifact_paths,
+    )
+    emit_halo_event(
+        action="research_round",
+        summary=f"HALO round {research_round}",
+        payload=build_halo_payload(
+            research_round=research_round,
+            thesis_id=thesis_id,
+            outcome=outcome,
+            family=controller.family.name,
+            reasoning=result.get("reasoning", ""),
+            rejection_reason=result.get("rejection_reason", ""),
+            usage=round_usage,
+            quality=quality_event,
+        ),
+    )
+    emit_recursive_improve_event(
+        action="research_round",
+        summary=f"recursive improve round {research_round}",
+        payload=build_recursive_improve_payload(
+            research_round=research_round,
+            thesis_id=thesis_id,
+            outcome=outcome,
+            family=controller.family.name,
+            reasoning=result.get("reasoning", ""),
+            rejection_reason=result.get("rejection_reason", ""),
+            usage=round_usage,
+            quality=quality_event,
+        ),
+    )
+    emit_reflexio_event(
+        action="research_round",
+        summary=f"reflexio round {research_round}",
+        payload=build_reflexio_payload(
+            research_round=research_round,
+            thesis_id=thesis_id,
+            outcome=outcome,
+            family=controller.family.name,
+            reasoning=result.get("reasoning", ""),
+            rejection_reason=result.get("rejection_reason", ""),
+            usage=round_usage,
+            quality=quality_event,
+        ),
+    )
+    _write_adapter_exports(
+        controller.root,
+        research_round=research_round,
+        thesis_id=thesis_id,
+        outcome=outcome,
+        family=controller.family.name,
+        reasoning=result.get("reasoning", ""),
+        rejection_reason=result.get("rejection_reason", ""),
+        usage=round_usage,
+        quality=quality_event,
+    )
+
+
+def _write_export_package(export_root: Path, directory_name: str, package: dict[str, Any]) -> None:
+    target_dir = export_root / directory_name
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for filename, payload in package.get("files", {}).items():
+        (target_dir / filename).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    (target_dir / "package.json").write_text(json.dumps(package, indent=2, sort_keys=True) + "\n")
+
+
+def _write_adapter_exports(
+    root: Path,
+    *,
+    research_round: int,
+    thesis_id: str,
+    outcome: str,
+    family: str,
+    reasoning: str,
+    rejection_reason: str,
+    usage: dict[str, Any],
+    quality: dict[str, Any],
+) -> None:
+    export_root = root / "trace_exports" / f"round-{research_round:03d}-{thesis_id}"
+    kwargs = {
+        "research_round": research_round,
+        "thesis_id": thesis_id,
+        "outcome": outcome,
+        "family": family,
+        "reasoning": reasoning,
+        "rejection_reason": rejection_reason,
+        "usage": usage,
+        "quality": quality,
+    }
+    _write_export_package(export_root, "halo", build_halo_export_package(**kwargs))
+    _write_export_package(
+        export_root,
+        "recursive_improve",
+        build_recursive_improve_export_package(**kwargs),
+    )
+    _write_export_package(export_root, "reflexio", build_reflexio_export_package(**kwargs))
+
+
+def _record_rejection_rule_if_needed(research_round: int, result: dict[str, Any]) -> None:
+    rejection_reason = result.get("rejection_reason")
+    if not rejection_reason:
+        return
+    thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
+    _RULE_PROPOSALS.create_proposal(
+        title=f"Round {research_round} rejected thesis {thesis_id}",
+        rationale=rejection_reason,
+        evidence_event_ids=[],
+        expected_impact="reduce repeated rejected research outcomes",
+        proposed_rule=f"Prevent repeated rejection path for thesis {thesis_id}",
+    )
+
+
 def _handle_max_rounds_reached(
     controller: "AutoresearchController", state: dict[str, Any]
 ) -> dict[str, Any]:
@@ -801,6 +962,8 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         rejection_reason=result.get("rejection_reason") or result.get("reasoning", ""),
         usage=round_usage,
     )
+    _record_rejection_rule_if_needed(research_round, result)
+    _record_round_quality_and_bridges(controller, research_round, result, round_usage)
 
     if result.get("should_stop"):
         return _handle_should_stop(controller, state, result)

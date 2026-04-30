@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+from unittest.mock import patch
 from pathlib import Path
 from typing import Any
 
@@ -394,6 +395,190 @@ def test_execute_once_research_failure_transitions_to_terminal_failure(controlle
     assert any(b.get("kind") == "research_failed" for b in blockers)
 
 
+def test_execute_once_research_success_records_quality_refinement_and_bridges(
+    controller, monkeypatch
+):
+    _seed_existing_result(controller, BASELINE_CONFIG)
+
+    generated_config = "experiments/research-thesis-001/runtime_config.json"
+    generated_path = controller.root / generated_config
+    generated_path.parent.mkdir(parents=True, exist_ok=True)
+    generated_path.write_text(json.dumps({"ema_length": 7, "rr_ratio": 2.5}))
+
+    def fake_research(self):
+        return {
+            "status": "completed",
+            "generated_config": generated_config,
+            "generated_config_needs_build": False,
+            "generated_thesis_id": "research-thesis-001",
+            "thesis_id": "research-thesis-001",
+            "experiment_id": "research-thesis-001",
+            "should_stop": False,
+            "reasoning": "fake",
+            "config_changes": {"ema_length": 7},
+            "hypothesis": "improve trend entry",
+            "mechanism": "faster trend detection",
+            "mechanism_dimension": "entry_timing",
+        }
+
+    monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
+
+    import research_conductor
+
+    monkeypatch.setattr(research_conductor, "reset_round_usage", lambda: None)
+    monkeypatch.setattr(
+        research_conductor,
+        "get_round_usage",
+        lambda: {"total": {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18}},
+    )
+    _patch_run_command_success(controller, monkeypatch, controller.root)
+
+    with (
+        patch("autoresearch_research._QUALITY_HISTORY.append_run") as append_run,
+        patch("autoresearch_research.emit_halo_event") as halo,
+        patch("autoresearch_research.emit_recursive_improve_event") as recursive_improve,
+        patch("autoresearch_research.emit_reflexio_event") as reflexio,
+        patch("autoresearch_research._write_adapter_exports") as write_exports,
+    ):
+        rc = controller.execute_once()
+
+    assert rc == 0
+    append_run.assert_called_once()
+    assert append_run.call_args.kwargs["run_label"] == "round-1"
+    assert append_run.call_args.kwargs["overall_score"] == 1.0
+    assert append_run.call_args.kwargs["dimension_scores"]["compiled"] == 1.0
+    halo.assert_called_once()
+    recursive_improve.assert_called_once()
+    reflexio.assert_called_once()
+    write_exports.assert_called_once()
+
+
+def test_execute_once_writes_adapter_export_packages_to_disk(controller, monkeypatch):
+    _seed_existing_result(controller, BASELINE_CONFIG)
+
+    generated_config = "experiments/research-thesis-001/runtime_config.json"
+    generated_path = controller.root / generated_config
+    generated_path.parent.mkdir(parents=True, exist_ok=True)
+    generated_path.write_text(json.dumps({"ema_length": 7, "rr_ratio": 2.5}))
+
+    def fake_research(self):
+        return {
+            "status": "completed",
+            "generated_config": generated_config,
+            "generated_config_needs_build": False,
+            "generated_thesis_id": "research-thesis-001",
+            "thesis_id": "research-thesis-001",
+            "experiment_id": "research-thesis-001",
+            "should_stop": False,
+            "reasoning": "fake",
+            "config_changes": {"ema_length": 7},
+            "hypothesis": "improve trend entry",
+            "mechanism": "faster trend detection",
+            "mechanism_dimension": "entry_timing",
+        }
+
+    monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
+
+    import research_conductor
+
+    monkeypatch.setattr(research_conductor, "reset_round_usage", lambda: None)
+    monkeypatch.setattr(
+        research_conductor,
+        "get_round_usage",
+        lambda: {"total": {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18}},
+    )
+    _patch_run_command_success(controller, monkeypatch, controller.root)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    export_root = controller.root / "trace_exports" / "round-001-research-thesis-001"
+    assert (export_root / "halo" / "halo-event.json").exists()
+    assert (export_root / "halo" / "package.json").exists()
+    assert (export_root / "recursive_improve" / "recursive-improve-event.json").exists()
+    assert (export_root / "reflexio" / "reflexio-event.json").exists()
+
+
+def test_execute_once_research_validation_rejection_records_rule_proposal(controller, monkeypatch):
+    _seed_existing_result(controller, BASELINE_CONFIG)
+
+    def fake_research(self):
+        return {
+            "status": "thesis_rejected",
+            "generated_config": None,
+            "generated_config_needs_build": False,
+            "generated_thesis_id": "bad-thesis",
+            "thesis_id": "bad-thesis",
+            "should_stop": False,
+            "reasoning": "retry budget exhausted",
+            "rejection_reason": "validator rejected thesis",
+            "config_changes": {"ema_length": 2},
+            "hypothesis": "bad hypothesis",
+            "mechanism": "bad mechanism",
+            "mechanism_dimension": "entry_timing",
+        }
+
+    monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
+
+    import research_conductor
+
+    monkeypatch.setattr(research_conductor, "reset_round_usage", lambda: None)
+    monkeypatch.setattr(research_conductor, "get_round_usage", lambda: {"total": {}})
+
+    with patch("autoresearch_research._RULE_PROPOSALS.create_proposal") as create_proposal:
+        rc = controller.execute_once()
+
+    assert rc == 0
+    create_proposal.assert_called_once()
+    assert create_proposal.call_args.kwargs["title"] == "Round 1 rejected thesis bad-thesis"
+
+
+def test_execute_once_records_autonomy_decision_and_audit_for_successful_research(
+    controller, monkeypatch
+):
+    _seed_existing_result(controller, BASELINE_CONFIG)
+
+    generated_config = "experiments/research-thesis-001/runtime_config.json"
+    generated_path = controller.root / generated_config
+    generated_path.parent.mkdir(parents=True, exist_ok=True)
+    generated_path.write_text(json.dumps({"ema_length": 7, "rr_ratio": 2.5}))
+
+    def fake_research(self):
+        return {
+            "status": "completed",
+            "generated_config": generated_config,
+            "generated_config_needs_build": False,
+            "generated_thesis_id": "research-thesis-001",
+            "thesis_id": "research-thesis-001",
+            "experiment_id": "research-thesis-001",
+            "should_stop": False,
+            "reasoning": "fake",
+        }
+
+    monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
+
+    import research_conductor
+
+    monkeypatch.setattr(research_conductor, "reset_round_usage", lambda: None)
+    monkeypatch.setattr(research_conductor, "get_round_usage", lambda: {"total": {}})
+    _patch_run_command_success(controller, monkeypatch, controller.root)
+
+    with (
+        patch("autoresearch_controller._AUTONOMY_LEDGER.record_decision") as record_decision,
+        patch("autoresearch_controller._AUTONOMY_LEDGER.record_audit") as record_audit,
+    ):
+        record_decision.return_value = {"decision_id": "decision-0001"}
+        rc = controller.execute_once()
+
+    assert rc == 0
+    record_decision.assert_called_once()
+    assert record_decision.call_args.kwargs["decision_type"] == "research_transition"
+    assert record_decision.call_args.kwargs["graduation_status"] == "supervised"
+    assert record_decision.call_args.kwargs["outcome"] == "approved"
+    record_audit.assert_called_once()
+    assert record_audit.call_args.kwargs["approval_status"] == "approved"
+
+
 # ────────────────────────────────────────────────────────────────────
 # 5. Backtest exits non-zero -> blocker.kind=command_failed
 # ────────────────────────────────────────────────────────────────────
@@ -685,3 +870,40 @@ def test_execute_once_queued_runtime_config_uses_thesis_sidecar_metadata(
     assert latest.thesis_id == "tiny-ema-thesis"
     assert latest.hypothesis == "tiny hypothesis"
     assert latest.mechanism == "tiny mechanism"
+
+
+def test_reconcile_state_clears_stale_current_best_when_no_kept_results_remain(controller) -> None:
+    controller.write_state(
+        {
+            "state": "running",
+            "job": 1,
+            "current_best": {"config": "configs/variants/stale.yaml", "metric": 9.9},
+            "heartbeat": {"current_best": {"config": "configs/variants/stale.yaml", "metric": 9.9}},
+        }
+    )
+    controller.write_entries(
+        [
+            {
+                "type": "config",
+                "name": "ema",
+                "metricName": "median_expectancy",
+                "metricUnit": "",
+                "bestDirection": "higher",
+            },
+            {
+                "run": 1,
+                "run_id": "discard-only",
+                "metric": 0.1,
+                "metrics": {"median_expectancy": 0.1},
+                "status": "discard",
+                "description": "strict-native loop: discard-only",
+                "timestamp": "2026-04-30T00:00:00+00:00",
+                "asi": {"config": "configs/variants/discard-only.yaml"},
+            },
+        ]
+    )
+
+    state = controller.reconcile_state()
+
+    assert state["current_best"] == {}
+    assert state["heartbeat"]["current_best"] == {}

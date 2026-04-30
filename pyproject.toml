@@ -58,3 +58,15 @@ skip_covered = false
 # Initial gate set to 70% on the union of autoresearch_* modules. Will
 # ratchet to 80% once integration test fixtures land in PR 5.
 fail_under = 70
+
+
+[project]
+name = "agents-auto-research"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "opentelemetry-sdk==1.41.1",
+    "opentelemetry-exporter-otlp-proto-http==1.41.1",
+    "openinference-instrumentation-openai==0.1.45",
+    "traceloop-sdk==0.60.0",
+]

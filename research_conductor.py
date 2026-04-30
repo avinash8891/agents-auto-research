@@ -12,7 +12,9 @@ from research_paths import _ROOT, _ensure_oauth_proxy, _parse_json
 from research_prompts import _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
 from research_tools_mcp import _build_research_tools_mcp
+from research_types import ResearchThesis
 from strategy_family import load_family
+from trace_refinement import RefinementRecorder
 from trace_logger import trace, trace_agent_prompt, trace_agent_response
 
 __all__ = [
@@ -21,6 +23,8 @@ __all__ = [
     "reset_round_usage",
     "get_round_usage",
 ]
+
+_REFINEMENT_RECORDER = RefinementRecorder()
 
 
 def _strategy_description_for(family_name: str) -> str:
@@ -120,10 +124,21 @@ async def run_research_conductor(
         "CONDUCTOR",
         f"START round={research_round} trades={'YES' if trades_file else 'NO'}",
     )
+    refinement_session = _REFINEMENT_RECORDER.start_session(
+        summary=f"research round {research_round}",
+        objective="produce the next thesis proposal",
+        initial_context={
+            "research_round": research_round,
+            "family_name": family_name,
+            "has_trades_file": bool(trades_file),
+            "rejection_feedback": rejection_feedback,
+        },
+    )
     trace_id = trace_agent_prompt("research-conductor", user_prompt, system_prompt)
 
     result_text = ""
     got_assistant_text = False
+    session_finished = False
     try:
         async for message in query(
             prompt=user_prompt,
@@ -157,15 +172,30 @@ async def run_research_conductor(
                         "CONDUCTOR",
                         f"USAGE conductor raw_keys={list(message.usage.keys())} usage={message.usage}",
                     )
-                    _accumulate_usage("conductor", message.usage, message.total_cost_usd)
-                if message.model_usage:
+                    _accumulate_usage(
+                        "conductor",
+                        message.usage,
+                        message.total_cost_usd,
+                        dedupe_key=f"conductor-message-{id(message)}-usage",
+                    )
+                elif message.model_usage:
                     trace(
                         "CONDUCTOR",
                         f"USAGE conductor model_usage_keys={list(message.model_usage.keys())} model_usage={message.model_usage}",
                     )
-                    _accumulate_usage("conductor", message.model_usage)
+                    _accumulate_usage(
+                        "conductor",
+                        message.model_usage,
+                        dedupe_key=f"conductor-message-{id(message)}-model",
+                    )
     except asyncio.TimeoutError:
         trace("CONDUCTOR", "TIMEOUT")
+        _REFINEMENT_RECORDER.finish_session(
+            session_id=refinement_session["session_id"],
+            stopping_reason="timeout",
+            final_outcome="conductor_error",
+        )
+        session_finished = True
         return {
             "status": "conductor_error",
             "error": "timeout",
@@ -175,6 +205,12 @@ async def run_research_conductor(
     except Exception as exc:
         trace("CONDUCTOR", f"ERROR: {exc}")
         print(f"CONDUCTOR error: {exc}")
+        _REFINEMENT_RECORDER.finish_session(
+            session_id=refinement_session["session_id"],
+            stopping_reason="exception",
+            final_outcome="conductor_error",
+        )
+        session_finished = True
         return {
             "status": "conductor_error",
             "error": str(exc),
@@ -184,20 +220,61 @@ async def run_research_conductor(
 
     parsed = _parse_json(result_text)
     trace_agent_response("research-conductor", trace_id, result_text, parsed)
+    _REFINEMENT_RECORDER.record_iteration(
+        session_id=refinement_session["session_id"],
+        iteration=1,
+        generate={
+            "trace_id": trace_id,
+            "prompt_length": len(user_prompt),
+            "system_prompt_length": len(system_prompt),
+        },
+        critique={"rejection_feedback": rejection_feedback},
+        revise={"used_feedback_retry": bool(rejection_feedback)},
+        evaluate={
+            "parsed": bool(parsed),
+            "suggested_theses": len(parsed.get("suggested_theses", [])) if parsed else 0,
+            "should_stop": bool(parsed.get("should_stop")) if parsed else False,
+        },
+    )
 
     if parsed:
         theses = parsed.get("suggested_theses", [])
         if parsed.get("should_stop"):
             trace("CONDUCTOR", "recommends STOP")
+            _REFINEMENT_RECORDER.finish_session(
+                session_id=refinement_session["session_id"],
+                stopping_reason="should_stop",
+                final_outcome="stop",
+            )
+            session_finished = True
             return parsed
         if theses and isinstance(theses[0], dict):
             t = theses[0]
-            if t.get("thesis_id") and (t.get("config_changes") or t.get("requires_code_change")):
+            candidate = dict(t)
+            candidate["strategy_family"] = family_name
+            try:
+                ResearchThesis.model_validate(candidate)
+            except Exception as exc:
+                trace("CONDUCTOR", f"validate failed thesis={t.get('thesis_id', 'unknown')}: {exc}")
+            else:
                 trace("CONDUCTOR", f"OK thesis={t['thesis_id']}")
+                _REFINEMENT_RECORDER.finish_session(
+                    session_id=refinement_session["session_id"],
+                    stopping_reason="valid_thesis",
+                    final_outcome="accepted",
+                )
+                session_finished = True
                 return parsed
         trace("CONDUCTOR", f"validate failed: {result_text[:200]}")
     else:
         trace("CONDUCTOR", f"parse failed: {result_text[:200]}")
+
+    if not session_finished:
+        _REFINEMENT_RECORDER.finish_session(
+            session_id=refinement_session["session_id"],
+            stopping_reason="invalid_output",
+            final_outcome="retry_required",
+        )
 
     return None
 
