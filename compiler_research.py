@@ -5,11 +5,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from compiler_defaults import _get_ema_defaults, _get_orb_defaults
-from compiler_validate import (
-    _config_content_hash,
-    validate_ema_runtime_config,
-    validate_orb_runtime_config,
-)
+from compiler_validate import validate_ema_runtime_config, validate_orb_runtime_config
+from config_hash import _config_hash
 from strategy_family import load_family
 
 if TYPE_CHECKING:
@@ -90,7 +87,7 @@ def compile_research_thesis(
                 + "; ".join(violations)
             )
 
-        experiment_id = _config_content_hash(runtime_config)
+        experiment_id = _config_hash(runtime_config)
         experiment_dir = root / "experiments" / experiment_id
         experiment_dir.mkdir(parents=True, exist_ok=True)
 
@@ -149,7 +146,7 @@ def compile_research_thesis(
                 + "; ".join(violations)
             )
 
-        experiment_id = _config_content_hash(runtime_config)
+        experiment_id = _config_hash(runtime_config)
         experiment_dir = root / "experiments" / experiment_id
         experiment_dir.mkdir(parents=True, exist_ok=True)
 

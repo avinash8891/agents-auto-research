@@ -81,37 +81,35 @@ Regime gating:
 Available regime names: {_CANONICAL_REGIMES}
 """
 
-FAMILY_RESEARCH_SPECS: dict[str, FamilyResearchSpec] = {
-    "orb": FamilyResearchSpec(
-        strategy_label="Opening Range Breakout (ORB)",
-        one_thesis_label="Opening Range Breakout (ORB)",
-        config_schema=ORB_CONFIG_SCHEMA,
-        research_questions=(
-            "What structural improvements to opening range breakout strategies are documented in literature?",
-            "What regime filters have been shown to improve mean-reversion or breakout strategies?",
-            "What exit mechanisms beyond fixed stop/target improve intraday momentum strategies?",
-            "What universe selection methods improve intraday breakout strategy performance?",
-        ),
-        config_rules=(
-            "ONLY use ORB supported config keys.",
-            "Do not invent config keys; unsupported keys are silently ignored.",
-            "Prefer structural improvements over micro-tuning.",
-        ),
-        prompt_focus=(
-            "universe selection",
-            "opening range filters",
-            "regime gating",
-            "intraday breakout exits",
-        ),
-        thesis_json_hint='"family": "universe" or "entry" or "exit" or "regime"',
-        allowed_config_keys=frozenset(supported_config_keys()) - {"_research_source"},
+ORB_RESEARCH_SPEC = FamilyResearchSpec(
+    strategy_label="Opening Range Breakout (ORB)",
+    one_thesis_label="Opening Range Breakout (ORB)",
+    config_schema=ORB_CONFIG_SCHEMA,
+    research_questions=(
+        "What structural improvements to opening range breakout strategies are documented in literature?",
+        "What regime filters have been shown to improve mean-reversion or breakout strategies?",
+        "What exit mechanisms beyond fixed stop/target improve intraday momentum strategies?",
+        "What universe selection methods improve intraday breakout strategy performance?",
     ),
-}
+    config_rules=(
+        "ONLY use ORB supported config keys.",
+        "Do not invent config keys; unsupported keys are silently ignored.",
+        "Prefer structural improvements over micro-tuning.",
+    ),
+    prompt_focus=(
+        "universe selection",
+        "opening range filters",
+        "regime gating",
+        "intraday breakout exits",
+    ),
+    thesis_json_hint='"family": "universe" or "entry" or "exit" or "regime"',
+    allowed_config_keys=frozenset(supported_config_keys()) - {"_research_source"},
+)
 
 
 def get_family_research_spec(name: str) -> FamilyResearchSpec:
-    if name in FAMILY_RESEARCH_SPECS:
-        return FAMILY_RESEARCH_SPECS[name]
+    if name == "orb":
+        return ORB_RESEARCH_SPEC
     from strategies import STRATEGIES
 
     return STRATEGIES[name].research_spec

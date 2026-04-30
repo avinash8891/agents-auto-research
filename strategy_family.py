@@ -87,31 +87,33 @@ def _discord_webhook_for(family_name: str) -> str:
 
 @lru_cache(maxsize=1)
 def _families() -> dict[str, StrategyFamily]:
-    families = {
-        "orb": StrategyFamily(
-            name="orb",
-            benchmark_script="backtest_orb_v2.py",
-            vps_benchmark_script="backtest_orb_v2.py",
-            proposals_dirname="orb-proposals",
-            compilations_dirname="orb-compilations",
-            contracts_dirname="orb-contracts",
-            run_queue_dirname="orb-run-queue",
-            research_dirname="orb-research-artifacts",
-            builder_requests_dirname="orb-builder-requests",
-            base_config_filename="orb_base.yaml",
-            runs_dirname="orb_autoresearch-runs",
-            discord_webhook=_discord_webhook_for("orb"),
-            variant_prefix="orb_",
-            default_variants=(
-                "configs/variants/orb_spy_only.yaml",
-                "configs/variants/orb_stocks_in_play.yaml",
-                "configs/variants/orb_trailing_stop.yaml",
-                "configs/variants/orb_trend_filter.yaml",
-            ),
-        )
-    }
-    for name, strategy in STRATEGIES.items():
+    orb_strategy = StrategyFamily(
+        name="orb",
+        benchmark_script="backtest_orb_v2.py",
+        vps_benchmark_script="backtest_orb_v2.py",
+        proposals_dirname="orb-proposals",
+        compilations_dirname="orb-compilations",
+        contracts_dirname="orb-contracts",
+        run_queue_dirname="orb-run-queue",
+        research_dirname="orb-research-artifacts",
+        builder_requests_dirname="orb-builder-requests",
+        base_config_filename="orb_base.yaml",
+        runs_dirname="orb_autoresearch-runs",
+        discord_webhook=_discord_webhook_for("orb"),
+        variant_prefix="orb_",
+        default_variants=(
+            "configs/variants/orb_spy_only.yaml",
+            "configs/variants/orb_stocks_in_play.yaml",
+            "configs/variants/orb_trailing_stop.yaml",
+            "configs/variants/orb_trend_filter.yaml",
+        ),
+    )
+    strategies = {"orb": orb_strategy}
+    strategies.update(STRATEGIES)
+    families: dict[str, StrategyFamily] = {}
+    for name, strategy in strategies.items():
         if name == "orb":
+            families[name] = orb_strategy
             continue
         families[name] = StrategyFamily(
             name=name,
