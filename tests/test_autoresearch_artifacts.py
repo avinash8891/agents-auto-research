@@ -17,6 +17,7 @@ from autoresearch_artifacts import (
     read_thesis_artifacts,
 )
 from autoresearch_state import ExperimentRecord
+from artifact_io import write_json_artifact
 
 
 def _write_artifact(directory: Path, name: str, payload: dict) -> Path:
@@ -81,6 +82,16 @@ def test_read_artifacts_skips_unreadable_json_file(tmp_path: Path, monkeypatch) 
     out = read_artifacts_relative_to_root(artifacts_dir, tmp_path)
     assert len(out) == 1
     assert out[0]["thesis_id"] == "g"
+
+
+def test_write_json_artifact_persists_iso8601_timestamp_strings(tmp_path: Path) -> None:
+    path = tmp_path / "artifact.json"
+
+    write_json_artifact(path, {"status": "ok", "timestamp": "2026-04-30T12:00:00+00:00"})
+
+    payload = json.loads(path.read_text())
+    assert payload["timestamp"] == "2026-04-30T12:00:00+00:00"
+    assert isinstance(payload["timestamp"], str)
 
 
 

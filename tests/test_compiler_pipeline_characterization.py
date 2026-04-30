@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import persistence_utils
 from compiler_pipeline import (
     create_executable_artifact,
     build_missing_primitives,
@@ -176,14 +177,14 @@ def test_compile_proposal_artifact_does_not_publish_compilation_before_queue(tmp
         ],
     }
 
-    original_replace = os.replace
+    original_replace = persistence_utils.os.replace
 
     def _crash_on_queue_replace(src: str | os.PathLike[str], dst: str | os.PathLike[str]):
         if Path(dst).parent.name == "ema-run-queue":
             raise RuntimeError("queue write failed")
         return original_replace(src, dst)
 
-    monkeypatch.setattr("compiler_thesis_io.os.replace", _crash_on_queue_replace)
+    monkeypatch.setattr(persistence_utils.os, "replace", _crash_on_queue_replace)
 
     with pytest.raises(RuntimeError, match="queue write failed"):
         compile_proposal_artifact(proposal, tmp_path)
@@ -208,6 +209,28 @@ def test_compile_proposal_artifact_leaves_no_tmp_artifacts_after_publish(tmp_pat
     compile_proposal_artifact(proposal, tmp_path)
 
     assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_compile_proposal_artifact_persists_iso8601_timestamps(tmp_path: Path) -> None:
+    proposal = {
+        "thesis_id": "ema_contract_ready",
+        "strategy_family": "ema",
+        "primitive_contract": [
+            {"type": "ema_length", "value": 5},
+            {"type": "timeframe_long", "minutes": 15},
+            {"type": "timeframe_short", "minutes": 5},
+            {"type": "risk_reward", "rr_ratio": 3.0},
+        ],
+    }
+
+    result = compile_proposal_artifact(proposal, tmp_path)
+
+    queue_payload = json.loads((tmp_path / "ema-run-queue" / "ema_contract_ready.json").read_text())
+    compilation_payload = result
+    assert isinstance(queue_payload["timestamp"], str)
+    assert queue_payload["timestamp"].endswith("+00:00") or queue_payload["timestamp"].endswith("Z")
+    assert isinstance(compilation_payload["timestamp"], str)
+    assert compilation_payload["timestamp"].endswith("+00:00") or compilation_payload["timestamp"].endswith("Z")
 
 
 def test_orb_strategy_compile_contract_matches_legacy_compiler() -> None:

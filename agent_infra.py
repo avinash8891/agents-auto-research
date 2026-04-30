@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,7 @@ def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
 
 
 SDK_TIMEOUT_SECONDS = 300  # Max seconds for a single SDK agent call (analyst needs Execute time)
+log = logging.getLogger(__name__)
 
 
 def _parse_json(text: str) -> dict[str, Any] | None:
@@ -77,6 +79,10 @@ def _parse_json(text: str) -> dict[str, Any] | None:
             if depth == 0:
                 try:
                     return json.loads(text[brace_start : i + 1])
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as exc:
+                    log.error(
+                        "AGENT_JSON_PARSE_FAILED error=%s | hint=repair the agent JSON payload or fenced response",
+                        exc,
+                    )
                     return None
     return None

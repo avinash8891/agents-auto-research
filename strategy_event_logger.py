@@ -14,6 +14,7 @@ Design:
 from __future__ import annotations
 
 import json
+import logging
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -136,7 +139,12 @@ class StrategyEventLogger:
                 if ts_raw
                 else np.array([np.datetime64("NaT")])
             )
-        except Exception:
+        except Exception as exc:
+            log.error(
+                "STRATEGY_EVENT_TIMESTAMP_INVALID value=%r error=%s | hint=provide an ISO-8601-compatible timestamp for strategy event logging",
+                ts_raw,
+                exc,
+            )
             ts = np.array([np.datetime64("NaT")])
 
         ep = np.array([kwargs.get("entry_price", np.nan)], dtype=np.float64)

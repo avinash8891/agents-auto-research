@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from artifact_io import timestamp_ms, write_json_artifact
+from artifact_io import timestamp_now, write_json_artifact
 from backtest.runtime_config import load_runtime_config
 from strategies import STRATEGIES
 from strategy_family import load_family
@@ -96,7 +96,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             "missing_primitives": missing_primitives,
             "normalized_contract": normalized_contract,
             "status": "requested",
-            "timestamp": timestamp_ms(),
+            "timestamp": timestamp_now(),
         },
     )
 

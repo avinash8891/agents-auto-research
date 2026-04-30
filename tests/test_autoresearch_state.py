@@ -6,6 +6,7 @@ production names (status="keep"/"discard", real config-path strings).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from autoresearch_state import (
@@ -48,6 +49,22 @@ def test_state_round_trip_preserves_payload_atomically(tmp_path: Path) -> None:
     assert read_state(state_path) == payload
     # tmp file used for atomic replace must be cleaned up.
     assert not state_path.with_name(state_path.name + ".tmp").exists()
+
+
+def test_write_state_fsyncs_before_replace(tmp_path: Path, monkeypatch) -> None:
+    state_path = tmp_path / "state.json"
+    calls: list[int] = []
+    original_fsync = os.fsync
+
+    def _record_fsync(fd: int) -> None:
+        calls.append(fd)
+        return original_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", _record_fsync)
+
+    write_state(state_path, {"state": "running"})
+
+    assert calls
 
 
 # ── direction / is_better / best_result / latest_result ─────────
@@ -254,6 +271,14 @@ def test_iso8601_utc_now_includes_timezone_marker() -> None:
 def test_coerce_timestamp_to_iso8601_passes_string_through() -> None:
     iso = "2026-04-29T12:00:00+00:00"
     assert coerce_timestamp_to_iso8601_utc(iso) == iso
+
+
+def test_coerce_timestamp_to_iso8601_rejects_naive_string() -> None:
+    assert coerce_timestamp_to_iso8601_utc("2026-04-29T12:00:00") is None
+
+
+def test_coerce_timestamp_to_iso8601_rejects_non_timestamp_string() -> None:
+    assert coerce_timestamp_to_iso8601_utc("unknown") is None
 
 
 def test_coerce_timestamp_to_iso8601_converts_epoch_ms() -> None:

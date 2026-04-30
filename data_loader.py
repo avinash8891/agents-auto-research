@@ -6,10 +6,13 @@ Also supports per-symbol subdirectories and flat parquets for ORB compatibility.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pandas as pd
+
+
+class DataLoadError(RuntimeError):
+    """Recoverable data loading failure for callers to handle."""
 
 
 def load_data(
@@ -45,8 +48,7 @@ def load_data(
     if parquets:
         return _load_flat(parquets, start_date, end_date)
 
-    print(f"Could not load data from {data_dir}", file=sys.stderr)
-    sys.exit(1)
+    raise FileNotFoundError(f"Could not load data from {data_dir}")
 
 
 def _load_wide(
@@ -99,8 +101,7 @@ def _load_per_symbol(
             all_dfs[sym] = df
 
     if not all_dfs:
-        print(f"No data found in {data_path}", file=sys.stderr)
-        sys.exit(1)
+        raise DataLoadError(f"No data found in {data_path}")
 
     fields = ["Open", "High", "Low", "Close", "Volume"]
     field_map = {"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"}
@@ -123,6 +124,10 @@ def _load_flat(
     end_date: str | None,
 ) -> dict[str, pd.DataFrame]:
     df = pd.concat([pd.read_parquet(p) for p in sorted(parquets)])
+    if start_date:
+        df = df[df.index >= start_date]
+    if end_date:
+        df = df[df.index <= end_date]
     batch: dict[str, pd.DataFrame] = {}
     for field, key in [
         ("Open", "open"),

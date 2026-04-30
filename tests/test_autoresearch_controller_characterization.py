@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 import sys
-from unittest.mock import patch
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -22,7 +22,7 @@ if str(REPO_ROOT) not in sys.path:
 import autoresearch_controller as loop_mod
 import autoresearch_research as research_mod
 from autoresearch_controller import AutoresearchController
-from experiment_db import BaselineTracker, ExperimentDB
+from experiment_db import BaselineCheckpoint, BaselineTracker, ExperimentDB
 from strategies import STRATEGIES
 from strategy_family import load_family
 
@@ -164,7 +164,7 @@ def test_execute_once_runs_baseline_when_no_results(controller, monkeypatch, tmp
     state["next_action"] = {
         "type": "run_experiment",
         "config": BASELINE_CONFIG,
-        "source": "research",
+        "source": "baseline",
     }
     controller.write_state(state)
 
@@ -173,12 +173,39 @@ def test_execute_once_runs_baseline_when_no_results(controller, monkeypatch, tmp
     assert rc == 0
     assert "configs/ema_base.yaml" in captured["command"]
     # The baseline path must have been the one selected.
+    assert "baseline_rerun_for_commit" not in controller.read_state()["next_action"]
     entries = controller.read_entries()
     metric_entries = [
         e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
     ]
     assert len(metric_entries) == 1
     assert metric_entries[0]["asi"]["config"] == BASELINE_CONFIG
+
+
+def test_execute_once_runs_initial_baseline_without_forced_rerun_metadata(
+    controller, monkeypatch, tmp_path
+):
+    captured = _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    state = controller.read_state()
+    state["next_action"] = {
+        "type": "run_experiment",
+        "config": BASELINE_CONFIG,
+        "source": "baseline",
+    }
+    controller.write_state(state)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    assert "configs/ema_base.yaml" in captured["command"]
+    assert "baseline_rerun_for_commit" not in controller.read_state()["next_action"]
+    entries = controller.read_entries()
+    metric_entries = [
+        e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
+    ]
+    assert len(metric_entries) == 1
+    assert "baseline_rerun_for_commit" not in metric_entries[0]["asi"]
 
 
 @pytest.mark.integration
@@ -807,9 +834,15 @@ def test_execute_once_does_not_resume_halted_thesis_when_runtime_scope_is_invali
         raise AssertionError("run_command should not be called for invalid resumed config")
 
     monkeypatch.setattr(AutoresearchController, "run_command", _fail_run_command)
-    monkeypatch.setattr(STRATEGIES["ema"], "validate_runtime_config_scope", lambda *a, **k: (_ for _ in ()).throw(ValueError("scope invalid")))
+    monkeypatch.setattr(
+        STRATEGIES["ema"],
+        "validate_runtime_config_scope",
+        lambda *a, **k: (_ for _ in ()).throw(ValueError("scope invalid")),
+    )
     monkeypatch.setattr(AutoresearchController, "_check_baseline_rerun", lambda self: None)
-    monkeypatch.setattr(AutoresearchController, "plan_next_action", lambda self, state, results: state)
+    monkeypatch.setattr(
+        AutoresearchController, "plan_next_action", lambda self, state, results: state
+    )
 
     rc = controller.execute_once()
 
@@ -821,7 +854,9 @@ def test_execute_once_does_not_resume_halted_thesis_when_runtime_scope_is_invali
     assert state["halted_reason"] == "requires_code_change"
 
 
-def test_execute_once_resume_halted_thesis_leaves_no_tmp_artifacts(controller, monkeypatch, tmp_path):
+def test_execute_once_resume_halted_thesis_leaves_no_tmp_artifacts(
+    controller, monkeypatch, tmp_path
+):
     halted_thesis_id = "resume-this-thesis"
     halted_thesis = {
         "thesis_id": halted_thesis_id,
@@ -848,8 +883,6 @@ def test_execute_once_resume_halted_thesis_leaves_no_tmp_artifacts(controller, m
 
 def test_execute_once_end_to_end_tiny_ema_fixture(controller, monkeypatch, tmp_path):
     _seed_existing_result(controller, BASELINE_CONFIG)
-    from experiment_db import BaselineCheckpoint
-
     controller.baseline_tracker.record(
         BaselineCheckpoint(
             code_commit="8dfae61",

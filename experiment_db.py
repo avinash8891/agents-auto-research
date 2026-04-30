@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
+from persistence_utils import write_text_atomic
 
 log = logging.getLogger(__name__)
 
@@ -506,12 +507,12 @@ class ExperimentDB:
                 verdict_status=row["verdict_status"],
                 verdict_summary=row["verdict_summary"],
                 parent_experiment_id=row["parent_experiment_id"],
-                timestamp=coerce_timestamp_to_iso8601_utc(
-                    row["timestamp"]
-                    if not isinstance(row["timestamp"], str) or "T" in row["timestamp"]
-                    else int(row["timestamp"])
-                )
-                or "",
+                timestamp=coerce_timestamp_to_iso8601_utc(row["timestamp"])
+                or (
+                    coerce_timestamp_to_iso8601_utc(int(row["timestamp"]))
+                    if isinstance(row["timestamp"], str) and row["timestamp"].isdigit()
+                    else ""
+                ),
                 family=row["family"],
                 hypothesis=row["hypothesis"],
                 mechanism=row["mechanism"],
@@ -708,8 +709,7 @@ class BaselineTracker:
 
     def _save(self) -> None:
         checkpoints = self._load()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps([asdict(c) for c in checkpoints], indent=2) + "\n")
+        write_text_atomic(self.path, json.dumps([asdict(c) for c in checkpoints], indent=2) + "\n")
 
     def record(self, checkpoint: BaselineCheckpoint) -> None:
         checkpoints = self._load()
@@ -822,7 +822,7 @@ class BaselineTracker:
 def build_config_hash(config: dict[str, Any]) -> str:
     """Deterministic hash of the full runtime config."""
     blob = json.dumps(config, sort_keys=True).encode()
-    return hashlib.sha256(blob).hexdigest()[:16]
+    return hashlib.sha256(blob).hexdigest()[:12]
 
 
 def build_data_hash(config: dict[str, Any]) -> str:
@@ -830,7 +830,7 @@ def build_data_hash(config: dict[str, Any]) -> str:
     data_keys = ["data_dir", "symbols", "validation_start", "validation_end"]
     data_fields = {k: config.get(k) for k in data_keys if config.get(k) is not None}
     blob = json.dumps(data_fields, sort_keys=True).encode()
-    return hashlib.sha256(blob).hexdigest()[:16]
+    return hashlib.sha256(blob).hexdigest()[:12]
 
 
 def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:

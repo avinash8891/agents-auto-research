@@ -8,9 +8,7 @@ ExperimentDB.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -26,7 +24,6 @@ from autoresearch_constants import (
     COMMAND_PREVIEW_TRUNCATION,
     COMMAND_TIMEOUT_SECONDS,
     COMMAND_TIMEOUT_TRUNCATION,
-    CONFIG_HASH_LENGTH,
     DISCORD_COLOR_DISCARD,
     DISCORD_COLOR_SUCCESS,
     DISCORD_COLOR_WARNING,
@@ -38,12 +35,14 @@ from autoresearch_state import (
     read_state,
     write_state,
 )
+from config_hash import _config_hash
 from experiment_db import (
     BaselineCheckpoint,
     ExperimentResult,
     build_config_hash,
     build_data_hash,
 )
+from persistence_utils import write_text_atomic
 from trace_logger import (
     begin_hypothesis,
     end_hypothesis,
@@ -51,13 +50,6 @@ from trace_logger import (
     trace_benchmark,
     trace_ssh,
 )
-
-
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(content)
-    os.replace(tmp_path, path)
 
 if TYPE_CHECKING:
     from autoresearch_controller import AutoresearchController
@@ -123,25 +115,35 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
 
 
 def parse_result_json(output: str) -> dict[str, Any] | None:
-    """Find RESULT_JSON line in output, read and return the JSON file."""
+    """Find RESULT_JSON line in output, or parse an inline result payload."""
     match = re.search(r"^RESULT_JSON (.+)$", output, flags=re.MULTILINE)
-    if not match:
+    if match:
+        result_path = Path(match.group(1).strip())
+        if not result_path.exists():
+            msg = f"RESULT_JSON path does not exist: {result_path}"
+            log.error(
+                f"RESULT_JSON error: {msg} | hint=backtest printed a stale or wrong result path"
+            )
+            raise ResultJsonError(msg)
+        try:
+            return json.loads(result_path.read_text())
+        except json.JSONDecodeError as exc:
+            msg = f"RESULT_JSON malformed JSON at {result_path}: {exc}"
+            log.error(f"RESULT_JSON error: {msg} | hint=fix the result writer before rerunning")
+            raise ResultJsonError(msg) from exc
+        except OSError as exc:
+            msg = f"RESULT_JSON unreadable at {result_path}: {exc}"
+            log.error(f"RESULT_JSON error: {msg} | hint=check file permissions and run-output dir")
+            raise ResultJsonError(msg) from exc
+
+    stripped = output.strip()
+    if not stripped.startswith("{"):
         return None
-    result_path = Path(match.group(1).strip())
-    if not result_path.exists():
-        msg = f"RESULT_JSON path does not exist: {result_path}"
-        log.error(f"RESULT_JSON error: {msg} | hint=backtest printed a stale or wrong result path")
-        raise ResultJsonError(msg)
     try:
-        return json.loads(result_path.read_text())
-    except json.JSONDecodeError as exc:
-        msg = f"RESULT_JSON malformed JSON at {result_path}: {exc}"
-        log.error(f"RESULT_JSON error: {msg} | hint=fix the result writer before rerunning")
-        raise ResultJsonError(msg) from exc
-    except OSError as exc:
-        msg = f"RESULT_JSON unreadable at {result_path}: {exc}"
-        log.error(f"RESULT_JSON error: {msg} | hint=check file permissions and run-output dir")
-        raise ResultJsonError(msg) from exc
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def parse_benchmark_details(output: str) -> dict[str, Any]:
@@ -415,6 +417,7 @@ def _build_asi_dict(
     analysis: dict[str, Any],
     thesis_id: str,
     config_changes: dict[str, Any],
+    next_action: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     contract = controller.ctx.current_contract
     identity = (
@@ -437,8 +440,10 @@ def _build_asi_dict(
         "thesis_id": thesis_id,
         "config_changes": config_changes,
     }
-    rerun_commit = controller.read_state().get("next_action", {}).get("baseline_rerun_for_commit")
-    if rerun_commit:
+    if next_action is None:
+        next_action = controller.read_state().get("next_action", {})
+    rerun_commit = next_action.get("baseline_rerun_for_commit")
+    if rerun_commit and next_action.get("source") == "baseline":
         asi["baseline_rerun_for_commit"] = rerun_commit
     return asi
 
@@ -534,8 +539,8 @@ def _build_export_entry(
 
 
 def _write_run_artifacts(artifact_dir: Path, output: str, analysis: dict[str, Any]) -> None:
-    _write_text_atomic(artifact_dir / "benchmark_output.txt", output)
-    _write_text_atomic(artifact_dir / "analysis.json", json.dumps(analysis, indent=2) + "\n")
+    write_text_atomic(artifact_dir / "benchmark_output.txt", output)
+    write_text_atomic(artifact_dir / "analysis.json", json.dumps(analysis, indent=2) + "\n")
 
 
 def log_experiment_result(
@@ -546,6 +551,7 @@ def log_experiment_result(
     decision: str,
     output: str,
     analysis: dict[str, Any],
+    next_action: dict[str, Any] | None = None,
 ) -> None:
     controller.sanitize_duplicate_entries(config)
     artifact_dir = _resolve_artifact_dir(controller, config)
@@ -559,6 +565,7 @@ def log_experiment_result(
         analysis=analysis,
         thesis_id=thesis_id,
         config_changes=config_changes,
+        next_action=next_action,
     )
     details = parse_benchmark_details(output)
     entries = controller.read_entries()
@@ -605,11 +612,9 @@ def _compute_run_output_dir(controller: "AutoresearchController", config: str) -
             _cfg = json.loads(config_path_full.read_text())
         if isinstance(_cfg, dict) and "runtime_config" in _cfg:
             _cfg = _cfg["runtime_config"]
-        config_hash = hashlib.sha256(json.dumps(_cfg, sort_keys=True).encode()).hexdigest()[
-            :CONFIG_HASH_LENGTH
-        ]
+        config_hash = _config_hash(_cfg)
     else:
-        config_hash = hashlib.sha256(config.encode()).hexdigest()[:CONFIG_HASH_LENGTH]
+        config_hash = _config_hash({"config_path": config})
     state = controller.read_state()
     job = state.get("job", 0)
     run_output_dir = controller.runs_dir.resolve() / f"job-{job}" / config_hash
@@ -727,7 +732,7 @@ def _build_thesis_for_eval(contract: Any) -> Any:
 def _persist_verdict(controller: "AutoresearchController", contract: Any, verdict: Any) -> None:
     experiment_dir = controller.root / "experiments" / contract.experiment_id
     if experiment_dir.exists():
-        _write_text_atomic(
+        write_text_atomic(
             experiment_dir / "verdict.json",
             verdict.model_dump_json(indent=2) + "\n",
         )
@@ -921,11 +926,17 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     if verdict:
         analysis["trade_analysis"]["verdict"] = verdict.model_dump()
     controller.log_experiment_result(
-        config=config, metric=metric, decision=decision, output=output, analysis=analysis
+        config=config,
+        metric=metric,
+        decision=decision,
+        output=output,
+        analysis=analysis,
+        next_action=next_action,
     )
     controller.ctx.current_contract = None  # cleared AFTER log so _build_db_record can read it
 
-    if next_action.get("source") == "baseline":
+    baseline_source = next_action.get("source") == "baseline"
+    if baseline_source:
         _record_baseline_checkpoint(controller, details)
     _finalize_experiment(controller, config, metric, decision, verdict)
     return 0
