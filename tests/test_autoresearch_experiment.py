@@ -16,6 +16,7 @@ import pytest
 from autoresearch_experiment import (
     ResultJsonError,
     _build_db_record,
+    _compute_run_output_dir,
     _evaluate_against_thesis,
     artifact_dir_for,
     evaluate_metric,
@@ -24,7 +25,6 @@ from autoresearch_experiment import (
     parse_metric,
     parse_result_json,
     primary_metric_name,
-    _compute_run_output_dir,
     sanitize_duplicate_entries,
 )
 from experiment_db import ExperimentDB
@@ -59,8 +59,9 @@ def test_parse_result_json_handles_malformed_json(tmp_path: Path) -> None:
 
 
 def test_read_thesis_metadata_handles_malformed_sidecar_json(tmp_path) -> None:
-    from autoresearch_experiment import _read_thesis_metadata
     from types import SimpleNamespace
+
+    from autoresearch_experiment import _read_thesis_metadata
 
     config = "experiments/bad/runtime_config.json"
     controller = SimpleNamespace(root=tmp_path, ctx=SimpleNamespace(current_contract=None))

@@ -11,9 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from persistence_utils import write_text_atomic
-
 from autoresearch_constants import MILLISECONDS_PER_SECOND
+from persistence_utils import write_text_atomic
 
 # ── Time helpers (rule J: UTC in persistent state) ───────────────
 
