@@ -3,10 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-# Keys in ema_base.yaml that are metadata, not backtest parameters.
-# Everything else is treated as a valid config key for thesis compilation.
-_EMA_META_KEYS = {"family"}
-
 
 def _load_ema_defaults() -> dict[str, Any]:
     """Load EMA baseline defaults from ema_base.yaml (single source of truth).
@@ -20,7 +16,7 @@ def _load_ema_defaults() -> dict[str, Any]:
     base_path = Path(__file__).resolve().parent / "configs" / "ema_base.yaml"
     with open(base_path) as f:
         raw = yaml.safe_load(f)
-    return {k: v for k, v in raw.items() if k not in _EMA_META_KEYS}
+    return {k: v for k, v in raw.items() if k != "family"}
 
 
 # Loaded lazily from configs/ema_base.yaml — single source of truth

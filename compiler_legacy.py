@@ -8,7 +8,8 @@ from typing import Any
 from artifact_store import timestamp_ms, write_json_artifact
 from compiler_defaults import _get_ema_defaults
 from compiler_operationalize import operationalize_thesis
-from compiler_validate import _config_content_hash, validate_ema_runtime_config
+from compiler_validate import validate_ema_runtime_config
+from config_hash import _config_hash
 from family_research import infer_family_from_dir_name, validate_family_config_changes
 from orb_contract import compile_contract
 from strategy_family import load_family
@@ -55,7 +56,7 @@ def compile_ema_thesis(
             "runtime_config": runtime_config,
         }
 
-    config_hash = _config_content_hash(runtime_config)
+    config_hash = _config_hash(runtime_config)
 
     contracts_dir = root / family.contracts_dirname
     contracts_dir.mkdir(parents=True, exist_ok=True)
@@ -96,7 +97,7 @@ def compile_proposal_artifact(
     family = load_family(family_name)
     contract = proposal.get("primitive_contract", [])
     if family_name == "ema":
-        from ema_contract import compile_ema_contract
+        from strategies.ema.contract import compile_ema_contract
 
         result = compile_ema_contract(contract)
     else:

@@ -1,58 +1,5 @@
 from __future__ import annotations
 
-STRATEGY_DESCRIPTIONS = {
-    "orb": """OPENING RANGE BREAKOUT (ORB) STRATEGY
-
-Mechanics:
-- Computes the Opening Range (OR) from the first N minutes of trading (configurable, default 30 min).
-- OR high = highest high during OR window; OR low = lowest low.
-- Long entry: first bar that breaks above OR high (next-bar open after breakout).
-- Short entry: first bar that breaks below OR low.
-- Stop loss: opposite side of the opening range (long stop = OR low, short stop = OR high).
-- Target = entry + risk-reward ratio * risk distance (default RR=2).
-- Exits: target hit, stop hit, time stop (default 15:30), max hold bars,
-  volatility trailing stop, failed breakout reversal, opposite-side break.
-- Regime classification: each day is classified as wide-OR, narrow-OR,
-  trend-day, chop-day, or normal based on OR width and intraday behavior.
-- Regime gating: can skip or require specific regime types.
-- Universe filter: stocks-in-play (top-N by first-30-min dollar volume or
-  relative volume) or explicit symbol list.
-- Relative volume (RVOL) gate: optional filter requiring volume above
-  trailing baseline before taking entries.
-
-To understand what the engine supports and what can be changed,
-READ THE SOURCE CODE. Do not guess parameter names.
-
-Source code for signal mechanics (use these to verify hypotheses):
-- orb_signals.py: OR computation, breakout detection, entry/stop/target calc
-- orb_exits.py: exit logic (stop, target, time stop, trailing stop, failed breakout)
-- regime_filter.py: regime classification (wide/narrow OR, trend/chop day)
-- backtest_orb_v2.py: main backtest orchestration, universe filtering""",
-    "ema": """5 EMA PULLBACK/REVERSAL STRATEGY
-
-Mechanics:
-- Uses an exponential moving average (EMA) on intraday bars.
-- BEARISH (short) setups use a shorter timeframe (e.g. 5min bars).
-- BULLISH (long) setups use a longer timeframe (e.g. 15min bars).
-- Entry occurs when price pulls back to the EMA and reverses.
-- Entry is at the alert candle's extreme (break level), not next-bar open.
-- Stop is at the alert candle's opposite extreme.
-- Target = entry + risk-reward ratio * risk distance.
-- Each timeframe is self-contained (no cross-timeframe merging).
-- Grounded in practitioner transcripts: primarily a short-selling strategy,
-  entries concentrated in first 30 minutes after open.
-
-To understand what the engine supports and what can be changed,
-READ THE SOURCE CODE. Do not guess parameter names.
-
-Source code for signal mechanics (use these to verify hypotheses):
-- strategies/ema/signals.py: signal generation, alert candle detection, EMA computation,
-  daily reset logic, ema_alert_carry() stateful loop
-- strategies/ema/exits.py: exit logic (stop/target/timeout)
-- strategies/ema/strategy.py: entry filters, main backtest orchestration""",
-}
-
-
 # ---------------------------------------------------------------------------
 # Conductor system prompt
 # ---------------------------------------------------------------------------

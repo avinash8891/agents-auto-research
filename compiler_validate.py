@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 
@@ -122,11 +121,3 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
             violations.append(f"range_shift_lookback={rsl}: must be between 5 and 100")
 
     return violations
-
-
-def _config_content_hash(config: dict[str, Any]) -> str:
-    """Deterministic hash of a config dict. Used as run_id and filename."""
-    import hashlib
-
-    blob = json.dumps(config, sort_keys=True).encode()
-    return hashlib.sha256(blob).hexdigest()[:12]
