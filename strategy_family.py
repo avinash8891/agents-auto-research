@@ -62,7 +62,7 @@ class StrategyFamily:
         python = "./venv/bin/python3" if IS_VPS else "python3"
         if script.endswith(".py"):
             if script == "vps_runner.py":
-                return f"{python} {script} {config_path}"
+                return f"{python} {script} --strategy {self.name} {config_path}"
             if script.startswith("backtest"):
                 cmd = f"{python} {script} --config {config_path}"
                 if output_dir:

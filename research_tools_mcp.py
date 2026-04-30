@@ -76,7 +76,7 @@ def _build_research_tools_mcp(
             finding: The factual observation (e.g. "Tuesdays have PF=1.7 vs Friday PF=2.7 across 3017 trades")
             finding_type: One of: observation, hypothesis, validated_finding, rejected_finding, open_question, implementation_note
             status: One of: unvalidated, validated, rejected, stale
-            evidence: Which round/experiment produced this (e.g. "round_003, thesis short_ema_8")
+            evidence: Which round/experiment produced this (e.g. "round_003, thesis entry_window_test")
             scope: What data this applies to (e.g. "train_2020-2023", "full_sample", "SPY_only")
             expires_if: Condition that invalidates this (e.g. "fails on validation split", "baseline drift >5%")
         """

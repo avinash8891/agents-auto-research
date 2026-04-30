@@ -53,7 +53,7 @@ class ExperimentResult:
     # ISO-8601 UTC string. Legacy DB files with int epoch-ms timestamps
     # are coerced to ISO on load (see ExperimentDB._load).
     timestamp: str = ""
-    family: str = "ema"
+    family: str = ""
     hypothesis: str = ""
     mechanism: str = ""
     job: int = 0

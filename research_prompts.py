@@ -183,7 +183,7 @@ MEMPALACE FINDING FORMAT (required for every save):
 Every memory you save MUST include these fields as a structured prefix:
   TYPE: one of [observation, hypothesis, validated_finding, rejected_finding, open_question, implementation_note]
   STATUS: one of [unvalidated, validated, rejected, stale]
-  EVIDENCE: which round/experiment produced this (e.g. "round_003, thesis short_ema_8")
+  EVIDENCE: which round/experiment produced this (e.g. "round_003, thesis entry_window_test")
   SCOPE: what data this applies to (e.g. "train_period_only", "full_sample", "SPY_only")
   EXPIRES_IF: condition that would invalidate this (e.g. "fails on validation split", "baseline changes")
 
@@ -192,7 +192,7 @@ Example good save:
    Tuesdays have PF=1.7 vs Friday PF=2.7 across 3017 trades in train period."
 
 Example BAD save (will poison future rounds):
-  "EMA 8 works better than EMA 5" u2190 opinion, no scope, no expiration
+  "Parameter value X works better than Y" u2190 opinion, no scope, no expiration
   "Gap filter is too strict" u2190 conclusion without evidence or scope
 
 When you READ a finding from search_findings, check its STATUS and SCOPE before trusting it.

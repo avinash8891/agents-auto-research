@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""VPS runner using paramiko — replaces ssh/scp in ema_autoresearch.sh.
+"""VPS runner using paramiko for strategy backtests.
 
-Usage: python3 vps_runner.py <config-path>
+Usage: python3 vps_runner.py --strategy <strategy-name> <config-path>
 
-Does exactly what ema_autoresearch.sh does:
 1. Syntax-check local files
 2. SCP files to VPS
-3. SSH to run backtest
-4. Print backtest output (for autoresearch_loop to parse)
+3. SSH to run the generic backtest runner
+4. Print backtest output for autoresearch_loop to parse
 """
 
+import argparse
 import ast
 import os
 import sys
@@ -18,6 +18,7 @@ from pathlib import Path
 
 import paramiko
 
+from strategies import STRATEGIES
 from trace_logger import trace, trace_ssh
 
 VPS_HOST = "31.97.60.116"
@@ -28,7 +29,6 @@ VPS_DIR = "/root/orb-research"
 LOCAL_ROOT = Path(__file__).resolve().parent
 SYNC_DIRS = ["backtest", "strategies"]
 SYNC_FILES = [
-    "backtest_5ema.py",
     "config_hash.py",
     "agent_orchestrator.py",
     "data_loader.py",
@@ -36,28 +36,18 @@ SYNC_FILES = [
     "numba_kernels.py",
     "strategy_event_logger.py",
     "trace_logger.py",
-    "configs/ema_base.yaml",
-]
-
-# Files to syntax-check
-SYNTAX_CHECK = [
-    "backtest_5ema.py",
-    "backtest/runner.py",
-    "backtest/runtime_config.py",
-    "strategies/base.py",
-    "strategies/ema/strategy.py",
-    "strategies/ema/signals.py",
-    "strategies/ema/contract.py",
 ]
 
 
-def syntax_check():
-    for fname in SYNTAX_CHECK:
-        path = LOCAL_ROOT / fname
+def syntax_check(paths: list[Path]) -> bool:
+    for path in paths:
+        if path.suffix != ".py":
+            continue
         try:
             ast.parse(path.read_text())
         except SyntaxError as e:
-            print(f"SYNTAX ERROR in {fname}: {e}", file=sys.stderr)
+            rel = path.relative_to(LOCAL_ROOT)
+            print(f"SYNTAX ERROR in {rel}: {e}", file=sys.stderr)
             return False
     return True
 
@@ -98,19 +88,22 @@ def _ensure_remote_dir(sftp: paramiko.SFTPClient, remote_path: str) -> None:
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 vps_runner.py <config-path>", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Run a strategy backtest on the VPS")
+    parser.add_argument("--strategy", required=True, choices=sorted(STRATEGIES))
+    parser.add_argument("config_path")
+    args = parser.parse_args()
 
-    config_path = sys.argv[1]
-    trace("VPS_RUNNER", f"START config={config_path}")
+    config_path = args.config_path
+    strategy_name = args.strategy
+    trace("VPS_RUNNER", f"START strategy={strategy_name} config={config_path}")
     if not (LOCAL_ROOT / config_path).exists():
         trace("VPS_RUNNER", f"Config not found: {config_path}")
         print(f"Config not found: {config_path}", file=sys.stderr)
         sys.exit(1)
 
-    trace("VPS_RUNNER", f"Syntax checking: {SYNTAX_CHECK}")
-    if not syntax_check():
+    sync_paths = _iter_sync_paths()
+    trace("VPS_RUNNER", f"Syntax checking {len(sync_paths)} synced files")
+    if not syntax_check(sync_paths):
         trace("VPS_RUNNER", "SYNTAX CHECK FAILED")
         print("SYNTAX ERROR")
         sys.exit(1)
@@ -124,7 +117,7 @@ def main():
     trace("VPS_RUNNER", "Connected")
 
     t0 = time.time()
-    for path in _iter_sync_paths():
+    for path in sync_paths:
         rel = path.relative_to(LOCAL_ROOT).as_posix()
         remote = f"{VPS_DIR}/{rel}"
         _ensure_remote_dir(sftp, remote)
@@ -144,7 +137,7 @@ def main():
         f'mkdir -p "{config_dirname}" && '
         f'cp "{config_basename}" "{config_path}" 2>/dev/null || true && '
         f"find . -name __pycache__ -type d -exec rm -rf {{}} + 2>/dev/null || true && "
-        f'python3 backtest/runner.py --strategy ema --config "{config_path}"'
+        f'python3 backtest/runner.py --strategy "{strategy_name}" --config "{config_path}"'
     )
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()

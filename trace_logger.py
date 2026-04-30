@@ -11,10 +11,10 @@ Usage:
     from trace_logger import trace, trace_agent_prompt, trace_agent_response, trace_ssh
     from trace_logger import get_run_id, begin_hypothesis, current_hypothesis_id
     trace("LOOP", "Starting autoresearch loop")
-    hid = begin_hypothesis("ema_transcript_baseline")  # -> "H001"
+    hid = begin_hypothesis("baseline")  # -> "H001"
     trace_agent_prompt("diagnostic-analyst", prompt_text)
     trace_agent_response("diagnostic-analyst", response_text, parsed_json)
-    trace_ssh("backtest_5ema.py --config x.json", exit_code, stdout, stderr)
+    trace_ssh("backtest/runner.py --strategy name --config x.json", exit_code, stdout, stderr)
 """
 from __future__ import annotations
 

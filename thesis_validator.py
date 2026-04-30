@@ -233,7 +233,6 @@ def check_hypothesis_alignment(
         "max_stop_distance_pct": [r"stop.{0,5}(distance|loss|size)", r"extreme.{0,5}(move|candle)", r"wide.{0,5}stop", r"candle.{0,5}size"],
         "use_range_shift": [r"range.{0,5}shift", r"lookback", r"adaptive", r"context.{0,5}window"],
         "range_shift_lookback": [r"range.{0,5}shift", r"lookback", r"adaptive"],
-        "ema_length": [r"\bema\b", r"moving average", r"smooth"],
         "timeframe_short": [r"timeframe", r"bar.{0,3}size", r"resolution", r"5.?min"],
         "timeframe_long": [r"timeframe", r"bar.{0,3}size", r"resolution", r"15.?min"],
         "direction_bias": [r"direction", r"long.only", r"short.only", r"bias"],
