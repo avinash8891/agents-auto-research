@@ -152,7 +152,7 @@ def test_sqlite_research_thesis_attempt_required_fields_are_non_empty(tmp_path: 
 def test_sqlite_experiment_required_fields_are_meaningfully_populated_in_real_ema5_flow(
     tmp_path: Path,
 ) -> None:
-    repo_root = Path("/Users/avinashvankadaru/.superset/projects/agents-auto-research").resolve()
+    repo_root = Path(__file__).resolve().parents[1]
     family = load_family("ema")
     runtime_root = (tmp_path / "runtime").resolve()
     runtime_root.mkdir(parents=True, exist_ok=True)
@@ -273,10 +273,12 @@ def test_sqlite_research_fields_are_meaningfully_populated_from_real_ready_thesi
 
     class _Controller:
         def __init__(self) -> None:
+            self.root = Path(__file__).resolve().parents[1]
             self.family = SimpleNamespace(
                 name="ema",
                 benchmark_command=lambda config: f"python3 -m backtest.runner --strategy ema --config {config}",
             )
+            self.research_dir = self.root / "ema-research"
             self.state = {"state": "blocked", "job": 7, "research_round": 0, "job_usage": None}
             self.round_kwargs = None
 

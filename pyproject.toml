@@ -70,4 +70,5 @@ dependencies = [
     "openinference-instrumentation-openai==0.1.45",
     "traceloop-sdk==0.60.0",
     "httpx",
+    "mcp",
 ]

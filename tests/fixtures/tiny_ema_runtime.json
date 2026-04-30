@@ -1,6 +1,6 @@
 {
   "family": "ema",
-  "data_dir": "/Users/avinashvankadaru/.superset/worktrees/agents-auto-research/multi-strategy-framework/tests/fixtures/tiny_ema_data",
+  "data_dir": "tests/fixtures/tiny_ema_data",
   "symbols": [
     "AAA",
     "BBB"
