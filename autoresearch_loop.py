@@ -151,7 +151,9 @@ class AutoresearchController:
         self.jsonl_path = jsonl_path
         self.current_md_path = current_md_path
         self.ideas_md_path = ideas_md_path
-        self.family = family or load_family("orb")
+        if family is None:
+            raise ValueError("AutoresearchController requires an explicit strategy family")
+        self.family = family
         self.runs_dir = runs_dir or (root / self.family.runs_dirname)
         self.research_dir = root / self.family.research_dirname
         self.proposals_dir = root / self.family.proposals_dirname
@@ -575,7 +577,7 @@ class AutoresearchController:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run autoresearch controller")
-    parser.add_argument("--family", default="orb", help="Strategy family to run")
+    parser.add_argument("--family", required=True, help="Strategy family to run")
     args = parser.parse_args()
 
     family = load_family(args.family)

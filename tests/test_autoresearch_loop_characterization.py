@@ -133,8 +133,25 @@ def _patch_run_command_success(controller, monkeypatch, tmp_path) -> dict[str, A
 
 
 def _symlink_runtime_repo(source_root: Path, runtime_root: Path) -> None:
+    runtime_state_names = {
+        "autoresearch-runs",
+        "ema_autoresearch-runs",
+        "ema_autoresearch.current.md",
+        "ema_autoresearch.jsonl",
+        "ema_autoresearch.next.json",
+        "ema_baseline_checkpoints.json",
+        "ema_experiments_db.json",
+        "orb_autoresearch-runs",
+        "orb_autoresearch.current.md",
+        "orb_autoresearch.jsonl",
+        "orb_autoresearch.next.json",
+        "orb_baseline_checkpoints.json",
+        "orb_experiments_db.json",
+    }
     for path in source_root.iterdir():
         if path.name in {".git", ".pytest_cache", "__pycache__", "tests"}:
+            continue
+        if path.name in runtime_state_names:
             continue
         if path.name.startswith(".") and path.name not in {".coveragerc"}:
             continue

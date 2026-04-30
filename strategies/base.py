@@ -31,6 +31,7 @@ class Strategy(Protocol):
     description_for_research: str
     research_spec: FamilyResearchSpec
     discord_webhook: str
+    default_variants: tuple[str, ...]
 
     def run(self, config: dict[str, Any]) -> dict[str, Any]: ...
     def get_defaults(self) -> dict[str, Any]: ...
@@ -39,6 +40,10 @@ class Strategy(Protocol):
     ) -> dict[str, Any]: ...
     def validate_runtime_config(self, config: dict[str, Any]) -> list[str]: ...
     def compile_contract(self, contract: list[dict[str, Any]]) -> Any: ...
+    def render_contract_to_runtime_config(
+        self, contract: list[dict[str, Any]]
+    ) -> dict[str, Any]: ...
+    def resolve_contract_support(self, contract: list[dict[str, Any]]) -> dict[str, Any]: ...
     def map_config_changes_to_contract(
         self, config_changes: dict[str, Any]
     ) -> list[dict[str, Any]]: ...
@@ -52,6 +57,7 @@ class BaseStrategy:
     vps_benchmark_script = ""
     extra_result_fields: tuple[str, ...] = ()
     description_for_research = ""
+    default_variants: tuple[str, ...] = ()
     research_spec: FamilyResearchSpec
 
     @property
@@ -75,6 +81,17 @@ class BaseStrategy:
     def get_defaults(self) -> dict[str, Any]:
         path = Path(__file__).parent / self.name / "defaults.yaml"
         return yaml.safe_load(path.read_text())
+
+    def render_contract_to_runtime_config(self, contract: list[dict[str, Any]]) -> dict[str, Any]:
+        compilation = self.compile_contract(contract)  # type: ignore[attr-defined]
+        return compilation.runtime_config
+
+    def resolve_contract_support(self, contract: list[dict[str, Any]]) -> dict[str, Any]:
+        compilation = self.compile_contract(contract)  # type: ignore[attr-defined]
+        return {
+            "supported": compilation.status == "ready_to_run",
+            "missing_primitive_types": compilation.missing_primitives,
+        }
 
 
 STRATEGIES: dict[str, Strategy] = {}

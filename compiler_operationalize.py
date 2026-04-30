@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from orb_contract import render_contract_to_runtime_config, resolve_contract_support
 from strategies import STRATEGIES
 
 AMBIGUOUS_PATTERNS = {
@@ -50,10 +49,14 @@ def finalize_thesis_config_changes(
             return finalized
         primitive_contract = []
     finalized["primitive_contract"] = primitive_contract
-    support = resolve_contract_support(finalized["primitive_contract"])
+    family_name = finalized["strategy_family"]
+    strategy = STRATEGIES[family_name]
+    support = strategy.resolve_contract_support(finalized["primitive_contract"])
     renderable = True
     try:
-        rendered_config = render_contract_to_runtime_config(finalized["primitive_contract"])
+        rendered_config = strategy.render_contract_to_runtime_config(
+            finalized["primitive_contract"]
+        )
     except (KeyError, TypeError, ValueError):
         renderable = False
         rendered_config = {}
@@ -78,7 +81,6 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
     """Convert a potentially ambiguous thesis into an executable contract.
 
     For registered strategies with config_changes, maps them to primitive_contract entries.
-    For ORB theses with config_changes, wraps as config_changes_passthrough.
     For ambiguous theses (detected by AMBIGUOUS_PATTERNS), runs an SDK
     operationalization agent to resolve the ambiguity.
     For clear theses with primitive_contract, renders to runtime config directly.
@@ -87,23 +89,21 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
     print(
         f"OPERATIONALIZE: config_changes={bool(thesis.get('config_changes'))} needs_op={thesis_needs_operationalization(thesis)} has_pc={bool(thesis.get('primitive_contract'))}"
     )
+    family_name = thesis["strategy_family"]
+    strategy = STRATEGIES[family_name]
     if thesis.get("config_changes"):
-        family_name = thesis.get("strategy_family")
-        if family_name in STRATEGIES:
-            thesis["primitive_contract"] = thesis.get("primitive_contract") or STRATEGIES[
-                family_name
-            ].map_config_changes_to_contract(thesis["config_changes"])
-        else:
-            thesis["primitive_contract"] = thesis.get("primitive_contract") or [
-                {"type": "config_changes_passthrough", "config_changes": thesis["config_changes"]}
-            ]
+        thesis["primitive_contract"] = thesis.get(
+            "primitive_contract"
+        ) or strategy.map_config_changes_to_contract(thesis["config_changes"])
         thesis["requires_code_change"] = thesis.get("requires_code_change", False)
         return thesis
 
     # Clear thesis — just render the contract
     if not thesis_needs_operationalization(thesis):
         thesis["primitive_contract"] = thesis.get("primitive_contract", [])
-        thesis["config_changes"] = render_contract_to_runtime_config(thesis["primitive_contract"])
+        thesis["config_changes"] = strategy.render_contract_to_runtime_config(
+            thesis["primitive_contract"]
+        )
         return thesis
 
     # Ambiguous thesis — use SDK operationalization agent

@@ -1,0 +1,79 @@
+# ORB (Opening Range Breakout) Base Configuration
+# This is the baseline config (Experiment #1). All variants compare against this.
+
+# --- Data ---
+data_dir: "data"
+symbols: null  # null = all available symbols
+
+# --- Date Splits (STRICT: no overlap allowed) ---
+# Discovery: used to develop intuition, look at patterns. NOT used for metrics.
+# Validation: walk-forward windows here produce the primary metric.
+# Holdout: NEVER touched during search. Only used for final confirmation.
+#
+# 10 years of data (2016-2025):
+#   Discovery  2016-2019  (4 years) — includes low-vol 2017, vol shock 2018, recovery 2019
+#   Validation 2020-2023  (4 years) — includes COVID crash, meme mania, rate hikes, recovery
+#   Holdout    2024-2025  (2 years) — final confirmation on unseen regimes
+discovery_start: "2016-01-01"
+discovery_end: "2019-12-31"
+validation_start: "2020-01-01"
+validation_end: "2023-12-31"
+holdout_start: "2024-01-01"
+holdout_end: "2025-12-31"
+
+# --- Opening Range ---
+or_minutes: 30          # First 30 minutes define the opening range
+timeframe_minutes: 5    # 5-minute candles
+
+# --- Entry ---
+rr_ratio: 2.0           # Risk-reward ratio (target = 2R from entry)
+max_one_entry_per_day: true  # Only one trade per symbol per day
+
+# --- Entry Filters (all OFF for baseline) ---
+use_volume_filter: false
+use_trend_filter: false
+use_wide_or_filter: false
+use_follow_through: false
+wide_or_mult: 1.5       # Skip if OR > 1.5x median OR width
+narrow_or_mult: 0.5     # Classify as narrow-OR if OR < 0.5x median
+trend_ema_period: 20    # Daily EMA for trend filter
+volume_lookback: 20     # Bars for relative volume median
+
+# --- Exit ---
+max_hold_bars: 78       # Full trading day in 5m bars (6.5 hours)
+slippage_pct: 0.05      # 5 bps slippage each way
+
+conservative_sl_fill: false  # If true, fill stops only at stop price (not at open)
+long_only: false             # If true, only take long breakouts
+
+# Exit variants (all OFF for baseline)
+use_time_stop: false
+use_failed_breakout_exit: false
+use_volatility_trail: false
+use_opposite_break_exit: false
+time_stop_hour: 12      # Midday cutoff for time stop
+time_stop_minute: 0
+vol_trail_atr_mult: 1.0 # ATR multiplier for volatility trail
+
+# --- RVOL Gate (OFF for baseline) ---
+use_rvol_gate: false
+rvol_threshold: 1.5               # Minimum relative volume to take entry
+rvol_lookback_days: 20            # Days for baseline volume computation
+rvol_baseline_stat: "mean"        # "mean" or "median" for baseline
+rvol_computation: "cumulative_or_window"  # How to compute RVOL
+rvol_min_history_days: 10         # Minimum days of history required
+
+# --- Universe Selection (OFF for baseline) ---
+universe_mode: null                          # null = all symbols; "stocks_in_play" = top-N by RVOL
+stocks_in_play_top_n: 20                     # How many stocks per day when universe_mode=stocks_in_play
+stocks_in_play_ranking: "first30_dollar_volume"  # Ranking metric for stocks-in-play filter
+
+# --- Regime Gating (OFF for baseline) ---
+skip_regimes: []        # e.g. ["chop", "low-vol"] to skip those days
+require_regimes: []     # e.g. ["trending"] to only trade on those days
+
+# --- Walk-Forward Windows ---
+# Windows are auto-generated from validation_start/validation_end.
+# Each window uses 6 months of data, strictly within the validation period.
+# Discovery data is NEVER used for metric computation.
+# Holdout data is NEVER touched during search.

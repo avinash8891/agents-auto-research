@@ -136,7 +136,7 @@ async def run_web_research(
 
 async def run_research_agent(
     context: dict[str, Any],
-    family_name: str = "orb",
+    family_name: str,
 ) -> dict[str, Any] | None:
     """Run the research agent. Orchestrator manages memory."""
     trace(
@@ -247,6 +247,6 @@ def run_web_research_sync(
 
 def run_research_agent_sync(
     context: dict[str, Any],
-    family_name: str = "orb",
+    family_name: str,
 ) -> dict[str, Any] | None:
     return asyncio.run(run_research_agent(context, family_name))

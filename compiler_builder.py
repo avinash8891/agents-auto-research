@@ -22,14 +22,22 @@ def _find_cli() -> str | None:
 
 def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     """Dispatch CLI builder to implement missing primitives for a thesis."""
-    compilation_family_name = "orb"
-    for candidate_family in ("orb", *sorted(STRATEGIES)):
+    compilation_family_name = None
+    for candidate_family in sorted(STRATEGIES):
         candidate_proposal_path = (
             root / load_family(candidate_family).proposals_dirname / f"{thesis_id}.json"
         )
         if candidate_proposal_path.exists():
             compilation_family_name = candidate_family
             break
+
+    if compilation_family_name is None:
+        return {
+            "status": "error",
+            "reason": f"missing proposal artifact for {thesis_id}",
+            "generated_config": None,
+            "validation_passed": False,
+        }
 
     family = load_family(compilation_family_name)
     proposal_path = root / family.proposals_dirname / f"{thesis_id}.json"
@@ -51,7 +59,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
 
     proposal = json.loads(proposal_path.read_text())
     compilation = json.loads(compilation_path.read_text())
-    family_name = proposal.get("strategy_family") or proposal.get("family", "orb")
+    family_name = proposal.get("strategy_family") or proposal["family"]
     family = load_family(family_name)
     normalized_contract = compilation.get("normalized_contract") or []
     missing_primitives = compilation.get("missing_primitives") or []

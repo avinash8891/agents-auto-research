@@ -14,7 +14,9 @@ from compiler_pipeline import (
     thesis_needs_operationalization,
     validate_orb_runtime_config,
 )
+from orb_contract import compile_contract as legacy_orb_compile_contract
 from research_types import ResearchThesis
+from strategies import STRATEGIES
 from strategies.ema.validate import validate_ema_runtime_config
 from strategy_family import load_family
 
@@ -75,6 +77,22 @@ def test_compile_proposal_artifact_writes_family_queue_and_contract(tmp_path: Pa
     queue = json.loads(queue_path.read_text())
     assert queue["status"] == "pending"
     assert queue["config"] == "ema-contracts/ema_contract_ready.json"
+
+
+def test_orb_strategy_compile_contract_matches_legacy_compiler() -> None:
+    contract = [
+        {"type": "or_window", "minutes": 30},
+        {"type": "risk_reward", "rr": 2.0},
+        {"type": "time_stop", "enabled": True, "hour": 12, "minute": 0},
+    ]
+
+    strategy_result = STRATEGIES["orb"].compile_contract(contract)
+    legacy_result = legacy_orb_compile_contract(contract)
+
+    assert strategy_result.status == legacy_result.status
+    assert strategy_result.runtime_config == legacy_result.runtime_config
+    assert strategy_result.missing_primitives == legacy_result.missing_primitives
+    assert strategy_result.normalized_contract == legacy_result.normalized_contract
 
 
 def test_compile_research_thesis_status_needs_code_when_invalid_keys(tmp_path: Path) -> None:

@@ -9,7 +9,6 @@ from artifact_store import timestamp_ms, write_json_artifact
 from compiler_operationalize import operationalize_thesis
 from config_hash import _config_hash
 from family_research import validate_family_config_changes
-from orb_contract import compile_contract
 from strategies import STRATEGIES
 from strategy_family import load_family
 
@@ -93,13 +92,10 @@ def compile_proposal_artifact(
 ) -> dict[str, Any]:
     """Compile a thesis proposal into a family-specific runtime artifact."""
     thesis_id = proposal["thesis_id"]
-    family_name = proposal.get("strategy_family", "orb")
+    family_name = proposal["strategy_family"]
     family = load_family(family_name)
     contract = proposal.get("primitive_contract", [])
-    if family_name in STRATEGIES:
-        result = STRATEGIES[family_name].compile_contract(contract)
-    else:
-        result = compile_contract(contract)
+    result = STRATEGIES[family_name].compile_contract(contract)
 
     compilations_dir = root / family.compilations_dirname
     run_queue_dir = root / family.run_queue_dirname
@@ -143,7 +139,7 @@ def create_executable_artifact(
     """Create executable config from a thesis.
 
     Registered strategies: validate config_changes, merge with baseline, write JSON.
-    Legacy ORB: operationalize + primitive_contract compilation.
+    Otherwise operationalize + primitive_contract compilation.
 
     Returns {"generated_config": str|None, "generated_config_needs_build": bool, ...}.
     """
@@ -261,7 +257,10 @@ def _infer_family_from_paths(thesis_dir: Path, base_config_path: Path) -> str:
     for family_name in sorted(STRATEGIES, key=len, reverse=True):
         if family_name.lower() in haystack:
             return family_name
-    return "orb"
+    raise ValueError(
+        "Unable to infer strategy family from thesis/base-config paths; "
+        "research artifacts must include strategy_family"
+    )
 
 
 def write_research_artifact(

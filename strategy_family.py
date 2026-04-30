@@ -4,7 +4,6 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
-from family_research import get_family_research_spec
 from strategies import STRATEGIES
 
 # When running on VPS, set AUTORESEARCH_VPS=1 to use direct backtest instead of vps_runner
@@ -23,15 +22,15 @@ class StrategyFamily:
     run_queue_dirname: str = "run-queue"
     research_dirname: str = "research"
     builder_requests_dirname: str = "builder-requests"
-    base_config_filename: str = "orb_base.yaml"
+    base_config_filename: str = "base.yaml"
     runs_dirname: str = "autoresearch-runs"
     discord_webhook: str = ""
     # Family-aware variant config conventions. Variant config files live
     # at `configs/variants/{variant_prefix}{slug}.yaml`. Default variants
     # are the seed list of well-known thesis paths checked at loop start.
-    # Pre-rule-PR-5, these were hardcoded as `orb_*.yaml` in the planner;
-    # now they derive from the family. See planning.list_known_variant_configs.
-    variant_prefix: str = "orb_"
+    # Pre-rule-PR-5, these were hardcoded as strategy-specific filenames in
+    # the planner; now they derive from the registered strategy metadata.
+    variant_prefix: str = ""
     default_variants: tuple[str, ...] = ()
 
     @property
@@ -73,7 +72,7 @@ class StrategyFamily:
 
     @property
     def research_spec(self):
-        return get_family_research_spec(self.name)
+        return STRATEGIES[self.name].research_spec
 
 
 def _discord_webhook_for(family_name: str) -> str:
@@ -86,66 +85,10 @@ def _discord_webhook_for(family_name: str) -> str:
     return os.environ.get(f"AUTORESEARCH_DISCORD_WEBHOOK_{family_name.upper()}", "")
 
 
-_ORB_DESCRIPTION_FOR_RESEARCH = """OPENING RANGE BREAKOUT (ORB) STRATEGY
-
-Mechanics:
-- Computes the Opening Range (OR) from the first N minutes of trading (configurable, default 30 min).
-- OR high = highest high during OR window; OR low = lowest low.
-- Long entry: first bar that breaks above OR high (next-bar open after breakout).
-- Short entry: first bar that breaks below OR low.
-- Stop loss: opposite side of the opening range (long stop = OR low, short stop = OR high).
-- Target = entry + risk-reward ratio * risk distance (default RR=2).
-- Exits: target hit, stop hit, time stop (default 15:30), max hold bars,
-  volatility trailing stop, failed breakout reversal, opposite-side break.
-- Regime classification: each day is classified as wide-OR, narrow-OR,
-  trend-day, chop-day, or normal based on OR width and intraday behavior.
-- Regime gating: can skip or require specific regime types.
-- Universe filter: stocks-in-play (top-N by first-30-min dollar volume or
-  relative volume) or explicit symbol list.
-- Relative volume (RVOL) gate: optional filter requiring volume above
-  trailing baseline before taking entries.
-
-To understand what the engine supports and what can be changed,
-READ THE SOURCE CODE. Do not guess parameter names.
-
-Source code for signal mechanics (use these to verify hypotheses):
-- orb_signals.py: OR computation, breakout detection, entry/stop/target calc
-- orb_exits.py: exit logic (stop, target, time stop, trailing stop, failed breakout)
-- regime_filter.py: regime classification (wide/narrow OR, trend/chop day)
-- backtest_orb_v2.py: main backtest orchestration, universe filtering"""
-
-
 @lru_cache(maxsize=1)
 def _families() -> dict[str, StrategyFamily]:
-    orb_strategy = StrategyFamily(
-        name="orb",
-        benchmark_script="backtest_orb_v2.py",
-        description_for_research=_ORB_DESCRIPTION_FOR_RESEARCH,
-        vps_benchmark_script="backtest_orb_v2.py",
-        proposals_dirname="orb-proposals",
-        compilations_dirname="orb-compilations",
-        contracts_dirname="orb-contracts",
-        run_queue_dirname="orb-run-queue",
-        research_dirname="orb-research-artifacts",
-        builder_requests_dirname="orb-builder-requests",
-        base_config_filename="orb_base.yaml",
-        runs_dirname="orb_autoresearch-runs",
-        discord_webhook=_discord_webhook_for("orb"),
-        variant_prefix="orb_",
-        default_variants=(
-            "configs/variants/orb_spy_only.yaml",
-            "configs/variants/orb_stocks_in_play.yaml",
-            "configs/variants/orb_trailing_stop.yaml",
-            "configs/variants/orb_trend_filter.yaml",
-        ),
-    )
-    strategies = {"orb": orb_strategy}
-    strategies.update(STRATEGIES)
     families: dict[str, StrategyFamily] = {}
-    for name, strategy in strategies.items():
-        if name == "orb":
-            families[name] = orb_strategy
-            continue
+    for name, strategy in STRATEGIES.items():
         families[name] = StrategyFamily(
             name=name,
             benchmark_script=strategy.benchmark_script or f"backtest_{name}.py",
@@ -161,12 +104,12 @@ def _families() -> dict[str, StrategyFamily]:
             runs_dirname=strategy.family_dirnames.runs,
             discord_webhook=_discord_webhook_for(name),
             variant_prefix=strategy.family_dirnames.variant_prefix,
-            default_variants=(),
+            default_variants=strategy.default_variants,
         )
     return families
 
 
-def load_family(name: str = "orb") -> StrategyFamily:
+def load_family(name: str) -> StrategyFamily:
     try:
         return _families()[name]
     except KeyError as exc:

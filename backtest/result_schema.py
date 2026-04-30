@@ -23,7 +23,7 @@ def build_result_payload(
     strategy_diagnostics: dict[str, Any],
     file_paths: dict[str, str],
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "family": strategy,
         "config": config_path,
         "config_hash": _config_hash(config),
@@ -36,3 +36,7 @@ def build_result_payload(
         "strategy_events_file": file_paths["strategy_events_file"],
         "diagnostics_file": file_paths["diagnostics_file"],
     }
+    for key, value in result.items():
+        if key not in payload and key not in METRIC_KEYS and not key.startswith("_"):
+            payload[key] = value
+    return payload

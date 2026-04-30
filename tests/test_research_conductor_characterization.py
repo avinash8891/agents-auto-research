@@ -20,6 +20,8 @@ import research_memory as memory
 import research_subagents as subagents
 import research_tools_mcp as tools_mcp
 import research_usage as usage
+from family_research import get_family_research_spec
+from strategies import STRATEGIES
 
 
 def _assistant_message(text: str):
@@ -196,6 +198,10 @@ def test_accumulate_usage_tracks_tokens_across_agents():
             "calls": 0,
         },
     }
+
+
+def test_orb_research_spec_resolves_from_strategy_registry() -> None:
+    assert get_family_research_spec("orb") is STRATEGIES["orb"].research_spec
 
 
 def test_save_research_finding_rejects_bad_type(monkeypatch):

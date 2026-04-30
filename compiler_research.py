@@ -4,14 +4,13 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from compiler_defaults import _get_orb_defaults
-from compiler_validate import validate_orb_runtime_config
 from config_hash import _config_hash
+from research_types import ExperimentContract
 from strategies import STRATEGIES
 from strategy_family import load_family
 
 if TYPE_CHECKING:
-    from research_types import ExperimentContract, ResearchThesis
+    from research_types import ResearchThesis
 
 
 def _needs_code_contract(
@@ -20,8 +19,6 @@ def _needs_code_contract(
     *,
     status: str = "needs_code",
 ) -> "ExperimentContract":
-    from research_types import ExperimentContract
-
     family_name = thesis.strategy_family
     experiment_id = thesis.thesis_id
     experiment_dir = root / "experiments" / experiment_id
@@ -49,8 +46,6 @@ def _compile_runtime_config_contract(
     root: Path,
     runtime_config: dict,
 ) -> "ExperimentContract":
-    from research_types import ExperimentContract
-
     family_name = thesis.strategy_family
     experiment_id = _config_hash(runtime_config)
     experiment_dir = root / "experiments" / experiment_id
@@ -99,8 +94,6 @@ def compile_research_thesis(
 
     The experiment_id is a content hash of the runtime config.
     """
-    from research_types import ExperimentContract
-
     family_name = thesis.strategy_family
 
     if thesis.requires_code_change:
@@ -116,25 +109,6 @@ def compile_research_thesis(
                 f"Config validation failed for thesis '{thesis.thesis_id}': "
                 + "; ".join(violations)
             )
-        return _compile_runtime_config_contract(thesis, root, runtime_config)
-
-    if family_name == "orb":
-        defaults = _get_orb_defaults()
-        allowed = set(defaults.keys())
-        invalid_keys = sorted(set(thesis.config_changes.keys()) - allowed)
-
-        if invalid_keys:
-            return _needs_code_contract(thesis, root)
-
-        runtime_config = {**defaults, **thesis.config_changes}
-
-        violations = validate_orb_runtime_config(runtime_config)
-        if violations:
-            raise ValueError(
-                f"Config validation failed for thesis '{thesis.thesis_id}': "
-                + "; ".join(violations)
-            )
-
         return _compile_runtime_config_contract(thesis, root, runtime_config)
 
     raise ValueError(f"compile_research_thesis does not support family '{family_name}' yet")
