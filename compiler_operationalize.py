@@ -93,6 +93,13 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
     strategy = STRATEGIES[family_name]
     needs_operationalization = thesis_needs_operationalization(thesis)
     if needs_operationalization:
+        # If the thesis already carries concrete config_changes, preserve them
+        # and avoid invoking the external resolver. The caller can still map the
+        # config deltas into a primitive contract later if needed.
+        if thesis.get("config_changes"):
+            thesis["primitive_contract"] = thesis.get("primitive_contract", [])
+            thesis["requires_code_change"] = thesis.get("requires_code_change", False)
+            return thesis
         clarification = _run_operationalization_agent(thesis)
         return finalize_thesis_config_changes(thesis, clarification)
 
