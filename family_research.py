@@ -115,10 +115,6 @@ def get_family_research_spec(name: str) -> FamilyResearchSpec:
     return STRATEGIES[name].research_spec
 
 
-def infer_family_from_dir_name(dirname: str) -> str:
-    return "ema" if "ema" in dirname else "orb"
-
-
 def validate_family_config_changes(family_name: str, thesis: dict[str, Any]) -> dict[str, Any]:
     spec = get_family_research_spec(family_name)
     config_changes = thesis.get("config_changes") or {}

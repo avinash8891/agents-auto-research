@@ -50,7 +50,7 @@ MECHANISM_DIMENSIONS = {
 class ResearchThesis(BaseModel):
     """What the conductor produces. Research-grade, not just config changes."""
     thesis_id: str
-    strategy_family: str = "ema"
+    strategy_family: str
 
     hypothesis: str
     mechanism: str

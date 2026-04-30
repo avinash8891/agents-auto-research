@@ -158,9 +158,7 @@ WORKFLOW:
 CRITICAL RULES:
 - Your thesis MUST include "config_changes" with specific key-value pairs from the schema below.
 - config_changes is applied as a DELTA ON TOP OF THE FAMILY DEFAULTS, NOT the current best.
-  The defaults are: ema_length=5, timeframe_long=15, timeframe_short=5, rr_ratio=3.0,
-  direction_bias="short_only", entry_cutoff_time="10:00", max_trades_per_day=3.
-  If you want entry_cutoff_time="09:31" AND max_trades_per_day=1, you MUST include BOTH keys.
+  If you want to change two runtime values, you MUST include BOTH keys.
   Any key you omit stays at the default value, NOT at the current best value.
 - TWO configs with the same final runtime values are DUPLICATES even if thesis_id differs.
   Before proposing, mentally compute the full config and check it differs from all prior experiments.

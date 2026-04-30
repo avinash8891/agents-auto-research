@@ -26,7 +26,8 @@ async def run_diagnostic_analysis(
     metric: float,
     config_contents: dict[str, Any] | None = None,
     baseline_results: dict[str, Any] | None = None,
-    family: str = "ema",
+    *,
+    family: str,
 ) -> dict[str, Any] | None:
     """Run the diagnostic analyst on raw trades. Orchestrator manages memory."""
     trace(
@@ -89,7 +90,8 @@ async def run_web_research(
     analyst_brief: str,
     result_summary: str,
     research_round: int = 1,
-    family: str = "ema",
+    *,
+    family: str,
 ) -> dict[str, Any] | None:
     """Run the web researcher via Claude SDK (builds prompt, delegates to OpenAI for search)."""
     trace(
@@ -209,7 +211,8 @@ def analyze_diagnostics_sync(
     metric: float,
     config_contents: dict[str, Any] | None = None,
     baseline_results: dict[str, Any] | None = None,
-    family: str = "ema",
+    *,
+    family: str,
 ) -> dict[str, Any] | None:
     return asyncio.run(
         run_diagnostic_analysis(
@@ -218,7 +221,7 @@ def analyze_diagnostics_sync(
             metric,
             config_contents,
             baseline_results,
-            family,
+            family=family,
         )
     )
 
@@ -228,7 +231,8 @@ def run_web_research_sync(
     analyst_brief: str,
     result_summary: str,
     research_round: int = 1,
-    family: str = "ema",
+    *,
+    family: str,
 ) -> dict[str, Any] | None:
     return asyncio.run(
         run_web_research(
@@ -236,7 +240,7 @@ def run_web_research_sync(
             analyst_brief,
             result_summary,
             research_round,
-            family,
+            family=family,
         )
     )
 

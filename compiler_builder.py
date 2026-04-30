@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from artifact_store import timestamp_ms, write_json_artifact
+from strategies import STRATEGIES
 from strategy_family import load_family
 
 
@@ -22,7 +23,7 @@ def _find_cli() -> str | None:
 def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     """Dispatch CLI builder to implement missing primitives for a thesis."""
     compilation_family_name = "orb"
-    for candidate_family in ("orb", "ema"):
+    for candidate_family in ("orb", *sorted(STRATEGIES)):
         candidate_proposal_path = (
             root / load_family(candidate_family).proposals_dirname / f"{thesis_id}.json"
         )

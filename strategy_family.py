@@ -148,9 +148,9 @@ def _families() -> dict[str, StrategyFamily]:
             continue
         families[name] = StrategyFamily(
             name=name,
-            benchmark_script=f"backtest_{'5ema' if name == 'ema' else name}.py",
+            benchmark_script=strategy.benchmark_script or f"backtest_{name}.py",
             description_for_research=strategy.description_for_research,
-            vps_benchmark_script="vps_runner.py" if name == "ema" else f"backtest_{name}.py",
+            vps_benchmark_script=strategy.vps_benchmark_script or f"backtest_{name}.py",
             proposals_dirname=strategy.family_dirnames.proposals,
             compilations_dirname=strategy.family_dirnames.compilations,
             contracts_dirname=strategy.family_dirnames.contracts,

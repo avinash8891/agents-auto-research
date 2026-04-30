@@ -7,12 +7,13 @@ import pytest
 
 from compiler_pipeline import (
     build_missing_primitives,
+    compile_config_thesis,
     compile_research_thesis,
     thesis_needs_operationalization,
-    validate_ema_runtime_config,
     validate_orb_runtime_config,
 )
 from research_types import ResearchThesis
+from strategies.ema.validate import validate_ema_runtime_config
 
 
 class _DummyCompletedProcess:
@@ -25,14 +26,12 @@ def test_compiler_pipeline_public_facade_imports() -> None:
     expected = [
         "compile_research_thesis",
         "compile_proposal_artifact",
-        "compile_ema_thesis",
+        "compile_config_thesis",
         "create_executable_artifact",
         "derive_thesis_artifacts",
         "write_research_artifact",
         "mark_request_completed",
-        "_get_ema_defaults",
         "_get_orb_defaults",
-        "validate_ema_runtime_config",
         "validate_orb_runtime_config",
         "thesis_needs_operationalization",
         "operationalize_thesis",
@@ -45,6 +44,13 @@ def test_compiler_pipeline_public_facade_imports() -> None:
         value = getattr(compiler_pipeline, name)
         assert value
         assert callable(value) or value is not None
+
+
+def test_compile_config_thesis_uses_registered_strategy_defaults(tmp_path: Path) -> None:
+    result = compile_config_thesis("ema", "ema-test", {"ema_length": 9}, tmp_path)
+    assert result["status"] == "ready_to_run"
+    assert result["runtime_config"]["ema_length"] == 9
+    assert result["config_path"].startswith("ema-contracts/")
 
 
 def test_validate_ema_runtime_config_rejects_negative_ema_length() -> None:

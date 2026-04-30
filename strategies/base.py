@@ -3,14 +3,11 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 import yaml
 
 from family_research import FamilyResearchSpec
-
-if TYPE_CHECKING:
-    from strategies.ema.contract import CompilationResult
 
 
 @dataclass(frozen=True)
@@ -28,6 +25,8 @@ class FamilyDirnames:
 
 class Strategy(Protocol):
     name: str
+    benchmark_script: str
+    vps_benchmark_script: str
     extra_result_fields: tuple[str, ...]
     description_for_research: str
     research_spec: FamilyResearchSpec
@@ -39,7 +38,7 @@ class Strategy(Protocol):
         self, config: dict[str, Any], source_path: Path | None = None
     ) -> dict[str, Any]: ...
     def validate_runtime_config(self, config: dict[str, Any]) -> list[str]: ...
-    def compile_contract(self, contract: list[dict[str, Any]]) -> CompilationResult: ...
+    def compile_contract(self, contract: list[dict[str, Any]]) -> Any: ...
     def map_config_changes_to_contract(
         self, config_changes: dict[str, Any]
     ) -> list[dict[str, Any]]: ...
@@ -49,6 +48,8 @@ class Strategy(Protocol):
 
 class BaseStrategy:
     name = ""
+    benchmark_script = ""
+    vps_benchmark_script = ""
     extra_result_fields: tuple[str, ...] = ()
     description_for_research = ""
     research_spec: FamilyResearchSpec

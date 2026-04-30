@@ -77,7 +77,7 @@ def finalize_thesis_config_changes(
 def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
     """Convert a potentially ambiguous thesis into an executable contract.
 
-    For EMA theses with config_changes, maps them to primitive_contract entries.
+    For registered strategies with config_changes, maps them to primitive_contract entries.
     For ORB theses with config_changes, wraps as config_changes_passthrough.
     For ambiguous theses (detected by AMBIGUOUS_PATTERNS), runs an SDK
     operationalization agent to resolve the ambiguity.

@@ -445,6 +445,8 @@ def run_backtest(config: dict) -> dict:
 
 class EMAStrategy(BaseStrategy):
     name = "ema"
+    benchmark_script = "backtest_5ema.py"
+    vps_benchmark_script = "vps_runner.py"
     extra_result_fields: tuple[str, ...] = ()
     description_for_research = DESCRIPTION_FOR_RESEARCH
     research_spec = EMA_RESEARCH_SPEC

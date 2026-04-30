@@ -32,7 +32,8 @@ def compile_ema_contract(contract: list[dict[str, Any]]) -> CompilationResult:
     # Defaults match transcript-grounded baseline (ema_base.yaml).
     # Keep the research window bounded when a raw primitive contract is run
     # directly from ema-contracts/ instead of a pre-rendered runtime config.
-    from compiler_pipeline import _get_ema_defaults
+    from strategies.ema.defaults import _get_ema_defaults
+
     runtime = {
         "family": "ema",
         **_get_ema_defaults(),
@@ -62,7 +63,8 @@ def compile_ema_contract(contract: list[dict[str, Any]]) -> CompilationResult:
                 runtime["gap_pct"] = primitive["gap_pct"]
 
     # Validate before returning
-    from compiler_pipeline import validate_ema_runtime_config
+    from strategies.ema.validate import validate_ema_runtime_config
+
     violations = validate_ema_runtime_config(runtime)
     if violations:
         return CompilationResult(

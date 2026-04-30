@@ -6,25 +6,25 @@ from pathlib import Path
 from typing import Any
 
 from artifact_store import timestamp_ms, write_json_artifact
-from compiler_defaults import _get_ema_defaults
 from compiler_operationalize import operationalize_thesis
-from compiler_validate import validate_ema_runtime_config
 from config_hash import _config_hash
-from family_research import infer_family_from_dir_name, validate_family_config_changes
+from family_research import validate_family_config_changes
 from orb_contract import compile_contract
+from strategies import STRATEGIES
 from strategy_family import load_family
 
 
-def compile_ema_thesis(
+def compile_config_thesis(
+    family_name: str,
     thesis_id: str,
     config_changes: dict[str, Any],
     root: Path,
 ) -> dict[str, Any]:
-    """Compile EMA thesis: validate + merge with baseline + write JSON.
+    """Compile a registered strategy thesis from config changes.
 
     Two steps:
-      1. Validate config_changes keys against allowed set
-      2. runtime_config = {**ema_base_yaml, **config_changes}, write JSON
+      1. Validate config_changes keys against the strategy defaults.
+      2. runtime_config = {**defaults, **config_changes}, write JSON.
 
     Filenames use config_hash (deterministic content hash), not thesis_id.
     thesis_id is stored as metadata inside the file for human readability.
@@ -32,8 +32,9 @@ def compile_ema_thesis(
 
     Returns {"status": ..., "config_path": ..., "runtime_config": ..., "config_hash": ...}
     """
-    family = load_family("ema")
-    defaults = _get_ema_defaults()
+    family = load_family(family_name)
+    strategy = STRATEGIES[family_name]
+    defaults = strategy.get_defaults()
     allowed = set(defaults.keys())
     invalid_keys = sorted(set(config_changes.keys()) - allowed)
     if invalid_keys:
@@ -46,8 +47,7 @@ def compile_ema_thesis(
 
     runtime_config = {**defaults, **config_changes}
 
-    # Hard constraints: reject strategically nonsensical configs
-    violations = validate_ema_runtime_config(runtime_config)
+    violations = strategy.validate_runtime_config(runtime_config)
     if violations:
         return {
             "status": "rejected_at_compile",
@@ -96,10 +96,8 @@ def compile_proposal_artifact(
     family_name = proposal.get("strategy_family", "orb")
     family = load_family(family_name)
     contract = proposal.get("primitive_contract", [])
-    if family_name == "ema":
-        from strategies.ema.contract import compile_ema_contract
-
-        result = compile_ema_contract(contract)
+    if family_name in STRATEGIES:
+        result = STRATEGIES[family_name].compile_contract(contract)
     else:
         result = compile_contract(contract)
 
@@ -144,13 +142,13 @@ def create_executable_artifact(
 ) -> dict[str, Any]:
     """Create executable config from a thesis.
 
-    EMA: validate config_changes keys, merge with baseline, write JSON.
-    ORB: operationalize + primitive_contract compilation (legacy path).
+    Registered strategies: validate config_changes, merge with baseline, write JSON.
+    Legacy ORB: operationalize + primitive_contract compilation.
 
     Returns {"generated_config": str|None, "generated_config_needs_build": bool, ...}.
     """
-    thesis["strategy_family"] = thesis.get("strategy_family") or infer_family_from_dir_name(
-        thesis_dir.name
+    thesis["strategy_family"] = thesis.get("strategy_family") or _infer_family_from_paths(
+        thesis_dir, base_config_path
     )
     thesis_id = thesis.get("thesis_id", "")
     family_name = thesis["strategy_family"]
@@ -178,9 +176,9 @@ def create_executable_artifact(
             "generated_thesis_id": thesis_id,
         }
 
-    if family_name == "ema":
+    if family_name in STRATEGIES and thesis.get("config_changes"):
         config_changes = thesis.get("config_changes", {})
-        result = compile_ema_thesis(thesis_id, config_changes, root)
+        result = compile_config_thesis(family_name, thesis_id, config_changes, root)
         if result["status"] != "ready_to_run":
             return {
                 "generated_config": None,
@@ -247,13 +245,23 @@ def derive_thesis_artifacts(
 
     generated: list[str] = []
     for thesis in suggested:
-        thesis.setdefault("strategy_family", "ema" if "ema" in thesis_dir.name else "orb")
+        thesis.setdefault("strategy_family", _infer_family_from_paths(thesis_dir, base_config_path))
         thesis = validate_family_config_changes(thesis["strategy_family"], thesis)
         result = create_executable_artifact(thesis_dir, base_config_path, thesis, root)
         if result.get("generated_config"):
             generated.append(result["generated_config"])
 
     return generated
+
+
+def _infer_family_from_paths(thesis_dir: Path, base_config_path: Path) -> str:
+    haystack = " ".join(
+        part.lower() for path in (thesis_dir, base_config_path) for part in path.parts
+    )
+    for family_name in sorted(STRATEGIES, key=len, reverse=True):
+        if family_name.lower() in haystack:
+            return family_name
+    return "orb"
 
 
 def write_research_artifact(

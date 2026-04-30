@@ -575,7 +575,7 @@ class AutoresearchController:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run autoresearch controller")
-    parser.add_argument("--family", default="orb", help="Strategy family to run (orb or ema)")
+    parser.add_argument("--family", default="orb", help="Strategy family to run")
     args = parser.parse_args()
 
     family = load_family(args.family)

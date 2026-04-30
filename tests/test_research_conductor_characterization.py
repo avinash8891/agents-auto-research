@@ -105,6 +105,7 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
         experiment_results="results",
         latest_outcome={"profit_factor": 1.2},
         research_round=3,
+        family_name="ema",
     )
 
     assert result == parsed_payload
@@ -151,6 +152,7 @@ def test_run_research_conductor_sync_returns_conductor_error_on_timeout(monkeypa
         experiment_results="results",
         latest_outcome={},
         research_round=4,
+        family_name="ema",
     )
 
     assert result == {

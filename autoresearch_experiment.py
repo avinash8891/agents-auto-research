@@ -251,9 +251,14 @@ def derive_trade_analysis(
             elif isinstance(raw, dict):
                 config_contents = raw
             else:
-                from strategies.ema.contract import compile_ema_contract
+                from orb_contract import compile_contract
+                from strategies import STRATEGIES
 
-                config_contents = compile_ema_contract(raw).runtime_config
+                family_name = controller.family.name
+                if family_name in STRATEGIES:
+                    config_contents = STRATEGIES[family_name].compile_contract(raw).runtime_config
+                else:
+                    config_contents = compile_contract(raw).runtime_config
         except OSError:
             pass
 

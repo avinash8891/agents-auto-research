@@ -7,7 +7,7 @@ from typing import Any
 from strategies import STRATEGIES
 
 
-def load_runtime_config(path: str, strategy_name: str = "ema") -> dict[str, Any]:
+def load_runtime_config(path: str, strategy_name: str) -> dict[str, Any]:
     p = Path(path)
     strategy = STRATEGIES[strategy_name]
     if p.suffix in (".yaml", ".yml"):
@@ -32,6 +32,6 @@ def load_runtime_config(path: str, strategy_name: str = "ema") -> dict[str, Any]
 
 
 def validate_runtime_config_scope(
-    config: dict[str, Any], *, source_path: Path | None = None, strategy_name: str = "ema"
+    config: dict[str, Any], *, source_path: Path | None = None, strategy_name: str
 ) -> dict[str, Any]:
     return STRATEGIES[strategy_name].validate_runtime_config_scope(config, source_path=source_path)
