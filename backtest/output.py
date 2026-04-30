@@ -1,18 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
 from backtest.result_schema import build_result_payload
-
-
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(content)
-    os.replace(tmp_path, path)
+from persistence_utils import write_text_atomic
 
 
 def write_all(
@@ -59,7 +52,7 @@ def write_all(
         },
     )
     result_json_path = output_path / "result.json"
-    _write_text_atomic(result_json_path, json.dumps(result_payload, indent=2) + "\n")
+    write_text_atomic(result_json_path, json.dumps(result_payload, indent=2) + "\n")
 
     print(f"RESULT_JSON {result_json_path}")
     if events_path:

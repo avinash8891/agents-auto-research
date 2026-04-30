@@ -16,6 +16,7 @@ from experiment_db import (
     BaselineCheckpoint,
     BaselineTracker,
     build_config_hash,
+    build_data_hash,
     ExperimentDB,
     ExperimentResult,
 )
@@ -125,6 +126,17 @@ def test_build_config_hash_matches_result_schema_hash_policy() -> None:
     config = {"b": 1, "a": 2}
 
     assert build_config_hash(config) == _config_hash(config)
+
+
+def test_build_data_hash_uses_12_char_policy() -> None:
+    config = {
+        "symbols": ["SPY"],
+        "data_dir": "data",
+        "validation_start": "2024-01-01",
+        "validation_end": "2024-01-31",
+    }
+
+    assert len(build_data_hash(config)) == 12
 
 
 # ── Back-compat path: legacy int timestamps still load ──────────

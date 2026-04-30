@@ -6,11 +6,12 @@ Pure functions. The controller composes these with its own paths.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from persistence_utils import write_text_atomic
 
 from autoresearch_constants import MILLISECONDS_PER_SECOND
 
@@ -121,14 +122,7 @@ def read_state(state_path: Path) -> dict[str, Any]:
 
 
 def write_state(state_path: Path, state: dict[str, Any]) -> None:
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = state_path.with_name(f"{state_path.name}.tmp")
-    payload = json.dumps(state, indent=2) + "\n"
-    with tmp_path.open("w") as handle:
-        handle.write(payload)
-        handle.flush()
-        os.fsync(handle.fileno())
-    tmp_path.replace(state_path)
+    write_text_atomic(state_path, json.dumps(state, indent=2) + "\n")
 
 
 # ── Results ────────────────────────────────────────────────────────

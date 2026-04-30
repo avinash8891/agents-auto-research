@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import json
 from pathlib import Path
 from typing import Any
@@ -81,17 +80,11 @@ from autoresearch_state import write_current_md as _state_write_current_md
 from autoresearch_state import write_state as _state_write_state
 from config_hash import _git_sha
 from experiment_db import BaselineTracker, ExperimentDB
+from persistence_utils import write_text_atomic as _write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import StrategyFamily, load_family
 from trace_autonomy_ledger import AutonomyLedger
 from trace_logger import trace, trace_state_change
-
-
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(content)
-    os.replace(tmp_path, path)
 
 log = get_logger(__name__)
 
@@ -382,6 +375,7 @@ class AutoresearchController:
         decision: str,
         output: str,
         analysis: dict[str, Any],
+        next_action: dict[str, Any] | None = None,
     ) -> None:
         _experiment_log_experiment_result(
             self,
@@ -390,6 +384,7 @@ class AutoresearchController:
             decision=decision,
             output=output,
             analysis=analysis,
+            next_action=next_action,
         )
 
     def run_command(self, command: str) -> tuple[int, str]:

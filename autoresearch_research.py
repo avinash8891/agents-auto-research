@@ -8,9 +8,7 @@ next state for the controller.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import os
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -19,7 +17,6 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from autoresearch_constants import (
-    CONFIG_HASH_LENGTH,
     DISCORD_BODY_MAX_CHARS,
     DISCORD_COLOR_DISCARD,
     DISCORD_COLOR_ERROR,
@@ -36,6 +33,8 @@ from autoresearch_state import (
     read_state,
     write_state,
 )
+from config_hash import _config_hash
+from persistence_utils import write_text_atomic as _write_text_atomic
 from strategy_family import StrategyFamily
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
 from trace_adapters.halo import build_halo_payload
@@ -58,13 +57,6 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 _QUALITY_HISTORY = QualityHistory()
 _RULE_PROPOSALS = RuleProposalRegistry()
-
-
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(content)
-    os.replace(tmp_path, path)
 
 
 # ── Discord notification ──────────────────────────────────────────
@@ -259,9 +251,7 @@ def queue_variants(
             continue  # skip the proposed value — it's already the primary
 
         runtime = {**baseline_config, **variant}
-        config_hash = hashlib.sha256(json.dumps(runtime, sort_keys=True).encode()).hexdigest()[
-            :CONFIG_HASH_LENGTH
-        ]
+        config_hash = _config_hash(runtime)
         variant_id = f"{thesis.thesis_id}_{label}"
         exp_dir = root / "experiments" / config_hash
         exp_dir.mkdir(parents=True, exist_ok=True)

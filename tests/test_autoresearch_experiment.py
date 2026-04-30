@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,6 +24,7 @@ from autoresearch_experiment import (
     parse_metric,
     parse_result_json,
     primary_metric_name,
+    _compute_run_output_dir,
     sanitize_duplicate_entries,
 )
 from experiment_db import ExperimentDB
@@ -125,6 +127,20 @@ def test_parse_benchmark_details_preserves_12_char_config_hash() -> None:
     details = parse_benchmark_details(output)
 
     assert details["config_hash"] == "123456789abc"
+
+
+def test_compute_run_output_dir_for_missing_config_uses_12_char_hash_slug(tmp_path: Path) -> None:
+    controller = SimpleNamespace(
+        root=tmp_path,
+        runs_dir=tmp_path / "runs",
+        read_state=lambda: {"job": 3},
+    )
+
+    run_dir, config_path_full = _compute_run_output_dir(controller, "configs/missing.yaml")
+
+    assert config_path_full == tmp_path / "configs/missing.yaml"
+    assert run_dir.parent.name == "job-3"
+    assert len(run_dir.name) == 12
 
 
 # ── parse_benchmark_details_legacy ──────────────────────────────

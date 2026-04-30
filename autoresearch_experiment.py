@@ -8,7 +8,6 @@ ExperimentDB.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import shutil
@@ -25,7 +24,6 @@ from autoresearch_constants import (
     COMMAND_PREVIEW_TRUNCATION,
     COMMAND_TIMEOUT_SECONDS,
     COMMAND_TIMEOUT_TRUNCATION,
-    CONFIG_HASH_LENGTH,
     DISCORD_COLOR_DISCARD,
     DISCORD_COLOR_SUCCESS,
     DISCORD_COLOR_WARNING,
@@ -37,13 +35,13 @@ from autoresearch_state import (
     read_state,
     write_state,
 )
+from config_hash import _config_hash
 from experiment_db import (
     BaselineCheckpoint,
     ExperimentResult,
     build_config_hash,
     build_data_hash,
 )
-from config_hash import _config_hash
 from persistence_utils import write_text_atomic
 from trace_logger import (
     begin_hypothesis,
@@ -52,7 +50,6 @@ from trace_logger import (
     trace_benchmark,
     trace_ssh,
 )
-
 
 if TYPE_CHECKING:
     from autoresearch_controller import AutoresearchController
@@ -124,7 +121,9 @@ def parse_result_json(output: str) -> dict[str, Any] | None:
         result_path = Path(match.group(1).strip())
         if not result_path.exists():
             msg = f"RESULT_JSON path does not exist: {result_path}"
-            log.error(f"RESULT_JSON error: {msg} | hint=backtest printed a stale or wrong result path")
+            log.error(
+                f"RESULT_JSON error: {msg} | hint=backtest printed a stale or wrong result path"
+            )
             raise ResultJsonError(msg)
         try:
             return json.loads(result_path.read_text())
@@ -418,6 +417,7 @@ def _build_asi_dict(
     analysis: dict[str, Any],
     thesis_id: str,
     config_changes: dict[str, Any],
+    next_action: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     contract = controller.ctx.current_contract
     identity = (
@@ -440,8 +440,10 @@ def _build_asi_dict(
         "thesis_id": thesis_id,
         "config_changes": config_changes,
     }
-    rerun_commit = controller.read_state().get("next_action", {}).get("baseline_rerun_for_commit")
-    if rerun_commit:
+    if next_action is None:
+        next_action = controller.read_state().get("next_action", {})
+    rerun_commit = next_action.get("baseline_rerun_for_commit")
+    if rerun_commit and next_action.get("source") == "baseline":
         asi["baseline_rerun_for_commit"] = rerun_commit
     return asi
 
@@ -549,6 +551,7 @@ def log_experiment_result(
     decision: str,
     output: str,
     analysis: dict[str, Any],
+    next_action: dict[str, Any] | None = None,
 ) -> None:
     controller.sanitize_duplicate_entries(config)
     artifact_dir = _resolve_artifact_dir(controller, config)
@@ -562,6 +565,7 @@ def log_experiment_result(
         analysis=analysis,
         thesis_id=thesis_id,
         config_changes=config_changes,
+        next_action=next_action,
     )
     details = parse_benchmark_details(output)
     entries = controller.read_entries()
@@ -610,7 +614,7 @@ def _compute_run_output_dir(controller: "AutoresearchController", config: str) -
             _cfg = _cfg["runtime_config"]
         config_hash = _config_hash(_cfg)
     else:
-        config_hash = hashlib.sha256(config.encode()).hexdigest()[:CONFIG_HASH_LENGTH]
+        config_hash = _config_hash({"config_path": config})
     state = controller.read_state()
     job = state.get("job", 0)
     run_output_dir = controller.runs_dir.resolve() / f"job-{job}" / config_hash
@@ -922,11 +926,17 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     if verdict:
         analysis["trade_analysis"]["verdict"] = verdict.model_dump()
     controller.log_experiment_result(
-        config=config, metric=metric, decision=decision, output=output, analysis=analysis
+        config=config,
+        metric=metric,
+        decision=decision,
+        output=output,
+        analysis=analysis,
+        next_action=next_action,
     )
     controller.ctx.current_contract = None  # cleared AFTER log so _build_db_record can read it
 
-    if next_action.get("source") == "baseline":
+    baseline_source = next_action.get("source") == "baseline"
+    if baseline_source:
         _record_baseline_checkpoint(controller, details)
     _finalize_experiment(controller, config, metric, decision, verdict)
     return 0

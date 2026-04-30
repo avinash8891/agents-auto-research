@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import sqlite3
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -13,15 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
+from persistence_utils import write_text_atomic
 
 log = logging.getLogger(__name__)
-
-
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(content)
-    os.replace(tmp_path, path)
 
 
 def _iso8601_utc_now() -> str:
@@ -716,7 +709,7 @@ class BaselineTracker:
 
     def _save(self) -> None:
         checkpoints = self._load()
-        _write_text_atomic(self.path, json.dumps([asdict(c) for c in checkpoints], indent=2) + "\n")
+        write_text_atomic(self.path, json.dumps([asdict(c) for c in checkpoints], indent=2) + "\n")
 
     def record(self, checkpoint: BaselineCheckpoint) -> None:
         checkpoints = self._load()
@@ -837,7 +830,7 @@ def build_data_hash(config: dict[str, Any]) -> str:
     data_keys = ["data_dir", "symbols", "validation_start", "validation_end"]
     data_fields = {k: config.get(k) for k in data_keys if config.get(k) is not None}
     blob = json.dumps(data_fields, sort_keys=True).encode()
-    return hashlib.sha256(blob).hexdigest()[:16]
+    return hashlib.sha256(blob).hexdigest()[:12]
 
 
 def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:

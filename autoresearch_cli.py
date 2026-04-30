@@ -6,11 +6,10 @@ import json
 import logging
 import statistics
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
-from autoresearch_constants import MILLISECONDS_PER_SECOND
+from artifact_io import timestamp_now
 from experiment_db import ExperimentDB, ExperimentResult
 
 
@@ -199,7 +198,7 @@ def cmd_log(args):
         "metrics": extra_metrics,
         "status": args.status,
         "description": args.description,
-        "timestamp": int(time.time() * MILLISECONDS_PER_SECOND),
+        "timestamp": timestamp_now(),
         "segment": segment,
         "confidence": None,
         "asi": asi,
@@ -230,7 +229,7 @@ def cmd_log(args):
             rejection_reason="N/A" if args.status == "keep" else args.description,
             verdict_status="accepted" if args.status == "keep" else "rejected",
             verdict_summary="kept by CLI evaluation" if args.status == "keep" else args.description,
-            timestamp=str(entry["timestamp"]),
+            timestamp=entry["timestamp"],
         )
     )
 
