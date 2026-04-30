@@ -3,12 +3,21 @@ from __future__ import annotations
 from typing import Any
 
 _ROUND_USAGE: dict[str, dict[str, float]] = {}
+_SEEN_DEDUPE_KEYS: set[str] = set()
 
 
 def _accumulate_usage(
-    agent_type: str, usage: dict[str, Any] | None, cost_usd: float | None = None
+    agent_type: str,
+    usage: dict[str, Any] | None,
+    cost_usd: float | None = None,
+    *,
+    dedupe_key: str | None = None,
 ) -> None:
     """Accumulate token usage for the current round."""
+    if dedupe_key:
+        if dedupe_key in _SEEN_DEDUPE_KEYS:
+            return
+        _SEEN_DEDUPE_KEYS.add(dedupe_key)
     if agent_type not in _ROUND_USAGE:
         _ROUND_USAGE[agent_type] = {
             "input_tokens": 0,
@@ -30,6 +39,7 @@ def _accumulate_usage(
 def reset_round_usage() -> None:
     """Reset usage counters at the start of a new round."""
     _ROUND_USAGE.clear()
+    _SEEN_DEDUPE_KEYS.clear()
 
 
 def get_round_usage() -> dict[str, Any]:

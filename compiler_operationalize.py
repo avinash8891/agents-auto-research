@@ -60,6 +60,10 @@ def finalize_thesis_config_changes(
     except (KeyError, TypeError, ValueError):
         renderable = False
         rendered_config = {}
+    if support["supported"] and primitive_contract and not renderable:
+        raise ValueError(
+            f"resolved contract could not be rendered for thesis '{finalized.get('thesis_id', 'unknown')}'"
+        )
     if clarification.get("requires_code_change"):
         finalized["requires_code_change"] = True
         finalized["config_changes"] = {}
@@ -85,12 +89,14 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
     operationalization agent to resolve the ambiguity.
     For clear theses with primitive_contract, renders to runtime config directly.
     """
-    # Direct config_changes → primitive_contract mapping
-    print(
-        f"OPERATIONALIZE: config_changes={bool(thesis.get('config_changes'))} needs_op={thesis_needs_operationalization(thesis)} has_pc={bool(thesis.get('primitive_contract'))}"
-    )
     family_name = thesis["strategy_family"]
     strategy = STRATEGIES[family_name]
+    needs_operationalization = thesis_needs_operationalization(thesis)
+    if needs_operationalization:
+        clarification = _run_operationalization_agent(thesis)
+        return finalize_thesis_config_changes(thesis, clarification)
+
+    # Direct config_changes → primitive_contract mapping
     if thesis.get("config_changes"):
         thesis["primitive_contract"] = thesis.get(
             "primitive_contract"
@@ -99,16 +105,11 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
         return thesis
 
     # Clear thesis — just render the contract
-    if not thesis_needs_operationalization(thesis):
-        thesis["primitive_contract"] = thesis.get("primitive_contract", [])
-        thesis["config_changes"] = strategy.render_contract_to_runtime_config(
-            thesis["primitive_contract"]
-        )
-        return thesis
-
-    # Ambiguous thesis — use SDK operationalization agent
-    clarification = _run_operationalization_agent(thesis)
-    return finalize_thesis_config_changes(thesis, clarification)
+    thesis["primitive_contract"] = thesis.get("primitive_contract", [])
+    thesis["config_changes"] = strategy.render_contract_to_runtime_config(
+        thesis["primitive_contract"]
+    )
+    return thesis
 
 
 def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:

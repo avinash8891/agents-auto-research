@@ -48,7 +48,9 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
         "suggested_theses": [
             {
                 "thesis_id": "entry_window_test",
-                "config_changes": {"entry_start_time": "09:35"},
+                "hypothesis": "Later entries reduce weak early signals.",
+                "mechanism": "Tightening the EMA entry window removes noisier open-driven setups.",
+                "config_changes": {"entry_cutoff_time": "09:35"},
             }
         ],
         "should_stop": False,
@@ -200,8 +202,38 @@ def test_accumulate_usage_tracks_tokens_across_agents():
     }
 
 
+def test_accumulate_usage_dedupes_repeated_message_key():
+    usage.reset_round_usage()
+
+    usage._accumulate_usage(
+        "conductor",
+        {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
+        cost_usd=0.25,
+        dedupe_key="message-1",
+    )
+    usage._accumulate_usage(
+        "conductor",
+        {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
+        cost_usd=0.25,
+        dedupe_key="message-1",
+    )
+
+    round_usage = usage.get_round_usage()
+    assert round_usage["by_agent"]["conductor"]["calls"] == 1
+    assert round_usage["by_agent"]["conductor"]["total_tokens"] == 12
+    assert round_usage["by_agent"]["conductor"]["cost_usd"] == 0.25
+
+
 def test_orb_research_spec_resolves_from_strategy_registry() -> None:
     assert get_family_research_spec("orb") is STRATEGIES["orb"].research_spec
+
+
+def test_ema_research_spec_matches_supported_operational_keys() -> None:
+    spec = get_family_research_spec("ema")
+    for key in {"gap_filter", "gap_pct", "use_range_shift", "range_shift_lookback"}:
+        assert key in spec.allowed_config_keys
+        assert key in spec.config_schema
+        assert any(key in rule for rule in spec.config_rules)
 
 
 def test_save_research_finding_rejects_bad_type(monkeypatch):

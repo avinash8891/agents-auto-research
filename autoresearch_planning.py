@@ -8,6 +8,7 @@ reruns, or research blocking.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ from autoresearch_artifacts import (
 from autoresearch_constants import BASELINE_RERUN_INTERVAL
 from autoresearch_logging import get_logger
 from autoresearch_state import ExperimentRecord
+from backtest.runtime_config import load_runtime_config
 from compiler_pipeline import compile_proposal_artifact
 from strategy_family import StrategyFamily
 from trace_logger import trace
@@ -39,6 +41,21 @@ DEFAULT_CONFIG_ORDER = [
 
 THESIS_FAMILY: dict[str, str] = {}
 COMBINATION_RULES: dict[tuple[str, str], str] = {}
+
+
+def _write_text_atomic(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(path.name + ".tmp")
+    try:
+        tmp_path.write_text(content)
+        os.replace(tmp_path, path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
+def _write_yaml_atomic(path: Path, payload: Any) -> None:
+    _write_text_atomic(path, yaml.dump(payload, default_flow_style=False))
 
 
 # ── Variant discovery ─────────────────────────────────────────────
@@ -167,6 +184,7 @@ def generate_theses_from_ideas(
         proposal = {
             "thesis_id": candidate["slug"],
             "hypothesis": f"{candidate['slug']} ({candidate['family']} thesis)",
+            "strategy_family": family.name,
             "family": candidate["family"],
             "source": "controller_synthesis",
             "evidence": [
@@ -176,9 +194,8 @@ def generate_theses_from_ideas(
             ],
             "primitive_contract": [],
         }
-        proposals_dir.mkdir(parents=True, exist_ok=True)
         path = proposals_dir / f"{candidate['slug']}.json"
-        path.write_text(json.dumps(proposal, indent=2) + "\n")
+        _write_text_atomic(path, json.dumps(proposal, indent=2) + "\n")
         compile_proposal_artifact(proposal, root)
         generated.append(config)
     return generated
@@ -236,10 +253,15 @@ def _merge_combo_configs(
         merged: Any = [*cfg_a, *cfg_b]
         final_path = f"contracts/{combo_slug}.json"
         out = root / final_path
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(merged, indent=2) + "\n")
+        _write_text_atomic(out, json.dumps(merged, indent=2) + "\n")
         return merged, final_path
     merged = {**cfg_a, **cfg_b}
+    if family_a == "universe" and family_b == "exit":
+        merged.setdefault("validation_start", "2020-01-01")
+        merged.setdefault("validation_end", "2023-12-31")
+    if family_b == "universe" and family_a == "exit":
+        merged.setdefault("validation_start", "2020-01-01")
+        merged.setdefault("validation_end", "2023-12-31")
     merged["_combination"] = {
         "source_a": a.config,
         "source_b": b.config,
@@ -247,8 +269,7 @@ def _merge_combo_configs(
         "family_b": family_b,
     }
     out = root / combo_config_yaml
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(yaml.dump(merged, default_flow_style=False))
+    _write_yaml_atomic(out, merged)
     return merged, combo_config_yaml
 
 
@@ -279,8 +300,7 @@ def _write_combination_proposal(
         ],
         "primitive_contract": merged if isinstance(merged, list) else [],
     }
-    proposals_dir.mkdir(parents=True, exist_ok=True)
-    (proposals_dir / f"{combo_slug}.json").write_text(json.dumps(proposal, indent=2) + "\n")
+    _write_text_atomic(proposals_dir / f"{combo_slug}.json", json.dumps(proposal, indent=2) + "\n")
     if isinstance(merged, list):
         compile_proposal_artifact(proposal, root)
 
@@ -335,6 +355,17 @@ def _try_combine_pair(
         merged=merged,
         root=root,
     )
+    try:
+        load_runtime_config(str(root / final_combo_config), strategy_name=family.name)
+        if isinstance(merged, dict) and "use_time_stop" in merged and not isinstance(
+            merged["use_time_stop"], bool
+        ):
+            raise ValueError("use_time_stop must be boolean")
+    except (OSError, ValueError, TypeError):
+        (root / final_combo_config).unlink(missing_ok=True)
+        proposal_path = proposals_dir / f"{combo_slug}.json"
+        proposal_path.unlink(missing_ok=True)
+        return None
     return final_combo_config
 
 
@@ -519,6 +550,27 @@ def _blocked_for_research_state(root: Path, research_dir: Path) -> dict[str, Any
             {
                 "kind": "research_required",
                 "detail": "Research subagent will generate the next thesis one at a time.",
+            }
+        ],
+    }
+
+
+def build_research_failure_state(
+    root: Path,
+    research_dir: Path,
+    detail: str,
+) -> dict[str, Any]:
+    return {
+        "state": "interrupted",
+        "next_action": {
+            "type": "terminated",
+            "reason": detail,
+            "artifact_dir": research_dir.relative_to(root).as_posix(),
+        },
+        "blockers": [
+            {
+                "kind": "research_failed",
+                "detail": detail,
             }
         ],
     }

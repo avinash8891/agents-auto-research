@@ -7,13 +7,16 @@ from pathlib import Path
 import pytest
 
 from compiler_pipeline import (
+    create_executable_artifact,
     build_missing_primitives,
     compile_config_thesis,
     compile_proposal_artifact,
     compile_research_thesis,
+    operationalize_thesis,
     thesis_needs_operationalization,
     validate_orb_runtime_config,
 )
+from compiler_operationalize import finalize_thesis_config_changes
 from orb_contract import compile_contract as legacy_orb_compile_contract
 from research_types import ResearchThesis
 from strategies import STRATEGIES
@@ -26,6 +29,25 @@ def test_compile_config_thesis_uses_registered_strategy_defaults(tmp_path: Path)
     assert result["status"] == "ready_to_run"
     assert result["runtime_config"]["ema_length"] == 9
     assert result["config_path"].startswith("ema-contracts/")
+
+
+def test_compile_config_thesis_does_not_publish_scope_invalid_runtime_config(tmp_path: Path) -> None:
+    original_validate_scope = STRATEGIES["orb"].validate_runtime_config_scope
+    STRATEGIES["orb"].validate_runtime_config_scope = lambda config, source_path=None: (_ for _ in ()).throw(  # type: ignore[assignment]
+        ValueError("scope invalid")
+    )
+    try:
+        result = compile_config_thesis(
+            "orb",
+            "orb-test",
+            {"or_minutes": 20},
+            tmp_path,
+        )
+    finally:
+        STRATEGIES["orb"].validate_runtime_config_scope = original_validate_scope  # type: ignore[assignment]
+
+    assert result["status"] != "ready_to_run"
+    assert result["config_path"] is None
 
 
 def test_validate_ema_runtime_config_rejects_negative_ema_length() -> None:
@@ -56,6 +78,20 @@ def test_compile_research_thesis_writes_three_files_for_ready_to_run(tmp_path: P
     assert (experiment_dir / "runtime_config.json").exists()
 
 
+def test_compile_research_thesis_leaves_no_tmp_artifacts(tmp_path: Path) -> None:
+    thesis = ResearchThesis(
+        thesis_id="thesis-ready",
+        strategy_family="ema",
+        hypothesis="Shorter EMA reacts faster.",
+        mechanism="Reduce lag in signal generation.",
+        config_changes={"ema_length": 9},
+    )
+
+    compile_research_thesis(thesis, tmp_path)
+
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
 def test_compile_proposal_artifact_writes_family_queue_and_contract(tmp_path: Path) -> None:
     proposal = {
         "thesis_id": "ema_contract_ready",
@@ -77,6 +113,101 @@ def test_compile_proposal_artifact_writes_family_queue_and_contract(tmp_path: Pa
     queue = json.loads(queue_path.read_text())
     assert queue["status"] == "pending"
     assert queue["config"] == "ema-contracts/ema_contract_ready.json"
+
+
+def test_compile_proposal_artifact_writes_atomic_json_artifacts(tmp_path: Path) -> None:
+    proposal = {
+        "thesis_id": "ema_contract_ready",
+        "strategy_family": "ema",
+        "primitive_contract": [
+            {"type": "ema_length", "value": 5},
+            {"type": "timeframe_long", "minutes": 15},
+            {"type": "timeframe_short", "minutes": 5},
+            {"type": "risk_reward", "rr_ratio": 3.0},
+        ],
+    }
+
+    compile_proposal_artifact(proposal, tmp_path)
+
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_compile_proposal_artifact_rejects_unloadable_ready_contract(tmp_path: Path, monkeypatch) -> None:
+    proposal = {
+        "thesis_id": "ema_contract_ready",
+        "strategy_family": "ema",
+        "primitive_contract": [
+            {"type": "ema_length", "value": 5},
+            {"type": "timeframe_long", "minutes": 15},
+            {"type": "timeframe_short", "minutes": 5},
+            {"type": "risk_reward", "rr_ratio": 3.0},
+        ],
+    }
+
+    original_compile = STRATEGIES["ema"].compile_contract
+
+    def _bad_compile(contract):
+        result = original_compile(contract)
+        return type(result)(
+            status="ready_to_run",
+            runtime_config={"ema_length": -1},
+            missing_primitives=result.missing_primitives,
+            normalized_contract=result.normalized_contract,
+        )
+
+    monkeypatch.setattr(STRATEGIES["ema"], "compile_contract", _bad_compile)
+
+    result = compile_proposal_artifact(proposal, tmp_path)
+
+    assert result["status"] == "rejected_at_compile"
+    assert not (tmp_path / "ema-contracts" / "ema_contract_ready.json").exists()
+    assert not (tmp_path / "ema-run-queue" / "ema_contract_ready.json").exists()
+
+
+def test_compile_proposal_artifact_does_not_publish_compilation_before_queue(tmp_path: Path, monkeypatch) -> None:
+    proposal = {
+        "thesis_id": "ema_contract_ready",
+        "strategy_family": "ema",
+        "primitive_contract": [
+            {"type": "ema_length", "value": 5},
+            {"type": "timeframe_long", "minutes": 15},
+            {"type": "timeframe_short", "minutes": 5},
+            {"type": "risk_reward", "rr_ratio": 3.0},
+        ],
+    }
+
+    original_replace = os.replace
+
+    def _crash_on_queue_replace(src: str | os.PathLike[str], dst: str | os.PathLike[str]):
+        if Path(dst).parent.name == "ema-run-queue":
+            raise RuntimeError("queue write failed")
+        return original_replace(src, dst)
+
+    monkeypatch.setattr("compiler_thesis_io.os.replace", _crash_on_queue_replace)
+
+    with pytest.raises(RuntimeError, match="queue write failed"):
+        compile_proposal_artifact(proposal, tmp_path)
+
+    assert not (tmp_path / "ema-compilations" / "ema_contract_ready.json").exists()
+    assert not (tmp_path / "ema-contracts" / "ema_contract_ready.json").exists()
+    assert not (tmp_path / "ema-run-queue" / "ema_contract_ready.json").exists()
+
+
+def test_compile_proposal_artifact_leaves_no_tmp_artifacts_after_publish(tmp_path: Path) -> None:
+    proposal = {
+        "thesis_id": "ema_contract_ready",
+        "strategy_family": "ema",
+        "primitive_contract": [
+            {"type": "ema_length", "value": 5},
+            {"type": "timeframe_long", "minutes": 15},
+            {"type": "timeframe_short", "minutes": 5},
+            {"type": "risk_reward", "rr_ratio": 3.0},
+        ],
+    }
+
+    compile_proposal_artifact(proposal, tmp_path)
+
+    assert not list(tmp_path.rglob("*.tmp"))
 
 
 def test_orb_strategy_compile_contract_matches_legacy_compiler() -> None:
@@ -119,6 +250,74 @@ def test_thesis_needs_operationalization_detects_ambiguous_terms() -> None:
         "mechanism": "Focus on a narrow opening range.",
     }
     assert thesis_needs_operationalization(thesis) is True
+
+
+def test_operationalize_thesis_preserves_ambiguous_intent_even_with_config_changes() -> None:
+    thesis = {
+        "strategy_family": "orb",
+        "hypothesis": "Use stocks in play universe.",
+        "mechanism": "Focus on a narrow opening range.",
+        "config_changes": {"or_minutes": 5},
+    }
+
+    operationalized = operationalize_thesis(dict(thesis))
+
+    assert thesis_needs_operationalization(thesis) is True
+    assert operationalized["primitive_contract"] != STRATEGIES["orb"].map_config_changes_to_contract(
+        {"or_minutes": 5}
+    )
+
+
+def test_finalize_thesis_config_changes_carries_resolved_changes_into_proposal_contract(tmp_path: Path) -> None:
+    thesis = {
+        "thesis_id": "resolved-changes",
+        "strategy_family": "orb",
+        "hypothesis": "Stocks in play should outperform.",
+        "mechanism": "Use a narrower opening range.",
+    }
+    clarification = {
+        "resolved_changes": {"or_minutes": 10},
+        "reasoning": "Resolved into explicit runtime config.",
+        "requires_code_change": False,
+    }
+
+    finalized = finalize_thesis_config_changes(thesis, clarification)
+    thesis_dir = tmp_path / "theses"
+    thesis_dir.mkdir()
+    base_config = tmp_path / "configs" / "orb_base.yaml"
+    base_config.parent.mkdir(parents=True, exist_ok=True)
+    base_config.write_text("validation_start: 2020-01-01\nvalidation_end: 2020-12-31\n")
+    result = create_executable_artifact(thesis_dir, base_config, finalized, tmp_path)
+
+    assert result["generated_config"].startswith("orb-contracts/")
+    payload = json.loads((tmp_path / result["generated_config"]).read_text())
+    assert payload["or_minutes"] == 10
+
+
+def test_finalize_thesis_config_changes_rejects_incomplete_resolved_changes_for_supported_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thesis = {
+        "thesis_id": "resolved-changes",
+        "strategy_family": "orb",
+        "hypothesis": "Stocks in play should outperform.",
+        "mechanism": "Use a narrower opening range.",
+    }
+    clarification = {
+        "resolved_contract": [{"type": "opening_range", "or_minutes": 10}],
+        "resolved_changes": {"or_minutes": 10},
+        "reasoning": "Resolved into explicit runtime config.",
+        "requires_code_change": False,
+    }
+
+    monkeypatch.setattr(
+        STRATEGIES["orb"],
+        "render_contract_to_runtime_config",
+        lambda contract: (_ for _ in ()).throw(ValueError("cannot render")),
+    )
+
+    with pytest.raises(ValueError, match="resolved contract could not be rendered"):
+        finalize_thesis_config_changes(thesis, clarification)
 
 
 def test_build_missing_primitives_returns_error_when_no_cli(
@@ -197,7 +396,7 @@ root = pathlib.Path(re.search(r"- Repo root: (.+)", prompt).group(1))
 config = re.search(r"- Expected config path: (.+)", prompt).group(1)
 target = root / config
 target.parent.mkdir(parents=True, exist_ok=True)
-target.write_text("builder_probe: true\\n")
+target.write_text("builder_probe: true\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
 print(f"generated {config}")
 """)
     claude.chmod(0o755)
@@ -207,9 +406,67 @@ print(f"generated {config}")
 
     assert result["status"] == "completed"
     assert result["generated_config"] == f"configs/variants/{thesis_id}.yaml"
-    assert (tmp_path / result["generated_config"]).read_text() == "builder_probe: true\n"
+    written = (tmp_path / result["generated_config"]).read_text()
+    assert "builder_probe: true" in written
     request = json.loads(
         (tmp_path / family.builder_requests_dirname / f"{thesis_id}.json").read_text()
     )
     assert request["family"] == family_name
     assert request["missing_primitives"] == ["missing_probe"]
+
+
+def test_build_missing_primitives_rejects_invalid_generated_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    family = load_family("ema")
+    thesis_id = "ema_invalid_generated"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"thesis_id": thesis_id, "strategy_family": "ema", "hypothesis": "bad build"}) + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"normalized_contract": [{"type": "missing_probe"}], "missing_primitives": ["missing_probe"]}) + "\n"
+    )
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    claude = bin_dir / "claude"
+    claude.write_text("""#!/usr/bin/env python3
+import pathlib
+import re
+import sys
+
+prompt = sys.argv[-1]
+root = pathlib.Path(re.search(r"- Repo root: (.+)", prompt).group(1))
+config = re.search(r"- Expected config path: (.+)", prompt).group(1)
+target = root / config
+target.parent.mkdir(parents=True, exist_ok=True)
+target.write_text("ema_length: -1\\n")
+print(f"generated {config}")
+""")
+    claude.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "error"
+    assert result["validation_passed"] is False
+
+
+def test_build_missing_primitives_reports_malformed_upstream_artifacts(tmp_path: Path) -> None:
+    family = load_family("ema")
+    thesis_id = "ema_broken_artifacts"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text("{not valid json")
+    (compilation_dir / f"{thesis_id}.json").write_text(json.dumps({"normalized_contract": []}))
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "error"
+    assert "malformed" in result["reason"].lower()

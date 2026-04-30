@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -50,6 +51,13 @@ from trace_logger import (
     trace_benchmark,
     trace_ssh,
 )
+
+
+def _write_text_atomic(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(content)
+    os.replace(tmp_path, path)
 
 if TYPE_CHECKING:
     from autoresearch_controller import AutoresearchController
@@ -303,7 +311,8 @@ def artifact_dir_for(state_path: Path, runs_dir: Path, config: str) -> Path:
 def sanitize_duplicate_entries(db: Any, config: str) -> None:
     slug = Path(config).stem
     removable_ids: list[str] = []
-    for record in db.all():
+    records = db.all()
+    for record in records:
         description = getattr(record, "_description_export", f"strict-native loop: {slug}")
         same_config = record.config_path == config
         low_information = description == f"loop: {slug}"
@@ -311,8 +320,13 @@ def sanitize_duplicate_entries(db: Any, config: str) -> None:
             removable_ids.append(record.experiment_id)
     if not removable_ids:
         return
-    db._records = [record for record in db.all() if record.experiment_id not in removable_ids]
-    db._save()
+    db.import_entries(
+        [
+            entry
+            for entry in db.export_entries()
+            if entry.get("type") == "config" or entry.get("run_id") not in removable_ids
+        ]
+    )
 
 
 def _resolve_artifact_dir(controller: "AutoresearchController", config: str) -> Path:
@@ -343,6 +357,12 @@ def _read_thesis_metadata(
             tj = json.loads(thesis_json_path.read_text())
             thesis_id = tj.get("thesis_id", thesis_id)
             config_changes = tj.get("config_changes", {})
+        except json.JSONDecodeError as exc:
+            log.error(
+                f"THESIS_METADATA_MALFORMED path={thesis_json_path}: {exc} "
+                f"| hint=repair or delete the malformed thesis sidecar JSON"
+            )
+            raise ValueError(f"THESIS_METADATA_MALFORMED path={thesis_json_path}: {exc}") from exc
         except OSError as exc:
             log.error(
                 f"THESIS_METADATA_READ error path={thesis_json_path}: {exc} "
@@ -362,6 +382,12 @@ def _contract_from_sidecar(controller: "AutoresearchController", config: str) ->
         return None
     try:
         payload = json.loads(thesis_json_path.read_text())
+    except json.JSONDecodeError as exc:
+        log.error(
+            f"THESIS_METADATA_MALFORMED path={thesis_json_path}: {exc} "
+            f"| hint=repair or delete the malformed thesis sidecar JSON"
+        )
+        raise ValueError(f"THESIS_METADATA_MALFORMED path={thesis_json_path}: {exc}") from exc
     except OSError as exc:
         log.error(
             f"THESIS_METADATA_READ error path={thesis_json_path}: {exc} "
@@ -508,8 +534,8 @@ def _build_export_entry(
 
 
 def _write_run_artifacts(artifact_dir: Path, output: str, analysis: dict[str, Any]) -> None:
-    (artifact_dir / "benchmark_output.txt").write_text(output)
-    (artifact_dir / "analysis.json").write_text(json.dumps(analysis, indent=2) + "\n")
+    _write_text_atomic(artifact_dir / "benchmark_output.txt", output)
+    _write_text_atomic(artifact_dir / "analysis.json", json.dumps(analysis, indent=2) + "\n")
 
 
 def log_experiment_result(
@@ -701,7 +727,10 @@ def _build_thesis_for_eval(contract: Any) -> Any:
 def _persist_verdict(controller: "AutoresearchController", contract: Any, verdict: Any) -> None:
     experiment_dir = controller.root / "experiments" / contract.experiment_id
     if experiment_dir.exists():
-        (experiment_dir / "verdict.json").write_text(verdict.model_dump_json(indent=2) + "\n")
+        _write_text_atomic(
+            experiment_dir / "verdict.json",
+            verdict.model_dump_json(indent=2) + "\n",
+        )
 
 
 def _evaluate_against_thesis(

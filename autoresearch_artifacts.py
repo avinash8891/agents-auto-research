@@ -10,6 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import json
+
 from artifact_io import read_json_artifacts as read_artifact_json_files
 from autoresearch_state import ExperimentRecord
 
@@ -52,7 +54,12 @@ def queue_from_thesis_artifacts(
         config = artifact.get("config")
         if not config or config in attempted or config in queued:
             continue
-        if not (root / config).exists():
+        config_path = root / config
+        if not config_path.exists():
+            continue
+        try:
+            json.loads(config_path.read_text())
+        except (OSError, ValueError, TypeError):
             continue
         queued.append(config)
     return queued

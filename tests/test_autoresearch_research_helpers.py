@@ -142,12 +142,13 @@ def test_load_baseline_config_loads_valid_yaml(tmp_path: Path) -> None:
     assert out == {"ema_length": 5, "rr_ratio": 3.0}
 
 
-def test_load_baseline_config_returns_none_on_yaml_error(tmp_path: Path) -> None:
+def test_load_baseline_config_raises_on_yaml_error(tmp_path: Path) -> None:
     fam = load_family("ema")
     (tmp_path / "configs").mkdir()
     # malformed YAML
     (tmp_path / "configs" / "ema_base.yaml").write_text("ema_length: [\n: : :")
-    assert load_baseline_config(tmp_path, fam) is None
+    with pytest.raises(ValueError, match="BASELINE_CONFIG_LOAD_FAILED"):
+        load_baseline_config(tmp_path, fam)
 
 
 # ── _backfill_artifact_files_from_latest_dir ────────────────────
@@ -219,6 +220,65 @@ def test_backfill_returns_originals_when_artifact_dir_missing(tmp_path: Path) ->
     assert _backfill_artifact_files_from_latest_dir(controller, latest, "", "", "") == ("", "", "")
 
 
+def test_backfill_prefers_matching_artifacts_when_multiple_exist(tmp_path: Path) -> None:
+    artifact_dir = tmp_path / "runs" / "abc"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "other.strategy_events.parquet").write_text("")
+    (artifact_dir / "x.strategy_events.parquet").write_text("")
+    latest = ExperimentRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
+    controller = SimpleNamespace(root=tmp_path)
+
+    _, events, _ = _backfill_artifact_files_from_latest_dir(controller, latest, "", "", "")
+
+    assert events.endswith("x.strategy_events.parquet")
+
+
+def test_adapter_export_packages_leave_no_tmp_artifacts(tmp_path: Path) -> None:
+    from autoresearch_research import _write_export_package
+
+    package = {
+        "files": {"a.json": {"hello": "world"}},
+        "meta": {"name": "pkg"},
+    }
+
+    _write_export_package(tmp_path, "halo", package)
+
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_load_data_flat_mode_applies_date_filters(tmp_path: Path) -> None:
+    import pandas as pd
+
+    from data_loader import load_data
+
+    df = pd.DataFrame(
+        {
+            "Symbol": ["SPY", "SPY"],
+            "Open": [10.0, 20.0],
+            "High": [11.0, 21.0],
+            "Low": [9.0, 19.0],
+            "Close": [10.5, 20.5],
+            "Volume": [100, 200],
+        },
+        index=pd.to_datetime(["2024-01-01", "2024-01-03"]),
+    )
+    path = tmp_path / "flat.parquet"
+    df.to_parquet(path)
+
+    batch = load_data(str(tmp_path), start_date="2024-01-02", end_date="2024-01-03")
+
+    assert list(batch["close"].index) == [pd.Timestamp("2024-01-03")]
+
+
+def test_load_data_missing_path_raises_instead_of_exiting() -> None:
+    import pytest
+
+    from data_loader import load_data
+
+    with pytest.raises(FileNotFoundError):
+        load_data("/definitely/not/a/real/path")
+
+
 # ── queue_variants ──────────────────────────────────────────────
 
 
@@ -285,3 +345,39 @@ def test_queue_variants_writes_runtime_config_per_variant(
     assert thesis["_variant_label"] == "agg"
     assert thesis["_variant_factor"] == 0.5
     assert thesis["_variant_of"] == "primary_exp_id_xyz"
+
+
+def test_queue_variants_persists_full_runtime_config_in_sidecar_metadata(
+    tmp_path: Path, thesis_stub, primary_contract_stub
+) -> None:
+    queue_dir = tmp_path / "queue"
+    variants = [
+        {"_variant_label": "agg", "_variant_factor": 0.5, "ema_length": 3},
+    ]
+
+    queue_variants(
+        tmp_path,
+        queue_dir,
+        variants,
+        thesis_stub,
+        primary_contract_stub,
+        {"ema_length": 5, "rr_ratio": 3.0},
+    )
+
+    experiments_dirs = list((tmp_path / "experiments").iterdir())
+    thesis = json.loads((experiments_dirs[0] / "thesis.json").read_text())
+    assert thesis["config_changes"] == {"ema_length": 3, "rr_ratio": 3.0}
+    assert thesis["config_changes_kind"] == "full_runtime"
+
+
+def test_queue_variants_leaves_no_tmp_artifacts(tmp_path: Path, thesis_stub, primary_contract_stub) -> None:
+    queue_variants(
+        tmp_path,
+        tmp_path / "queue",
+        [{"_variant_label": "agg", "_variant_factor": 0.5, "ema_length": 3}],
+        thesis_stub,
+        primary_contract_stub,
+        {"ema_length": 5, "rr_ratio": 3.0},
+    )
+
+    assert not list(tmp_path.rglob("*.tmp"))

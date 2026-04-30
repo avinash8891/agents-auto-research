@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -57,6 +58,13 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 _QUALITY_HISTORY = QualityHistory()
 _RULE_PROPOSALS = RuleProposalRegistry()
+
+
+def _write_text_atomic(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(content)
+    os.replace(tmp_path, path)
 
 
 # ── Discord notification ──────────────────────────────────────────
@@ -258,14 +266,15 @@ def queue_variants(
         exp_dir = root / "experiments" / config_hash
         exp_dir.mkdir(parents=True, exist_ok=True)
 
-        (exp_dir / "runtime_config.json").write_text(json.dumps(runtime, indent=2) + "\n")
+        _write_text_atomic(exp_dir / "runtime_config.json", json.dumps(runtime, indent=2) + "\n")
         variant_thesis = thesis.model_dump()
         variant_thesis["thesis_id"] = variant_id
         variant_thesis["_variant_of"] = primary_contract.experiment_id
         variant_thesis["_variant_label"] = label
         variant_thesis["_variant_factor"] = factor
-        variant_thesis["config_changes"] = variant
-        (exp_dir / "thesis.json").write_text(json.dumps(variant_thesis, indent=2) + "\n")
+        variant_thesis["config_changes"] = runtime
+        variant_thesis["config_changes_kind"] = "full_runtime"
+        _write_text_atomic(exp_dir / "thesis.json", json.dumps(variant_thesis, indent=2) + "\n")
 
         run_queue_dir.mkdir(parents=True, exist_ok=True)
         queue_artifact = {
@@ -277,8 +286,9 @@ def queue_variants(
             "variant_label": label,
             "variant_factor": factor,
         }
-        (run_queue_dir / f"{variant_id}.json").write_text(
-            json.dumps(queue_artifact, indent=2) + "\n"
+        _write_text_atomic(
+            run_queue_dir / f"{variant_id}.json",
+            json.dumps(queue_artifact, indent=2) + "\n",
         )
         trace("LOOP", f"queued variant {variant_id} ({label}) config_hash={config_hash}")
 
@@ -307,7 +317,14 @@ def _backfill_artifact_files_from_latest_dir(
             artifact_dir.glob("*strategy_events.csv")
         )
         if events_files:
-            strategy_events_file = str(events_files[0])
+            preferred_prefix = f"{latest.config}."
+            preferred_stem = f"{Path(latest.config).stem}."
+            preferred = [
+                path
+                for path in events_files
+                if path.name.startswith(preferred_prefix) or path.name.startswith(preferred_stem)
+            ]
+            strategy_events_file = str((preferred or events_files)[0])
     if not diagnostics_file:
         diag_jsons = list(artifact_dir.glob("*diagnostics.json"))
         if diag_jsons:
@@ -744,8 +761,14 @@ def _write_export_package(export_root: Path, directory_name: str, package: dict[
     target_dir = export_root / directory_name
     target_dir.mkdir(parents=True, exist_ok=True)
     for filename, payload in package.get("files", {}).items():
-        (target_dir / filename).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    (target_dir / "package.json").write_text(json.dumps(package, indent=2, sort_keys=True) + "\n")
+        _write_text_atomic(
+            target_dir / filename,
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        )
+    _write_text_atomic(
+        target_dir / "package.json",
+        json.dumps(package, indent=2, sort_keys=True) + "\n",
+    )
 
 
 def _write_adapter_exports(

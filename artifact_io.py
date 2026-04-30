@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ def read_json_artifacts(directory: Path) -> list[dict[str, Any]]:
     for path in sorted(directory.glob("*.json")):
         try:
             payload = json.loads(path.read_text())
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, OSError):
             continue
         payload["artifact_path"] = path.as_posix()
         artifacts.append(payload)
@@ -24,7 +25,9 @@ def read_json_artifacts(directory: Path) -> list[dict[str, Any]]:
 
 def write_json_artifact(path: Path, payload: dict[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n")
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2) + "\n")
+    os.replace(tmp_path, path)
     return path
 
 

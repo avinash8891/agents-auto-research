@@ -16,6 +16,10 @@ All config_changes keys MUST come from this list:
   - direction_bias
   - entry_cutoff_time
   - max_trades_per_day
+  - gap_filter
+  - gap_pct
+  - use_range_shift
+  - range_shift_lookback
 
 EMA FAMILY RULES:
 - ema_length: integer EMA period used for the setup
@@ -25,6 +29,10 @@ EMA FAMILY RULES:
 - direction_bias: "both", "long_only", or "short_only"
 - entry_cutoff_time: string HH:MM (e.g. "10:00") — only take entries before this time. null=all day.
 - max_trades_per_day: integer — max trades per day across all symbols. null=unlimited.
+- gap_filter: boolean — require a minimum opening gap before considering entries.
+- gap_pct: float — gap threshold used when gap_filter=true.
+- use_range_shift: boolean — enable range-shift filter logic.
+- range_shift_lookback: integer — lookback bars for range-shift evaluation when enabled.
 
 IMPORTANT:
 - Do NOT emit ORB keys like universe_mode, skip_regimes, use_time_stop, use_rvol_gate, use_follow_through, or use_volatility_trail.
@@ -38,7 +46,7 @@ IMPORTANT:
         "What risk-reward structures are documented for intraday EMA pullback/reversal strategies?",
     ),
     config_rules=(
-        "ONLY use ema_length, timeframe_long, timeframe_short, rr_ratio, direction_bias, entry_cutoff_time, and max_trades_per_day in config_changes.",
+        "ONLY use ema_length, timeframe_long, timeframe_short, rr_ratio, direction_bias, entry_cutoff_time, max_trades_per_day, gap_filter, gap_pct, use_range_shift, and range_shift_lookback in config_changes.",
         "If a thesis depends on time stops, volume gates, universe filters, or regime filters, mark it requires_code_change=true instead of emitting ORB keys.",
         "Prefer hypotheses that can be tested by changing EMA period, timeframe pairing, risk/reward structure, entry timing, or daily trade limits.",
     ),

@@ -23,6 +23,7 @@ import autoresearch_controller as loop_mod
 import autoresearch_research as research_mod
 from autoresearch_controller import AutoresearchController
 from experiment_db import BaselineTracker, ExperimentDB
+from strategies import STRATEGIES
 from strategy_family import load_family
 
 BASELINE_CONFIG = "configs/ema_base.yaml"
@@ -158,6 +159,14 @@ def _symlink_runtime_repo(source_root: Path, runtime_root: Path) -> None:
 # ────────────────────────────────────────────────────────────────────
 def test_execute_once_runs_baseline_when_no_results(controller, monkeypatch, tmp_path):
     captured = _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    state = controller.read_state()
+    state["next_action"] = {
+        "type": "run_experiment",
+        "config": BASELINE_CONFIG,
+        "source": "research",
+    }
+    controller.write_state(state)
 
     rc = controller.execute_once()
 
@@ -659,6 +668,61 @@ def test_execute_once_success_preserves_artifacts_and_db_write(controller, monke
     assert db_calls[0].config_path == BASELINE_CONFIG
 
 
+def test_execute_once_success_persists_verdict_without_tmp_artifacts(
+    controller, monkeypatch, tmp_path
+):
+    _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    class _Contract:
+        thesis_id = "thesis-1"
+        strategy_family = "ema"
+        hypothesis = "h"
+        mechanism = "m"
+        expected_effects = [{"metric": "profit_factor", "direction": "increase"}]
+        disqualifiers = []
+        required_diagnostics = []
+        experiment_id = "exp-1"
+
+    exp_dir = controller.root / "experiments" / "exp-1"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_eval(*args, **kwargs):
+        class _Verdict:
+            status = "accepted"
+            passed_effects = []
+            failed_effects = []
+            triggered_disqualifiers = []
+            summary = "ok"
+
+            def model_dump(self):
+                return {
+                    "status": self.status,
+                    "passed_effects": [],
+                    "failed_effects": [],
+                    "triggered_disqualifiers": [],
+                    "summary": self.summary,
+                }
+
+            def model_dump_json(self, indent=2):
+                return json.dumps(self.model_dump(), indent=indent)
+
+        return _Verdict(), "keep"
+
+    monkeypatch.setattr(
+        "autoresearch_experiment._evaluate_against_thesis",
+        fake_eval,
+    )
+    controller.ctx.current_contract = _Contract()
+
+    from autoresearch_experiment import _persist_verdict
+
+    verdict, _ = fake_eval()
+    _persist_verdict(controller, _Contract(), verdict)
+
+    assert (exp_dir / "verdict.json").exists()
+    assert not list(exp_dir.rglob("*.tmp"))
+
+
 # ────────────────────────────────────────────────────────────────────
 # 8. Halted thesis with no missing config keys -> resumes as running
 # ────────────────────────────────────────────────────────────────────
@@ -704,6 +768,82 @@ def test_execute_once_resumes_halted_thesis_when_keys_now_exist(controller, monk
     assert "halted_thesis_id" not in state
     assert "halted_reason" not in state
     assert "halted_thesis" not in state
+
+
+def test_execute_once_does_not_resume_halted_thesis_when_runtime_scope_is_invalid(
+    controller, monkeypatch, tmp_path
+):
+    halted_thesis_id = "resume-invalid-thesis"
+    halted_thesis = {
+        "thesis_id": halted_thesis_id,
+        "hypothesis": "tighten ema length",
+        "mechanism": "faster signal response",
+        "mechanism_dimension": "signal_quality",
+        "dimension_novelty": "Tests whether a missing bounded runtime scope still blocks resume.",
+        "config_changes": {"ema_length": 7},
+        "expected_effects": [
+            {"metric": "profit_factor", "direction": "increase", "rationale": "faster response"}
+        ],
+        "disqualifiers": [
+            {
+                "name": "drawdown_expansion",
+                "condition": "max_drawdown worsens materially",
+                "severity": "hard_fail",
+            }
+        ],
+    }
+    controller.write_state(
+        {
+            "state": "halted",
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": halted_thesis_id,
+            "halted_thesis": halted_thesis,
+            "job": 1,
+            "research_round": 0,
+        }
+    )
+
+    def _fail_run_command(*args, **kwargs):
+        raise AssertionError("run_command should not be called for invalid resumed config")
+
+    monkeypatch.setattr(AutoresearchController, "run_command", _fail_run_command)
+    monkeypatch.setattr(STRATEGIES["ema"], "validate_runtime_config_scope", lambda *a, **k: (_ for _ in ()).throw(ValueError("scope invalid")))
+    monkeypatch.setattr(AutoresearchController, "_check_baseline_rerun", lambda self: None)
+    monkeypatch.setattr(AutoresearchController, "plan_next_action", lambda self, state, results: state)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    assert not (controller.root / f"experiments/{halted_thesis_id}/runtime_config.json").exists()
+    state = controller.read_state()
+    assert state["state"] == "halted"
+    assert state["halted_thesis_id"] == halted_thesis_id
+    assert state["halted_reason"] == "requires_code_change"
+
+
+def test_execute_once_resume_halted_thesis_leaves_no_tmp_artifacts(controller, monkeypatch, tmp_path):
+    halted_thesis_id = "resume-this-thesis"
+    halted_thesis = {
+        "thesis_id": halted_thesis_id,
+        "hypothesis": "tighten ema length",
+        "config_changes": {"ema_length": 7},
+    }
+    controller.write_state(
+        {
+            "state": "halted",
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": halted_thesis_id,
+            "halted_thesis": halted_thesis,
+            "job": 1,
+            "research_round": 0,
+        }
+    )
+    _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    assert not list(controller.root.rglob("*.tmp"))
 
 
 def test_execute_once_end_to_end_tiny_ema_fixture(controller, monkeypatch, tmp_path):
