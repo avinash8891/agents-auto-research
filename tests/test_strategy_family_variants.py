@@ -10,6 +10,16 @@ from strategies import STRATEGIES
 from strategy_family import StrategyFamily, load_family
 
 
+def test_strategy_package_discovers_plugins_without_manual_strategy_imports() -> None:
+    import strategies
+
+    source = strategies.__loader__.get_source("strategies")
+    assert "import strategies.ema" not in source
+    assert "import strategies.orb" not in source
+    assert "import strategies._demo" not in source
+    assert {"_demo", "ema", "orb"}.issubset(STRATEGIES)
+
+
 def test_orb_family_has_orb_prefix_and_default_variants() -> None:
     fam = load_family("orb")
     assert fam.variant_prefix == "orb_"
