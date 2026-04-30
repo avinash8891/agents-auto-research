@@ -81,11 +81,13 @@ from autoresearch_state import write_state as _state_write_state
 from config_hash import _git_sha
 from experiment_db import BaselineTracker, ExperimentDB
 from strategy_family import StrategyFamily, load_family
+from trace_autonomy_ledger import AutonomyLedger
 from trace_logger import trace, trace_state_change
 
 log = get_logger(__name__)
 
 ROOT = Path(__file__).resolve().parent
+_AUTONOMY_LEDGER = AutonomyLedger()
 STATE_PATH = ROOT / "autoresearch.next.json"
 CURRENT_MD_PATH = ROOT / "autoresearch.current.md"
 IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
@@ -302,8 +304,7 @@ class AutoresearchController:
         state = self.read_state()
         results = self.read_results()
         best = self.best_result(results)
-        if best:
-            state["current_best"] = best
+        state["current_best"] = best
         state["pending_configs"] = self.pending_configs(results)
         state["thesis_statuses"] = self.thesis_statuses(results)
 
@@ -313,7 +314,7 @@ class AutoresearchController:
             heartbeat["last_completed_thesis"] = latest.config
             heartbeat["last_result"] = latest.status
             heartbeat["last_metric"] = latest.metric
-            heartbeat["current_best"] = state.get("current_best", {})
+        heartbeat["current_best"] = state.get("current_best", {})
 
         state = self.plan_next_action(state, results)
         old_state_val = state.get("state", "unknown")
@@ -533,6 +534,24 @@ class AutoresearchController:
             blockers = state.get("blockers", [])
             if any(b.get("kind") == "research_required" for b in blockers):
                 state = self._run_research(state)
+                if state.get("state") == "running":
+                    decision = _AUTONOMY_LEDGER.record_decision(
+                        summary="controller accepted research-generated next action",
+                        decision_type="research_transition",
+                        score=None,
+                        graduation_status="supervised",
+                        outcome="approved",
+                        rationale="research round produced a runnable next action",
+                        constraints=["must still pass experiment execution"],
+                        evidence_event_ids=[],
+                    )
+                    _AUTONOMY_LEDGER.record_audit(
+                        summary="controller applied research-generated next action",
+                        action="transition_to_running",
+                        approval_status="approved",
+                        actor="autoresearch_controller",
+                        related_decision_id=decision["decision_id"],
+                    )
 
         # Terminal states
         if state.get("state") != "running":
