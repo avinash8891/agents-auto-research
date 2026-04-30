@@ -6,21 +6,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-from artifact_io import timestamp_ms, write_json_artifact
-from autoresearch_constants import MILLISECONDS_PER_SECOND
+from artifact_io import timestamp_now, write_json_artifact
 from backtest.runtime_config import load_runtime_config
 from compiler_operationalize import operationalize_thesis
 from config_hash import _config_hash
 from family_research_spec import validate_family_config_changes
+from persistence_utils import write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import load_family
-
-
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(content)
-    os.replace(tmp_path, path)
 
 
 def compile_config_thesis(
@@ -82,7 +75,7 @@ def compile_config_thesis(
 
     # Skip write if identical config already exists (dedup)
     if not config_path.exists():
-        _write_text_atomic(config_path, json.dumps(runtime_config, indent=2) + "\n")
+        write_text_atomic(config_path, json.dumps(runtime_config, indent=2) + "\n")
 
     # Write queue entry (also keyed by hash)
     run_queue_dir = root / family.run_queue_dirname
@@ -94,7 +87,7 @@ def compile_config_thesis(
             "thesis_id": thesis_id,
             "status": "pending",
             "config": config_path.relative_to(root).as_posix(),
-            "timestamp": timestamp_ms(),
+            "timestamp": timestamp_now(),
         },
     )
     return {
@@ -129,7 +122,7 @@ def compile_proposal_artifact(
         "runtime_config": result.runtime_config,
         "missing_primitives": result.missing_primitives,
         "normalized_contract": result.normalized_contract,
-        "timestamp": timestamp_ms(),
+        "timestamp": timestamp_now(),
     }
 
     if result.status != "ready_to_run":
@@ -139,7 +132,7 @@ def compile_proposal_artifact(
     validation_tmp_dir = root / ".tmp-contract-validation"
     validation_tmp_path = validation_tmp_dir / f"{thesis_id}.json"
     try:
-        _write_text_atomic(validation_tmp_path, json.dumps(result.normalized_contract, indent=2) + "\n")
+        write_text_atomic(validation_tmp_path, json.dumps(result.normalized_contract, indent=2) + "\n")
         load_runtime_config(str(validation_tmp_path), strategy_name=family_name)
     except Exception as exc:
         validation_tmp_path.unlink(missing_ok=True)
@@ -157,10 +150,10 @@ def compile_proposal_artifact(
         "thesis_id": thesis_id,
         "status": "pending",
         "config": contract_path.relative_to(root).as_posix(),
-        "timestamp": timestamp_ms(),
+        "timestamp": timestamp_now(),
     }
     try:
-        _write_text_atomic(contract_path, json.dumps(result.normalized_contract, indent=2) + "\n")
+        write_text_atomic(contract_path, json.dumps(result.normalized_contract, indent=2) + "\n")
         write_json_artifact(run_queue_dir / f"{thesis_id}.json", queue_payload)
         write_json_artifact(compilations_dir / f"{thesis_id}.json", compilation_payload)
     except Exception:
@@ -204,7 +197,7 @@ def create_executable_artifact(
                 "config_changes": thesis.get("config_changes", {}),
                 "requires_code_change": True,
                 "evidence": thesis.get("evidence", []),
-                "timestamp": timestamp_ms(),
+                "timestamp": timestamp_now(),
             },
         )
         return {
@@ -234,7 +227,7 @@ def create_executable_artifact(
                 "mechanism": thesis.get("mechanism", ""),
                 "config_changes": thesis.get("config_changes", {}),
                 "evidence": thesis.get("evidence", []),
-                "timestamp": timestamp_ms(),
+                "timestamp": timestamp_now(),
             },
         )
         return {
@@ -253,7 +246,7 @@ def create_executable_artifact(
         "thesis_id": thesis_id,
         "strategy_family": family_name,
         "primitive_contract": thesis.get("primitive_contract", []),
-        "timestamp": timestamp_ms(),
+        "timestamp": timestamp_now(),
     }
     compilation = compile_proposal_artifact(proposal, root)
     if compilation["status"] != "ready_to_run":
@@ -326,7 +319,7 @@ def write_research_artifact(
     artifact = {
         "request_id": request_id,
         "status": "completed",
-        "timestamp": int(time.time() * MILLISECONDS_PER_SECOND),
+        "timestamp": timestamp_now(),
         "research_mode": research_mode,
         "external_research_attempted": external_research_attempted,
         "external_research_attempts": external_research_attempts,
@@ -338,10 +331,10 @@ def write_research_artifact(
         artifact["fallback_reason"] = fallback_reason
 
     artifact_path = research_dir / f"{request_id}-findings.json"
-    _write_text_atomic(artifact_path, json.dumps(artifact, indent=2) + "\n")
+    write_text_atomic(artifact_path, json.dumps(artifact, indent=2) + "\n")
 
     raw_path = research_dir / f"{request_id}-raw.txt"
-    _write_text_atomic(raw_path, raw_output)
+    write_text_atomic(raw_path, raw_output)
 
     return artifact_path
 
@@ -350,5 +343,5 @@ def mark_request_completed(request_path: Path) -> None:
     """Mark a research request as completed."""
     payload = json.loads(request_path.read_text())
     payload["status"] = "completed"
-    payload["completed_at"] = int(time.time() * MILLISECONDS_PER_SECOND)
-    _write_text_atomic(request_path, json.dumps(payload, indent=2) + "\n")
+    payload["completed_at"] = timestamp_now()
+    write_text_atomic(request_path, json.dumps(payload, indent=2) + "\n")

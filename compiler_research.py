@@ -1,25 +1,17 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from config_hash import _config_hash
+from persistence_utils import write_text_atomic
 from research_types import ExperimentContract
 from strategies import STRATEGIES
 from strategy_family import load_family
 
 if TYPE_CHECKING:
     from research_types import ResearchThesis
-
-
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(content)
-    os.replace(tmp_path, path)
-
 
 def _needs_code_contract(
     thesis: "ResearchThesis",
@@ -31,7 +23,7 @@ def _needs_code_contract(
     experiment_id = thesis.thesis_id
     experiment_dir = root / "experiments" / experiment_id
     experiment_dir.mkdir(parents=True, exist_ok=True)
-    _write_text_atomic(experiment_dir / "thesis.json", thesis.model_dump_json(indent=2) + "\n")
+    write_text_atomic(experiment_dir / "thesis.json", thesis.model_dump_json(indent=2) + "\n")
     contract = ExperimentContract(
         experiment_id=experiment_id,
         thesis_id=thesis.thesis_id,
@@ -45,7 +37,7 @@ def _needs_code_contract(
         required_diagnostics=thesis.required_diagnostics,
         status=status,
     )
-    _write_text_atomic(
+    write_text_atomic(
         experiment_dir / "contract.json", contract.model_dump_json(indent=2) + "\n"
     )
     return contract
@@ -61,8 +53,8 @@ def _compile_runtime_config_contract(
     experiment_dir = root / "experiments" / experiment_id
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
-    _write_text_atomic(experiment_dir / "thesis.json", thesis.model_dump_json(indent=2) + "\n")
-    _write_text_atomic(
+    write_text_atomic(experiment_dir / "thesis.json", thesis.model_dump_json(indent=2) + "\n")
+    write_text_atomic(
         experiment_dir / "runtime_config.json", json.dumps(runtime_config, indent=2) + "\n"
     )
     contract = ExperimentContract(
@@ -78,7 +70,7 @@ def _compile_runtime_config_contract(
         required_diagnostics=thesis.required_diagnostics,
         status="ready_to_run",
     )
-    _write_text_atomic(
+    write_text_atomic(
         experiment_dir / "contract.json", contract.model_dump_json(indent=2) + "\n"
     )
     return contract

@@ -105,6 +105,28 @@ def test_parse_benchmark_details_falls_back_to_legacy_when_no_result_json() -> N
     assert details["max_drawdown"] == 0.1
 
 
+def test_parse_benchmark_details_preserves_12_char_config_hash() -> None:
+    output = json.dumps(
+        {
+            "family": "ema",
+            "config": "configs/ema_base.yaml",
+            "config_hash": "123456789abc",
+            "git_sha": "abcdef0",
+            "timestamp": "2026-04-30T00:00:00+00:00",
+            "metrics": {"median_expectancy": 1.5, "trade_count": 42},
+            "diagnostics": {},
+            "strategy_diagnostics": {},
+            "trades_file": "",
+            "strategy_events_file": "",
+            "diagnostics_file": "",
+        }
+    )
+
+    details = parse_benchmark_details(output)
+
+    assert details["config_hash"] == "123456789abc"
+
+
 # ── parse_benchmark_details_legacy ──────────────────────────────
 
 
