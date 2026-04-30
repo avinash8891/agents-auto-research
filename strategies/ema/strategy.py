@@ -17,7 +17,7 @@ from data_loader import load_data
 from metrics import compute_metrics, empty_metrics
 from strategies.base import BaseStrategy
 from strategies.ema.contract import compile_ema_contract
-from strategies.ema.contract_mapping import map_ema_config_changes_to_contract
+from strategies.ema.contract import map_ema_config_changes_to_contract
 from strategies.ema.exits import simulate_trades
 from strategies.ema.prompt import DESCRIPTION_FOR_RESEARCH
 from strategies.ema.research import EMA_RESEARCH_SPEC
@@ -447,7 +447,6 @@ class EMAStrategy(BaseStrategy):
     name = "ema"
     benchmark_script = "backtest_5ema.py"
     vps_benchmark_script = "vps_runner.py"
-    extra_result_fields: tuple[str, ...] = ()
     description_for_research = DESCRIPTION_FOR_RESEARCH
     research_spec = EMA_RESEARCH_SPEC
 
