@@ -370,7 +370,9 @@ def test_queue_variants_persists_full_runtime_config_in_sidecar_metadata(
     assert thesis["config_changes_kind"] == "full_runtime"
 
 
-def test_queue_variants_leaves_no_tmp_artifacts(tmp_path: Path, thesis_stub, primary_contract_stub) -> None:
+def test_queue_variants_leaves_no_tmp_artifacts(
+    tmp_path: Path, thesis_stub, primary_contract_stub
+) -> None:
     queue_variants(
         tmp_path,
         tmp_path / "queue",

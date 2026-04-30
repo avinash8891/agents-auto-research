@@ -94,7 +94,6 @@ def test_write_json_artifact_persists_iso8601_timestamp_strings(tmp_path: Path) 
     assert isinstance(payload["timestamp"], str)
 
 
-
 def test_read_artifacts_returns_sorted_by_filename(tmp_path: Path) -> None:
     artifacts_dir = tmp_path / "queue"
     _write_artifact(artifacts_dir, "z.json", {"id": "z"})

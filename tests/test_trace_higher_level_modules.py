@@ -268,5 +268,8 @@ def test_adapter_export_packages_include_target_files_and_metadata() -> None:
 
     assert halo["target"] == "halo"
     assert halo["files"]["halo-event.json"]["loop_state"]["thesis_id"] == "th-1"
-    assert recursive_improve["files"]["recursive-improve-event.json"]["iteration_context"]["round"] == 2
+    assert (
+        recursive_improve["files"]["recursive-improve-event.json"]["iteration_context"]["round"]
+        == 2
+    )
     assert reflexio["files"]["reflexio-event.json"]["episode"]["family"] == "ema"

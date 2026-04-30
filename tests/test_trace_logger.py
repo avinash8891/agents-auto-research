@@ -104,18 +104,24 @@ def test_begin_round_keeps_exporting_events_after_multiple_round_resets(
     trace_logger.begin_round(1)
     trace_logger.trace("LOOP", "first round started")
     first_file = trace_logger.get_event_file()
-    first_events = [json.loads(line) for line in first_file.read_text(encoding="utf-8").splitlines()]
+    first_events = [
+        json.loads(line) for line in first_file.read_text(encoding="utf-8").splitlines()
+    ]
     assert first_events[-1]["summary"] == "first round started"
 
     trace_logger.begin_round(2)
     trace_logger.trace("LOOP", "second round started")
     second_file = trace_logger.get_event_file()
-    second_events = [json.loads(line) for line in second_file.read_text(encoding="utf-8").splitlines()]
+    second_events = [
+        json.loads(line) for line in second_file.read_text(encoding="utf-8").splitlines()
+    ]
     assert second_events[-1]["summary"] == "second round started"
     assert second_events[-1]["run_id"] == trace_logger.get_run_id()
 
 
-def test_begin_round_rebinds_openai_instrumentation_to_new_provider(monkeypatch, tmp_path: Path) -> None:
+def test_begin_round_rebinds_openai_instrumentation_to_new_provider(
+    monkeypatch, tmp_path: Path
+) -> None:
     trace_logger = _load_trace_logger(monkeypatch, tmp_path)
     original_provider = trace_logger._PROVIDER
 
