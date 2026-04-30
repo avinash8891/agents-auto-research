@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from artifact_io import write_json_artifact
 from autoresearch_artifacts import (
     queue_from_thesis_artifacts,
     read_artifacts_relative_to_root,
@@ -17,7 +18,6 @@ from autoresearch_artifacts import (
     read_thesis_artifacts,
 )
 from autoresearch_state import ExperimentRecord
-from artifact_io import write_json_artifact
 
 
 def _write_artifact(directory: Path, name: str, payload: dict) -> Path:

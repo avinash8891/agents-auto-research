@@ -15,10 +15,10 @@ from config_hash import _config_hash
 from experiment_db import (
     BaselineCheckpoint,
     BaselineTracker,
-    build_config_hash,
-    build_data_hash,
     ExperimentDB,
     ExperimentResult,
+    build_config_hash,
+    build_data_hash,
 )
 
 
