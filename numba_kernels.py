@@ -3,19 +3,23 @@
 Falls back to pure numpy if numba is not available.
 All functions operate on numpy arrays only (no pandas).
 """
+
 from __future__ import annotations
 
 import numpy as np
 
 try:
     from numba import njit
+
     HAS_NUMBA = True
 except ImportError:
     HAS_NUMBA = False
+
     # Fallback: identity decorator — functions run as plain Python
     def njit(*args, **kwargs):
         def wrapper(fn):
             return fn
+
         if len(args) == 1 and callable(args[0]):
             return args[0]
         return wrapper
@@ -65,7 +69,6 @@ def first_signal_per_day(signals: np.ndarray, day_ids: np.ndarray) -> np.ndarray
                 else:
                     found = True
     return out
-
 
 
 @njit(cache=True)

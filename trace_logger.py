@@ -16,11 +16,10 @@ Usage:
     trace_agent_response("diagnostic-analyst", response_text, parsed_json)
     trace_ssh("backtest/runner.py --strategy name --config x.json", exit_code, stdout, stderr)
 """
+
 from __future__ import annotations
 
 import json
-import os
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -88,17 +87,15 @@ def begin_round(round_number: int) -> None:
 
 def end_hypothesis(decision: str = "", metric: float | None = None) -> None:
     """Mark the current hypothesis as complete."""
-    trace("HYPOTHESIS", f"END {_current_hypothesis_id} name={_current_hypothesis_name} decision={decision} metric={metric}")
+    trace(
+        "HYPOTHESIS",
+        f"END {_current_hypothesis_id} name={_current_hypothesis_name} decision={decision} metric={metric}",
+    )
 
 
 def current_hypothesis_id() -> str | None:
     """Return the active hypothesis ID, or None."""
     return _current_hypothesis_id
-
-
-def current_hypothesis_name() -> str | None:
-    """Return the active hypothesis name, or None."""
-    return _current_hypothesis_name
 
 
 def get_run_id() -> str:
@@ -145,7 +142,9 @@ def trace_agent_prompt(agent_name: str, prompt: str, system_prompt: str = "") ->
     prompt_file = _hyp_dir() / f"{trace_id}-prompt.txt"
     with open(prompt_file, "w") as f:
         f.write(f"=== RUN: {_RUN_ID} ===\n")
-        f.write(f"=== HYPOTHESIS: {_current_hypothesis_id or 'none'} ({_current_hypothesis_name or 'none'}) ===\n")
+        f.write(
+            f"=== HYPOTHESIS: {_current_hypothesis_id or 'none'} ({_current_hypothesis_name or 'none'}) ===\n"
+        )
         f.write(f"=== AGENT: {agent_name} ===\n")
         f.write(f"=== TIMESTAMP: {_ts()} ===\n")
         f.write(f"=== TRACE_ID: {trace_id} ===\n\n")
@@ -175,7 +174,9 @@ def trace_agent_response(
     response_file = _hyp_dir() / f"{trace_id}-response.txt"
     with open(response_file, "w") as f:
         f.write(f"=== RUN: {_RUN_ID} ===\n")
-        f.write(f"=== HYPOTHESIS: {_current_hypothesis_id or 'none'} ({_current_hypothesis_name or 'none'}) ===\n")
+        f.write(
+            f"=== HYPOTHESIS: {_current_hypothesis_id or 'none'} ({_current_hypothesis_name or 'none'}) ===\n"
+        )
         f.write(f"=== AGENT: {agent_name} ===\n")
         f.write(f"=== TIMESTAMP: {_ts()} ===\n")
         f.write(f"=== TRACE_ID: {trace_id} ===\n\n")
@@ -194,7 +195,9 @@ def trace_agent_response(
     print(f"TRACE {_RUN_ID}{htag} [AGENT<-{agent_name}] RESPONSE {status} (len={len(raw_text)})")
 
 
-def trace_agent_tool_call(agent_name: str, trace_id: str, tool_name: str, tool_input: str = "") -> None:
+def trace_agent_tool_call(
+    agent_name: str, trace_id: str, tool_name: str, tool_input: str = ""
+) -> None:
     """Log a tool call made by an agent."""
     seq = _next_seq()
     htag = _hyp_tag()
@@ -217,7 +220,9 @@ def trace_ssh(command: str, exit_code: int, stdout: str = "", stderr: str = "") 
     ssh_file = _hyp_dir() / f"ssh-{seq:05d}.txt"
     with open(ssh_file, "w") as f:
         f.write(f"=== RUN: {_RUN_ID} ===\n")
-        f.write(f"=== HYPOTHESIS: {_current_hypothesis_id or 'none'} ({_current_hypothesis_name or 'none'}) ===\n")
+        f.write(
+            f"=== HYPOTHESIS: {_current_hypothesis_id or 'none'} ({_current_hypothesis_name or 'none'}) ===\n"
+        )
         f.write(f"=== SSH COMMAND ===\n{command}\n")
         f.write(f"=== TIMESTAMP: {_ts()} ===\n")
         f.write(f"=== EXIT CODE: {exit_code} ===\n\n")
@@ -235,7 +240,9 @@ def trace_ssh(command: str, exit_code: int, stdout: str = "", stderr: str = "") 
     print(f"TRACE {_RUN_ID}{htag} [SSH] exit={exit_code} cmd='{command[:80]}'")
 
 
-def trace_benchmark(config: str, metric: float | None, decision: str, details: dict | None = None) -> None:
+def trace_benchmark(
+    config: str, metric: float | None, decision: str, details: dict | None = None
+) -> None:
     """Log a benchmark result."""
     seq = _next_seq()
     htag = _hyp_tag()
@@ -245,7 +252,9 @@ def trace_benchmark(config: str, metric: float | None, decision: str, details: d
             f"decision={decision}\n"
         )
         if details:
-            f.write(f"[{_ts()}] [{_RUN_ID}]{htag} [{seq:05d}] [BENCHMARK.DETAIL] {json.dumps(details, default=str)}\n")
+            f.write(
+                f"[{_ts()}] [{_RUN_ID}]{htag} [{seq:05d}] [BENCHMARK.DETAIL] {json.dumps(details, default=str)}\n"
+            )
     print(f"TRACE {_RUN_ID}{htag} [BENCHMARK] {config} -> metric={metric} decision={decision}")
 
 
@@ -259,7 +268,10 @@ def trace_state_change(old_state: str, new_state: str, reason: str = "") -> None
             + (f" | reason: {reason}" if reason else "")
             + "\n"
         )
-    print(f"TRACE {_RUN_ID}{htag} [STATE] {old_state} -> {new_state}" + (f" ({reason})" if reason else ""))
+    print(
+        f"TRACE {_RUN_ID}{htag} [STATE] {old_state} -> {new_state}"
+        + (f" ({reason})" if reason else "")
+    )
 
 
 _JOB: int = 0

@@ -10,6 +10,7 @@ Design:
 - After backtest: build one DataFrame from accumulated arrays + write parquet.
 - Counters tracked incrementally for diagnostics.json.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,13 +26,14 @@ import pandas as pd
 @dataclass(slots=True)
 class _EventBatch:
     """Lightweight container for a batch of events. No DataFrame overhead."""
-    timestamps: np.ndarray     # datetime64 indices
+
+    timestamps: np.ndarray  # datetime64 indices
     symbol: str
     direction: str
     event_type: str
     reason: str
-    entry_prices: np.ndarray   # float64
-    stop_prices: np.ndarray    # float64
+    entry_prices: np.ndarray  # float64
+    stop_prices: np.ndarray  # float64
 
 
 class StrategyEventLogger:
@@ -85,9 +87,21 @@ class StrategyEventLogger:
         if reason:
             self._rejection_counts[reason] += n
 
-        ts = pd.to_datetime(df["timestamp"], errors="coerce").values if "timestamp" in df.columns else np.full(n, np.datetime64("NaT"))
-        ep = pd.to_numeric(df.get("entry_price"), errors="coerce").values if "entry_price" in df.columns else np.full(n, np.nan)
-        sp = pd.to_numeric(df.get("stop_price"), errors="coerce").values if "stop_price" in df.columns else np.full(n, np.nan)
+        ts = (
+            pd.to_datetime(df["timestamp"], errors="coerce").values
+            if "timestamp" in df.columns
+            else np.full(n, np.datetime64("NaT"))
+        )
+        ep = (
+            pd.to_numeric(df.get("entry_price"), errors="coerce").values
+            if "entry_price" in df.columns
+            else np.full(n, np.nan)
+        )
+        sp = (
+            pd.to_numeric(df.get("stop_price"), errors="coerce").values
+            if "stop_price" in df.columns
+            else np.full(n, np.nan)
+        )
 
         has_multi_sym = "symbol" in df.columns and df["symbol"].nunique() > 1
         has_multi_dir = "direction" in df.columns and df["direction"].nunique() > 1
@@ -95,7 +109,9 @@ class StrategyEventLogger:
 
         if has_multi_sym or has_multi_dir or has_multi_rsn:
             batch_idx = len(self._batches)
-            self._batches.append(_EventBatch(ts, "__multi__", "__multi__", event_type, "__multi__", ep, sp))
+            self._batches.append(
+                _EventBatch(ts, "__multi__", "__multi__", event_type, "__multi__", ep, sp)
+            )
             self._multi_arrays[batch_idx] = (
                 df["symbol"].values if "symbol" in df.columns else np.full(n, ""),
                 df["direction"].values if "direction" in df.columns else np.full(n, ""),
@@ -115,20 +131,27 @@ class StrategyEventLogger:
 
         ts_raw = kwargs.get("timestamp", "")
         try:
-            ts = np.array([np.datetime64(pd.Timestamp(ts_raw))]) if ts_raw else np.array([np.datetime64("NaT")])
+            ts = (
+                np.array([np.datetime64(pd.Timestamp(ts_raw))])
+                if ts_raw
+                else np.array([np.datetime64("NaT")])
+            )
         except Exception:
             ts = np.array([np.datetime64("NaT")])
 
         ep = np.array([kwargs.get("entry_price", np.nan)], dtype=np.float64)
         sp = np.array([kwargs.get("stop_price", np.nan)], dtype=np.float64)
-        self._batches.append(_EventBatch(
-            ts,
-            kwargs.get("symbol", ""),
-            kwargs.get("direction", ""),
-            kwargs.get("event_type", ""),
-            kwargs.get("reason", ""),
-            ep, sp,
-        ))
+        self._batches.append(
+            _EventBatch(
+                ts,
+                kwargs.get("symbol", ""),
+                kwargs.get("direction", ""),
+                kwargs.get("event_type", ""),
+                kwargs.get("reason", ""),
+                ep,
+                sp,
+            )
+        )
 
     def to_dataframe(self) -> pd.DataFrame:
         """Build one DataFrame from all accumulated batches. Single allocation."""
@@ -165,15 +188,17 @@ class StrategyEventLogger:
 
             pos = end
 
-        return pd.DataFrame({
-            "timestamp": ts_all,
-            "symbol": sym_all,
-            "direction": dir_all,
-            "event_type": evt_all,
-            "reason": rsn_all,
-            "entry_price": ep_all,
-            "stop_price": sp_all,
-        })
+        return pd.DataFrame(
+            {
+                "timestamp": ts_all,
+                "symbol": sym_all,
+                "direction": dir_all,
+                "event_type": evt_all,
+                "reason": rsn_all,
+                "entry_price": ep_all,
+                "stop_price": sp_all,
+            }
+        )
 
     def write_parquet(self, path: str | Path) -> None:
         """Build DataFrame and write to parquet in one shot."""
@@ -199,9 +224,3 @@ class StrategyEventLogger:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(diag, indent=2) + "\n")
         return diag
-
-    def clear(self) -> None:
-        self._event_counts.clear()
-        self._rejection_counts.clear()
-        self._batches.clear()
-        self._multi_arrays.clear()

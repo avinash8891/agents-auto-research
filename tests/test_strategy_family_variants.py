@@ -6,6 +6,9 @@ the orb_/ema_ hardcoding is removed.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from backtest.legacy_entrypoint import strategy_for_script
 from strategies import STRATEGIES
 from strategy_family import StrategyFamily, load_family
 
@@ -96,3 +99,29 @@ def test_strategy_family_default_variant_prefix_is_not_strategy_specific() -> No
     fam = StrategyFamily(name="x", benchmark_script="x.py")
     assert fam.variant_prefix == ""
     assert fam.default_variants == ()
+
+
+def test_benchmark_command_uses_generic_strategy_runner() -> None:
+    command = load_family("ema").benchmark_command("configs/ema_base.yaml", output_dir="/tmp/run")
+    assert command == (
+        "python3 -m backtest.runner --strategy ema --config configs/ema_base.yaml "
+        "--output-dir /tmp/run"
+    )
+    assert "backtest_5ema.py" not in command
+
+
+def test_legacy_backtest_scripts_resolve_strategy_from_registry() -> None:
+    assert strategy_for_script("backtest_5ema.py") == "ema"
+    assert strategy_for_script("backtest_orb_v2.py") == "orb"
+
+
+def test_registered_strategies_do_not_keep_duplicate_default_yaml_files() -> None:
+    """Strategy defaults have one canonical YAML source per family."""
+    repo_root = Path(__file__).resolve().parents[1]
+    for family_name, strategy in STRATEGIES.items():
+        config_default = repo_root / "configs" / strategy.family_dirnames.base_config_filename
+        package_default = repo_root / "strategies" / family_name / "defaults.yaml"
+        assert config_default.exists(), f"{family_name} missing canonical {config_default}"
+        assert (
+            not package_default.exists()
+        ), f"{family_name} has duplicate defaults at {package_default}"

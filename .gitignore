@@ -219,3 +219,16 @@ __marimo__/
 .serena/
 
 logs/
+
+# Local market data symlink/directory.
+/data
+
+# Autoresearch runtime state and generated experiment artifacts.
+*_autoresearch-runs/
+*_autoresearch.current.md
+*_autoresearch.jsonl
+*_autoresearch.next.json
+*_baseline_checkpoints.json
+*_experiments_db.json
+experiments/
+research_findings.jsonl

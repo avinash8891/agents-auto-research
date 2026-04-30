@@ -1,19 +1,12 @@
-#!/usr/bin/env python3
-"""ORB Backtest Runner v2 — autoresearch-compatible.
+"""ORB strategy runtime.
 
-Modeled on backtest_5ema.py: outputs result.json, trades.csv,
-strategy_events.csv, diagnostics.json for the research loop.
-
-Usage:
-    python backtest_orb_v2.py --config configs/orb_base.yaml --output-dir /tmp/run1
+The CLI and artifact writer live in the generic `backtest.runner` path; this
+module only owns ORB-specific backtest behavior.
 """
 
 from __future__ import annotations
 
-import argparse
-import json
 import sys
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -21,22 +14,6 @@ import pandas as pd
 from data_loader import load_data
 from metrics import compute_metrics, empty_metrics
 from strategy_event_logger import StrategyEventLogger
-
-
-def load_runtime_config(path: str) -> dict:
-    p = Path(path)
-    if p.suffix in (".yaml", ".yml"):
-        import yaml
-
-        return yaml.safe_load(p.read_text())
-    payload = json.loads(p.read_text())
-    if isinstance(payload, dict) and "runtime_config" in payload:
-        return payload["runtime_config"]
-    if isinstance(payload, list):
-        from strategies.orb.contract import render_contract_to_runtime_config
-
-        return render_contract_to_runtime_config(payload)
-    return payload
 
 
 def run_backtest(config: dict) -> dict:
@@ -269,102 +246,3 @@ def _apply_stocks_in_play_filter(
         close.where(mask),
         volume.where(mask) if volume is not None else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-
-def _git_sha() -> str:
-    import subprocess as _sp
-
-    try:
-        return _sp.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            stderr=_sp.DEVNULL,
-            text=True,
-        ).strip()
-    except Exception:
-        return "unknown"
-
-
-def _config_hash(config: dict) -> str:
-    import hashlib
-
-    blob = json.dumps(config, sort_keys=True).encode()
-    return hashlib.sha256(blob).hexdigest()[:12]
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="ORB Backtest Runner v2")
-    parser.add_argument("--config", required=True)
-    parser.add_argument(
-        "--output-dir", default="/tmp", help="Directory to write result.json and trades CSV"
-    )
-    args = parser.parse_args()
-    config = load_runtime_config(args.config)
-
-    result = run_backtest(config)
-    trades_df = result.pop("_trades_df", None)
-    event_logger = result.pop("_event_logger", None)
-
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Write trades CSV
-    trades_path = ""
-    if trades_df is not None and not trades_df.empty:
-        trades_path = str(output_dir / "trades.csv")
-        trades_df.to_csv(trades_path, index=False)
-
-    # Write strategy events as parquet (vectorized, compact, analyst-ready)
-    events_path = ""
-    if event_logger:
-        events_path = str(output_dir / "strategy_events.parquet")
-        event_logger.write_parquet(events_path)
-
-    # Write diagnostics.json
-    diagnostics_path = ""
-    trade_count = len(trades_df) if trades_df is not None else 0
-    strategy_diagnostics = {}
-    if event_logger:
-        diagnostics_path = str(output_dir / "diagnostics.json")
-        strategy_diagnostics = event_logger.write_diagnostics(diagnostics_path, trade_count)
-
-    # Write result.json
-    from datetime import datetime, timezone
-
-    result_payload = {
-        "family": "orb",
-        "config": args.config,
-        "config_hash": _config_hash(config),
-        "git_sha": _git_sha(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "metrics": {
-            "median_expectancy": result["median_expectancy"],
-            "trade_count": result["trade_count"],
-            "profit_factor": result["profit_factor"],
-            "max_drawdown": result["max_drawdown"],
-            "pct_profitable_windows": result["pct_profitable_windows"],
-            "avg_sharpe_across_windows": result["avg_sharpe_across_windows"],
-        },
-        "diagnostics": result.get("diagnostics", {}),
-        "strategy_diagnostics": strategy_diagnostics,
-        "regime_expectancy": result.get("regime_expectancy", {}),
-        "trades_file": trades_path,
-        "strategy_events_file": events_path,
-        "diagnostics_file": diagnostics_path,
-    }
-    result_json_path = output_dir / "result.json"
-    result_json_path.write_text(json.dumps(result_payload, indent=2) + "\n")
-
-    print(f"RESULT_JSON {result_json_path}")
-    if events_path:
-        print(f"STRATEGY_EVENTS_FILE {events_path}")
-    if diagnostics_path:
-        print(f"DIAGNOSTICS_FILE {diagnostics_path}")
-
-
-if __name__ == "__main__":
-    main()

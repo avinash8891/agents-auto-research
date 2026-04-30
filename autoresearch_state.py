@@ -15,6 +15,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from autoresearch_constants import MILLISECONDS_PER_SECOND
+
 _log = logging.getLogger(__name__)
 
 
@@ -42,7 +44,10 @@ def coerce_timestamp_to_iso8601_utc(value: Any) -> str | None:
         # Trust the string shape; we want the read path to be cheap.
         return value
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value / 1000, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(
+            value / MILLISECONDS_PER_SECOND,
+            tz=timezone.utc,
+        ).isoformat()
     return None
 
 
@@ -58,7 +63,7 @@ def coerce_timestamp_to_epoch_ms(value: Any) -> int:
         return int(value)
     if isinstance(value, str):
         try:
-            return int(datetime.fromisoformat(value).timestamp() * 1000)
+            return int(datetime.fromisoformat(value).timestamp() * MILLISECONDS_PER_SECOND)
         except ValueError:
             return 0
     return 0
@@ -368,12 +373,15 @@ def _format_blocker_lines(blockers: list[dict[str, Any]]) -> list[str]:
     ] or ["- None"]
 
 
-def render_current_md(state: dict[str, Any], results: list[ExperimentRecord]) -> str:
+def render_current_md(
+    state: dict[str, Any], results: list[ExperimentRecord], *, family_name: str | None = None
+) -> str:
     best = state.get("current_best", {})
     next_action = state.get("next_action", {})
     chosen = next_action.get("config", next_action.get("type", "none"))
+    label = family_name.upper() if family_name else "Autoresearch"
     lines = [
-        "# ORB Autoresearch Current State",
+        f"# {label} Autoresearch Current State",
         "",
         "## Current Best",
         f"- `{best.get('config', 'unknown') if best else 'none'}`",
@@ -403,6 +411,10 @@ def render_current_md(state: dict[str, Any], results: list[ExperimentRecord]) ->
 
 
 def write_current_md(
-    current_md_path: Path, state: dict[str, Any], results: list[ExperimentRecord]
+    current_md_path: Path,
+    state: dict[str, Any],
+    results: list[ExperimentRecord],
+    *,
+    family_name: str | None = None,
 ) -> None:
-    current_md_path.write_text(render_current_md(state, results))
+    current_md_path.write_text(render_current_md(state, results, family_name=family_name))

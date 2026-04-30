@@ -3,6 +3,7 @@
 Expects a trades DataFrame with at least: pnl_pct, entry_date, exit_date, exit_reason.
 Optional columns for richer diagnostics: direction, entry_price, stop, target.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -34,7 +35,9 @@ def compute_metrics(trades_df: pd.DataFrame) -> dict:
         "diagnostics": diagnostics,
     }
     if "exit_reason" in trades_df.columns:
-        result["exit_reason_counts"] = trades_df["exit_reason"].value_counts().sort_index().to_dict()
+        result["exit_reason_counts"] = (
+            trades_df["exit_reason"].value_counts().sort_index().to_dict()
+        )
     return result
 
 
@@ -66,9 +69,9 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_hour = {}
         for hour, group in df.groupby("entry_hour")["pnl_pct"]:
             w = group[group > 0].sum()
-            l = abs(group[group <= 0].sum()) or 0.001
+            loss = abs(group[group <= 0].sum()) or 0.001
             pf_by_hour[f"{int(hour):02d}:00"] = {
-                "pf": round(w / l, 3),
+                "pf": round(w / loss, 3),
                 "trades": len(group),
                 "win_rate": round(float((group > 0).mean()), 3),
             }
@@ -79,9 +82,9 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_dir = {}
         for d, group in trades_df.groupby("direction")["pnl_pct"]:
             w = group[group > 0].sum()
-            l = abs(group[group <= 0].sum()) or 0.001
+            loss = abs(group[group <= 0].sum()) or 0.001
             pf_by_dir[d] = {
-                "pf": round(w / l, 3),
+                "pf": round(w / loss, 3),
                 "trades": len(group),
                 "win_rate": round(float((group > 0).mean()), 3),
             }
@@ -92,9 +95,9 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_exit = {}
         for reason, group in trades_df.groupby("exit_reason")["pnl_pct"]:
             w = group[group > 0].sum()
-            l = abs(group[group <= 0].sum()) or 0.001
+            loss = abs(group[group <= 0].sum()) or 0.001
             pf_by_exit[reason] = {
-                "pf": round(w / l, 3),
+                "pf": round(w / loss, 3),
                 "trades": len(group),
                 "mean_pnl": round(float(group.mean()), 5),
             }
@@ -107,9 +110,9 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_dow = {}
         for dow, group in df.groupby("dow")["pnl_pct"]:
             w = group[group > 0].sum()
-            l = abs(group[group <= 0].sum()) or 0.001
+            loss = abs(group[group <= 0].sum()) or 0.001
             pf_by_dow[dow] = {
-                "pf": round(w / l, 3),
+                "pf": round(w / loss, 3),
                 "trades": len(group),
             }
         diag["pf_by_day_of_week"] = pf_by_dow
@@ -121,9 +124,9 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_year = {}
         for year, group in df.groupby("year")["pnl_pct"]:
             w = group[group > 0].sum()
-            l = abs(group[group <= 0].sum()) or 0.001
+            loss = abs(group[group <= 0].sum()) or 0.001
             pf_by_year[str(year)] = {
-                "pf": round(w / l, 3),
+                "pf": round(w / loss, 3),
                 "trades": len(group),
             }
         diag["pf_by_year"] = pf_by_year
@@ -131,7 +134,9 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
     # 6. Trade duration
     if "entry_date" in trades_df.columns and "exit_date" in trades_df.columns:
         df = trades_df.copy()
-        duration_mins = (pd.to_datetime(df["exit_date"]) - pd.to_datetime(df["entry_date"])).dt.total_seconds() / 60
+        duration_mins = (
+            pd.to_datetime(df["exit_date"]) - pd.to_datetime(df["entry_date"])
+        ).dt.total_seconds() / 60
         w_dur = duration_mins[df["pnl_pct"] > 0]
         l_dur = duration_mins[df["pnl_pct"] <= 0]
         diag["avg_duration_minutes"] = {
@@ -175,13 +180,15 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
             if len(group) < 5:
                 continue
             w = group[group > 0].sum()
-            l = abs(group[group <= 0].sum()) or 0.001
-            sym_stats.append({
-                "symbol": sym,
-                "pf": round(w / l, 3),
-                "trades": len(group),
-                "win_rate": round(float((group > 0).mean()), 3),
-            })
+            loss = abs(group[group <= 0].sum()) or 0.001
+            sym_stats.append(
+                {
+                    "symbol": sym,
+                    "pf": round(w / loss, 3),
+                    "trades": len(group),
+                    "win_rate": round(float((group > 0).mean()), 3),
+                }
+            )
         sym_stats.sort(key=lambda x: x["pf"])
         diag["pf_by_symbol_worst10"] = sym_stats[:10]
         diag["pf_by_symbol_best10"] = sym_stats[-10:][::-1]
@@ -195,16 +202,23 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         df = trades_df.copy()
         df["stop_dist_pct"] = ((df["entry_price"] - df["stop"]).abs() / df["entry_price"]) * 100
         try:
-            df["stop_q"] = pd.qcut(df["stop_dist_pct"], 5, labels=["Q1_tight", "Q2", "Q3", "Q4", "Q5_wide"], duplicates="drop")
+            df["stop_q"] = pd.qcut(
+                df["stop_dist_pct"],
+                5,
+                labels=["Q1_tight", "Q2", "Q3", "Q4", "Q5_wide"],
+                duplicates="drop",
+            )
             pf_by_stop = {}
             for q, group in df.groupby("stop_q")["pnl_pct"]:
                 w = group[group > 0].sum()
-                l = abs(group[group <= 0].sum()) or 0.001
+                loss = abs(group[group <= 0].sum()) or 0.001
                 pf_by_stop[str(q)] = {
-                    "pf": round(w / l, 3),
+                    "pf": round(w / loss, 3),
                     "trades": len(group),
                     "win_rate": round(float((group > 0).mean()), 3),
-                    "mean_stop_dist_pct": round(float(df.loc[group.index, "stop_dist_pct"].mean()), 4),
+                    "mean_stop_dist_pct": round(
+                        float(df.loc[group.index, "stop_dist_pct"].mean()), 4
+                    ),
                 }
             diag["pf_by_stop_distance_quintile"] = pf_by_stop
         except ValueError:
@@ -228,24 +242,28 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
                 prev_dt = row["entry_dt"]
             else:
                 if streak_len >= 5:
-                    streaks.append({
-                        "length": streak_len,
-                        "start": str(start_dt.date()),
-                        "end": str(prev_dt.date()),
-                        "cumulative_pnl": round(float(streak_pnl), 5),
-                    })
+                    streaks.append(
+                        {
+                            "length": streak_len,
+                            "start": str(start_dt.date()),
+                            "end": str(prev_dt.date()),
+                            "cumulative_pnl": round(float(streak_pnl), 5),
+                        }
+                    )
                 start_dt = None
                 prev_dt = None
                 streak_len = 0
                 streak_pnl = 0.0
         # Handle trailing streak
         if streak_len >= 5 and start_dt is not None:
-            streaks.append({
-                "length": streak_len,
-                "start": str(start_dt.date()),
-                "end": str(prev_dt.date()),
-                "cumulative_pnl": round(float(streak_pnl), 5),
-            })
+            streaks.append(
+                {
+                    "length": streak_len,
+                    "start": str(start_dt.date()),
+                    "end": str(prev_dt.date()),
+                    "cumulative_pnl": round(float(streak_pnl), 5),
+                }
+            )
         streaks.sort(key=lambda x: x["length"], reverse=True)
         diag["losing_streaks_gte5"] = streaks[:10]  # top 10 worst
         diag["losing_streak_count_gte5"] = len(streaks)
@@ -257,9 +275,9 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_month = {}
         for month, group in df.groupby("month")["pnl_pct"]:
             w = group[group > 0].sum()
-            l = abs(group[group <= 0].sum()) or 0.001
+            loss = abs(group[group <= 0].sum()) or 0.001
             pf_by_month[month] = {
-                "pf": round(w / l, 3),
+                "pf": round(w / loss, 3),
                 "trades": len(group),
                 "win_rate": round(float((group > 0).mean()), 3),
             }
@@ -273,9 +291,9 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_yq = {}
         for yq, group in df.groupby("yq")["pnl_pct"]:
             w = group[group > 0].sum()
-            l = abs(group[group <= 0].sum()) or 0.001
+            loss = abs(group[group <= 0].sum()) or 0.001
             pf_by_yq[yq] = {
-                "pf": round(w / l, 3),
+                "pf": round(w / loss, 3),
                 "trades": len(group),
             }
         diag["pf_by_year_quarter"] = pf_by_yq

@@ -3,6 +3,7 @@
 Loads wide-format parquets (open/high/low/close/volume) from a data directory.
 Also supports per-symbol subdirectories and flat parquets for ORB compatibility.
 """
+
 from __future__ import annotations
 
 import sys
@@ -123,12 +124,15 @@ def _load_flat(
 ) -> dict[str, pd.DataFrame]:
     df = pd.concat([pd.read_parquet(p) for p in sorted(parquets)])
     batch: dict[str, pd.DataFrame] = {}
-    for field, key in [("Open", "open"), ("High", "high"), ("Low", "low"),
-                       ("Close", "close"), ("Volume", "volume")]:
+    for field, key in [
+        ("Open", "open"),
+        ("High", "high"),
+        ("Low", "low"),
+        ("Close", "close"),
+        ("Volume", "volume"),
+    ]:
         if field in df.columns:
             batch[key] = (
-                df.pivot(columns="Symbol", values=field)
-                if "Symbol" in df.columns
-                else df[[field]]
+                df.pivot(columns="Symbol", values=field) if "Symbol" in df.columns else df[[field]]
             )
     return batch

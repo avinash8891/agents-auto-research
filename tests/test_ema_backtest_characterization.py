@@ -16,8 +16,7 @@ if str(REPO_ROOT) not in sys.path:
 from backtest.filters import _exclude_signals_on_days
 from backtest.runtime_config import load_runtime_config, validate_runtime_config_scope
 from strategies import STRATEGIES
-from strategies.ema.contract import compile_ema_contract
-from strategies.ema.contract import map_ema_config_changes_to_contract
+from strategies.ema.contract import compile_ema_contract, map_ema_config_changes_to_contract
 from strategies.ema.signals import generate_signals_for_frame
 from strategies.ema.validate import validate_ema_runtime_config
 

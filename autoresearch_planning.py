@@ -37,37 +37,8 @@ DEFAULT_CONFIG_ORDER = [
     "configs/variants/orb_trend_filter.yaml",
 ]
 
-THESIS_FAMILY: dict[str, str] = {
-    "spy_only": "universe",
-    "stocks_in_play": "universe",
-    "stocks_in_play_universe": "universe",
-    "relative_volume_stocks_in_play": "universe",
-    "top_10_dollar_volume_stocks_in_play": "universe",
-    "high_relative_volume_filter": "entry",
-    "trend_alignment_filter": "entry",
-    "follow_through": "entry",
-    "trailing_stop": "exit",
-    "time_stop": "exit",
-    "failed_breakout_exit": "exit",
-    "volatility_trail": "exit",
-    "trend_filter": "regime",
-    "skip_chop": "regime",
-    "skip_low_vol": "regime",
-    "trend_day_only": "regime",
-}
-
-COMBINATION_RULES: dict[tuple[str, str], str] = {
-    ("universe", "exit"): "allowed",
-    ("universe", "entry"): "allowed",
-    ("universe", "regime"): "allowed",
-    ("entry", "exit"): "allowed",
-    ("entry", "regime"): "allowed",
-    ("exit", "regime"): "allowed",
-    ("universe", "universe"): "disallowed",
-    ("entry", "entry"): "disallowed",
-    ("exit", "exit"): "review_required",
-    ("regime", "regime"): "review_required",
-}
+THESIS_FAMILY: dict[str, str] = {}
+COMBINATION_RULES: dict[tuple[str, str], str] = {}
 
 
 # ── Variant discovery ─────────────────────────────────────────────
@@ -162,7 +133,8 @@ def parse_ideas_backlog(ideas_md_path: Path, family: StrategyFamily) -> list[dic
                 {
                     "slug": slug,
                     "config": family.variant_config_path(slug),
-                    "family": current_family or THESIS_FAMILY.get(slug, "unknown"),
+                    "family": current_family
+                    or (family.thesis_family_by_slug or {}).get(slug, "unknown"),
                     "source": "ideas_backlog",
                 }
             )
@@ -218,8 +190,9 @@ def generate_theses_from_ideas(
 def thesis_family_for(config: str, family: StrategyFamily, proposals_dir: Path, root: Path) -> str:
     """Determine the thesis family for a config path."""
     slug = family.slug_from_config(config)
-    if slug in THESIS_FAMILY:
-        return THESIS_FAMILY[slug]
+    thesis_family_by_slug = family.thesis_family_by_slug or {}
+    if slug in thesis_family_by_slug:
+        return thesis_family_by_slug[slug]
     for artifact in read_thesis_artifacts(proposals_dir, root):
         if artifact.get("thesis_id") == slug:
             return artifact.get("family", "unknown")
@@ -326,7 +299,8 @@ def _try_combine_pair(
     """
     family_a = thesis_family_for(a.config, family, proposals_dir, root)
     family_b = thesis_family_for(b.config, family, proposals_dir, root)
-    rule = COMBINATION_RULES.get((family_a, family_b)) or COMBINATION_RULES.get(
+    combination_rules = family.combination_rules or {}
+    rule = combination_rules.get((family_a, family_b)) or combination_rules.get(
         (family_b, family_a), "disallowed"
     )
     if rule != "allowed":

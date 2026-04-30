@@ -14,7 +14,9 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
     rr = config.get("rr_ratio")
     if rr is not None:
         if not isinstance(rr, (int, float)) or float(rr) < 0.5:
-            violations.append(f"rr_ratio={rr}: must be >= 0.5 (below 0.5 is guaranteed negative edge)")
+            violations.append(
+                f"rr_ratio={rr}: must be >= 0.5 (below 0.5 is guaranteed negative edge)"
+            )
         if isinstance(rr, (int, float)) and float(rr) > 20:
             violations.append(f"rr_ratio={rr}: must be <= 20 (unreachable targets waste entries)")
     tf_short = config.get("timeframe_short")
@@ -40,7 +42,9 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
         if isinstance(mtpd, (int, float)) and int(mtpd) < 1:
             violations.append(f"max_trades_per_day={mtpd}: must be >= 1 (0 disables trading)")
         if isinstance(mtpd, (int, float)) and int(mtpd) > 20:
-            violations.append(f"max_trades_per_day={mtpd}: must be <= 20 (transcript says 3-5; >20 effectively disables the cap)")
+            violations.append(
+                f"max_trades_per_day={mtpd}: must be <= 20 (transcript says 3-5; >20 effectively disables the cap)"
+            )
     bias = config.get("direction_bias")
     valid_biases = {"long_only", "short_only", "both"}
     if bias is not None and bias not in valid_biases:
@@ -64,7 +68,9 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
         if float(gap_pct) <= 0:
             violations.append(f"gap_pct={gap_pct}: must be > 0")
         if float(gap_pct) > 0.20:
-            violations.append(f"gap_pct={gap_pct}: must be <= 0.20 (20%; higher filters out everything)")
+            violations.append(
+                f"gap_pct={gap_pct}: must be <= 0.20 (20%; higher filters out everything)"
+            )
     rsl = config.get("range_shift_lookback")
     if rsl is not None:
         if not (5 <= int(rsl) <= 100):

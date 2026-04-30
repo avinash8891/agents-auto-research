@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-import yaml
+from strategies.base import load_strategy_defaults
 
 _orb_defaults_cache: dict[str, Any] | None = None
 
 
 def _load_orb_defaults() -> dict[str, Any]:
-    base_path = Path(__file__).resolve().parents[2] / "configs" / "orb_base.yaml"
-    return yaml.safe_load(base_path.read_text())
+    return load_strategy_defaults("orb")
 
 
 def _get_orb_defaults() -> dict[str, Any]:

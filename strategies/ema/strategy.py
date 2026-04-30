@@ -16,8 +16,7 @@ from backtest.resample import build_timeframe_frame
 from data_loader import load_data
 from metrics import compute_metrics, empty_metrics
 from strategies.base import BaseStrategy
-from strategies.ema.contract import compile_ema_contract
-from strategies.ema.contract import map_ema_config_changes_to_contract
+from strategies.ema.contract import compile_ema_contract, map_ema_config_changes_to_contract
 from strategies.ema.exits import simulate_trades
 from strategies.ema.prompt import DESCRIPTION_FOR_RESEARCH
 from strategies.ema.research import EMA_RESEARCH_SPEC

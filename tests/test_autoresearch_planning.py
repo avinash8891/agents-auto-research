@@ -13,8 +13,6 @@ from pathlib import Path
 import pytest
 
 from autoresearch_planning import (
-    COMBINATION_RULES,
-    THESIS_FAMILY,
     check_baseline_rerun,
     generate_combination_candidates,
     list_known_variant_configs,
@@ -209,23 +207,24 @@ def test_thesis_family_for_returns_unknown_when_neither_match(tmp_path: Path, or
 
 
 def test_combination_rules_universe_plus_exit_allowed() -> None:
-    assert COMBINATION_RULES[("universe", "exit")] == "allowed"
+    assert load_family("orb").combination_rules[("universe", "exit")] == "allowed"
 
 
 def test_combination_rules_disallows_two_universes() -> None:
-    assert COMBINATION_RULES[("universe", "universe")] == "disallowed"
+    assert load_family("orb").combination_rules[("universe", "universe")] == "disallowed"
 
 
 def test_combination_rules_review_required_for_two_exits() -> None:
-    assert COMBINATION_RULES[("exit", "exit")] == "review_required"
+    assert load_family("orb").combination_rules[("exit", "exit")] == "review_required"
 
 
 def test_thesis_family_map_covers_known_slugs() -> None:
     # Any future thesis slug added to the loop must be classified.
-    assert THESIS_FAMILY["spy_only"] == "universe"
-    assert THESIS_FAMILY["trailing_stop"] == "exit"
-    assert THESIS_FAMILY["trend_filter"] == "regime"
-    assert THESIS_FAMILY["follow_through"] == "entry"
+    thesis_family_by_slug = load_family("orb").thesis_family_by_slug
+    assert thesis_family_by_slug["spy_only"] == "universe"
+    assert thesis_family_by_slug["trailing_stop"] == "exit"
+    assert thesis_family_by_slug["trend_filter"] == "regime"
+    assert thesis_family_by_slug["follow_through"] == "entry"
 
 
 # ── generate_combination_candidates ─────────────────────────────

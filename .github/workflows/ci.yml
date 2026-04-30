@@ -16,22 +16,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov pyyaml ruff black isort pydantic bandit
+          pip install pytest pytest-cov pyyaml ruff black isort pydantic bandit pandas numpy pyarrow paramiko
       - name: Lint (ruff)
-        run: ruff check autoresearch_*.py tests/
+        run: ruff check .
       - name: Format check (black)
-        run: black --check autoresearch_*.py tests/
+        run: black --check .
       - name: Import sort check (isort)
-        run: isort --check-only autoresearch_*.py tests/
+        run: isort --check-only .
       - name: Security scan (bandit) — high severity, fail on any new issue
-        run: bandit -r autoresearch_*.py --severity-level high
+        run: bandit -r autoresearch_*.py agent_*.py research_conductor.py compiler_pipeline.py --severity-level high
       - name: Run tests with coverage
         run: |
-          pytest -v \
-            --cov=autoresearch_loop \
-            --cov=autoresearch_state \
-            --cov=autoresearch_artifacts \
-            --cov=autoresearch_planning \
-            --cov=autoresearch_research \
-            --cov=autoresearch_experiment \
-            --cov-report=term-missing
+          pytest -v --cov --cov-report=term-missing

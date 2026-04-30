@@ -239,7 +239,9 @@ def test_render_current_md_includes_best_and_latest_when_present() -> None:
     results = [
         ExperimentRecord("configs/variants/ema_a.yaml", 1.5, "keep", "", 100, {}),
     ]
-    md = render_current_md(state, results)
+    md = render_current_md(state, results, family_name="ema")
+    assert "# EMA Autoresearch Current State" in md
+    assert "# ORB Autoresearch Current State" not in md
     assert "configs/variants/ema_a.yaml" in md
     assert "1.5" in md
     assert "configs/variants/ema_b.yaml" in md
@@ -267,10 +269,10 @@ def test_render_current_md_renders_blockers() -> None:
 
 def test_write_current_md_writes_file_to_disk(tmp_path: Path) -> None:
     out = tmp_path / "current.md"
-    write_current_md(out, {"state": "running"}, [])
+    write_current_md(out, {"state": "running"}, [], family_name="ema")
     assert out.exists()
     body = out.read_text()
-    assert "Autoresearch Current State" in body
+    assert "# EMA Autoresearch Current State" in body
 
 
 # ── RunContext defaults ──────────────────────────────────────────

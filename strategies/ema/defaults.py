@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-import yaml
+from strategies.base import load_strategy_defaults
 
 _ema_defaults_cache: dict[str, Any] | None = None
 
 
 def _load_ema_defaults() -> dict[str, Any]:
-    base_path = Path(__file__).resolve().parent / "defaults.yaml"
-    raw = yaml.safe_load(base_path.read_text())
+    raw = load_strategy_defaults("ema")
     return {k: v for k, v in raw.items() if k != "family"}
 
 

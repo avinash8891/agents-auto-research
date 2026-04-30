@@ -32,6 +32,8 @@ class StrategyFamily:
     # the planner; now they derive from the registered strategy metadata.
     variant_prefix: str = ""
     default_variants: tuple[str, ...] = ()
+    thesis_family_by_slug: dict[str, str] | None = None
+    combination_rules: dict[tuple[str, str], str] | None = None
 
     @property
     def baseline_config_path(self) -> str:
@@ -52,23 +54,11 @@ class StrategyFamily:
         return _Path(config_path).stem.removeprefix(self.variant_prefix)
 
     def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
-        script = (
-            self.vps_benchmark_script
-            if IS_VPS and self.vps_benchmark_script
-            else self.benchmark_script
-        )
-        # On VPS, use venv python to ensure all deps are available
         python = "./venv/bin/python3" if IS_VPS else "python3"
-        if script.endswith(".py"):
-            if script == "vps_runner.py":
-                return f"{python} {script} --strategy {self.name} {config_path}"
-            if script.startswith("backtest"):
-                cmd = f"{python} {script} --config {config_path}"
-                if output_dir:
-                    cmd += f" --output-dir {output_dir}"
-                return cmd
-            return f"{python} {script} {config_path}"
-        return f"./{script} {config_path}"
+        cmd = f"{python} -m backtest.runner --strategy {self.name} --config {config_path}"
+        if output_dir:
+            cmd += f" --output-dir {output_dir}"
+        return cmd
 
     @property
     def research_spec(self):
@@ -105,6 +95,8 @@ def _families() -> dict[str, StrategyFamily]:
             discord_webhook=_discord_webhook_for(name),
             variant_prefix=strategy.family_dirnames.variant_prefix,
             default_variants=strategy.default_variants,
+            thesis_family_by_slug=dict(strategy.thesis_family_by_slug),
+            combination_rules=dict(strategy.combination_rules),
         )
     return families
 

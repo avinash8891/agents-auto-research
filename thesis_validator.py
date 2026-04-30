@@ -10,6 +10,7 @@ Three guardrails inspired by AlphaAgent (arxiv 2502.16789v2):
 3. Multi-variant probing — generate 3 configs per continuous param to separate
    "mechanism works" from "got lucky with value" (their multi-factor-per-hypothesis).
 """
+
 from __future__ import annotations
 
 import json
@@ -18,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 from research_types import MECHANISM_DIMENSIONS, ResearchThesis
-
 
 # Metrics the backtest engine always produces (no custom diagnostics needed)
 BUILTIN_METRICS = {
@@ -36,6 +36,7 @@ CONFIG_OVERLAP_THRESHOLD = 0.5
 
 class ThesisValidationError(ValueError):
     """Raised when a thesis fails validation."""
+
     pass
 
 
@@ -106,7 +107,11 @@ def _normalize_disqualifier(disqualifier: Any) -> Any:
             parts.append(str(threshold))
         normalized = {
             "name": _slugify("_".join(parts)),
-            "condition": " ".join(str(part) for part in (metric, condition, threshold, reason) if part not in (None, "")),
+            "condition": " ".join(
+                str(part)
+                for part in (metric, condition, threshold, reason)
+                if part not in (None, "")
+            ),
             "severity": disqualifier.get("severity", "hard_fail"),
         }
         return normalized
@@ -119,8 +124,7 @@ def _normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
     if isinstance(dimension, str):
         normalized["mechanism_dimension"] = MECHANISM_DIMENSION_ALIASES.get(dimension, dimension)
     normalized["expected_effects"] = [
-        _normalize_expected_effect(effect)
-        for effect in normalized.get("expected_effects", [])
+        _normalize_expected_effect(effect) for effect in normalized.get("expected_effects", [])
     ]
     normalized["disqualifiers"] = [
         _normalize_disqualifier(disqualifier)
@@ -132,6 +136,7 @@ def _normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Guardrail 1: Config-key overlap detection
 # ---------------------------------------------------------------------------
+
 
 def load_prior_theses(root: Path) -> list[dict[str, Any]]:
     """Load all previously proposed theses from JSONL files."""
@@ -149,12 +154,14 @@ def load_prior_theses(root: Path) -> list[dict[str, Any]]:
                 continue
             config_changes = e.get("config_changes") or {}
             if config_changes:
-                prior.append({
-                    "thesis_id": e.get("thesis_id", "unknown"),
-                    "config_changes": config_changes,
-                    "outcome": e.get("outcome", "unknown"),
-                    "mechanism_dimension": e.get("mechanism_dimension", ""),
-                })
+                prior.append(
+                    {
+                        "thesis_id": e.get("thesis_id", "unknown"),
+                        "config_changes": config_changes,
+                        "outcome": e.get("outcome", "unknown"),
+                        "mechanism_dimension": e.get("mechanism_dimension", ""),
+                    }
+                )
     return prior
 
 
@@ -193,6 +200,7 @@ def config_key_overlap(
 # Guardrail 2: Hypothesis-config alignment scoring
 # ---------------------------------------------------------------------------
 
+
 def check_hypothesis_alignment(
     hypothesis: str,
     mechanism: str,
@@ -220,17 +228,48 @@ def check_hypothesis_alignment(
     # Each pattern is a regex searched against the lowercased hypothesis+mechanism.
     # Use specific multi-word phrases to avoid false positives.
     KEY_CONCEPTS: dict[str, list[str]] = {
-        "entry_cutoff_time": [r"entry.{0,10}tim", r"cutoff", r"time window", r"entry window", r"morning", r"first.{0,5}\d+.{0,5}min", r"open.{0,10}bar"],
-        "max_trades_per_day": [r"max.{0,5}trade", r"position limit", r"portfolio", r"daily.{0,5}cap", r"trade.{0,5}capacity", r"number of trades"],
+        "entry_cutoff_time": [
+            r"entry.{0,10}tim",
+            r"cutoff",
+            r"time window",
+            r"entry window",
+            r"morning",
+            r"first.{0,5}\d+.{0,5}min",
+            r"open.{0,10}bar",
+        ],
+        "max_trades_per_day": [
+            r"max.{0,5}trade",
+            r"position limit",
+            r"portfolio",
+            r"daily.{0,5}cap",
+            r"trade.{0,5}capacity",
+            r"number of trades",
+        ],
         "rr_ratio": [r"risk.{0,3}reward", r"target.{0,5}ratio", r"r.?r.?ratio", r"profit target"],
         "trail_after_r": [r"trail", r"let.{0,10}run", r"continuation", r"runner"],
-        "max_hold_bars": [r"hold.{0,5}(duration|bar|time|period)", r"time.?stop", r"decay", r"dissipat", r"max.{0,3}hold"],
+        "max_hold_bars": [
+            r"hold.{0,5}(duration|bar|time|period)",
+            r"time.?stop",
+            r"decay",
+            r"dissipat",
+            r"max.{0,3}hold",
+        ],
         "gap_exclude": [r"gap", r"overnight.{0,10}(gap|move)"],
         "gap_exclude_pct": [r"gap", r"overnight.{0,10}(gap|move)"],
         "gap_filter": [r"gap", r"overnight"],
         "gap_pct": [r"gap"],
-        "min_stop_distance_pct": [r"stop.{0,5}(distance|loss|size)", r"noise.{0,5}(stop|exit)", r"tight.{0,5}stop", r"slippage"],
-        "max_stop_distance_pct": [r"stop.{0,5}(distance|loss|size)", r"extreme.{0,5}(move|candle)", r"wide.{0,5}stop", r"candle.{0,5}size"],
+        "min_stop_distance_pct": [
+            r"stop.{0,5}(distance|loss|size)",
+            r"noise.{0,5}(stop|exit)",
+            r"tight.{0,5}stop",
+            r"slippage",
+        ],
+        "max_stop_distance_pct": [
+            r"stop.{0,5}(distance|loss|size)",
+            r"extreme.{0,5}(move|candle)",
+            r"wide.{0,5}stop",
+            r"candle.{0,5}size",
+        ],
         "use_range_shift": [r"range.{0,5}shift", r"lookback", r"adaptive", r"context.{0,5}window"],
         "range_shift_lookback": [r"range.{0,5}shift", r"lookback", r"adaptive"],
         "timeframe_short": [r"timeframe", r"bar.{0,3}size", r"resolution", r"5.?min"],
@@ -274,6 +313,7 @@ ALIGNMENT_THRESHOLD = 0.4  # reject if less than 40% of keys align
 # Guardrail 3: Multi-variant probing
 # ---------------------------------------------------------------------------
 
+
 def generate_variants(
     config_changes: dict[str, Any],
     baseline: dict[str, Any],
@@ -284,13 +324,11 @@ def generate_variants(
     Returns list of variant config_changes dicts (always includes the original).
     """
     numeric_changes = {
-        k: v for k, v in config_changes.items()
+        k: v
+        for k, v in config_changes.items()
         if isinstance(v, (int, float)) and not isinstance(v, bool)
     }
-    non_numeric_changes = {
-        k: v for k, v in config_changes.items()
-        if k not in numeric_changes
-    }
+    non_numeric_changes = {k: v for k, v in config_changes.items() if k not in numeric_changes}
 
     # Only probe when there are 1-2 numeric changes and no complex non-numeric ones
     if not numeric_changes or len(numeric_changes) > 2 or non_numeric_changes:
@@ -334,6 +372,7 @@ def generate_variants(
 # ---------------------------------------------------------------------------
 # Core validation
 # ---------------------------------------------------------------------------
+
 
 def validate_research_thesis(
     thesis: ResearchThesis,
@@ -407,8 +446,7 @@ def validate_research_thesis(
     # --- Guardrail 1b: Dimension rotation ---
     if prior_theses and thesis.mechanism_dimension:
         same_dim = [
-            p for p in prior_theses
-            if p.get("mechanism_dimension") == thesis.mechanism_dimension
+            p for p in prior_theses if p.get("mechanism_dimension") == thesis.mechanism_dimension
         ]
         if same_dim:
             prior_ids = [p["thesis_id"] for p in same_dim]
@@ -425,7 +463,9 @@ def validate_research_thesis(
     # --- Guardrail 2: Hypothesis-config alignment ---
     if thesis.config_changes:
         score, explanation = check_hypothesis_alignment(
-            thesis.hypothesis, thesis.mechanism, thesis.config_changes,
+            thesis.hypothesis,
+            thesis.mechanism,
+            thesis.config_changes,
         )
         if score < ALIGNMENT_THRESHOLD:
             raise ThesisValidationError(

@@ -6,6 +6,7 @@ The conductor produces a ResearchThesis (why, what should happen, what disproves
 The compiler converts it to an ExperimentContract (executable config + research metadata).
 The evaluator checks the result against predictions and produces an ExperimentVerdict.
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 
 class ExpectedEffect(BaseModel):
     """A measurable prediction about what a config change should do."""
+
     metric: str
     direction: Literal[
         "increase",
@@ -30,6 +32,7 @@ class ExpectedEffect(BaseModel):
 
 class Disqualifier(BaseModel):
     """A condition that, if triggered, invalidates the thesis regardless of metric improvement."""
+
     name: str
     condition: str
     severity: Literal["hard_fail", "soft_fail"] = "hard_fail"
@@ -49,6 +52,7 @@ MECHANISM_DIMENSIONS = {
 
 class ResearchThesis(BaseModel):
     """What the conductor produces. Research-grade, not just config changes."""
+
     thesis_id: str
     strategy_family: str
 
@@ -79,6 +83,7 @@ class ExperimentContract(BaseModel):
     The runtime_config is for the backtester.
     Everything else is for the evaluator.
     """
+
     experiment_id: str  # config content hash
     thesis_id: str
     strategy_family: str
@@ -98,6 +103,7 @@ class ExperimentContract(BaseModel):
 
 class ExperimentVerdict(BaseModel):
     """Result of evaluating a backtest against the thesis predictions."""
+
     experiment_id: str
     thesis_id: str
 

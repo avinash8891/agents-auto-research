@@ -5,6 +5,7 @@ Checks:
   2. Did any disqualifier trigger?
   3. Accept / reject / inconclusive verdict.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -80,6 +81,7 @@ def evaluate_disqualifier(
 
     # Pattern: "{metric} decreases by more than {N} percent"
     import re
+
     m = re.search(
         r"(\w+)\s+(?:decreases|drops|falls)\s+by\s+more\s+than\s+(\d+(?:\.\d+)?)\s*percent",
         condition,
@@ -139,7 +141,8 @@ def evaluate_experiment(
 
     # Determine verdict
     hard_fails = [
-        dq.name for dq in thesis.disqualifiers
+        dq.name
+        for dq in thesis.disqualifiers
         if dq.severity == "hard_fail" and dq.name in triggered
     ]
 

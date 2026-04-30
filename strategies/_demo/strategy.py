@@ -22,7 +22,6 @@ class DemoCompilationResult:
 
 class DemoStrategy(BaseStrategy):
     name = "_demo"
-    extra_result_fields: tuple[str, ...] = ()
     description_for_research = DESCRIPTION_FOR_RESEARCH
     research_spec = DEMO_RESEARCH_SPEC
 

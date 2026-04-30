@@ -20,7 +20,6 @@ class ORBStrategy(BaseStrategy):
     name = "orb"
     benchmark_script = "backtest_orb_v2.py"
     vps_benchmark_script = "backtest_orb_v2.py"
-    extra_result_fields = ("regime_expectancy",)
     description_for_research = DESCRIPTION_FOR_RESEARCH
     research_spec = ORB_RESEARCH_SPEC
     default_variants = (
@@ -29,6 +28,36 @@ class ORBStrategy(BaseStrategy):
         "configs/variants/orb_trailing_stop.yaml",
         "configs/variants/orb_trend_filter.yaml",
     )
+    thesis_family_by_slug = {
+        "spy_only": "universe",
+        "stocks_in_play": "universe",
+        "stocks_in_play_universe": "universe",
+        "relative_volume_stocks_in_play": "universe",
+        "top_10_dollar_volume_stocks_in_play": "universe",
+        "high_relative_volume_filter": "entry",
+        "trend_alignment_filter": "entry",
+        "follow_through": "entry",
+        "trailing_stop": "exit",
+        "time_stop": "exit",
+        "failed_breakout_exit": "exit",
+        "volatility_trail": "exit",
+        "trend_filter": "regime",
+        "skip_chop": "regime",
+        "skip_low_vol": "regime",
+        "trend_day_only": "regime",
+    }
+    combination_rules = {
+        ("universe", "exit"): "allowed",
+        ("universe", "entry"): "allowed",
+        ("universe", "regime"): "allowed",
+        ("entry", "exit"): "allowed",
+        ("entry", "regime"): "allowed",
+        ("exit", "regime"): "allowed",
+        ("universe", "universe"): "disallowed",
+        ("entry", "entry"): "disallowed",
+        ("exit", "exit"): "review_required",
+        ("regime", "regime"): "review_required",
+    }
 
     @property
     def family_dirnames(self) -> FamilyDirnames:
