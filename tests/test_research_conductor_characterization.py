@@ -62,9 +62,7 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
             self.content = [SimpleNamespace(text=text)]
 
     class ResultMessage:
-        def __init__(
-            self, usage=None, model_usage=None, result=None, total_cost_usd=None
-        ):
+        def __init__(self, usage=None, model_usage=None, result=None, total_cost_usd=None):
             self.usage = usage
             self.model_usage = model_usage
             self.result = result
@@ -171,12 +169,8 @@ def test_accumulate_usage_tracks_tokens_across_agents():
         {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13},
         cost_usd=0.11,
     )
-    usage._accumulate_usage(
-        "web_researcher", {"input": 7, "output": 2, "total": 9}, cost_usd=0.05
-    )
-    usage._accumulate_usage(
-        "conductor", {"input_tokens": 5, "output_tokens": 4, "total_tokens": 9}
-    )
+    usage._accumulate_usage("web_researcher", {"input": 7, "output": 2, "total": 9}, cost_usd=0.05)
+    usage._accumulate_usage("conductor", {"input_tokens": 5, "output_tokens": 4, "total_tokens": 9})
 
     round_usage = usage.get_round_usage()
 
@@ -215,9 +209,7 @@ def test_save_research_finding_rejects_bad_type(monkeypatch):
         root=infra._ROOT,
         list_past_theses_for_root=memory.list_past_theses,
     )
-    tool = next(
-        tool for tool in mcp._tool_manager.list_tools() if tool.name == "save_finding"
-    )
+    tool = next(tool for tool in mcp._tool_manager.list_tools() if tool.name == "save_finding")
 
     result = asyncio.run(
         tool.fn(
@@ -272,11 +264,7 @@ def test_list_past_theses_parses_autoresearch_jsonl(monkeypatch, tmp_path):
         root=tmp_path,
         list_past_theses_for_root=memory.list_past_theses,
     )
-    tool = next(
-        tool
-        for tool in mcp._tool_manager.list_tools()
-        if tool.name == "list_past_theses"
-    )
+    tool = next(tool for tool in mcp._tool_manager.list_tools() if tool.name == "list_past_theses")
 
     payload = asyncio.run(tool.fn())
     parsed = json.loads(payload)

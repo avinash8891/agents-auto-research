@@ -4,7 +4,6 @@ after a crash between write_entries and experiment_db.add."""
 import json
 from pathlib import Path
 
-
 from autoresearch_loop import AutoresearchController
 from strategy_family import load_family
 
