@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 
 from family_research import get_family_research_spec
+from strategies import STRATEGIES
 
 # When running on VPS, set AUTORESEARCH_VPS=1 to use direct backtest instead of vps_runner
 IS_VPS = os.environ.get("AUTORESEARCH_VPS", "") == "1"
@@ -58,8 +60,9 @@ class StrategyFamily:
         # On VPS, use venv python to ensure all deps are available
         python = "./venv/bin/python3" if IS_VPS else "python3"
         if script.endswith(".py"):
-            # vps_runner.py uses positional arg; backtest_5ema.py uses --config
-            if "backtest" in script:
+            if script == "vps_runner.py":
+                return f"{python} {script} {config_path}"
+            if script.startswith("backtest"):
                 cmd = f"{python} {script} --config {config_path}"
                 if output_dir:
                     cmd += f" --output-dir {output_dir}"
@@ -82,49 +85,55 @@ def _discord_webhook_for(family_name: str) -> str:
     return os.environ.get(f"AUTORESEARCH_DISCORD_WEBHOOK_{family_name.upper()}", "")
 
 
-FAMILIES: dict[str, StrategyFamily] = {
-    "orb": StrategyFamily(
-        name="orb",
-        benchmark_script="backtest_orb_v2.py",
-        vps_benchmark_script="backtest_orb_v2.py",
-        proposals_dirname="orb-proposals",
-        compilations_dirname="orb-compilations",
-        contracts_dirname="orb-contracts",
-        run_queue_dirname="orb-run-queue",
-        research_dirname="orb-research-artifacts",
-        builder_requests_dirname="orb-builder-requests",
-        base_config_filename="orb_base.yaml",
-        runs_dirname="orb_autoresearch-runs",
-        discord_webhook=_discord_webhook_for("orb"),
-        variant_prefix="orb_",
-        default_variants=(
-            "configs/variants/orb_spy_only.yaml",
-            "configs/variants/orb_stocks_in_play.yaml",
-            "configs/variants/orb_trailing_stop.yaml",
-            "configs/variants/orb_trend_filter.yaml",
-        ),
-    ),
-    "ema": StrategyFamily(
-        name="ema",
-        benchmark_script="backtest_5ema.py",
-        vps_benchmark_script="backtest_5ema.py",
-        proposals_dirname="ema-proposals",
-        compilations_dirname="ema-compilations",
-        contracts_dirname="ema-contracts",
-        run_queue_dirname="ema-run-queue",
-        research_dirname="ema-research",
-        builder_requests_dirname="ema-builder-requests",
-        base_config_filename="ema_base.yaml",
-        runs_dirname="ema_autoresearch-runs",
-        discord_webhook=_discord_webhook_for("ema"),
-        variant_prefix="ema_",
-        default_variants=(),  # No seed list yet for EMA family.
-    ),
-}
+@lru_cache(maxsize=1)
+def _families() -> dict[str, StrategyFamily]:
+    families = {
+        "orb": StrategyFamily(
+            name="orb",
+            benchmark_script="backtest_orb_v2.py",
+            vps_benchmark_script="backtest_orb_v2.py",
+            proposals_dirname="orb-proposals",
+            compilations_dirname="orb-compilations",
+            contracts_dirname="orb-contracts",
+            run_queue_dirname="orb-run-queue",
+            research_dirname="orb-research-artifacts",
+            builder_requests_dirname="orb-builder-requests",
+            base_config_filename="orb_base.yaml",
+            runs_dirname="orb_autoresearch-runs",
+            discord_webhook=_discord_webhook_for("orb"),
+            variant_prefix="orb_",
+            default_variants=(
+                "configs/variants/orb_spy_only.yaml",
+                "configs/variants/orb_stocks_in_play.yaml",
+                "configs/variants/orb_trailing_stop.yaml",
+                "configs/variants/orb_trend_filter.yaml",
+            ),
+        )
+    }
+    for name, strategy in STRATEGIES.items():
+        if name == "orb":
+            continue
+        families[name] = StrategyFamily(
+            name=name,
+            benchmark_script=f"backtest_{'5ema' if name == 'ema' else name}.py",
+            vps_benchmark_script="vps_runner.py" if name == "ema" else f"backtest_{name}.py",
+            proposals_dirname=strategy.family_dirnames.proposals,
+            compilations_dirname=strategy.family_dirnames.compilations,
+            contracts_dirname=strategy.family_dirnames.contracts,
+            run_queue_dirname=strategy.family_dirnames.run_queue,
+            research_dirname=strategy.family_dirnames.research,
+            builder_requests_dirname=strategy.family_dirnames.builder_requests,
+            base_config_filename=strategy.family_dirnames.base_config_filename,
+            runs_dirname=strategy.family_dirnames.runs,
+            discord_webhook=_discord_webhook_for(name),
+            variant_prefix=strategy.family_dirnames.variant_prefix,
+            default_variants=(),
+        )
+    return families
 
 
 def load_family(name: str = "orb") -> StrategyFamily:
     try:
-        return FAMILIES[name]
+        return _families()[name]
     except KeyError as exc:
         raise ValueError(f"Unknown strategy family: {name}") from exc

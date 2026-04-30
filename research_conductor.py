@@ -8,10 +8,11 @@ from research_infra import _ROOT, _ensure_oauth_proxy, _parse_json
 from research_memory import _palace_search, _palace_status
 from research_memory import list_past_theses as list_past_theses_for_root
 from research_memory import save_research_finding
-from research_prompts import STRATEGY_DESCRIPTIONS, _build_conductor_system_prompt
+from research_prompts import _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
 from research_tools_mcp import _build_research_tools_mcp
 from research_usage import _accumulate_usage, get_round_usage, reset_round_usage
+from strategies import STRATEGIES
 from trace_logger import trace, trace_agent_prompt, trace_agent_response
 
 __all__ = [
@@ -39,8 +40,11 @@ async def run_research_conductor(
         query,
     )
 
-    strategy_desc = STRATEGY_DESCRIPTIONS.get(
-        family_name, f"Strategy family: {family_name}"
+    strategy_desc = STRATEGIES.get(family_name, None)
+    strategy_desc = (
+        strategy_desc.description_for_research
+        if strategy_desc is not None
+        else f"Strategy family: {family_name}"
     )
 
     # Build in-process MCP server with research tools
@@ -70,9 +74,7 @@ async def run_research_conductor(
     system_prompt = _build_conductor_system_prompt(strategy_desc)
 
     # Build user prompt with experiment results table
-    outcome_lines = (
-        json.dumps(latest_outcome, indent=2) if latest_outcome else "(no results yet)"
-    )
+    outcome_lines = json.dumps(latest_outcome, indent=2) if latest_outcome else "(no results yet)"
 
     if trades_file:
         evidence_lines = f"Trades file for analysis: {trades_file}"
@@ -144,11 +146,7 @@ async def run_research_conductor(
                         got_assistant_text = True
                         result_text += block.text
             elif isinstance(message, ResultMessage):
-                if (
-                    not got_assistant_text
-                    and hasattr(message, "result")
-                    and message.result
-                ):
+                if not got_assistant_text and hasattr(message, "result") and message.result:
                     result_text = str(message.result)
                 # Capture conductor token usage
                 if message.usage:
@@ -156,9 +154,7 @@ async def run_research_conductor(
                         "CONDUCTOR",
                         f"USAGE conductor raw_keys={list(message.usage.keys())} usage={message.usage}",
                     )
-                    _accumulate_usage(
-                        "conductor", message.usage, message.total_cost_usd
-                    )
+                    _accumulate_usage("conductor", message.usage, message.total_cost_usd)
                 if message.model_usage:
                     trace(
                         "CONDUCTOR",
@@ -193,9 +189,7 @@ async def run_research_conductor(
             return parsed
         if theses and isinstance(theses[0], dict):
             t = theses[0]
-            if t.get("thesis_id") and (
-                t.get("config_changes") or t.get("requires_code_change")
-            ):
+            if t.get("thesis_id") and (t.get("config_changes") or t.get("requires_code_change")):
                 trace("CONDUCTOR", f"OK thesis={t['thesis_id']}")
                 return parsed
         trace("CONDUCTOR", f"validate failed: {result_text[:200]}")

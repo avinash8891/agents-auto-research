@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +86,7 @@ from autoresearch_state import render_current_md as _state_render_current_md
 from autoresearch_state import write_current_md as _state_write_current_md
 from autoresearch_state import write_entries as _state_write_entries
 from autoresearch_state import write_state as _state_write_state
+from config_hash import _git_sha
 from experiment_db import BaselineTracker, ExperimentDB
 from strategy_family import StrategyFamily, load_family
 from trace_logger import trace
@@ -207,15 +207,7 @@ class AutoresearchController:
         _state_write_entries(self.jsonl_path, entries)
 
     def current_commit(self) -> str:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        commit = (result.stdout or "").strip()
-        return commit or "unknown"
+        return _git_sha()
 
     def direction(self) -> str:
         return _state_direction(self.read_entries())

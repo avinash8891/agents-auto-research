@@ -1,0 +1,4 @@
+family: _demo
+validation_start: "2024-01-01"
+validation_end: "2024-01-02"
+allow_unbounded_research_backtest: false
