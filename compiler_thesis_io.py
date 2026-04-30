@@ -131,7 +131,9 @@ def compile_proposal_artifact(
     validation_tmp_dir = root / ".tmp-contract-validation"
     validation_tmp_path = validation_tmp_dir / f"{thesis_id}.json"
     try:
-        write_text_atomic(validation_tmp_path, json.dumps(result.normalized_contract, indent=2) + "\n")
+        write_text_atomic(
+            validation_tmp_path, json.dumps(result.normalized_contract, indent=2) + "\n"
+        )
         load_runtime_config(str(validation_tmp_path), strategy_name=family_name)
     except Exception as exc:
         validation_tmp_path.unlink(missing_ok=True)

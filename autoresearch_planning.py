@@ -357,8 +357,10 @@ def _try_combine_pair(
     )
     try:
         load_runtime_config(str(root / final_combo_config), strategy_name=family.name)
-        if isinstance(merged, dict) and "use_time_stop" in merged and not isinstance(
-            merged["use_time_stop"], bool
+        if (
+            isinstance(merged, dict)
+            and "use_time_stop" in merged
+            and not isinstance(merged["use_time_stop"], bool)
         ):
             raise ValueError("use_time_stop must be boolean")
     except (OSError, ValueError, TypeError):

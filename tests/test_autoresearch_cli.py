@@ -17,7 +17,10 @@ def test_cli_add_result_persists_iso8601_timestamp(monkeypatch, tmp_path) -> Non
     monkeypatch.setattr(
         autoresearch_cli,
         "read_session",
-        lambda path: ({"bestDirection": "lower", "_segment": 0, "metricName": "median_expectancy"}, []),
+        lambda path: (
+            {"bestDirection": "lower", "_segment": 0, "metricName": "median_expectancy"},
+            [],
+        ),
     )
     monkeypatch.setattr(autoresearch_cli, "compute_confidence", lambda *args, **kwargs: None)
     monkeypatch.setattr(autoresearch_cli, "find_baseline", lambda *args, **kwargs: None)

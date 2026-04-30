@@ -198,7 +198,9 @@ def test_thesis_family_for_falls_back_to_proposal_artifact(tmp_path: Path, orb_f
     )
 
 
-def test_generate_theses_from_ideas_compiles_family_keyed_proposal(tmp_path: Path, orb_family) -> None:
+def test_generate_theses_from_ideas_compiles_family_keyed_proposal(
+    tmp_path: Path, orb_family
+) -> None:
     ideas_path = tmp_path / "autoresearch.ideas.md"
     ideas_path.write_text("### Entry theses\n- `novel_thesis`\n")
     variants = tmp_path / "configs" / "variants"
@@ -341,12 +343,18 @@ def test_generate_combination_candidates_leaves_no_tmp_or_partial_yaml_on_failed
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
     (variants / "orb_spy_only.json").write_text('[{"type":"universe_symbols","symbols":["SPY"]}]\n')
-    (variants / "orb_trend_filter.json").write_text('[{"type":"regime_filter","require_regimes":["trend_day"]}]\n')
+    (variants / "orb_trend_filter.json").write_text(
+        '[{"type":"regime_filter","require_regimes":["trend_day"]}]\n'
+    )
     proposals_dir = tmp_path / "orb-proposals"
 
     (proposals_dir / "spy_only.json").parent.mkdir(parents=True, exist_ok=True)
-    (proposals_dir / "spy_only.json").write_text(json.dumps({"thesis_id": "spy_only", "family": "universe"}))
-    (proposals_dir / "trend_filter.json").write_text(json.dumps({"thesis_id": "trend_filter", "family": "regime"}))
+    (proposals_dir / "spy_only.json").write_text(
+        json.dumps({"thesis_id": "spy_only", "family": "universe"})
+    )
+    (proposals_dir / "trend_filter.json").write_text(
+        json.dumps({"thesis_id": "trend_filter", "family": "regime"})
+    )
 
     results = [
         ExperimentRecord("configs/variants/orb_spy_only.json", 1.0, "keep", "", 1, {}),

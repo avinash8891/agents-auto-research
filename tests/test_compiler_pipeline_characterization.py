@@ -32,7 +32,9 @@ def test_compile_config_thesis_uses_registered_strategy_defaults(tmp_path: Path)
     assert result["config_path"].startswith("ema-contracts/")
 
 
-def test_compile_config_thesis_does_not_publish_scope_invalid_runtime_config(tmp_path: Path) -> None:
+def test_compile_config_thesis_does_not_publish_scope_invalid_runtime_config(
+    tmp_path: Path,
+) -> None:
     original_validate_scope = STRATEGIES["orb"].validate_runtime_config_scope
     STRATEGIES["orb"].validate_runtime_config_scope = lambda config, source_path=None: (_ for _ in ()).throw(  # type: ignore[assignment]
         ValueError("scope invalid")
@@ -133,7 +135,9 @@ def test_compile_proposal_artifact_writes_atomic_json_artifacts(tmp_path: Path) 
     assert not list(tmp_path.rglob("*.tmp"))
 
 
-def test_compile_proposal_artifact_rejects_unloadable_ready_contract(tmp_path: Path, monkeypatch) -> None:
+def test_compile_proposal_artifact_rejects_unloadable_ready_contract(
+    tmp_path: Path, monkeypatch
+) -> None:
     proposal = {
         "thesis_id": "ema_contract_ready",
         "strategy_family": "ema",
@@ -165,7 +169,9 @@ def test_compile_proposal_artifact_rejects_unloadable_ready_contract(tmp_path: P
     assert not (tmp_path / "ema-run-queue" / "ema_contract_ready.json").exists()
 
 
-def test_compile_proposal_artifact_does_not_publish_compilation_before_queue(tmp_path: Path, monkeypatch) -> None:
+def test_compile_proposal_artifact_does_not_publish_compilation_before_queue(
+    tmp_path: Path, monkeypatch
+) -> None:
     proposal = {
         "thesis_id": "ema_contract_ready",
         "strategy_family": "ema",
@@ -230,7 +236,9 @@ def test_compile_proposal_artifact_persists_iso8601_timestamps(tmp_path: Path) -
     assert isinstance(queue_payload["timestamp"], str)
     assert queue_payload["timestamp"].endswith("+00:00") or queue_payload["timestamp"].endswith("Z")
     assert isinstance(compilation_payload["timestamp"], str)
-    assert compilation_payload["timestamp"].endswith("+00:00") or compilation_payload["timestamp"].endswith("Z")
+    assert compilation_payload["timestamp"].endswith("+00:00") or compilation_payload[
+        "timestamp"
+    ].endswith("Z")
 
 
 def test_orb_strategy_compile_contract_matches_legacy_compiler() -> None:
@@ -286,12 +294,14 @@ def test_operationalize_thesis_preserves_ambiguous_intent_even_with_config_chang
     operationalized = operationalize_thesis(dict(thesis))
 
     assert thesis_needs_operationalization(thesis) is True
-    assert operationalized["primitive_contract"] != STRATEGIES["orb"].map_config_changes_to_contract(
-        {"or_minutes": 5}
-    )
+    assert operationalized["primitive_contract"] != STRATEGIES[
+        "orb"
+    ].map_config_changes_to_contract({"or_minutes": 5})
 
 
-def test_finalize_thesis_config_changes_carries_resolved_changes_into_proposal_contract(tmp_path: Path) -> None:
+def test_finalize_thesis_config_changes_carries_resolved_changes_into_proposal_contract(
+    tmp_path: Path,
+) -> None:
     thesis = {
         "thesis_id": "resolved-changes",
         "strategy_family": "orb",
@@ -448,10 +458,17 @@ def test_build_missing_primitives_rejects_invalid_generated_config(
     proposal_dir.mkdir(parents=True)
     compilation_dir.mkdir(parents=True)
     (proposal_dir / f"{thesis_id}.json").write_text(
-        json.dumps({"thesis_id": thesis_id, "strategy_family": "ema", "hypothesis": "bad build"}) + "\n"
+        json.dumps({"thesis_id": thesis_id, "strategy_family": "ema", "hypothesis": "bad build"})
+        + "\n"
     )
     (compilation_dir / f"{thesis_id}.json").write_text(
-        json.dumps({"normalized_contract": [{"type": "missing_probe"}], "missing_primitives": ["missing_probe"]}) + "\n"
+        json.dumps(
+            {
+                "normalized_contract": [{"type": "missing_probe"}],
+                "missing_primitives": ["missing_probe"],
+            }
+        )
+        + "\n"
     )
 
     bin_dir = tmp_path / "bin"

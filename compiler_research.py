@@ -13,6 +13,7 @@ from strategy_family import load_family
 if TYPE_CHECKING:
     from research_types import ResearchThesis
 
+
 def _needs_code_contract(
     thesis: "ResearchThesis",
     root: Path,
@@ -37,9 +38,7 @@ def _needs_code_contract(
         required_diagnostics=thesis.required_diagnostics,
         status=status,
     )
-    write_text_atomic(
-        experiment_dir / "contract.json", contract.model_dump_json(indent=2) + "\n"
-    )
+    write_text_atomic(experiment_dir / "contract.json", contract.model_dump_json(indent=2) + "\n")
     return contract
 
 
@@ -70,9 +69,7 @@ def _compile_runtime_config_contract(
         required_diagnostics=thesis.required_diagnostics,
         status="ready_to_run",
     )
-    write_text_atomic(
-        experiment_dir / "contract.json", contract.model_dump_json(indent=2) + "\n"
-    )
+    write_text_atomic(experiment_dir / "contract.json", contract.model_dump_json(indent=2) + "\n")
     return contract
 
 
