@@ -21,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
 import autoresearch_loop as loop_mod
 import autoresearch_research as research_mod
 from autoresearch_loop import AutoresearchController
+from experiment_db import BaselineTracker, ExperimentDB
 from strategy_family import load_family
 
 BASELINE_CONFIG = "configs/ema_base.yaml"
@@ -131,6 +132,18 @@ def _patch_run_command_success(controller, monkeypatch, tmp_path) -> dict[str, A
     return captured
 
 
+def _symlink_runtime_repo(source_root: Path, runtime_root: Path) -> None:
+    for path in source_root.iterdir():
+        if path.name in {".git", ".pytest_cache", "__pycache__", "tests"}:
+            continue
+        if path.name.startswith(".") and path.name not in {".coveragerc"}:
+            continue
+        target = runtime_root / path.name
+        if target.exists():
+            continue
+        target.symlink_to(path, target_is_directory=path.is_dir())
+
+
 # ────────────────────────────────────────────────────────────────────
 # 1. No results -> baseline runs
 # ────────────────────────────────────────────────────────────────────
@@ -148,6 +161,73 @@ def test_execute_once_runs_baseline_when_no_results(controller, monkeypatch, tmp
     ]
     assert len(metric_entries) == 1
     assert metric_entries[0]["asi"]["config"] == BASELINE_CONFIG
+
+
+@pytest.mark.integration
+def test_execute_once_runs_real_backtest_for_forced_tiny_ema_fixture(tmp_path):
+    runtime_root = tmp_path / "runtime-root"
+    runtime_root.mkdir()
+    _symlink_runtime_repo(REPO_ROOT, runtime_root)
+    family = load_family("ema")
+    state_path = runtime_root / "ema_autoresearch.next.json"
+    jsonl_path = runtime_root / "ema_autoresearch.jsonl"
+    current_md_path = runtime_root / "ema_autoresearch.current.md"
+    ideas_md_path = runtime_root / "ema_autoresearch.ideas.md"
+    runs_dir = runtime_root / family.runs_dirname
+    controller = AutoresearchController(
+        root=runtime_root,
+        state_path=state_path,
+        jsonl_path=jsonl_path,
+        current_md_path=current_md_path,
+        ideas_md_path=ideas_md_path,
+        runs_dir=runs_dir,
+        family=family,
+    )
+    controller.experiment_db = ExperimentDB(runtime_root / "ema_experiments_db.json")
+    controller.baseline_tracker = BaselineTracker(runtime_root / "ema_baseline_checkpoints.json")
+    controller.write_entries(
+        [
+            {
+                "type": "config",
+                "name": "ema",
+                "metricName": "median_expectancy",
+                "metricUnit": "",
+                "bestDirection": "higher",
+            }
+        ]
+    )
+    config_path = REPO_ROOT / "tests" / "fixtures" / "tiny_ema_runtime.json"
+    controller.write_state(
+        {
+            "state": "running",
+            "job": 1,
+            "research_round": 0,
+            "next_action": {
+                "type": "run_experiment",
+                "config": str(config_path),
+                "requires_trade_analysis": True,
+                "source": "integration_fixture",
+                "baseline_rerun_for_commit": "fixture-forced-action",
+            },
+            "blockers": [],
+        }
+    )
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    entries = controller.read_entries()
+    metric_entries = [
+        e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
+    ]
+    assert len(metric_entries) == 1
+    entry = metric_entries[0]
+    assert entry["asi"]["config"] == str(config_path)
+    assert entry["metrics"]["trade_count"] == 0
+    artifact_dir = runtime_root / entry["asi"]["artifact_dir"]
+    assert (artifact_dir / "result.json").exists()
+    assert (artifact_dir / "benchmark_output.txt").read_text().startswith("RESULT_JSON ")
+    assert controller.experiment_db.all()[0].family == "ema"
 
 
 # ────────────────────────────────────────────────────────────────────

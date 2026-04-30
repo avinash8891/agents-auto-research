@@ -43,3 +43,11 @@ def real_ideas_backlog_path(fixtures_dir: Path) -> Path:
 def repo_root() -> Path:
     """The project root, useful for tests that load real configs."""
     return REPO_ROOT
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Keep integration tests honest: no pytest monkeypatch fixture there."""
+    if item.get_closest_marker("integration") and "monkeypatch" in getattr(
+        item, "fixturenames", ()
+    ):
+        raise RuntimeError("integration tests must not use the monkeypatch fixture")

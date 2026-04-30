@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -8,42 +9,14 @@ import pytest
 from compiler_pipeline import (
     build_missing_primitives,
     compile_config_thesis,
+    compile_proposal_artifact,
     compile_research_thesis,
     thesis_needs_operationalization,
     validate_orb_runtime_config,
 )
 from research_types import ResearchThesis
 from strategies.ema.validate import validate_ema_runtime_config
-
-
-class _DummyCompletedProcess:
-    def __init__(self, stdout: str = "", stderr: str = "") -> None:
-        self.stdout = stdout
-        self.stderr = stderr
-
-
-def test_compiler_pipeline_public_facade_imports() -> None:
-    expected = [
-        "compile_research_thesis",
-        "compile_proposal_artifact",
-        "compile_config_thesis",
-        "create_executable_artifact",
-        "derive_thesis_artifacts",
-        "write_research_artifact",
-        "mark_request_completed",
-        "_get_orb_defaults",
-        "validate_orb_runtime_config",
-        "thesis_needs_operationalization",
-        "operationalize_thesis",
-        "build_missing_primitives",
-    ]
-
-    import compiler_pipeline
-
-    for name in expected:
-        value = getattr(compiler_pipeline, name)
-        assert value
-        assert callable(value) or value is not None
+from strategy_family import load_family
 
 
 def test_compile_config_thesis_uses_registered_strategy_defaults(tmp_path: Path) -> None:
@@ -79,6 +52,29 @@ def test_compile_research_thesis_writes_three_files_for_ready_to_run(tmp_path: P
     assert (experiment_dir / "thesis.json").exists()
     assert (experiment_dir / "contract.json").exists()
     assert (experiment_dir / "runtime_config.json").exists()
+
+
+def test_compile_proposal_artifact_writes_family_queue_and_contract(tmp_path: Path) -> None:
+    proposal = {
+        "thesis_id": "ema_contract_ready",
+        "strategy_family": "ema",
+        "primitive_contract": [
+            {"type": "ema_length", "value": 5},
+            {"type": "timeframe_long", "minutes": 15},
+            {"type": "timeframe_short", "minutes": 5},
+            {"type": "risk_reward", "rr_ratio": 3.0},
+        ],
+    }
+
+    result = compile_proposal_artifact(proposal, tmp_path)
+
+    assert result["status"] == "ready_to_run"
+    contract_path = tmp_path / "ema-contracts" / "ema_contract_ready.json"
+    queue_path = tmp_path / "ema-run-queue" / "ema_contract_ready.json"
+    assert json.loads(contract_path.read_text()) == result["normalized_contract"]
+    queue = json.loads(queue_path.read_text())
+    assert queue["status"] == "pending"
+    assert queue["config"] == "ema-contracts/ema_contract_ready.json"
 
 
 def test_compile_research_thesis_status_needs_code_when_invalid_keys(tmp_path: Path) -> None:
@@ -139,3 +135,63 @@ def test_build_missing_primitives_returns_error_when_no_cli(
         "generated_config": None,
         "validation_passed": False,
     }
+
+
+@pytest.mark.parametrize("family_name,thesis_id", [("ema", "ema_missing"), ("orb", "orb_missing")])
+def test_build_missing_primitives_dispatches_family_request_to_cli_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, family_name: str, thesis_id: str
+) -> None:
+    family = load_family(family_name)
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                "strategy_family": family_name,
+                "hypothesis": "missing primitive should be delegated",
+            }
+        )
+        + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps(
+            {
+                "normalized_contract": [{"type": "missing_probe"}],
+                "missing_primitives": ["missing_probe"],
+            }
+        )
+        + "\n"
+    )
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    claude = bin_dir / "claude"
+    claude.write_text("""#!/usr/bin/env python3
+import pathlib
+import re
+import sys
+
+prompt = sys.argv[-1]
+root = pathlib.Path(re.search(r"- Repo root: (.+)", prompt).group(1))
+config = re.search(r"- Expected config path: (.+)", prompt).group(1)
+target = root / config
+target.parent.mkdir(parents=True, exist_ok=True)
+target.write_text("builder_probe: true\\n")
+print(f"generated {config}")
+""")
+    claude.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "completed"
+    assert result["generated_config"] == f"configs/variants/{thesis_id}.yaml"
+    assert (tmp_path / result["generated_config"]).read_text() == "builder_probe: true\n"
+    request = json.loads(
+        (tmp_path / family.builder_requests_dirname / f"{thesis_id}.json").read_text()
+    )
+    assert request["family"] == family_name
+    assert request["missing_primitives"] == ["missing_probe"]
