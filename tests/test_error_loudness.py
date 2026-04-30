@@ -10,7 +10,7 @@ import pytest
 from agent_infra import _parse_json as parse_agent_json
 from autoresearch_research import load_baseline_config
 from experiment_db import BaselineCheckpoint, BaselineTracker
-from metrics import compute_diagnostics
+from metrics import compute_diagnostics, compute_metrics
 from research_paths import _parse_json as parse_research_json
 from strategy_event_logger import StrategyEventLogger
 from thesis_validator import load_prior_theses
@@ -112,6 +112,38 @@ def test_compute_diagnostics_reports_unbucketable_stop_distance(
 
     assert diag["pf_by_stop_distance_quintile"]["status"] == "unavailable"
     assert "STOP_DISTANCE_QUINTILE_UNAVAILABLE" in caplog.text
+
+
+def test_compute_diagnostics_all_wins_symbol_bucket_uses_explicit_pf_sentinel() -> None:
+    trades = pd.DataFrame(
+        {
+            "pnl_pct": [1.0, 0.5, 0.25, 0.75, 0.1],
+            "symbol": ["SPY"] * 5,
+        }
+    )
+
+    diag = compute_diagnostics(trades)
+
+    assert diag["pf_by_symbol_best10"][0]["pf"] == 0.0
+
+
+def test_compute_metrics_zero_trades_returns_sentinel_values() -> None:
+    trades = pd.DataFrame({"pnl_pct": []})
+
+    metrics = compute_metrics(trades)
+
+    assert metrics["trade_count"] == 0
+    assert metrics["median_expectancy"] == 0.0
+    assert metrics["pct_profitable_windows"] == 0.0
+    assert metrics["profit_factor"] == 0.0
+
+
+def test_compute_metrics_all_wins_uses_explicit_profit_factor_sentinel() -> None:
+    trades = pd.DataFrame({"pnl_pct": [1.0, 0.5, 2.0]})
+
+    metrics = compute_metrics(trades)
+
+    assert metrics["profit_factor"] == 0.0
 
 
 def test_strategy_event_logger_logs_invalid_timestamp(

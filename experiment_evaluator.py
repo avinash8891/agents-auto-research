@@ -22,14 +22,13 @@ def evaluate_effect(
     effect: ExpectedEffect,
     baseline: dict[str, Any],
     candidate: dict[str, Any],
-) -> bool:
+) -> bool | None:
     """Check if a single expected effect holds."""
     b = baseline.get(effect.metric)
     c = candidate.get(effect.metric)
 
     if b is None or c is None:
-        # Metric not available u2014 can't evaluate, treat as failed
-        return False
+        return None
 
     b = float(b)
     c = float(c)
@@ -130,7 +129,8 @@ def evaluate_experiment(
     triggered: list[str] = []
 
     for effect in thesis.expected_effects:
-        if evaluate_effect(effect, baseline_metrics, candidate_metrics):
+        effect_result = evaluate_effect(effect, baseline_metrics, candidate_metrics)
+        if effect_result is True:
             passed.append(effect.metric)
         else:
             failed.append(effect.metric)

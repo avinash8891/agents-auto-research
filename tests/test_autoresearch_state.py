@@ -256,6 +256,14 @@ def test_coerce_timestamp_to_iso8601_passes_string_through() -> None:
     assert coerce_timestamp_to_iso8601_utc(iso) == iso
 
 
+def test_coerce_timestamp_to_iso8601_rejects_naive_string() -> None:
+    assert coerce_timestamp_to_iso8601_utc("2026-04-29T12:00:00") is None
+
+
+def test_coerce_timestamp_to_iso8601_rejects_non_timestamp_string() -> None:
+    assert coerce_timestamp_to_iso8601_utc("unknown") is None
+
+
 def test_coerce_timestamp_to_iso8601_converts_epoch_ms() -> None:
     # 2024-01-01 00:00:00 UTC == 1704067200000 ms.
     iso = coerce_timestamp_to_iso8601_utc(1704067200000)

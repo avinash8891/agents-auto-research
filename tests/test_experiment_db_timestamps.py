@@ -11,9 +11,11 @@ import json
 import sqlite3
 from pathlib import Path
 
+from config_hash import _config_hash
 from experiment_db import (
     BaselineCheckpoint,
     BaselineTracker,
+    build_config_hash,
     ExperimentDB,
     ExperimentResult,
 )
@@ -66,6 +68,63 @@ def test_disk_payload_is_iso_string(tmp_path: Path) -> None:
         ).fetchone()
     assert isinstance(row[0], str)
     assert row[0].endswith("+00:00")
+
+
+def test_malformed_string_timestamp_does_not_crash_db_load(tmp_path: Path) -> None:
+    db_path = tmp_path / "experiments.db"
+    ExperimentDB(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM experiments")
+        conn.execute(
+            """
+            INSERT INTO experiments (
+                experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+                data_hash, train_metrics_json, validation_metrics_json, trade_count,
+                trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_experiment_id,
+                timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "bad-string-ts",
+                "t",
+                "configs/ema_base.yaml",
+                "{}",
+                "abc1234",
+                "d",
+                "{}",
+                "{}",
+                0,
+                "",
+                "",
+                "",
+                "{}",
+                0,
+                "",
+                "none",
+                "",
+                "",
+                "unknown",
+                "ema",
+                "",
+                "",
+                0,
+                "{}",
+                "{}",
+                "",
+            ),
+        )
+        conn.commit()
+
+    out = ExperimentDB(db_path).all()
+    assert len(out) == 1
+    assert out[0].timestamp == ""
+
+
+def test_build_config_hash_matches_result_schema_hash_policy() -> None:
+    config = {"b": 1, "a": 2}
+
+    assert build_config_hash(config) == _config_hash(config)
 
 
 # ── Back-compat path: legacy int timestamps still load ──────────
@@ -243,3 +302,19 @@ def test_baseline_checkpoint_disk_payload_is_iso_string(tmp_path: Path) -> None:
     raw = json.loads(path.read_text())
     assert isinstance(raw[0]["timestamp"], str)
     assert raw[0]["timestamp"].endswith("+00:00")
+
+
+def test_baseline_checkpoint_record_leaves_no_tmp_artifacts(tmp_path: Path) -> None:
+    path = tmp_path / "baseline.json"
+    tracker = BaselineTracker(path)
+    tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="d",
+            config_hash="c",
+            metrics={},
+            timestamp="2026-04-29T12:00:00+00:00",
+        )
+    )
+
+    assert not list(tmp_path.rglob("*.tmp"))

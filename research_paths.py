@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 _ROOT = Path(__file__).resolve().parent
 _OAUTH_PROXY_PORT = 10531
 _OAUTH_PROXY_URL = f"http://127.0.0.1:{_OAUTH_PROXY_PORT}/v1"
+log = logging.getLogger(__name__)
 
 
 def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
@@ -56,6 +58,10 @@ def _parse_json(text: str) -> dict[str, Any] | None:
             if depth == 0:
                 try:
                     return json.loads(text[brace : i + 1])
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as exc:
+                    log.error(
+                        "RESEARCH_JSON_PARSE_FAILED error=%s | hint=repair the research JSON payload or fenced response",
+                        exc,
+                    )
                     return None
     return None
