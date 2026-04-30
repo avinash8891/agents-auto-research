@@ -10,8 +10,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from autoresearch_experiment import (
+    ResultJsonError,
+    _build_db_record,
+    _evaluate_against_thesis,
     artifact_dir_for,
+    evaluate_metric,
     parse_benchmark_details,
     parse_benchmark_details_legacy,
     parse_metric,
@@ -19,6 +25,7 @@ from autoresearch_experiment import (
     primary_metric_name,
     sanitize_duplicate_entries,
 )
+from experiment_db import ExperimentDB
 
 # ── parse_result_json ────────────────────────────────────────────
 
@@ -29,7 +36,8 @@ def test_parse_result_json_returns_none_when_no_marker_in_output() -> None:
 
 def test_parse_result_json_returns_none_when_referenced_file_missing(tmp_path: Path) -> None:
     output = f"RESULT_JSON {tmp_path / 'no-such.json'}\n"
-    assert parse_result_json(output) is None
+    with pytest.raises(ResultJsonError, match="does not exist"):
+        parse_result_json(output)
 
 
 def test_parse_result_json_loads_real_fixture(fixtures_dir: Path) -> None:
@@ -44,7 +52,8 @@ def test_parse_result_json_loads_real_fixture(fixtures_dir: Path) -> None:
 def test_parse_result_json_handles_malformed_json(tmp_path: Path) -> None:
     bad = tmp_path / "bad.json"
     bad.write_text("{not valid")
-    assert parse_result_json(f"RESULT_JSON {bad}\n") is None
+    with pytest.raises(ResultJsonError, match="malformed JSON"):
+        parse_result_json(f"RESULT_JSON {bad}\n")
 
 
 # ── parse_benchmark_details (RESULT_JSON path) ──────────────────
@@ -180,10 +189,12 @@ def test_artifact_dir_for_defaults_job_to_zero(tmp_path: Path) -> None:
 
 
 def test_sanitize_drops_low_information_loop_duplicate(tmp_path: Path) -> None:
-    jsonl = tmp_path / "log.jsonl"
+    db = ExperimentDB(tmp_path / "experiments.db")
+    db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
     config = "configs/variants/ema_aggressive.yaml"
     rich = {
         "run": 1,
+        "run_id": "rich",
         "metric": 1.42,
         "status": "keep",
         "description": "strict-native loop: ema_aggressive",
@@ -191,31 +202,332 @@ def test_sanitize_drops_low_information_loop_duplicate(tmp_path: Path) -> None:
     }
     low_info = {
         "run": 2,
+        "run_id": "low",
         "metric": 1.42,
         "status": "keep",
         "description": "loop: ema_aggressive",
         "asi": {"config": config},
     }
-    jsonl.write_text(json.dumps(rich) + "\n" + json.dumps(low_info) + "\n")
+    db.import_entries([rich, low_info])
 
-    sanitize_duplicate_entries(jsonl, config)
-    remaining = [json.loads(line) for line in jsonl.read_text().splitlines() if line]
+    sanitize_duplicate_entries(db, config)
+    remaining = [entry for entry in db.export_entries() if entry.get("type") != "config"]
     assert len(remaining) == 1
     assert remaining[0]["description"] == "strict-native loop: ema_aggressive"
 
 
 def test_sanitize_preserves_config_header(tmp_path: Path) -> None:
-    jsonl = tmp_path / "log.jsonl"
-    header = {"type": "config", "metricName": "median_expectancy"}
+    db = ExperimentDB(tmp_path / "experiments.db")
+    db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
     real = {
         "run": 1,
+        "run_id": "real",
         "metric": 1.0,
         "status": "keep",
         "description": "strict-native loop: ema_base",
         "asi": {"config": "configs/ema_base.yaml"},
     }
-    jsonl.write_text(json.dumps(header) + "\n" + json.dumps(real) + "\n")
-    sanitize_duplicate_entries(jsonl, "configs/ema_base.yaml")
-    out = [json.loads(line) for line in jsonl.read_text().splitlines() if line]
-    assert out[0] == header
+    db.import_entries([real])
+    sanitize_duplicate_entries(db, "configs/ema_base.yaml")
+    out = db.export_entries()
+    assert out[0]["type"] == "config"
+    assert out[0]["metricName"] == "median_expectancy"
     assert out[1]["status"] == "keep"
+
+
+def test_evaluate_metric_uses_sqlite_experiment_db(tmp_path: Path) -> None:
+    db = ExperimentDB(tmp_path / "experiments.db")
+    db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
+    db.add_from_sqlite_fields(
+        experiment_id="e1",
+        thesis_id="t1",
+        config_path="configs/ema_base.yaml",
+        runtime_config={},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"median_expectancy": 1.0},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-1",
+        primary_metric_name="median_expectancy",
+        primary_metric_value=1.0,
+    )
+
+    decision = evaluate_metric(tmp_path, db.path.name, 1.1)
+
+    assert decision == "keep"
+
+
+def test_build_db_record_populates_expected_runtime_fields(tmp_path: Path) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def current_commit(self) -> str:
+            return "abc1234"
+
+    controller = _Controller()
+    controller.ctx.current_contract = None
+    controller.ctx.parent_experiment_id = "parent-exp"
+    controller.ctx.latest_config_contents = {"ema_length": 5}
+    controller.ctx.latest_strategy_events_file = str(tmp_path / "strategy_events.parquet")
+    controller.ctx.latest_diagnostics_file = str(tmp_path / "diagnostics.json")
+    controller.ctx.latest_trades_file = str(tmp_path / "trades.csv")
+
+    record = _build_db_record(
+        controller,
+        config="configs/ema_base.yaml",
+        decision="keep",
+        details={
+            "trade_count": 2,
+            "profit_factor": 1.1,
+            "trades_file": controller.ctx.latest_trades_file,
+            "strategy_events_file": controller.ctx.latest_strategy_events_file,
+            "diagnostics_file": controller.ctx.latest_diagnostics_file,
+            "strategy_diagnostics": {"exits_at_target": 1},
+        },
+        analysis={"trade_analysis": {"verdict": {"status": "accepted", "summary": "ok"}}},
+        fallback_experiment_id="run-1",
+        state={"job": 3, "_last_round_usage": {"tokens": 17}},
+    )
+
+    assert record.runtime_config == {"ema_length": 5}
+    assert record.trades_file == str(tmp_path / "trades.csv")
+    assert record.strategy_events_file == str(tmp_path / "strategy_events.parquet")
+    assert record.diagnostics_file == str(tmp_path / "diagnostics.json")
+    assert record.strategy_diagnostics == {"exits_at_target": 1}
+    assert record.parent_experiment_id == "parent-exp"
+
+
+def test_build_asi_and_entry_use_contract_identity_over_runtime_config_stem(tmp_path: Path) -> None:
+    from autoresearch_experiment import _build_asi_dict, _build_export_entry
+
+    class _Controller:
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def read_state(self):
+            return {"job": 1}
+
+        def current_commit(self) -> str:
+            return "abc1234"
+
+    controller = _Controller()
+    controller.ctx.current_contract = type(
+        "Contract",
+        (),
+        {
+            "thesis_id": "ema5",
+            "experiment_id": "ema5",
+            "hypothesis": "ema 5 should react faster",
+        },
+    )()
+
+    artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-1" / "c2821b0a43ba"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    analysis = {
+        "trade_analysis": {},
+        "insights": [],
+        "next_candidates": [],
+        "why_not_data_fit": "",
+    }
+
+    asi = _build_asi_dict(
+        controller,
+        config="experiments/ema5/runtime_config.json",
+        artifact_dir=artifact_dir,
+        analysis=analysis,
+        thesis_id="ema5",
+        config_changes={},
+    )
+    entry = _build_export_entry(
+        controller,
+        config="experiments/ema5/runtime_config.json",
+        metric=1.0,
+        decision="keep",
+        details={"trade_count": 2},
+        asi=asi,
+        next_run=1,
+        state={"job": 1},
+    )
+
+    assert asi["hypothesis"] == "ema5"
+    assert asi["artifact_dir"] == "ema_autoresearch-runs/job-1/c2821b0a43ba"
+    assert entry["description"] == "strict-native loop: ema5"
+
+
+def test_build_asi_uses_real_artifact_hash_directory_for_contract_run(tmp_path: Path) -> None:
+    from autoresearch_experiment import _build_asi_dict
+
+    class _Controller:
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def read_state(self):
+            return {"job": 1}
+
+    controller = _Controller()
+    controller.ctx.current_contract = type(
+        "Contract",
+        (),
+        {
+            "thesis_id": "ema5",
+            "experiment_id": "ema5",
+        },
+    )()
+    artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-1" / "c2821b0a43ba"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    asi = _build_asi_dict(
+        controller,
+        config="experiments/ema5/runtime_config.json",
+        artifact_dir=artifact_dir,
+        analysis={},
+        thesis_id="ema5",
+        config_changes={},
+    )
+
+    assert asi["artifact_dir"] == "ema_autoresearch-runs/job-1/c2821b0a43ba"
+
+
+def test_build_asi_and_entry_use_deterministic_ids_without_trace_context(tmp_path: Path) -> None:
+    from autoresearch_experiment import _build_asi_dict, _build_export_entry
+
+    class _Controller:
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def read_state(self):
+            return {"job": 7}
+
+        def current_commit(self) -> str:
+            return "abc1234"
+
+    controller = _Controller()
+    controller.ctx.current_contract = type(
+        "Contract",
+        (),
+        {
+            "thesis_id": "ema5",
+            "experiment_id": "ema5",
+        },
+    )()
+    artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-7" / "ema5"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    asi = _build_asi_dict(
+        controller,
+        config="experiments/ema5/runtime_config.json",
+        artifact_dir=artifact_dir,
+        analysis={},
+        thesis_id="ema5",
+        config_changes={},
+    )
+    entry = _build_export_entry(
+        controller,
+        config="experiments/ema5/runtime_config.json",
+        metric=1.0,
+        decision="keep",
+        details={"trade_count": 2},
+        asi=asi,
+        next_run=1,
+        state={"job": 7},
+    )
+
+    assert asi["run_id"] == "job-7-run-1-ema5"
+    assert asi["hypothesis_id"] == "ema5"
+    assert entry["run_id"] == "job-7-run-1-ema5"
+    assert entry["hypothesis_id"] == "ema5"
+
+
+def test_artifact_dir_for_uses_contract_identity_for_runtime_config_paths(tmp_path: Path) -> None:
+    from autoresearch_experiment import artifact_dir_for
+
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({"job": 1}))
+    runs_dir = tmp_path / "ema_autoresearch-runs"
+
+    out = artifact_dir_for(state_path, runs_dir, "experiments/ema5/runtime_config.json")
+
+    assert out == runs_dir.resolve() / "job-1" / "ema5"
+
+
+def test_build_db_record_populates_train_metrics_and_keep_verdict_defaults(tmp_path: Path) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def current_commit(self) -> str:
+            return "abc1234"
+
+    controller = _Controller()
+    controller.ctx.current_contract = None
+    controller.ctx.parent_experiment_id = ""
+    controller.ctx.latest_config_contents = {"ema_length": 5}
+
+    details = {
+        "trade_count": 2,
+        "profit_factor": 1.1,
+        "max_drawdown": 0.1,
+        "train_metrics": {"trade_count": 2, "profit_factor": 1.1},
+        "strategy_diagnostics": {"exits_at_target": 1},
+    }
+    record = _build_db_record(
+        controller,
+        config="configs/ema_base.yaml",
+        decision="keep",
+        details=details,
+        analysis={"trade_analysis": {}},
+        fallback_experiment_id="run-1",
+        state={"job": 3, "_last_round_usage": {"tokens": 17}},
+    )
+
+    assert record.train_metrics == {"trade_count": 2, "profit_factor": 1.1}
+    assert record.verdict_status == "accepted"
+    assert record.verdict_summary == "kept by primary metric improvement"
+    assert record.rejection_reason == "N/A"
+
+
+def test_evaluate_against_thesis_raises_deterministic_evaluator_errors(monkeypatch) -> None:
+    class _Contract:
+        thesis_id = "t1"
+        strategy_family = "ema"
+        hypothesis = "h"
+        mechanism = "m"
+        expected_effects = [{"metric": "median_expectancy", "direction": "increase"}]
+        disqualifiers = []
+        required_diagnostics = []
+        experiment_id = "exp-1"
+
+    class _Controller:
+        def read_results(self):
+            return []
+
+        root = Path(".")
+
+    def fake_evaluate_experiment(**kwargs):
+        raise KeyError("missing diagnostics")
+
+    monkeypatch.setattr("experiment_evaluator.evaluate_experiment", fake_evaluate_experiment)
+
+    with pytest.raises(KeyError):
+        _evaluate_against_thesis(
+            _Controller(),
+            _Contract(),
+            1.0,
+            "keep",
+            {"trade_count": 1},
+        )

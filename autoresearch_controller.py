@@ -33,7 +33,6 @@ from autoresearch_experiment import (
 )
 from autoresearch_experiment import parse_metric as _experiment_parse_metric
 from autoresearch_experiment import parse_result_json as _experiment_parse_result_json
-from autoresearch_experiment import primary_metric_name as _experiment_primary_metric_name
 from autoresearch_experiment import run_command as _experiment_run_command
 from autoresearch_experiment import run_experiment as _experiment_run_experiment
 from autoresearch_experiment import (
@@ -69,22 +68,15 @@ from autoresearch_research import notify_discord as _notify_discord
 from autoresearch_research import queue_variants as _research_queue_variants
 from autoresearch_research import results_to_dicts as _research_results_to_dicts
 from autoresearch_research import run_research as _research_run_research
-from autoresearch_state import (
-    ExperimentRecord,
-    RunContext,
-)
+from autoresearch_state import ExperimentRecord, RunContext
 from autoresearch_state import best_result as _state_best_result
 from autoresearch_state import deduplicate_entries as _state_deduplicate_entries
-from autoresearch_state import direction as _state_direction
 from autoresearch_state import is_better as _state_is_better
 from autoresearch_state import latest_result as _state_latest_result
 from autoresearch_state import promote_missing_known_results as _state_promote_missing_known_results
-from autoresearch_state import read_entries as _state_read_entries
-from autoresearch_state import read_results as _state_read_results
 from autoresearch_state import read_state as _state_read_state
 from autoresearch_state import render_current_md as _state_render_current_md
 from autoresearch_state import write_current_md as _state_write_current_md
-from autoresearch_state import write_entries as _state_write_entries
 from autoresearch_state import write_state as _state_write_state
 from config_hash import _git_sha
 from experiment_db import BaselineTracker, ExperimentDB
@@ -95,18 +87,15 @@ log = get_logger(__name__)
 
 ROOT = Path(__file__).resolve().parent
 STATE_PATH = ROOT / "autoresearch.next.json"
-JSONL_PATH = ROOT / "autoresearch.jsonl"
 CURRENT_MD_PATH = ROOT / "autoresearch.current.md"
 IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
 
 
-def default_controller_paths(
-    root: Path, family: StrategyFamily
-) -> tuple[Path, Path, Path, Path, Path]:
+def default_controller_paths(root: Path, family: StrategyFamily) -> tuple[Path, Path, Path, Path]:
+    """Returns state_path, current_md_path, ideas_md_path, runs_dir."""
     prefix = family.name
     return (
         root / f"{prefix}_autoresearch.next.json",
-        root / f"{prefix}_autoresearch.jsonl",
         root / f"{prefix}_autoresearch.current.md",
         root / f"{prefix}_autoresearch.ideas.md",
         root / family.runs_dirname,
@@ -125,7 +114,6 @@ __all__ = (
     "main",
     "ROOT",
     "STATE_PATH",
-    "JSONL_PATH",
     "CURRENT_MD_PATH",
     "IDEAS_MD_PATH",
     "DEFAULT_CONFIG_ORDER",
@@ -140,7 +128,6 @@ class AutoresearchController:
         self,
         root: Path = ROOT,
         state_path: Path = STATE_PATH,
-        jsonl_path: Path = JSONL_PATH,
         current_md_path: Path = CURRENT_MD_PATH,
         ideas_md_path: Path = IDEAS_MD_PATH,
         runs_dir: Path | None = None,
@@ -148,7 +135,6 @@ class AutoresearchController:
     ) -> None:
         self.root = root.resolve()
         self.state_path = state_path
-        self.jsonl_path = jsonl_path
         self.current_md_path = current_md_path
         self.ideas_md_path = ideas_md_path
         if family is None:
@@ -160,41 +146,12 @@ class AutoresearchController:
         self.compilations_dir = root / self.family.compilations_dirname
         self.contracts_dir = root / self.family.contracts_dirname
         self.run_queue_dir = root / self.family.run_queue_dirname
-        self.experiment_db = ExperimentDB(root / f"{self.family.name}_experiments_db.json")
+        self.experiment_db = ExperimentDB(root / f"{self.family.name}_experiments.db")
         self.baseline_tracker = BaselineTracker(
             root / f"{self.family.name}_baseline_checkpoints.json"
         )
-        # Sync ExperimentDB from JSONL in case a crash left them out of sync
-        # (write_entries succeeds but experiment_db.add never ran).
-        self._sync_db_from_jsonl()
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()
-
-    def _sync_db_from_jsonl(self) -> None:
-        """Recover ExperimentDB entries that exist in JSONL but not in the DB.
-
-        This self-heals the crash window between write_entries() (JSONL write,
-        canonical) and experiment_db.add() (DB write, derived).  If they are
-        already in sync the call is a no-op because backfill_from_jsonl uses
-        ExperimentDB.add which deduplicates by experiment_id.
-        """
-        if not self.jsonl_path.exists():
-            return
-        entries = _state_read_entries(self.jsonl_path)
-        jsonl_exp_count = sum(
-            1 for e in entries if e.get("type") not in ("config", "research_round")
-        )
-        db_count = len(self.experiment_db.all())
-        if jsonl_exp_count > db_count:
-            from experiment_db import backfill_from_jsonl
-
-            added = backfill_from_jsonl(self.jsonl_path, self.experiment_db)
-            if added:
-                log.warning(
-                    f"DB_SYNC recovered {added} experiment(s) from JSONL "
-                    f"(crash between write_entries and experiment_db.add) "
-                    f"| hint=this is self-healing; no action needed"
-                )
 
     def read_state(self) -> dict[str, Any]:
         return _state_read_state(self.state_path)
@@ -207,19 +164,19 @@ class AutoresearchController:
             trace_state_change(previous_state, next_state, state.get("finished_reason", ""))
 
     def read_entries(self) -> list[dict[str, Any]]:
-        return _state_read_entries(self.jsonl_path)
+        return self.experiment_db.export_entries()
 
     def write_entries(self, entries: list[dict[str, Any]]) -> None:
-        _state_write_entries(self.jsonl_path, entries)
+        self.experiment_db.import_entries(entries)
 
     def current_commit(self) -> str:
         return _git_sha()
 
     def direction(self) -> str:
-        return _state_direction(self.read_entries())
+        return self.experiment_db.best_direction()
 
     def read_results(self) -> list[ExperimentRecord]:
-        return _state_read_results(self.read_entries())
+        return self.experiment_db.read_results()
 
     def read_json_artifacts(self, directory: Path) -> list[dict[str, Any]]:
         return _artifacts_read_artifacts_relative_to_root(directory, self.root)
@@ -373,7 +330,7 @@ class AutoresearchController:
         return _experiment_artifact_dir_for(self.state_path, self.runs_dir, config)
 
     def sanitize_duplicate_entries(self, config: str) -> None:
-        _experiment_sanitize_duplicate_entries(self.jsonl_path, config)
+        _experiment_sanitize_duplicate_entries(self.experiment_db, config)
 
     def _accumulate_job_usage(self, round_usage: dict[str, Any]) -> None:
         _research_accumulate_job_usage(self.state_path, round_usage)
@@ -383,6 +340,7 @@ class AutoresearchController:
         *,
         round_number: int,
         thesis_id: str,
+        hypothesis_id: str = "",
         outcome: str,
         config_changes: dict[str, Any] | None = None,
         hypothesis: str = "",
@@ -392,10 +350,11 @@ class AutoresearchController:
         usage: dict[str, Any] | None = None,
     ) -> None:
         _research_log_research_round(
-            self.jsonl_path,
+            self.experiment_db.path,
             self.state_path,
             round_number=round_number,
             thesis_id=thesis_id,
+            hypothesis_id=hypothesis_id,
             outcome=outcome,
             config_changes=config_changes,
             hypothesis=hypothesis,
@@ -427,13 +386,13 @@ class AutoresearchController:
         return _experiment_run_command(self.root, command)
 
     def primary_metric_name(self) -> str:
-        return _experiment_primary_metric_name(self.read_entries())
+        return self.experiment_db.primary_metric_name()
 
     def parse_metric(self, output: str, name: str = "median_expectancy") -> float | None:
         return _experiment_parse_metric(output, name)
 
     def evaluate_metric(self, metric: float) -> str:
-        return _experiment_evaluate_metric(self.root, self.jsonl_path.name, metric)
+        return _experiment_evaluate_metric(self.root, self.experiment_db.path.name, metric)
 
     def derive_trade_analysis(
         self, config: str, metric: float, decision: str, output: str = ""
@@ -590,13 +549,10 @@ def main() -> int:
     args = parser.parse_args()
 
     family = load_family(args.family)
-    state_path, jsonl_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(
-        ROOT, family
-    )
+    state_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(ROOT, family)
     controller = AutoresearchController(
         family=family,
         state_path=state_path,
-        jsonl_path=jsonl_path,
         current_md_path=current_md_path,
         ideas_md_path=ideas_md_path,
         runs_dir=runs_dir,

@@ -28,20 +28,17 @@ from autoresearch_constants import (
     MAX_VALIDATION_RETRIES,
 )
 from autoresearch_logging import get_logger
+from autoresearch_planning import build_research_failure_state
 from autoresearch_state import (
     ExperimentRecord,
     iso8601_utc_now,
-    read_entries,
     read_state,
-    write_entries,
     write_state,
 )
 from strategy_family import StrategyFamily
 from trace_logger import (
     begin_hypothesis,
-    current_hypothesis_id,
     end_hypothesis,
-    get_run_id,
     trace,
 )
 
@@ -89,7 +86,7 @@ def notify_discord(
         trace("DISCORD", f"FAILED title='{title[:60]}' error={exc}")
 
 
-# ── JSONL + state mutators ────────────────────────────────────────
+# ── Persistence + state mutators ─────────────────────────────────
 
 
 def accumulate_job_usage(state_path: Path, round_usage: dict[str, Any]) -> None:
@@ -113,11 +110,12 @@ def accumulate_job_usage(state_path: Path, round_usage: dict[str, Any]) -> None:
 
 
 def log_research_round(
-    jsonl_path: Path,
+    db_path: Path,
     state_path: Path,
     *,
     round_number: int,
     thesis_id: str,
+    hypothesis_id: str = "",
     outcome: str,
     config_changes: dict[str, Any] | None = None,
     hypothesis: str = "",
@@ -126,27 +124,35 @@ def log_research_round(
     rejection_reason: str = "",
     usage: dict[str, Any] | None = None,
 ) -> None:
-    """Log every research round outcome to the JSONL."""
-    entries = read_entries(jsonl_path)
+    """Log every research round outcome to canonical persistence."""
+    from experiment_db import ExperimentDB
+
+    db = ExperimentDB(db_path)
     state = read_state(state_path)
-    entry = {
-        "type": "research_round",
-        "job": state.get("job"),
-        "round": round_number,
-        "run_id": get_run_id(),
-        "hypothesis_id": current_hypothesis_id(),
-        "thesis_id": thesis_id,
-        "outcome": outcome,
-        "config_changes": config_changes or {},
-        "hypothesis": hypothesis,
-        "mechanism": mechanism,
-        "mechanism_dimension": mechanism_dimension,
-        "rejection_reason": rejection_reason,
-        "usage": usage,
-        "timestamp": iso8601_utc_now(),
-    }
-    entries.append(entry)
-    write_entries(jsonl_path, entries)
+    db.log_research_round(
+        state_path,
+        round_number=round_number,
+        thesis_id=thesis_id,
+        hypothesis_id=hypothesis_id or thesis_id,
+        outcome=outcome,
+        usage=usage,
+    )
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": f"job-{state.get('job', 0)}-round-{round_number}",
+            "attempt_number": 1,
+            "thesis_id": thesis_id,
+            "strategy_family": state.get("family", ""),
+            "config_changes": config_changes or {},
+            "validator_status": outcome,
+            "mechanism_dimension": mechanism_dimension,
+            "hypothesis": hypothesis,
+            "mechanism": mechanism,
+            "rejection_reason": rejection_reason,
+            "selected_for_execution": 1 if outcome == "compiled" else 0,
+            "created_at_utc": iso8601_utc_now(),
+        }
+    )
 
 
 # ── Pure helpers ──────────────────────────────────────────────────
@@ -204,8 +210,12 @@ def load_baseline_config(root: Path, family: StrategyFamily) -> dict[str, Any] |
         return None
     try:
         return yaml.safe_load(base_path.read_text())
-    except (yaml.YAMLError, OSError):
-        return None
+    except (yaml.YAMLError, OSError) as exc:
+        log.error(
+            f"BASELINE_CONFIG_LOAD_FAILED path={base_path}: {exc} "
+            f"| hint=fix the family baseline config before generating variants"
+        )
+        raise ValueError(f"BASELINE_CONFIG_LOAD_FAILED path={base_path}: {exc}") from exc
 
 
 def queue_variants(
@@ -367,6 +377,7 @@ def _log_validation_rejection(
     controller.log_research_round(
         round_number=research_round,
         thesis_id=thesis_id,
+        hypothesis_id=thesis_id,
         outcome=f"rejected_attempt_{attempt+1}",
         config_changes=raw_thesis.get("config_changes"),
         hypothesis=raw_thesis.get("hypothesis", ""),
@@ -724,10 +735,13 @@ def _handle_round_failure(
     trace("LOOP", f"research round {research_round} produced no config: {reason}")
     log.warning(f"HEARTBEAT research round {research_round} failed: {reason}")
     state["research_round"] = research_round
-    state["state"] = "blocked"
-    state["blockers"] = [
-        {"kind": "research_required", "detail": f"round {research_round} failed: {reason}"}
-    ]
+    state.update(
+        build_research_failure_state(
+            controller.root,
+            controller.research_dir,
+            f"round {research_round} failed: {reason}",
+        )
+    )
     controller.write_state(state)
     return state
 
@@ -765,10 +779,20 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
     result, round_usage = _invoke_conductor_round(controller, research_round)
     state = controller.read_state()  # refresh after _invoke_conductor_round mutated state
 
-    thesis_meta = result.get("thesis", {})
+    thesis_meta = result.get("thesis") or {
+        "thesis_id": result.get("generated_thesis_id") or result.get("thesis_id") or "none",
+        "strategy_family": controller.family.name,
+        "config_changes": result.get("config_changes") or {},
+        "hypothesis": result.get("hypothesis") or result.get("reasoning", ""),
+        "mechanism": result.get("mechanism") or result.get("reasoning", ""),
+        "mechanism_dimension": result.get("mechanism_dimension") or "",
+    }
+    state["family"] = controller.family.name
+    controller.write_state(state)
     controller.log_research_round(
         round_number=research_round,
         thesis_id=result.get("generated_thesis_id") or result.get("thesis_id") or "none",
+        hypothesis_id=result.get("generated_thesis_id") or result.get("thesis_id") or "none",
         outcome=_classify_round_outcome(result),
         config_changes=thesis_meta.get("config_changes"),
         hypothesis=thesis_meta.get("hypothesis", ""),

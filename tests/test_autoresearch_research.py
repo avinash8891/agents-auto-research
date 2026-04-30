@@ -6,7 +6,7 @@ end-to-end by the characterization tests; this module covers the pure helpers
 
 Project rule G: real outcome strings ("compiled", "needs_code", "rejected",
 "stopped"), real status keys, behavioral assertions on token totals and
-JSONL shape.
+exported entry shape.
 """
 
 from __future__ import annotations
@@ -14,13 +14,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from autoresearch_research import (
-    accumulate_job_usage,
-    log_research_round,
-    notify_discord,
-    results_to_dicts,
-)
+from autoresearch_research import accumulate_job_usage, notify_discord, results_to_dicts
 from autoresearch_state import ExperimentRecord, write_state
+from experiment_db import ExperimentDB
 
 # ── notify_discord fail-open contract ────────────────────────────
 
@@ -111,84 +107,50 @@ def test_accumulate_job_usage_handles_missing_total_block(tmp_path: Path) -> Non
     assert usage["total_tokens"] == 0
 
 
-# ── log_research_round JSONL shape ──────────────────────────────
+# ── log_research_round SQLite persistence ───────────────────────
 
 
-def test_log_research_round_appends_entry_with_required_fields(tmp_path: Path) -> None:
-    jsonl = tmp_path / "log.jsonl"
+def test_log_research_round_persists_required_fields_to_sqlite(tmp_path: Path) -> None:
+    db = ExperimentDB(tmp_path / "experiments.db")
     state_path = tmp_path / "state.json"
     write_state(state_path, {"state": "running", "job": 5})
 
-    log_research_round(
-        jsonl,
+    db.log_research_round(
         state_path,
         round_number=3,
         thesis_id="trailing_stop",
         outcome="compiled",
-        config_changes={"trailing_stop": 0.5},
-        hypothesis="add a trailing stop",
-        mechanism="protect winners",
-        mechanism_dimension="exit",
-        rejection_reason="",
         usage={"total": {"total_tokens": 1234}},
     )
-    rows = [json.loads(line) for line in jsonl.read_text().splitlines() if line]
+    rows = db.list_research_rounds()
     assert len(rows) == 1
     row = rows[0]
-    assert row["type"] == "research_round"
-    assert row["job"] == 5
-    assert row["round"] == 3
-    assert row["thesis_id"] == "trailing_stop"
+    assert row["job_id"] == 5
+    assert row["round_number"] == 3
+    assert row["selected_thesis_id"] == "trailing_stop"
     assert row["outcome"] == "compiled"
-    assert row["config_changes"] == {"trailing_stop": 0.5}
-    assert row["hypothesis"] == "add a trailing stop"
-    assert row["usage"] == {"total": {"total_tokens": 1234}}
-    # Rule J: persisted timestamps are ISO-8601 UTC strings, not naive ints.
-    assert "timestamp" in row
-    assert isinstance(row["timestamp"], str)
-    # ISO-8601 with timezone marker (`+00:00` or `Z`).
-    assert row["timestamp"].endswith("+00:00") or row["timestamp"].endswith("Z")
+    assert row["usage_json"] == {"total": {"total_tokens": 1234}}
+    assert row["created_at_utc"].endswith("+00:00") or row["created_at_utc"].endswith("Z")
 
 
-def test_log_research_round_appends_to_existing_jsonl(tmp_path: Path) -> None:
-    jsonl = tmp_path / "log.jsonl"
+def test_log_research_round_persists_explicit_hypothesis_id_without_trace_context(
+    tmp_path: Path,
+) -> None:
+    db = ExperimentDB(tmp_path / "experiments.db")
     state_path = tmp_path / "state.json"
-    write_state(state_path, {"state": "running", "job": 1})
+    write_state(state_path, {"state": "running", "job": 5})
 
-    # Pre-existing entry should be preserved.
-    jsonl.write_text(
-        json.dumps(
-            {"run": 1, "metric": 1.0, "status": "keep", "asi": {"config": "configs/ema_base.yaml"}}
-        )
-        + "\n"
-    )
-    log_research_round(
-        jsonl,
+    db.log_research_round(
         state_path,
-        round_number=1,
-        thesis_id="x",
-        outcome="rejected",
-        rejection_reason="overlap with prior thesis",
+        round_number=3,
+        thesis_id="trailing_stop",
+        hypothesis_id="hyp-123",
+        outcome="compiled",
+        usage={"total": {"total_tokens": 1234}},
     )
-    rows = [json.loads(line) for line in jsonl.read_text().splitlines() if line]
-    assert len(rows) == 2
-    assert rows[0].get("type") != "research_round"
-    assert rows[1]["outcome"] == "rejected"
+    rows = db.list_research_rounds()
 
-
-def test_log_research_round_uses_real_outcome_strings(tmp_path: Path) -> None:
-    """Verify each known outcome string round-trips. Project rule G: realistic
-    production names."""
-    jsonl = tmp_path / "log.jsonl"
-    state_path = tmp_path / "state.json"
-    write_state(state_path, {"state": "running", "job": 1})
-
-    for outcome in ("compiled", "needs_code", "rejected", "stopped", "conductor_error"):
-        log_research_round(jsonl, state_path, round_number=1, thesis_id="t", outcome=outcome)
-
-    rows = [json.loads(line) for line in jsonl.read_text().splitlines() if line]
-    outcomes = [r["outcome"] for r in rows]
-    assert outcomes == ["compiled", "needs_code", "rejected", "stopped", "conductor_error"]
+    assert rows[0]["hypothesis_id"] == "hyp-123"
 
 
 # ── results_to_dicts ────────────────────────────────────────────

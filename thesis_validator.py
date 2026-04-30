@@ -14,11 +14,14 @@ Three guardrails inspired by AlphaAgent (arxiv 2502.16789v2):
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
 
 from research_types import MECHANISM_DIMENSIONS, ResearchThesis
+
+log = logging.getLogger(__name__)
 
 # Metrics the backtest engine always produces (no custom diagnostics needed)
 BUILTIN_METRICS = {
@@ -138,30 +141,54 @@ def _normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def load_prior_theses(root: Path) -> list[dict[str, Any]]:
-    """Load all previously proposed theses from JSONL files."""
+def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]:
+    """Load all previously proposed theses from canonical persistence."""
     prior: list[dict[str, Any]] = []
-    for jf in sorted(root.glob("*_autoresearch.jsonl")):
-        for line in jf.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                e = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            if e.get("type") != "research_round":
-                continue
-            config_changes = e.get("config_changes") or {}
-            if config_changes:
-                prior.append(
-                    {
-                        "thesis_id": e.get("thesis_id", "unknown"),
-                        "config_changes": config_changes,
-                        "outcome": e.get("outcome", "unknown"),
-                        "mechanism_dimension": e.get("mechanism_dimension", ""),
-                    }
-                )
+    if db is None:
+        from experiment_db import ExperimentDB
+
+        for db_path in sorted(root.glob("*_experiments.db")):
+            db = ExperimentDB(db_path)
+            for line_no, row in enumerate(db.list_research_thesis_attempts(), start=1):
+                if not isinstance(row, dict):
+                    log.warning(
+                        "PRIOR_THESES_SQLITE_INVALID path=%s row=%s error=not_a_dict "
+                        "| hint=fix the malformed thesis-attempt row; it is ignored",
+                        db_path,
+                        line_no,
+                    )
+                    continue
+                config_changes = row.get("config_changes") or {}
+                if config_changes:
+                    prior.append(
+                        {
+                            "thesis_id": row.get("thesis_id", "unknown"),
+                            "config_changes": config_changes,
+                            "outcome": row.get("validator_status", "unknown"),
+                            "mechanism_dimension": row.get("mechanism_dimension", ""),
+                        }
+                    )
+        return prior
+
+    for line_no, row in enumerate(db.list_research_thesis_attempts(), start=1):
+        if not isinstance(row, dict) or "thesis_id" not in row or row.get("_invalid"):
+            log.warning(
+                "PRIOR_THESES_SQLITE_INVALID path=%s row=%s error=malformed_row "
+                "| hint=fix the malformed thesis-attempt row; it is ignored",
+                db.path,
+                line_no,
+            )
+            continue
+        config_changes = row.get("config_changes") or {}
+        if config_changes:
+            prior.append(
+                {
+                    "thesis_id": row.get("thesis_id", "unknown"),
+                    "config_changes": config_changes,
+                    "outcome": row.get("validator_status", "unknown"),
+                    "mechanism_dimension": row.get("mechanism_dimension", ""),
+                }
+            )
     return prior
 
 

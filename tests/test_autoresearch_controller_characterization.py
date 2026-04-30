@@ -44,16 +44,20 @@ def controller(tmp_path, monkeypatch):
     dst_yaml.write_text(src_yaml.read_text())
 
     state_path = tmp_path / "ema_autoresearch.next.json"
-    jsonl_path = tmp_path / "ema_autoresearch.jsonl"
     current_md_path = tmp_path / "ema_autoresearch.current.md"
     ideas_md_path = tmp_path / "ema_autoresearch.ideas.md"
     runs_dir = tmp_path / family.runs_dirname
 
-    # Write the JSONL config header that autoresearch_cli.py evaluate requires.
-    # Without this, `cmd_evaluate` exits with code 1 ("No config found") and
-    # evaluate_metric would always return "discard".
-    jsonl_path.write_text(
-        json.dumps(
+    controller = AutoresearchController(
+        root=tmp_path,
+        state_path=state_path,
+        current_md_path=current_md_path,
+        ideas_md_path=ideas_md_path,
+        runs_dir=runs_dir,
+        family=family,
+    )
+    controller.write_entries(
+        [
             {
                 "type": "config",
                 "name": "ema",
@@ -61,18 +65,7 @@ def controller(tmp_path, monkeypatch):
                 "metricUnit": "",
                 "bestDirection": "higher",
             }
-        )
-        + "\n"
-    )
-
-    controller = AutoresearchController(
-        root=tmp_path,
-        state_path=state_path,
-        jsonl_path=jsonl_path,
-        current_md_path=current_md_path,
-        ideas_md_path=ideas_md_path,
-        runs_dir=runs_dir,
-        family=family,
+        ]
     )
     # Seed minimal state with a job number so artifact_dir_for works.
     controller.write_state({"state": "running", "job": 1, "research_round": 0})
@@ -137,16 +130,14 @@ def _symlink_runtime_repo(source_root: Path, runtime_root: Path) -> None:
         "autoresearch-runs",
         "ema_autoresearch-runs",
         "ema_autoresearch.current.md",
-        "ema_autoresearch.jsonl",
         "ema_autoresearch.next.json",
         "ema_baseline_checkpoints.json",
-        "ema_experiments_db.json",
+        "ema_experiments.db",
         "orb_autoresearch-runs",
         "orb_autoresearch.current.md",
-        "orb_autoresearch.jsonl",
         "orb_autoresearch.next.json",
         "orb_baseline_checkpoints.json",
-        "orb_experiments_db.json",
+        "orb_experiments.db",
     }
     for path in source_root.iterdir():
         if path.name in {".git", ".pytest_cache", "__pycache__", "tests"}:
@@ -187,20 +178,18 @@ def test_execute_once_runs_real_backtest_for_forced_tiny_ema_fixture(tmp_path):
     _symlink_runtime_repo(REPO_ROOT, runtime_root)
     family = load_family("ema")
     state_path = runtime_root / "ema_autoresearch.next.json"
-    jsonl_path = runtime_root / "ema_autoresearch.jsonl"
     current_md_path = runtime_root / "ema_autoresearch.current.md"
     ideas_md_path = runtime_root / "ema_autoresearch.ideas.md"
     runs_dir = runtime_root / family.runs_dirname
     controller = AutoresearchController(
         root=runtime_root,
         state_path=state_path,
-        jsonl_path=jsonl_path,
         current_md_path=current_md_path,
         ideas_md_path=ideas_md_path,
         runs_dir=runs_dir,
         family=family,
     )
-    controller.experiment_db = ExperimentDB(runtime_root / "ema_experiments_db.json")
+    controller.experiment_db = ExperimentDB(runtime_root / "ema_experiments.db")
     controller.baseline_tracker = BaselineTracker(runtime_root / "ema_baseline_checkpoints.json")
     controller.write_entries(
         [
@@ -251,7 +240,7 @@ def test_execute_once_runs_real_backtest_for_forced_tiny_ema_fixture(tmp_path):
 # 2. Pending run-queue artifact runs before research
 # ────────────────────────────────────────────────────────────────────
 def test_execute_once_runs_pending_queue_before_research(controller, monkeypatch, tmp_path):
-    # Seed JSONL with a baseline result so we are past the "no results" branch.
+    # Seed a baseline result so we are past the "no results" branch.
     _seed_existing_result(controller, BASELINE_CONFIG)
 
     # Create a runtime config the queue artifact references.
@@ -328,7 +317,7 @@ def test_execute_once_blocked_research_generates_config(controller, monkeypatch,
     assert generated_config in captured["command"]
     state = controller.read_state()
     assert state["state"] in ("running", "blocked")  # post-reconcile may flip back to blocked
-    # Evidence the research path was used: a research_round entry in JSONL.
+    # Evidence the research path was used: a persisted research_round export entry.
     research_entries = [e for e in controller.read_entries() if e.get("type") == "research_round"]
     assert any(e.get("outcome") == "compiled" for e in research_entries)
 
@@ -374,6 +363,37 @@ def test_execute_once_research_needs_code_halts(controller, monkeypatch):
     assert state["halted_thesis_id"] == "needs-code-thesis"
 
 
+def test_execute_once_research_failure_transitions_to_terminal_failure(controller, monkeypatch):
+    _seed_existing_result(controller, BASELINE_CONFIG)
+
+    def fake_research(self):
+        return {
+            "status": "conductor_error",
+            "generated_config": None,
+            "generated_config_needs_build": False,
+            "generated_thesis_id": "bad-thesis",
+            "thesis_id": "bad-thesis",
+            "should_stop": False,
+            "reasoning": "conductor crashed",
+            "rejection_reason": "conductor crashed",
+        }
+
+    monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
+
+    import research_conductor
+
+    monkeypatch.setattr(research_conductor, "reset_round_usage", lambda: None)
+    monkeypatch.setattr(research_conductor, "get_round_usage", lambda: {"total": {}})
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    state = controller.read_state()
+    assert state["state"] == "interrupted"
+    blockers = state.get("blockers", [])
+    assert any(b.get("kind") == "research_failed" for b in blockers)
+
+
 # ────────────────────────────────────────────────────────────────────
 # 5. Backtest exits non-zero -> blocker.kind=command_failed
 # ────────────────────────────────────────────────────────────────────
@@ -389,6 +409,7 @@ def test_execute_once_backtest_failure_blocks(controller, monkeypatch):
     assert rc == 1
     state = controller.read_state()
     assert state["state"] == "blocked"
+    assert state.get("next_action", {}).get("type") == "blocked"
     blockers = state.get("blockers", [])
     assert any(b.get("kind") == "command_failed" for b in blockers)
 
@@ -408,12 +429,13 @@ def test_execute_once_metric_parse_failure_blocks(controller, monkeypatch):
     assert rc == 1
     state = controller.read_state()
     assert state["state"] == "blocked"
+    assert state.get("next_action", {}).get("type") == "blocked"
     blockers = state.get("blockers", [])
     assert any(b.get("kind") == "metric_parse_failed" for b in blockers)
 
 
 # ────────────────────────────────────────────────────────────────────
-# 7. Success -> artifacts written, JSONL entry, ExperimentDB.add called
+# 7. Success -> artifacts written, export entry, ExperimentDB.add called
 # ────────────────────────────────────────────────────────────────────
 def test_execute_once_success_preserves_artifacts_and_db_write(controller, monkeypatch, tmp_path):
     _patch_run_command_success(controller, monkeypatch, tmp_path)
@@ -431,7 +453,7 @@ def test_execute_once_success_preserves_artifacts_and_db_write(controller, monke
 
     assert rc == 0
 
-    # JSONL has a metric entry tagged for the baseline config.
+    # Exported entries include a metric entry tagged for the baseline config.
     entries = controller.read_entries()
     metric_entries = [
         e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
@@ -587,3 +609,79 @@ def test_execute_once_end_to_end_tiny_ema_fixture(controller, monkeypatch, tmp_p
     artifact_dir = controller.root / metric_entries[0]["asi"]["artifact_dir"]
     assert (artifact_dir / "benchmark_output.txt").exists()
     assert (artifact_dir / "analysis.json").exists()
+
+
+def test_execute_once_queued_runtime_config_uses_thesis_sidecar_metadata(
+    controller, monkeypatch, tmp_path
+):
+    _seed_existing_result(controller, BASELINE_CONFIG)
+
+    config_rel = "experiments/tiny-ema/runtime_config.json"
+    config_path = tmp_path / config_rel
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text((REPO_ROOT / "tests" / "fixtures" / "tiny_ema_runtime.json").read_text())
+    (config_path.parent / "thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "tiny-ema-thesis",
+                "hypothesis": "tiny hypothesis",
+                "mechanism": "tiny mechanism",
+                "config_changes": {"ema_length": 5},
+            }
+        )
+    )
+
+    controller.run_queue_dir.mkdir(parents=True, exist_ok=True)
+    (controller.run_queue_dir / "tiny-ema.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "tiny-ema",
+                "config": config_rel,
+                "status": "pending",
+                "source": "characterization",
+            }
+        )
+    )
+
+    def fake_run_command(self, command: str):
+        parts = command.split()
+        output_dir = Path(parts[parts.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        config_arg = parts[parts.index("--config") + 1]
+        payload = {
+            "family": "ema",
+            "config": config_arg,
+            "config_hash": "tinyfixture12",
+            "git_sha": "3154bec",
+            "timestamp": "2026-04-30T00:00:00Z",
+            "metrics": {
+                "median_expectancy": 1.0,
+                "trade_count": 1,
+                "profit_factor": 1.0,
+                "max_drawdown": 0.0,
+                "pct_profitable_windows": 1.0,
+                "avg_sharpe_across_windows": 1.0,
+            },
+            "diagnostics": {},
+            "strategy_diagnostics": {
+                "trade_count": 1,
+                "event_counts": {},
+                "rejection_breakdown": {},
+            },
+            "trades_file": str(output_dir / "trades.csv"),
+            "strategy_events_file": str(output_dir / "strategy_events.parquet"),
+            "diagnostics_file": str(output_dir / "diagnostics.json"),
+        }
+        result_path = output_dir / "result.json"
+        result_path.write_text(json.dumps(payload) + "\n")
+        return 0, f"RESULT_JSON {result_path}\n"
+
+    monkeypatch.setattr(AutoresearchController, "run_command", fake_run_command)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    latest = controller.experiment_db.latest(1)[0]
+    assert latest.thesis_id == "tiny-ema-thesis"
+    assert latest.hypothesis == "tiny hypothesis"
+    assert latest.mechanism == "tiny mechanism"

@@ -2,8 +2,8 @@
 
 Owns the path from `next_action.config` to a logged experiment record:
 shell out via run_command, parse RESULT_JSON / metrics, decide keep/discard,
-optionally evaluate against a thesis contract, and persist to JSONL plus
-the structured ExperimentDB.
+optionally evaluate against a thesis contract, and persist to the structured
+ExperimentDB.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -30,11 +31,10 @@ from autoresearch_constants import (
     DISCORD_COLOR_WARNING,
 )
 from autoresearch_logging import get_logger
+from autoresearch_planning import build_research_failure_state
 from autoresearch_state import (
     iso8601_utc_now,
-    read_entries,
     read_state,
-    write_entries,
     write_state,
 )
 from experiment_db import (
@@ -45,9 +45,7 @@ from experiment_db import (
 )
 from trace_logger import (
     begin_hypothesis,
-    current_hypothesis_id,
     end_hypothesis,
-    get_run_id,
     trace,
     trace_benchmark,
     trace_ssh,
@@ -57,6 +55,10 @@ if TYPE_CHECKING:
     from autoresearch_controller import AutoresearchController
 
 log = get_logger(__name__)
+
+
+class ResultJsonError(RuntimeError):
+    """Raised when a RESULT_JSON marker exists but the referenced payload is invalid."""
 
 
 # ── Shell out ─────────────────────────────────────────────────────
@@ -119,11 +121,19 @@ def parse_result_json(output: str) -> dict[str, Any] | None:
         return None
     result_path = Path(match.group(1).strip())
     if not result_path.exists():
-        return None
+        msg = f"RESULT_JSON path does not exist: {result_path}"
+        log.error(f"RESULT_JSON error: {msg} | hint=backtest printed a stale or wrong result path")
+        raise ResultJsonError(msg)
     try:
         return json.loads(result_path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return None
+    except json.JSONDecodeError as exc:
+        msg = f"RESULT_JSON malformed JSON at {result_path}: {exc}"
+        log.error(f"RESULT_JSON error: {msg} | hint=fix the result writer before rerunning")
+        raise ResultJsonError(msg) from exc
+    except OSError as exc:
+        msg = f"RESULT_JSON unreadable at {result_path}: {exc}"
+        log.error(f"RESULT_JSON error: {msg} | hint=check file permissions and run-output dir")
+        raise ResultJsonError(msg) from exc
 
 
 def parse_benchmark_details(output: str) -> dict[str, Any]:
@@ -132,6 +142,8 @@ def parse_benchmark_details(output: str) -> dict[str, Any]:
     if result_json:
         details: dict[str, Any] = {}
         metrics = result_json.get("metrics", {})
+        if metrics:
+            details["train_metrics"] = dict(metrics)
         for key in (
             "trade_count",
             "profit_factor",
@@ -179,8 +191,12 @@ def parse_benchmark_details_legacy(output: str) -> dict[str, Any]:
     if diag_match:
         try:
             details["diagnostics"] = json.loads(diag_match.group(1))
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as exc:
+            log.error(
+                f"DIAGNOSTICS parse error: {exc} "
+                f"| hint=backtest emitted a malformed DIAGNOSTICS JSON line"
+            )
+            raise ValueError(f"malformed DIAGNOSTICS line: {exc}") from exc
     trades_match = re.search(r"^TRADES_FILE (.+)$", output, flags=re.MULTILINE)
     if trades_match:
         details["trades_file"] = trades_match.group(1).strip()
@@ -188,7 +204,9 @@ def parse_benchmark_details_legacy(output: str) -> dict[str, Any]:
 
 
 def primary_metric_name(entries: list[dict[str, Any]]) -> str:
-    """Read the primary metric name from the JSONL config header."""
+    """Read the primary metric name from exported session entries."""
+    if not entries:
+        return "median_expectancy"
     for entry in entries:
         if entry.get("type") == "config":
             return entry.get("metricName", "median_expectancy")
@@ -204,26 +222,11 @@ def parse_metric(output: str, name: str = "median_expectancy") -> float | None:
     return float(match.group(1)) if match else None
 
 
-def evaluate_metric(root: Path, jsonl_name: str, metric: float) -> str:
-    result = subprocess.run(
-        [
-            "python3",
-            "autoresearch_cli.py",
-            "evaluate",
-            "--jsonl",
-            jsonl_name,
-            "--metric",
-            str(metric),
-            "--direction",
-            "higher",
-        ],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    text = (result.stdout or "") + (result.stderr or "")
-    return "keep" if "DECISION: keep" in text else "discard"
+def evaluate_metric(root: Path, db_name: str, metric: float) -> str:
+    from experiment_db import ExperimentDB
+
+    db = ExperimentDB(root / db_name)
+    return db.evaluate_metric(metric)
 
 
 # ── Trade analysis (sets transient controller fields) ────────────
@@ -255,8 +258,12 @@ def derive_trade_analysis(
 
                 family_name = controller.family.name
                 config_contents = STRATEGIES[family_name].compile_contract(raw).runtime_config
-        except OSError:
-            pass
+        except OSError as exc:
+            log.error(
+                f"CONFIG_READ error config={config}: {exc} "
+                f"| hint=the experiment config exists but cannot be read"
+            )
+            raise
 
     controller.ctx.latest_trades_file = details.get("trades_file", "")
     controller.ctx.latest_strategy_events_file = details.get("strategy_events_file", "")
@@ -276,31 +283,36 @@ def derive_trade_analysis(
     }
 
 
-# ── Artifact + JSONL helpers ─────────────────────────────────────
+# ── Artifact + entry helpers ─────────────────────────────────────
 
 
 def artifact_dir_for(state_path: Path, runs_dir: Path, config: str) -> Path:
     state = read_state(state_path)
     job = state.get("job", 0)
-    path = runs_dir.resolve() / f"job-{job}" / Path(config).stem
+    config_path = Path(config)
+    slug = (
+        config_path.parent.name
+        if config_path.name == "runtime_config.json" and config_path.parent.name
+        else config_path.stem
+    )
+    path = runs_dir.resolve() / f"job-{job}" / slug
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def sanitize_duplicate_entries(jsonl_path: Path, config: str) -> None:
-    filtered: list[dict[str, Any]] = []
+def sanitize_duplicate_entries(db: Any, config: str) -> None:
     slug = Path(config).stem
-    for entry in read_entries(jsonl_path):
-        if entry.get("type") == "config":
-            filtered.append(entry)
-            continue
-        asi = entry.get("asi") or {}
-        same_config = asi.get("config") == config
-        low_information = entry.get("description") == f"loop: {slug}"
+    removable_ids: list[str] = []
+    for record in db.all():
+        description = getattr(record, "_description_export", f"strict-native loop: {slug}")
+        same_config = record.config_path == config
+        low_information = description == f"loop: {slug}"
         if same_config and low_information:
-            continue
-        filtered.append(entry)
-    write_entries(jsonl_path, filtered)
+            removable_ids.append(record.experiment_id)
+    if not removable_ids:
+        return
+    db._records = [record for record in db.all() if record.experiment_id not in removable_ids]
+    db._save()
 
 
 def _resolve_artifact_dir(controller: "AutoresearchController", config: str) -> Path:
@@ -324,20 +336,49 @@ def _read_thesis_metadata(
     contract = controller.ctx.current_contract
     thesis_id = contract.thesis_id if contract else Path(config).stem
     config_changes: dict[str, Any] = {}
-    thesis_json_path = (
-        controller.root
-        / "experiments"
-        / (contract.experiment_id if contract else Path(config).stem)
-        / "thesis.json"
-    )
+    experiment_slug = contract.experiment_id if contract else Path(config).parent.name
+    thesis_json_path = controller.root / "experiments" / experiment_slug / "thesis.json"
     if thesis_json_path.exists():
         try:
             tj = json.loads(thesis_json_path.read_text())
             thesis_id = tj.get("thesis_id", thesis_id)
             config_changes = tj.get("config_changes", {})
-        except OSError:
-            pass
+        except OSError as exc:
+            log.error(
+                f"THESIS_METADATA_READ error path={thesis_json_path}: {exc} "
+                f"| hint=the thesis sidecar exists but cannot be read"
+            )
+            raise
     return thesis_id, config_changes
+
+
+def _contract_from_sidecar(controller: "AutoresearchController", config: str) -> Any | None:
+    contract = controller.ctx.current_contract
+    if contract is not None:
+        return contract
+    experiment_slug = Path(config).parent.name
+    thesis_json_path = controller.root / "experiments" / experiment_slug / "thesis.json"
+    if not thesis_json_path.exists():
+        return None
+    try:
+        payload = json.loads(thesis_json_path.read_text())
+    except OSError as exc:
+        log.error(
+            f"THESIS_METADATA_READ error path={thesis_json_path}: {exc} "
+            f"| hint=the thesis sidecar exists but cannot be read"
+        )
+        raise
+    return SimpleNamespace(
+        experiment_id=experiment_slug,
+        thesis_id=payload.get("thesis_id", experiment_slug),
+        hypothesis=payload.get("hypothesis", ""),
+        mechanism=payload.get("mechanism", ""),
+    )
+
+
+def _analysis_identity(controller: "AutoresearchController", config: str) -> str:
+    contract = _contract_from_sidecar(controller, config)
+    return contract.thesis_id if contract else Path(config).stem
 
 
 def _build_asi_dict(
@@ -349,11 +390,16 @@ def _build_asi_dict(
     thesis_id: str,
     config_changes: dict[str, Any],
 ) -> dict[str, Any]:
+    contract = controller.ctx.current_contract
+    identity = (
+        contract.thesis_id if contract and getattr(contract, "thesis_id", "") else Path(config).stem
+    )
+    run_id = f"job-{controller.read_state().get('job', 0)}-run-1-{identity}"
     asi = {
         "job": controller.read_state().get("job"),
-        "run_id": get_run_id(),
-        "hypothesis_id": current_hypothesis_id(),
-        "hypothesis": Path(config).stem,
+        "run_id": run_id,
+        "hypothesis_id": identity,
+        "hypothesis": identity,
         "config": config,
         "artifact_dir": artifact_dir.relative_to(controller.root).as_posix(),
         "trade_analysis": analysis.get("trade_analysis", {}),
@@ -381,17 +427,30 @@ def _build_db_record(
     fallback_experiment_id: str,
     state: dict[str, Any],
 ) -> ExperimentResult:
-    contract = controller.ctx.current_contract
+    contract = _contract_from_sidecar(controller, config)
     verdict = analysis.get("trade_analysis", {}).get("verdict", {})
     runtime_config = controller.ctx.latest_config_contents or {}
-    return ExperimentResult(
+    train_metrics = details.get("train_metrics", {})
+    if not isinstance(train_metrics, dict):
+        train_metrics = {}
+    verdict_status = verdict.get("status")
+    verdict_summary = verdict.get("summary", "")
+    if not verdict_status:
+        verdict_status = "accepted" if decision == "keep" else "rejected"
+    if not verdict_summary:
+        verdict_summary = (
+            "kept by primary metric improvement"
+            if decision == "keep"
+            else "rejected by primary metric comparison"
+        )
+    record = ExperimentResult(
         experiment_id=contract.experiment_id if contract else fallback_experiment_id,
         thesis_id=contract.thesis_id if contract else Path(config).stem,
         config_path=config,
         runtime_config=runtime_config,
         code_commit=controller.current_commit(),
         data_hash=build_data_hash(runtime_config),
-        train_metrics={},
+        train_metrics=train_metrics,
         validation_metrics=details,
         trade_count=details.get("trade_count", 0),
         trades_file=details.get("trades_file", ""),
@@ -399,9 +458,9 @@ def _build_db_record(
         diagnostics_file=details.get("diagnostics_file", ""),
         strategy_diagnostics=details.get("strategy_diagnostics", {}),
         accepted=decision == "keep",
-        rejection_reason=verdict.get("summary", "") if decision != "keep" else "",
-        verdict_status=verdict.get("status", "none"),
-        verdict_summary=verdict.get("summary", ""),
+        rejection_reason=verdict_summary if decision != "keep" else "N/A",
+        verdict_status=verdict_status,
+        verdict_summary=verdict_summary,
         parent_experiment_id=controller.ctx.parent_experiment_id,
         timestamp=iso8601_utc_now(),
         family=controller.family.name,
@@ -410,9 +469,10 @@ def _build_db_record(
         job=state.get("job", 0),
         usage=state.get("_last_round_usage", {}),
     )
+    return record
 
 
-def _build_jsonl_entry(
+def _build_export_entry(
     controller: "AutoresearchController",
     *,
     config: str,
@@ -423,20 +483,27 @@ def _build_jsonl_entry(
     next_run: int,
     state: dict[str, Any],
 ) -> dict[str, Any]:
+    contract = _contract_from_sidecar(controller, config)
+    identity = (
+        contract.thesis_id if contract and getattr(contract, "thesis_id", "") else Path(config).stem
+    )
+    run_id = f"job-{state.get('job', 0)}-run-{next_run}-{identity}"
     return {
         "run": next_run,
         "job": state.get("job"),
-        "run_id": get_run_id(),
-        "hypothesis_id": current_hypothesis_id(),
+        "run_id": run_id,
+        "hypothesis_id": identity,
         "commit": controller.current_commit(),
         "metric": metric,
         "metrics": details,
         "status": decision,
-        "description": f"strict-native loop: {Path(config).stem}",
+        "description": f"strict-native loop: {identity}",
         "timestamp": iso8601_utc_now(),
         "segment": 0,
         "confidence": None,
         "asi": asi,
+        "hypothesis": getattr(contract, "hypothesis", "") if contract else "",
+        "mechanism": getattr(contract, "mechanism", "") if contract else "",
     }
 
 
@@ -471,7 +538,7 @@ def log_experiment_result(
     entries = controller.read_entries()
     next_run = 1 + len([entry for entry in entries if entry.get("type") != "config"])
     state = controller.read_state()
-    entry = _build_jsonl_entry(
+    entry = _build_export_entry(
         controller,
         config=config,
         metric=metric,
@@ -484,17 +551,18 @@ def log_experiment_result(
     entries.append(entry)
     controller.write_entries(entries)
     trace_benchmark(config, metric, decision, details)
-    controller.experiment_db.add(
-        _build_db_record(
-            controller,
-            config=config,
-            decision=decision,
-            details=details,
-            analysis=analysis,
-            fallback_experiment_id=entry["run_id"],
-            state=state,
-        )
+    record = _build_db_record(
+        controller,
+        config=config,
+        decision=decision,
+        details=details,
+        analysis=analysis,
+        fallback_experiment_id=entry["run_id"],
+        state=state,
     )
+    setattr(record, "_asi_export", asi)
+    setattr(record, "_description_export", entry["description"])
+    controller.experiment_db.add(record)
 
 
 # ── Run experiment orchestrator ──────────────────────────────────
@@ -531,8 +599,18 @@ def _block_with_command_failed(
 ) -> int:
     from autoresearch_research import notify_discord
 
-    state["state"] = "blocked"
-    state["blockers"] = [{"kind": "command_failed", "detail": command, "exit_code": code}]
+    state.update(
+        {
+            "state": "blocked",
+            "next_action": {
+                "type": "blocked",
+                "reason": "command_failed",
+                "command": command,
+                "exit_code": code,
+            },
+            "blockers": [{"kind": "command_failed", "detail": command, "exit_code": code}],
+        }
+    )
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
     log.error(
@@ -557,8 +635,17 @@ def _block_with_metric_parse_failed(
 ) -> int:
     from autoresearch_research import notify_discord
 
-    state["state"] = "blocked"
-    state["blockers"] = [{"kind": "metric_parse_failed", "detail": command}]
+    state.update(
+        {
+            "state": "blocked",
+            "next_action": {
+                "type": "blocked",
+                "reason": "metric_parse_failed",
+                "command": command,
+            },
+            "blockers": [{"kind": "metric_parse_failed", "detail": command}],
+        }
+    )
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
     log.error(
@@ -662,8 +749,12 @@ def _evaluate_against_thesis(
         IndexError,
     ) as exc:
         trace("EVAL", f"evaluation error: {exc}")
-        log.warning(f"EVAL error (non-fatal): {exc}")
-        return None, decision
+        log.error(
+            f"EVAL error (fatal): {exc} "
+            f"| hint=the thesis evaluator hit a deterministic local error; fix the thesis/evaluator "
+            f"contract instead of accepting a metric-only result"
+        )
+        raise
 
 
 def _record_baseline_checkpoint(
@@ -759,12 +850,35 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     if code != 0:
         return _block_with_command_failed(controller, controller.read_state(), command, code)
 
-    metric = controller.parse_metric(output, name=controller.primary_metric_name())
+    try:
+        metric = controller.parse_metric(output, name=controller.primary_metric_name())
+    except ResultJsonError:
+        return _block_with_metric_parse_failed(controller, controller.read_state(), command)
     if metric is None:
         return _block_with_metric_parse_failed(controller, controller.read_state(), command)
 
-    details = controller.parse_benchmark_details(output)
-    decision = controller.evaluate_metric(metric)
+    try:
+        details = controller.parse_benchmark_details(output)
+    except (ResultJsonError, ValueError):
+        return _block_with_metric_parse_failed(controller, controller.read_state(), command)
+    try:
+        decision = controller.evaluate_metric(metric)
+    except TimeoutError as exc:
+        interrupted = build_research_failure_state(
+            controller.root,
+            controller.research_dir,
+            str(exc),
+        )
+        state = controller.read_state()
+        state.update(interrupted)
+        controller.write_state(state)
+        controller.write_current_md(state, controller.read_results())
+        log.error(
+            "LOOP_STOP state=interrupted evaluate_metric_timeout "
+            "| hint=autoresearch_cli evaluate hung; inspect local Python environment and "
+            "retry once the CLI returns within timeout"
+        )
+        return 1
     trace("LOOP", f"METRIC parsed: {metric} decision={decision} config={config}")
 
     verdict: Any | None = None

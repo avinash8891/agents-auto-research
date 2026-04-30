@@ -93,10 +93,9 @@ def _is_runtime_top_level_file(rel: Path) -> bool:
     name = rel.as_posix()
     return (
         name.endswith("_autoresearch.current.md")
-        or name.endswith("_autoresearch.jsonl")
         or name.endswith("_autoresearch.next.json")
         or name.endswith("_baseline_checkpoints.json")
-        or name.endswith("_experiments_db.json")
+        or name.endswith("_experiments.db")
         or name == "research_findings.jsonl"
     )
 

@@ -8,6 +8,7 @@ compatibility for legacy DB files that still contain int timestamps.
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from experiment_db import (
@@ -45,7 +46,7 @@ def _make_record(experiment_id: str, *, timestamp: str = "") -> ExperimentResult
 
 
 def test_new_record_round_trip_preserves_iso_timestamp(tmp_path: Path) -> None:
-    db = ExperimentDB(tmp_path / "experiments_db.json")
+    db = ExperimentDB(tmp_path / "experiments.db")
     db.add(_make_record("exp1", timestamp="2026-04-29T12:00:00+00:00"))
     # Force re-load by clearing the in-memory cache.
     db._records = None
@@ -55,44 +56,67 @@ def test_new_record_round_trip_preserves_iso_timestamp(tmp_path: Path) -> None:
 
 
 def test_disk_payload_is_iso_string(tmp_path: Path) -> None:
-    """The on-disk JSON must contain a string, not an int, for new writes."""
-    db_path = tmp_path / "experiments_db.json"
+    """The on-disk sqlite row must contain a string, not an int, for new writes."""
+    db_path = tmp_path / "experiments.db"
     db = ExperimentDB(db_path)
     db.add(_make_record("exp1", timestamp="2026-04-29T12:00:00+00:00"))
-    raw = json.loads(db_path.read_text())
-    assert isinstance(raw[0]["timestamp"], str)
-    assert raw[0]["timestamp"].endswith("+00:00")
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT timestamp FROM experiments WHERE experiment_id = 'exp1'"
+        ).fetchone()
+    assert isinstance(row[0], str)
+    assert row[0].endswith("+00:00")
 
 
 # ── Back-compat path: legacy int timestamps still load ──────────
 
 
 def test_legacy_int_db_file_loads_and_coerces_to_iso(tmp_path: Path) -> None:
-    """A pre-rule-J DB file with int epoch-ms timestamps must still load.
-    The in-memory record has the timestamp coerced to ISO-8601 UTC."""
-    legacy_db = tmp_path / "experiments_db.json"
-    legacy_record = {
-        "experiment_id": "legacy1",
-        "thesis_id": "t",
-        "config_path": "configs/ema_base.yaml",
-        "runtime_config": {},
-        "code_commit": "abc1234",
-        "data_hash": "d",
-        "train_metrics": {},
-        "validation_metrics": {},
-        "trade_count": 0,
-        "trades_file": "",
-        "strategy_events_file": "",
-        "diagnostics_file": "",
-        "strategy_diagnostics": {},
-        "accepted": False,
-        "rejection_reason": "",
-        "verdict_status": "none",
-        "verdict_summary": "",
-        "timestamp": 1704067200000,  # 2024-01-01T00:00:00 UTC
-        "family": "ema",
-    }
-    legacy_db.write_text(json.dumps([legacy_record]) + "\n")
+    """A sqlite row with int epoch-ms timestamps must still load as ISO in memory."""
+    legacy_db = tmp_path / "experiments.db"
+    db = ExperimentDB(legacy_db)
+    with sqlite3.connect(legacy_db) as conn:
+        conn.execute("DELETE FROM experiments")
+        conn.execute(
+            """
+            INSERT INTO experiments (
+                experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+                data_hash, train_metrics_json, validation_metrics_json, trade_count,
+                trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_experiment_id,
+                timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy1",
+                "t",
+                "configs/ema_base.yaml",
+                "{}",
+                "abc1234",
+                "d",
+                "{}",
+                "{}",
+                0,
+                "",
+                "",
+                "",
+                "{}",
+                0,
+                "",
+                "none",
+                "",
+                "",
+                1704067200000,
+                "ema",
+                "",
+                "",
+                0,
+                "{}",
+                "{}",
+                "",
+            ),
+        )
+        conn.commit()
 
     db = ExperimentDB(legacy_db)
     out = db.all()
@@ -104,31 +128,61 @@ def test_legacy_int_db_file_loads_and_coerces_to_iso(tmp_path: Path) -> None:
 def test_latest_orders_correctly_across_legacy_and_new(tmp_path: Path) -> None:
     """A DB containing one legacy int row and one new ISO row must order
     correctly when latest() is called."""
-    db_path = tmp_path / "experiments_db.json"
-    legacy = {
-        "experiment_id": "legacy",
-        "thesis_id": "t",
-        "config_path": "x",
-        "runtime_config": {},
-        "code_commit": "",
-        "data_hash": "",
-        "train_metrics": {},
-        "validation_metrics": {},
-        "trade_count": 0,
-        "trades_file": "",
-        "strategy_events_file": "",
-        "diagnostics_file": "",
-        "strategy_diagnostics": {},
-        "accepted": False,
-        "rejection_reason": "",
-        "verdict_status": "none",
-        "verdict_summary": "",
-        "timestamp": 1700000000000,  # Nov 14 2023
-    }
-    new = dict(legacy)
-    new["experiment_id"] = "new"
-    new["timestamp"] = "2024-01-01T00:00:00+00:00"  # 1704067200000 ms — later
-    db_path.write_text(json.dumps([legacy, new]) + "\n")
+    db_path = tmp_path / "experiments.db"
+    db = ExperimentDB(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM experiments")
+        base = (
+            "t",
+            "x",
+            "{}",
+            "",
+            "",
+            "{}",
+            "{}",
+            0,
+            "",
+            "",
+            "",
+            "{}",
+            0,
+            "",
+            "none",
+            "",
+            "",
+            "",
+            "",
+            "",
+            0,
+            "{}",
+            "{}",
+            "",
+        )
+        conn.execute(
+            """
+            INSERT INTO experiments (
+                experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+                data_hash, train_metrics_json, validation_metrics_json, trade_count,
+                trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_experiment_id,
+                timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("legacy", *base[:17], 1700000000000, *base[17:]),
+        )
+        conn.execute(
+            """
+            INSERT INTO experiments (
+                experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+                data_hash, train_metrics_json, validation_metrics_json, trade_count,
+                trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_experiment_id,
+                timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("new", *base[:17], "2024-01-01T00:00:00+00:00", *base[17:]),
+        )
+        conn.commit()
 
     db = ExperimentDB(db_path)
     latest_records = db.latest(2)

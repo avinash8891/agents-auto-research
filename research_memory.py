@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from research_paths import _ROOT
 
 _PALACE_DIR = str(_ROOT / "palace")
+log = logging.getLogger(__name__)
 
 
 def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor") -> dict:
@@ -37,6 +39,13 @@ def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor")
         )
         return {"success": True, "drawer_id": drawer_id}
     except Exception as exc:
+        log.warning(
+            "PALACE_ADD_FAILED wing=%s room=%s error=%s "
+            "| hint=falling back to local research_findings.jsonl if saving a finding",
+            wing,
+            room,
+            exc,
+        )
         return {"success": False, "error": str(exc)}
 
 
@@ -56,6 +65,13 @@ def _palace_search(
         )
         return result.get("results", [])
     except Exception as exc:
+        log.warning(
+            "PALACE_SEARCH_FAILED wing=%s room=%s error=%s "
+            "| hint=memory search returned an error object to the conductor",
+            wing,
+            room,
+            exc,
+        )
         return [{"error": str(exc)}]
 
 
@@ -67,6 +83,11 @@ def _palace_status() -> dict:
         stack = MemoryStack(palace_path=_PALACE_DIR)
         return stack.status()
     except Exception as exc:
+        log.warning(
+            "PALACE_STATUS_FAILED error=%s "
+            "| hint=memory status returned an error object to the conductor",
+            exc,
+        )
         return {"error": str(exc)}
 
 
@@ -130,26 +151,21 @@ def save_research_finding(
 
 
 def list_past_theses(root: Path) -> str:
-    jsonl_files = sorted(root.glob("*_autoresearch.jsonl"))
     entries = []
-    for jf in jsonl_files:
-        for line in jf.read_text().splitlines():
-            try:
-                e = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            if e.get("type") != "research_round":
-                continue
+    for db_path in sorted(root.glob("*_experiments.db")):
+        from experiment_db import ExperimentDB
+
+        db = ExperimentDB(db_path)
+        for e in db.list_research_thesis_attempts():
             entries.append(
                 {
                     "thesis_id": e.get("thesis_id", "unknown"),
-                    "outcome": e.get("outcome", "unknown"),
+                    "outcome": e.get("validator_status", "unknown"),
                     "mechanism_dimension": e.get("mechanism_dimension", ""),
                     "config_changes": e.get("config_changes", {}),
                     "hypothesis": e.get("hypothesis", "")[:150],
                     "rejection_reason": e.get("rejection_reason", "")[:100],
-                    "round": e.get("round"),
-                    "job": e.get("job"),
+                    "round": e.get("research_round_id"),
                 }
             )
     if not entries:

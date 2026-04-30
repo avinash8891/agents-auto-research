@@ -1,27 +1,17 @@
 #!/usr/bin/env python3
-"""
-autoresearch_cli.py — CLI helper for autoresearch experiment tracking.
-
-Handles JSONL state management, MAD-based confidence scoring, and experiment logging.
-No external dependencies — stdlib only.
-
-Usage:
-    python3 autoresearch_cli.py init --jsonl FILE --name NAME --metric-name NAME [--metric-unit UNIT] [--direction lower|higher]
-    python3 autoresearch_cli.py log --jsonl FILE --commit SHA --metric VALUE --status STATUS --description DESC [--direction lower|higher] [--metrics '{"k":v}'] [--asi '{"k":"v"}']
-    python3 autoresearch_cli.py evaluate --jsonl FILE --metric VALUE --direction lower|higher
-    python3 autoresearch_cli.py summary --jsonl FILE
-    python3 autoresearch_cli.py status --jsonl FILE
-"""
+"""SQLite-backed CLI helper for autoresearch experiment tracking."""
 
 import argparse
 import json
 import logging
-import os
 import statistics
 import sys
 import time
+from pathlib import Path
+from typing import Any
 
 from autoresearch_constants import MILLISECONDS_PER_SECOND
+from experiment_db import ExperimentDB, ExperimentResult
 
 
 def _make_stdout_logger() -> logging.Logger:
@@ -44,46 +34,42 @@ def _make_stdout_logger() -> logging.Logger:
 _log = _make_stdout_logger()
 
 
-def read_jsonl(path):
-    """Read a JSONL file, returning (config, results) where config is the latest config header."""
-    config = None
+def _db(path: str) -> ExperimentDB:
+    return ExperimentDB(Path(path))
+
+
+def read_session(path: str) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    db = _db(path)
+    config = db.session_meta() or None
+    if config is not None:
+        config["_segment"] = 0
     results = []
-    segment = 0
-
-    if not os.path.exists(path):
-        return config, results
-
-    with open(path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            if entry.get("type") == "config":
-                if results:
-                    segment += 1
-                config = entry
-                config["_segment"] = segment
-                continue
-
-            # Skip non-result entries (e.g. research_round thesis proposals)
-            if entry.get("type") in ("research_round",):
-                continue
-
-            # Skip entries without a metric (not experiment results)
-            if "metric" not in entry:
-                continue
-
-            entry.setdefault("segment", segment)
-            entry.setdefault("metrics", {})
-            entry.setdefault("confidence", None)
-            entry.setdefault("asi", None)
-            results.append(entry)
-
+    for idx, record in enumerate(db.all(), start=1):
+        metric = (
+            record.validation_metrics.get(config.get("metricName", "median_expectancy"))
+            if config
+            else None
+        )
+        if metric is None:
+            metric = record.train_metrics.get("median_expectancy")
+        results.append(
+            {
+                "run": idx,
+                "commit": record.code_commit[:7],
+                "metric": metric,
+                "metrics": record.validation_metrics,
+                "status": "keep" if record.accepted else "discard",
+                "description": getattr(
+                    record,
+                    "_description_export",
+                    f"strict-native loop: {Path(record.config_path).stem}",
+                ),
+                "timestamp": record.timestamp,
+                "segment": 0,
+                "confidence": None,
+                "asi": getattr(record, "_asi_export", None),
+            }
+        )
     return config, results
 
 
@@ -169,25 +155,21 @@ def is_better(current, best, direction):
 
 
 def cmd_init(args):
-    """Write a config header to the JSONL file."""
-    config = {
-        "type": "config",
-        "name": args.name,
-        "metricName": args.metric_name,
-        "metricUnit": args.metric_unit or "",
-        "bestDirection": args.direction or "lower",
-    }
-    mode = "a" if os.path.exists(args.jsonl) else "w"
-    with open(args.jsonl, mode) as f:
-        f.write(json.dumps(config) + "\n")
+    """Initialize the sqlite-backed experiment session."""
+    db = _db(args.db)
+    db.init_session(
+        name=args.name,
+        metric_name=args.metric_name,
+        direction=args.direction or "lower",
+    )
     _log.info(
         f"Initialized: {args.name} (metric: {args.metric_name}, direction: {args.direction or 'lower'})"
     )
 
 
 def cmd_log(args):
-    """Append an experiment result to the JSONL file."""
-    config, results = read_jsonl(args.jsonl)
+    """Append an experiment result to the sqlite-backed session."""
+    config, results = read_session(args.db)
 
     if config is None:
         _log.error("Error: No config found. Run 'init' first.")
@@ -228,9 +210,29 @@ def cmd_log(args):
     confidence = compute_confidence(results, segment, direction)
     entry["confidence"] = confidence
 
-    with open(args.jsonl, "a") as f:
-        out = {k: v for k, v in entry.items() if v is not None or k in ("confidence",)}
-        f.write(json.dumps(out) + "\n")
+    db = _db(args.db)
+    db.add(
+        ExperimentResult(
+            experiment_id=f"cli-run-{entry['run']}",
+            thesis_id=f"cli-run-{entry['run']}",
+            config_path=args.description,
+            runtime_config={},
+            code_commit=args.commit,
+            data_hash="",
+            train_metrics=extra_metrics,
+            validation_metrics=extra_metrics,
+            trade_count=int(extra_metrics.get("trade_count", 0) or 0),
+            trades_file="",
+            strategy_events_file="",
+            diagnostics_file="",
+            strategy_diagnostics={},
+            accepted=args.status == "keep",
+            rejection_reason="N/A" if args.status == "keep" else args.description,
+            verdict_status="accepted" if args.status == "keep" else "rejected",
+            verdict_summary="kept by CLI evaluation" if args.status == "keep" else args.description,
+            timestamp=str(entry["timestamp"]),
+        )
+    )
 
     baseline = find_baseline(results, segment)
     best = find_best_kept(results, segment, direction)
@@ -253,10 +255,10 @@ def cmd_log(args):
 
 def cmd_evaluate(args):
     """Evaluate whether a new metric value should be kept or discarded."""
-    config, results = read_jsonl(args.jsonl)
+    config, results = read_session(args.db)
 
     if not config:
-        _log.info("No config found in JSONL. Run init first.")
+        _log.info("No config found in the experiment database. Run init first.")
         sys.exit(1)
 
     segment = config.get("_segment", 0)
@@ -306,7 +308,7 @@ def cmd_evaluate(args):
 
 def cmd_summary(args):
     """Print a summary of the experiment session."""
-    config, results = read_jsonl(args.jsonl)
+    config, results = read_session(args.db)
 
     if not config:
         _log.info("No experiments found.")
@@ -368,7 +370,7 @@ def cmd_summary(args):
 
 def cmd_status(args):
     """Print current status (baseline, best, confidence) as JSON for programmatic use."""
-    config, results = read_jsonl(args.jsonl)
+    config, results = read_session(args.db)
 
     if not config:
         _log.info(json.dumps({"error": "no config found"}))
@@ -406,7 +408,7 @@ def main():
 
     # init
     p_init = subparsers.add_parser("init", help="Initialize experiment session")
-    p_init.add_argument("--jsonl", required=True, help="Path to autoresearch.jsonl")
+    p_init.add_argument("--db", required=True, help="Path to experiments sqlite database")
     p_init.add_argument("--name", required=True, help="Session name")
     p_init.add_argument("--metric-name", required=True, help="Primary metric name")
     p_init.add_argument("--metric-unit", default="", help="Metric unit (e.g., us, ms, s, kb)")
@@ -414,7 +416,7 @@ def main():
 
     # log
     p_log = subparsers.add_parser("log", help="Log an experiment result")
-    p_log.add_argument("--jsonl", required=True, help="Path to autoresearch.jsonl")
+    p_log.add_argument("--db", required=True, help="Path to experiments sqlite database")
     p_log.add_argument("--commit", required=True, help="Git commit hash")
     p_log.add_argument("--metric", required=True, type=float, help="Primary metric value")
     p_log.add_argument(
@@ -429,7 +431,7 @@ def main():
 
     # evaluate
     p_eval = subparsers.add_parser("evaluate", help="Evaluate whether to keep or discard")
-    p_eval.add_argument("--jsonl", required=True, help="Path to autoresearch.jsonl")
+    p_eval.add_argument("--db", required=True, help="Path to experiments sqlite database")
     p_eval.add_argument("--metric", required=True, type=float, help="New metric value to evaluate")
     p_eval.add_argument(
         "--direction", choices=["lower", "higher"], help="Override direction from config"
@@ -437,11 +439,11 @@ def main():
 
     # summary
     p_summary = subparsers.add_parser("summary", help="Print experiment summary")
-    p_summary.add_argument("--jsonl", required=True, help="Path to autoresearch.jsonl")
+    p_summary.add_argument("--db", required=True, help="Path to experiments sqlite database")
 
     # status
     p_status = subparsers.add_parser("status", help="Print current status as JSON")
-    p_status.add_argument("--jsonl", required=True, help="Path to autoresearch.jsonl")
+    p_status.add_argument("--db", required=True, help="Path to experiments sqlite database")
 
     args = parser.parse_args()
 

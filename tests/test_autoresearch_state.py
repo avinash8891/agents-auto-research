@@ -20,12 +20,10 @@ from autoresearch_state import (
     iso8601_utc_now,
     latest_result,
     promote_missing_known_results,
-    read_entries,
     read_results,
     read_state,
     render_current_md,
     write_current_md,
-    write_entries,
     write_state,
 )
 
@@ -50,43 +48,6 @@ def test_state_round_trip_preserves_payload_atomically(tmp_path: Path) -> None:
     assert read_state(state_path) == payload
     # tmp file used for atomic replace must be cleaned up.
     assert not state_path.with_name(state_path.name + ".tmp").exists()
-
-
-# ── JSONL round-trip ─────────────────────────────────────────────
-
-
-def test_read_entries_returns_empty_when_file_missing(tmp_path: Path) -> None:
-    assert read_entries(tmp_path / "absent.jsonl") == []
-
-
-def test_jsonl_round_trip_preserves_entry_order_and_count(tmp_path: Path) -> None:
-    entries = [
-        {"type": "config", "metricName": "median_expectancy", "bestDirection": "higher"},
-        {"run": 1, "metric": 1.2, "status": "keep", "asi": {"config": "configs/ema_base.yaml"}},
-        {
-            "run": 2,
-            "metric": 0.8,
-            "status": "discard",
-            "asi": {"config": "configs/variants/ema_x.yaml"},
-        },
-    ]
-    path = tmp_path / "log.jsonl"
-    write_entries(path, entries)
-    assert read_entries(path) == entries
-
-
-def test_read_entries_skips_blank_lines(tmp_path: Path) -> None:
-    path = tmp_path / "log.jsonl"
-    path.write_text(
-        '{"type": "config"}\n'
-        "\n"
-        "   \n"
-        '{"run": 1, "metric": 1.0, "status": "keep", "asi": {"config": "configs/ema_base.yaml"}}\n'
-    )
-    entries = read_entries(path)
-    assert len(entries) == 2
-    assert entries[0]["type"] == "config"
-    assert entries[1]["status"] == "keep"
 
 
 # ── direction / is_better / best_result / latest_result ─────────

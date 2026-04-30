@@ -231,33 +231,26 @@ def test_save_research_finding_rejects_bad_type(monkeypatch):
     assert "REJECTED" in result
 
 
-def test_list_past_theses_parses_autoresearch_jsonl(monkeypatch, tmp_path):
-    file_one = tmp_path / "ema_autoresearch.jsonl"
-    file_two = tmp_path / "orb_autoresearch.jsonl"
-    file_one.write_text(
-        "\n".join(
-            [
-                json.dumps(
-                    {
-                        "type": "research_round",
-                        "thesis_id": "ema_one",
-                        "outcome": "compiled",
-                        "round": 1,
-                    }
-                ),
-                json.dumps({"type": "other", "thesis_id": "ignored"}),
-            ]
-        )
+def test_list_past_theses_reads_sqlite_history(monkeypatch, tmp_path):
+    from experiment_db import ExperimentDB
+
+    db_one = ExperimentDB(tmp_path / "ema_experiments.db")
+    db_two = ExperimentDB(tmp_path / "orb_experiments.db")
+    db_one.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-1-round-1",
+            "attempt_number": 1,
+            "thesis_id": "ema_one",
+            "validator_status": "compiled",
+        }
     )
-    file_two.write_text(
-        json.dumps(
-            {
-                "type": "research_round",
-                "thesis_id": "orb_two",
-                "outcome": "rejected",
-                "round": 2,
-            }
-        )
+    db_two.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-2-round-2",
+            "attempt_number": 1,
+            "thesis_id": "orb_two",
+            "validator_status": "rejected",
+        }
     )
 
     mcp = tools_mcp._build_research_tools_mcp(

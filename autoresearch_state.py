@@ -1,4 +1,4 @@
-"""State, JSONL log, results, and current.md rendering for autoresearch.
+"""State, experiment results, and current.md rendering for autoresearch.
 
 Pure functions. The controller composes these with its own paths.
 """
@@ -6,19 +6,13 @@ Pure functions. The controller composes these with its own paths.
 from __future__ import annotations
 
 import json
-import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
-
-from pydantic import BaseModel, ConfigDict, ValidationError
+from typing import Any
 
 from autoresearch_constants import MILLISECONDS_PER_SECOND
-
-_log = logging.getLogger(__name__)
-
 
 # ── Time helpers (rule J: UTC in persistent state) ───────────────
 
@@ -123,115 +117,6 @@ def write_state(state_path: Path, state: dict[str, Any]) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     tmp_path.replace(state_path)
-
-
-# ── JSONL row schemas (rule 5: validate at every layer boundary) ──
-
-
-class JsonlConfigEntry(BaseModel):
-    """The metadata header row at the top of each JSONL file."""
-
-    model_config = ConfigDict(extra="allow")
-    type: Literal["config"]
-    metricName: str | None = None
-    bestDirection: Literal["higher", "lower"] = "higher"
-
-
-class JsonlResearchRoundEntry(BaseModel):
-    """One conductor-round outcome row."""
-
-    model_config = ConfigDict(extra="allow")
-    type: Literal["research_round"]
-    outcome: str
-    round: int | None = None
-    thesis_id: str | None = None
-
-
-class JsonlExperimentEntry(BaseModel):
-    """One backtest-result row. Identified by absence of `type`."""
-
-    model_config = ConfigDict(extra="allow")
-    metric: float
-    status: Literal["keep", "discard"]
-    asi: dict[str, Any] | None = None
-
-
-def _validate_jsonl_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Validate a single JSONL row against its source-specific schema.
-
-    Returns the validated dict (round-trip through pydantic, preserving
-    extra fields). Raises ValidationError on schema mismatch.
-    """
-    row_type = row.get("type")
-    if row_type == "config":
-        JsonlConfigEntry.model_validate(row)
-    elif row_type == "research_round":
-        JsonlResearchRoundEntry.model_validate(row)
-    else:
-        JsonlExperimentEntry.model_validate(row)
-    # Validation only — return the original dict so default-valued fields
-    # are not silently inserted on read.
-    return row
-
-
-def _quarantine_row(jsonl_path: Path, raw_line: str, reason: str) -> None:
-    """Append a malformed row to <jsonl_path>.quarantine.jsonl with reason.
-
-    Project rule I: malformed rows go to a quarantine file plus a log line
-    that names the problem; the read continues so the loop is not killed
-    by one bad row.
-    """
-    quarantine = jsonl_path.with_suffix(jsonl_path.suffix + ".quarantine.jsonl")
-    quarantine.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps({"reason": reason, "raw": raw_line}) + "\n"
-    with quarantine.open("a") as handle:
-        handle.write(payload)
-    _log.warning(
-        "JSONL_QUARANTINE jsonl=%s reason=%s row_preview=%s",
-        jsonl_path.name,
-        reason,
-        raw_line[:120],
-    )
-
-
-# ── JSONL log ──────────────────────────────────────────────────────
-
-
-def read_entries(jsonl_path: Path) -> list[dict[str, Any]]:
-    """Read validated JSONL rows. Malformed rows go to quarantine.
-
-    Project rule 5: validate at every layer boundary. Source-specific
-    pydantic models (JsonlConfigEntry / JsonlResearchRoundEntry /
-    JsonlExperimentEntry) gate every row before it enters the rest of
-    the system. Project rule I: bad rows quarantine and log; the read
-    continues so one malformed row does not kill the loop.
-    """
-    if not jsonl_path.exists():
-        return []
-    entries: list[dict[str, Any]] = []
-    for line in jsonl_path.read_text().splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            row = json.loads(stripped)
-        except json.JSONDecodeError as exc:
-            _quarantine_row(jsonl_path, stripped, f"json_decode_error: {exc}")
-            continue
-        if not isinstance(row, dict):
-            _quarantine_row(jsonl_path, stripped, f"not_a_json_object: {type(row).__name__}")
-            continue
-        try:
-            entries.append(_validate_jsonl_row(row))
-        except ValidationError as exc:
-            _quarantine_row(
-                jsonl_path, stripped, f"schema_validation_failed: {exc.error_count()} errors"
-            )
-    return entries
-
-
-def write_entries(jsonl_path: Path, entries: list[dict[str, Any]]) -> None:
-    jsonl_path.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
 
 
 # ── Results ────────────────────────────────────────────────────────
