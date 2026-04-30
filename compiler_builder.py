@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from artifact_io import timestamp_ms, write_json_artifact
+from backtest.runtime_config import load_runtime_config
 from strategies import STRATEGIES
 from strategy_family import load_family
 
@@ -57,8 +58,24 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             "validation_passed": False,
         }
 
-    proposal = json.loads(proposal_path.read_text())
-    compilation = json.loads(compilation_path.read_text())
+    try:
+        proposal = json.loads(proposal_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "status": "error",
+            "reason": f"malformed proposal artifact for {thesis_id}: {exc}",
+            "generated_config": None,
+            "validation_passed": False,
+        }
+    try:
+        compilation = json.loads(compilation_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "status": "error",
+            "reason": f"malformed compilation artifact for {thesis_id}: {exc}",
+            "generated_config": None,
+            "validation_passed": False,
+        }
     family_name = proposal.get("strategy_family") or proposal["family"]
     family = load_family(family_name)
     normalized_contract = compilation.get("normalized_contract") or []
@@ -85,6 +102,15 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
 
     config_abspath = root / config_path
     if config_abspath.exists():
+        try:
+            load_runtime_config(str(config_abspath), family_name)
+        except Exception as exc:
+            return {
+                "status": "error",
+                "reason": f"generated config failed validation: {exc}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
         return {
             "status": "completed",
             "reason": "config already exists",
@@ -152,6 +178,16 @@ Constraints:
     result = (proc.stdout or "") + (proc.stderr or "")
 
     generated = config_path if config_abspath.exists() else None
+    if generated:
+        try:
+            load_runtime_config(str(config_abspath), family_name)
+        except Exception as exc:
+            return {
+                "status": "error",
+                "reason": f"generated config failed validation: {exc}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
     return {
         "status": "completed" if generated else "error",
         "reason": result,

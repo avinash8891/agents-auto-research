@@ -56,6 +56,20 @@ def test_parse_result_json_handles_malformed_json(tmp_path: Path) -> None:
         parse_result_json(f"RESULT_JSON {bad}\n")
 
 
+def test_read_thesis_metadata_handles_malformed_sidecar_json(tmp_path) -> None:
+    from autoresearch_experiment import _read_thesis_metadata
+    from types import SimpleNamespace
+
+    config = "experiments/bad/runtime_config.json"
+    controller = SimpleNamespace(root=tmp_path, ctx=SimpleNamespace(current_contract=None))
+    thesis_json = controller.root / "experiments" / "bad" / "thesis.json"
+    thesis_json.parent.mkdir(parents=True, exist_ok=True)
+    thesis_json.write_text("{not valid json")
+
+    with pytest.raises(ValueError, match="THESIS_METADATA_MALFORMED"):
+        _read_thesis_metadata(controller, config)
+
+
 # ── parse_benchmark_details (RESULT_JSON path) ──────────────────
 
 
@@ -233,6 +247,46 @@ def test_sanitize_preserves_config_header(tmp_path: Path) -> None:
     assert out[0]["type"] == "config"
     assert out[0]["metricName"] == "median_expectancy"
     assert out[1]["status"] == "keep"
+
+
+def test_sanitize_does_not_mutate_private_db_cache(tmp_path: Path) -> None:
+    db = ExperimentDB(tmp_path / "experiments.db")
+    db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
+    config = "configs/variants/ema_aggressive.yaml"
+    rich = {
+        "run": 1,
+        "run_id": "rich",
+        "metric": 1.42,
+        "status": "keep",
+        "description": "strict-native loop: ema_aggressive",
+        "asi": {"config": config, "trade_analysis": {"trade_count": 287}},
+    }
+    low_info = {
+        "run": 2,
+        "run_id": "low",
+        "metric": 1.42,
+        "status": "keep",
+        "description": "loop: ema_aggressive",
+        "asi": {"config": config},
+    }
+    db.import_entries([rich, low_info])
+
+    original_records = list(db._records or [])
+    sanitize_duplicate_entries(db, config)
+
+    assert db._records is not None
+    assert len(db._records) == 1
+    assert db._records[0].experiment_id == "rich"
+    assert len(original_records) == 2
+
+
+def test_evaluate_effect_returns_none_when_metric_is_missing() -> None:
+    from experiment_evaluator import evaluate_effect
+    from research_types import ExpectedEffect
+
+    effect = ExpectedEffect(metric="profit_factor", direction="increase")
+
+    assert evaluate_effect(effect, {"profit_factor": 1.0}, {}) is None
 
 
 def test_evaluate_metric_uses_sqlite_experiment_db(tmp_path: Path) -> None:
@@ -531,3 +585,16 @@ def test_evaluate_against_thesis_raises_deterministic_evaluator_errors(monkeypat
             "keep",
             {"trade_count": 1},
         )
+
+
+def test_write_run_artifacts_leaves_no_tmp_artifacts(tmp_path: Path) -> None:
+    from autoresearch_experiment import _write_run_artifacts
+
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+
+    _write_run_artifacts(artifact_dir, "benchmark ok\n", {"metric": 1.0})
+
+    assert (artifact_dir / "benchmark_output.txt").exists()
+    assert (artifact_dir / "analysis.json").exists()
+    assert not list(artifact_dir.rglob("*.tmp"))

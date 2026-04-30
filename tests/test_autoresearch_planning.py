@@ -8,11 +8,13 @@ strings ("keep", "discard", "pending", "completed").
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from autoresearch_planning import (
+    build_research_failure_state,
     check_baseline_rerun,
     generate_combination_candidates,
     list_known_variant_configs,
@@ -196,6 +198,42 @@ def test_thesis_family_for_falls_back_to_proposal_artifact(tmp_path: Path, orb_f
     )
 
 
+def test_generate_theses_from_ideas_compiles_family_keyed_proposal(tmp_path: Path, orb_family) -> None:
+    ideas_path = tmp_path / "autoresearch.ideas.md"
+    ideas_path.write_text("### Entry theses\n- `novel_thesis`\n")
+    variants = tmp_path / "configs" / "variants"
+    variants.mkdir(parents=True)
+    (variants / "orb_novel_thesis.yaml").write_text("opening_range_minutes: 5\n")
+    proposals_dir = tmp_path / orb_family.proposals_dirname
+    run_queue_dir = tmp_path / orb_family.run_queue_dirname
+
+    from autoresearch_planning import generate_theses_from_ideas
+
+    generated = generate_theses_from_ideas(
+        tmp_path, orb_family, ideas_path, run_queue_dir, proposals_dir, []
+    )
+
+    assert generated == ["configs/variants/orb_novel_thesis.yaml"]
+    assert (proposals_dir / "novel_thesis.json").exists()
+    assert (tmp_path / orb_family.compilations_dirname / "novel_thesis.json").exists()
+
+
+def test_generate_theses_from_ideas_leaves_no_tmp_artifacts(tmp_path: Path, orb_family) -> None:
+    ideas_path = tmp_path / "autoresearch.ideas.md"
+    ideas_path.write_text("### Entry theses\n- `novel_thesis`\n")
+    variants = tmp_path / "configs" / "variants"
+    variants.mkdir(parents=True)
+    (variants / "orb_novel_thesis.yaml").write_text("opening_range_minutes: 5\n")
+    proposals_dir = tmp_path / orb_family.proposals_dirname
+    run_queue_dir = tmp_path / orb_family.run_queue_dirname
+
+    from autoresearch_planning import generate_theses_from_ideas
+
+    generate_theses_from_ideas(tmp_path, orb_family, ideas_path, run_queue_dir, proposals_dir, [])
+
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
 def test_thesis_family_for_returns_unknown_when_neither_match(tmp_path: Path, orb_family) -> None:
     assert (
         thesis_family_for("configs/variants/orb_mystery.yaml", orb_family, tmp_path / "p", tmp_path)
@@ -276,6 +314,68 @@ def test_generate_combination_candidates_creates_yaml_for_allowed_pair(
     assert proposal_path.exists()
     proposal = json.loads(proposal_path.read_text())
     assert proposal["family"] == "combination"
+
+
+def test_generate_combination_candidates_does_not_publish_invalid_yaml_combo(
+    tmp_path: Path, orb_family
+) -> None:
+    variants = tmp_path / "configs" / "variants"
+    variants.mkdir(parents=True)
+    (variants / "orb_spy_only.yaml").write_text("symbols: SPY\n")
+    (variants / "orb_trailing_stop.yaml").write_text("use_time_stop: maybe\n")
+    proposals_dir = tmp_path / "orb-proposals"
+
+    results = [
+        ExperimentRecord("configs/variants/orb_spy_only.yaml", 1.0, "keep", "", 1, {}),
+        ExperimentRecord("configs/variants/orb_trailing_stop.yaml", 1.2, "keep", "", 2, {}),
+    ]
+    out = generate_combination_candidates(tmp_path, orb_family, proposals_dir, results)
+
+    assert out == []
+    assert not (tmp_path / "configs" / "variants" / "orb_spy_only_x_trailing_stop.yaml").exists()
+
+
+def test_generate_combination_candidates_leaves_no_tmp_or_partial_yaml_on_failed_publish(
+    tmp_path: Path, orb_family, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    variants = tmp_path / "configs" / "variants"
+    variants.mkdir(parents=True)
+    (variants / "orb_spy_only.json").write_text('[{"type":"universe_symbols","symbols":["SPY"]}]\n')
+    (variants / "orb_trend_filter.json").write_text('[{"type":"regime_filter","require_regimes":["trend_day"]}]\n')
+    proposals_dir = tmp_path / "orb-proposals"
+
+    (proposals_dir / "spy_only.json").parent.mkdir(parents=True, exist_ok=True)
+    (proposals_dir / "spy_only.json").write_text(json.dumps({"thesis_id": "spy_only", "family": "universe"}))
+    (proposals_dir / "trend_filter.json").write_text(json.dumps({"thesis_id": "trend_filter", "family": "regime"}))
+
+    results = [
+        ExperimentRecord("configs/variants/orb_spy_only.json", 1.0, "keep", "", 1, {}),
+        ExperimentRecord("configs/variants/orb_trend_filter.json", 1.2, "keep", "", 2, {}),
+    ]
+
+    original_replace = os.replace
+
+    def _crash_on_combo_publish(src, dst):
+        if str(dst).endswith("contracts/spy_only_x_trend_filter.json"):
+            raise RuntimeError("combo publish failed")
+        return original_replace(src, dst)
+
+    monkeypatch.setattr("autoresearch_planning.os.replace", _crash_on_combo_publish)
+
+    with pytest.raises(RuntimeError, match="combo publish failed"):
+        generate_combination_candidates(tmp_path, orb_family, proposals_dir, results)
+
+    assert not (tmp_path / "contracts" / "spy_only_x_trend_filter.json").exists()
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_build_research_failure_state_marks_interrupted_research_failure(tmp_path: Path) -> None:
+    research_dir = tmp_path / "research"
+    out = build_research_failure_state(tmp_path, research_dir, "round 5 failed")
+
+    assert out["state"] == "interrupted"
+    assert out["next_action"]["type"] == "terminated"
+    assert any(b["kind"] == "research_failed" for b in out["blockers"])
 
 
 # ── should_terminate ────────────────────────────────────────────

@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
 
 from artifact_io import timestamp_ms, write_json_artifact
 from autoresearch_constants import MILLISECONDS_PER_SECOND
+from backtest.runtime_config import load_runtime_config
 from compiler_operationalize import operationalize_thesis
 from config_hash import _config_hash
 from family_research_spec import validate_family_config_changes
 from strategies import STRATEGIES
 from strategy_family import load_family
+
+
+def _write_text_atomic(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(content)
+    os.replace(tmp_path, path)
 
 
 def compile_config_thesis(
@@ -55,6 +64,15 @@ def compile_config_thesis(
             "config_path": None,
             "runtime_config": runtime_config,
         }
+    try:
+        strategy.validate_runtime_config_scope(runtime_config)
+    except ValueError as exc:
+        return {
+            "status": "rejected_at_compile",
+            "violations": [str(exc)],
+            "config_path": None,
+            "runtime_config": runtime_config,
+        }
 
     config_hash = _config_hash(runtime_config)
 
@@ -64,7 +82,7 @@ def compile_config_thesis(
 
     # Skip write if identical config already exists (dedup)
     if not config_path.exists():
-        config_path.write_text(json.dumps(runtime_config, indent=2) + "\n")
+        _write_text_atomic(config_path, json.dumps(runtime_config, indent=2) + "\n")
 
     # Write queue entry (also keyed by hash)
     run_queue_dir = root / family.run_queue_dirname
@@ -101,6 +119,8 @@ def compile_proposal_artifact(
     compilations_dir = root / family.compilations_dirname
     run_queue_dir = root / family.run_queue_dirname
     contracts_dir = root / family.contracts_dirname
+    contracts_dir.mkdir(parents=True, exist_ok=True)
+    run_queue_dir.mkdir(parents=True, exist_ok=True)
 
     compilation_payload = {
         "thesis_id": thesis_id,
@@ -111,14 +131,26 @@ def compile_proposal_artifact(
         "normalized_contract": result.normalized_contract,
         "timestamp": timestamp_ms(),
     }
-    write_json_artifact(compilations_dir / f"{thesis_id}.json", compilation_payload)
 
     if result.status != "ready_to_run":
+        write_json_artifact(compilations_dir / f"{thesis_id}.json", compilation_payload)
         return compilation_payload
 
+    validation_tmp_dir = root / ".tmp-contract-validation"
+    validation_tmp_path = validation_tmp_dir / f"{thesis_id}.json"
+    try:
+        _write_text_atomic(validation_tmp_path, json.dumps(result.normalized_contract, indent=2) + "\n")
+        load_runtime_config(str(validation_tmp_path), strategy_name=family_name)
+    except Exception as exc:
+        validation_tmp_path.unlink(missing_ok=True)
+        compilation_payload["status"] = "rejected_at_compile"
+        compilation_payload["runtime_loader_error"] = str(exc)
+        write_json_artifact(compilations_dir / f"{thesis_id}.json", compilation_payload)
+        return compilation_payload
+    finally:
+        validation_tmp_path.unlink(missing_ok=True)
+
     contract_path = contracts_dir / f"{thesis_id}.json"
-    contract_path.parent.mkdir(parents=True, exist_ok=True)
-    contract_path.write_text(json.dumps(result.normalized_contract, indent=2) + "\n")
 
     queue_payload = {
         "queue_id": thesis_id,
@@ -127,7 +159,15 @@ def compile_proposal_artifact(
         "config": contract_path.relative_to(root).as_posix(),
         "timestamp": timestamp_ms(),
     }
-    write_json_artifact(run_queue_dir / f"{thesis_id}.json", queue_payload)
+    try:
+        _write_text_atomic(contract_path, json.dumps(result.normalized_contract, indent=2) + "\n")
+        write_json_artifact(run_queue_dir / f"{thesis_id}.json", queue_payload)
+        write_json_artifact(compilations_dir / f"{thesis_id}.json", compilation_payload)
+    except Exception:
+        contract_path.unlink(missing_ok=True)
+        (run_queue_dir / f"{thesis_id}.json").unlink(missing_ok=True)
+        (compilations_dir / f"{thesis_id}.json").unlink(missing_ok=True)
+        raise
     return compilation_payload
 
 
@@ -205,6 +245,10 @@ def create_executable_artifact(
 
     thesis = validate_family_config_changes(family_name, thesis)
     thesis = operationalize_thesis(dict(thesis))
+    if thesis.get("config_changes") and not thesis.get("primitive_contract"):
+        thesis["primitive_contract"] = STRATEGIES[family_name].map_config_changes_to_contract(
+            thesis["config_changes"]
+        )
     proposal = {
         "thesis_id": thesis_id,
         "strategy_family": family_name,
@@ -294,10 +338,10 @@ def write_research_artifact(
         artifact["fallback_reason"] = fallback_reason
 
     artifact_path = research_dir / f"{request_id}-findings.json"
-    artifact_path.write_text(json.dumps(artifact, indent=2) + "\n")
+    _write_text_atomic(artifact_path, json.dumps(artifact, indent=2) + "\n")
 
     raw_path = research_dir / f"{request_id}-raw.txt"
-    raw_path.write_text(raw_output)
+    _write_text_atomic(raw_path, raw_output)
 
     return artifact_path
 
@@ -307,4 +351,4 @@ def mark_request_completed(request_path: Path) -> None:
     payload = json.loads(request_path.read_text())
     payload["status"] = "completed"
     payload["completed_at"] = int(time.time() * MILLISECONDS_PER_SECOND)
-    request_path.write_text(json.dumps(payload, indent=2) + "\n")
+    _write_text_atomic(request_path, json.dumps(payload, indent=2) + "\n")

@@ -61,6 +61,8 @@ def compile_ema_contract(contract: list[dict[str, Any]]) -> CompilationResult:
             runtime["gap_filter"] = primitive.get("enabled", True)
             if "gap_pct" in primitive:
                 runtime["gap_pct"] = primitive["gap_pct"]
+        elif primitive["type"] == "config_changes_passthrough":
+            runtime.update(primitive.get("config_changes", {}))
 
     # Validate before returning
     from strategies.ema.validate import validate_ema_runtime_config
@@ -116,5 +118,25 @@ def map_ema_config_changes_to_contract(config_changes: dict[str, Any]) -> list[d
                 "enabled": bool(config_changes["use_range_shift"]),
                 "lookback": config_changes.get("range_shift_lookback"),
             }
+        )
+    explicitly_mapped_keys = {
+        "ema_length",
+        "timeframe_long",
+        "timeframe_short",
+        "rr_ratio",
+        "direction_bias",
+        "entry_cutoff_time",
+        "max_trades_per_day",
+        "gap_filter",
+        "gap_pct",
+        "use_range_shift",
+        "range_shift_lookback",
+    }
+    passthrough_changes = {
+        key: value for key, value in config_changes.items() if key not in explicitly_mapped_keys
+    }
+    if passthrough_changes:
+        primitive_contract.append(
+            {"type": "config_changes_passthrough", "config_changes": passthrough_changes}
         )
     return primitive_contract

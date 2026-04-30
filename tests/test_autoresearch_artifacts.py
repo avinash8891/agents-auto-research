@@ -61,6 +61,29 @@ def test_read_artifacts_skips_malformed_json(tmp_path: Path) -> None:
     assert out[0]["thesis_id"] == "g"
 
 
+def test_read_artifacts_skips_unreadable_json_file(tmp_path: Path, monkeypatch) -> None:
+    artifacts_dir = tmp_path / "ema-run-queue"
+    artifacts_dir.mkdir()
+    good = artifacts_dir / "good.json"
+    bad = artifacts_dir / "bad.json"
+    good.write_text(json.dumps({"thesis_id": "g", "status": "pending", "config": "x.json"}))
+    bad.write_text("{}")
+
+    original_read_text = Path.read_text
+
+    def _read_text(self: Path, *args, **kwargs):
+        if self == bad:
+            raise OSError("simulated read failure")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+    out = read_artifacts_relative_to_root(artifacts_dir, tmp_path)
+    assert len(out) == 1
+    assert out[0]["thesis_id"] == "g"
+
+
+
 def test_read_artifacts_returns_sorted_by_filename(tmp_path: Path) -> None:
     artifacts_dir = tmp_path / "queue"
     _write_artifact(artifacts_dir, "z.json", {"id": "z"})
@@ -179,3 +202,14 @@ def test_queue_dedupes_within_a_single_pass(tmp_path: Path) -> None:
 
     queued = queue_from_thesis_artifacts(run_queue_dir, tmp_path, [])
     assert queued == [config]
+
+
+def test_queue_skips_malformed_runtime_config_even_if_path_exists(tmp_path: Path) -> None:
+    run_queue_dir = tmp_path / "ema-run-queue"
+    config = "experiments/runtime_config.json"
+    (tmp_path / config).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / config).write_text("{not valid json")
+    _write_artifact(run_queue_dir, "bad.json", {"config": config, "status": "pending"})
+
+    queued = queue_from_thesis_artifacts(run_queue_dir, tmp_path, [])
+    assert queued == []

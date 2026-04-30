@@ -261,6 +261,21 @@ def test_map_ema_config_changes_to_contract_keeps_filter_primitives() -> None:
     assert {"type": "range_shift", "enabled": True, "lookback": 30} in contract
 
 
+def test_map_ema_config_changes_to_contract_preserves_supported_defaults_surface() -> None:
+    contract = map_ema_config_changes_to_contract(
+        {
+            "max_hold_bars": 7,
+            "trail_after_r": 1.5,
+            "symbols": ["SPY"],
+            "validation_start": "2024-01-01",
+            "validation_end": "2024-12-31",
+        }
+    )
+
+    rendered_keys = {primitive["type"] for primitive in contract}
+    assert "config_changes_passthrough" in rendered_keys
+
+
 def test_compile_ema_contract_returns_ready_to_run_for_valid_contract() -> None:
     result = compile_ema_contract(
         [
