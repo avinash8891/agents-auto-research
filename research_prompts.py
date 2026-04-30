@@ -46,10 +46,10 @@ To understand what the engine supports and what can be changed,
 READ THE SOURCE CODE. Do not guess parameter names.
 
 Source code for signal mechanics (use these to verify hypotheses):
-- ema_signals.py: signal generation, alert candle detection, EMA computation,
+- strategies/ema/signals.py: signal generation, alert candle detection, EMA computation,
   daily reset logic, ema_alert_carry() stateful loop
-- ema_exits.py: exit logic (stop/target/timeout)
-- backtest_5ema.py: entry filters, main backtest orchestration""",
+- strategies/ema/exits.py: exit logic (stop/target/timeout)
+- strategies/ema/strategy.py: entry filters, main backtest orchestration""",
 }
 
 

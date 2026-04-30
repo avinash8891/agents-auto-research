@@ -100,9 +100,15 @@ def generate_signals_for_frame(
     ema = pd.Series(close).ewm(span=ema_length, adjust=False).mean().values
 
     # Shifted arrays (previous bar values)
-    prev_high = np.empty(n); prev_high[0] = np.nan; prev_high[1:] = high[:-1]
-    prev_low = np.empty(n); prev_low[0] = np.nan; prev_low[1:] = low[:-1]
-    prev_ema = np.empty(n); prev_ema[0] = np.nan; prev_ema[1:] = ema[:-1]
+    prev_high = np.empty(n)
+    prev_high[0] = np.nan
+    prev_high[1:] = high[:-1]
+    prev_low = np.empty(n)
+    prev_low[0] = np.nan
+    prev_low[1:] = low[:-1]
+    prev_ema = np.empty(n)
+    prev_ema[0] = np.nan
+    prev_ema[1:] = ema[:-1]
 
     # Daily reset: same day as previous bar
     if isinstance(frame.index, pd.DatetimeIndex):

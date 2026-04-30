@@ -3,6 +3,7 @@
 Takes a resampled OHLC frame and EMASignals, simulates trades with
 fixed stop/target exits plus slippage. Returns a list of trade dicts.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 
 def simulate_trades(
     frame: pd.DataFrame,
-    signals,  # EMASignals from ema_signals
+    signals,  # EMASignals from strategies.ema.signals
     config: dict,
     symbol: str = "",
     event_logger: "StrategyEventLogger | None" = None,
@@ -62,22 +63,26 @@ def simulate_trades(
     def _ts(bar_idx: int) -> str:
         return str(f_idx[bar_idx]) if bar_idx < n else ""
 
-    def _log_rejection(bar_idx: int, reason: str,
-                       ep: float = float("nan"), sp: float = float("nan")) -> None:
+    def _log_rejection(
+        bar_idx: int, reason: str, ep: float = float("nan"), sp: float = float("nan")
+    ) -> None:
         if event_logger is None:
             return
         event_logger.log(
-            timestamp=_ts(bar_idx), symbol=symbol, direction=direction,
-            event_type="order_rejected", status="rejected",
-            stage="execution_simulation", reason=reason,
+            timestamp=_ts(bar_idx),
+            symbol=symbol,
+            direction=direction,
+            event_type="order_rejected",
+            status="rejected",
+            stage="execution_simulation",
+            reason=reason,
             entry_price=ep if ep == ep else None,
             stop_price=sp if sp == sp else None,
         )
 
     for i in signal_bars:
         if i <= in_trade_until:
-            _log_rejection(i, "position_already_open",
-                           raw_entry_prices[i], raw_stop_prices[i])
+            _log_rejection(i, "position_already_open", raw_entry_prices[i], raw_stop_prices[i])
             continue
 
         entry_raw = raw_entry_prices[i]
@@ -106,25 +111,47 @@ def simulate_trades(
         if trail_after_r is None:
             # Legacy: fixed target exit
             exit_bar, exit_price, exit_reason = _exit_fixed_target(
-                i, n, entry, stop, target, risk, is_long, max_hold,
-                f_high, f_low, f_open, f_close,
+                i,
+                n,
+                entry,
+                stop,
+                target,
+                risk,
+                is_long,
+                max_hold,
+                f_high,
+                f_low,
+                f_open,
+                f_close,
             )
         else:
             # Transcript-faithful: trail after reaching minimum R
-            trail_trigger = entry + trail_after_r * risk if is_long else entry - trail_after_r * risk
+            trail_trigger = (
+                entry + trail_after_r * risk if is_long else entry - trail_after_r * risk
+            )
             exit_bar, exit_price, exit_reason = _exit_trail_after_r(
-                i, n, entry, stop, trail_trigger, risk, is_long, max_hold,
-                f_high, f_low, f_open, f_close,
+                i,
+                n,
+                entry,
+                stop,
+                trail_trigger,
+                risk,
+                is_long,
+                max_hold,
+                f_high,
+                f_low,
+                f_open,
+                f_close,
             )
 
         if exit_bar < 0:
             continue
 
         if is_long:
-            exit_price *= (1.0 - slippage)
+            exit_price *= 1.0 - slippage
             pnl = (exit_price - entry) / entry
         else:
-            exit_price *= (1.0 + slippage)
+            exit_price *= 1.0 + slippage
             pnl = (entry - exit_price) / entry
 
         in_trade_until = exit_bar
@@ -145,10 +172,15 @@ def simulate_trades(
 
         if event_logger is not None:
             event_logger.log(
-                timestamp=_ts(i), symbol=symbol, direction=direction,
-                event_type="executed_trade", status="executed",
+                timestamp=_ts(i),
+                symbol=symbol,
+                direction=direction,
+                event_type="executed_trade",
+                status="executed",
                 stage="execution_simulation",
-                entry_price=entry, stop_price=stop, target_price=target,
+                entry_price=entry,
+                stop_price=stop,
+                target_price=target,
                 rr_ratio=rr_ratio,
             )
 
@@ -156,10 +188,18 @@ def simulate_trades(
 
 
 def _exit_fixed_target(
-    i: int, n: int, entry: float, stop: float, target: float,
-    risk: float, is_long: bool, max_hold: int,
-    f_high: np.ndarray, f_low: np.ndarray,
-    f_open: np.ndarray, f_close: np.ndarray,
+    i: int,
+    n: int,
+    entry: float,
+    stop: float,
+    target: float,
+    risk: float,
+    is_long: bool,
+    max_hold: int,
+    f_high: np.ndarray,
+    f_low: np.ndarray,
+    f_open: np.ndarray,
+    f_close: np.ndarray,
 ) -> tuple[int, float, str]:
     """Original fixed-target exit logic."""
     end = min(i + max_hold + 1, n)
@@ -210,10 +250,18 @@ def _exit_fixed_target(
 
 
 def _exit_trail_after_r(
-    i: int, n: int, entry: float, stop: float, trail_trigger: float,
-    risk: float, is_long: bool, max_hold: int,
-    f_high: np.ndarray, f_low: np.ndarray,
-    f_open: np.ndarray, f_close: np.ndarray,
+    i: int,
+    n: int,
+    entry: float,
+    stop: float,
+    trail_trigger: float,
+    risk: float,
+    is_long: bool,
+    max_hold: int,
+    f_high: np.ndarray,
+    f_low: np.ndarray,
+    f_open: np.ndarray,
+    f_close: np.ndarray,
 ) -> tuple[int, float, str]:
     """Transcript-faithful exit: fixed stop until trail_trigger reached,
     then trail candle-by-candle.

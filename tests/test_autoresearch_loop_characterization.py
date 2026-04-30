@@ -400,3 +400,93 @@ def test_execute_once_resumes_halted_thesis_when_keys_now_exist(controller, monk
     assert "halted_thesis_id" not in state
     assert "halted_reason" not in state
     assert "halted_thesis" not in state
+
+
+def test_execute_once_end_to_end_tiny_ema_fixture(controller, monkeypatch, tmp_path):
+    _seed_existing_result(controller, BASELINE_CONFIG)
+    from experiment_db import BaselineCheckpoint
+
+    controller.baseline_tracker.record(
+        BaselineCheckpoint(
+            code_commit="8dfae61",
+            data_hash="fixture-data",
+            config_hash="fixture-config",
+            metrics={"median_expectancy": 0.0},
+            timestamp="2026-04-29T00:00:00Z",
+            round_number=1,
+        )
+    )
+
+    config_rel = "experiments/tiny-ema/runtime_config.json"
+    config_path = tmp_path / config_rel
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text((REPO_ROOT / "tests" / "fixtures" / "tiny_ema_runtime.json").read_text())
+
+    controller.run_queue_dir.mkdir(parents=True, exist_ok=True)
+    (controller.run_queue_dir / "tiny-ema.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "tiny-ema",
+                "config": config_rel,
+                "status": "pending",
+                "source": "characterization",
+            }
+        )
+    )
+
+    calls: list[str] = []
+
+    def fake_run_command(self, command: str):
+        calls.append(command)
+        parts = command.split()
+        output_dir = Path(parts[parts.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        config_arg = parts[parts.index("--config") + 1]
+        payload = {
+            "family": "ema",
+            "config": config_arg,
+            "config_hash": "tinyfixture12",
+            "git_sha": "3154bec",
+            "timestamp": "2026-04-30T00:00:00Z",
+            "metrics": {
+                "median_expectancy": 0.0,
+                "trade_count": 0,
+                "profit_factor": 0.0,
+                "max_drawdown": 0.0,
+                "pct_profitable_windows": 0.0,
+                "avg_sharpe_across_windows": 0.0,
+            },
+            "diagnostics": {},
+            "strategy_diagnostics": {
+                "trade_count": 0,
+                "event_counts": {},
+                "rejection_breakdown": {},
+            },
+            "trades_file": "",
+            "strategy_events_file": str(output_dir / "strategy_events.parquet"),
+            "diagnostics_file": str(output_dir / "diagnostics.json"),
+        }
+        result_path = output_dir / "result.json"
+        result_path.write_text(json.dumps(payload) + "\n")
+        (output_dir / "analysis.json").write_text(json.dumps({"metric": 0.0}) + "\n")
+        (output_dir / "benchmark_output.txt").write_text("benchmark ok\n")
+        return 0, f"RESULT_JSON {result_path}\n"
+
+    monkeypatch.setattr(AutoresearchController, "run_command", fake_run_command)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    assert calls and BASELINE_CONFIG in calls[0]
+    state = controller.read_state()
+    next_action = state.get("next_action", {})
+    assert next_action.get("config") == config_rel
+    entries = controller.read_entries()
+    metric_entries = [
+        e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
+    ]
+    assert len(metric_entries) == 1
+    assert metric_entries[0]["asi"]["config"] == BASELINE_CONFIG
+    artifact_dir = controller.root / metric_entries[0]["asi"]["artifact_dir"]
+    assert (artifact_dir / "benchmark_output.txt").exists()
+    assert (artifact_dir / "analysis.json").exists()

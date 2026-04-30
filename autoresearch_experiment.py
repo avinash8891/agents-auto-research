@@ -251,7 +251,7 @@ def derive_trade_analysis(
             elif isinstance(raw, dict):
                 config_contents = raw
             else:
-                from ema_contract import compile_ema_contract
+                from strategies.ema.contract import compile_ema_contract
 
                 config_contents = compile_ema_contract(raw).runtime_config
         except OSError:

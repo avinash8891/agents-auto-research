@@ -19,7 +19,9 @@ class FamilyResearchSpec:
 
 
 _CANONICAL_REGIMES = ", ".join(f'"{name}"' for name in canonical_regimes())
-_ORB_SUPPORTED_KEYS = "\n".join(f"  - {key}" for key in supported_config_keys() if key != "_research_source")
+_ORB_SUPPORTED_KEYS = "\n".join(
+    f"  - {key}" for key in supported_config_keys() if key != "_research_source"
+)
 
 ORB_CONFIG_SCHEMA = f"""
 SUPPORTED CONFIG KEYS (backtest_orb.py + orb_signals.py + exits.py):
@@ -79,34 +81,6 @@ Regime gating:
 Available regime names: {_CANONICAL_REGIMES}
 """
 
-EMA_CONFIG_SCHEMA = """
-SUPPORTED EMA CONFIG CHANGES:
-
-All config_changes keys MUST come from this list:
-  - ema_length
-  - timeframe_long
-  - timeframe_short
-  - rr_ratio
-  - direction_bias
-  - entry_cutoff_time
-  - max_trades_per_day
-
-EMA FAMILY RULES:
-- ema_length: integer EMA period used for the setup
-- timeframe_long: integer minutes for bullish setup timeframe
-- timeframe_short: integer minutes for bearish setup timeframe
-- rr_ratio: float risk/reward multiple
-- direction_bias: "both", "long_only", or "short_only"
-- entry_cutoff_time: string HH:MM (e.g. "10:00") — only take entries before this time. null=all day.
-- max_trades_per_day: integer — max trades per day across all symbols. null=unlimited.
-
-IMPORTANT:
-- Do NOT emit ORB keys like universe_mode, skip_regimes, use_time_stop, use_rvol_gate, use_follow_through, or use_volatility_trail.
-- If a thesis requires filters/exits not expressible through the EMA keys above, set requires_code_change=true and explain what primitive/config support is missing.
-- Research should focus on EMA-family hypotheses such as EMA period choice, timeframe selection, risk/reward structure, entry timing, and daily trade limits.
-"""
-
-
 FAMILY_RESEARCH_SPECS: dict[str, FamilyResearchSpec] = {
     "orb": FamilyResearchSpec(
         strategy_label="Opening Range Breakout (ORB)",
@@ -132,38 +106,15 @@ FAMILY_RESEARCH_SPECS: dict[str, FamilyResearchSpec] = {
         thesis_json_hint='"family": "universe" or "entry" or "exit" or "regime"',
         allowed_config_keys=frozenset(supported_config_keys()) - {"_research_source"},
     ),
-    "ema": FamilyResearchSpec(
-        strategy_label="5 EMA reversal/pullback",
-        one_thesis_label="5 EMA reversal/pullback",
-        config_schema=EMA_CONFIG_SCHEMA,
-        research_questions=(
-            "What EMA-based pullback or reversal entry structures are documented in literature or practitioner research?",
-            "What EMA period choices are commonly used for intraday pullback/reversal setups and why?",
-            "What timeframe combinations are used for long-vs-short EMA pullback confirmations?",
-            "What risk-reward structures are documented for intraday EMA pullback/reversal strategies?",
-        ),
-        config_rules=(
-            "ONLY use ema_length, timeframe_long, timeframe_short, rr_ratio, direction_bias, entry_cutoff_time, and max_trades_per_day in config_changes.",
-            "If a thesis depends on time stops, volume gates, universe filters, or regime filters, mark it requires_code_change=true instead of emitting ORB keys.",
-            "Prefer hypotheses that can be tested by changing EMA period, timeframe pairing, risk/reward structure, entry timing, or daily trade limits.",
-        ),
-        prompt_focus=(
-            "EMA period selection",
-            "timeframe asymmetry",
-            "risk-reward structure",
-            "direction bias",
-            "entry timing window",
-            "daily trade frequency",
-            "EMA pullback/reversal mechanics",
-        ),
-        thesis_json_hint='"family": "entry" or "exit"',
-        allowed_config_keys=frozenset({"ema_length", "timeframe_long", "timeframe_short", "rr_ratio", "direction_bias", "entry_cutoff_time", "max_trades_per_day", "gap_filter", "gap_pct", "use_range_shift", "range_shift_lookback"}),
-    ),
 }
 
 
 def get_family_research_spec(name: str) -> FamilyResearchSpec:
-    return FAMILY_RESEARCH_SPECS[name]
+    if name in FAMILY_RESEARCH_SPECS:
+        return FAMILY_RESEARCH_SPECS[name]
+    from strategies import STRATEGIES
+
+    return STRATEGIES[name].research_spec
 
 
 def infer_family_from_dir_name(dirname: str) -> str:

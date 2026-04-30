@@ -9,6 +9,7 @@ Does exactly what ema_autoresearch.sh does:
 3. SSH to run backtest
 4. Print backtest output (for autoresearch_loop to parse)
 """
+
 import ast
 import os
 import sys
@@ -25,25 +26,28 @@ VPS_KEY = os.path.expanduser("~/.ssh/vps_key")
 VPS_DIR = "/root/orb-research"
 
 LOCAL_ROOT = Path(__file__).resolve().parent
-
-# Files to sync (mirrors ema_autoresearch.sh)
+SYNC_DIRS = ["backtest", "strategies"]
 SYNC_FILES = [
     "backtest_5ema.py",
-    "ema_signals.py",
-    "ema_exits.py",
-    "ema_contract.py",
+    "config_hash.py",
     "agent_orchestrator.py",
     "data_loader.py",
     "metrics.py",
     "numba_kernels.py",
+    "strategy_event_logger.py",
     "trace_logger.py",
+    "configs/ema_base.yaml",
 ]
 
 # Files to syntax-check
 SYNTAX_CHECK = [
-    "ema_signals.py",
     "backtest_5ema.py",
-    "ema_contract.py",
+    "backtest/runner.py",
+    "backtest/runtime_config.py",
+    "strategies/base.py",
+    "strategies/ema/strategy.py",
+    "strategies/ema/signals.py",
+    "strategies/ema/contract.py",
 ]
 
 
@@ -58,6 +62,41 @@ def syntax_check():
     return True
 
 
+def _iter_sync_paths() -> list[Path]:
+    paths: list[Path] = []
+    for dirname in SYNC_DIRS:
+        base = LOCAL_ROOT / dirname
+        if not base.exists():
+            continue
+        for path in sorted(base.rglob("*")):
+            if path.is_file() and path.suffix in {".py", ".yaml"}:
+                paths.append(path)
+    for rel in SYNC_FILES:
+        path = LOCAL_ROOT / rel
+        if path.exists():
+            paths.append(path)
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in paths:
+        rel = path.relative_to(LOCAL_ROOT)
+        if rel in seen:
+            continue
+        seen.add(rel)
+        unique.append(path)
+    return unique
+
+
+def _ensure_remote_dir(sftp: paramiko.SFTPClient, remote_path: str) -> None:
+    parts = Path(remote_path).parts
+    current = ""
+    for part in parts[:-1]:
+        current = f"{current}/{part}" if current else part
+        try:
+            sftp.mkdir(current)
+        except IOError:
+            pass
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 vps_runner.py <config-path>", file=sys.stderr)
@@ -70,7 +109,6 @@ def main():
         print(f"Config not found: {config_path}", file=sys.stderr)
         sys.exit(1)
 
-    # 1. Syntax check
     trace("VPS_RUNNER", f"Syntax checking: {SYNTAX_CHECK}")
     if not syntax_check():
         trace("VPS_RUNNER", "SYNTAX CHECK FAILED")
@@ -78,7 +116,6 @@ def main():
         sys.exit(1)
     trace("VPS_RUNNER", "Syntax check passed")
 
-    # 2. Connect
     trace("VPS_RUNNER", f"Connecting to {VPS_HOST} as {VPS_USER}")
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -86,16 +123,14 @@ def main():
     sftp = client.open_sftp()
     trace("VPS_RUNNER", "Connected")
 
-    # 3. SCP files
     t0 = time.time()
-    for fname in SYNC_FILES:
-        local = str(LOCAL_ROOT / fname)
-        remote = f"{VPS_DIR}/{fname}"
-        if os.path.exists(local):
-            sftp.put(local, remote)
-            trace("VPS_RUNNER", f"SCP {fname} -> {remote}")
+    for path in _iter_sync_paths():
+        rel = path.relative_to(LOCAL_ROOT).as_posix()
+        remote = f"{VPS_DIR}/{rel}"
+        _ensure_remote_dir(sftp, remote)
+        sftp.put(str(path), remote)
+        trace("VPS_RUNNER", f"SCP {rel} -> {remote}")
 
-    # SCP config file
     config_basename = os.path.basename(config_path)
     config_dirname = os.path.dirname(config_path)
     sftp.put(str(LOCAL_ROOT / config_path), f"{VPS_DIR}/{config_basename}")
@@ -104,13 +139,12 @@ def main():
     sftp.close()
     trace("VPS_RUNNER", f"SCP complete in {time.time() - t0:.1f}s")
 
-    # 4. SSH to run backtest
     cmd = (
         f"cd {VPS_DIR} && "
-        f"mkdir -p \"{config_dirname}\" && "
-        f"cp \"{config_basename}\" \"{config_path}\" 2>/dev/null || true && "
+        f'mkdir -p "{config_dirname}" && '
+        f'cp "{config_basename}" "{config_path}" 2>/dev/null || true && '
         f"find . -name __pycache__ -type d -exec rm -rf {{}} + 2>/dev/null || true && "
-        f"python3 backtest_5ema.py --config \"{config_path}\""
+        f'python3 backtest/runner.py --strategy ema --config "{config_path}"'
     )
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()
@@ -123,9 +157,11 @@ def main():
     elapsed = time.time() - t1
 
     trace_ssh(cmd, exit_code, out, err)
-    trace("VPS_RUNNER", f"DONE exit={exit_code} elapsed={elapsed:.1f}s stdout_len={len(out)} stderr_len={len(err)}")
+    trace(
+        "VPS_RUNNER",
+        f"DONE exit={exit_code} elapsed={elapsed:.1f}s stdout_len={len(out)} stderr_len={len(err)}",
+    )
 
-    # Print output for autoresearch_loop to parse
     if out:
         print(out, end="")
     if err:
