@@ -68,4 +68,7 @@ done
 
 scp -q "$CONFIG_PATH" root@31.97.60.116:/root/orb-research/ >/dev/null 2>&1 || true
 
-ssh -o StrictHostKeyChecking=no root@31.97.60.116   "cd /root/orb-research && mkdir -p "$(dirname "$CONFIG_PATH")" && cp "$(basename "$CONFIG_PATH")" "$CONFIG_PATH" 2>/dev/null || true && find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true && python3 backtest_5ema.py --config "$CONFIG_PATH"" 2>&1
+config_dir="$(dirname "$CONFIG_PATH")"
+config_base="$(basename "$CONFIG_PATH")"
+ssh -o StrictHostKeyChecking=no root@31.97.60.116 \
+  "cd /root/orb-research && mkdir -p \"$config_dir\" && cp \"$config_base\" \"$CONFIG_PATH\" 2>/dev/null || true && find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true && python3 backtest_5ema.py --config \"$CONFIG_PATH\"" 2>&1

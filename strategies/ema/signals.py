@@ -5,6 +5,7 @@ Transcript rules:
   LONG (15min): candle entirely below 5 EMA -> next bar breaks high -> entry
   Stop at alert candle opposite extreme. Daily reset (no overnight carry).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -114,7 +115,7 @@ def generate_signals_for_frame(
     if isinstance(frame.index, pd.DatetimeIndex):
         dates = frame.index.date
         same_day = np.zeros(n, dtype=bool)
-        same_day[1:] = np.array([dates[i] == dates[i-1] for i in range(1, n)])
+        same_day[1:] = np.array([dates[i] == dates[i - 1] for i in range(1, n)])
     else:
         same_day = np.ones(n, dtype=bool)
         same_day[0] = False
@@ -122,8 +123,12 @@ def generate_signals_for_frame(
     # Stateful alert-carry (numba JIT): transcript says "if next candle does
     # not break, consider the next candle" — alert stays armed until broken
     # or a new trading day resets it.
-    entries, entry_prices, stop_prices, _alert_idxs = ema_alert_carry(
-        high, low, ema, same_day, direction == "short",
+    entries, entry_prices, stop_prices, alert_indices = ema_alert_carry(
+        high,
+        low,
+        ema,
+        same_day,
+        direction == "short",
     )
 
     # Range shift filter
@@ -139,9 +144,6 @@ def generate_signals_for_frame(
             entries = entries & (bias == -1)
         entry_prices = np.where(entries, entry_prices, np.nan)
         stop_prices = np.where(entries, stop_prices, np.nan)
-
-    # Alert bar indices
-    alert_indices = np.where(entries, np.arange(n) - 1, -1)
 
     return EMASignals(
         entries=pd.Series(entries, index=frame.index),
