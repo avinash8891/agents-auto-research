@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from artifact_store import timestamp_ms, write_json_artifact
+from artifact_io import timestamp_ms, write_json_artifact
 from strategies import STRATEGIES
 from strategy_family import load_family
 

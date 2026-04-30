@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 import yaml
 
-from family_research import FamilyResearchSpec
+from family_research_spec import FamilyResearchSpec
 
 
 @dataclass(frozen=True)
@@ -27,11 +27,12 @@ class Strategy(Protocol):
     name: str
     benchmark_script: str
     vps_benchmark_script: str
-    extra_result_fields: tuple[str, ...]
     description_for_research: str
     research_spec: FamilyResearchSpec
     discord_webhook: str
     default_variants: tuple[str, ...]
+    thesis_family_by_slug: dict[str, str]
+    combination_rules: dict[tuple[str, str], str]
 
     def run(self, config: dict[str, Any]) -> dict[str, Any]: ...
     def get_defaults(self) -> dict[str, Any]: ...
@@ -55,9 +56,10 @@ class BaseStrategy:
     name = ""
     benchmark_script = ""
     vps_benchmark_script = ""
-    extra_result_fields: tuple[str, ...] = ()
     description_for_research = ""
     default_variants: tuple[str, ...] = ()
+    thesis_family_by_slug: dict[str, str] = {}
+    combination_rules: dict[tuple[str, str], str] = {}
     research_spec: FamilyResearchSpec
 
     @property
@@ -79,8 +81,7 @@ class BaseStrategy:
         return os.environ.get(f"AUTORESEARCH_DISCORD_WEBHOOK_{self.name.upper()}", "")
 
     def get_defaults(self) -> dict[str, Any]:
-        path = Path(__file__).parent / self.name / "defaults.yaml"
-        return yaml.safe_load(path.read_text())
+        return load_strategy_defaults(self.name, self.family_dirnames.base_config_filename)
 
     def render_contract_to_runtime_config(self, contract: list[dict[str, Any]]) -> dict[str, Any]:
         compilation = self.compile_contract(contract)  # type: ignore[attr-defined]
@@ -95,6 +96,12 @@ class BaseStrategy:
 
 
 STRATEGIES: dict[str, Strategy] = {}
+
+
+def load_strategy_defaults(name: str, base_config_filename: str | None = None) -> dict[str, Any]:
+    filename = base_config_filename or f"{name}_base.yaml"
+    path = Path(__file__).resolve().parents[1] / "configs" / filename
+    return yaml.safe_load(path.read_text())
 
 
 def register(name: str):

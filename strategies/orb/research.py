@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from family_research import FamilyResearchSpec
+from family_research_spec import FamilyResearchSpec
 from strategies.orb.schema import canonical_regimes, supported_config_keys
 
 _CANONICAL_REGIMES = ", ".join(f'"{name}"' for name in canonical_regimes())

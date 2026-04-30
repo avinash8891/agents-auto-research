@@ -4,8 +4,8 @@ import json
 import subprocess
 import sys
 
-from research_infra import _OAUTH_PROXY_URL, _ROOT, _ensure_oauth_proxy, _parse_json
-from research_usage import _accumulate_usage
+from agent_token_usage import _accumulate_usage
+from research_paths import _OAUTH_PROXY_URL, _ROOT, _ensure_oauth_proxy, _parse_json
 from trace_logger import trace, trace_agent_response
 
 
@@ -35,9 +35,7 @@ async def _call_analyst(
             with open(file_path) as f:
                 content = f.read()
             if len(content) > 50000:
-                return (
-                    content[:50000] + f"\n... (truncated, {len(content)} total chars)"
-                )
+                return content[:50000] + f"\n... (truncated, {len(content)} total chars)"
             return content
         except Exception as e:
             return f"ERROR: {e}"

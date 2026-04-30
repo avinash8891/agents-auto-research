@@ -4,8 +4,8 @@ import asyncio
 import subprocess
 from typing import Any
 
-import agent_definitions
 import agent_infra
+import agent_prompts
 
 
 async def _query_with_timeout(
@@ -157,7 +157,7 @@ async def _run_single_agent(
     name: str,
     prompt: str,
     agent_def: Any,
-    retries: int = agent_definitions.MAX_RETRIES,
+    retries: int = agent_prompts.MAX_RETRIES,
     timeout: int = agent_infra.SDK_TIMEOUT_SECONDS,
 ) -> dict[str, Any] | None:
     """Run a single agent directly with its system prompt."""
@@ -203,5 +203,9 @@ async def _run_single_agent(
                 f"RETRY: Your previous response could not be parsed as valid JSON "
                 f"or was missing required fields. {prompt}"
             )
+
+    if agent_infra.cli_fallback_enabled():
+        trace("AGENT_SDK", f"{name} falling back to Claude CLI")
+        return _run_cli_agent(name, agent_def.prompt, prompt, retries=1)
 
     return None

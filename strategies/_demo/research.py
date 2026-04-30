@@ -1,4 +1,4 @@
-from family_research import FamilyResearchSpec
+from family_research_spec import FamilyResearchSpec
 
 DEMO_RESEARCH_SPEC = FamilyResearchSpec(
     strategy_label="Demo",
