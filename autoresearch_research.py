@@ -46,7 +46,7 @@ from trace_logger import (
 )
 
 if TYPE_CHECKING:
-    from autoresearch_loop import AutoresearchController
+    from autoresearch_controller import AutoresearchController
 
 log = get_logger(__name__)
 

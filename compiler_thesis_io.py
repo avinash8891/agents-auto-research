@@ -5,10 +5,11 @@ import time
 from pathlib import Path
 from typing import Any
 
-from artifact_store import timestamp_ms, write_json_artifact
+from artifact_io import timestamp_ms, write_json_artifact
+from autoresearch_constants import MILLISECONDS_PER_SECOND
 from compiler_operationalize import operationalize_thesis
 from config_hash import _config_hash
-from family_research import validate_family_config_changes
+from family_research_spec import validate_family_config_changes
 from strategies import STRATEGIES
 from strategy_family import load_family
 
@@ -281,7 +282,7 @@ def write_research_artifact(
     artifact = {
         "request_id": request_id,
         "status": "completed",
-        "timestamp": int(time.time() * 1000),
+        "timestamp": int(time.time() * MILLISECONDS_PER_SECOND),
         "research_mode": research_mode,
         "external_research_attempted": external_research_attempted,
         "external_research_attempts": external_research_attempts,
@@ -305,5 +306,5 @@ def mark_request_completed(request_path: Path) -> None:
     """Mark a research request as completed."""
     payload = json.loads(request_path.read_text())
     payload["status"] = "completed"
-    payload["completed_at"] = int(time.time() * 1000)
+    payload["completed_at"] = int(time.time() * MILLISECONDS_PER_SECOND)
     request_path.write_text(json.dumps(payload, indent=2) + "\n")

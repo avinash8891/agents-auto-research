@@ -14,13 +14,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import agent_token_usage as usage
 import research_conductor as rc
-import research_infra as infra
 import research_memory as memory
+import research_paths as infra
 import research_subagents as subagents
 import research_tools_mcp as tools_mcp
-import research_usage as usage
-from family_research import get_family_research_spec
+from family_research_spec import get_family_research_spec
 from strategies import STRATEGIES
 
 

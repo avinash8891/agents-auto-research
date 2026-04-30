@@ -1,6 +1,6 @@
 """Directory-based artifact discovery for autoresearch.
 
-Wraps artifact_store.read_json_artifacts so that the returned `artifact_path`
+Wraps artifact_io.read_json_artifacts so that the returned `artifact_path`
 fields are made relative to the controller root, then exposes the family-
 specific lookups (research artifacts, thesis proposals, run-queue artifacts).
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from artifact_store import read_json_artifacts as read_artifact_json_files
+from artifact_io import read_json_artifacts as read_artifact_json_files
 from autoresearch_state import ExperimentRecord
 
 

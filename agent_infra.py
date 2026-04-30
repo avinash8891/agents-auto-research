@@ -14,6 +14,14 @@ if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") and _OAUTH_TOKEN_FILE.exists():
 CLI_TIMEOUT_SECONDS = 180  # Max seconds for a CLI agent call
 
 
+def cli_fallback_enabled() -> bool:
+    return os.environ.get("AUTORESEARCH_AGENT_CLI_FALLBACK", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
 _OAUTH_PROXY_PORT = 10531
 _OAUTH_PROXY_URL = f"http://127.0.0.1:{_OAUTH_PROXY_PORT}/v1"
 

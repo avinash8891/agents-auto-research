@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 
-MEMPALACE_CMD = "/Users/avinashvankadaru/.local/bin/mempalace-mcp"
+MEMPALACE_CMD = "mempalace"
 MEMPALACE_PALACE = "/Users/avinashvankadaru/.codex/mempalace/palace"
 
 
@@ -11,7 +11,7 @@ def _mempalace_search(query_text: str, wing: str = "autoresearch", n: int = 3) -
     try:
         result = subprocess.run(
             [
-                "mempalace",
+                MEMPALACE_CMD,
                 "search",
                 query_text,
                 "--palace",
@@ -36,7 +36,7 @@ def _mempalace_write(wing: str, room: str, content: str) -> bool:
     try:
         subprocess.run(
             [
-                "mempalace",
+                MEMPALACE_CMD,
                 "add",
                 content,
                 "--palace",
@@ -60,7 +60,7 @@ def _mempalace_diary(agent_name: str, topic: str, entry: str) -> bool:
     try:
         subprocess.run(
             [
-                "mempalace",
+                MEMPALACE_CMD,
                 "diary",
                 entry,
                 "--palace",

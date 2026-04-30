@@ -18,9 +18,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import autoresearch_loop as loop_mod
+import autoresearch_controller as loop_mod
 import autoresearch_research as research_mod
-from autoresearch_loop import AutoresearchController
+from autoresearch_controller import AutoresearchController
 from experiment_db import BaselineTracker, ExperimentDB
 from strategy_family import load_family
 
@@ -49,7 +49,7 @@ def controller(tmp_path, monkeypatch):
     ideas_md_path = tmp_path / "ema_autoresearch.ideas.md"
     runs_dir = tmp_path / family.runs_dirname
 
-    # Write the JSONL config header that autoresearch_helper.py evaluate requires.
+    # Write the JSONL config header that autoresearch_cli.py evaluate requires.
     # Without this, `cmd_evaluate` exits with code 1 ("No config found") and
     # evaluate_metric would always return "discard".
     jsonl_path.write_text(

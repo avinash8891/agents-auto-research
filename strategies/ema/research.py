@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from family_research import FamilyResearchSpec
+from family_research_spec import FamilyResearchSpec
 
 EMA_RESEARCH_SPEC = FamilyResearchSpec(
     strategy_label="5 EMA reversal/pullback",
@@ -52,17 +52,19 @@ IMPORTANT:
         "EMA pullback/reversal mechanics",
     ),
     thesis_json_hint='"family": "entry" or "exit"',
-    allowed_config_keys=frozenset({
-        "ema_length",
-        "timeframe_long",
-        "timeframe_short",
-        "rr_ratio",
-        "direction_bias",
-        "entry_cutoff_time",
-        "max_trades_per_day",
-        "gap_filter",
-        "gap_pct",
-        "use_range_shift",
-        "range_shift_lookback",
-    }),
+    allowed_config_keys=frozenset(
+        {
+            "ema_length",
+            "timeframe_long",
+            "timeframe_short",
+            "rr_ratio",
+            "direction_bias",
+            "entry_cutoff_time",
+            "max_trades_per_day",
+            "gap_filter",
+            "gap_pct",
+            "use_range_shift",
+            "range_shift_lookback",
+        }
+    ),
 )

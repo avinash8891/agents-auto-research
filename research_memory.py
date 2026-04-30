@@ -3,14 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from research_infra import _ROOT
+from research_paths import _ROOT
 
 _PALACE_DIR = str(_ROOT / "palace")
 
 
-def _palace_add(
-    wing: str, room: str, content: str, added_by: str = "conductor"
-) -> dict:
+def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor") -> dict:
     """Add a drawer to the palace via palace.get_collection + ChromaDB upsert."""
     import hashlib
     from datetime import datetime
@@ -91,17 +89,13 @@ def save_research_finding(
     VALID_STATUSES = {"unvalidated", "validated", "rejected", "stale"}
 
     if finding_type not in VALID_TYPES:
-        return (
-            f"REJECTED: finding_type must be one of {VALID_TYPES}, got '{finding_type}'"
-        )
+        return f"REJECTED: finding_type must be one of {VALID_TYPES}, got '{finding_type}'"
     if status not in VALID_STATUSES:
         return f"REJECTED: status must be one of {VALID_STATUSES}, got '{status}''"
     if not evidence.strip():
         return "REJECTED: evidence cannot be empty — cite which round/experiment"
     if not scope.strip():
-        return (
-            "REJECTED: scope cannot be empty — specify what data period this applies to"
-        )
+        return "REJECTED: scope cannot be empty — specify what data period this applies to"
     if not expires_if.strip():
         return "REJECTED: expires_if cannot be empty — what would invalidate this?"
 

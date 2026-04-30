@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from autoresearch_constants import MILLISECONDS_PER_SECOND
+
 
 def read_json_artifacts(directory: Path) -> list[dict[str, Any]]:
     artifacts: list[dict[str, Any]] = []
@@ -27,4 +29,4 @@ def write_json_artifact(path: Path, payload: dict[str, Any]) -> Path:
 
 
 def timestamp_ms() -> int:
-    return int(time.time() * 1000)
+    return int(time.time() * MILLISECONDS_PER_SECOND)

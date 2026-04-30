@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-autoresearch_helper.py — CLI helper for autoresearch experiment tracking.
+autoresearch_cli.py — CLI helper for autoresearch experiment tracking.
 
 Handles JSONL state management, MAD-based confidence scoring, and experiment logging.
 No external dependencies — stdlib only.
 
 Usage:
-    python3 autoresearch_helper.py init --jsonl FILE --name NAME --metric-name NAME [--metric-unit UNIT] [--direction lower|higher]
-    python3 autoresearch_helper.py log --jsonl FILE --commit SHA --metric VALUE --status STATUS --description DESC [--direction lower|higher] [--metrics '{"k":v}'] [--asi '{"k":"v"}']
-    python3 autoresearch_helper.py evaluate --jsonl FILE --metric VALUE --direction lower|higher
-    python3 autoresearch_helper.py summary --jsonl FILE
-    python3 autoresearch_helper.py status --jsonl FILE
+    python3 autoresearch_cli.py init --jsonl FILE --name NAME --metric-name NAME [--metric-unit UNIT] [--direction lower|higher]
+    python3 autoresearch_cli.py log --jsonl FILE --commit SHA --metric VALUE --status STATUS --description DESC [--direction lower|higher] [--metrics '{"k":v}'] [--asi '{"k":"v"}']
+    python3 autoresearch_cli.py evaluate --jsonl FILE --metric VALUE --direction lower|higher
+    python3 autoresearch_cli.py summary --jsonl FILE
+    python3 autoresearch_cli.py status --jsonl FILE
 """
 
 import argparse
@@ -21,12 +21,14 @@ import statistics
 import sys
 import time
 
+from autoresearch_constants import MILLISECONDS_PER_SECOND
+
 
 def _make_stdout_logger() -> logging.Logger:
     """Stdlib-only logger that emits %(message)s to stdout, byte-identical
     to print() output. Preserves the `DECISION: keep` / `DECISION: discard`
     stdout contract that autoresearch_experiment.evaluate_metric parses."""
-    logger = logging.getLogger("autoresearch_helper")
+    logger = logging.getLogger("autoresearch_cli")
     if not any(
         isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stdout
         for h in logger.handlers
@@ -215,7 +217,7 @@ def cmd_log(args):
         "metrics": extra_metrics,
         "status": args.status,
         "description": args.description,
-        "timestamp": int(time.time() * 1000),
+        "timestamp": int(time.time() * MILLISECONDS_PER_SECOND),
         "segment": segment,
         "confidence": None,
         "asi": asi,

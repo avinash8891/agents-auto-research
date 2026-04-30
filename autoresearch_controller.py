@@ -89,7 +89,7 @@ from autoresearch_state import write_state as _state_write_state
 from config_hash import _git_sha
 from experiment_db import BaselineTracker, ExperimentDB
 from strategy_family import StrategyFamily, load_family
-from trace_logger import trace
+from trace_logger import trace, trace_state_change
 
 log = get_logger(__name__)
 
@@ -200,7 +200,11 @@ class AutoresearchController:
         return _state_read_state(self.state_path)
 
     def write_state(self, state: dict[str, Any]) -> None:
+        previous_state = self.read_state().get("state", "unknown")
         _state_write_state(self.state_path, state)
+        next_state = state.get("state", "unknown")
+        if previous_state != next_state:
+            trace_state_change(previous_state, next_state, state.get("finished_reason", ""))
 
     def read_entries(self) -> list[dict[str, Any]]:
         return _state_read_entries(self.jsonl_path)
@@ -322,10 +326,15 @@ class AutoresearchController:
         )
 
     def render_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> str:
-        return _state_render_current_md(state, results)
+        return _state_render_current_md(state, results, family_name=self.family.name)
 
     def write_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> None:
-        _state_write_current_md(self.current_md_path, state, results)
+        _state_write_current_md(
+            self.current_md_path,
+            state,
+            results,
+            family_name=self.family.name,
+        )
 
     def reconcile_state(self) -> dict[str, Any]:
         entries = self.read_entries()

@@ -6,11 +6,11 @@ import asyncio
 import json
 from typing import Any
 
-import agent_codex_calls
-import agent_definitions
 import agent_formatters
 import agent_infra
 import agent_memory
+import agent_openai_calls
+import agent_prompts
 from agent_runners import _run_single_agent
 
 format_result_history = agent_formatters.format_result_history
@@ -59,7 +59,7 @@ async def run_diagnostic_analysis(
     )
     # Use Codex SDK analyst (gpt-5.5 + local FunctionTools) instead of
     # Claude SDK analyst (which spawns a crash-prone CLI subprocess).
-    result = await agent_codex_calls._run_diagnostic_analyst_openai(prompt)
+    result = await agent_openai_calls._run_diagnostic_analyst_openai(prompt)
 
     # WRITE: persist validated result to mempalace
     if result:
@@ -108,7 +108,7 @@ async def run_web_research(
         f"PRIOR WEB RESEARCH (do not repeat):\n{prior}\n\n"
         f"Search for external evidence and ideas relevant to these findings."
     )
-    result = await agent_codex_calls._run_web_research_openai(user_prompt)
+    result = await agent_openai_calls._run_web_research_openai(user_prompt)
 
     # WRITE: persist validated result
     if result:
@@ -143,7 +143,7 @@ async def run_research_agent(
         "ORCHESTRATOR",
         f"run_research_agent family={family_name} round={context.get('research_round')}",
     )
-    from family_research import get_family_research_spec
+    from family_research_spec import get_family_research_spec
 
     spec = get_family_research_spec(family_name)
     best = context.get("current_best", {})
@@ -169,7 +169,7 @@ async def run_research_agent(
         f"Based on all the above, propose exactly ONE next thesis that CHANGES something from the current best config."
     )
 
-    research_def = agent_definitions._research_agent(
+    research_def = agent_prompts._research_agent(
         strategy_label=spec.strategy_label,
         config_rules=spec.config_rules,
         config_schema=spec.config_schema,
@@ -180,7 +180,7 @@ async def run_research_agent(
         "research-agent",
         prompt,
         research_def,
-        retries=agent_definitions.MAX_RETRIES,
+        retries=agent_prompts.MAX_RETRIES,
         timeout=agent_infra.SDK_TIMEOUT_SECONDS,
     )
     if not parsed:

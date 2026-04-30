@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -11,12 +12,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import agent_codex_calls
-import agent_definitions
 import agent_formatters
 import agent_infra
 import agent_memory
+import agent_openai_calls
 import agent_orchestrator as ao
+import agent_prompts
 import agent_runners
 
 
@@ -44,7 +45,7 @@ def test_run_diagnostic_analysis_returns_validated_result_and_writes_memory(monk
         assert "RAW TRADES FILE: /tmp/trades.csv" in prompt
         return result_payload
 
-    monkeypatch.setattr(agent_codex_calls, "_run_diagnostic_analyst_openai", fake_run)
+    monkeypatch.setattr(agent_openai_calls, "_run_diagnostic_analyst_openai", fake_run)
     monkeypatch.setattr(
         agent_memory,
         "_mempalace_write",
@@ -111,7 +112,7 @@ def test_run_web_research_returns_findings_and_writes_memory(monkeypatch):
         assert "DIAGNOSTIC INSIGHTS:" in prompt
         return result_payload
 
-    monkeypatch.setattr(agent_codex_calls, "_run_web_research_openai", fake_run)
+    monkeypatch.setattr(agent_openai_calls, "_run_web_research_openai", fake_run)
     monkeypatch.setattr(
         agent_memory,
         "_mempalace_write",
@@ -155,7 +156,7 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
     monkeypatch.setattr(agent_memory, "_mempalace_search", lambda *a, **k: "prior theses")
     monkeypatch.setattr(agent_memory, "_mempalace_write", lambda *a, **k: True)
     monkeypatch.setattr(agent_memory, "_mempalace_diary", lambda *a, **k: True)
-    monkeypatch.setattr(agent_definitions, "MAX_RETRIES", 2)
+    monkeypatch.setattr(agent_prompts, "MAX_RETRIES", 2)
     monkeypatch.setattr(agent_infra, "SDK_TIMEOUT_SECONDS", 300)
 
     class FakeSpec:
@@ -166,12 +167,12 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
 
     monkeypatch.setitem(
         sys.modules,
-        "family_research",
+        "family_research_spec",
         SimpleNamespace(get_family_research_spec=lambda family_name: FakeSpec()),
     )
 
     monkeypatch.setattr(
-        agent_definitions,
+        agent_prompts,
         "_research_agent",
         lambda **kwargs: SimpleNamespace(prompt="system", model="claude", maxTurns=15, tools=[]),
     )
@@ -233,6 +234,51 @@ def test_run_research_agent_validates_thesis_structure(monkeypatch):
         ],
         "should_stop": False,
     }
+
+
+def test_run_single_agent_can_fall_back_to_cli_when_enabled(monkeypatch):
+    monkeypatch.setenv("AUTORESEARCH_AGENT_CLI_FALLBACK", "1")
+
+    async def fake_query_with_timeout(prompt, agent_def, timeout):
+        yield "not-json"
+
+    cli_payload = {
+        "reasoning": "Valid thesis",
+        "suggested_theses": [
+            {
+                "thesis_id": "cli_fallback",
+                "hypothesis": "fallback returned a valid thesis",
+                "config_changes": {"entry_cutoff_time": "09:31"},
+            }
+        ],
+    }
+
+    class Completed:
+        returncode = 0
+        stdout = json.dumps(cli_payload)
+        stderr = ""
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return Completed()
+
+    monkeypatch.setattr(agent_runners, "_query_with_timeout", fake_query_with_timeout)
+    monkeypatch.setattr(agent_runners.subprocess, "run", fake_run)
+
+    result = asyncio.run(
+        agent_runners._run_single_agent(
+            "research-agent",
+            "user prompt",
+            SimpleNamespace(prompt="system prompt", model="sonnet", maxTurns=15, tools=[]),
+            retries=1,
+        )
+    )
+
+    assert result == cli_payload
+    assert calls[0][:3] == ["claude", "-p", "user prompt"]
+    assert "--system-prompt" in calls[0]
 
 
 def test_validate_output_rejects_diagnostic_without_pattern():

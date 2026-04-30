@@ -7,13 +7,13 @@ include = '\.pyi?$'
 profile = "black"
 line_length = 100
 known_first_party = [
-    "autoresearch_loop",
+    "autoresearch_controller",
     "autoresearch_state",
     "autoresearch_artifacts",
     "autoresearch_planning",
     "autoresearch_research",
     "autoresearch_experiment",
-    "autoresearch_helper",
+    "autoresearch_cli",
 ]
 
 [tool.ruff]
@@ -23,23 +23,26 @@ target-version = "py310"
 [tool.ruff.lint]
 # E402: module-level import not at top — tests intentionally insert sys.path
 #       manipulation before importing the project modules.
-# F401: imported but unused — autoresearch_loop intentionally re-exports
+# F401: imported but unused — autoresearch_controller intentionally re-exports
 #       _notify_discord for back-compat with test monkeypatch sites; the
 #       __all__ tuple makes the re-export explicit.
 ignore = ["E402"]
 
 [tool.ruff.lint.per-file-ignores]
-# autoresearch_helper.py is a CLI script; some prints use plain strings.
-"autoresearch_helper.py" = ["F541"]
+# autoresearch_cli.py is a CLI script; some prints use plain strings.
+"autoresearch_cli.py" = ["F541"]
 
 [tool.coverage.run]
 source = [
-    "autoresearch_loop",
+    "agent_orchestrator",
+    "autoresearch_controller",
     "autoresearch_state",
     "autoresearch_artifacts",
     "autoresearch_planning",
     "autoresearch_research",
     "autoresearch_experiment",
+    "compiler_pipeline",
+    "research_conductor",
 ]
 omit = ["tests/*"]
 

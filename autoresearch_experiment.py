@@ -54,7 +54,7 @@ from trace_logger import (
 )
 
 if TYPE_CHECKING:
-    from autoresearch_loop import AutoresearchController
+    from autoresearch_controller import AutoresearchController
 
 log = get_logger(__name__)
 
@@ -208,7 +208,7 @@ def evaluate_metric(root: Path, jsonl_name: str, metric: float) -> str:
     result = subprocess.run(
         [
             "python3",
-            "autoresearch_helper.py",
+            "autoresearch_cli.py",
             "evaluate",
             "--jsonl",
             jsonl_name,
