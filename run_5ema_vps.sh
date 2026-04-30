@@ -154,4 +154,4 @@ PYEOF
 
 echo ""
 echo "Autoresearch running on VPS. To monitor:"
-echo "  python3 -c "import paramiko,os; c=paramiko.SSHClient(); c.set_missing_host_key_policy(paramiko.AutoAddPolicy()); c.connect('31.97.60.116',username='root',key_filename=os.path.expanduser('~/.ssh/vps_key')); i,o,e=c.exec_command('tail -20 /root/orb-research/autoresearch_stdout.log'); print(o.read().decode()); c.close()""
+echo "  python3 -c 'import os,paramiko; c=paramiko.SSHClient(); c.set_missing_host_key_policy(paramiko.AutoAddPolicy()); c.connect(\"31.97.60.116\", username=\"root\", key_filename=os.path.expanduser(\"~/.ssh/vps_key\")); i,o,e=c.exec_command(\"tail -20 /root/orb-research/autoresearch_stdout.log\"); print(o.read().decode()); c.close()'"
