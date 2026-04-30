@@ -17,13 +17,12 @@ from backtest.filters import _exclude_signals_on_days
 from backtest.runtime_config import load_runtime_config, validate_runtime_config_scope
 from strategies import STRATEGIES
 from strategies.ema.contract import compile_ema_contract
-from strategies.ema.contract_mapping import map_ema_config_changes_to_contract
+from strategies.ema.contract import map_ema_config_changes_to_contract
 from strategies.ema.signals import generate_signals_for_frame
 from strategies.ema.validate import validate_ema_runtime_config
 
 FIXTURES = REPO_ROOT / "tests" / "fixtures"
 TINY_CONFIG = FIXTURES / "tiny_ema_runtime.json"
-EXPECTED_EVENTS = json.loads((FIXTURES / "tiny_ema_expected_events.json").read_text())
 
 
 def _tiny_config() -> dict:
@@ -43,7 +42,9 @@ def test_ema_strategy_run_returns_event_logger_keys() -> None:
     }
 
 
-def test_ema_strategy_writes_strategy_events_parquet_with_filter_rejections(tmp_path: Path) -> None:
+def test_ema_strategy_does_not_write_strategy_events_when_no_events_are_generated(
+    tmp_path: Path,
+) -> None:
     result = STRATEGIES["ema"].run(_tiny_config())
 
     events_path = tmp_path / "strategy_events.parquet"
@@ -51,44 +52,6 @@ def test_ema_strategy_writes_strategy_events_parquet_with_filter_rejections(tmp_
 
     assert not events_path.exists()
     assert result["_event_logger"].to_dataframe().empty
-    assert EXPECTED_EVENTS == [
-        {
-            "timestamp": "2024-01-02T10:25:00.000",
-            "symbol": "AAA",
-            "direction": "short",
-            "event_type": "raw_setup",
-            "reason": "",
-            "entry_price": 100.42,
-            "stop_price": 100.98,
-        },
-        {
-            "timestamp": "2024-01-02T10:25:00.000",
-            "symbol": "AAA",
-            "direction": "short",
-            "event_type": "rejected_signal",
-            "reason": "entry_cutoff",
-            "entry_price": None,
-            "stop_price": None,
-        },
-        {
-            "timestamp": "2024-01-02T10:25:00.000",
-            "symbol": "BBB",
-            "direction": "short",
-            "event_type": "raw_setup",
-            "reason": "",
-            "entry_price": 101.12,
-            "stop_price": 101.68,
-        },
-        {
-            "timestamp": "2024-01-02T10:25:00.000",
-            "symbol": "BBB",
-            "direction": "short",
-            "event_type": "rejected_signal",
-            "reason": "entry_cutoff",
-            "entry_price": None,
-            "stop_price": None,
-        },
-    ]
 
 
 def test_ema_strategy_writes_diagnostics_json_with_event_counts(tmp_path: Path) -> None:
