@@ -18,6 +18,7 @@ from backtest.runtime_config import load_runtime_config, validate_runtime_config
 from compiler_pipeline import validate_ema_runtime_config
 from strategies import STRATEGIES
 from strategies.ema.contract import compile_ema_contract
+from strategies.ema.contract_mapping import map_ema_config_changes_to_contract
 from strategies.ema.signals import generate_signals_for_frame
 
 FIXTURES = REPO_ROOT / "tests" / "fixtures"
@@ -260,6 +261,42 @@ def test_generate_signals_alert_bar_idx_is_recomputed_via_arange() -> None:
     assert np.isnan(signals.stop_price.iloc[0])
     assert np.isnan(signals.stop_price.iloc[1])
     assert signals.stop_price.iloc[2] == 8.8
+
+
+def test_generate_signals_preserves_carried_alert_bar_idx() -> None:
+    idx = pd.to_datetime(
+        ["2024-01-02 09:30", "2024-01-02 09:35", "2024-01-02 09:40", "2024-01-02 09:45"]
+    )
+    frame = pd.DataFrame(
+        {
+            "open": [10.0, 9.0, 9.0, 9.2],
+            "high": [10.5, 9.2, 9.1, 9.3],
+            "low": [9.8, 8.8, 8.9, 8.7],
+            "close": [10.0, 9.0, 9.0, 9.0],
+        },
+        index=idx,
+    )
+
+    signals = generate_signals_for_frame(frame, "long", ema_length=2)
+
+    assert signals.entries.tolist() == [False, False, False, True]
+    assert signals.alert_bar_idx.tolist() == [-1, -1, -1, 2]
+    assert signals.entry_price.iloc[3] == 9.1
+    assert signals.stop_price.iloc[3] == 8.9
+
+
+def test_map_ema_config_changes_to_contract_keeps_filter_primitives() -> None:
+    contract = map_ema_config_changes_to_contract(
+        {
+            "gap_filter": True,
+            "gap_pct": 0.02,
+            "use_range_shift": True,
+            "range_shift_lookback": 30,
+        }
+    )
+
+    assert {"type": "gap_filter", "enabled": True, "gap_pct": 0.02} in contract
+    assert {"type": "range_shift", "enabled": True, "lookback": 30} in contract
 
 
 def test_compile_ema_contract_returns_ready_to_run_for_valid_contract() -> None:
