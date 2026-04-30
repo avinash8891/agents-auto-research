@@ -7,10 +7,9 @@ specific lookups (research artifacts, thesis proposals, run-queue artifacts).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
-
-import json
 
 from artifact_io import read_json_artifacts as read_artifact_json_files
 from autoresearch_state import ExperimentRecord

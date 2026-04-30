@@ -7,17 +7,17 @@ from pathlib import Path
 import pytest
 
 import persistence_utils
+from compiler_operationalize import finalize_thesis_config_changes
 from compiler_pipeline import (
-    create_executable_artifact,
     build_missing_primitives,
     compile_config_thesis,
     compile_proposal_artifact,
     compile_research_thesis,
+    create_executable_artifact,
     operationalize_thesis,
     thesis_needs_operationalization,
     validate_orb_runtime_config,
 )
-from compiler_operationalize import finalize_thesis_config_changes
 from orb_contract import compile_contract as legacy_orb_compile_contract
 from research_types import ResearchThesis
 from strategies import STRATEGIES
