@@ -15,6 +15,7 @@ IS_VPS = os.environ.get("AUTORESEARCH_VPS", "") == "1"
 class StrategyFamily:
     name: str
     benchmark_script: str
+    description_for_research: str = ""
     vps_benchmark_script: str = ""  # direct script when running on VPS
     proposals_dirname: str = "proposals"
     compilations_dirname: str = "compilations"
@@ -85,11 +86,41 @@ def _discord_webhook_for(family_name: str) -> str:
     return os.environ.get(f"AUTORESEARCH_DISCORD_WEBHOOK_{family_name.upper()}", "")
 
 
+_ORB_DESCRIPTION_FOR_RESEARCH = """OPENING RANGE BREAKOUT (ORB) STRATEGY
+
+Mechanics:
+- Computes the Opening Range (OR) from the first N minutes of trading (configurable, default 30 min).
+- OR high = highest high during OR window; OR low = lowest low.
+- Long entry: first bar that breaks above OR high (next-bar open after breakout).
+- Short entry: first bar that breaks below OR low.
+- Stop loss: opposite side of the opening range (long stop = OR low, short stop = OR high).
+- Target = entry + risk-reward ratio * risk distance (default RR=2).
+- Exits: target hit, stop hit, time stop (default 15:30), max hold bars,
+  volatility trailing stop, failed breakout reversal, opposite-side break.
+- Regime classification: each day is classified as wide-OR, narrow-OR,
+  trend-day, chop-day, or normal based on OR width and intraday behavior.
+- Regime gating: can skip or require specific regime types.
+- Universe filter: stocks-in-play (top-N by first-30-min dollar volume or
+  relative volume) or explicit symbol list.
+- Relative volume (RVOL) gate: optional filter requiring volume above
+  trailing baseline before taking entries.
+
+To understand what the engine supports and what can be changed,
+READ THE SOURCE CODE. Do not guess parameter names.
+
+Source code for signal mechanics (use these to verify hypotheses):
+- orb_signals.py: OR computation, breakout detection, entry/stop/target calc
+- orb_exits.py: exit logic (stop, target, time stop, trailing stop, failed breakout)
+- regime_filter.py: regime classification (wide/narrow OR, trend/chop day)
+- backtest_orb_v2.py: main backtest orchestration, universe filtering"""
+
+
 @lru_cache(maxsize=1)
 def _families() -> dict[str, StrategyFamily]:
     orb_strategy = StrategyFamily(
         name="orb",
         benchmark_script="backtest_orb_v2.py",
+        description_for_research=_ORB_DESCRIPTION_FOR_RESEARCH,
         vps_benchmark_script="backtest_orb_v2.py",
         proposals_dirname="orb-proposals",
         compilations_dirname="orb-compilations",
@@ -118,6 +149,7 @@ def _families() -> dict[str, StrategyFamily]:
         families[name] = StrategyFamily(
             name=name,
             benchmark_script=f"backtest_{'5ema' if name == 'ema' else name}.py",
+            description_for_research=strategy.description_for_research,
             vps_benchmark_script="vps_runner.py" if name == "ema" else f"backtest_{name}.py",
             proposals_dirname=strategy.family_dirnames.proposals,
             compilations_dirname=strategy.family_dirnames.compilations,

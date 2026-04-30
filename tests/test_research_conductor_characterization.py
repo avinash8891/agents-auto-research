@@ -70,7 +70,10 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
             self.result = result
             self.total_cost_usd = total_cost_usd
 
+    captured_query: dict[str, object] = {}
+
     async def fake_query(*args, **kwargs):
+        captured_query.update(kwargs)
         yield AssistantMessage("```json\n" + json.dumps(parsed_payload) + "\n```")
         yield ResultMessage(
             usage={"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
@@ -105,6 +108,8 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
     )
 
     assert result == parsed_payload
+    options = captured_query["options"]
+    assert "5 EMA PULLBACK/REVERSAL STRATEGY" in options.system_prompt
     assert rc.run_research_conductor.__code__.co_names.count("_ROOT") == 1
     assert "__globals__" not in rc.run_research_conductor.__code__.co_names
 

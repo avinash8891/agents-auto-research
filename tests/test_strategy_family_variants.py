@@ -22,6 +22,15 @@ def test_ema_family_has_ema_prefix_and_no_default_variants_yet() -> None:
     assert fam.default_variants == ()
 
 
+def test_strategy_family_exposes_research_description() -> None:
+    assert "OPENING RANGE BREAKOUT (ORB) STRATEGY" in load_family(
+        "orb"
+    ).description_for_research
+    assert "5 EMA PULLBACK/REVERSAL STRATEGY" in load_family(
+        "ema"
+    ).description_for_research
+
+
 def test_baseline_config_path_uses_base_config_filename() -> None:
     assert load_family("orb").baseline_config_path == "configs/orb_base.yaml"
     assert load_family("ema").baseline_config_path == "configs/ema_base.yaml"

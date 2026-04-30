@@ -8,10 +8,11 @@ from research_infra import _ROOT, _ensure_oauth_proxy, _parse_json
 from research_memory import _palace_search, _palace_status
 from research_memory import list_past_theses as list_past_theses_for_root
 from research_memory import save_research_finding
-from research_prompts import STRATEGY_DESCRIPTIONS, _build_conductor_system_prompt
+from research_prompts import _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
 from research_tools_mcp import _build_research_tools_mcp
 from research_usage import _accumulate_usage, get_round_usage, reset_round_usage
+from strategy_family import load_family
 from trace_logger import trace, trace_agent_prompt, trace_agent_response
 
 __all__ = [
@@ -20,6 +21,14 @@ __all__ = [
     "reset_round_usage",
     "get_round_usage",
 ]
+
+
+def _strategy_description_for(family_name: str) -> str:
+    try:
+        description = load_family(family_name).description_for_research
+    except ValueError:
+        description = ""
+    return description or f"Strategy family: {family_name}"
 
 
 async def run_research_conductor(
@@ -39,9 +48,7 @@ async def run_research_conductor(
         query,
     )
 
-    strategy_desc = STRATEGY_DESCRIPTIONS.get(
-        family_name, f"Strategy family: {family_name}"
-    )
+    strategy_desc = _strategy_description_for(family_name)
 
     # Build in-process MCP server with research tools
     _ensure_oauth_proxy()
