@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from backtest.result_schema import build_result_payload
-from persistence_utils import write_text_atomic
+from persistence_utils import write_json_atomic_strict
 
 
 def write_all(
@@ -52,7 +51,7 @@ def write_all(
         },
     )
     result_json_path = output_path / "result.json"
-    write_text_atomic(result_json_path, json.dumps(result_payload, indent=2) + "\n")
+    write_json_atomic_strict(result_json_path, result_payload)
 
     print(f"RESULT_JSON {result_json_path}")
     if events_path:

@@ -74,6 +74,8 @@ configs = [
     "configs/_demo_base.yaml",
     "configs/ema_base.yaml",
     "configs/orb_base.yaml",
+]
+"configs/variants" = [
     "configs/variants/orb_spy_only.yaml",
     "configs/variants/orb_stocks_in_play.yaml",
     "configs/variants/orb_trailing_stop.yaml",
