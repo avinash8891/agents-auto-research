@@ -1,0 +1,11 @@
+tests/test_autoresearch_state.py
+  dbc5ae606013cb0f 54-56,58,60-61
+autoresearch_state.py
+  dbc5ae606013cb0f 120-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "aee776e044de2a781f412f53f6d16f0e0695bb3d",
+  "prompts": {}
+}
