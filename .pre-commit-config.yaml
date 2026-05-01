@@ -18,7 +18,7 @@ repos:
     hooks:
       - id: cubic-review
         name: cubic review
-        entry: cubic review --base origin/main
+        entry: /bin/sh -lc 'PATH="$HOME/.cubic/bin:$PATH" exec cubic review --base origin/main'
         language: system
         pass_filenames: false
         stages: [pre-push]
