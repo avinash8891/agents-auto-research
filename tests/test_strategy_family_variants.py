@@ -9,9 +9,9 @@ from __future__ import annotations
 import sysconfig
 from pathlib import Path
 
+import strategies.base as strategies_base
 from backtest.legacy_entrypoint import strategy_for_script
 from strategies import STRATEGIES
-import strategies.base as strategies_base
 from strategy_family import StrategyFamily, load_family
 
 
