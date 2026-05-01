@@ -174,7 +174,12 @@ def find_best_kept(results, segment, direction):
             metric = r.get("metric")
             if metric is None:
                 continue
-            val = float(metric)
+            try:
+                val = float(metric)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(val):
+                continue
             if best is None:
                 best = val
             elif direction == "lower" and val < best:

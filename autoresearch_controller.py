@@ -497,7 +497,7 @@ class AutoresearchController:
         return _orchestration_apply_forced_baseline_rerun(self, baseline_action)
 
     def _resolve_next_action(self) -> dict[str, Any]:
-        return _orchestration_resolve_next_action(self, self.read_state())
+        return _orchestration_resolve_next_action(self)
 
     def _run_research(self, state: dict[str, Any]) -> dict[str, Any]:
         return _research_run_research(self, state)

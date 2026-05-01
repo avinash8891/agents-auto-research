@@ -184,6 +184,18 @@ def test_compute_confidence_ignores_non_finite_metrics() -> None:
     assert confidence is None
 
 
+def test_find_best_kept_ignores_non_finite_metrics() -> None:
+    results = [
+        {"segment": 0, "status": "keep", "metric": float("nan")},
+        {"segment": 0, "status": "keep", "metric": 1.0},
+        {"segment": 0, "status": "keep", "metric": 2.0},
+    ]
+
+    best = autoresearch_cli.find_best_kept(results, 0, "higher")
+
+    assert best == 2.0
+
+
 def test_compute_confidence_returns_none_when_baseline_is_unusable() -> None:
     results = [
         {"segment": 0, "status": "keep", "metric": None},

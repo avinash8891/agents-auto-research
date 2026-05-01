@@ -1315,10 +1315,28 @@ def test_orchestration_resolve_next_action_prefers_forced_baseline(controller, m
         lambda: {"state": "blocked", "next_action": {"type": "noop"}},
     )
 
-    state = orchestration_mod.resolve_next_action(controller, controller.read_state())
+    state = orchestration_mod.resolve_next_action(controller)
 
     assert state["state"] == "running"
     assert state["next_action"] == baseline_action
+
+
+def test_controller_resolve_next_action_does_not_pre_read_state(controller, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def _fake_read_state():
+        calls.append("read_state")
+        return {"state": "running"}
+
+    monkeypatch.setattr(controller, "read_state", _fake_read_state)
+    monkeypatch.setattr(
+        loop_mod, "_orchestration_resolve_next_action", lambda _controller: {"state": "running"}
+    )
+
+    state = controller._resolve_next_action()
+
+    assert state == {"state": "running"}
+    assert calls == []
 
 
 def test_resolve_conductor_inputs_handles_fresh_run_context(controller) -> None:

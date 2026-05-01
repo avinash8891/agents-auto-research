@@ -116,9 +116,7 @@ def apply_forced_baseline_rerun(
     return state
 
 
-def resolve_next_action(
-    controller: "AutoresearchController", state: dict[str, Any] | None = None
-) -> dict[str, Any]:
+def resolve_next_action(controller: "AutoresearchController") -> dict[str, Any]:
     resumed = try_resume_halted_thesis(controller)
     if resumed is not None:
         return resumed
