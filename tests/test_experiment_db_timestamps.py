@@ -21,6 +21,7 @@ from experiment_db import (
     build_config_hash,
     build_data_hash,
 )
+from persistence_utils import write_text_atomic
 
 
 def _make_record(experiment_id: str, *, timestamp: str = "") -> ExperimentResult:
@@ -369,3 +370,34 @@ def test_baseline_checkpoint_record_preserves_existing_file_mode(tmp_path: Path)
     )
 
     assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+
+def test_write_text_atomic_ignores_race_when_target_disappears_before_stat(
+    tmp_path: Path, monkeypatch
+) -> None:
+    path = tmp_path / "artifact.txt"
+    path.write_text("original")
+
+    real_stat = Path.stat
+    real_exists = Path.exists
+    calls = {"exists": 0, "stat": 0}
+
+    def fake_exists(self: Path) -> bool:
+        if self == path:
+            calls["exists"] += 1
+            return True
+        return real_exists(self)
+
+    def fake_stat(self: Path):
+        if self == path:
+            calls["stat"] += 1
+            if calls["stat"] == 1:
+                raise FileNotFoundError
+        return real_stat(self)
+
+    monkeypatch.setattr(Path, "exists", fake_exists)
+    monkeypatch.setattr(Path, "stat", fake_stat)
+
+    write_text_atomic(path, "updated")
+
+    assert path.read_text() == "updated"

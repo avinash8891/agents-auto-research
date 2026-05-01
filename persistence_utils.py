@@ -24,7 +24,11 @@ def json_loads_metric_sentinels(payload: str) -> Any:
 
 def write_text_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
+    existing_mode = None
+    try:
+        existing_mode = stat.S_IMODE(path.stat().st_mode)
+    except FileNotFoundError:
+        pass
     fd, tmp_name = tempfile.mkstemp(
         dir=path.parent,
         prefix=f"{path.name}.",
