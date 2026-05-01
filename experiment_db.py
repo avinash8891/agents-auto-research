@@ -32,6 +32,13 @@ def _coerce_metric_float(value: Any, *, default: float = 0.0) -> float:
         return default
 
 
+def _metric_value_for_record(record: ExperimentResult, metric: str) -> Any:
+    validation_value = record.validation_metrics.get(metric)
+    if validation_value is not None:
+        return validation_value
+    return record.train_metrics.get(metric)
+
+
 @dataclass
 class ExperimentResult:
     """One complete experiment record."""
@@ -261,6 +268,48 @@ class ExperimentDB:
                 family=family,
                 job=job_id,
             )
+        )
+
+    def _write_record(self, conn: sqlite3.Connection, record: ExperimentResult) -> None:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO experiments (
+                experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+                data_hash, train_metrics_json, validation_metrics_json, trade_count,
+                trades_file, strategy_events_file, diagnostics_file,
+                strategy_diagnostics_json, accepted, rejection_reason, verdict_status,
+                verdict_summary, parent_experiment_id, timestamp, family, hypothesis,
+                mechanism, job, usage_json, asi_json, description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record.experiment_id,
+                record.thesis_id,
+                record.config_path,
+                json_dumps_strict(record.runtime_config),
+                record.code_commit,
+                record.data_hash,
+                json_dumps_strict(record.train_metrics),
+                json_dumps_strict(record.validation_metrics),
+                record.trade_count,
+                record.trades_file,
+                record.strategy_events_file,
+                record.diagnostics_file,
+                json_dumps_strict(record.strategy_diagnostics),
+                int(record.accepted),
+                record.rejection_reason,
+                record.verdict_status,
+                record.verdict_summary,
+                record.parent_experiment_id,
+                record.timestamp,
+                record.family,
+                record.hypothesis,
+                record.mechanism,
+                record.job,
+                json_dumps_strict(record.usage),
+                json_dumps_strict(getattr(record, "_asi_export", {})),
+                getattr(record, "_description_export", ""),
+            ),
         )
 
     def log_research_round(
@@ -560,46 +609,7 @@ class ExperimentDB:
         with self._connect() as conn:
             conn.execute("DELETE FROM experiments")
             for r in records:
-                conn.execute(
-                    """
-                    INSERT INTO experiments (
-                        experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
-                        data_hash, train_metrics_json, validation_metrics_json, trade_count,
-                        trades_file, strategy_events_file, diagnostics_file,
-                        strategy_diagnostics_json, accepted, rejection_reason, verdict_status,
-                        verdict_summary, parent_experiment_id, timestamp, family, hypothesis,
-                        mechanism, job, usage_json, asi_json, description
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        r.experiment_id,
-                        r.thesis_id,
-                        r.config_path,
-                        json_dumps_strict(r.runtime_config),
-                        r.code_commit,
-                        r.data_hash,
-                        json_dumps_strict(r.train_metrics),
-                        json_dumps_strict(r.validation_metrics),
-                        r.trade_count,
-                        r.trades_file,
-                        r.strategy_events_file,
-                        r.diagnostics_file,
-                        json_dumps_strict(r.strategy_diagnostics),
-                        int(r.accepted),
-                        r.rejection_reason,
-                        r.verdict_status,
-                        r.verdict_summary,
-                        r.parent_experiment_id,
-                        r.timestamp,
-                        r.family,
-                        r.hypothesis,
-                        r.mechanism,
-                        r.job,
-                        json_dumps_strict(r.usage),
-                        json_dumps_strict(getattr(r, "_asi_export", {})),
-                        getattr(r, "_description_export", ""),
-                    ),
-                )
+                self._write_record(conn, r)
             conn.commit()
 
     def add(self, result: ExperimentResult) -> None:
@@ -615,7 +625,9 @@ class ExperimentDB:
         if export_description is not None:
             setattr(records[-1], "_description_export", export_description)
         self._records = records
-        self._save()
+        with self._connect() as conn:
+            self._write_record(conn, records[-1])
+            conn.commit()
 
     def get(self, experiment_id: str) -> ExperimentResult | None:
         for r in self._load():
@@ -644,13 +656,17 @@ class ExperimentDB:
         records = self._load()
         best = None
         for r in records:
-            val = r.train_metrics.get(metric) or r.validation_metrics.get(metric)
+            val = r.validation_metrics.get(metric)
+            if val is None:
+                val = r.train_metrics.get(metric)
             if val is None:
                 continue
             if best is None:
                 best = r
                 continue
-            best_val = best.train_metrics.get(metric) or best.validation_metrics.get(metric)
+            best_val = best.validation_metrics.get(metric)
+            if best_val is None:
+                best_val = best.train_metrics.get(metric)
             if val > best_val:
                 best = r
         return best
@@ -663,23 +679,19 @@ class ExperimentDB:
         primary_metric_name = self.primary_metric_name()
         lines: list[str] = []
         for r in records:
-            m = r.train_metrics
-            metric_value = (
-                r.validation_metrics.get(primary_metric_name)
-                if r.validation_metrics.get(primary_metric_name) is not None
-                else r.train_metrics.get(primary_metric_name)
-            )
+            m = {**r.train_metrics, **r.validation_metrics}
+            metric_value = _metric_value_for_record(r, primary_metric_name)
             parts = [
                 f"metric={metric_value if metric_value is not None else '?'}",
                 f"status={'accepted' if r.accepted else 'rejected'}",
             ]
-            if m.get("trade_count"):
+            if m.get("trade_count") is not None:
                 parts.append(f"trades={m['trade_count']}")
-            if m.get("profit_factor"):
+            if m.get("profit_factor") is not None:
                 parts.append(f"PF={m['profit_factor']}")
-            if m.get("max_drawdown"):
+            if m.get("max_drawdown") is not None:
                 parts.append(f"maxDD={m['max_drawdown']}")
-            if m.get("avg_sharpe_across_windows"):
+            if m.get("avg_sharpe_across_windows") is not None:
                 parts.append(f"sharpe={m['avg_sharpe_across_windows']}")
             if r.verdict_status and r.verdict_status != "none":
                 parts.append(f"verdict={r.verdict_status}")
@@ -735,7 +747,7 @@ class BaselineTracker:
         if not text:
             self._checkpoints = []
             return self._checkpoints
-        raw = json.loads(text)
+        raw = json_loads_metric_sentinels(text)
         # Rule J back-compat: pre-migration checkpoint files have int
         # epoch-ms timestamps; coerce to ISO-8601 UTC on load.
         for row in raw:

@@ -131,6 +131,59 @@ def test_read_session_relaxes_infinity_metric_sentinels(tmp_path) -> None:
     assert math.isinf(results[-1]["metric"]) is False
 
 
+def test_read_session_coerces_string_metric_values_before_stats(tmp_path) -> None:
+    class _FakeRecord:
+        def __init__(self) -> None:
+            self.code_commit = "abcdef123456"
+            self.validation_metrics = {"trade_count": 2, "profit_factor": "Infinity"}
+            self.train_metrics = {"median_expectancy": "1.2"}
+            self.accepted = True
+            self.config_path = "configs/ema_base.yaml"
+            self.timestamp = "2026-05-01T00:00:00+00:00"
+
+    class _FakeDB:
+        def session_meta(self):
+            return {"name": "sess", "metricName": "median_expectancy", "bestDirection": "lower"}
+
+        def all(self):
+            return [_FakeRecord()]
+
+    original_db = autoresearch_cli._db
+    autoresearch_cli._db = lambda path: _FakeDB()
+    try:
+        config, results = autoresearch_cli.read_session(str(tmp_path / "cli.db"))
+    finally:
+        autoresearch_cli._db = original_db
+
+    assert config is not None
+    assert results[0]["metric"] == 1.2
+    assert math.isinf(results[0]["metrics"]["profit_factor"])
+
+
+def test_compute_confidence_requires_three_numeric_metrics() -> None:
+    results = [
+        {"segment": 0, "status": "keep", "metric": 1.0},
+        {"segment": 0, "status": "keep", "metric": None},
+        {"segment": 0, "status": "keep", "metric": 2.0},
+    ]
+
+    confidence = autoresearch_cli.compute_confidence(results, 0, "higher")
+
+    assert confidence is None
+
+
+def test_compute_confidence_ignores_non_finite_metrics() -> None:
+    results = [
+        {"segment": 0, "status": "keep", "metric": 1.0},
+        {"segment": 0, "status": "keep", "metric": float("inf")},
+        {"segment": 0, "status": "keep", "metric": 2.0},
+    ]
+
+    confidence = autoresearch_cli.compute_confidence(results, 0, "higher")
+
+    assert confidence is None
+
+
 def test_cli_log_persists_primary_metric_even_when_extra_metrics_are_sparse(monkeypatch, tmp_path):
     captured: list[object] = []
 

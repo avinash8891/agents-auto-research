@@ -4,6 +4,7 @@
 import argparse
 import json
 import logging
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import Any
 
 from artifact_io import timestamp_now
 from experiment_db import ExperimentDB, ExperimentResult
+from persistence_utils import json_loads_metric_sentinels
 
 
 def _make_stdout_logger() -> logging.Logger:
@@ -37,6 +39,15 @@ def _db(path: str) -> ExperimentDB:
     return ExperimentDB(Path(path))
 
 
+def _coerce_cli_metric(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def read_session(path: str) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     db = _db(path)
     config = db.session_meta() or None
@@ -50,12 +61,13 @@ def read_session(path: str) -> tuple[dict[str, Any] | None, list[dict[str, Any]]
         metric = record.validation_metrics.get(primary_metric_name) if config else None
         if metric is None:
             metric = record.train_metrics.get(primary_metric_name)
+        metric = _coerce_cli_metric(metric)
         results.append(
             {
                 "run": idx,
                 "commit": record.code_commit[:7],
                 "metric": metric,
-                "metrics": record.validation_metrics,
+                "metrics": json_loads_metric_sentinels(json.dumps(record.validation_metrics)),
                 "status": "keep" if record.accepted else "discard",
                 "description": getattr(
                     record,
@@ -96,22 +108,36 @@ def compute_confidence(results, segment, direction):
         for r in current_segment_results(results, segment)
         if r.get("status") not in ("crash", "checks_failed")
     ]
-    if len(cur) < 3:
+    numeric_cur = []
+    for r in cur:
+        metric = r.get("metric")
+        if metric is None:
+            continue
+        try:
+            if not math.isfinite(float(metric)):
+                continue
+        except (TypeError, ValueError):
+            continue
+        numeric_cur.append(r)
+    if len(numeric_cur) < 3:
         return None
 
-    values = [r["metric"] for r in cur]
+    values = [float(r["metric"]) for r in numeric_cur]
     mad = compute_mad(values)
     if mad == 0:
         return None
 
-    baseline = find_baseline(results, segment)
+    baseline = find_baseline(numeric_cur, segment)
     if baseline is None:
         return None
 
     best_kept = None
-    for r in cur:
+    for r in numeric_cur:
         if r.get("status") == "keep":
-            val = r["metric"]
+            metric = r.get("metric")
+            if metric is None:
+                continue
+            val = float(metric)
             if best_kept is None:
                 best_kept = val
             elif direction == "lower" and val < best_kept:
@@ -129,7 +155,10 @@ def compute_confidence(results, segment, direction):
 def find_baseline(results, segment):
     """Find the baseline metric (first experiment in current segment)."""
     cur = current_segment_results(results, segment)
-    return cur[0]["metric"] if cur else None
+    if not cur:
+        return None
+    metric = cur[0].get("metric")
+    return float(metric) if metric is not None else None
 
 
 def find_best_kept(results, segment, direction):
@@ -138,7 +167,10 @@ def find_best_kept(results, segment, direction):
     best = None
     for r in cur:
         if r.get("status") == "keep":
-            val = r["metric"]
+            metric = r.get("metric")
+            if metric is None:
+                continue
+            val = float(metric)
             if best is None:
                 best = val
             elif direction == "lower" and val < best:

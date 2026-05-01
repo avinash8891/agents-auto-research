@@ -296,21 +296,21 @@ def derive_trade_analysis(
             )
             raise
 
-    controller.ctx.latest_trades_file = details.get("trades_file", "")
-    controller.ctx.latest_strategy_events_file = details.get("strategy_events_file", "")
-    controller.ctx.latest_diagnostics_file = details.get("diagnostics_file", "")
-    controller.ctx.latest_config_contents = config_contents
-
     trade_analysis: dict[str, Any] = {
         "what_changed_vs_baseline": f"{Path(config).stem} evaluated independently.",
         "primary_metric_improved": decision == "keep",
         **details,
     }
+    controller.ctx.latest_trades_file = details.get("trades_file", "")
+    controller.ctx.latest_strategy_events_file = details.get("strategy_events_file", "")
+    controller.ctx.latest_diagnostics_file = details.get("diagnostics_file", "")
+    controller.ctx.latest_config_contents = config_contents
     return {
         "trade_analysis": trade_analysis,
         "insights": [f"metric={metric}", f"decision={decision}"],
         "next_candidates": [],
         "why_not_data_fit": "Independent thesis evaluation only.",
+        "runtime_config": config_contents,
     }
 
 
@@ -352,17 +352,14 @@ def sanitize_duplicate_entries(db: Any, config: str) -> None:
     )
 
 
-def _resolve_artifact_dir(controller: "AutoresearchController", config: str) -> Path:
+def _resolve_artifact_dir(
+    controller: "AutoresearchController", config: str, artifact_dir: Path | None = None
+) -> Path:
     """Pick the run-output directory: the one set in run_experiment if
-    present, otherwise compute a fresh per-job dir. Reset ctx so a
-    subsequent log call recomputes."""
-    artifact_dir = controller.ctx.current_artifact_dir or artifact_dir_for(
-        controller.state_path,
-        controller.runs_dir,
-        config,
-    )
-    controller.ctx.current_artifact_dir = None
-    return artifact_dir
+    present, otherwise compute a fresh per-job dir."""
+    if artifact_dir is not None:
+        return artifact_dir
+    return artifact_dir_for(controller.state_path, controller.runs_dir, config)
 
 
 def _read_thesis_metadata(
@@ -488,12 +485,14 @@ def _build_db_record(
     decision: str,
     details: dict[str, Any],
     analysis: dict[str, Any],
+    runtime_config: dict[str, Any] | None = None,
     fallback_experiment_id: str,
     state: dict[str, Any],
 ) -> ExperimentResult:
     contract = _contract_from_sidecar(controller, config)
     verdict = analysis.get("trade_analysis", {}).get("verdict", {})
-    runtime_config = controller.ctx.latest_config_contents or {}
+    if runtime_config is None:
+        runtime_config = getattr(controller.ctx, "latest_config_contents", {}) or {}
     train_metrics = details.get("train_metrics", {})
     if not isinstance(train_metrics, dict):
         train_metrics = {}
@@ -587,12 +586,16 @@ def log_experiment_result(
     output: str,
     analysis: dict[str, Any],
     next_action: dict[str, Any] | None = None,
+    artifact_dir: Path | None = None,
 ) -> None:
     controller.sanitize_duplicate_entries(config)
-    artifact_dir = _resolve_artifact_dir(controller, config)
+    artifact_dir = _resolve_artifact_dir(controller, config, artifact_dir=artifact_dir)
     _write_run_artifacts(artifact_dir, output, analysis)
 
     thesis_id, config_changes = _read_thesis_metadata(controller, config)
+    runtime_config = analysis.get("runtime_config", {})
+    if not isinstance(runtime_config, dict):
+        runtime_config = {}
     asi = _build_asi_dict(
         controller,
         config=config,
@@ -603,8 +606,7 @@ def log_experiment_result(
         next_action=next_action,
     )
     details = parse_benchmark_details(output)
-    entries = controller.read_entries()
-    next_run = 1 + len([entry for entry in entries if entry.get("type") != "config"])
+    next_run = 1 + controller.experiment_db.count()
     state = controller.read_state()
     entry = _build_export_entry(
         controller,
@@ -616,8 +618,6 @@ def log_experiment_result(
         next_run=next_run,
         state=state,
     )
-    entries.append(entry)
-    controller.write_entries(entries)
     trace_benchmark(config, metric, decision, details)
     record = _build_db_record(
         controller,
@@ -625,6 +625,7 @@ def log_experiment_result(
         decision=decision,
         details=details,
         analysis=analysis,
+        runtime_config=runtime_config,
         fallback_experiment_id=entry["run_id"],
         state=state,
     )
@@ -832,9 +833,10 @@ def _evaluate_against_thesis(
 
 
 def _record_baseline_checkpoint(
-    controller: "AutoresearchController", details: dict[str, Any]
+    controller: "AutoresearchController",
+    details: dict[str, Any],
+    runtime_cfg: dict[str, Any],
 ) -> None:
-    runtime_cfg = controller.ctx.latest_config_contents or {}
     new_checkpoint = BaselineCheckpoint(
         code_commit=controller.current_commit(),
         data_hash=build_data_hash(runtime_cfg),
@@ -896,7 +898,6 @@ def _setup_run(controller: "AutoresearchController", config: str) -> tuple[Path,
     and build the benchmark command. Returns (run_output_dir, command);
     command is None if the family did not produce one."""
     run_output_dir, config_path_full = _compute_run_output_dir(controller, config)
-    controller.ctx.current_artifact_dir = run_output_dir
     if config_path_full.exists():
         shutil.copy2(config_path_full, run_output_dir / "config.json")
     command = controller.family.benchmark_command(config, output_dir=str(run_output_dir))
@@ -909,7 +910,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     config = next_action["config"]
 
     try:
-        _, command = _setup_run(controller, config)
+        run_output_dir, command = _setup_run(controller, config)
         if not command:
             log.error(
                 "LOOP_STOP missing_benchmark_command "
@@ -978,11 +979,12 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             output=output,
             analysis=analysis,
             next_action=next_action,
+            artifact_dir=run_output_dir,
         )
 
         baseline_source = next_action.get("source") == "baseline"
         if baseline_source:
-            _record_baseline_checkpoint(controller, details)
+            _record_baseline_checkpoint(controller, details, analysis.get("runtime_config", {}))
         _finalize_experiment(controller, config, metric, decision, verdict)
         return 0
     finally:

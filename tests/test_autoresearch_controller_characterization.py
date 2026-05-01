@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import autoresearch_controller as loop_mod
+import autoresearch_orchestration as orchestration_mod
 import autoresearch_research as research_mod
 from autoresearch_controller import AutoresearchController
 from experiment_db import BaselineCheckpoint, BaselineTracker, ExperimentDB
@@ -1286,7 +1287,7 @@ def test_forced_baseline_rerun_clears_terminal_metadata(controller, monkeypatch)
     }
 
     monkeypatch.setattr(
-        AutoresearchController, "_check_baseline_rerun", lambda self: baseline_action
+        orchestration_mod, "check_baseline_rerun", lambda _controller: baseline_action
     )
 
     state = controller._resolve_next_action()
@@ -1295,6 +1296,43 @@ def test_forced_baseline_rerun_clears_terminal_metadata(controller, monkeypatch)
     assert state["next_action"] == baseline_action
     assert "finished_reason" not in state
     assert "research_stop_reasoning" not in state
+
+
+def test_orchestration_resolve_next_action_prefers_forced_baseline(controller, monkeypatch) -> None:
+    baseline_action = {
+        "type": "run_experiment",
+        "config": BASELINE_CONFIG,
+        "source": "baseline",
+    }
+
+    monkeypatch.setattr(orchestration_mod, "try_resume_halted_thesis", lambda _controller: None)
+    monkeypatch.setattr(
+        orchestration_mod, "check_baseline_rerun", lambda _controller: baseline_action
+    )
+    monkeypatch.setattr(
+        controller,
+        "reconcile_state",
+        lambda: {"state": "blocked", "next_action": {"type": "noop"}},
+    )
+
+    state = orchestration_mod.resolve_next_action(controller, controller.read_state())
+
+    assert state["state"] == "running"
+    assert state["next_action"] == baseline_action
+
+
+def test_resolve_conductor_inputs_handles_fresh_run_context(controller) -> None:
+    from autoresearch_research import _resolve_conductor_inputs
+
+    trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
+        controller,
+        [],
+    )
+
+    assert trades_file == ""
+    assert strategy_events_file == ""
+    assert diagnostics_file == ""
+    assert latest_outcome == {}
 
 
 def test_main_exits_on_persisted_blocked_state(monkeypatch, tmp_path):

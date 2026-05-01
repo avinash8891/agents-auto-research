@@ -158,6 +158,166 @@ def test_experiment_db_export_import_round_trip_preserves_custom_metric_name(tmp
     assert imported_results[0].metric == 2.5
 
 
+def test_experiment_db_best_by_metric_treats_zero_as_real_value(tmp_path) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
+    db.add_from_sqlite_fields(
+        experiment_id="e1",
+        thesis_id="t1",
+        config_path="configs/ema_zero.yaml",
+        runtime_config={},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"custom_metric": 0.0},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-1",
+        primary_metric_name="custom_metric",
+        primary_metric_value=0.0,
+    )
+    db.add_from_sqlite_fields(
+        experiment_id="e2",
+        thesis_id="t2",
+        config_path="configs/ema_negative.yaml",
+        runtime_config={},
+        code_commit="def456",
+        data_hash="data2",
+        metrics={"custom_metric": -1.0},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-2",
+        primary_metric_name="custom_metric",
+        primary_metric_value=-1.0,
+    )
+
+    best = db.best_by_metric("custom_metric")
+
+    assert best is not None
+    assert best.experiment_id == "e1"
+
+
+def test_experiment_db_format_for_conductor_includes_zero_metrics(tmp_path) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
+    db.add_from_sqlite_fields(
+        experiment_id="e1",
+        thesis_id="t1",
+        config_path="configs/ema_zero.yaml",
+        runtime_config={},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={
+            "median_expectancy": 0.0,
+            "trade_count": 0,
+            "profit_factor": 0.0,
+            "avg_sharpe_across_windows": 0.0,
+        },
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-1",
+        primary_metric_name="median_expectancy",
+        primary_metric_value=0.0,
+    )
+
+    summary = db.format_for_conductor()
+
+    assert "metric=0.0" in summary
+    assert "trades=0" in summary
+    assert "PF=0.0" in summary
+    assert "sharpe=0.0" in summary
+
+
+def test_experiment_db_format_for_conductor_prefers_validation_metrics(tmp_path) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
+    db.add_from_sqlite_fields(
+        experiment_id="e1",
+        thesis_id="t1",
+        config_path="configs/ema_conflict.yaml",
+        runtime_config={},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"median_expectancy": 2.0, "trade_count": 10},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-1",
+        primary_metric_name="median_expectancy",
+        primary_metric_value=2.0,
+    )
+    record = db.all()[0]
+    record.train_metrics["median_expectancy"] = 1.0
+    record.validation_metrics["median_expectancy"] = 2.0
+
+    summary = db.format_for_conductor()
+
+    assert "metric=2.0" in summary
+
+
+def test_experiment_db_preserves_literal_infinity_strings_in_free_form_json(tmp_path) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
+    db.add_from_sqlite_fields(
+        experiment_id="e1",
+        thesis_id="t1",
+        config_path="configs/ema_freeform.yaml",
+        runtime_config={"ema_length": 5},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"median_expectancy": 1.0},
+        trade_analysis={},
+        strategy_diagnostics={"note": "ok"},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-1",
+        primary_metric_name="median_expectancy",
+        primary_metric_value=1.0,
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE experiments SET usage_json=?, asi_json=? WHERE experiment_id=?",
+            (
+                json.dumps({"note": "Infinity"}),
+                json.dumps({"flag": "-Infinity"}),
+                "e1",
+            ),
+        )
+        conn.commit()
+
+    db = ExperimentDB(db_path)
+    loaded = db.all()[0]
+
+    assert loaded.usage == {"note": "Infinity"}
+    assert loaded._asi_export == {"flag": "-Infinity"}
+
+
 def test_experiment_db_serializes_non_finite_metrics_as_json_strings(tmp_path) -> None:
     db_path = tmp_path / "ema_experiments.db"
     db = ExperimentDB(db_path)
@@ -398,6 +558,128 @@ def test_sqlite_experiment_required_fields_are_meaningfully_populated_in_real_em
     assert asi["hypothesis_id"] == "ema5"
     assert asi["artifact_dir"] == "ema_autoresearch-runs/job-1/ema5"
     assert row[25] == "strict-native loop: ema5"
+
+
+def test_log_experiment_result_does_not_rewrite_entire_export_table(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    family = load_family("ema")
+    runtime_root = (tmp_path / "runtime").resolve()
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    controller = AutoresearchController(
+        root=runtime_root,
+        state_path=runtime_root / "ema_autoresearch.next.json",
+        current_md_path=runtime_root / "ema_autoresearch.current.md",
+        ideas_md_path=runtime_root / "ema_autoresearch.ideas.md",
+        runs_dir=runtime_root / family.runs_dirname,
+        family=family,
+    )
+    controller.experiment_db = ExperimentDB(runtime_root / "ema_experiments.db")
+    controller.write_entries(
+        [
+            {
+                "type": "config",
+                "name": "ema",
+                "metricName": "median_expectancy",
+                "metricUnit": "",
+                "bestDirection": "higher",
+            }
+        ]
+    )
+    fixture = json.loads((repo_root / "tests" / "fixtures" / "tiny_ema_runtime.json").read_text())
+    fixture["ema_length"] = 5
+    config_rel = "experiments/ema5/runtime_config.json"
+    config_path = runtime_root / config_rel
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(fixture))
+    controller.ctx.current_contract = SimpleNamespace(
+        experiment_id="ema5",
+        thesis_id="ema5",
+        hypothesis="ema 5 should react faster",
+        mechanism="reduce lag in entries",
+    )
+    controller.ctx.parent_experiment_id = "parent-123"
+    controller.write_state(
+        {
+            "state": "running",
+            "job": 1,
+            "research_round": 1,
+            "blockers": [],
+            "_last_round_usage": {"prompt_tokens": 10},
+        }
+    )
+    run_output_dir = runtime_root / family.runs_dirname / "job-1" / "c2821b0a43ba"
+    run_output_dir.mkdir(parents=True, exist_ok=True)
+    command = family.benchmark_command(str(config_path), run_output_dir)
+    original_pythonpath = os.environ.get("PYTHONPATH", "")
+    os.environ["PYTHONPATH"] = (
+        f"{repo_root}{os.pathsep}{original_pythonpath}" if original_pythonpath else str(repo_root)
+    )
+    try:
+        code, output = controller.run_command(command)
+    finally:
+        if original_pythonpath:
+            os.environ["PYTHONPATH"] = original_pythonpath
+        else:
+            os.environ.pop("PYTHONPATH", None)
+    assert code == 0
+    metric = controller.parse_metric(output, controller.primary_metric_name())
+    decision = controller.evaluate_metric(metric)
+    analysis = controller.derive_trade_analysis(config_rel, metric, decision, output=output)
+
+    called = False
+
+    def fail_write_entries(entries):
+        nonlocal called
+        called = True
+        raise AssertionError("write_entries should not be called on the hot logging path")
+
+    monkeypatch.setattr(controller, "write_entries", fail_write_entries)
+
+    controller.log_experiment_result(
+        config=config_rel,
+        metric=metric,
+        decision=decision,
+        output=output,
+        analysis=analysis,
+    )
+
+    assert called is False
+
+
+def test_experiment_db_add_uses_single_row_upsert_without_full_save(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
+
+    monkeypatch.setattr(
+        db,
+        "_save",
+        lambda: (_ for _ in ()).throw(AssertionError("_save should not run on add")),
+    )
+
+    db.add_from_sqlite_fields(
+        experiment_id="e1",
+        thesis_id="t1",
+        config_path="configs/ema_base.yaml",
+        runtime_config={"ema_length": 5},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"median_expectancy": 1.25, "trade_count": 10},
+        trade_analysis={"trade_count": 10},
+        strategy_diagnostics={"rejection_breakdown": {}},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-1",
+        primary_metric_name="median_expectancy",
+        primary_metric_value=1.25,
+    )
+
+    assert db.count() == 1
 
 
 def test_sqlite_research_fields_are_meaningfully_populated_from_real_ready_thesis() -> None:
