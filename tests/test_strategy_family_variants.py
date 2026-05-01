@@ -33,6 +33,12 @@ def test_orb_family_has_orb_prefix_and_default_variants() -> None:
     assert fam.research_dirname == "orb-research-artifacts"
 
 
+def test_orb_family_default_variants_are_shipped() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    for rel_path in load_family("orb").default_variants:
+        assert (repo_root / rel_path).is_file(), rel_path
+
+
 def test_ema_family_has_ema_prefix_and_no_default_variants_yet() -> None:
     fam = load_family("ema")
     assert fam.variant_prefix == "ema_"
