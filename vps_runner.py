@@ -203,7 +203,7 @@ def _localize_remote_result_output(output: str, sftp: paramiko.SFTPClient) -> st
     local_result_path.write_text(json.dumps(payload, indent=2) + "\n")
     return re.sub(
         r"^RESULT_JSON .+$",
-        f"RESULT_JSON {local_result_path}",
+        lambda _: f"RESULT_JSON {local_result_path}",
         output,
         count=1,
         flags=re.MULTILINE,
