@@ -48,7 +48,12 @@ def load_runtime_config(path: str, strategy_name: str) -> dict[str, Any]:
             )
         config = compilation.runtime_config
     config = _resolve_relative_data_dir(config, p)
-    return strategy.validate_runtime_config_scope(config, source_path=p)
+    config = strategy.validate_runtime_config_scope(config, source_path=p)
+    violations = strategy.validate_runtime_config(config)
+    if violations:
+        source = f" for {p}" if p is not None else ""
+        raise ValueError(f"Config validation failed{source}: " + "; ".join(violations))
+    return config
 
 
 def validate_runtime_config_scope(

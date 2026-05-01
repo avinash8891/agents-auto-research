@@ -355,8 +355,9 @@ def generate_orb_signals(
     broke_below_df = pd.DataFrame(broke_below, index=close.index, columns=close.columns)
 
     if max_one_entry_per_day:
-        broke_above_df = _first_signal_per_day(broke_above_df, day_ids)
-        broke_below_df = _first_signal_per_day(broke_below_df, day_ids)
+        first_signal_df = _first_signal_per_day(broke_above_df | broke_below_df, day_ids)
+        broke_above_df = broke_above_df & first_signal_df
+        broke_below_df = broke_below_df & first_signal_df
 
     # Shift signals forward by 1 bar: breakout detected on bar N,
     # entry happens on bar N+1's open (no look-ahead bias).

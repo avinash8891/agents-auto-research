@@ -6,9 +6,12 @@ the orb_/ema_ hardcoding is removed.
 
 from __future__ import annotations
 
+import shlex
+import sys
 import sysconfig
 from pathlib import Path
 
+import backtest.legacy_entrypoint as legacy_entrypoint
 import strategies.base as strategies_base
 from backtest.legacy_entrypoint import strategy_for_script
 from strategies import STRATEGIES
@@ -110,17 +113,46 @@ def test_strategy_family_default_variant_prefix_is_not_strategy_specific() -> No
 
 
 def test_benchmark_command_uses_generic_strategy_runner() -> None:
-    command = load_family("ema").benchmark_command("configs/ema_base.yaml", output_dir="/tmp/run")
+    config_path = "configs/ema base.yaml"
+    output_dir = "/tmp/run dir"
+    command = load_family("ema").benchmark_command(config_path, output_dir=output_dir)
     assert command == (
-        "python3 -m backtest.runner --strategy ema --config configs/ema_base.yaml "
-        "--output-dir /tmp/run"
+        "python3 -m backtest.runner --strategy ema --config "
+        f"{shlex.quote(config_path)} --output-dir {shlex.quote(output_dir)}"
     )
     assert "backtest_5ema.py" not in command
+
+
+def test_benchmark_command_accepts_pathlike_output_dir(tmp_path: Path) -> None:
+    command = load_family("ema").benchmark_command("configs/ema_base.yaml", output_dir=tmp_path)
+    assert f"--output-dir {shlex.quote(str(tmp_path))}" in command
 
 
 def test_legacy_backtest_scripts_resolve_strategy_from_registry() -> None:
     assert strategy_for_script("backtest_5ema.py") == "ema"
     assert strategy_for_script("backtest_orb_v2.py") == "orb"
+
+
+def test_legacy_entrypoint_reexecs_current_interpreter(monkeypatch) -> None:
+    captured = {}
+
+    def fake_execv(executable: str, argv: list[str]) -> None:
+        captured["executable"] = executable
+        captured["argv"] = argv
+        raise RuntimeError("exec intercepted")
+
+    monkeypatch.setattr(legacy_entrypoint.os, "execv", fake_execv)
+    monkeypatch.setattr(sys, "argv", ["backtest_5ema.py", "--config", "cfg.json"])
+
+    try:
+        legacy_entrypoint.main_for_script("backtest_5ema.py")
+    except RuntimeError as exc:
+        assert str(exc) == "exec intercepted"
+
+    assert captured["executable"] == sys.executable
+    assert captured["argv"][0] == sys.executable
+    assert captured["argv"][1:4] == ["-m", "backtest.runner", "--strategy"]
+    assert captured["argv"][4] == "ema"
 
 
 def test_registered_strategies_do_not_keep_duplicate_default_yaml_files() -> None:

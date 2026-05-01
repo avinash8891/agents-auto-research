@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from strategies import STRATEGIES
@@ -27,10 +28,10 @@ def main_for_script(script_path: str) -> None:
         "--output-dir", default="/tmp", help="Directory to write result.json and trades CSV"
     )
     args = parser.parse_args()
-    os.execvp(
-        "python3",
+    os.execv(
+        sys.executable,
         [
-            "python3",
+            sys.executable,
             "-m",
             "backtest.runner",
             "--strategy",

@@ -26,11 +26,19 @@ def _filter_signals_to_days(signals, frame: pd.DataFrame, allowed_days: set):
     """Zero out signals on days not in allowed_days."""
     if not allowed_days:
         signals.entries[:] = False
+        signals.entry_price[:] = np.nan
+        signals.stop_price[:] = np.nan
+        if hasattr(signals, "alert_bar_idx"):
+            signals.alert_bar_idx[:] = -1
         return signals
     dates = frame.index.date
     mask = np.array([d in allowed_days for d in dates])
     signals.entries[~mask] = False
     signals.entry_price[~mask] = np.nan
+    signals.stop_price[~mask] = np.nan
+    if hasattr(signals, "alert_bar_idx"):
+        signals.alert_bar_idx[~mask] = -1
+    return signals
 
 
 def _exclude_signals_on_days(signals, frame: pd.DataFrame, excluded_days: set):
@@ -42,7 +50,4 @@ def _exclude_signals_on_days(signals, frame: pd.DataFrame, excluded_days: set):
     signals.entries[mask] = False
     signals.entry_price[mask] = np.nan
     signals.stop_price[mask] = np.nan
-    return signals
-    signals.stop_price[~mask] = np.nan
-    signals.alert_bar_idx[~mask] = -1
     return signals
