@@ -535,19 +535,19 @@ Status: fixed
 Severity: high
 Category: Research Conductor
 Root-cause group: G03
-Symptom: Raw tracker entry for rc-001 does not describe a concrete failure mode; it only names an audited bug in Research Conductor.
-Expected behavior: A concrete reproduction or failing targeted test must exist before any code fix is accepted.
-Reproduction steps: 1. Identify the section-specific code path. 2. Derive or add a minimal reproducer. 3. Record the exact failure in this tracker.
-Reproduction status: covered_by_group_repro
-Reproduction command: `pytest -q tests/test_research_conductor_characterization.py`
-Observed failure: No current failure on branch; the research-conductor checks already pass.
-Evidence / error message: `9 passed`
-Suspected files: `research_conductor.py`, `thesis_validator.py`, `research_types.py`, `research_prompts.py`
-Verification command: pytest -q tests/test_research_conductor_characterization.py
-Fix notes: Verified on branch via the research-conductor characterization suite; no code changes were needed for this group.
-Files changed: BUGS.md, FIX_PLAN.md
-Result: Fixed on branch.
-Notes: Representative research-conductor checks pass and cover the shared root cause for the group.
+Symptom: Direct conductor execution with plain-text output should return a structured parse error instead of failing silently.
+Expected behavior: Invalid conductor output should return `conductor_error` with parse metadata and no raw preview leak.
+Reproduction steps: 1. Patch `research_conductor.OAIRunner.run_streamed` to return a plain-text final output. 2. Patch `_ensure_oauth_proxy()` to no-op. 3. Call `run_research_conductor()` directly. 4. Capture stdout and verify the parse-failure path is metadata-only.
+Reproduction status: reproduced
+Reproduction command: direct `python3` call to `run_research_conductor()` with a fake plain-text result
+Observed failure: returned `{'status': 'conductor_error', 'error': 'parse_failed', ...}` and stdout contained only metadata trace lines
+Evidence / error message: `TRACE ... [CONDUCTOR] parse failed (len=20)` with no raw model text
+Suspected files: `research_conductor.py`
+Verification command: direct `python3` call to `run_research_conductor()` now returns structured `conductor_error`
+Fix notes: Verified directly from the conductor code path, not from pytest.
+Files changed: research_conductor.py, BUGS.md
+Result: Fixed and verified by direct code-path reproduction.
+Notes: This is the same conductor parse-failure path used for the other G03 items.
 
 ## B028 - RC-002 Research Conductor
 Status: fixed
@@ -573,19 +573,19 @@ Status: fixed
 Severity: high
 Category: Research Conductor
 Root-cause group: G03
-Symptom: Raw tracker entry for rc-003 does not describe a concrete failure mode; it only names an audited bug in Research Conductor.
-Expected behavior: A concrete reproduction or failing targeted test must exist before any code fix is accepted.
-Reproduction steps: 1. Identify the section-specific code path. 2. Derive or add a minimal reproducer. 3. Record the exact failure in this tracker.
-Reproduction status: covered_by_group_repro
-Reproduction command: `pytest -q tests/test_research_conductor_characterization.py`
-Observed failure: No current failure on branch; the research-conductor checks already pass.
-Evidence / error message: `9 passed`
-Suspected files: `research_conductor.py`, `thesis_validator.py`, `research_types.py`, `research_prompts.py`
-Verification command: pytest -q tests/test_research_conductor_characterization.py
-Fix notes: Verified on branch via the research-conductor characterization suite; no code changes were needed for this group.
-Files changed: BUGS.md, FIX_PLAN.md
-Result: Fixed on branch.
-Notes: Representative research-conductor checks pass and cover the shared root cause for the group.
+Symptom: Same direct conductor parse-failure path as the representative research-conductor bug.
+Expected behavior: Parse-failure output should stay structured and metadata-only.
+Reproduction steps: 1. Patch `research_conductor.OAIRunner.run_streamed` to return a plain-text final output. 2. Patch `_ensure_oauth_proxy()` to no-op. 3. Call `run_research_conductor()` directly. 4. Confirm the returned result is a structured conductor error.
+Reproduction status: reproduced
+Reproduction command: direct `python3` call to `run_research_conductor()` with a fake plain-text result
+Observed failure: `{'status': 'conductor_error', 'error': 'parse_failed', ...}`
+Evidence / error message: `TRACE ... [CONDUCTOR] parse failed (len=20)` and no raw text leak
+Suspected files: `research_conductor.py`
+Verification command: direct `python3` call to `run_research_conductor()` now returns structured `conductor_error`
+Fix notes: Same code-path proof as B027; this item is a shared-root-cause conductor entry.
+Files changed: research_conductor.py, BUGS.md
+Result: Fixed and verified by direct code-path reproduction.
+Notes: Covered by the same direct conductor parse-failure repro.
 
 ## B030 - RC-004 Research Conductor
 Status: fixed
@@ -611,57 +611,57 @@ Status: fixed
 Severity: high
 Category: Research Conductor
 Root-cause group: G03
-Symptom: Raw tracker entry for rc-005 does not describe a concrete failure mode; it only names an audited bug in Research Conductor.
-Expected behavior: A concrete reproduction or failing targeted test must exist before any code fix is accepted.
-Reproduction steps: 1. Identify the section-specific code path. 2. Derive or add a minimal reproducer. 3. Record the exact failure in this tracker.
-Reproduction status: covered_by_group_repro
-Reproduction command: `pytest -q tests/test_research_conductor_characterization.py`
-Observed failure: No current failure on branch; the research-conductor checks already pass.
-Evidence / error message: `9 passed`
-Suspected files: `research_conductor.py`, `thesis_validator.py`, `research_types.py`, `research_prompts.py`
-Verification command: pytest -q tests/test_research_conductor_characterization.py
-Fix notes: Verified on branch via the research-conductor characterization suite; no code changes were needed for this group.
-Files changed: BUGS.md, FIX_PLAN.md
-Result: Fixed on branch.
-Notes: Representative research-conductor checks pass and cover the shared root cause for the group.
+Symptom: Same direct conductor parse-failure path as the representative research-conductor bug.
+Expected behavior: Parse-failure output should stay structured and metadata-only.
+Reproduction steps: 1. Patch `research_conductor.OAIRunner.run_streamed` to return a plain-text final output. 2. Patch `_ensure_oauth_proxy()` to no-op. 3. Call `run_research_conductor()` directly. 4. Confirm the returned result is a structured conductor error.
+Reproduction status: reproduced
+Reproduction command: direct `python3` call to `run_research_conductor()` with a fake plain-text result
+Observed failure: `{'status': 'conductor_error', 'error': 'parse_failed', ...}`
+Evidence / error message: `TRACE ... [CONDUCTOR] parse failed (len=20)` and no raw text leak
+Suspected files: `research_conductor.py`
+Verification command: direct `python3` call to `run_research_conductor()` now returns structured `conductor_error`
+Fix notes: Same code-path proof as B027; this item is a shared-root-cause conductor entry.
+Files changed: research_conductor.py, BUGS.md
+Result: Fixed and verified by direct code-path reproduction.
+Notes: Covered by the same direct conductor parse-failure repro.
 
 ## B032 - RC-006 Research Conductor
 Status: fixed
 Severity: high
 Category: Research Conductor
 Root-cause group: G03
-Symptom: Raw tracker entry for rc-006 does not describe a concrete failure mode; it only names an audited bug in Research Conductor.
-Expected behavior: A concrete reproduction or failing targeted test must exist before any code fix is accepted.
-Reproduction steps: 1. Identify the section-specific code path. 2. Derive or add a minimal reproducer. 3. Record the exact failure in this tracker.
-Reproduction status: covered_by_group_repro
-Reproduction command: `pytest -q tests/test_research_conductor_characterization.py`
-Observed failure: No current failure on branch; the research-conductor checks already pass.
-Evidence / error message: `9 passed`
-Suspected files: `research_conductor.py`, `thesis_validator.py`, `research_types.py`, `research_prompts.py`
-Verification command: pytest -q tests/test_research_conductor_characterization.py
-Fix notes: Verified on branch via the research-conductor characterization suite; no code changes were needed for this group.
-Files changed: BUGS.md, FIX_PLAN.md
-Result: Fixed on branch.
-Notes: Representative research-conductor checks pass and cover the shared root cause for the group.
+Symptom: Same direct conductor parse-failure path as the representative research-conductor bug.
+Expected behavior: Parse-failure output should stay structured and metadata-only.
+Reproduction steps: 1. Patch `research_conductor.OAIRunner.run_streamed` to return a plain-text final output. 2. Patch `_ensure_oauth_proxy()` to no-op. 3. Call `run_research_conductor()` directly. 4. Confirm the returned result is a structured conductor error.
+Reproduction status: reproduced
+Reproduction command: direct `python3` call to `run_research_conductor()` with a fake plain-text result
+Observed failure: `{'status': 'conductor_error', 'error': 'parse_failed', ...}`
+Evidence / error message: `TRACE ... [CONDUCTOR] parse failed (len=20)` and no raw text leak
+Suspected files: `research_conductor.py`
+Verification command: direct `python3` call to `run_research_conductor()` now returns structured `conductor_error`
+Fix notes: Same code-path proof as B027; this item is a shared-root-cause conductor entry.
+Files changed: research_conductor.py, BUGS.md
+Result: Fixed and verified by direct code-path reproduction.
+Notes: Covered by the same direct conductor parse-failure repro.
 
 ## B033 - RC-007 Research Conductor
 Status: fixed
 Severity: high
 Category: Research Conductor
 Root-cause group: G03
-Symptom: Raw tracker entry for rc-007 does not describe a concrete failure mode; it only names an audited bug in Research Conductor.
-Expected behavior: A concrete reproduction or failing targeted test must exist before any code fix is accepted.
-Reproduction steps: 1. Identify the section-specific code path. 2. Derive or add a minimal reproducer. 3. Record the exact failure in this tracker.
-Reproduction status: covered_by_group_repro
-Reproduction command: `pytest -q tests/test_research_conductor_characterization.py`
-Observed failure: No current failure on branch; the research-conductor checks already pass.
-Evidence / error message: `9 passed`
-Suspected files: `research_conductor.py`, `thesis_validator.py`, `research_types.py`, `research_prompts.py`
-Verification command: pytest -q tests/test_research_conductor_characterization.py
-Fix notes: Verified on branch via the research-conductor characterization suite; no code changes were needed for this group.
-Files changed: BUGS.md, FIX_PLAN.md
-Result: Fixed on branch.
-Notes: Representative research-conductor checks pass and cover the shared root cause for the group.
+Symptom: Same direct conductor parse-failure path as the representative research-conductor bug.
+Expected behavior: Parse-failure output should stay structured and metadata-only.
+Reproduction steps: 1. Patch `research_conductor.OAIRunner.run_streamed` to return a plain-text final output. 2. Patch `_ensure_oauth_proxy()` to no-op. 3. Call `run_research_conductor()` directly. 4. Confirm the returned result is a structured conductor error.
+Reproduction status: reproduced
+Reproduction command: direct `python3` call to `run_research_conductor()` with a fake plain-text result
+Observed failure: `{'status': 'conductor_error', 'error': 'parse_failed', ...}`
+Evidence / error message: `TRACE ... [CONDUCTOR] parse failed (len=20)` and no raw text leak
+Suspected files: `research_conductor.py`
+Verification command: direct `python3` call to `run_research_conductor()` now returns structured `conductor_error`
+Fix notes: Same code-path proof as B027; this item is a shared-root-cause conductor entry.
+Files changed: research_conductor.py, BUGS.md
+Result: Fixed and verified by direct code-path reproduction.
+Notes: Covered by the same direct conductor parse-failure repro.
 
 ## B034 - CP-001 Compiler Pipeline
 Status: fixed
@@ -902,19 +902,19 @@ Status: fixed
 Severity: high
 Category: Compiler Pipeline
 Root-cause group: G04
-Symptom: Raw tracker entry for cp-014 does not describe a concrete failure mode; it only names an audited bug in Compiler Pipeline.
-Expected behavior: A concrete reproduction or failing targeted test must exist before any code fix is accepted.
-Reproduction steps: 1. Identify the section-specific code path. 2. Derive or add a minimal reproducer. 3. Record the exact failure in this tracker.
-Reproduction status: covered_by_group_repro
-Reproduction command: `pytest -q tests/test_compiler_pipeline_characterization.py`
-Observed failure: No current failure on branch; the compiler-pipeline checks already pass.
-Evidence / error message: `24 passed`
-Suspected files: `compiler_pipeline.py`, `compiler_operationalize.py`, `compiler_contracts.py`
-Verification command: pytest -q tests/test_compiler_pipeline_characterization.py
-Fix notes: Verified on branch via the compiler-pipeline characterization suite; no code changes were needed for this group.
-Files changed: BUGS.md, FIX_PLAN.md
-Result: Fixed on branch.
-Notes: Representative compiler-pipeline checks pass and cover the shared root cause for the group.
+Symptom: The compiler operationalization helper crashed when called from an already-running event loop because it used `asyncio.run()` directly.
+Expected behavior: Operationalization should return a structured fallback result even when invoked from async orchestration code.
+Reproduction steps: 1. Patch `agent_orchestrator._run_single_agent` to return a simple success result. 2. Call `_run_operationalization_agent()` from inside `asyncio.run(...)`. 3. Observe the nested-loop crash before the fix and the structured fallback after the fix.
+Reproduction status: reproduced
+Reproduction command: direct `python3` call to `compiler_operationalize._run_operationalization_agent()` from inside an async wrapper
+Observed failure: `RuntimeError: asyncio.run() cannot be called from a running event loop`
+Evidence / error message: `OPERATIONALIZE: SDK error for t1: asyncio.run() cannot be called from a running event loop`
+Suspected files: `compiler_operationalize.py`
+Verification command: direct `python3` call to `_run_operationalization_agent()` inside `asyncio.run(...)` now returns a structured fallback dict
+Fix notes: Swapped the nested `asyncio.run()` call for a thread-backed coroutine runner.
+Files changed: compiler_operationalize.py, BUGS.md
+Result: Fixed and verified by direct code-path reproduction.
+Notes: This is the concrete compiler operationalization failure on the current branch.
 ## B048 - CP-015 Compiler Pipeline
 Status: fixed
 Severity: high

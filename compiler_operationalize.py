@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import asyncio
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -121,6 +123,29 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
     return thesis
 
 
+def _run_coroutine_sync(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result_box: dict[str, Any] = {}
+    error_box: dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            result_box["value"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - exercised via regression test
+            error_box["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if error_box:
+        raise error_box["error"]
+    return result_box.get("value")
+
+
 def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
     """Run SDK agent to resolve ambiguous thesis into exact contract.
 
@@ -128,8 +153,6 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
     Falls back to empty resolution if agent unavailable.
     """
     try:
-        import asyncio
-
         from agent_orchestrator import _run_single_agent
 
         agent_def = SimpleNamespace(
@@ -140,7 +163,7 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
             maxTurns=3,
         )
 
-        result = asyncio.run(
+        result = _run_coroutine_sync(
             _run_single_agent(
                 "operationalization-agent",
                 f"Operationalize this thesis: {json.dumps(thesis, indent=2)}",
