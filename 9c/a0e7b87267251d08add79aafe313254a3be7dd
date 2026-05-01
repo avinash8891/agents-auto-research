@@ -1,0 +1,48 @@
+autoresearch_controller.py
+  dbc5ae606013cb0f 505-507,509-510
+tests/test_research_conductor_characterization.py
+  dbc5ae606013cb0f 310,327
+autoresearch_experiment.py
+  dbc5ae606013cb0f 13,73,75-76,89-96,114
+autoresearch_state.py
+  dbc5ae606013cb0f 120-123
+tests/test_autoresearch_state.py
+  dbc5ae606013cb0f 54-62
+tests/test_autoresearch_controller_characterization.py
+  dbc5ae606013cb0f 869-892
+tests/test_autoresearch_experiment.py
+  dbc5ae606013cb0f 11,17,42-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "9ca0e7b87267251d08add79aafe313254a3be7dd",
+  "prompts": {
+    "a4dc0ab7f4fb3e35": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de36e-95ef-77a2-a6a5-3e00f4e69739",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 77,
+      "overriden_lines": 0
+    },
+    "dbc5ae606013cb0f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de36d-cd36-7ad0-86bd-68166dfcd69b",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 90,
+      "total_deletions": 50,
+      "accepted_lines": 90,
+      "overriden_lines": 0
+    }
+  }
+}
