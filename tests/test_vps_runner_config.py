@@ -10,10 +10,10 @@ import pytest
 from strategy_family import load_family
 from vps_runner import (
     VPSConfig,
+    _localize_remote_result_output,
     build_remote_command,
     config_from_env,
     create_verified_ssh_client,
-    _localize_remote_result_output,
     sync_relative_paths,
 )
 
@@ -47,9 +47,7 @@ def test_vps_config_requires_explicit_environment(monkeypatch) -> None:
         config_from_env()
 
 
-def test_syntax_check_reports_external_python_path_without_crashing(
-    tmp_path, capsys
-) -> None:
+def test_syntax_check_reports_external_python_path_without_crashing(tmp_path, capsys) -> None:
     from vps_runner import syntax_check
 
     bad = tmp_path / "bad.py"

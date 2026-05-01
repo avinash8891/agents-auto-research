@@ -191,7 +191,9 @@ def cmd_log(args):
         except json.JSONDecodeError:
             _log.error(f"Warning: could not parse --asi JSON: {args.asi}")
 
-    primary_metric_name = config.get("metricName", "median_expectancy") if config else "median_expectancy"
+    primary_metric_name = (
+        config.get("metricName", "median_expectancy") if config else "median_expectancy"
+    )
     merged_metrics = dict(extra_metrics)
     merged_metrics[primary_metric_name] = args.metric
 

@@ -95,7 +95,9 @@ def test_cli_log_persists_primary_metric_even_when_extra_metrics_are_sparse(monk
     monkeypatch.setattr(autoresearch_cli, "find_baseline", lambda *args, **kwargs: None)
     monkeypatch.setattr(autoresearch_cli, "find_best_kept", lambda *args, **kwargs: None)
 
-    autoresearch_cli.cmd_log(_base_args(tmp_path, metric=3.14, metrics=json.dumps({"trade_count": 2})))
+    autoresearch_cli.cmd_log(
+        _base_args(tmp_path, metric=3.14, metrics=json.dumps({"trade_count": 2}))
+    )
 
     assert captured
     record = captured[0]
