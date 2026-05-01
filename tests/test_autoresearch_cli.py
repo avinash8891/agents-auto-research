@@ -196,6 +196,14 @@ def test_find_best_kept_ignores_non_finite_metrics() -> None:
     assert best == 2.0
 
 
+def test_find_baseline_rejects_non_finite_metric() -> None:
+    results = [{"segment": 0, "status": "keep", "metric": float("nan")}]
+
+    baseline = autoresearch_cli.find_baseline(results, 0)
+
+    assert baseline is None
+
+
 def test_compute_confidence_returns_none_when_baseline_is_unusable() -> None:
     results = [
         {"segment": 0, "status": "keep", "metric": None},

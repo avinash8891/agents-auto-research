@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import stat
 from pathlib import Path
 
 from config_hash import _config_hash
@@ -20,6 +21,7 @@ from experiment_db import (
     build_config_hash,
     build_data_hash,
 )
+from persistence_utils import write_text_atomic
 
 
 def _make_record(experiment_id: str, *, timestamp: str = "") -> ExperimentResult:
@@ -349,3 +351,53 @@ def test_baseline_checkpoint_record_leaves_no_tmp_artifacts(tmp_path: Path) -> N
     )
 
     assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_baseline_checkpoint_record_preserves_existing_file_mode(tmp_path: Path) -> None:
+    path = tmp_path / "baseline.json"
+    path.write_text("[]\n")
+    path.chmod(0o640)
+
+    tracker = BaselineTracker(path)
+    tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="d",
+            config_hash="c",
+            metrics={},
+            timestamp="2026-04-29T12:00:00+00:00",
+        )
+    )
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+
+def test_write_text_atomic_ignores_race_when_target_disappears_before_stat(
+    tmp_path: Path, monkeypatch
+) -> None:
+    path = tmp_path / "artifact.txt"
+    path.write_text("original")
+
+    real_stat = Path.stat
+    real_exists = Path.exists
+    calls = {"exists": 0, "stat": 0}
+
+    def fake_exists(self: Path) -> bool:
+        if self == path:
+            calls["exists"] += 1
+            return True
+        return real_exists(self)
+
+    def fake_stat(self: Path):
+        if self == path:
+            calls["stat"] += 1
+            if calls["stat"] == 1:
+                raise FileNotFoundError
+        return real_stat(self)
+
+    monkeypatch.setattr(Path, "exists", fake_exists)
+    monkeypatch.setattr(Path, "stat", fake_stat)
+
+    write_text_atomic(path, "updated")
+
+    assert path.read_text() == "updated"

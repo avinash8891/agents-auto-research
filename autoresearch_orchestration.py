@@ -4,7 +4,6 @@ import json
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
-from autoresearch_planning import check_baseline_rerun as _planning_check_baseline_rerun
 from persistence_utils import write_text_atomic as _write_text_atomic
 from strategies import STRATEGIES
 from trace_sdk import trace
@@ -94,16 +93,6 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
     return state
 
 
-def check_baseline_rerun(controller: "AutoresearchController") -> dict[str, Any] | None:
-    return _planning_check_baseline_rerun(
-        controller.root,
-        controller.family,
-        controller.baseline_tracker,
-        controller.current_commit(),
-        controller.read_results(),
-    )
-
-
 def apply_forced_baseline_rerun(
     controller: "AutoresearchController", baseline_action: dict[str, Any]
 ) -> dict[str, Any]:
@@ -117,12 +106,12 @@ def apply_forced_baseline_rerun(
 
 
 def resolve_next_action(controller: "AutoresearchController") -> dict[str, Any]:
-    resumed = try_resume_halted_thesis(controller)
+    resumed = controller._try_resume_halted_thesis()
     if resumed is not None:
         return resumed
 
-    baseline_action = check_baseline_rerun(controller)
+    baseline_action = controller._check_baseline_rerun()
     if baseline_action:
-        return apply_forced_baseline_rerun(controller, baseline_action)
+        return controller._apply_forced_baseline_rerun(baseline_action)
 
     return controller.reconcile_state()

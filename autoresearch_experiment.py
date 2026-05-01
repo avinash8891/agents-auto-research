@@ -593,9 +593,9 @@ def log_experiment_result(
     _write_run_artifacts(artifact_dir, output, analysis)
 
     thesis_id, config_changes = _read_thesis_metadata(controller, config)
-    runtime_config = analysis.get("runtime_config", {})
-    if not isinstance(runtime_config, dict):
-        runtime_config = {}
+    runtime_config = analysis.get("runtime_config")
+    if not isinstance(runtime_config, dict) or not runtime_config:
+        runtime_config = getattr(controller.ctx, "latest_config_contents", {}) or {}
     asi = _build_asi_dict(
         controller,
         config=config,
@@ -984,7 +984,10 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
 
         baseline_source = next_action.get("source") == "baseline"
         if baseline_source:
-            _record_baseline_checkpoint(controller, details, analysis.get("runtime_config", {}))
+            runtime_config = analysis.get("runtime_config")
+            if not isinstance(runtime_config, dict) or not runtime_config:
+                runtime_config = getattr(controller.ctx, "latest_config_contents", {}) or {}
+            _record_baseline_checkpoint(controller, details, runtime_config)
         _finalize_experiment(controller, config, metric, decision, verdict)
         return 0
     finally:

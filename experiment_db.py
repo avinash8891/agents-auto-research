@@ -201,11 +201,11 @@ class ExperimentDB:
         compare_against = None
         if kept:
             compare_against = _coerce_metric_float(
-                kept[0].validation_metrics.get(self.primary_metric_name(), 0.0)
+                _metric_value_for_record(kept[0], self.primary_metric_name())
             )
             for record in kept[1:]:
                 candidate = _coerce_metric_float(
-                    record.validation_metrics.get(self.primary_metric_name(), 0.0)
+                    _metric_value_for_record(record, self.primary_metric_name())
                 )
                 if direction == "higher" and candidate > compare_against:
                     compare_against = candidate
@@ -213,7 +213,7 @@ class ExperimentDB:
                     compare_against = candidate
         else:
             compare_against = _coerce_metric_float(
-                records[0].validation_metrics.get(self.primary_metric_name(), 0.0)
+                _metric_value_for_record(records[0], self.primary_metric_name())
             )
         improved = metric > compare_against if direction == "higher" else metric < compare_against
         return "keep" if improved else "discard"

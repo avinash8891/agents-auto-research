@@ -162,7 +162,10 @@ def find_baseline(results, segment):
     if not cur:
         return None
     metric = cur[0].get("metric")
-    return float(metric) if metric is not None else None
+    if metric is None:
+        return None
+    val = float(metric)
+    return val if math.isfinite(val) else None
 
 
 def find_best_kept(results, segment, direction):
