@@ -503,6 +503,92 @@ def test_log_experiment_result_uses_legacy_runtime_config_fallback(tmp_path: Pat
     assert json.loads(row[0]) == {"ema_length": 5}
 
 
+def test_run_experiment_uses_runtime_config_fallback_for_baseline_checkpoint(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _Controller:
+        def __init__(self) -> None:
+            self.root = tmp_path
+            self.runs_dir = tmp_path / "ema-runs"
+            self.research_dir = tmp_path / "ema-research"
+            self.state_path = tmp_path / "ema_autoresearch.next.json"
+            self.family = SimpleNamespace(
+                name="ema",
+                discord_webhook="",
+                benchmark_command=lambda config, output_dir=None: "echo ok",
+            )
+            self.ctx = SimpleNamespace(
+                current_contract=None,
+                parent_experiment_id="",
+                latest_config_contents={"ema_length": 5},
+            )
+
+        def current_commit(self) -> str:
+            return "abc1234"
+
+        def read_state(self) -> dict[str, object]:
+            return {
+                "state": "running",
+                "job": 1,
+                "next_action": {"config": "configs/ema_base.yaml", "source": "baseline"},
+                "_last_round_usage": {},
+            }
+
+        def primary_metric_name(self) -> str:
+            return "median_expectancy"
+
+        def write_state(self, state: dict[str, object]) -> None:
+            self.state = dict(state)
+
+        def clear_transient_context(self) -> None:
+            return None
+
+        def run_command(self, command: str) -> tuple[int, str]:
+            return 0, "RESULT_JSON /tmp/result.json\n"
+
+        def parse_metric(self, output: str, name: str = "median_expectancy") -> float | None:
+            return 1.25
+
+        def parse_benchmark_details(self, output: str) -> dict[str, object]:
+            return {"trade_count": 10}
+
+        def evaluate_metric(self, metric: float) -> str:
+            return "keep"
+
+        def derive_trade_analysis(
+            self, config: str, metric: float, decision: str, output: str = ""
+        ) -> dict[str, object]:
+            return {"trade_analysis": {}, "runtime_config": {}}
+
+        def log_experiment_result(self, **kwargs: object) -> None:
+            return None
+
+        def write_current_md(self, state: dict[str, object], results: list[object]) -> None:
+            return None
+
+        def read_results(self) -> list[object]:
+            return []
+
+    controller = _Controller()
+
+    monkeypatch.setattr(
+        experiment_mod, "_setup_run", lambda controller, config: (tmp_path, "echo ok")
+    )
+    monkeypatch.setattr(
+        experiment_mod,
+        "_record_baseline_checkpoint",
+        lambda controller, details, runtime_cfg: captured.setdefault("runtime_cfg", runtime_cfg),
+    )
+    monkeypatch.setattr(experiment_mod, "_finalize_experiment", lambda *args, **kwargs: None)
+
+    rc = experiment_mod.run_experiment(controller, controller.read_state())
+
+    assert rc == 0
+    assert captured["runtime_cfg"] == {"ema_length": 5}
+
+
 def test_build_asi_and_entry_use_contract_identity_over_runtime_config_stem(tmp_path: Path) -> None:
     from autoresearch_experiment import _build_asi_dict, _build_export_entry
 

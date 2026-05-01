@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import stat
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ def json_loads_metric_sentinels(payload: str) -> Any:
 
 def write_text_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
     fd, tmp_name = tempfile.mkstemp(
         dir=path.parent,
         prefix=f"{path.name}.",
@@ -34,6 +36,8 @@ def write_text_atomic(path: Path, content: str) -> None:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
+        if existing_mode is not None:
+            os.chmod(tmp_path, existing_mode)
         os.replace(tmp_path, path)
     finally:
         tmp_path.unlink(missing_ok=True)
