@@ -18,7 +18,11 @@ def _append_bounded(lines: list[str], line: str, *, budget: int, emitted: int) -
     next_len = emitted + len(line) + (1 if lines else 0)
     if next_len > budget:
         if not lines or lines[-1] != "... (truncated)":
-            lines.append("... (truncated)")
+            marker = "... (truncated)"
+            marker_len = len(marker) + (1 if lines else 0)
+            if emitted + marker_len <= budget and (not lines or lines[-1] != marker):
+                lines.append(marker)
+                emitted += marker_len
         return False, emitted
     lines.append(line)
     return True, next_len

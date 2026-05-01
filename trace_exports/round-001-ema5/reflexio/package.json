@@ -1,0 +1,47 @@
+{
+  "files": {
+    "reflexio-event.json": {
+      "episode": {
+        "family": "ema",
+        "outcome": "compiled",
+        "round": 1,
+        "thesis_id": "ema5"
+      },
+      "reflection": {
+        "quality": {
+          "delta": {},
+          "dimension_scores": {
+            "compiled": 1.0,
+            "conductor_error": 0.0,
+            "needs_code": 0.0,
+            "rejected": 0.0,
+            "stopped": 0.0
+          },
+          "overall_score": 1.0,
+          "regressions": [],
+          "run_label": "round-1",
+          "trend": "initial"
+        },
+        "reasoning": "research rationale",
+        "rejection_reason": ""
+      },
+      "resources": {
+        "usage": {
+          "total": {
+            "input_tokens": 1,
+            "output_tokens": 2,
+            "total_tokens": 3
+          }
+        }
+      },
+      "system": "reflexio"
+    },
+    "reflexio-summary.json": {
+      "outcome": "compiled",
+      "round": 1,
+      "thesis_id": "ema5"
+    }
+  },
+  "schema_version": 1,
+  "target": "reflexio"
+}

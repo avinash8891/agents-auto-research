@@ -249,9 +249,12 @@ async def run_research_conductor(
             elif final_output is not None:
                 result_text = json.dumps(final_output, default=str)
 
-        for resp in getattr(result, "raw_responses", []) or []:
+        saw_raw_usage = False
+        raw_responses = getattr(result, "raw_responses", []) or []
+        for resp in raw_responses:
             u = getattr(resp, "usage", None)
             if u:
+                saw_raw_usage = True
                 trace(
                     "CONDUCTOR",
                     f"USAGE conductor raw_keys={list(u.__dict__.keys()) if hasattr(u, '__dict__') else []} usage={u}",
@@ -265,6 +268,30 @@ async def run_research_conductor(
                     },
                     cost_usd=getattr(resp, "total_cost_usd", 0.0) or 0.0,
                     dedupe_key=f"conductor-response-{id(resp)}",
+                )
+        if not raw_responses or not saw_raw_usage:
+            top_usage = getattr(result, "usage", None) or getattr(result, "model_usage", None)
+            top_cost = getattr(result, "total_cost_usd", None)
+            if top_usage is not None or top_cost is not None:
+                _accumulate_usage(
+                    "conductor",
+                    (
+                        {
+                            "input_tokens": (
+                                getattr(top_usage, "input_tokens", 0) if top_usage else 0
+                            ),
+                            "output_tokens": (
+                                getattr(top_usage, "output_tokens", 0) if top_usage else 0
+                            ),
+                            "total_tokens": (
+                                getattr(top_usage, "total_tokens", 0) if top_usage else 0
+                            ),
+                        }
+                        if top_usage
+                        else None
+                    ),
+                    cost_usd=top_cost if top_cost is not None else 0.0,
+                    dedupe_key=f"conductor-result-{id(result)}",
                 )
     except asyncio.TimeoutError:
         trace("CONDUCTOR", "TIMEOUT")

@@ -1,0 +1,36 @@
+{
+  "evaluation": {
+    "quality": {
+      "delta": {},
+      "dimension_scores": {
+        "compiled": 1.0,
+        "conductor_error": 0.0,
+        "needs_code": 0.0,
+        "rejected": 0.0,
+        "stopped": 0.0
+      },
+      "overall_score": 1.0,
+      "regressions": [],
+      "run_label": "round-1",
+      "trend": "initial"
+    },
+    "reasoning": "research rationale",
+    "rejection_reason": ""
+  },
+  "loop_state": {
+    "outcome": "compiled",
+    "research_round": 1,
+    "strategy_family": "ema",
+    "thesis_id": "ema5"
+  },
+  "resources": {
+    "usage": {
+      "total": {
+        "input_tokens": 1,
+        "output_tokens": 2,
+        "total_tokens": 3
+      }
+    }
+  },
+  "system": "halo"
+}
