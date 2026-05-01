@@ -74,7 +74,10 @@ def test_remote_command_uses_generic_runner_and_family_metadata() -> None:
 
     assert f"cd {shlex.quote(config.remote_dir)}" in command
     assert f"mkdir -p {shlex.quote(os.path.dirname(config_path) or '.')}" in command
-    assert f"cp {shlex.quote(os.path.basename(config_path))} {shlex.quote(config_path)}" in command
+    assert (
+        f"(cp {shlex.quote(os.path.basename(config_path))} {shlex.quote(config_path)} 2>/dev/null || true)"
+        in command
+    )
     assert (
         f"python3 backtest/runner.py --strategy {shlex.quote(family.name)} "
         f"--config {shlex.quote(config_path)}"

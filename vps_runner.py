@@ -75,7 +75,7 @@ def build_remote_command(config: VPSConfig, family: StrategyFamily, config_path:
     return (
         f"cd {shlex.quote(config.remote_dir)} && "
         f"mkdir -p {shlex.quote(config_dirname)} && "
-        f"cp {shlex.quote(config_basename)} {shlex.quote(config_path)} 2>/dev/null || true && "
+        f"(cp {shlex.quote(config_basename)} {shlex.quote(config_path)} 2>/dev/null || true) && "
         f"find . -name __pycache__ -type d -exec rm -rf {{}} + 2>/dev/null || true && "
         f"python3 backtest/runner.py --strategy {shlex.quote(family.name)} "
         f"--config {shlex.quote(config_path)}"
