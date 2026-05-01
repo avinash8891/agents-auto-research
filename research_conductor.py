@@ -249,7 +249,8 @@ async def run_research_conductor(
             elif final_output is not None:
                 result_text = json.dumps(final_output, default=str)
 
-        for resp in getattr(result, "raw_responses", []) or []:
+        raw_responses = getattr(result, "raw_responses", []) or []
+        for resp in raw_responses:
             u = getattr(resp, "usage", None)
             if u:
                 trace(
@@ -266,6 +267,23 @@ async def run_research_conductor(
                     cost_usd=getattr(resp, "total_cost_usd", 0.0) or 0.0,
                     dedupe_key=f"conductor-response-{id(resp)}",
                 )
+        if not raw_responses:
+            top_usage = getattr(result, "usage", None) or getattr(result, "model_usage", None)
+            top_cost = getattr(result, "total_cost_usd", 0.0) or 0.0
+            _accumulate_usage(
+                "conductor",
+                (
+                    {
+                        "input_tokens": getattr(top_usage, "input_tokens", 0),
+                        "output_tokens": getattr(top_usage, "output_tokens", 0),
+                        "total_tokens": getattr(top_usage, "total_tokens", 0),
+                    }
+                    if top_usage
+                    else None
+                ),
+                cost_usd=top_cost,
+                dedupe_key=f"conductor-toplevel-{id(result)}",
+            )
     except asyncio.TimeoutError:
         trace("CONDUCTOR", "TIMEOUT")
         _REFINEMENT_RECORDER.finish_session(
