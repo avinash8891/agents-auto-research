@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 # ── Module-function backing store ───────────────────────────────────────────
@@ -40,6 +38,13 @@ from autoresearch_experiment import (
     sanitize_duplicate_entries as _experiment_sanitize_duplicate_entries,
 )
 from autoresearch_logging import get_logger
+from autoresearch_orchestration import (
+    apply_forced_baseline_rerun as _orchestration_apply_forced_baseline_rerun,
+)
+from autoresearch_orchestration import resolve_next_action as _orchestration_resolve_next_action
+from autoresearch_orchestration import (
+    try_resume_halted_thesis as _orchestration_try_resume_halted_thesis,
+)
 from autoresearch_planning import (
     COMBINATION_RULES,
     DEFAULT_CONFIG_ORDER,
@@ -81,8 +86,6 @@ from autoresearch_state import write_current_md as _state_write_current_md
 from autoresearch_state import write_state as _state_write_state
 from config_hash import _git_sha
 from experiment_db import BaselineTracker, ExperimentDB
-from persistence_utils import write_text_atomic as _write_text_atomic
-from strategies import STRATEGIES
 from strategy_family import StrategyFamily, load_family
 from trace_autonomy_ledger import AutonomyLedger
 from trace_sdk import trace, trace_state_change
@@ -173,7 +176,6 @@ class AutoresearchController:
         """
         self.ctx.current_contract = None
         self.ctx.parent_experiment_id = ""
-        self.ctx.current_artifact_dir = None
 
     def clear_terminal_metadata(self, state: dict[str, Any]) -> None:
         """Remove terminal-only fields when a transition reactivates the run."""
@@ -421,6 +423,7 @@ class AutoresearchController:
         output: str,
         analysis: dict[str, Any],
         next_action: dict[str, Any] | None = None,
+        artifact_dir: Path | None = None,
     ) -> None:
         _experiment_log_experiment_result(
             self,
@@ -430,6 +433,7 @@ class AutoresearchController:
             output=output,
             analysis=analysis,
             next_action=next_action,
+            artifact_dir=artifact_dir,
         )
 
     def run_command(self, command: str) -> tuple[int, str]:
@@ -487,113 +491,13 @@ class AutoresearchController:
         )
 
     def _try_resume_halted_thesis(self) -> dict[str, Any] | None:
-        """If a halted thesis's missing config keys now exist in base yaml,
-        materialize the runtime config and return the resumed-running state.
-        Returns None if no halted thesis is present or its keys are still
-        missing.
-        """
-        state = self.read_state()
-        halted_id = state.get("halted_thesis_id")
-        if not halted_id or state.get("halted_reason") != "requires_code_change":
-            return None
-        raw_thesis = state.get("halted_thesis", {})
-        config_changes = raw_thesis.get("config_changes", {})
-        if not config_changes:
-            return None
-        import yaml as _yaml
-
-        base = (
-            _yaml.safe_load((self.root / "configs" / self.family.base_config_filename).read_text())
-            or {}
-        )
-        if not isinstance(base, dict):
-            return None
-        if set(config_changes) - set(base):
-            return None
-        runtime = {**base, **config_changes}
-        try:
-            runtime = STRATEGIES[self.family.name].validate_runtime_config_scope(runtime)
-        except ValueError:
-            return None
-        exp_dir = self.root / "experiments" / halted_id
-        exp_dir.mkdir(parents=True, exist_ok=True)
-        config_path = f"experiments/{halted_id}/runtime_config.json"
-        _write_text_atomic(self.root / config_path, json.dumps(runtime, indent=2) + "\n")
-        resumed_thesis = dict(raw_thesis)
-        resumed_thesis.setdefault("thesis_id", halted_id)
-        resumed_thesis.setdefault("config_changes", config_changes)
-        thesis_sidecar = {
-            "experiment_id": halted_id,
-            "strategy_family": self.family.name,
-            "thesis_id": resumed_thesis.get("thesis_id", halted_id),
-            "hypothesis": resumed_thesis.get("hypothesis", ""),
-            "mechanism": resumed_thesis.get("mechanism", ""),
-            "config_changes": resumed_thesis.get("config_changes", {}),
-            "expected_effects": resumed_thesis.get("expected_effects", []),
-            "disqualifiers": resumed_thesis.get("disqualifiers", []),
-            "required_diagnostics": resumed_thesis.get("required_diagnostics", []),
-        }
-        _write_text_atomic(
-            exp_dir / "thesis.json",
-            json.dumps(thesis_sidecar, indent=2) + "\n",
-        )
-        self.ctx.current_contract = SimpleNamespace(
-            experiment_id=halted_id,
-            strategy_family=self.family.name,
-            thesis_id=thesis_sidecar["thesis_id"],
-            hypothesis=thesis_sidecar["hypothesis"],
-            mechanism=thesis_sidecar["mechanism"],
-            config_changes=thesis_sidecar["config_changes"],
-            expected_effects=thesis_sidecar["expected_effects"],
-            disqualifiers=thesis_sidecar["disqualifiers"],
-            required_diagnostics=thesis_sidecar["required_diagnostics"],
-        )
-        self.ctx.parent_experiment_id = ""
-        state["state"] = "running"
-        self.clear_terminal_metadata(state)
-        state["current_thesis"] = {"config": config_path, "status": "ready_to_run"}
-        state["next_action"] = {
-            "type": "run_experiment",
-            "config": config_path,
-            "benchmark_command": self.family.benchmark_command(config_path),
-            "requires_trade_analysis": True,
-            "source": "resumed_halted_thesis",
-        }
-        state["blockers"] = []
-        state.pop("halted_thesis_id", None)
-        state.pop("halted_reason", None)
-        state.pop("halted_thesis", None)
-        self.write_state(state)
-        trace("LOOP", f"resumed halted thesis={halted_id}")
-        return state
+        return _orchestration_try_resume_halted_thesis(self)
 
     def _apply_forced_baseline_rerun(self, baseline_action: dict[str, Any]) -> dict[str, Any]:
-        """Persist a forced-baseline-rerun next_action and return the updated state."""
-        state = self.read_state()
-        state["state"] = "running"
-        self.clear_terminal_metadata(state)
-        state["next_action"] = baseline_action
-        state["blockers"] = []
-        self.write_state(state)
-        return state
+        return _orchestration_apply_forced_baseline_rerun(self, baseline_action)
 
     def _resolve_next_action(self) -> dict[str, Any]:
-        """Decide what to do next. Returns a state dict with state/next_action/blockers.
-
-        Priority order:
-        0. Resume halted thesis (code was implemented, runtime_config now exists)
-        1. Forced baseline rerun (code changed or periodic)
-        2. reconcile_state() discovery (pending configs, thesis queue, combos, ideas)
-        """
-        resumed = self._try_resume_halted_thesis()
-        if resumed is not None:
-            return resumed
-
-        baseline_action = self._check_baseline_rerun()
-        if baseline_action:
-            return self._apply_forced_baseline_rerun(baseline_action)
-
-        return self.reconcile_state()
+        return _orchestration_resolve_next_action(self)
 
     def _run_research(self, state: dict[str, Any]) -> dict[str, Any]:
         return _research_run_research(self, state)

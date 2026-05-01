@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -45,9 +46,17 @@ COMBINATION_RULES: dict[tuple[str, str], str] = {}
 
 def _write_text_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f"{path.name}.",
+        suffix=".tmp",
+    )
+    tmp_path = Path(tmp_name)
     try:
-        tmp_path.write_text(content)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(tmp_path, path)
     except Exception:
         tmp_path.unlink(missing_ok=True)
