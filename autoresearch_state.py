@@ -119,8 +119,11 @@ def read_state(state_path: Path) -> dict[str, Any]:
         return {"state": "running"}
     try:
         return json.loads(state_path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {"state": "running"}
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ValueError(
+            f"Corrupted autoresearch state file: {state_path} | "
+            "hint=restore a valid JSON state file or delete the file to restart from a clean state"
+        ) from exc
 
 
 def write_state(state_path: Path, state: dict[str, Any]) -> None:
