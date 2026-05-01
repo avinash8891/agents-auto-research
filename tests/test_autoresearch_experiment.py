@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from config_hash import _config_hash
 from autoresearch_experiment import (
     ResultJsonError,
     _build_db_record,
@@ -28,6 +27,7 @@ from autoresearch_experiment import (
     primary_metric_name,
     sanitize_duplicate_entries,
 )
+from config_hash import _config_hash
 from experiment_db import ExperimentDB
 
 # ── parse_result_json ────────────────────────────────────────────

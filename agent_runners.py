@@ -3,15 +3,16 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from agent_token_usage import _accumulate_result_usage
-import agent_infra
-import agent_prompts
 from agents import Agent as OAIAgent
 from agents import ModelSettings as OAIModelSettings
-from agents import Runner as OAIRunner
 from agents import RunConfig as OAIRunConfig
+from agents import Runner as OAIRunner
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
+
+import agent_infra
+import agent_prompts
+from agent_token_usage import _accumulate_result_usage
 from research_paths import _OAUTH_PROXY_URL
 from thesis_validator import ThesisValidationError, validate_thesis_dict
 

@@ -3,10 +3,10 @@ from __future__ import annotations
 import subprocess
 from typing import Any
 
-from agent_token_usage import _accumulate_result_usage
 import agent_infra
 import agent_prompts
 from agent_runners import _validate_output
+from agent_token_usage import _accumulate_result_usage
 from trace_sdk import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
 
 

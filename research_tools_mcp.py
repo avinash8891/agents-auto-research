@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from agnost_mcp import config, track
+
 from trace_sdk import trace
 
 

@@ -43,13 +43,13 @@ from trace_adapters.recursive_improve import (
     build_recursive_improve_payload,
 )
 from trace_adapters.reflexio import build_reflexio_export_package, build_reflexio_payload
+from trace_quality_history import QualityHistory
+from trace_rule_proposals import RuleProposalRegistry
 from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
     trace,
 )
-from trace_quality_history import QualityHistory
-from trace_rule_proposals import RuleProposalRegistry
 
 if TYPE_CHECKING:
     from autoresearch_controller import AutoresearchController

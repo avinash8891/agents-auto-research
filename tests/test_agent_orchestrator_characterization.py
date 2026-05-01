@@ -407,6 +407,7 @@ def test_run_single_agent_returns_structured_parse_error_without_stdout(monkeypa
 
 def test_run_web_research_openai_returns_structured_error_without_stdout(monkeypatch, capsys):
     import agents
+
     import trace_sdk
 
     monkeypatch.setattr(agent_infra, "_ensure_oauth_proxy", lambda: None)

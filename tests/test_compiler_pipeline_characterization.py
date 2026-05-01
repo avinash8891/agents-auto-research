@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-import persistence_utils
 import compiler_operationalize as co
+import persistence_utils
 from compiler_operationalize import finalize_thesis_config_changes
 from compiler_pipeline import (
     build_missing_primitives,

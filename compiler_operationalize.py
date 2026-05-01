@@ -4,8 +4,8 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-from strategies import STRATEGIES
 from agent_infra import _is_error_result
+from strategies import STRATEGIES
 
 AMBIGUOUS_PATTERNS = {
     "stocks_in_play": ("stocks in play", "stocks-in-play", "stocks_in_play"),

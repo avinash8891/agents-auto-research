@@ -7,8 +7,8 @@ from typing import Any
 
 from agents import Agent as OAIAgent
 from agents import ModelSettings as OAIModelSettings
-from agents import Runner as OAIRunner
 from agents import RunConfig as OAIRunConfig
+from agents import Runner as OAIRunner
 from agents import function_tool
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
@@ -21,9 +21,9 @@ from research_paths import _OAUTH_PROXY_URL, _ROOT, _ensure_oauth_proxy, _parse_
 from research_prompts import _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
 from strategy_family import load_family
-from trace_sdk import trace, trace_agent_prompt, trace_agent_response
-from trace_refinement import RefinementRecorder
 from thesis_validator import validate_thesis_dict
+from trace_refinement import RefinementRecorder
+from trace_sdk import trace, trace_agent_prompt, trace_agent_response
 
 __all__ = [
     "run_research_conductor",
