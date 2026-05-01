@@ -8,11 +8,13 @@ tests/fixtures/result_v1.json.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+import autoresearch_experiment as experiment_mod
 from autoresearch_experiment import (
     ResultJsonError,
     _build_db_record,
@@ -35,6 +37,37 @@ from experiment_db import ExperimentDB
 
 def test_parse_result_json_returns_none_when_no_marker_in_output() -> None:
     assert parse_result_json("nothing useful here") is None
+
+
+def test_run_command_executes_argv_without_shell(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    class Result:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    code, output = experiment_mod.run_command(
+        tmp_path, "python3 -m backtest.runner --config 'configs/ema base.yaml'"
+    )
+
+    assert code == 0
+    assert output == "ok"
+    assert captured["kwargs"]["shell"] is False
+    assert captured["args"][0] == [
+        "python3",
+        "-m",
+        "backtest.runner",
+        "--config",
+        "configs/ema base.yaml",
+    ]
 
 
 def test_parse_result_json_returns_none_when_referenced_file_missing(tmp_path: Path) -> None:

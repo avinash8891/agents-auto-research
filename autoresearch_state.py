@@ -117,7 +117,10 @@ class RunContext:
 def read_state(state_path: Path) -> dict[str, Any]:
     if not state_path.exists():
         return {"state": "running"}
-    return json.loads(state_path.read_text())
+    try:
+        return json.loads(state_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {"state": "running"}
 
 
 def write_state(state_path: Path, state: dict[str, Any]) -> None:

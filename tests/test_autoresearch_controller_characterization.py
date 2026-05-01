@@ -866,6 +866,30 @@ def test_execute_once_resumes_halted_thesis_when_keys_now_exist(controller, monk
     assert "halted_thesis" not in state
 
 
+def test_try_resume_halted_thesis_handles_empty_baseline_yaml(controller) -> None:
+    halted_thesis_id = "resume-empty-baseline"
+    halted_thesis = {
+        "thesis_id": halted_thesis_id,
+        "hypothesis": "tighten ema length",
+        "config_changes": {"ema_length": 7},
+    }
+    baseline_path = controller.root / BASELINE_CONFIG
+    baseline_path.write_text("")
+    controller.write_state(
+        {
+            "state": "halted",
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": halted_thesis_id,
+            "halted_thesis": halted_thesis,
+            "job": 1,
+            "research_round": 0,
+        }
+    )
+
+    assert controller._try_resume_halted_thesis() is None
+    assert not (controller.root / f"experiments/{halted_thesis_id}/runtime_config.json").exists()
+
+
 def test_execute_once_resumes_halted_thesis_preserves_metadata(controller, monkeypatch, tmp_path):
     halted_thesis_id = "resume-this-thesis"
     halted_thesis = {

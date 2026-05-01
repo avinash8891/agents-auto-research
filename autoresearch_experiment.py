@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -69,13 +70,10 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         trace("COMMAND", f"START: {command}")
         log.info(f"RUN_COMMAND start: {command[:COMMAND_PREVIEW_TRUNCATION]}")
         sys.stdout.flush()
-        # shell=True is required: `command` is a composed string built by
-        # family.benchmark_command() that includes flags and may include
-        # shell-interpreted metacharacters. Inputs come from project-internal
-        # config — never from user input or the network.
+        args = shlex.split(command)
         result = subprocess.run(  # noqa: S602  # nosec B602
-            command,
-            shell=True,
+            args,
+            shell=False,
             cwd=root,
             capture_output=True,
             text=True,
@@ -88,6 +86,14 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         log.info(f"RUN_COMMAND done: exit={result.returncode}")
         sys.stdout.flush()
         return int(result.returncode), stdout + stderr
+    except ValueError as exc:
+        trace("COMMAND", f"ERROR: {exc}")
+        log.error(
+            f"RUN_COMMAND error: {exc} "
+            f"| hint=fix the benchmark command quoting or command assembly; "
+            f"see TRACE COMMAND for the failing line"
+        )
+        return 1, str(exc)
     except subprocess.TimeoutExpired:
         trace(
             "COMMAND",
@@ -105,7 +111,7 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         trace("COMMAND", f"ERROR: {exc}")
         log.error(
             f"RUN_COMMAND error: {exc} "
-            f"| hint=verify the cwd, shell, and that the script path is reachable; "
+            f"| hint=verify the cwd and that the script path is reachable; "
             f"see TRACE COMMAND for the failing line"
         )
         return 1, str(exc)

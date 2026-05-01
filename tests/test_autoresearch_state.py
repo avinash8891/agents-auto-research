@@ -51,6 +51,15 @@ def test_state_round_trip_preserves_payload_atomically(tmp_path: Path) -> None:
     assert not state_path.with_name(state_path.name + ".tmp").exists()
 
 
+def test_read_state_returns_running_default_when_file_corrupted(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    state_path.write_text("{not valid json")
+
+    state = read_state(state_path)
+
+    assert state == {"state": "running"}
+
+
 def test_write_state_fsyncs_before_replace(tmp_path: Path, monkeypatch) -> None:
     state_path = tmp_path / "state.json"
     calls: list[int] = []
