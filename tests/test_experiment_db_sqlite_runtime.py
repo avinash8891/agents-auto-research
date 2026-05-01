@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from autoresearch_controller import AutoresearchController
-from experiment_db import ExperimentDB
+from experiment_db import ExperimentDB, ExperimentResult
 from strategy_family import load_family
 
 
@@ -205,6 +205,44 @@ def test_experiment_db_best_by_metric_treats_zero_as_real_value(tmp_path) -> Non
 
     assert best is not None
     assert best.experiment_id == "e1"
+
+
+def test_experiment_db_evaluate_metric_uses_train_metric_for_custom_primary_metric(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="calmar", direction="higher")
+    db.add(
+        ExperimentResult(
+            experiment_id="e1",
+            thesis_id="t1",
+            config_path="configs/ema_base.yaml",
+            runtime_config={},
+            code_commit="abc123",
+            data_hash="data1",
+            train_metrics={"calmar": 2.5},
+            validation_metrics={"trade_count": 10},
+            trade_count=10,
+            trades_file="",
+            strategy_events_file="",
+            diagnostics_file="",
+            strategy_diagnostics={},
+            accepted=True,
+            rejection_reason="",
+            verdict_status="none",
+            verdict_summary="",
+            parent_experiment_id="",
+            timestamp="2026-04-29T12:00:00+00:00",
+            family="ema",
+            hypothesis="",
+            mechanism="",
+            job=1,
+            usage={},
+        )
+    )
+
+    assert db.evaluate_metric(2.0) == "discard"
 
 
 def test_experiment_db_format_for_conductor_includes_zero_metrics(tmp_path) -> None:
