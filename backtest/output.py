@@ -15,8 +15,9 @@ def write_all(
     strategy: str,
     config_path: str,
 ) -> dict[str, Any]:
-    trades_df = result.pop("_trades_df", None)
-    event_logger = result.pop("_event_logger", None)
+    result_payload_input = dict(result)
+    trades_df = result_payload_input.pop("_trades_df", None)
+    event_logger = result_payload_input.pop("_event_logger", None)
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -42,7 +43,7 @@ def write_all(
         strategy,
         config_path,
         config,
-        result,
+        result_payload_input,
         strategy_diagnostics,
         {
             "trades_file": trades_path,

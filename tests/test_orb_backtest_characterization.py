@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from strategies.orb.runner import run_backtest
-from strategies.orb.signals import generate_orb_signals
+from strategies.orb.signals import _cap_first_entry_per_day, generate_orb_signals
 
 
 def test_orb_backtest_returns_empty_metrics_for_empty_validation_window(monkeypatch) -> None:
@@ -68,3 +68,29 @@ def test_orb_max_one_entry_per_day_limits_both_directions() -> None:
 
     assert signals.entries_long.sum().item() == 1
     assert signals.entries_short.sum().item() == 0
+
+
+def test_orb_first_entry_cap_prefers_long_on_same_bar_tie() -> None:
+    idx = pd.to_datetime(
+        [
+            "2024-01-02 09:30",
+            "2024-01-02 09:35",
+            "2024-01-02 09:40",
+        ]
+    )
+    day_ids = pd.Index(idx.date).factorize()[0]
+    broke_above_df = pd.DataFrame(
+        [[False], [True], [False]],
+        index=idx,
+        columns=["AAA"],
+    )
+    broke_below_df = pd.DataFrame(
+        [[False], [True], [True]],
+        index=idx,
+        columns=["AAA"],
+    )
+
+    capped_long, capped_short = _cap_first_entry_per_day(broke_above_df, broke_below_df, day_ids)
+
+    assert capped_long.sum().item() == 1
+    assert capped_short.sum().item() == 0

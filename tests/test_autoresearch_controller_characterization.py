@@ -705,13 +705,13 @@ def test_execute_once_backtest_failure_blocks(controller, monkeypatch):
 
 
 # ────────────────────────────────────────────────────────────────────
-# 6. Zero exit but no RESULT_JSON -> blocker.kind=metric_parse_failed
+# 6. Zero exit but legacy METRIC stdout -> blocker.kind=metric_parse_failed
 # ────────────────────────────────────────────────────────────────────
 def test_execute_once_metric_parse_failure_blocks(controller, monkeypatch):
     monkeypatch.setattr(
         AutoresearchController,
         "run_command",
-        lambda self, command: (0, "no metrics in this output"),
+        lambda self, command: (0, "METRIC median_expectancy=1.42\nMETRIC trade_count=12\n"),
     )
 
     rc = controller.execute_once()
@@ -864,6 +864,30 @@ def test_execute_once_resumes_halted_thesis_when_keys_now_exist(controller, monk
     assert "halted_thesis_id" not in state
     assert "halted_reason" not in state
     assert "halted_thesis" not in state
+
+
+def test_try_resume_halted_thesis_handles_empty_baseline_yaml(controller) -> None:
+    halted_thesis_id = "resume-empty-baseline"
+    halted_thesis = {
+        "thesis_id": halted_thesis_id,
+        "hypothesis": "tighten ema length",
+        "config_changes": {"ema_length": 7},
+    }
+    baseline_path = controller.root / BASELINE_CONFIG
+    baseline_path.write_text("")
+    controller.write_state(
+        {
+            "state": "halted",
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": halted_thesis_id,
+            "halted_thesis": halted_thesis,
+            "job": 1,
+            "research_round": 0,
+        }
+    )
+
+    assert controller._try_resume_halted_thesis() is None
+    assert not (controller.root / f"experiments/{halted_thesis_id}/runtime_config.json").exists()
 
 
 def test_execute_once_resumes_halted_thesis_preserves_metadata(controller, monkeypatch, tmp_path):

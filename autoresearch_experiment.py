@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -69,13 +70,10 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         trace("COMMAND", f"START: {command}")
         log.info(f"RUN_COMMAND start: {command[:COMMAND_PREVIEW_TRUNCATION]}")
         sys.stdout.flush()
-        # shell=True is required: `command` is a composed string built by
-        # family.benchmark_command() that includes flags and may include
-        # shell-interpreted metacharacters. Inputs come from project-internal
-        # config — never from user input or the network.
+        args = shlex.split(command)
         result = subprocess.run(  # noqa: S602  # nosec B602
-            command,
-            shell=True,
+            args,
+            shell=False,
             cwd=root,
             capture_output=True,
             text=True,
@@ -88,6 +86,14 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         log.info(f"RUN_COMMAND done: exit={result.returncode}")
         sys.stdout.flush()
         return int(result.returncode), stdout + stderr
+    except ValueError as exc:
+        trace("COMMAND", f"ERROR: {exc}")
+        log.error(
+            f"RUN_COMMAND error: {exc} "
+            f"| hint=fix the benchmark command quoting or command assembly; "
+            f"see TRACE COMMAND for the failing line"
+        )
+        return 1, str(exc)
     except subprocess.TimeoutExpired:
         trace(
             "COMMAND",
@@ -105,7 +111,7 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         trace("COMMAND", f"ERROR: {exc}")
         log.error(
             f"RUN_COMMAND error: {exc} "
-            f"| hint=verify the cwd, shell, and that the script path is reachable; "
+            f"| hint=verify the cwd and that the script path is reachable; "
             f"see TRACE COMMAND for the failing line"
         )
         return 1, str(exc)
@@ -114,8 +120,12 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
 # ── Output parsing ────────────────────────────────────────────────
 
 
-def parse_result_json(output: str) -> dict[str, Any] | None:
-    """Find RESULT_JSON line in output, or parse an inline result payload."""
+def parse_result_json(output: str, *, allow_inline_json: bool = False) -> dict[str, Any] | None:
+    """Find RESULT_JSON line in output.
+
+    Inline JSON payloads are only accepted when explicitly opted in, to keep
+    modern runners fail-closed on missing RESULT_JSON markers.
+    """
     match = re.search(r"^RESULT_JSON (.+)$", output, flags=re.MULTILINE)
     if match:
         result_path = Path(match.group(1).strip())
@@ -136,6 +146,8 @@ def parse_result_json(output: str) -> dict[str, Any] | None:
             log.error(f"RESULT_JSON error: {msg} | hint=check file permissions and run-output dir")
             raise ResultJsonError(msg) from exc
 
+    if not allow_inline_json:
+        return None
     stripped = output.strip()
     if not stripped.startswith("{"):
         return None
@@ -146,8 +158,11 @@ def parse_result_json(output: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def parse_benchmark_details(output: str) -> dict[str, Any]:
-    """Extract metrics from result.json written by backtest."""
+def parse_benchmark_details(output: str, *, allow_legacy: bool = False) -> dict[str, Any]:
+    """Extract metrics from result.json written by backtest.
+
+    Legacy stdout parsing is only available when explicitly enabled.
+    """
     result_json = parse_result_json(output)
     if result_json:
         details: dict[str, Any] = {}
@@ -177,6 +192,8 @@ def parse_benchmark_details(output: str) -> dict[str, Any]:
                 details[key] = result_json[key]
         return details
 
+    if not allow_legacy:
+        raise ResultJsonError("RESULT_JSON marker missing; legacy stdout parsing is disabled")
     trace("LOOP", "WARNING: no RESULT_JSON found, falling back to stdout parsing")
     return parse_benchmark_details_legacy(output)
 
@@ -223,11 +240,15 @@ def primary_metric_name(entries: list[dict[str, Any]]) -> str:
     return "median_expectancy"
 
 
-def parse_metric(output: str, name: str = "median_expectancy") -> float | None:
+def parse_metric(
+    output: str, name: str = "median_expectancy", *, allow_legacy: bool = False
+) -> float | None:
     result_json = parse_result_json(output)
     if result_json:
         val = result_json.get("metrics", {}).get(name)
         return float(val) if val is not None else None
+    if not allow_legacy:
+        return None
     match = re.search(rf"^METRIC {re.escape(name)}=([-+]?\d*\.?\d+)", output, flags=re.MULTILINE)
     return float(match.group(1)) if match else None
 

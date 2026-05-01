@@ -502,9 +502,12 @@ class AutoresearchController:
             return None
         import yaml as _yaml
 
-        base = _yaml.safe_load(
-            (self.root / "configs" / self.family.base_config_filename).read_text()
+        base = (
+            _yaml.safe_load((self.root / "configs" / self.family.base_config_filename).read_text())
+            or {}
         )
+        if not isinstance(base, dict):
+            return None
         if set(config_changes) - set(base):
             return None
         runtime = {**base, **config_changes}

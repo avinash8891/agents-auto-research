@@ -14,6 +14,7 @@ import ast
 import json
 import os
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -70,13 +71,14 @@ def config_from_env() -> VPSConfig:
 
 def build_remote_command(config: VPSConfig, family: StrategyFamily, config_path: str) -> str:
     config_basename = os.path.basename(config_path)
-    config_dirname = os.path.dirname(config_path)
+    config_dirname = os.path.dirname(config_path) or "."
     return (
-        f"cd {config.remote_dir} && "
-        f'mkdir -p "{config_dirname}" && '
-        f'cp "{config_basename}" "{config_path}" 2>/dev/null || true && '
+        f"cd {shlex.quote(config.remote_dir)} && "
+        f"mkdir -p {shlex.quote(config_dirname)} && "
+        f"(cp {shlex.quote(config_basename)} {shlex.quote(config_path)} 2>/dev/null || true) && "
         f"find . -name __pycache__ -type d -exec rm -rf {{}} + 2>/dev/null || true && "
-        f'python3 backtest/runner.py --strategy "{family.name}" --config "{config_path}"'
+        f"python3 backtest/runner.py --strategy {shlex.quote(family.name)} "
+        f"--config {shlex.quote(config_path)}"
     )
 
 

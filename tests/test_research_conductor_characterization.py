@@ -307,6 +307,7 @@ def test_save_research_finding_rejects_bad_type(monkeypatch):
     tracked: dict[str, object] = {}
 
     def fake_track(server, org_id, cfg):
+        tracked["calls"] = tracked.get("calls", 0) + 1
         tracked["server"] = server
         tracked["org_id"] = org_id
         tracked["cfg"] = cfg
@@ -323,6 +324,7 @@ def test_save_research_finding_rejects_bad_type(monkeypatch):
         root=infra._ROOT,
         list_past_theses_for_root=memory.list_past_theses,
     )
+    assert tracked["calls"] == 1
     assert tracked["org_id"] == "a042226c-b858-46f3-9756-b1e675c03c13"
     identity = tracked["cfg"].identify(
         {"headers": {"x-user-id": "user-123", "mcp-session-id": "session-456"}},

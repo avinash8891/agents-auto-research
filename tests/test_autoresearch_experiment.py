@@ -8,11 +8,13 @@ tests/fixtures/result_v1.json.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+import autoresearch_experiment as experiment_mod
 from autoresearch_experiment import (
     ResultJsonError,
     _build_db_record,
@@ -35,6 +37,37 @@ from experiment_db import ExperimentDB
 
 def test_parse_result_json_returns_none_when_no_marker_in_output() -> None:
     assert parse_result_json("nothing useful here") is None
+
+
+def test_run_command_executes_argv_without_shell(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    class Result:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    code, output = experiment_mod.run_command(
+        tmp_path, "python3 -m backtest.runner --config 'configs/ema base.yaml'"
+    )
+
+    assert code == 0
+    assert output == "ok"
+    assert captured["kwargs"]["shell"] is False
+    assert captured["args"][0] == [
+        "python3",
+        "-m",
+        "backtest.runner",
+        "--config",
+        "configs/ema base.yaml",
+    ]
 
 
 def test_parse_result_json_returns_none_when_referenced_file_missing(tmp_path: Path) -> None:
@@ -101,32 +134,23 @@ def test_parse_benchmark_details_extracts_metrics_from_real_fixture(fixtures_dir
     assert details["config_hash"] == "ab12cd34ef56"
 
 
-def test_parse_benchmark_details_falls_back_to_legacy_when_no_result_json() -> None:
+def test_parse_benchmark_details_requires_result_json_by_default() -> None:
     output = "METRIC trade_count=42\nMETRIC profit_factor=1.4\nMETRIC max_drawdown=0.1\n"
-    details = parse_benchmark_details(output)
-    assert details["trade_count"] == 42
-    assert details["profit_factor"] == 1.4
-    assert details["max_drawdown"] == 0.1
+    with pytest.raises(ResultJsonError, match="RESULT_JSON marker missing"):
+        parse_benchmark_details(output)
 
 
-def test_parse_benchmark_details_preserves_12_char_config_hash() -> None:
-    output = json.dumps(
-        {
-            "family": "ema",
-            "config": "configs/ema_base.yaml",
-            "config_hash": "123456789abc",
-            "git_sha": "abcdef0",
-            "timestamp": "2026-04-30T00:00:00+00:00",
-            "metrics": {"median_expectancy": 1.5, "trade_count": 42},
-            "diagnostics": {},
-            "strategy_diagnostics": {},
-            "trades_file": "",
-            "strategy_events_file": "",
-            "diagnostics_file": "",
-        }
-    )
-
-    details = parse_benchmark_details(output)
+def test_parse_benchmark_details_preserves_12_char_config_hash(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    payload = json.loads((fixtures_dir / "result_v1.json").read_text())
+    payload["config_hash"] = "123456789abc"
+    payload_path = tmp_path / "result_v1_config_hash.json"
+    payload_path.write_text(json.dumps(payload) + "\n")
+    try:
+        details = parse_benchmark_details(f"RESULT_JSON {payload_path}\n")
+    finally:
+        payload_path.unlink(missing_ok=True)
 
     assert details["config_hash"] == "123456789abc"
 
@@ -197,7 +221,12 @@ def test_parse_metric_returns_none_when_metric_missing(fixtures_dir: Path) -> No
 
 def test_parse_metric_legacy_path() -> None:
     output = "METRIC median_expectancy=1.42\n"
-    assert parse_metric(output, name="median_expectancy") == 1.42
+    assert parse_metric(output, name="median_expectancy", allow_legacy=True) == 1.42
+
+
+def test_parse_metric_rejects_legacy_stdout_by_default() -> None:
+    output = "METRIC median_expectancy=1.42\n"
+    assert parse_metric(output, name="median_expectancy") is None
 
 
 def test_parse_metric_returns_none_when_no_signal() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import shlex
 from pathlib import Path
 
 import pytest
@@ -65,12 +66,22 @@ def test_remote_command_uses_generic_runner_and_family_metadata() -> None:
         host="203.0.113.10",
         user="researcher",
         key="/tmp/key",
-        remote_dir="/srv/autoresearch",
+        remote_dir="/srv/autoresearch with spaces; rm -rf /",
     )
 
-    command = build_remote_command(config, family, "configs/ema_base.yaml")
+    config_path = "configs/variants/ema aggressive/ema base.yaml"
+    command = build_remote_command(config, family, config_path)
 
-    assert 'python3 backtest/runner.py --strategy "ema" --config "configs/ema_base.yaml"' in command
+    assert f"cd {shlex.quote(config.remote_dir)}" in command
+    assert f"mkdir -p {shlex.quote(os.path.dirname(config_path) or '.')}" in command
+    assert (
+        f"(cp {shlex.quote(os.path.basename(config_path))} {shlex.quote(config_path)} 2>/dev/null || true)"
+        in command
+    )
+    assert (
+        f"python3 backtest/runner.py --strategy {shlex.quote(family.name)} "
+        f"--config {shlex.quote(config_path)}"
+    ) in command
     assert "/root/orb-research" not in command
     assert "backtest_5ema.py" not in command
 

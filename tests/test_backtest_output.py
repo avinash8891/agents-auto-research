@@ -4,8 +4,19 @@ import json
 from math import inf
 from pathlib import Path
 
+import pandas as pd
+
 from autoresearch_experiment import parse_metric
 from backtest.output import write_all
+
+
+class _FakeEventLogger:
+    def write_parquet(self, path: str) -> None:
+        Path(path).write_text("events")
+
+    def write_diagnostics(self, path: str, trade_count: int) -> dict[str, int]:
+        Path(path).write_text(json.dumps({"trade_count": trade_count}))
+        return {"trade_count": trade_count}
 
 
 def test_write_all_serializes_infinite_profit_factor_as_strict_json(
@@ -18,7 +29,10 @@ def test_write_all_serializes_infinite_profit_factor_as_strict_json(
         "max_drawdown": 0.0,
         "pct_profitable_windows": 1.0,
         "avg_sharpe_across_windows": 0.0,
+        "_trades_df": pd.DataFrame([{"trade_id": 1}]),
+        "_event_logger": _FakeEventLogger(),
     }
+    original_keys = set(result)
 
     payload = write_all(
         result,
@@ -33,3 +47,6 @@ def test_write_all_serializes_infinite_profit_factor_as_strict_json(
     assert json.loads(text)["metrics"]["profit_factor"] == "Infinity"
     assert payload["metrics"]["profit_factor"] == inf
     assert parse_metric(f"RESULT_JSON {tmp_path / 'result.json'}\n", name="profit_factor") == inf
+    assert set(result) == original_keys
+    assert "_trades_df" in result
+    assert "_event_logger" in result

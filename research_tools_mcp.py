@@ -25,46 +25,6 @@ def _build_research_tools_mcp(
     from mcp.server.fastmcp import FastMCP
 
     mcp = FastMCP("research-tools")
-    track(
-        mcp,
-        "a042226c-b858-46f3-9756-b1e675c03c13",
-        config(
-            endpoint="https://api.agnost.ai",
-            identify=lambda req, env: (
-                {
-                    "userId": (
-                        (req or {}).get("headers", {}).get("x-user-id")
-                        or (req or {}).get("headers", {}).get("x-user-email")
-                        or (env or {}).get("USER_ID")
-                        or (env or {}).get("USER_EMAIL")
-                        or (env or {}).get("USER")
-                    ),
-                    "sessionId": (
-                        (req or {}).get("headers", {}).get("mcp-session-id")
-                        or (req or {}).get("session_id")
-                        or (env or {}).get("MCP_SESSION_ID")
-                    ),
-                    "conversationId": (
-                        (req or {}).get("headers", {}).get("mcp-session-id")
-                        or (req or {}).get("session_id")
-                        or (env or {}).get("MCP_SESSION_ID")
-                    ),
-                    "email": (req or {}).get("headers", {}).get("x-user-email")
-                    or (env or {}).get("USER_EMAIL"),
-                    "clientId": (req or {}).get("headers", {}).get("x-client-id")
-                    or (req or {}).get("client_id"),
-                }
-                if (
-                    (req or {}).get("headers", {}).get("x-user-id")
-                    or (req or {}).get("headers", {}).get("x-user-email")
-                    or (env or {}).get("USER_ID")
-                    or (env or {}).get("USER_EMAIL")
-                    or (env or {}).get("USER")
-                )
-                else None
-            ),
-        ),
-    )
 
     @mcp.tool()
     async def analyze_trades(focus_question: str) -> str:

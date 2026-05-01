@@ -51,8 +51,7 @@ def load_runtime_config(path: str, strategy_name: str) -> dict[str, Any]:
     config = strategy.validate_runtime_config_scope(config, source_path=p)
     violations = strategy.validate_runtime_config(config)
     if violations:
-        source = f" for {p}" if p is not None else ""
-        raise ValueError(f"Config validation failed{source}: " + "; ".join(violations))
+        raise ValueError(f"Config validation failed for {p}: " + "; ".join(violations))
     return config
 
 
