@@ -191,11 +191,17 @@ def cmd_log(args):
         except json.JSONDecodeError:
             _log.error(f"Warning: could not parse --asi JSON: {args.asi}")
 
+    primary_metric_name = (
+        config.get("metricName", "median_expectancy") if config else "median_expectancy"
+    )
+    merged_metrics = dict(extra_metrics)
+    merged_metrics[primary_metric_name] = args.metric
+
     entry = {
         "run": len(results) + 1,
         "commit": args.commit[:7] if args.commit else "0000000",
         "metric": args.metric,
-        "metrics": extra_metrics,
+        "metrics": merged_metrics,
         "status": args.status,
         "description": args.description,
         "timestamp": timestamp_now(),
@@ -217,9 +223,9 @@ def cmd_log(args):
         runtime_config={},
         code_commit=args.commit,
         data_hash="",
-        train_metrics=extra_metrics,
-        validation_metrics=extra_metrics,
-        trade_count=int(extra_metrics.get("trade_count", 0) or 0),
+        train_metrics=merged_metrics,
+        validation_metrics=merged_metrics,
+        trade_count=int(merged_metrics.get("trade_count", 0) or 0),
         trades_file="",
         strategy_events_file="",
         diagnostics_file="",

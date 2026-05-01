@@ -42,7 +42,7 @@ from experiment_db import (
     build_config_hash,
     build_data_hash,
 )
-from persistence_utils import write_text_atomic
+from persistence_utils import write_json_atomic_strict, write_text_atomic
 from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
@@ -531,10 +531,12 @@ def _build_export_entry(
         contract.thesis_id if contract and getattr(contract, "thesis_id", "") else Path(config).stem
     )
     run_id = f"job-{state.get('job', 0)}-run-{next_run}-{identity}"
+    experiment_id = contract.experiment_id if contract else run_id
     return {
         "run": next_run,
         "job": state.get("job"),
         "run_id": run_id,
+        "experiment_id": experiment_id,
         "hypothesis_id": identity,
         "commit": controller.current_commit(),
         "metric": metric,
@@ -552,7 +554,7 @@ def _build_export_entry(
 
 def _write_run_artifacts(artifact_dir: Path, output: str, analysis: dict[str, Any]) -> None:
     write_text_atomic(artifact_dir / "benchmark_output.txt", output)
-    write_text_atomic(artifact_dir / "analysis.json", json.dumps(analysis, indent=2) + "\n")
+    write_json_atomic_strict(artifact_dir / "analysis.json", analysis)
 
 
 def log_experiment_result(

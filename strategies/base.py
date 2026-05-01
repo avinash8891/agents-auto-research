@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import sys
+import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -100,8 +102,16 @@ STRATEGIES: dict[str, Strategy] = {}
 
 def load_strategy_defaults(name: str, base_config_filename: str | None = None) -> dict[str, Any]:
     filename = base_config_filename or f"{name}_base.yaml"
-    path = Path(__file__).resolve().parents[1] / "configs" / filename
-    return yaml.safe_load(path.read_text())
+    candidate_paths = [
+        Path(__file__).resolve().parents[1] / "configs" / filename,
+        Path(sysconfig.get_paths()["data"]) / "configs" / filename,
+        Path(sys.prefix) / "configs" / filename,
+    ]
+    for path in candidate_paths:
+        if path.exists():
+            return yaml.safe_load(path.read_text())
+    searched = ", ".join(str(path) for path in candidate_paths)
+    raise FileNotFoundError(f"Could not load strategy defaults for {name}: searched {searched}")
 
 
 def register(name: str):

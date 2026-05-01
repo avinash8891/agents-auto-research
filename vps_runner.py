@@ -11,8 +11,11 @@ Usage: python3 vps_runner.py --strategy <strategy-name> <config-path>
 
 import argparse
 import ast
+import json
 import os
+import re
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,7 +86,10 @@ def syntax_check(paths: list[Path]) -> bool:
         try:
             ast.parse(path.read_text())
         except SyntaxError as e:
-            rel = path.relative_to(LOCAL_ROOT)
+            try:
+                rel = path.relative_to(LOCAL_ROOT)
+            except ValueError:
+                rel = path
             print(f"SYNTAX ERROR in {rel}: {e}", file=sys.stderr)
             return False
     return True
@@ -162,6 +168,48 @@ def _ensure_remote_dir(sftp: paramiko.SFTPClient, remote_path: str) -> None:
             pass
 
 
+def _localize_remote_result_output(output: str, sftp: paramiko.SFTPClient) -> str:
+    """Fetch remote result artifacts locally and rewrite RESULT_JSON to a local path."""
+    match = re.search(r"^RESULT_JSON (.+)$", output, flags=re.MULTILINE)
+    if not match:
+        return output
+
+    remote_result_path = Path(match.group(1).strip())
+    local_dir = Path(tempfile.mkdtemp(prefix="autoresearch-vps-"))
+    local_result_path = local_dir / "result.json"
+
+    try:
+        sftp.get(str(remote_result_path), str(local_result_path))
+    except OSError:
+        return output
+
+    try:
+        payload = json.loads(local_result_path.read_text())
+    except Exception:
+        return output
+
+    for key in ("trades_file", "strategy_events_file", "diagnostics_file"):
+        remote_file = payload.get(key)
+        if not remote_file:
+            continue
+        remote_file_path = Path(str(remote_file))
+        local_file_path = local_dir / remote_file_path.name
+        try:
+            sftp.get(str(remote_file_path), str(local_file_path))
+        except OSError:
+            continue
+        payload[key] = str(local_file_path)
+
+    local_result_path.write_text(json.dumps(payload, indent=2) + "\n")
+    return re.sub(
+        r"^RESULT_JSON .+$",
+        lambda _: f"RESULT_JSON {local_result_path}",
+        output,
+        count=1,
+        flags=re.MULTILINE,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run a strategy backtest on the VPS")
     parser.add_argument("--strategy", required=True, choices=sorted(STRATEGIES))
@@ -211,7 +259,6 @@ def main():
         f"SCP config {config_path} -> {vps_config.remote_dir}/{config_basename}",
     )
 
-    sftp.close()
     trace("VPS_RUNNER", f"SCP complete in {time.time() - t0:.1f}s")
 
     cmd = build_remote_command(vps_config, family, config_path)
@@ -225,6 +272,10 @@ def main():
     exit_code = stdout.channel.recv_exit_status()
     elapsed = time.time() - t1
 
+    out = _localize_remote_result_output(out, sftp)
+    client.close()
+    sftp.close()
+
     trace_ssh(cmd, exit_code, out, err)
     trace(
         "VPS_RUNNER",
@@ -236,7 +287,6 @@ def main():
     if err:
         print(err, end="", file=sys.stderr)
 
-    client.close()
     sys.exit(exit_code)
 
 

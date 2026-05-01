@@ -60,6 +60,36 @@ def test_experiment_db_persists_experiment_rows_to_sqlite(tmp_path) -> None:
     assert row == ("e1", "t1", "configs/ema_base.yaml", 1)
 
 
+def test_experiment_db_read_results_uses_configured_primary_metric(tmp_path) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="calmar", direction="higher")
+    db.add_from_sqlite_fields(
+        experiment_id="e1",
+        thesis_id="t1",
+        config_path="configs/ema_base.yaml",
+        runtime_config={"ema_length": 5},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"trade_count": 10, "calmar": 2.5},
+        trade_analysis={"trade_count": 10},
+        strategy_diagnostics={"rejection_breakdown": {}},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-1",
+        primary_metric_name="calmar",
+        primary_metric_value=2.5,
+    )
+
+    results = db.read_results()
+
+    assert len(results) == 1
+    assert results[0].metric == 2.5
+
+
 def test_sqlite_session_meta_required_fields_are_non_empty(tmp_path: Path) -> None:
     db_path = tmp_path / "ema_experiments.db"
     db = ExperimentDB(db_path)

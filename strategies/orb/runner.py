@@ -39,10 +39,11 @@ def run_backtest(config: dict) -> dict:
     volume = batch.get("volume")
 
     print(f"Data loaded: {close.shape[0]} bars, {close.shape[1]} symbols", file=sys.stderr)
-    print(f"Date range: {close.index[0]} to {close.index[-1]}", file=sys.stderr)
 
     if close.empty:
         return {**empty_metrics(), "_trades_df": pd.DataFrame(), "_event_logger": None}
+
+    print(f"Date range: {close.index[0]} to {close.index[-1]}", file=sys.stderr)
 
     # Stocks-in-play universe filter
     universe_mode = config.get("universe_mode")

@@ -6,8 +6,10 @@ the orb_/ema_ hardcoding is removed.
 
 from __future__ import annotations
 
+import sysconfig
 from pathlib import Path
 
+import strategies.base as strategies_base
 from backtest.legacy_entrypoint import strategy_for_script
 from strategies import STRATEGIES
 from strategy_family import StrategyFamily, load_family
@@ -29,6 +31,12 @@ def test_orb_family_has_orb_prefix_and_default_variants() -> None:
     assert "configs/variants/orb_spy_only.yaml" in fam.default_variants
     assert "configs/variants/orb_trailing_stop.yaml" in fam.default_variants
     assert fam.research_dirname == "orb-research-artifacts"
+
+
+def test_orb_family_default_variants_are_shipped() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    for rel_path in load_family("orb").default_variants:
+        assert (repo_root / rel_path).is_file(), rel_path
 
 
 def test_ema_family_has_ema_prefix_and_no_default_variants_yet() -> None:
@@ -125,3 +133,20 @@ def test_registered_strategies_do_not_keep_duplicate_default_yaml_files() -> Non
         assert (
             not package_default.exists()
         ), f"{family_name} has duplicate defaults at {package_default}"
+
+
+def test_load_strategy_defaults_falls_back_to_installed_data_files(
+    monkeypatch, tmp_path: Path
+) -> None:
+    configs_dir = tmp_path / "configs"
+    configs_dir.mkdir()
+    (configs_dir / "orb_base.yaml").write_text("validation_start: '2024-01-01'\n")
+
+    monkeypatch.setattr(
+        strategies_base,
+        "__file__",
+        str(tmp_path / "site-packages" / "fake.py"),
+    )
+    monkeypatch.setattr(sysconfig, "get_paths", lambda: {"data": str(tmp_path)})
+
+    assert strategies_base.load_strategy_defaults("orb") == {"validation_start": "2024-01-01"}

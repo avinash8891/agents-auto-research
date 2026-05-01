@@ -69,6 +69,19 @@ py-modules = [
     "vps_runner",
 ]
 
+[tool.setuptools.data-files]
+configs = [
+    "configs/_demo_base.yaml",
+    "configs/ema_base.yaml",
+    "configs/orb_base.yaml",
+]
+"configs/variants" = [
+    "configs/variants/orb_spy_only.yaml",
+    "configs/variants/orb_stocks_in_play.yaml",
+    "configs/variants/orb_trailing_stop.yaml",
+    "configs/variants/orb_trend_filter.yaml",
+]
+
 [tool.isort]
 profile = "black"
 line_length = 100
@@ -139,4 +152,9 @@ dependencies = [
     "traceloop-sdk==0.60.0",
     "httpx",
     "mcp",
+    "numpy",
+    "pandas",
+    "paramiko",
+    "PyYAML",
+    "pyarrow",
 ]
