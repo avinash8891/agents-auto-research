@@ -56,12 +56,13 @@ class StrategyFamily:
 
     def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
         python = "./venv/bin/python3" if IS_VPS else "python3"
+        config_path_str = str(config_path)
         cmd = (
             f"{python} -m backtest.runner --strategy {shlex.quote(self.name)} "
-            f"--config {shlex.quote(config_path)}"
+            f"--config {shlex.quote(config_path_str)}"
         )
         if output_dir:
-            cmd += f" --output-dir {shlex.quote(output_dir)}"
+            cmd += f" --output-dir {shlex.quote(str(output_dir))}"
         return cmd
 
     @property

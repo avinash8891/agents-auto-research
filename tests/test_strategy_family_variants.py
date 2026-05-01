@@ -123,6 +123,11 @@ def test_benchmark_command_uses_generic_strategy_runner() -> None:
     assert "backtest_5ema.py" not in command
 
 
+def test_benchmark_command_accepts_pathlike_output_dir(tmp_path: Path) -> None:
+    command = load_family("ema").benchmark_command("configs/ema_base.yaml", output_dir=tmp_path)
+    assert f"--output-dir {shlex.quote(str(tmp_path))}" in command
+
+
 def test_legacy_backtest_scripts_resolve_strategy_from_registry() -> None:
     assert strategy_for_script("backtest_5ema.py") == "ema"
     assert strategy_for_script("backtest_orb_v2.py") == "orb"
