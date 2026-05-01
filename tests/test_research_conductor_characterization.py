@@ -82,6 +82,8 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
     monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
     monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
+    monkeypatch.setattr(rc, "validate_thesis_dict", lambda thesis: None)
+    monkeypatch.setattr(rc, "validate_thesis_dict", lambda thesis: None)
 
     captured: dict[str, object] = {}
 
@@ -125,6 +127,68 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
     assert captured["input"].startswith("Research round: 3")
     assert captured["kwargs"]["max_turns"] == 50
     assert captured["kwargs"]["run_config"].tracing_disabled is True
+
+
+def test_run_research_conductor_sync_records_top_level_usage_when_raw_usage_missing(
+    monkeypatch,
+):
+    parsed_payload = {
+        "reasoning": "grounded",
+        "suggested_theses": [
+            {
+                "thesis_id": "entry_window_test",
+                "hypothesis": "narrow the entry window to reduce weak early signals.",
+                "mechanism": "Tightening the EMA entry window removes noisier open-driven setups.",
+                "mechanism_dimension": "entry_timing",
+                "dimension_novelty": "This is a distinct timing regime rather than a simple parameter sweep.",
+                "config_changes": {"entry_cutoff_time": "09:35"},
+                "expected_effects": [],
+                "disqualifiers": [],
+            }
+        ],
+        "should_stop": False,
+    }
+
+    monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
+    monkeypatch.setattr(rc, "validate_thesis_dict", lambda thesis: None)
+
+    class _FakeResult:
+        def __init__(self, payload: str):
+            self.final_output = payload
+            self.raw_responses = [SimpleNamespace()]
+            self.usage = SimpleNamespace(
+                input_tokens=5,
+                output_tokens=7,
+                total_tokens=12,
+            )
+            self.total_cost_usd = 0.25
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+    def fake_run_streamed(*args, **kwargs):
+        return _FakeResult(json.dumps(parsed_payload))
+
+    monkeypatch.setattr(rc.OAIRunner, "run_streamed", fake_run_streamed)
+
+    rc.reset_round_usage()
+    result = rc.run_research_conductor_sync(
+        trades_file="/tmp/trades.csv",
+        experiment_results="results",
+        latest_outcome={"profit_factor": 1.2},
+        research_round=3,
+        family_name="ema",
+    )
+
+    assert result == parsed_payload
+    round_usage = rc.get_round_usage()
+    assert round_usage["by_agent"]["conductor"]["calls"] == 1
+    assert round_usage["by_agent"]["conductor"]["total_tokens"] == 12
+    assert round_usage["by_agent"]["conductor"]["cost_usd"] == pytest.approx(0.25)
 
 
 def test_run_research_conductor_sync_returns_conductor_error_on_timeout(monkeypatch):

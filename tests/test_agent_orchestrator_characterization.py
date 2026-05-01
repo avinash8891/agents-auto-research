@@ -442,6 +442,41 @@ def test_run_web_research_openai_returns_structured_error_without_stdout(monkeyp
     assert usage.get_round_usage()["by_agent"]["web-researcher"]["calls"] == 1
 
 
+def test_run_web_research_openai_uses_responses_model_for_web_search(monkeypatch):
+    import agents
+    import trace_sdk
+
+    monkeypatch.setattr(agent_infra, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(trace_sdk, "trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
+
+    captured: dict[str, object] = {}
+
+    class Completed:
+        def __init__(self):
+            self.final_output = "not-json"
+            self.raw_responses = []
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+    def fake_run_streamed(agent, *args, **kwargs):
+        captured["model_type"] = type(agent.model).__name__
+        captured["tool_type"] = type(agent.tools[0]).__name__
+        return Completed()
+
+    monkeypatch.setattr(agents.Runner, "run_streamed", fake_run_streamed)
+
+    result = asyncio.run(agent_openai_calls._run_web_research_openai("prompt", retries=1))
+
+    assert captured["model_type"] == "OpenAIResponsesModel"
+    assert captured["tool_type"] == "WebSearchTool"
+    assert result["status"] == "error"
+    assert result["kind"] == "no_json"
+
+
 def test_run_research_agent_propagates_error_result_without_memory_writes(monkeypatch):
     error_result = {
         "status": "error",

@@ -20,13 +20,13 @@ async def _run_web_research_openai(
     from agents import RunConfig as OAIRunConfig
     from agents import Runner as OAIRunner
     from agents import WebSearchTool
-    from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+    from agents.models.openai_responses import OpenAIResponsesModel
     from openai import AsyncOpenAI
 
     agent_infra._ensure_oauth_proxy()
 
     client = AsyncOpenAI(api_key="unused", base_url=agent_infra._OAUTH_PROXY_URL)
-    model = OpenAIChatCompletionsModel(model="gpt-5.5", openai_client=client)
+    model = OpenAIResponsesModel(model="gpt-5.5", openai_client=client)
 
     agent = OAIAgent(
         name="web-researcher",
