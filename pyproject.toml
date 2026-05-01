@@ -65,6 +65,7 @@ name = "agents-auto-research"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
+    "openai-agents==0.14.2",
     "opentelemetry-sdk==1.41.1",
     "opentelemetry-exporter-otlp-proto-http==1.41.1",
     "openinference-instrumentation-openai==0.1.45",
