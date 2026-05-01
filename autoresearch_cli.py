@@ -108,6 +108,14 @@ def compute_confidence(results, segment, direction):
         for r in current_segment_results(results, segment)
         if r.get("status") not in ("crash", "checks_failed")
     ]
+    baseline = cur[0].get("metric") if cur else None
+    try:
+        if baseline is None or not math.isfinite(float(baseline)):
+            return None
+        baseline = float(baseline)
+    except (TypeError, ValueError):
+        return None
+
     numeric_cur = []
     for r in cur:
         metric = r.get("metric")
@@ -125,10 +133,6 @@ def compute_confidence(results, segment, direction):
     values = [float(r["metric"]) for r in numeric_cur]
     mad = compute_mad(values)
     if mad == 0:
-        return None
-
-    baseline = find_baseline(numeric_cur, segment)
-    if baseline is None:
         return None
 
     best_kept = None

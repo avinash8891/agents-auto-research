@@ -184,6 +184,19 @@ def test_compute_confidence_ignores_non_finite_metrics() -> None:
     assert confidence is None
 
 
+def test_compute_confidence_returns_none_when_baseline_is_unusable() -> None:
+    results = [
+        {"segment": 0, "status": "keep", "metric": None},
+        {"segment": 0, "status": "keep", "metric": 1.0},
+        {"segment": 0, "status": "keep", "metric": 2.0},
+        {"segment": 0, "status": "keep", "metric": 3.0},
+    ]
+
+    confidence = autoresearch_cli.compute_confidence(results, 0, "higher")
+
+    assert confidence is None
+
+
 def test_cli_log_persists_primary_metric_even_when_extra_metrics_are_sparse(monkeypatch, tmp_path):
     captured: list[object] = []
 
