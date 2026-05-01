@@ -2,20 +2,28 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from typing import Any
+
+from agents import Agent as OAIAgent
+from agents import ModelSettings as OAIModelSettings
+from agents import RunConfig as OAIRunConfig
+from agents import Runner as OAIRunner
+from agents import function_tool
+from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+from openai import AsyncOpenAI
 
 from agent_token_usage import _accumulate_usage, get_round_usage, reset_round_usage
 from research_memory import _palace_search, _palace_status
 from research_memory import list_past_theses as list_past_theses_for_root
 from research_memory import save_research_finding
-from research_paths import _ROOT, _ensure_oauth_proxy, _parse_json
+from research_paths import _OAUTH_PROXY_URL, _ROOT, _ensure_oauth_proxy, _parse_json
 from research_prompts import _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
-from research_tools_mcp import _build_research_tools_mcp
-from research_types import ResearchThesis
 from strategy_family import load_family
-from trace_sdk import trace, trace_agent_prompt, trace_agent_response
+from thesis_validator import validate_thesis_dict
 from trace_refinement import RefinementRecorder
+from trace_sdk import trace, trace_agent_prompt, trace_agent_response
 
 __all__ = [
     "run_research_conductor",
@@ -25,6 +33,29 @@ __all__ = [
 ]
 
 _REFINEMENT_RECORDER = RefinementRecorder()
+
+
+def _run_coroutine_sync(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result_box: dict[str, Any] = {}
+    error_box: dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            result_box["value"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - exercised via regression test
+            error_box["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if error_box:
+        raise error_box["error"]
+    return result_box.get("value")
 
 
 def _strategy_description_for(family_name: str) -> str:
@@ -45,38 +76,7 @@ async def run_research_conductor(
     diagnostics_file: str = "",
     rejection_feedback: str = "",
 ) -> dict[str, Any] | None:
-    from claude_agent_sdk import (
-        AssistantMessage,
-        ClaudeAgentOptions,
-        ResultMessage,
-        query,
-    )
-
     strategy_desc = _strategy_description_for(family_name)
-
-    # Build in-process MCP server with research tools
-    _ensure_oauth_proxy()
-    research_mcp = _build_research_tools_mcp(
-        trades_file=trades_file,
-        strategy_events_file=strategy_events_file,
-        diagnostics_file=diagnostics_file,
-        call_analyst=_call_analyst,
-        call_web_researcher=_call_web_researcher,
-        save_research_finding=save_research_finding,
-        palace_search=_palace_search,
-        palace_status=_palace_status,
-        root=_ROOT,
-        list_past_theses_for_root=list_past_theses_for_root,
-    )
-
-    # Single MCP server with all tools (no external mempalace process)
-    mcp_servers: dict[str, Any] = {
-        "research-tools": {
-            "type": "sdk",
-            "name": "research-tools",
-            "instance": research_mcp._mcp_server,
-        },
-    }
 
     system_prompt = _build_conductor_system_prompt(strategy_desc)
 
@@ -135,59 +135,137 @@ async def run_research_conductor(
         },
     )
     trace_id = trace_agent_prompt("research-conductor", user_prompt, system_prompt)
-
     result_text = ""
-    got_assistant_text = False
     session_finished = False
     try:
-        async for message in query(
-            prompt=user_prompt,
-            options=ClaudeAgentOptions(
-                system_prompt=system_prompt,
-                model="claude-opus-4-6",
-                mcp_servers=mcp_servers,
-                allowed_tools=[
-                    "mcp__research-tools__analyze_trades",
-                    "mcp__research-tools__web_search",
-                    "mcp__research-tools__save_finding",
-                    "mcp__research-tools__search_findings",
-                    "mcp__research-tools__memory_status",
-                    "mcp__research-tools__list_past_theses",
-                ],
-                permission_mode="bypassPermissions",
-                max_turns=50,
+        _ensure_oauth_proxy()
+        client = AsyncOpenAI(api_key="unused", base_url=_OAUTH_PROXY_URL)
+        model = OpenAIChatCompletionsModel(model="gpt-5.5", openai_client=client)
+
+        @function_tool
+        async def analyze_trades(focus_question: str) -> str:
+            if not trades_file:
+                return "ERROR: No trades file available for this round."
+            return await _call_analyst(
+                trades_file,
+                focus_question,
+                strategy_events_file=strategy_events_file,
+                diagnostics_file=diagnostics_file,
+            )
+
+        @function_tool
+        async def web_search(query: str, context: str = "") -> str:
+            return await _call_web_researcher(query, context)
+
+        @function_tool
+        async def save_finding(
+            finding: str,
+            finding_type: str,
+            status: str,
+            evidence: str,
+            scope: str,
+            expires_if: str,
+        ) -> str:
+            trace(
+                "CONDUCTOR",
+                f"save_finding type={finding_type} status={status} finding='{finding[:80]}'",
+            )
+            result = save_research_finding(
+                finding=finding,
+                finding_type=finding_type,
+                status=status,
+                evidence=evidence,
+                scope=scope,
+                expires_if=expires_if,
+            )
+            return result
+
+        @function_tool
+        async def search_findings(query: str, finding_type: str = "") -> str:
+            room = finding_type if finding_type else None
+            results = _palace_search(
+                query=query,
+                wing="research_findings",
+                room=room,
+                n_results=10,
+            )
+            if not results:
+                return "No findings found."
+            if len(results) == 1 and "error" in results[0]:
+                return f"SEARCH ERROR: {results[0]['error']}"
+            lines = []
+            for r in results:
+                text = r.get("text", "")[:300]
+                room_name = r.get("room", "")
+                dist = r.get("distance", "?")
+                lines.append(f"[{room_name}] (dist={dist}) {text}")
+            return "\n---\n".join(lines)
+
+        @function_tool
+        async def memory_status() -> str:
+            info = _palace_status()
+            if "error" in info:
+                return f"STATUS ERROR: {info['error']}"
+            return json.dumps(info, indent=2, default=str)
+
+        @function_tool
+        async def list_past_theses() -> str:
+            return list_past_theses_for_root(_ROOT)
+
+        agent = OAIAgent(
+            name="research-conductor",
+            instructions=system_prompt,
+            tools=[
+                analyze_trades,
+                web_search,
+                save_finding,
+                search_findings,
+                memory_status,
+                list_past_theses,
+            ],
+            model=model,
+        )
+
+        result = OAIRunner.run_streamed(
+            agent,
+            user_prompt,
+            max_turns=50,
+            run_config=OAIRunConfig(
+                model_settings=OAIModelSettings(store=False),
+                tracing_disabled=True,
             ),
-        ):
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if hasattr(block, "text"):
-                        got_assistant_text = True
-                        result_text += block.text
-            elif isinstance(message, ResultMessage):
-                if not got_assistant_text and hasattr(message, "result") and message.result:
-                    result_text = str(message.result)
-                # Capture conductor token usage
-                if message.usage:
-                    trace(
-                        "CONDUCTOR",
-                        f"USAGE conductor raw_keys={list(message.usage.keys())} usage={message.usage}",
-                    )
-                    _accumulate_usage(
-                        "conductor",
-                        message.usage,
-                        message.total_cost_usd,
-                        dedupe_key=f"conductor-message-{id(message)}-usage",
-                    )
-                elif message.model_usage:
-                    trace(
-                        "CONDUCTOR",
-                        f"USAGE conductor model_usage_keys={list(message.model_usage.keys())} model_usage={message.model_usage}",
-                    )
-                    _accumulate_usage(
-                        "conductor",
-                        message.model_usage,
-                        dedupe_key=f"conductor-message-{id(message)}-model",
-                    )
+        )
+        async for _ in result.stream_events():
+            pass
+        if hasattr(result, "final_output_as"):
+            try:
+                result_text = result.final_output_as(str) or ""
+            except Exception:
+                result_text = ""
+        if not result_text:
+            final_output = getattr(result, "final_output", None)
+            if isinstance(final_output, str):
+                result_text = final_output
+            elif final_output is not None:
+                result_text = json.dumps(final_output, default=str)
+
+        for resp in getattr(result, "raw_responses", []) or []:
+            u = getattr(resp, "usage", None)
+            if u:
+                trace(
+                    "CONDUCTOR",
+                    f"USAGE conductor raw_keys={list(u.__dict__.keys()) if hasattr(u, '__dict__') else []} usage={u}",
+                )
+                _accumulate_usage(
+                    "conductor",
+                    {
+                        "input_tokens": getattr(u, "input_tokens", 0),
+                        "output_tokens": getattr(u, "output_tokens", 0),
+                        "total_tokens": getattr(u, "total_tokens", 0),
+                    },
+                    cost_usd=getattr(resp, "total_cost_usd", 0.0) or 0.0,
+                    dedupe_key=f"conductor-response-{id(resp)}",
+                )
     except asyncio.TimeoutError:
         trace("CONDUCTOR", "TIMEOUT")
         _REFINEMENT_RECORDER.finish_session(
@@ -203,8 +281,9 @@ async def run_research_conductor(
             "should_stop": False,
         }
     except Exception as exc:
-        trace("CONDUCTOR", f"ERROR: {exc}")
-        print(f"CONDUCTOR error: {exc}")
+        error_text = str(exc)
+        error_kind = "proxy_unavailable" if "openai-oauth proxy" in error_text else "exception"
+        trace("CONDUCTOR", f"ERROR: {error_kind}")
         _REFINEMENT_RECORDER.finish_session(
             session_id=refinement_session["session_id"],
             stopping_reason="exception",
@@ -213,7 +292,8 @@ async def run_research_conductor(
         session_finished = True
         return {
             "status": "conductor_error",
-            "error": str(exc),
+            "error": error_kind,
+            "details": exc.__class__.__name__,
             "suggested_theses": [],
             "should_stop": False,
         }
@@ -253,7 +333,7 @@ async def run_research_conductor(
             candidate = dict(t)
             candidate["strategy_family"] = family_name
             try:
-                ResearchThesis.model_validate(candidate)
+                validate_thesis_dict(candidate)
             except Exception as exc:
                 trace("CONDUCTOR", f"validate failed thesis={t.get('thesis_id', 'unknown')}: {exc}")
             else:
@@ -265,9 +345,23 @@ async def run_research_conductor(
                 )
                 session_finished = True
                 return parsed
-        trace("CONDUCTOR", f"validate failed: {result_text[:200]}")
+        trace("CONDUCTOR", f"validate failed (len={len(result_text)})")
+        failure = {
+            "status": "conductor_error",
+            "error": "validation_failed",
+            "reasoning": parsed.get("reasoning", ""),
+            "suggested_theses": [],
+            "should_stop": False,
+        }
     else:
-        trace("CONDUCTOR", f"parse failed: {result_text[:200]}")
+        trace("CONDUCTOR", f"parse failed (len={len(result_text)})")
+        failure = {
+            "status": "conductor_error",
+            "error": "parse_failed",
+            "reasoning": "",
+            "suggested_theses": [],
+            "should_stop": False,
+        }
 
     if not session_finished:
         _REFINEMENT_RECORDER.finish_session(
@@ -276,7 +370,7 @@ async def run_research_conductor(
             final_outcome="retry_required",
         )
 
-    return None
+    return failure
 
 
 def run_research_conductor_sync(
@@ -289,7 +383,7 @@ def run_research_conductor_sync(
     diagnostics_file: str = "",
     rejection_feedback: str = "",
 ) -> dict[str, Any] | None:
-    return asyncio.run(
+    return _run_coroutine_sync(
         run_research_conductor(
             trades_file,
             experiment_results,

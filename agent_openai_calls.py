@@ -6,6 +6,7 @@ from typing import Any
 import agent_infra
 import agent_prompts
 from agent_runners import _validate_output
+from agent_token_usage import _accumulate_result_usage
 from trace_sdk import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
 
 
@@ -19,19 +20,19 @@ async def _run_web_research_openai(
     from agents import RunConfig as OAIRunConfig
     from agents import Runner as OAIRunner
     from agents import WebSearchTool
-    from agents.models.openai_provider import OpenAIProvider
+    from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
     from openai import AsyncOpenAI
 
     agent_infra._ensure_oauth_proxy()
 
     client = AsyncOpenAI(api_key="unused", base_url=agent_infra._OAUTH_PROXY_URL)
-    provider = OpenAIProvider(openai_client=client)
+    model = OpenAIChatCompletionsModel(model="gpt-5.5", openai_client=client)
 
     agent = OAIAgent(
         name="web-researcher",
         instructions=agent_prompts.WEB_RESEARCHER_SYSTEM_PROMPT,
         tools=[WebSearchTool()],
-        model="gpt-5.5",
+        model=model,
     )
 
     for attempt in range(1, retries + 1):
@@ -47,7 +48,6 @@ async def _run_web_research_openai(
                 agent,
                 prompt,
                 run_config=OAIRunConfig(
-                    model_provider=provider,
                     model_settings=OAIModelSettings(store=False),
                     tracing_disabled=True,
                 ),
@@ -56,21 +56,49 @@ async def _run_web_research_openai(
                 pass
 
             output = result.final_output or ""
-            parsed = agent_infra._parse_json(output)
+            _accumulate_result_usage("web-researcher", result)
+            parsed_result = agent_infra._parse_json_detailed(output)
+            parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
             trace_agent_response("openai-web-researcher", trace_id, output, parsed)
             if parsed is not None and _validate_output("web-researcher", parsed):
                 trace("OPENAI_AGENT", "web-researcher VALIDATED OK")
                 return parsed
             trace("OPENAI_AGENT", "web-researcher validate FAILED")
-            print(f"WEB_RESEARCH parse/validate failed (attempt {attempt}): {output[:200]}")
+            error = agent_infra._structured_error(
+                "web-researcher",
+                "validation" if parsed is not None else parsed_result.get("kind", "parse"),
+                (
+                    "Web research response failed validation"
+                    if parsed is not None
+                    else "Web research response could not be parsed"
+                ),
+                attempt=attempt,
+                details=parsed_result.get("message"),
+                excerpt=parsed_result.get("excerpt") or (output[:200] if output else None),
+            )
         except Exception as exc:
-            trace("OPENAI_AGENT", f"web-researcher ERROR: {exc}")
-            print(f"WEB_RESEARCH error (attempt {attempt}): {exc}")
+            trace("OPENAI_AGENT", f"web-researcher ERROR: {exc.__class__.__name__}")
+            _accumulate_result_usage("web-researcher", None)
+            error = agent_infra._structured_error(
+                "web-researcher",
+                "transport",
+                "Web research execution failed",
+                attempt=attempt,
+                details=exc.__class__.__name__,
+            )
 
         if attempt < retries:
             prompt = f"RETRY: Return valid JSON with 'findings' array and 'summary'. {prompt}"
+            continue
 
-    return None
+        return error
+
+    return agent_infra._structured_error(
+        "web-researcher",
+        "exhausted",
+        "Web research retries exhausted",
+        attempt=retries,
+    )
 
 
 DIAGNOSTIC_ANALYST_PROMPT = agent_prompts.DIAGNOSTIC_ANALYST_SYSTEM_PROMPT
@@ -159,20 +187,48 @@ async def _run_diagnostic_analyst_openai(
                 pass
 
             output = result.final_output or ""
-            parsed = agent_infra._parse_json(output)
+            _accumulate_result_usage("codex-analyst", result)
+            parsed_result = agent_infra._parse_json_detailed(output)
+            parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
             trace_agent_response("codex-analyst", trace_id, output, parsed)
             if parsed is not None and _validate_output("diagnostic-analyst", parsed):
                 trace("OPENAI_AGENT", "codex-analyst VALIDATED OK")
                 return parsed
             trace("OPENAI_AGENT", "codex-analyst validate FAILED")
-            print(f"CODEX_ANALYST parse/validate failed (attempt {attempt}): {output[:200]}")
+            error = agent_infra._structured_error(
+                "diagnostic-analyst",
+                "validation" if parsed is not None else parsed_result.get("kind", "parse"),
+                (
+                    "Diagnostic analyst response failed validation"
+                    if parsed is not None
+                    else "Diagnostic analyst response could not be parsed"
+                ),
+                attempt=attempt,
+                details=parsed_result.get("message"),
+                excerpt=parsed_result.get("excerpt") or (output[:200] if output else None),
+            )
         except Exception as exc:
-            trace("OPENAI_AGENT", f"codex-analyst ERROR: {exc}")
-            print(f"CODEX_ANALYST error (attempt {attempt}): {exc}")
+            trace("OPENAI_AGENT", f"codex-analyst ERROR: {exc.__class__.__name__}")
+            _accumulate_result_usage("codex-analyst", None)
+            error = agent_infra._structured_error(
+                "diagnostic-analyst",
+                "transport",
+                "Diagnostic analyst execution failed",
+                attempt=attempt,
+                details=exc.__class__.__name__,
+            )
 
         if attempt < retries:
             prompt = (
                 f"RETRY: Return valid JSON with key_anomalies array and overall_diagnosis. {prompt}"
             )
+            continue
 
-    return None
+        return error
+
+    return agent_infra._structured_error(
+        "diagnostic-analyst",
+        "exhausted",
+        "Diagnostic analyst retries exhausted",
+        attempt=retries,
+    )

@@ -27,6 +27,7 @@ from autoresearch_experiment import (
     primary_metric_name,
     sanitize_duplicate_entries,
 )
+from config_hash import _config_hash
 from experiment_db import ExperimentDB
 
 # ── parse_result_json ────────────────────────────────────────────
@@ -317,6 +318,27 @@ def test_sanitize_does_not_mutate_private_db_cache(tmp_path: Path) -> None:
     assert len(db._records) == 1
     assert db._records[0].experiment_id == "rich"
     assert len(original_records) == 2
+
+
+def test_compute_run_output_dir_anchors_relative_runs_dir_to_controller_root(
+    tmp_path: Path,
+) -> None:
+    class _Controller:
+        def __init__(self) -> None:
+            self.root = tmp_path
+            self.runs_dir = Path("ema_autoresearch-runs")
+
+        def read_state(self) -> dict[str, object]:
+            return {"job": 7}
+
+    controller = _Controller()
+    run_output_dir, config_path_full = _compute_run_output_dir(
+        controller, "configs/variants/missing.yaml"
+    )
+
+    expected_hash = _config_hash({"config_path": "configs/variants/missing.yaml"})
+    assert config_path_full == tmp_path / "configs/variants/missing.yaml"
+    assert run_output_dir == tmp_path / "ema_autoresearch-runs" / "job-7" / expected_hash
 
 
 def test_evaluate_effect_returns_none_when_metric_is_missing() -> None:

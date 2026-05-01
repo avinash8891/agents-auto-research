@@ -6,10 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-# Load Claude OAuth token if not already set (bypasses keychain)
 _OAUTH_TOKEN_FILE = Path.home() / ".claude_oauth_token"
-if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") and _OAUTH_TOKEN_FILE.exists():
-    os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = _OAUTH_TOKEN_FILE.read_text().strip()
 
 
 CLI_TIMEOUT_SECONDS = 180  # Max seconds for a CLI agent call
@@ -32,6 +29,7 @@ def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
     import socket
     import time
 
+    _ensure_oauth_token()
     deadline = time.monotonic() + timeout_seconds
     last_error: OSError | None = None
     while True:
@@ -44,10 +42,9 @@ def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
             break
         time.sleep(0.5)
 
+    log.error("openai-oauth proxy unavailable: %s", last_error)
     raise RuntimeError(
-        f"openai-oauth proxy is not listening at {_OAUTH_PROXY_URL}. "
-        "Start openai-oauth.service before running research jobs. "
-        f"Last error: {last_error}"
+        "openai-oauth proxy is not available. Start openai-oauth.service before running research jobs."
     )
 
 
@@ -57,32 +54,128 @@ log = logging.getLogger(__name__)
 
 def _parse_json(text: str) -> dict[str, Any] | None:
     """Extract JSON from agent output."""
-    text = text.strip()
-    if "```json" in text:
-        start = text.index("```json") + 7
-        end = text.index("```", start)
-        text = text[start:end].strip()
-    elif "```" in text:
-        start = text.index("```") + 3
-        end = text.index("```", start)
-        text = text[start:end].strip()
+    parsed = _parse_json_detailed(text)
+    return parsed.get("parsed") if parsed.get("status") == "ok" else None
 
-    brace_start = text.find("{")
+
+def _ensure_oauth_token() -> None:
+    if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") and _OAUTH_TOKEN_FILE.exists():
+        os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = _OAUTH_TOKEN_FILE.read_text().strip()
+
+
+def _structured_error(
+    agent: str,
+    kind: str,
+    message: str,
+    *,
+    attempt: int | None = None,
+    details: str | None = None,
+    excerpt: str | None = None,
+    fenced: bool | None = None,
+) -> dict[str, Any]:
+    error: dict[str, Any] = {
+        "status": "error",
+        "agent": agent,
+        "kind": kind,
+        "message": message,
+    }
+    if attempt is not None:
+        error["attempt"] = attempt
+    if details:
+        error["details"] = details
+    if excerpt:
+        error["excerpt"] = excerpt
+    if fenced is not None:
+        error["fenced"] = fenced
+    return error
+
+
+def _is_error_result(result: Any) -> bool:
+    return isinstance(result, dict) and result.get("status") == "error"
+
+
+def _parse_json_detailed(text: str) -> dict[str, Any]:
+    """Extract JSON from agent output with a structured failure kind."""
+    raw_text = text or ""
+    stripped = raw_text.strip()
+    if not stripped:
+        return _structured_error("json-parser", "empty", "No agent output was returned")
+
+    fenced = False
+    if "```json" in stripped:
+        fenced = True
+        start = stripped.index("```json") + 7
+        try:
+            end = stripped.index("```", start)
+            stripped = stripped[start:end].strip()
+        except ValueError:
+            return _structured_error(
+                "json-parser",
+                "truncated_fenced_json",
+                "Fenced JSON response was not closed",
+                excerpt=stripped[:200],
+                fenced=True,
+            )
+    elif "```" in stripped:
+        fenced = True
+        start = stripped.index("```") + 3
+        try:
+            end = stripped.index("```", start)
+            stripped = stripped[start:end].strip()
+        except ValueError:
+            return _structured_error(
+                "json-parser",
+                "truncated_fenced_json",
+                "Fenced JSON response was not closed",
+                excerpt=stripped[:200],
+                fenced=True,
+            )
+
+    brace_start = stripped.find("{")
     if brace_start == -1:
-        return None
+        return _structured_error(
+            "json-parser",
+            "no_json",
+            "No JSON object found in agent output",
+            excerpt=stripped[:200],
+        )
+
     depth = 0
-    for i in range(brace_start, len(text)):
-        if text[i] == "{":
+    closing_index: int | None = None
+    for i in range(brace_start, len(stripped)):
+        if stripped[i] == "{":
             depth += 1
-        elif text[i] == "}":
+        elif stripped[i] == "}":
             depth -= 1
             if depth == 0:
-                try:
-                    return json.loads(text[brace_start : i + 1])
-                except json.JSONDecodeError as exc:
-                    log.error(
-                        "AGENT_JSON_PARSE_FAILED error=%s | hint=repair the agent JSON payload or fenced response",
-                        exc,
-                    )
-                    return None
-    return None
+                closing_index = i
+                break
+
+    if closing_index is None:
+        return _structured_error(
+            "json-parser",
+            "truncated_json",
+            "JSON object appears truncated",
+            excerpt=stripped[brace_start : brace_start + 200],
+        )
+
+    candidate = stripped[brace_start : closing_index + 1]
+    try:
+        return {
+            "status": "ok",
+            "kind": "parsed",
+            "message": "JSON parsed successfully",
+            "parsed": json.loads(candidate),
+            "excerpt": candidate[:200],
+            **({"fenced": True} if fenced else {}),
+        }
+    except json.JSONDecodeError as exc:
+        log.error("AGENT_JSON_PARSE_FAILED error=%s", exc)
+        return _structured_error(
+            "json-parser",
+            "malformed_json",
+            "JSON payload could not be decoded",
+            details=str(exc),
+            excerpt=candidate[:200],
+            fenced=fenced,
+        )

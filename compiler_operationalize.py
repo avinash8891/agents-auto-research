@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
+from agent_infra import _is_error_result
 from strategies import STRATEGIES
 
 AMBIGUOUS_PATTERNS = {
@@ -128,15 +130,13 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
     try:
         import asyncio
 
-        from claude_agent_sdk import AgentDefinition
-
         from agent_orchestrator import _run_single_agent
 
-        agent_def = AgentDefinition(
+        agent_def = SimpleNamespace(
             description="Resolves ambiguous trading theses into exact executable contracts.",
             prompt=_build_operationalization_prompt(thesis),
             tools=[],
-            model="sonnet",
+            model="gpt-5.5",
             maxTurns=3,
         )
 
@@ -147,6 +147,18 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
                 agent_def,
             )
         )
+
+        if _is_error_result(result):
+            print(
+                f"OPERATIONALIZE: agent failed for {thesis.get('thesis_id')} "
+                f"({result.get('kind')}): {result.get('message')}"
+            )
+            return {
+                "resolved_changes": {},
+                "requires_code_change": True,
+                "missing_primitives": [f"operationalization_{result.get('kind', 'error')}"],
+                "code_change_idea": result.get("message", "Operationalization failed"),
+            }
 
         if result:
             return result

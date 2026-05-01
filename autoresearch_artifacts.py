@@ -15,6 +15,18 @@ from artifact_io import read_json_artifacts as read_artifact_json_files
 from autoresearch_state import ExperimentRecord
 
 
+def _serialize_artifact_path(path: Path, root: Path) -> str:
+    """Prefer a repo-relative artifact path, but preserve absolute paths.
+
+    Artifact discovery can surface files stored outside the controller root,
+    so callers must not assume `path` is always a descendant of `root`.
+    """
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def read_artifacts_relative_to_root(directory: Path, root: Path) -> list[dict[str, Any]]:
     """Read all *.json artifacts under `directory` and rewrite each
     payload's `artifact_path` to be relative to `root` (POSIX form)."""
@@ -22,7 +34,7 @@ def read_artifacts_relative_to_root(directory: Path, root: Path) -> list[dict[st
     for payload in artifacts:
         artifact_path = payload.get("artifact_path")
         if artifact_path:
-            payload["artifact_path"] = Path(artifact_path).relative_to(root).as_posix()
+            payload["artifact_path"] = _serialize_artifact_path(Path(artifact_path), root)
     return artifacts
 
 

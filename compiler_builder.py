@@ -13,9 +13,7 @@ from strategy_family import load_family
 
 
 def _find_cli() -> str | None:
-    """Find claude or codex CLI."""
-    if shutil.which("claude"):
-        return "claude"
+    """Find the codex CLI."""
     if shutil.which("codex"):
         return "codex"
     return None
@@ -154,19 +152,7 @@ Constraints:
             "validation_passed": False,
         }
 
-    if cli == "claude":
-        cmd = [
-            "claude",
-            "-p",
-            "--model",
-            "claude-opus-4-6",
-            "--allowedTools",
-            "Read,LS,Grep,Glob,ApplyPatch,Execute",
-            "--no-session-persistence",
-            prompt,
-        ]
-    else:
-        cmd = ["codex", "exec", prompt]
+    cmd = ["codex", "exec", prompt]
 
     proc = subprocess.run(
         cmd,

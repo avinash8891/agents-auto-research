@@ -210,28 +210,30 @@ def cmd_log(args):
     entry["confidence"] = confidence
 
     db = _db(args.db)
-    db.add(
-        ExperimentResult(
-            experiment_id=f"cli-run-{entry['run']}",
-            thesis_id=f"cli-run-{entry['run']}",
-            config_path=args.description,
-            runtime_config={},
-            code_commit=args.commit,
-            data_hash="",
-            train_metrics=extra_metrics,
-            validation_metrics=extra_metrics,
-            trade_count=int(extra_metrics.get("trade_count", 0) or 0),
-            trades_file="",
-            strategy_events_file="",
-            diagnostics_file="",
-            strategy_diagnostics={},
-            accepted=args.status == "keep",
-            rejection_reason="N/A" if args.status == "keep" else args.description,
-            verdict_status="accepted" if args.status == "keep" else "rejected",
-            verdict_summary="kept by CLI evaluation" if args.status == "keep" else args.description,
-            timestamp=entry["timestamp"],
-        )
+    record = ExperimentResult(
+        experiment_id=f"cli-run-{entry['run']}",
+        thesis_id=f"cli-run-{entry['run']}",
+        config_path=args.description,
+        runtime_config={},
+        code_commit=args.commit,
+        data_hash="",
+        train_metrics=extra_metrics,
+        validation_metrics=extra_metrics,
+        trade_count=int(extra_metrics.get("trade_count", 0) or 0),
+        trades_file="",
+        strategy_events_file="",
+        diagnostics_file="",
+        strategy_diagnostics={},
+        accepted=args.status == "keep",
+        rejection_reason="N/A" if args.status == "keep" else args.description,
+        verdict_status="accepted" if args.status == "keep" else "rejected",
+        verdict_summary="kept by CLI evaluation" if args.status == "keep" else args.description,
+        timestamp=entry["timestamp"],
     )
+    setattr(record, "_description_export", args.description)
+    if asi is not None:
+        setattr(record, "_asi_export", asi)
+    db.add(record)
 
     baseline = find_baseline(results, segment)
     best = find_best_kept(results, segment, direction)

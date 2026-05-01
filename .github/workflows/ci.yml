@@ -16,13 +16,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov pyyaml ruff black isort pydantic bandit pandas numpy pyarrow paramiko opentelemetry-sdk==1.41.1 opentelemetry-exporter-otlp-proto-http==1.41.1 openinference-instrumentation-openai==0.1.45 traceloop-sdk==0.60.0 httpx mcp
-      - name: Lint (ruff)
-        run: ruff check .
-      - name: Format check (black)
-        run: black --check .
-      - name: Import sort check (isort)
-        run: isort --check-only .
+          pip install -e .
+          pip install pytest pytest-cov pyyaml pre-commit pydantic bandit pandas numpy pyarrow paramiko opentelemetry-sdk==1.41.1 opentelemetry-exporter-otlp-proto-http==1.41.1 openinference-instrumentation-openai==0.1.45 traceloop-sdk==0.60.0 httpx mcp
+      - name: Code quality checks (pre-commit)
+        run: pre-commit run --all-files
       - name: Security scan (bandit) — high severity, fail on any new issue
         run: bandit -r autoresearch_*.py agent_*.py research_conductor.py compiler_pipeline.py --severity-level high
       - name: Run tests with coverage

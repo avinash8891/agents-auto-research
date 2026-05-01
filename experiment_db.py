@@ -21,6 +21,13 @@ def _iso8601_utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _coerce_metric_float(value: Any, *, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class ExperimentResult:
     """One complete experiment record."""
@@ -182,15 +189,21 @@ class ExperimentDB:
         kept = [r for r in records if r.accepted]
         compare_against = None
         if kept:
-            compare_against = kept[0].validation_metrics.get(self.primary_metric_name(), 0.0)
+            compare_against = _coerce_metric_float(
+                kept[0].validation_metrics.get(self.primary_metric_name(), 0.0)
+            )
             for record in kept[1:]:
-                candidate = record.validation_metrics.get(self.primary_metric_name(), 0.0)
+                candidate = _coerce_metric_float(
+                    record.validation_metrics.get(self.primary_metric_name(), 0.0)
+                )
                 if direction == "higher" and candidate > compare_against:
                     compare_against = candidate
                 if direction == "lower" and candidate < compare_against:
                     compare_against = candidate
         else:
-            compare_against = records[0].validation_metrics.get(self.primary_metric_name(), 0.0)
+            compare_against = _coerce_metric_float(
+                records[0].validation_metrics.get(self.primary_metric_name(), 0.0)
+            )
         improved = metric > compare_against if direction == "higher" else metric < compare_against
         return "keep" if improved else "discard"
 
@@ -290,8 +303,15 @@ class ExperimentDB:
                        selected_thesis_id, outcome, created_at_utc, usage_json
                 FROM research_rounds ORDER BY rowid
                 """).fetchall()
-        return [
-            {
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                usage_json = json.loads(row["usage_json"])
+                invalid_usage_json = False
+            except Exception:
+                usage_json = {}
+                invalid_usage_json = True
+            payload = {
                 "research_round_id": row["research_round_id"],
                 "job_id": row["job_id"],
                 "round_number": row["round_number"],
@@ -300,10 +320,12 @@ class ExperimentDB:
                 "selected_thesis_id": row["selected_thesis_id"],
                 "outcome": row["outcome"],
                 "created_at_utc": row["created_at_utc"],
-                "usage_json": json.loads(row["usage_json"]),
+                "usage_json": usage_json,
             }
-            for row in rows
-        ]
+            if invalid_usage_json:
+                payload["invalid_usage_json"] = True
+            result.append(payload)
+        return result
 
     def list_research_thesis_attempts(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
@@ -464,7 +486,7 @@ class ExperimentDB:
             results.append(
                 ExperimentRecord(
                     config=record.config_path,
-                    metric=float(metric),
+                    metric=_coerce_metric_float(metric),
                     status="keep" if record.accepted else "discard",
                     description=f"strict-native loop: {Path(record.config_path).stem}",
                     timestamp=record.timestamp or "1970-01-01T00:00:00+00:00",

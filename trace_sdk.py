@@ -526,10 +526,9 @@ def trace_agent_prompt(agent_name: str, prompt: str, system_prompt: str = "") ->
             system_prompt=system_prompt,
         ),
     )
-    prompt_preview = prompt[:200].replace("\n", " ")
     _log_line(
         f"AGENT->{agent_name}",
-        f"PROMPT sent (len={len(prompt)}) | preview: {prompt_preview}...",
+        f"PROMPT sent (len={len(prompt)})",
         None,
         seq,
     )
@@ -543,7 +542,7 @@ def trace_agent_prompt(agent_name: str, prompt: str, system_prompt: str = "") ->
             "trace_id": trace_id,
             "prompt_length": len(prompt),
             "system_prompt_length": len(system_prompt),
-            "preview": prompt_preview,
+            "preview_len": min(len(prompt), 200),
         },
         artifact_paths=[prompt_path],
     )
@@ -573,10 +572,9 @@ def trace_agent_response(
         ),
     )
     status = "PARSED_OK" if parsed else "PARSE_FAILED"
-    preview = raw_text[:200].replace("\n", " ")
     _log_line(
         f"AGENT<-{agent_name}",
-        f"RESPONSE {status} (len={len(raw_text)}) | preview: {preview}...",
+        f"RESPONSE {status} (len={len(raw_text)})",
         None,
         seq,
     )
@@ -590,7 +588,7 @@ def trace_agent_response(
             "trace_id": trace_id,
             "status": status,
             "response_length": len(raw_text),
-            "preview": preview,
+            "preview_len": min(len(raw_text), 200),
             "parsed_keys": sorted(parsed.keys()) if parsed else [],
         },
         artifact_paths=[response_path],

@@ -43,13 +43,13 @@ from trace_adapters.recursive_improve import (
     build_recursive_improve_payload,
 )
 from trace_adapters.reflexio import build_reflexio_export_package, build_reflexio_payload
+from trace_quality_history import QualityHistory
+from trace_rule_proposals import RuleProposalRegistry
 from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
     trace,
 )
-from trace_quality_history import QualityHistory
-from trace_rule_proposals import RuleProposalRegistry
 
 if TYPE_CHECKING:
     from autoresearch_controller import AutoresearchController
@@ -945,6 +945,9 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
     """Run one research round. Returns updated state dict."""
     from trace_sdk import begin_round
 
+    ensure_job_metadata = getattr(controller, "_ensure_job_metadata", None)
+    if ensure_job_metadata is not None:
+        ensure_job_metadata()
     research_round = state.get("research_round", 0) + 1
     begin_round(research_round)
     if research_round > MAX_RESEARCH_ROUNDS:
