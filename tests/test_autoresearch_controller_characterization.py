@@ -705,13 +705,13 @@ def test_execute_once_backtest_failure_blocks(controller, monkeypatch):
 
 
 # ────────────────────────────────────────────────────────────────────
-# 6. Zero exit but no RESULT_JSON -> blocker.kind=metric_parse_failed
+# 6. Zero exit but legacy METRIC stdout -> blocker.kind=metric_parse_failed
 # ────────────────────────────────────────────────────────────────────
 def test_execute_once_metric_parse_failure_blocks(controller, monkeypatch):
     monkeypatch.setattr(
         AutoresearchController,
         "run_command",
-        lambda self, command: (0, "no metrics in this output"),
+        lambda self, command: (0, "METRIC median_expectancy=1.42\nMETRIC trade_count=12\n"),
     )
 
     rc = controller.execute_once()
