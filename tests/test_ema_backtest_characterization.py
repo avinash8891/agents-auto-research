@@ -363,6 +363,24 @@ def test_load_runtime_config_rejects_invalid_runtime_config(
             },
             "or_minutes='30': must be an integer",
         ),
+        (
+            "orb",
+            {
+                "validation_start": "2024-01-01",
+                "validation_end": "2024-01-02",
+                "rr_ratio": True,
+            },
+            "rr_ratio=True: must be numeric",
+        ),
+        (
+            "ema",
+            {
+                "validation_start": "2024-01-01",
+                "validation_end": "2024-01-02",
+                "gap_pct": True,
+            },
+            "gap_pct=True: must be numeric",
+        ),
     ],
 )
 def test_load_runtime_config_rejects_malformed_numeric_types(

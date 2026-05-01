@@ -7,6 +7,10 @@ def _is_int_value(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _is_number_value(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
     violations: list[str] = []
     ema = config.get("ema_length")
@@ -17,11 +21,11 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
             violations.append(f"ema_length={ema}: must be <= 200 (intraday bars, not daily)")
     rr = config.get("rr_ratio")
     if rr is not None:
-        if not isinstance(rr, (int, float)) or float(rr) < 0.5:
+        if not _is_number_value(rr) or float(rr) < 0.5:
             violations.append(
                 f"rr_ratio={rr}: must be >= 0.5 (below 0.5 is guaranteed negative edge)"
             )
-        if isinstance(rr, (int, float)) and float(rr) > 20:
+        if _is_number_value(rr) and float(rr) > 20:
             violations.append(f"rr_ratio={rr}: must be <= 20 (unreachable targets waste entries)")
     tf_short = config.get("timeframe_short")
     tf_long = config.get("timeframe_long")
@@ -69,13 +73,16 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
         except (ValueError, IndexError):
             violations.append(f"entry_cutoff_time='{cutoff}': invalid time format (use HH:MM)")
     gap_pct = config.get("gap_pct")
-    if gap_pct is not None and isinstance(gap_pct, (int, float)):
-        if float(gap_pct) <= 0:
-            violations.append(f"gap_pct={gap_pct}: must be > 0")
-        if float(gap_pct) > 0.20:
-            violations.append(
-                f"gap_pct={gap_pct}: must be <= 0.20 (20%; higher filters out everything)"
-            )
+    if gap_pct is not None:
+        if not _is_number_value(gap_pct):
+            violations.append(f"gap_pct={gap_pct!r}: must be numeric")
+        else:
+            if float(gap_pct) <= 0:
+                violations.append(f"gap_pct={gap_pct}: must be > 0")
+            if float(gap_pct) > 0.20:
+                violations.append(
+                    f"gap_pct={gap_pct}: must be <= 0.20 (20%; higher filters out everything)"
+                )
     rsl = config.get("range_shift_lookback")
     if rsl is not None:
         if not _is_int_value(rsl):
