@@ -531,10 +531,12 @@ def _build_export_entry(
         contract.thesis_id if contract and getattr(contract, "thesis_id", "") else Path(config).stem
     )
     run_id = f"job-{state.get('job', 0)}-run-{next_run}-{identity}"
+    experiment_id = contract.experiment_id if contract else run_id
     return {
         "run": next_run,
         "job": state.get("job"),
         "run_id": run_id,
+        "experiment_id": experiment_id,
         "hypothesis_id": identity,
         "commit": controller.current_commit(),
         "metric": metric,

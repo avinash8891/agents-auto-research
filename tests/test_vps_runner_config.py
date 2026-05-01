@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from vps_runner import (
     build_remote_command,
     config_from_env,
     create_verified_ssh_client,
+    _localize_remote_result_output,
     sync_relative_paths,
 )
 
@@ -43,6 +45,20 @@ def test_vps_config_requires_explicit_environment(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="AUTORESEARCH_VPS_HOST"):
         config_from_env()
+
+
+def test_syntax_check_reports_external_python_path_without_crashing(
+    tmp_path, capsys
+) -> None:
+    from vps_runner import syntax_check
+
+    bad = tmp_path / "bad.py"
+    bad.write_text("def broken(:\n    pass\n")
+
+    assert syntax_check([bad]) is False
+    err = capsys.readouterr().err
+    assert "SYNTAX ERROR in" in err
+    assert str(bad) in err
 
 
 def test_remote_command_uses_generic_runner_and_family_metadata() -> None:
@@ -114,3 +130,49 @@ def test_ssh_client_rejects_missing_known_hosts_file(monkeypatch, tmp_path) -> N
 
     with pytest.raises(FileNotFoundError, match="AUTORESEARCH_KNOWN_HOSTS"):
         create_verified_ssh_client()
+
+
+def test_localize_remote_result_output_fetches_remote_artifacts(monkeypatch, tmp_path) -> None:
+    remote_dir = tmp_path / "remote"
+    remote_dir.mkdir()
+    local_dir = tmp_path / "local"
+    local_dir.mkdir()
+
+    remote_result = remote_dir / "result.json"
+    remote_trades = remote_dir / "trades.csv"
+    remote_events = remote_dir / "strategy_events.parquet"
+    remote_diag = remote_dir / "diagnostics.json"
+    remote_trades.write_text("t")
+    remote_events.write_text("e")
+    remote_diag.write_text("d")
+    remote_result.write_text(
+        json.dumps(
+            {
+                "trades_file": str(remote_trades),
+                "strategy_events_file": str(remote_events),
+                "diagnostics_file": str(remote_diag),
+            }
+        )
+    )
+
+    copied: list[tuple[str, str]] = []
+
+    class FakeSFTP:
+        def get(self, remote_path: str, local_path: str) -> None:
+            copied.append((remote_path, local_path))
+            Path(local_path).write_text(Path(remote_path).read_text())
+
+    monkeypatch.setattr("vps_runner.tempfile.mkdtemp", lambda prefix: str(local_dir))
+
+    out = _localize_remote_result_output(f"RESULT_JSON {remote_result}\n", FakeSFTP())
+
+    assert f"RESULT_JSON {local_dir / 'result.json'}" in out
+    copied_remote_paths = {remote for remote, _ in copied}
+    assert str(remote_result) in copied_remote_paths
+    assert str(remote_trades) in copied_remote_paths
+    assert str(remote_events) in copied_remote_paths
+    assert str(remote_diag) in copied_remote_paths
+    localized = json.loads((local_dir / "result.json").read_text())
+    assert localized["trades_file"] == str(local_dir / "trades.csv")
+    assert localized["strategy_events_file"] == str(local_dir / "strategy_events.parquet")
+    assert localized["diagnostics_file"] == str(local_dir / "diagnostics.json")

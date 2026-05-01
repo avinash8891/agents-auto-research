@@ -478,11 +478,12 @@ class ExperimentDB:
     def read_results(self) -> list[Any]:
         from autoresearch_state import ExperimentRecord
 
+        primary_metric_name = self.primary_metric_name()
         results: list[ExperimentRecord] = []
         for record in self.all():
-            metric = record.validation_metrics.get("median_expectancy")
+            metric = record.validation_metrics.get(primary_metric_name)
             if metric is None:
-                metric = record.train_metrics.get("median_expectancy", 0.0)
+                metric = record.train_metrics.get(primary_metric_name, 0.0)
             results.append(
                 ExperimentRecord(
                     config=record.config_path,
@@ -651,11 +652,17 @@ class ExperimentDB:
         records = self._load()
         if not records:
             return "No experiments in database yet."
+        primary_metric_name = self.primary_metric_name()
         lines: list[str] = []
         for r in records:
             m = r.train_metrics
+            metric_value = (
+                r.validation_metrics.get(primary_metric_name)
+                if r.validation_metrics.get(primary_metric_name) is not None
+                else r.train_metrics.get(primary_metric_name)
+            )
             parts = [
-                f"metric={m.get('median_expectancy', '?')}",
+                f"metric={metric_value if metric_value is not None else '?'}",
                 f"status={'accepted' if r.accepted else 'rejected'}",
             ]
             if m.get("trade_count"):
@@ -868,7 +875,7 @@ def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:
         if k not in metrics and isinstance(v, (int, float)):
             metrics[k] = v
     record = ExperimentResult(
-        experiment_id=entry.get("run_id", ""),
+        experiment_id=entry.get("experiment_id") or entry.get("run_id", ""),
         thesis_id=asi.get("thesis_id") or Path(asi.get("config", "")).stem,
         config_path=asi.get("config", ""),
         runtime_config={},
@@ -913,6 +920,7 @@ def _record_to_entry(record: ExperimentResult, run: int) -> dict[str, Any]:
         "run": run,
         "job": record.job,
         "run_id": record.experiment_id,
+        "experiment_id": record.experiment_id,
         "commit": record.code_commit,
         "metric": primary_metric_value,
         "metrics": dict(record.validation_metrics or record.train_metrics),
