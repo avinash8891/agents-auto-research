@@ -1,0 +1,38 @@
+strategies/orb/signals.py
+  cf3feb0734dbfe97 143-152,368-370
+tests/test_orb_backtest_characterization.py
+  cf3feb0734dbfe97 6,71-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "4d705ee3c26ccc1ebfc3b8851eba3af0f667c5c3",
+  "prompts": {
+    "a4dc0ab7f4fb3e35": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de36e-95ef-77a2-a6a5-3e00f4e69739",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 77,
+      "total_deletions": 0,
+      "accepted_lines": 77,
+      "overriden_lines": 0
+    },
+    "cf3feb0734dbfe97": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de365-1cb5-7e80-9b1d-050490473277",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 40,
+      "total_deletions": 4,
+      "accepted_lines": 40,
+      "overriden_lines": 0
+    }
+  }
+}
