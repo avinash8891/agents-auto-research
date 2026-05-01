@@ -18,6 +18,8 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, Sp
 from traceloop.sdk import Traceloop
 from traceloop.sdk.instruments import Instruments
 
+# Traceloop SDK is the OpenLLMetry layer used for model/workflow instrumentation.
+
 _LOG_DIR = Path(__file__).resolve().parent / "logs"
 _LOG_DIR.mkdir(exist_ok=True)
 
@@ -180,6 +182,7 @@ class TraceRuntimeState:
 _STATE = TraceRuntimeState(log_dir=_LOG_DIR, session_id=_SESSION_ID)
 _PROVIDER: TracerProvider | None = None
 _INITIALIZED = False
+_OPENAI_INSTRUMENTED = False
 _OPENAI_INSTRUMENTOR = OpenAIInstrumentor()
 
 
@@ -339,10 +342,13 @@ def _build_provider() -> TracerProvider:
 
 
 def _bind_instrumentation() -> None:
+    global _OPENAI_INSTRUMENTED
     if _PROVIDER is None:
         return
-    _OPENAI_INSTRUMENTOR.uninstrument()
+    if _OPENAI_INSTRUMENTED:
+        _OPENAI_INSTRUMENTOR.uninstrument()
     _OPENAI_INSTRUMENTOR.instrument(tracer_provider=_PROVIDER)
+    _OPENAI_INSTRUMENTED = True
 
 
 def _initialize_tracing() -> None:
@@ -379,7 +385,7 @@ def _reset_provider_for_current_state() -> None:
 
 
 def _tracer():
-    return otel_trace.get_tracer("agents-auto-research.trace_logger", tracer_provider=_PROVIDER)
+    return otel_trace.get_tracer("agents-auto-research.trace_sdk", tracer_provider=_PROVIDER)
 
 
 @contextmanager
@@ -435,7 +441,7 @@ def begin_hypothesis(name: str) -> str:
     hypothesis_id = _STATE.begin_hypothesis(name)
     trace("HYPOTHESIS", f"BEGIN {hypothesis_id} name={name}")
     _record_event(
-        source_module="trace_logger",
+        source_module="trace_sdk",
         category="lifecycle",
         action="hypothesis",
         summary=f"BEGIN {hypothesis_id} name={name}",
@@ -493,7 +499,7 @@ def trace(component: str, message: str, data: dict | None = None) -> None:
     seq = _STATE.next_seq()
     _log_line(component, message, data, seq)
     _record_event(
-        source_module="trace_logger",
+        source_module="trace_sdk",
         category="trace",
         action=component.lower(),
         summary=message,
@@ -528,7 +534,7 @@ def trace_agent_prompt(agent_name: str, prompt: str, system_prompt: str = "") ->
         seq,
     )
     _record_event(
-        source_module="trace_logger",
+        source_module="trace_sdk",
         category="agent",
         action="prompt",
         summary=f"PROMPT sent to {agent_name}",
@@ -575,7 +581,7 @@ def trace_agent_response(
         seq,
     )
     _record_event(
-        source_module="trace_logger",
+        source_module="trace_sdk",
         category="agent",
         action="response",
         summary=f"RESPONSE {status} from {agent_name}",
@@ -601,7 +607,7 @@ def trace_agent_tool_call(
     input_preview = tool_input[:300].replace("\n", " ") if tool_input else ""
     _log_line(f"AGENT.TOOL {agent_name}", f"{tool_name} | {input_preview}", None, seq)
     _record_event(
-        source_module="trace_logger",
+        source_module="trace_sdk",
         category="agent",
         action="tool_call",
         summary=f"{agent_name} called {tool_name}",
@@ -637,7 +643,7 @@ def trace_ssh(command: str, exit_code: int, stdout: str = "", stderr: str = "") 
     if stderr_preview:
         _log_line("SSH.ERR", stderr_preview, None, seq)
     _record_event(
-        source_module="trace_logger",
+        source_module="trace_sdk",
         category="ssh",
         action="command",
         summary=f"SSH exit={exit_code}",
@@ -662,7 +668,7 @@ def trace_benchmark(
     if details:
         _log_line("BENCHMARK.DETAIL", json.dumps(details, default=str), None, seq)
     _record_event(
-        source_module="trace_logger",
+        source_module="trace_sdk",
         category="benchmark",
         action="result",
         summary=f"benchmark {decision}",
@@ -680,7 +686,7 @@ def trace_state_change(old_state: str, new_state: str, reason: str = "") -> None
     summary = f"{old_state} -> {new_state}"
     _log_line("STATE", summary + (f" | reason: {reason}" if reason else ""), None, seq)
     _record_event(
-        source_module="trace_logger",
+        source_module="trace_sdk",
         category="state",
         action="transition",
         summary=summary,

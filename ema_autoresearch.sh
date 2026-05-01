@@ -33,7 +33,13 @@ for dirname in ["backtest", "strategies", "configs"]:
         for path in sorted(base.rglob("*")):
             if path.is_file() and path.suffix in {".py", ".yaml", ".yml"}:
                 paths.append(path)
-for rel in ["data_loader.py", "metrics.py", "numba_kernels.py", "strategy_event_logger.py", "trace_logger.py"]:
+for rel in [
+    "data_loader.py",
+    "metrics.py",
+    "numba_kernels.py",
+    "strategy_event_logger.py",
+    "trace_sdk.py",
+]:
     path = local / rel
     if path.exists():
         paths.append(path)

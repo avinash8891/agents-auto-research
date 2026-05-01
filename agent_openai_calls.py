@@ -6,7 +6,7 @@ from typing import Any
 import agent_infra
 import agent_prompts
 from agent_runners import _validate_output
-from trace_logger import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
+from trace_sdk import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
 
 
 async def _run_web_research_openai(

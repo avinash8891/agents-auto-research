@@ -9,7 +9,7 @@ from pathlib import Path
 
 def _load_modules(monkeypatch, tmp_path: Path):
     for module_name in [
-        "trace_logger",
+        "trace_sdk",
         "trace_autonomy_ledger",
         "trace_quality_history",
         "trace_refinement",
@@ -33,9 +33,9 @@ def _load_modules(monkeypatch, tmp_path: Path):
             message="'asyncio\\.iscoroutinefunction' is deprecated and slated for removal in Python 3\\.16; use inspect\\.iscoroutinefunction\\(\\) instead",
             category=DeprecationWarning,
         )
-        trace_logger = importlib.import_module("trace_logger")
+        trace_sdk = importlib.import_module("trace_sdk")
     return {
-        "trace_logger": importlib.reload(trace_logger),
+        "trace_sdk": importlib.reload(trace_sdk),
         "ledger": importlib.reload(importlib.import_module("trace_autonomy_ledger")),
         "quality": importlib.reload(importlib.import_module("trace_quality_history")),
         "refinement": importlib.reload(importlib.import_module("trace_refinement")),
@@ -43,8 +43,8 @@ def _load_modules(monkeypatch, tmp_path: Path):
     }
 
 
-def _read_events(trace_logger) -> list[dict]:
-    event_file = trace_logger.get_event_file()
+def _read_events(trace_sdk) -> list[dict]:
+    event_file = trace_sdk.get_event_file()
     return [json.loads(line) for line in event_file.read_text(encoding="utf-8").splitlines()]
 
 
@@ -75,7 +75,7 @@ def test_autonomy_ledger_records_decisions_and_graduation_status(
     )
 
     events = [
-        event for event in _read_events(modules["trace_logger"]) if event["category"] == "autonomy"
+        event for event in _read_events(modules["trace_sdk"]) if event["category"] == "autonomy"
     ]
     assert [event["action"] for event in events[-2:]] == ["decision", "audit"]
     assert events[-2]["payload"]["decision_id"] == decision["decision_id"]
@@ -106,7 +106,7 @@ def test_quality_history_tracks_runs_and_detects_regression_and_trend(
     )
 
     events = [
-        event for event in _read_events(modules["trace_logger"]) if event["category"] == "quality"
+        event for event in _read_events(modules["trace_sdk"]) if event["category"] == "quality"
     ]
     assert len(events) >= 2
     assert events[-1]["payload"]["regressions"] == ["accuracy", "overall"]
@@ -136,7 +136,7 @@ def test_rule_proposals_capture_rationale_evidence_and_status_updates(
 
     events = [
         event
-        for event in _read_events(modules["trace_logger"])
+        for event in _read_events(modules["trace_sdk"])
         if event["category"] == "rule_proposal"
     ]
     assert events[-2]["action"] == "create"
@@ -175,7 +175,7 @@ def test_refinement_recorder_tracks_iteration_chain_and_stopping_reason(
 
     events = [
         event
-        for event in _read_events(modules["trace_logger"])
+        for event in _read_events(modules["trace_sdk"])
         if event["category"] == "refinement"
     ]
     assert [event["action"] for event in events[-3:]] == [

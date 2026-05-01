@@ -6,7 +6,7 @@ import sys
 
 from agent_token_usage import _accumulate_usage
 from research_paths import _OAUTH_PROXY_URL, _ROOT, _ensure_oauth_proxy, _parse_json
-from trace_logger import trace, trace_agent_response
+from trace_sdk import trace, trace_agent_response
 
 
 async def _call_analyst(
