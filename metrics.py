@@ -7,7 +7,6 @@ Optional columns for richer diagnostics: direction, entry_price, stop, target.
 from __future__ import annotations
 
 import logging
-import math
 
 import numpy as np
 import pandas as pd
@@ -24,12 +23,6 @@ def _profit_factor_from_pnl(group: pd.Series | np.ndarray) -> float:
     if gross_loss == 0.0:
         return 99.99 if gross_profit > 0.0 else 0.0
     return round(gross_profit / gross_loss, 4)
-
-
-def _reported_profit_factor_from_pnl(group: pd.Series | np.ndarray) -> float:
-    """Return the bounded profit factor used in public reporting surfaces."""
-    profit_factor = _profit_factor_from_pnl(group)
-    return 0.0 if math.isinf(profit_factor) else profit_factor
 
 
 def compute_metrics(trades_df: pd.DataFrame) -> dict:
@@ -54,7 +47,7 @@ def compute_metrics(trades_df: pd.DataFrame) -> dict:
     result = {
         "median_expectancy": round(float(np.median(pnl_arr)), 4),
         "trade_count": int(len(pnl_arr)),
-        "profit_factor": _reported_profit_factor_from_pnl(pnl_arr),
+        "profit_factor": _profit_factor_from_pnl(pnl_arr),
         "max_drawdown": round(float(np.max(drawdown)) if len(drawdown) else 0.0, 4),
         "pct_profitable_windows": round(float((pnl_arr > 0).mean()), 4),
         "avg_sharpe_across_windows": round(sharpe, 4),
@@ -95,7 +88,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_hour = {}
         for hour, group in df.groupby("entry_hour")["pnl_pct"]:
             pf_by_hour[f"{int(hour):02d}:00"] = {
-                "pf": round(_reported_profit_factor_from_pnl(group), 3),
+                "pf": round(_profit_factor_from_pnl(group), 3),
                 "trades": len(group),
                 "win_rate": round(float((group > 0).mean()), 3),
             }
@@ -106,7 +99,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_dir = {}
         for d, group in trades_df.groupby("direction")["pnl_pct"]:
             pf_by_dir[d] = {
-                "pf": round(_reported_profit_factor_from_pnl(group), 3),
+                "pf": round(_profit_factor_from_pnl(group), 3),
                 "trades": len(group),
                 "win_rate": round(float((group > 0).mean()), 3),
             }
@@ -117,7 +110,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_exit = {}
         for reason, group in trades_df.groupby("exit_reason")["pnl_pct"]:
             pf_by_exit[reason] = {
-                "pf": round(_reported_profit_factor_from_pnl(group), 3),
+                "pf": round(_profit_factor_from_pnl(group), 3),
                 "trades": len(group),
                 "mean_pnl": round(float(group.mean()), 5),
             }
@@ -130,7 +123,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_dow = {}
         for dow, group in df.groupby("dow")["pnl_pct"]:
             pf_by_dow[dow] = {
-                "pf": round(_reported_profit_factor_from_pnl(group), 3),
+                "pf": round(_profit_factor_from_pnl(group), 3),
                 "trades": len(group),
             }
         diag["pf_by_day_of_week"] = pf_by_dow
@@ -142,7 +135,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_year = {}
         for year, group in df.groupby("year")["pnl_pct"]:
             pf_by_year[str(year)] = {
-                "pf": round(_reported_profit_factor_from_pnl(group), 3),
+                "pf": round(_profit_factor_from_pnl(group), 3),
                 "trades": len(group),
             }
         diag["pf_by_year"] = pf_by_year
@@ -198,7 +191,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
             sym_stats.append(
                 {
                     "symbol": sym,
-                    "pf": round(_reported_profit_factor_from_pnl(group), 3),
+                    "pf": round(_profit_factor_from_pnl(group), 3),
                     "trades": len(group),
                     "win_rate": round(float((group > 0).mean()), 3),
                 }
@@ -225,7 +218,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
             pf_by_stop = {}
             for q, group in df.groupby("stop_q")["pnl_pct"]:
                 pf_by_stop[str(q)] = {
-                    "pf": round(_reported_profit_factor_from_pnl(group), 3),
+                    "pf": round(_profit_factor_from_pnl(group), 3),
                     "trades": len(group),
                     "win_rate": round(float((group > 0).mean()), 3),
                     "mean_stop_dist_pct": round(
@@ -295,7 +288,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_month = {}
         for month, group in df.groupby("month")["pnl_pct"]:
             pf_by_month[month] = {
-                "pf": round(_reported_profit_factor_from_pnl(group), 3),
+                "pf": round(_profit_factor_from_pnl(group), 3),
                 "trades": len(group),
                 "win_rate": round(float((group > 0).mean()), 3),
             }
@@ -309,7 +302,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
         pf_by_yq = {}
         for yq, group in df.groupby("yq")["pnl_pct"]:
             pf_by_yq[yq] = {
-                "pf": round(_reported_profit_factor_from_pnl(group), 3),
+                "pf": round(_profit_factor_from_pnl(group), 3),
                 "trades": len(group),
             }
         diag["pf_by_year_quarter"] = pf_by_yq

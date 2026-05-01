@@ -124,7 +124,7 @@ def test_compute_diagnostics_all_wins_symbol_bucket_uses_explicit_pf_sentinel() 
 
     diag = compute_diagnostics(trades)
 
-    assert diag["pf_by_symbol_best10"][0]["pf"] == 0.0
+    assert diag["pf_by_symbol_best10"][0]["pf"] == 99.99
 
 
 def test_compute_metrics_zero_trades_returns_sentinel_values() -> None:
@@ -143,7 +143,7 @@ def test_compute_metrics_all_wins_uses_explicit_profit_factor_sentinel() -> None
 
     metrics = compute_metrics(trades)
 
-    assert metrics["profit_factor"] == 0.0
+    assert metrics["profit_factor"] == 99.99
 
 
 def test_strategy_event_logger_logs_invalid_timestamp(
