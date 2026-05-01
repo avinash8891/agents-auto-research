@@ -784,7 +784,6 @@ def test_experiment_record_prefers_contract_metadata_over_runtime_config_stem(
                 hypothesis="hypothesis text",
                 mechanism="mechanism text",
             ),
-            latest_config_contents={"ema_length": 5},
             parent_experiment_id="parent-1",
         ),
     )
@@ -794,6 +793,7 @@ def test_experiment_record_prefers_contract_metadata_over_runtime_config_stem(
         decision="keep",
         details={"trade_count": 1, "train_metrics": {"median_expectancy": 1.0}},
         analysis={"trade_analysis": {}},
+        runtime_config={"ema_length": 5},
         fallback_experiment_id="fallback",
         state={"job": 3, "_last_round_usage": {}},
     )
@@ -801,3 +801,4 @@ def test_experiment_record_prefers_contract_metadata_over_runtime_config_stem(
     assert record.thesis_id == "time_stop_reversion_decay"
     assert record.hypothesis == "hypothesis text"
     assert record.mechanism == "mechanism text"
+    assert record.runtime_config == {"ema_length": 5}
