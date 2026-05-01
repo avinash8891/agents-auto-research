@@ -444,6 +444,7 @@ def test_run_web_research_openai_returns_structured_error_without_stdout(monkeyp
 
 def test_run_web_research_openai_uses_responses_model_for_web_search(monkeypatch):
     import agents
+
     import trace_sdk
 
     monkeypatch.setattr(agent_infra, "_ensure_oauth_proxy", lambda: None)

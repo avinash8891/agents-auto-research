@@ -277,9 +277,15 @@ async def run_research_conductor(
                     "conductor",
                     (
                         {
-                            "input_tokens": getattr(top_usage, "input_tokens", 0) if top_usage else 0,
-                            "output_tokens": getattr(top_usage, "output_tokens", 0) if top_usage else 0,
-                            "total_tokens": getattr(top_usage, "total_tokens", 0) if top_usage else 0,
+                            "input_tokens": (
+                                getattr(top_usage, "input_tokens", 0) if top_usage else 0
+                            ),
+                            "output_tokens": (
+                                getattr(top_usage, "output_tokens", 0) if top_usage else 0
+                            ),
+                            "total_tokens": (
+                                getattr(top_usage, "total_tokens", 0) if top_usage else 0
+                            ),
                         }
                         if top_usage
                         else None
