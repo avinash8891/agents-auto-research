@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -13,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from backtest.filters import _exclude_signals_on_days
+from backtest.filters import _exclude_signals_on_days, _filter_signals_to_days
 from backtest.runtime_config import load_runtime_config, validate_runtime_config_scope
 from strategies import STRATEGIES
 from strategies.ema.contract import compile_ema_contract, map_ema_config_changes_to_contract
@@ -305,6 +306,64 @@ def test_load_runtime_config_accepts_runtime_config_wrapper(tmp_path: Path) -> N
     loaded = load_runtime_config(str(wrapped), "ema")
 
     assert loaded["ema_length"] == _tiny_config()["ema_length"]
+
+
+@pytest.mark.parametrize(
+    ("family", "config", "expected"),
+    [
+        (
+            "ema",
+            {
+                "validation_start": "2024-01-01",
+                "validation_end": "2024-01-02",
+                "ema_length": 1,
+            },
+            "ema_length=1: must be >= 2",
+        ),
+        (
+            "orb",
+            {
+                "validation_start": "2024-01-01",
+                "validation_end": "2024-01-02",
+                "or_minutes": 2,
+                "timeframe_minutes": 5,
+            },
+            "or_minutes=2 out of range [5, 120]",
+        ),
+    ],
+)
+def test_load_runtime_config_rejects_invalid_runtime_config(
+    tmp_path: Path, family: str, config: dict, expected: str
+) -> None:
+    path = tmp_path / f"{family}.json"
+    path.write_text(json.dumps({"runtime_config": config}) + "\n")
+
+    with pytest.raises(ValueError, match=f"Config validation failed.*{re.escape(expected)}"):
+        load_runtime_config(str(path), family)
+
+
+def test_filter_signals_to_days_clears_rejected_metadata() -> None:
+    idx = pd.to_datetime(["2024-01-02 09:30", "2024-01-03 09:30", "2024-01-04 09:30"])
+    frame = pd.DataFrame(index=idx)
+
+    class Signals:
+        def __init__(self) -> None:
+            self.entries = pd.Series([True, True, True], index=idx)
+            self.entry_price = pd.Series([1.0, 2.0, 3.0], index=idx)
+            self.stop_price = pd.Series([0.5, 1.5, 2.5], index=idx)
+            self.alert_bar_idx = pd.Series([10, 11, 12], index=idx)
+
+    signals = Signals()
+    out = _filter_signals_to_days(signals, frame, {idx[1].date()})
+
+    assert out.entries.tolist() == [False, True, False]
+    assert np.isnan(out.entry_price.iloc[0])
+    assert out.entry_price.iloc[1] == 2.0
+    assert np.isnan(out.entry_price.iloc[2])
+    assert np.isnan(out.stop_price.iloc[0])
+    assert out.stop_price.iloc[1] == 1.5
+    assert np.isnan(out.stop_price.iloc[2])
+    assert out.alert_bar_idx.tolist() == [-1, 11, -1]
 
 
 def test_demo_strategy_runner_succeeds(tmp_path: Path) -> None:

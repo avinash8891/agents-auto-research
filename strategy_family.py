@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -55,9 +56,12 @@ class StrategyFamily:
 
     def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
         python = "./venv/bin/python3" if IS_VPS else "python3"
-        cmd = f"{python} -m backtest.runner --strategy {self.name} --config {config_path}"
+        cmd = (
+            f"{python} -m backtest.runner --strategy {shlex.quote(self.name)} "
+            f"--config {shlex.quote(config_path)}"
+        )
         if output_dir:
-            cmd += f" --output-dir {output_dir}"
+            cmd += f" --output-dir {shlex.quote(output_dir)}"
         return cmd
 
     @property
