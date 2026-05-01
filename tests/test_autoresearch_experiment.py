@@ -8,6 +8,7 @@ tests/fixtures/result_v1.json.
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -450,6 +451,56 @@ def test_build_db_record_populates_expected_runtime_fields(tmp_path: Path) -> No
     assert record.diagnostics_file == str(tmp_path / "diagnostics.json")
     assert record.strategy_diagnostics == {"exits_at_target": 1}
     assert record.parent_experiment_id == "parent-exp"
+
+
+def test_log_experiment_result_uses_legacy_runtime_config_fallback(tmp_path: Path) -> None:
+    class _Controller:
+        def __init__(self) -> None:
+            self.root = tmp_path
+            self.state_path = tmp_path / "ema_autoresearch.next.json"
+            self.runs_dir = tmp_path / "ema-runs"
+            self.family = SimpleNamespace(name="ema")
+            self.experiment_db = ExperimentDB(tmp_path / "ema_experiments.db")
+            self.ctx = SimpleNamespace(
+                current_contract=None,
+                parent_experiment_id="parent-exp",
+                latest_config_contents={"ema_length": 5},
+            )
+
+        def sanitize_duplicate_entries(self, config: str) -> None:
+            return None
+
+        def current_commit(self) -> str:
+            return "abc1234"
+
+        def read_state(self) -> dict[str, object]:
+            return {"state": "running", "job": 1, "_last_round_usage": {}}
+
+    controller = _Controller()
+    controller.state_path.write_text(json.dumps({"state": "running", "job": 1}))
+
+    result_path = tmp_path / "result.json"
+    result_path.write_text(json.dumps({"metrics": {"median_expectancy": 1.25, "trade_count": 10}}))
+
+    experiment_mod.log_experiment_result(
+        controller,
+        config="configs/ema_base.yaml",
+        metric=1.25,
+        decision="keep",
+        output=f"RESULT_JSON {result_path}\n",
+        analysis={"trade_analysis": {}},
+    )
+
+    with sqlite3.connect(controller.experiment_db.path) as conn:
+        row = conn.execute("""
+            SELECT runtime_config_json
+            FROM experiments
+            ORDER BY rowid DESC
+            LIMIT 1
+            """).fetchone()
+
+    assert row is not None
+    assert json.loads(row[0]) == {"ema_length": 5}
 
 
 def test_build_asi_and_entry_use_contract_identity_over_runtime_config_stem(tmp_path: Path) -> None:

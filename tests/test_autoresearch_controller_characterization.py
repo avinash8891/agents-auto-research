@@ -1286,9 +1286,8 @@ def test_forced_baseline_rerun_clears_terminal_metadata(controller, monkeypatch)
         "baseline_rerun_for_commit": "new-commit",
     }
 
-    monkeypatch.setattr(
-        orchestration_mod, "check_baseline_rerun", lambda _controller: baseline_action
-    )
+    monkeypatch.setattr(controller, "_try_resume_halted_thesis", lambda: None)
+    monkeypatch.setattr(controller, "_check_baseline_rerun", lambda: baseline_action)
 
     state = controller._resolve_next_action()
 
@@ -1305,18 +1304,32 @@ def test_orchestration_resolve_next_action_prefers_forced_baseline(controller, m
         "source": "baseline",
     }
 
-    monkeypatch.setattr(orchestration_mod, "try_resume_halted_thesis", lambda _controller: None)
+    calls: list[str] = []
+
     monkeypatch.setattr(
-        orchestration_mod, "check_baseline_rerun", lambda _controller: baseline_action
+        controller,
+        "_try_resume_halted_thesis",
+        lambda: calls.append("resume") or None,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_check_baseline_rerun",
+        lambda: calls.append("baseline") or baseline_action,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_apply_forced_baseline_rerun",
+        lambda action: calls.append("apply") or {"state": "running", "next_action": action},
     )
     monkeypatch.setattr(
         controller,
         "reconcile_state",
-        lambda: {"state": "blocked", "next_action": {"type": "noop"}},
+        lambda: (_ for _ in ()).throw(AssertionError("reconcile_state should not be called")),
     )
 
     state = orchestration_mod.resolve_next_action(controller)
 
+    assert calls == ["resume", "baseline", "apply"]
     assert state["state"] == "running"
     assert state["next_action"] == baseline_action
 
