@@ -352,7 +352,7 @@ def test_load_runtime_config_rejects_invalid_runtime_config(
                 "validation_end": "2024-01-02",
                 "range_shift_lookback": "20",
             },
-            "range_shift_lookback='20': must be numeric",
+            "range_shift_lookback='20': must be an integer",
         ),
         (
             "orb",
@@ -361,7 +361,7 @@ def test_load_runtime_config_rejects_invalid_runtime_config(
                 "validation_end": "2024-01-02",
                 "or_minutes": "30",
             },
-            "or_minutes='30': must be numeric",
+            "or_minutes='30': must be an integer",
         ),
     ],
 )
