@@ -48,9 +48,31 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
         "suggested_theses": [
             {
                 "thesis_id": "entry_window_test",
-                "hypothesis": "Later entries reduce weak early signals.",
+                "hypothesis": "narrow the entry window to reduce weak early signals.",
                 "mechanism": "Tightening the EMA entry window removes noisier open-driven setups.",
+                "mechanism_dimension": "entry_timing",
+                "dimension_novelty": "This is a distinct timing regime rather than a simple parameter sweep.",
                 "config_changes": {"entry_cutoff_time": "09:35"},
+                "expected_effects": [
+                    {
+                        "metric": "profit_factor",
+                        "direction": "increase",
+                        "threshold": 0.05,
+                        "rationale": "A narrower opening window should remove low-quality trades.",
+                    },
+                    {
+                        "metric": "trade_count",
+                        "direction": "increase_or_same",
+                        "rationale": "The change should preserve most opportunities.",
+                    },
+                ],
+                "disqualifiers": [
+                    {
+                        "name": "trade_count_collapse",
+                        "condition": "trade_count decreases by more than 30 percent versus baseline",
+                        "severity": "hard_fail",
+                    }
+                ],
             }
         ],
         "should_stop": False,
@@ -61,45 +83,33 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
     monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
 
-    class AssistantMessage:
-        def __init__(self, text):
-            self.content = [SimpleNamespace(text=text)]
+    captured: dict[str, object] = {}
 
-    class ResultMessage:
-        def __init__(self, usage=None, model_usage=None, result=None, total_cost_usd=None):
-            self.usage = usage
-            self.model_usage = model_usage
-            self.result = result
-            self.total_cost_usd = total_cost_usd
+    class _FakeResult:
+        def __init__(self, payload: str):
+            self.final_output = payload
+            self.raw_responses = [
+                SimpleNamespace(
+                    usage=SimpleNamespace(
+                        input_tokens=5,
+                        output_tokens=7,
+                        total_tokens=12,
+                    ),
+                    total_cost_usd=0.25,
+                )
+            ]
 
-    captured_query: dict[str, object] = {}
+        async def stream_events(self):
+            if False:
+                yield None
 
-    async def fake_query(*args, **kwargs):
-        captured_query.update(kwargs)
-        yield AssistantMessage("```json\n" + json.dumps(parsed_payload) + "\n```")
-        yield ResultMessage(
-            usage={"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
-            total_cost_usd=0.25,
-        )
+    def fake_run_streamed(starting_agent, input, **kwargs):
+        captured["agent"] = starting_agent
+        captured["input"] = input
+        captured["kwargs"] = kwargs
+        return _FakeResult("```json\n" + json.dumps(parsed_payload) + "\n```")
 
-    monkeypatch.setitem(
-        sys.modules,
-        "claude_agent_sdk",
-        SimpleNamespace(
-            AssistantMessage=AssistantMessage,
-            ClaudeAgentOptions=lambda **kwargs: SimpleNamespace(**kwargs),
-            ResultMessage=ResultMessage,
-            query=fake_query,
-        ),
-    )
-
-    captured = {}
-
-    def fake_build_research_tools_mcp(**kwargs):
-        captured.update(kwargs)
-        return SimpleNamespace(_mcp_server=object())
-
-    monkeypatch.setattr(rc, "_build_research_tools_mcp", fake_build_research_tools_mcp)
+    monkeypatch.setattr(rc.OAIRunner, "run_streamed", fake_run_streamed)
 
     rc.reset_round_usage()
     result = rc.run_research_conductor_sync(
@@ -111,44 +121,22 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
     )
 
     assert result == parsed_payload
-    options = captured_query["options"]
-    assert "5 EMA PULLBACK/REVERSAL STRATEGY" in options.system_prompt
-    assert rc.run_research_conductor.__code__.co_names.count("_ROOT") == 1
-    assert "__globals__" not in rc.run_research_conductor.__code__.co_names
+    assert "5 EMA PULLBACK/REVERSAL STRATEGY" in captured["agent"].instructions
+    assert captured["input"].startswith("Research round: 3")
+    assert captured["kwargs"]["max_turns"] == 50
+    assert captured["kwargs"]["run_config"].tracing_disabled is True
 
 
 def test_run_research_conductor_sync_returns_conductor_error_on_timeout(monkeypatch):
     monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
-    monkeypatch.setattr(
-        rc,
-        "_build_research_tools_mcp",
-        lambda **kwargs: SimpleNamespace(_mcp_server=object()),
-    )
     monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
     monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
 
-    class AssistantMessage:
-        pass
-
-    class ResultMessage:
-        pass
-
-    async def fake_query(*args, **kwargs):
+    def fake_run_streamed(*args, **kwargs):
         raise asyncio.TimeoutError
-        yield  # pragma: no cover
 
-    monkeypatch.setitem(
-        sys.modules,
-        "claude_agent_sdk",
-        SimpleNamespace(
-            AssistantMessage=AssistantMessage,
-            ClaudeAgentOptions=lambda **kwargs: SimpleNamespace(**kwargs),
-            ResultMessage=ResultMessage,
-            query=fake_query,
-        ),
-    )
-
+    monkeypatch.setattr(rc.OAIRunner, "run_streamed", fake_run_streamed)
     result = rc.run_research_conductor_sync(
         trades_file="/tmp/trades.csv",
         experiment_results="results",
@@ -224,6 +212,21 @@ def test_accumulate_usage_dedupes_repeated_message_key():
     assert round_usage["by_agent"]["conductor"]["cost_usd"] == 0.25
 
 
+def test_accumulate_result_usage_uses_reported_total_cost_when_raw_usage_missing():
+    usage.reset_round_usage()
+
+    result = SimpleNamespace(
+        raw_responses=[],
+        total_cost_usd=0.42,
+    )
+
+    usage._accumulate_result_usage("analyst", result)
+
+    round_usage = usage.get_round_usage()
+    assert round_usage["by_agent"]["analyst"]["calls"] == 1
+    assert round_usage["by_agent"]["analyst"]["cost_usd"] == pytest.approx(0.42)
+
+
 def test_orb_research_spec_resolves_from_strategy_registry() -> None:
     assert get_family_research_spec("orb") is STRATEGIES["orb"].research_spec
 
@@ -237,6 +240,15 @@ def test_ema_research_spec_matches_supported_operational_keys() -> None:
 
 
 def test_save_research_finding_rejects_bad_type(monkeypatch):
+    tracked: dict[str, object] = {}
+
+    def fake_track(server, org_id, cfg):
+        tracked["server"] = server
+        tracked["org_id"] = org_id
+        tracked["cfg"] = cfg
+
+    monkeypatch.setattr(tools_mcp, "track", fake_track)
+
     mcp = tools_mcp._build_research_tools_mcp(
         trades_file="/tmp/trades.csv",
         call_analyst=subagents._call_analyst,
@@ -247,6 +259,18 @@ def test_save_research_finding_rejects_bad_type(monkeypatch):
         root=infra._ROOT,
         list_past_theses_for_root=memory.list_past_theses,
     )
+    assert tracked["org_id"] == "a042226c-b858-46f3-9756-b1e675c03c13"
+    identity = tracked["cfg"].identify(
+        {"headers": {"x-user-id": "user-123", "mcp-session-id": "session-456"}},
+        {"USER": "fallback-user"},
+    )
+    assert identity == {
+        "userId": "user-123",
+        "sessionId": "session-456",
+        "conversationId": "session-456",
+        "email": None,
+        "clientId": None,
+    }
     tool = next(tool for tool in mcp._tool_manager.list_tools() if tool.name == "save_finding")
 
     result = asyncio.run(

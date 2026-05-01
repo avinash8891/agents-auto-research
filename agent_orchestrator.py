@@ -3,21 +3,59 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import threading
 from typing import Any
 
 import agent_formatters
 import agent_infra
-import agent_memory
 import agent_openai_calls
 import agent_prompts
-from agent_runners import _run_single_agent
+import agent_runners
+from agent_orchestrator_helpers import (
+    _build_diagnostic_prompt,
+    _build_research_prompt,
+    _build_web_research_prompt,
+    _persist_diagnostic_result,
+    _persist_research_thesis,
+    _persist_web_research_result,
+)
+from trace_sdk import trace
 
 format_result_history = agent_formatters.format_result_history
 format_insight_brief = agent_formatters.format_insight_brief
 format_web_findings = agent_formatters.format_web_findings
 _parse_json = agent_infra._parse_json
-from trace_sdk import trace
+
+# Backward compatibility for callers that still import the single-agent runner
+# from the orchestrator module.
+_run_single_agent = agent_runners._run_single_agent
+
+
+def _is_error_result(result: dict[str, Any] | None) -> bool:
+    return agent_infra._is_error_result(result)
+
+
+def _run_coroutine_sync(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result_box: dict[str, Any] = {}
+    error_box: dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            result_box["value"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - exercised via regression test
+            error_box["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if error_box:
+        raise error_box["error"]
+    return result_box.get("value")
 
 
 async def run_diagnostic_analysis(
@@ -34,53 +72,15 @@ async def run_diagnostic_analysis(
         "ORCHESTRATOR",
         f"run_diagnostic_analysis config={config} metric={metric} trades={trades_file}",
     )
-    # READ: get prior diagnostics from mempalace
-    prior = agent_memory._mempalace_search("diagnostic anomalies patterns", wing="autoresearch")
-
-    config_str = json.dumps(config_contents, indent=2) if config_contents else "unknown"
-    results_str = json.dumps(
-        {
-            k: v
-            for k, v in (baseline_results or {}).items()
-            if k != "diagnostics" and k != "trades_file"
-        },
-        indent=2,
+    prompt = _build_diagnostic_prompt(
+        trades_file, config, metric, config_contents, baseline_results, family
     )
-
-    prompt = (
-        f"Analyze the raw trades for config '{config}' "
-        f"(strategy family: {family}).\n\n"
-        f"STRATEGY CONFIG (what settings are applied):\n{config_str}\n\n"
-        f"BACKTEST RESULTS:\n{results_str}\n\n"
-        f"RAW TRADES FILE: {trades_file}\n\n"
-        f"PRIOR DIAGNOSTIC FINDINGS (from earlier runs):\n{prior}\n\n"
-        f"Load the CSV file and perform your analysis. "
-        f"The file contains one row per trade with the schema described in your instructions."
-    )
-    # Use Codex SDK analyst (gpt-5.5 + local FunctionTools) instead of
-    # Claude SDK analyst (which spawns a crash-prone CLI subprocess).
     result = await agent_openai_calls._run_diagnostic_analyst_openai(prompt)
+    if _is_error_result(result):
+        return result
 
-    # WRITE: persist validated result to mempalace
     if result:
-        summary = result.get("overall_diagnosis", "")
-        anomalies = result.get("key_anomalies", [])
-        content = (
-            f"DIAGNOSTIC ANALYSIS: {config} PF={metric}\n"
-            f"DIAGNOSIS: {summary}\n"
-            f"ANOMALIES ({len(anomalies)}):\n"
-            + "\n".join(
-                f"  [{a.get('confidence', '?')}] {a.get('pattern', '')} "
-                f"-> {a.get('suggested_exploit', '')}"
-                for a in anomalies
-            )
-        )
-        agent_memory._mempalace_write("autoresearch", f"{family}-diagnostics", content)
-        agent_memory._mempalace_diary(
-            "diagnostic-analyst",
-            f"{family}-analysis",
-            f"CONFIG:{config}|PF:{metric}|ANOMALIES:{len(anomalies)}|{summary[:100]}",
-        )
+        result = _persist_diagnostic_result(result, config, metric, family)
 
     return result
 
@@ -93,43 +93,20 @@ async def run_web_research(
     *,
     family: str,
 ) -> dict[str, Any] | None:
-    """Run the web researcher via Claude SDK (builds prompt, delegates to OpenAI for search)."""
+    """Run the web researcher via the OpenAI Agents SDK (builds prompt, delegates to search)."""
     trace(
         "ORCHESTRATOR",
         f"run_web_research round={research_round} family={family} strategy={strategy_label}",
     )
-    # READ: get prior web findings
-    prior = agent_memory._mempalace_search("web research findings strategy", wing="autoresearch")
-
-    user_prompt = (
-        f"Strategy: {strategy_label}, round {research_round}\n\n"
-        f"DIAGNOSTIC INSIGHTS:\n{analyst_brief}\n\n"
-        f"RESULTS SUMMARY:\n{result_summary}\n\n"
-        f"PRIOR WEB RESEARCH (do not repeat):\n{prior}\n\n"
-        f"Search for external evidence and ideas relevant to these findings."
+    user_prompt = _build_web_research_prompt(
+        strategy_label, analyst_brief, result_summary, research_round, family
     )
     result = await agent_openai_calls._run_web_research_openai(user_prompt)
+    if _is_error_result(result):
+        return result
 
-    # WRITE: persist validated result
     if result:
-        findings = result.get("findings", [])
-        summary = result.get("summary", "")
-        gaps = result.get("confidence_and_gaps", "")
-        content = (
-            f"WEB RESEARCH round={research_round}: {summary}\n"
-            + "\n".join(
-                f"  [{f.get('label', '?')}/{f.get('source_quality', '?')}] "
-                f"{f.get('topic', '')}: {f.get('actionable_idea', '')}"
-                for f in findings
-            )
-            + (f"\nGAPS: {gaps}" if gaps else "")
-        )
-        agent_memory._mempalace_write("autoresearch", f"{family}-web-research", content)
-        agent_memory._mempalace_diary(
-            "web-researcher",
-            f"{family}-research",
-            f"ROUND:{research_round}|FINDINGS:{len(findings)}|{summary[:100]}",
-        )
+        result = _persist_web_research_result(result, research_round, family)
 
     return result
 
@@ -146,28 +123,8 @@ async def run_research_agent(
     from family_research_spec import get_family_research_spec
 
     spec = get_family_research_spec(family_name)
-    best = context.get("current_best", {})
-    history = context.get("result_history", "")
     research_round = context.get("research_round", 1)
-    analyst_brief = context.get("analyst_brief", "")
-    web_findings = context.get("web_findings", "")
-
-    # READ: get prior theses from mempalace
-    prior_theses = agent_memory._mempalace_search("research thesis proposed", wing="autoresearch")
-
-    best_config = best.get("config_contents", {})
-    best_config_str = json.dumps(best_config, indent=2) if best_config else "unknown"
-
-    prompt = (
-        f"Research round: {research_round}\n"
-        f"Current best: {best.get('config', 'none')} at metric={best.get('metric', 'unknown')}\n\n"
-        f"CURRENT BEST CONFIG (these settings are ALREADY applied — do NOT re-propose them):\n{best_config_str}\n\n"
-        f"FULL EXPERIMENT HISTORY:\n{history}\n\n"
-        f"DIAGNOSTIC ANALYST INSIGHTS:\n{analyst_brief}\n\n"
-        f"WEB RESEARCH FINDINGS:\n{web_findings}\n\n"
-        f"PRIOR THESES (from memory):\n{prior_theses}\n\n"
-        f"Based on all the above, propose exactly ONE next thesis that CHANGES something from the current best config."
-    )
+    prompt = _build_research_prompt(context, family_name, spec)
 
     research_def = agent_prompts._research_agent(
         strategy_label=spec.strategy_label,
@@ -176,33 +133,19 @@ async def run_research_agent(
         thesis_json_hint=spec.thesis_json_hint,
     )
 
-    parsed = await _run_single_agent(
+    parsed = await agent_runners._run_single_agent(
         "research-agent",
         prompt,
         research_def,
         retries=agent_prompts.MAX_RETRIES,
         timeout=agent_infra.SDK_TIMEOUT_SECONDS,
     )
+    if _is_error_result(parsed):
+        return parsed
     if not parsed:
         return None
 
-    theses = parsed.get("suggested_theses", [])
-    if theses:
-        thesis = theses[0]
-        content = (
-            f"THESIS round={research_round}: {thesis.get('thesis_id', '?')}\n"
-            f"HYPOTHESIS: {thesis.get('hypothesis', '')}\n"
-            f"MECHANISM: {thesis.get('mechanism', '')}\n"
-            f"REASONING: {parsed.get('reasoning', '')}"
-        )
-        agent_memory._mempalace_write("autoresearch", f"{family_name}-theses", content)
-        agent_memory._mempalace_diary(
-            "research-agent",
-            f"{family_name}-thesis",
-            f"ROUND:{research_round}|THESIS:{thesis.get('thesis_id', '?')}|"
-            f"{parsed.get('reasoning', '')[:100]}",
-        )
-    return parsed
+    return _persist_research_thesis(parsed, family_name, research_round)
 
 
 def analyze_diagnostics_sync(
@@ -214,7 +157,7 @@ def analyze_diagnostics_sync(
     *,
     family: str,
 ) -> dict[str, Any] | None:
-    return asyncio.run(
+    return _run_coroutine_sync(
         run_diagnostic_analysis(
             trades_file,
             config,
@@ -234,7 +177,7 @@ def run_web_research_sync(
     *,
     family: str,
 ) -> dict[str, Any] | None:
-    return asyncio.run(
+    return _run_coroutine_sync(
         run_web_research(
             strategy_label,
             analyst_brief,
@@ -249,4 +192,4 @@ def run_research_agent_sync(
     context: dict[str, Any],
     family_name: str,
 ) -> dict[str, Any] | None:
-    return asyncio.run(run_research_agent(context, family_name))
+    return _run_coroutine_sync(run_research_agent(context, family_name))

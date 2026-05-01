@@ -68,6 +68,7 @@ dependencies = [
     "opentelemetry-sdk==1.41.1",
     "opentelemetry-exporter-otlp-proto-http==1.41.1",
     "openinference-instrumentation-openai==0.1.45",
+    "agnost-mcp==0.1.12",
     "traceloop-sdk==0.60.0",
     "httpx",
     "mcp",

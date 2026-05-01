@@ -76,6 +76,7 @@ def test_sync_manifest_includes_autoresearch_loop_imported_modules() -> None:
     assert imported_local_modules
     for module_name in imported_local_modules:
         assert f"{module_name}.py" in synced
+    assert any(path.startswith("trace_adapters/") for path in synced)
 
 
 def test_ssh_client_requires_pretrusted_host_keys(monkeypatch, tmp_path) -> None:

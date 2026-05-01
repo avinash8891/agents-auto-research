@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 # ── Module-function backing store ───────────────────────────────────────────
@@ -138,24 +139,62 @@ class AutoresearchController:
         family: StrategyFamily | None = None,
     ) -> None:
         self.root = root.resolve()
-        self.state_path = state_path
-        self.current_md_path = current_md_path
-        self.ideas_md_path = ideas_md_path
+        self.state_path = state_path if state_path.is_absolute() else self.root / state_path
+        self.current_md_path = (
+            current_md_path if current_md_path.is_absolute() else self.root / current_md_path
+        )
+        self.ideas_md_path = (
+            ideas_md_path if ideas_md_path.is_absolute() else self.root / ideas_md_path
+        )
         if family is None:
             raise ValueError("AutoresearchController requires an explicit strategy family")
         self.family = family
-        self.runs_dir = runs_dir or (root / self.family.runs_dirname)
-        self.research_dir = root / self.family.research_dirname
-        self.proposals_dir = root / self.family.proposals_dirname
-        self.compilations_dir = root / self.family.compilations_dirname
-        self.contracts_dir = root / self.family.contracts_dirname
-        self.run_queue_dir = root / self.family.run_queue_dirname
-        self.experiment_db = ExperimentDB(root / f"{self.family.name}_experiments.db")
+        raw_runs_dir = runs_dir or Path(self.family.runs_dirname)
+        self.runs_dir = (
+            raw_runs_dir.resolve() if raw_runs_dir.is_absolute() else self.root / raw_runs_dir
+        )
+        self.research_dir = self.root / self.family.research_dirname
+        self.proposals_dir = self.root / self.family.proposals_dirname
+        self.compilations_dir = self.root / self.family.compilations_dirname
+        self.contracts_dir = self.root / self.family.contracts_dirname
+        self.run_queue_dir = self.root / self.family.run_queue_dirname
+        self.experiment_db = ExperimentDB(self.root / f"{self.family.name}_experiments.db")
         self.baseline_tracker = BaselineTracker(
-            root / f"{self.family.name}_baseline_checkpoints.json"
+            self.root / f"{self.family.name}_baseline_checkpoints.json"
         )
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()
+
+    def clear_transient_context(self) -> None:
+        """Clear per-experiment and per-research-round context.
+
+        This prevents stale lineage metadata from leaking into later runs in
+        the same controller process.
+        """
+        self.ctx.current_contract = None
+        self.ctx.parent_experiment_id = ""
+        self.ctx.current_artifact_dir = None
+
+    def clear_terminal_metadata(self, state: dict[str, Any]) -> None:
+        """Remove terminal-only fields when a transition reactivates the run."""
+        state.pop("finished_reason", None)
+        state.pop("research_stop_reasoning", None)
+
+    def _ensure_job_metadata(self) -> None:
+        """Stamp job-scoped defaults into state for direct loop entrypoints."""
+        state = self.read_state()
+        changed = False
+        if not state.get("job"):
+            state["job"] = 1
+            changed = True
+        if "research_round" not in state:
+            state["research_round"] = 0
+            changed = True
+        if "job_usage" not in state:
+            state["job_usage"] = None
+            changed = True
+        if changed:
+            self.write_state(state)
 
     def read_state(self) -> dict[str, Any]:
         return _state_read_state(self.state_path)
@@ -316,16 +355,22 @@ class AutoresearchController:
             heartbeat["last_completed_thesis"] = latest.config
             heartbeat["last_result"] = latest.status
             heartbeat["last_metric"] = latest.metric
+        else:
+            heartbeat.pop("last_completed_thesis", None)
+            heartbeat.pop("last_result", None)
+            heartbeat.pop("last_metric", None)
         heartbeat["current_best"] = state.get("current_best", {})
 
+        previous_state = state.get("state", "unknown")
         state = self.plan_next_action(state, results)
-        old_state_val = state.get("state", "unknown")
+        next_state = state.get("state", "unknown")
         self.write_state(state)
         self.write_current_md(state, results)
         next_action = state.get("next_action", {})
         trace(
             "RECONCILE",
-            f"state={old_state_val} best={best} next_action_type={next_action.get('type')}",
+            f"previous_state={previous_state} state={next_state} "
+            f"best={best} next_action_type={next_action.get('type')}",
         )
         return state
 
@@ -471,7 +516,38 @@ class AutoresearchController:
         exp_dir.mkdir(parents=True, exist_ok=True)
         config_path = f"experiments/{halted_id}/runtime_config.json"
         _write_text_atomic(self.root / config_path, json.dumps(runtime, indent=2) + "\n")
+        resumed_thesis = dict(raw_thesis)
+        resumed_thesis.setdefault("thesis_id", halted_id)
+        resumed_thesis.setdefault("config_changes", config_changes)
+        thesis_sidecar = {
+            "experiment_id": halted_id,
+            "strategy_family": self.family.name,
+            "thesis_id": resumed_thesis.get("thesis_id", halted_id),
+            "hypothesis": resumed_thesis.get("hypothesis", ""),
+            "mechanism": resumed_thesis.get("mechanism", ""),
+            "config_changes": resumed_thesis.get("config_changes", {}),
+            "expected_effects": resumed_thesis.get("expected_effects", []),
+            "disqualifiers": resumed_thesis.get("disqualifiers", []),
+            "required_diagnostics": resumed_thesis.get("required_diagnostics", []),
+        }
+        _write_text_atomic(
+            exp_dir / "thesis.json",
+            json.dumps(thesis_sidecar, indent=2) + "\n",
+        )
+        self.ctx.current_contract = SimpleNamespace(
+            experiment_id=halted_id,
+            strategy_family=self.family.name,
+            thesis_id=thesis_sidecar["thesis_id"],
+            hypothesis=thesis_sidecar["hypothesis"],
+            mechanism=thesis_sidecar["mechanism"],
+            config_changes=thesis_sidecar["config_changes"],
+            expected_effects=thesis_sidecar["expected_effects"],
+            disqualifiers=thesis_sidecar["disqualifiers"],
+            required_diagnostics=thesis_sidecar["required_diagnostics"],
+        )
+        self.ctx.parent_experiment_id = ""
         state["state"] = "running"
+        self.clear_terminal_metadata(state)
         state["current_thesis"] = {"config": config_path, "status": "ready_to_run"}
         state["next_action"] = {
             "type": "run_experiment",
@@ -492,6 +568,7 @@ class AutoresearchController:
         """Persist a forced-baseline-rerun next_action and return the updated state."""
         state = self.read_state()
         state["state"] = "running"
+        self.clear_terminal_metadata(state)
         state["next_action"] = baseline_action
         state["blockers"] = []
         self.write_state(state)
@@ -530,6 +607,7 @@ class AutoresearchController:
         3. If running: execute the experiment (backtest + evaluate)
         """
         trace("LOOP", "=== execute_once START ===")
+        self._ensure_job_metadata()
 
         state = self._resolve_next_action()
         trace(
@@ -607,9 +685,11 @@ def main() -> int:
         current = state.get("state")
         if current in ("finished", "interrupted", "halted"):
             return 0
-        # "blocked" with research_required is handled by execute_once on next
-        # iteration. Other blocked states (command_failed, etc.) also terminate
-        # via non-zero return code from execute_once.
+        if current == "blocked":
+            # `execute_once()` already performs the only recoverable blocked
+            # transition (`research_required`). Any remaining blocked state is
+            # terminal for the process.
+            return 1
 
 
 if __name__ == "__main__":

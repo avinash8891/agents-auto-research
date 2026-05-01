@@ -24,7 +24,7 @@ from strategy_family import StrategyFamily, load_family
 from trace_sdk import trace, trace_ssh
 
 LOCAL_ROOT = Path(__file__).resolve().parent
-SYNC_DIRS = ("backtest", "configs", "strategies")
+SYNC_DIRS = ("backtest", "configs", "strategies", "trace_adapters")
 SYNC_TOP_LEVEL_SUFFIXES = (".py", ".yaml", ".yml", ".json")
 SYNC_EXCLUDED_DIRS = {
     ".git",

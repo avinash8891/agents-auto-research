@@ -174,9 +174,7 @@ def test_refinement_recorder_tracks_iteration_chain_and_stopping_reason(
     )
 
     events = [
-        event
-        for event in _read_events(modules["trace_sdk"])
-        if event["category"] == "refinement"
+        event for event in _read_events(modules["trace_sdk"]) if event["category"] == "refinement"
     ]
     assert [event["action"] for event in events[-3:]] == [
         "session_start",

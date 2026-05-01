@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import persistence_utils
+import compiler_operationalize as co
 from compiler_operationalize import finalize_thesis_config_changes
 from compiler_pipeline import (
     build_missing_primitives,
@@ -299,6 +300,35 @@ def test_operationalize_thesis_preserves_ambiguous_intent_even_with_config_chang
     ].map_config_changes_to_contract({"or_minutes": 5})
 
 
+def test_operationalization_agent_import_path_remains_compatible(monkeypatch) -> None:
+    called: dict[str, object] = {}
+
+    async def fake_run_single_agent(name, prompt, agent_def, retries=2, timeout=300):
+        called["name"] = name
+        called["prompt"] = prompt
+        called["agent_def"] = agent_def
+        return {
+            "resolved_changes": {"entry_cutoff_time": "09:35"},
+            "reasoning": "resolved",
+            "requires_code_change": False,
+        }
+
+    monkeypatch.setattr("agent_orchestrator._run_single_agent", fake_run_single_agent)
+
+    thesis = {
+        "thesis_id": "open_window",
+        "strategy_family": "ema",
+        "hypothesis": "narrow the opening range",
+        "mechanism": "restrict entry timing to a narrower open window",
+    }
+
+    result = co._run_operationalization_agent(thesis)
+
+    assert called["name"] == "operationalization-agent"
+    assert result["resolved_changes"] == {"entry_cutoff_time": "09:35"}
+    assert result["requires_code_change"] is False
+
+
 def test_finalize_thesis_config_changes_carries_resolved_changes_into_proposal_contract(
     tmp_path: Path,
 ) -> None:
@@ -418,8 +448,8 @@ def test_build_missing_primitives_dispatches_family_request_to_cli_boundary(
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    claude = bin_dir / "claude"
-    claude.write_text("""#!/usr/bin/env python3
+    codex = bin_dir / "codex"
+    codex.write_text("""#!/usr/bin/env python3
 import pathlib
 import re
 import sys
@@ -432,7 +462,7 @@ target.parent.mkdir(parents=True, exist_ok=True)
 target.write_text("builder_probe: true\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
 print(f"generated {config}")
 """)
-    claude.chmod(0o755)
+    codex.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
 
     result = build_missing_primitives(tmp_path, thesis_id)
@@ -473,8 +503,8 @@ def test_build_missing_primitives_rejects_invalid_generated_config(
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    claude = bin_dir / "claude"
-    claude.write_text("""#!/usr/bin/env python3
+    codex = bin_dir / "codex"
+    codex.write_text("""#!/usr/bin/env python3
 import pathlib
 import re
 import sys
@@ -487,7 +517,7 @@ target.parent.mkdir(parents=True, exist_ok=True)
 target.write_text("ema_length: -1\\n")
 print(f"generated {config}")
 """)
-    claude.chmod(0o755)
+    codex.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
 
     result = build_missing_primitives(tmp_path, thesis_id)

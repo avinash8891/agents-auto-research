@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 MAX_TURNS_RESEARCH = 15
 MAX_RETRIES = 2
 
@@ -119,10 +121,8 @@ def _research_agent(
     config_schema: str,
     thesis_json_hint: str,
 ):
-    from claude_agent_sdk import AgentDefinition
-
     rules_block = "\n".join(f"- {rule}" for rule in config_rules)
-    return AgentDefinition(
+    return SimpleNamespace(
         description=(
             "Trading strategy research agent. Proposes exactly ONE next hypothesis "
             "to test based on diagnostics and web research findings."
@@ -159,34 +159,53 @@ FAMILY RULES:
 CONFIG SCHEMA (only these keys are valid in config_changes):
 {config_schema}
 
-OUTPUT FORMAT:
-Return a JSON object:
-{{
-  "reasoning": "2-3 sentences explaining why this is the logical next step, citing specific
-                  numbers from the diagnostics or experiment history",
-  "suggested_theses": [
+    OUTPUT FORMAT:
+    Return a JSON object:
     {{
-      "thesis_id": "short_snake_case_name (unique, never reuse)",
-      "hypothesis": "what this tests and what improvement is expected",
-      {thesis_json_hint},
-      "mechanism": "what structural change it makes and why it should help",
-      "evidence": ["specific data points or web research findings that support this"],
-      "why_not_overfit": "why this generalizes beyond the backtest sample",
-      "config_changes": {{"key": "value (from CONFIG SCHEMA above)"}},
-      "requires_code_change": false
+      "reasoning": "2-3 sentences explaining why this is the logical next step, citing specific
+                      numbers from the diagnostics or experiment history",
+      "suggested_theses": [
+        {{
+          "thesis_id": "short_snake_case_name (unique, never reuse)",
+          "mechanism_dimension": "one of: entry_timing, exit_mechanism, signal_quality, regime_conditioning, portfolio_construction, risk_structure, market_microstructure",
+          "dimension_novelty": "why this is not a parameter variation of any prior thesis in the same dimension",
+          "hypothesis": "what this tests and what improvement is expected",
+          {thesis_json_hint},
+          "mechanism": "what structural change it makes and why it should help",
+          "evidence": ["specific data points or web research findings that support this"],
+          "why_not_overfit": "why this generalizes beyond the backtest sample",
+          "expected_effects": [
+            {{
+              "metric": "profit_factor",
+              "direction": "increase",
+              "threshold": 0.05,
+              "rationale": "why this metric should move in this direction"
+            }}
+          ],
+          "disqualifiers": [
+            {{
+              "name": "trade_count_collapse",
+              "condition": "trade_count decreases materially versus baseline",
+              "severity": "hard_fail"
+            }}
+          ],
+          "config_changes": {{"key": "value (from CONFIG SCHEMA above)"}},
+          "requires_code_change": false
+        }}
+      ],
+      "sources": ["URLs consulted via web-researcher, or empty list"],
+      "should_stop": false
     }}
-  ],
-  "sources": ["URLs consulted via web-researcher, or empty list"],
-  "should_stop": false
-}}
 
-IMPORTANT:
-- suggested_theses MUST contain exactly 1 thesis. Never return an empty list unless should_stop is true.
-- config_changes MUST be non-empty unless requires_code_change is true.
-- Set "should_stop": true ONLY if genuinely no more justified theses remain after
-  exhausting all patterns in the diagnostic data.
-Return ONLY the JSON object.""",
+    IMPORTANT:
+    - suggested_theses MUST contain exactly 1 thesis. Never return an empty list unless should_stop is true.
+    - config_changes MUST be non-empty unless requires_code_change is true.
+    - expected_effects MUST contain at least 1 measurable prediction.
+    - disqualifiers MUST contain at least 1 falsification condition.
+    - Set "should_stop": true ONLY if genuinely no more justified theses remain after
+      exhausting all patterns in the diagnostic data.
+    Return ONLY the JSON object.""",
         tools=[],
-        model="claude-opus-4-6",
+        model="gpt-5.5",
         maxTurns=MAX_TURNS_RESEARCH,
     )

@@ -409,6 +409,18 @@ def _analysis_identity(controller: "AutoresearchController", config: str) -> str
     return contract.thesis_id if contract else Path(config).stem
 
 
+def _serialize_artifact_dir(controller: "AutoresearchController", artifact_dir: Path) -> str:
+    """Prefer a repo-relative artifact path, but keep absolute paths valid.
+
+    The controller accepts an absolute runs_dir, so result logging must not
+    assume every artifact directory lives under controller.root.
+    """
+    try:
+        return artifact_dir.relative_to(controller.root).as_posix()
+    except ValueError:
+        return artifact_dir.as_posix()
+
+
 def _build_asi_dict(
     controller: "AutoresearchController",
     *,
@@ -430,7 +442,7 @@ def _build_asi_dict(
         "hypothesis_id": identity,
         "hypothesis": identity,
         "config": config,
-        "artifact_dir": artifact_dir.relative_to(controller.root).as_posix(),
+        "artifact_dir": _serialize_artifact_dir(controller, artifact_dir),
         "trade_analysis": analysis.get("trade_analysis", {}),
         "insights": analysis.get("insights", []),
         "next_candidates": analysis.get("next_candidates", []),
@@ -617,7 +629,12 @@ def _compute_run_output_dir(controller: "AutoresearchController", config: str) -
         config_hash = _config_hash({"config_path": config})
     state = controller.read_state()
     job = state.get("job", 0)
-    run_output_dir = controller.runs_dir.resolve() / f"job-{job}" / config_hash
+    runs_dir = (
+        controller.runs_dir
+        if controller.runs_dir.is_absolute()
+        else controller.root / controller.runs_dir
+    )
+    run_output_dir = runs_dir / f"job-{job}" / config_hash
     run_output_dir.mkdir(parents=True, exist_ok=True)
     return run_output_dir, config_path_full
 
@@ -868,78 +885,89 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     next_action = state["next_action"]
     config = next_action["config"]
 
-    _, command = _setup_run(controller, config)
-    if not command:
-        log.error(
-            "LOOP_STOP missing_benchmark_command "
-            "| hint=family.benchmark_command() returned an empty string; "
-            "check StrategyFamily wiring for this family in strategy_family.py"
+    try:
+        _, command = _setup_run(controller, config)
+        if not command:
+            log.error(
+                "LOOP_STOP missing_benchmark_command "
+                "| hint=family.benchmark_command() returned an empty string; "
+                "check StrategyFamily wiring for this family in strategy_family.py"
+            )
+            return 1
+
+        begin_hypothesis(Path(config).stem if config else "unknown")
+        trace("LOOP", f"BENCHMARK START: {command}")
+        log.info(f"HEARTBEAT running {command}")
+        code, output = controller.run_command(command)
+        if code != 0:
+            return _block_with_command_failed(controller, controller.read_state(), command, code)
+
+        try:
+            metric = controller.parse_metric(output, name=controller.primary_metric_name())
+        except ResultJsonError:
+            return _block_with_metric_parse_failed(controller, controller.read_state(), command)
+        if metric is None:
+            return _block_with_metric_parse_failed(controller, controller.read_state(), command)
+
+        try:
+            details = controller.parse_benchmark_details(output)
+        except (ResultJsonError, ValueError):
+            return _block_with_metric_parse_failed(controller, controller.read_state(), command)
+        try:
+            decision = controller.evaluate_metric(metric)
+        except TimeoutError as exc:
+            interrupted = build_research_failure_state(
+                controller.root,
+                controller.research_dir,
+                str(exc),
+            )
+            state = controller.read_state()
+            state.update(interrupted)
+            controller.write_state(state)
+            controller.write_current_md(state, controller.read_results())
+            log.error(
+                "LOOP_STOP state=interrupted evaluate_metric_timeout "
+                "| hint=autoresearch_cli evaluate hung; inspect local Python environment and "
+                "retry once the CLI returns within timeout"
+            )
+            return 1
+        trace("LOOP", f"METRIC parsed: {metric} decision={decision} config={config}")
+
+        verdict: Any | None = None
+        contract = controller.ctx.current_contract
+        if contract and contract.expected_effects:
+            verdict, decision = _evaluate_against_thesis(
+                controller, contract, metric, decision, details
+            )
+
+        analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
+        if verdict:
+            analysis["trade_analysis"]["verdict"] = verdict.model_dump()
+        if controller.ctx.current_contract is None:
+            controller.ctx.parent_experiment_id = ""
+            current_state = controller.read_state()
+            if current_state.pop("_last_round_usage", None) is not None:
+                controller.write_state(current_state)
+        controller.log_experiment_result(
+            config=config,
+            metric=metric,
+            decision=decision,
+            output=output,
+            analysis=analysis,
+            next_action=next_action,
         )
-        return 1
 
-    begin_hypothesis(Path(config).stem if config else "unknown")
-    trace("LOOP", f"BENCHMARK START: {command}")
-    log.info(f"HEARTBEAT running {command}")
-    code, output = controller.run_command(command)
-    if code != 0:
-        return _block_with_command_failed(controller, controller.read_state(), command, code)
-
-    try:
-        metric = controller.parse_metric(output, name=controller.primary_metric_name())
-    except ResultJsonError:
-        return _block_with_metric_parse_failed(controller, controller.read_state(), command)
-    if metric is None:
-        return _block_with_metric_parse_failed(controller, controller.read_state(), command)
-
-    try:
-        details = controller.parse_benchmark_details(output)
-    except (ResultJsonError, ValueError):
-        return _block_with_metric_parse_failed(controller, controller.read_state(), command)
-    try:
-        decision = controller.evaluate_metric(metric)
-    except TimeoutError as exc:
-        interrupted = build_research_failure_state(
-            controller.root,
-            controller.research_dir,
-            str(exc),
-        )
+        baseline_source = next_action.get("source") == "baseline"
+        if baseline_source:
+            _record_baseline_checkpoint(controller, details)
+        _finalize_experiment(controller, config, metric, decision, verdict)
+        return 0
+    finally:
+        controller.clear_transient_context()
         state = controller.read_state()
-        state.update(interrupted)
-        controller.write_state(state)
-        controller.write_current_md(state, controller.read_results())
-        log.error(
-            "LOOP_STOP state=interrupted evaluate_metric_timeout "
-            "| hint=autoresearch_cli evaluate hung; inspect local Python environment and "
-            "retry once the CLI returns within timeout"
-        )
-        return 1
-    trace("LOOP", f"METRIC parsed: {metric} decision={decision} config={config}")
-
-    verdict: Any | None = None
-    contract = controller.ctx.current_contract
-    if contract and contract.expected_effects:
-        verdict, decision = _evaluate_against_thesis(
-            controller, contract, metric, decision, details
-        )
-
-    analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
-    if verdict:
-        analysis["trade_analysis"]["verdict"] = verdict.model_dump()
-    controller.log_experiment_result(
-        config=config,
-        metric=metric,
-        decision=decision,
-        output=output,
-        analysis=analysis,
-        next_action=next_action,
-    )
-    controller.ctx.current_contract = None  # cleared AFTER log so _build_db_record can read it
-
-    baseline_source = next_action.get("source") == "baseline"
-    if baseline_source:
-        _record_baseline_checkpoint(controller, details)
-    _finalize_experiment(controller, config, metric, decision, verdict)
-    return 0
+        if "_last_round_usage" in state:
+            state.pop("_last_round_usage", None)
+            controller.write_state(state)
 
 
 def _finalize_experiment(

@@ -206,7 +206,7 @@ async def _call_web_researcher(query: str, context: str) -> str:
     from agents import RunConfig as OAIRunConfig
     from agents import Runner as OAIRunner
     from agents import WebSearchTool
-    from agents.models.openai_provider import OpenAIProvider
+    from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
     from openai import AsyncOpenAI
 
     _ensure_oauth_proxy()
@@ -238,12 +238,12 @@ Return ONLY the JSON object."""
     user_prompt = f"RESEARCH QUESTION: {query}\n\nCONTEXT: {context}"
 
     client = AsyncOpenAI(api_key="unused", base_url=_OAUTH_PROXY_URL)
-    provider = OpenAIProvider(openai_client=client)
+    model = OpenAIChatCompletionsModel(model="gpt-5.5", openai_client=client)
     agent = OAIAgent(
         name="web-researcher",
         instructions=web_prompt,
         tools=[WebSearchTool()],
-        model="gpt-5.5",
+        model=model,
     )
 
     trace("CONDUCTOR", f"web_search dispatch query='{query[:80]}'")
@@ -252,7 +252,6 @@ Return ONLY the JSON object."""
             agent,
             user_prompt,
             run_config=OAIRunConfig(
-                model_provider=provider,
                 model_settings=OAIModelSettings(store=False),
                 tracing_disabled=True,
             ),

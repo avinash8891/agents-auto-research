@@ -427,6 +427,14 @@ def should_terminate(
 # ── Research-next-action waterfall + plan_next_action ────────────
 
 
+def _serialize_path(root: Path, path: Path) -> str:
+    """Prefer a root-relative path, but preserve absolute paths when needed."""
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def _running_state(config: str, family: StrategyFamily, source: str) -> dict[str, Any]:
     """Build the standard `state=running` dict for one of the planning
     waterfall's branches. All five 'pick this config next' branches in
@@ -546,7 +554,7 @@ def _blocked_for_research_state(root: Path, research_dir: Path) -> dict[str, Any
             "type": "research",
             "reason": "All candidates and ideas exhausted; research subagent will generate next thesis.",
             "requires_subagent": True,
-            "artifact_dir": research_dir.relative_to(root).as_posix(),
+            "artifact_dir": _serialize_path(root, research_dir),
         },
         "blockers": [
             {
@@ -567,7 +575,7 @@ def build_research_failure_state(
         "next_action": {
             "type": "terminated",
             "reason": detail,
-            "artifact_dir": research_dir.relative_to(root).as_posix(),
+            "artifact_dir": _serialize_path(root, research_dir),
         },
         "blockers": [
             {

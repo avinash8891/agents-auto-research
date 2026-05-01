@@ -35,7 +35,10 @@ def test_trace_sdk_initialization_does_not_uninstrument_first_import(
     sys.modules.pop("trace_sdk", None)
     monkeypatch.chdir(tmp_path)
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
-    with warnings.catch_warnings(), patch.object(OpenAIInstrumentor, "uninstrument") as uninstrument:
+    with (
+        warnings.catch_warnings(),
+        patch.object(OpenAIInstrumentor, "uninstrument") as uninstrument,
+    ):
         warnings.filterwarnings(
             "ignore",
             message="Support for class-based `config` is deprecated, use ConfigDict instead\\.",
@@ -116,7 +119,9 @@ def test_begin_round_keeps_exporting_events_after_multiple_round_resets(
     trace_sdk.begin_round(1)
     trace_sdk.trace("LOOP", "first round started")
     first_file = trace_sdk.get_event_file()
-    first_events = [json.loads(line) for line in first_file.read_text(encoding="utf-8").splitlines()]
+    first_events = [
+        json.loads(line) for line in first_file.read_text(encoding="utf-8").splitlines()
+    ]
     assert first_events[-1]["summary"] == "first round started"
 
     trace_sdk.begin_round(2)

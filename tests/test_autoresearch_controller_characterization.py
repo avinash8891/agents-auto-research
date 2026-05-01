@@ -93,6 +93,75 @@ def _seed_existing_result(
     controller.write_entries(entries)
 
 
+def test_controller_anchors_relative_paths_to_root(tmp_path):
+    family = load_family("ema")
+    controller = AutoresearchController(
+        root=tmp_path,
+        state_path=Path("ema_autoresearch.next.json"),
+        current_md_path=Path("ema_autoresearch.current.md"),
+        ideas_md_path=Path("ema_autoresearch.ideas.md"),
+        runs_dir=Path(family.runs_dirname),
+        family=family,
+    )
+
+    assert controller.state_path == tmp_path / "ema_autoresearch.next.json"
+    assert controller.current_md_path == tmp_path / "ema_autoresearch.current.md"
+    assert controller.ideas_md_path == tmp_path / "ema_autoresearch.ideas.md"
+    assert controller.runs_dir == tmp_path / family.runs_dirname
+    assert controller.research_dir == tmp_path / family.research_dirname
+    assert controller.proposals_dir == tmp_path / family.proposals_dirname
+    assert controller.compilations_dir == tmp_path / family.compilations_dirname
+    assert controller.contracts_dir == tmp_path / family.contracts_dirname
+    assert controller.run_queue_dir == tmp_path / family.run_queue_dirname
+
+
+def test_execute_once_anchors_absolute_runs_dir_through_resolved_root(tmp_path, monkeypatch):
+    family = load_family("ema")
+    real_root = tmp_path / "real-root"
+    real_root.mkdir()
+    symlink_root = tmp_path / "symlink-root"
+    symlink_root.symlink_to(real_root, target_is_directory=True)
+
+    src_yaml = REPO_ROOT / BASELINE_CONFIG
+    dst_yaml = real_root / BASELINE_CONFIG
+    dst_yaml.parent.mkdir(parents=True, exist_ok=True)
+    dst_yaml.write_text(src_yaml.read_text())
+
+    controller = AutoresearchController(
+        root=symlink_root,
+        state_path=Path("ema_autoresearch.next.json"),
+        current_md_path=Path("ema_autoresearch.current.md"),
+        ideas_md_path=Path("ema_autoresearch.ideas.md"),
+        runs_dir=symlink_root / family.runs_dirname,
+        family=family,
+    )
+    controller.write_entries(
+        [
+            {
+                "type": "config",
+                "name": "ema",
+                "metricName": "median_expectancy",
+                "metricUnit": "",
+                "bestDirection": "higher",
+            }
+        ]
+    )
+    controller.write_state({"state": "running", "job": 1, "research_round": 0})
+
+    captured = _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    assert str(real_root) in captured["command"]
+    entries = controller.read_entries()
+    metric_entries = [
+        e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
+    ]
+    assert len(metric_entries) == 1
+    assert metric_entries[0]["asi"]["artifact_dir"].startswith("ema_autoresearch-runs/job-1/")
+
+
 def _success_output(result_path: Path, metric: float = 1.5) -> str:
     payload = {
         "metrics": {
@@ -797,6 +866,78 @@ def test_execute_once_resumes_halted_thesis_when_keys_now_exist(controller, monk
     assert "halted_thesis" not in state
 
 
+def test_execute_once_resumes_halted_thesis_preserves_metadata(controller, monkeypatch, tmp_path):
+    halted_thesis_id = "resume-this-thesis"
+    halted_thesis = {
+        "thesis_id": halted_thesis_id,
+        "hypothesis": "tighten ema length",
+        "mechanism": "faster signal response",
+        "config_changes": {"ema_length": 7},
+    }
+    controller.write_state(
+        {
+            "state": "halted",
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": halted_thesis_id,
+            "halted_thesis": halted_thesis,
+            "job": 1,
+            "research_round": 0,
+        }
+    )
+    _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    entry = next(
+        e
+        for e in controller.read_entries()
+        if e.get("metric") is not None and e.get("type") not in ("config", "research_round")
+    )
+    assert entry["asi"]["thesis_id"] == halted_thesis_id
+    assert entry["asi"]["hypothesis_id"] == halted_thesis_id
+    latest = controller.experiment_db.latest(1)[0]
+    assert latest.thesis_id == halted_thesis_id
+    assert latest.hypothesis == "tighten ema length"
+    assert latest.mechanism == "faster signal response"
+    assert latest.parent_experiment_id == ""
+
+
+def test_execute_once_clears_stale_parent_experiment_id_before_logging(
+    controller, monkeypatch, tmp_path
+):
+    controller.ctx.parent_experiment_id = "stale-parent"
+    _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    latest = controller.experiment_db.latest(1)[0]
+    assert latest.parent_experiment_id == ""
+
+
+def test_execute_once_clears_stale_last_round_usage_before_logging(
+    controller, monkeypatch, tmp_path
+):
+    controller.write_state(
+        {
+            "state": "running",
+            "job": 1,
+            "research_round": 0,
+            "_last_round_usage": {
+                "total": {"input_tokens": 7, "output_tokens": 11, "total_tokens": 18}
+            },
+        }
+    )
+    _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    latest = controller.experiment_db.latest(1)[0]
+    assert latest.usage == {}
+
+
 def test_execute_once_does_not_resume_halted_thesis_when_runtime_scope_is_invalid(
     controller, monkeypatch, tmp_path
 ):
@@ -1051,7 +1192,12 @@ def test_reconcile_state_clears_stale_current_best_when_no_kept_results_remain(c
             "state": "running",
             "job": 1,
             "current_best": {"config": "configs/variants/stale.yaml", "metric": 9.9},
-            "heartbeat": {"current_best": {"config": "configs/variants/stale.yaml", "metric": 9.9}},
+            "heartbeat": {
+                "current_best": {"config": "configs/variants/stale.yaml", "metric": 9.9},
+                "last_completed_thesis": "configs/variants/stale.yaml",
+                "last_result": "keep",
+                "last_metric": 9.9,
+            },
         }
     )
     controller.write_entries(
@@ -1063,16 +1209,6 @@ def test_reconcile_state_clears_stale_current_best_when_no_kept_results_remain(c
                 "metricUnit": "",
                 "bestDirection": "higher",
             },
-            {
-                "run": 1,
-                "run_id": "discard-only",
-                "metric": 0.1,
-                "metrics": {"median_expectancy": 0.1},
-                "status": "discard",
-                "description": "strict-native loop: discard-only",
-                "timestamp": "2026-04-30T00:00:00+00:00",
-                "asi": {"config": "configs/variants/discard-only.yaml"},
-            },
         ]
     )
 
@@ -1080,3 +1216,100 @@ def test_reconcile_state_clears_stale_current_best_when_no_kept_results_remain(c
 
     assert state["current_best"] == {}
     assert state["heartbeat"]["current_best"] == {}
+    assert "last_completed_thesis" not in state["heartbeat"]
+    assert "last_result" not in state["heartbeat"]
+    assert "last_metric" not in state["heartbeat"]
+
+
+def test_reconcile_state_trace_reports_pre_and_post_plan_states(controller, monkeypatch) -> None:
+    controller.write_state({"state": "blocked", "job": 1, "blockers": []})
+    events: list[tuple[str, str]] = []
+
+    def fake_plan_next_action(self, state, results):
+        state["state"] = "running"
+        state["next_action"] = {
+            "type": "run_experiment",
+            "config": BASELINE_CONFIG,
+        }
+        return state
+
+    monkeypatch.setattr(AutoresearchController, "plan_next_action", fake_plan_next_action)
+    monkeypatch.setattr(loop_mod, "trace", lambda event, message: events.append((event, message)))
+
+    controller.reconcile_state()
+
+    reconcile_events = [message for event, message in events if event == "RECONCILE"]
+    assert reconcile_events
+    assert "previous_state=blocked" in reconcile_events[-1]
+    assert "state=running" in reconcile_events[-1]
+
+
+def test_forced_baseline_rerun_clears_terminal_metadata(controller, monkeypatch) -> None:
+    controller.write_state(
+        {
+            "state": "finished",
+            "finished_reason": "research_recommends_stop",
+            "research_stop_reasoning": "no more justified theses",
+            "job": 1,
+            "blockers": [],
+        }
+    )
+    baseline_action = {
+        "type": "run_experiment",
+        "config": BASELINE_CONFIG,
+        "source": "baseline",
+        "baseline_rerun_for_commit": "new-commit",
+    }
+
+    monkeypatch.setattr(
+        AutoresearchController, "_check_baseline_rerun", lambda self: baseline_action
+    )
+
+    state = controller._resolve_next_action()
+
+    assert state["state"] == "running"
+    assert state["next_action"] == baseline_action
+    assert "finished_reason" not in state
+    assert "research_stop_reasoning" not in state
+
+
+def test_main_exits_on_persisted_blocked_state(monkeypatch, tmp_path):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.calls = 0
+            self.state = {"state": "blocked"}
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            self.state = dict(state)
+
+        def execute_once(self):
+            self.calls += 1
+            if self.calls > 1:
+                raise AssertionError("main() should stop after seeing a blocked state")
+            return 0
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr("trace_sdk.get_log_file", lambda: "test.log")
+    monkeypatch.setattr("trace_sdk.get_session_id", lambda: "session-1")
+    monkeypatch.setattr("trace_sdk.set_family", lambda *args, **kwargs: None)
+    monkeypatch.setattr(loop_mod, "trace", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sys, "argv", ["autoresearch_controller.py", "--family", "ema"])
+
+    assert loop_mod.main() == 1
