@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from types import SimpleNamespace
 
 import autoresearch_cli
@@ -73,6 +74,61 @@ def test_cli_add_result_preserves_description_and_asi_round_trip(tmp_path) -> No
     assert config is not None
     assert results[-1]["description"] == "cli description"
     assert results[-1]["asi"] == {"note": "hello"}
+
+
+def test_read_session_falls_back_to_configured_primary_metric(tmp_path) -> None:
+    class _FakeRecord:
+        def __init__(self) -> None:
+            self.code_commit = "abcdef123456"
+            self.validation_metrics = {"trade_count": 1}
+            self.train_metrics = {"calmar": 2.5}
+            self.accepted = True
+            self.config_path = "configs/ema_base.yaml"
+            self.timestamp = "2026-05-01T00:00:00+00:00"
+
+    class _FakeDB:
+        def session_meta(self):
+            return {"name": "sess", "metricName": "calmar", "bestDirection": "higher"}
+
+        def all(self):
+            return [_FakeRecord()]
+
+    original_db = autoresearch_cli._db
+    autoresearch_cli._db = lambda path: _FakeDB()
+    try:
+        config, results = autoresearch_cli.read_session(str(tmp_path / "cli.db"))
+    finally:
+        autoresearch_cli._db = original_db
+
+    assert config is not None
+    assert results[0]["metric"] == 2.5
+
+
+def test_read_session_relaxes_infinity_metric_sentinels(tmp_path) -> None:
+    db_path = tmp_path / "cli.db"
+    autoresearch_cli.cmd_init(
+        SimpleNamespace(
+            db=str(db_path),
+            name="sess",
+            metric_name="median_expectancy",
+            metric_unit="",
+            direction="lower",
+        )
+    )
+
+    autoresearch_cli.cmd_log(
+        _base_args(
+            tmp_path,
+            metric=1.2,
+            metrics=json.dumps({"trade_count": 2, "profit_factor": float("inf")}),
+        )
+    )
+
+    config, results = autoresearch_cli.read_session(str(db_path))
+
+    assert config is not None
+    assert math.isinf(results[-1]["metrics"]["profit_factor"])
+    assert math.isinf(results[-1]["metric"]) is False
 
 
 def test_cli_log_persists_primary_metric_even_when_extra_metrics_are_sparse(monkeypatch, tmp_path):

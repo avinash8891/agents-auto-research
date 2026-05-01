@@ -12,7 +12,11 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
-from persistence_utils import write_text_atomic
+from persistence_utils import (
+    json_dumps_strict,
+    json_loads_metric_sentinels,
+    write_text_atomic,
+)
 
 log = logging.getLogger(__name__)
 
@@ -291,7 +295,7 @@ class ExperimentDB:
                     thesis_id,
                     outcome,
                     _iso8601_utc_now(),
-                    json.dumps(usage or {}),
+                    json_dumps_strict(usage or {}),
                 ),
             )
             conn.commit()
@@ -378,7 +382,7 @@ class ExperimentDB:
                     row["attempt_number"],
                     row["thesis_id"],
                     row.get("strategy_family", ""),
-                    json.dumps(row.get("config_changes", {})),
+                    json_dumps_strict(row.get("config_changes", {})),
                     row.get("validator_status", ""),
                     row.get("mechanism_dimension", ""),
                     row.get("hypothesis", ""),
@@ -409,7 +413,7 @@ class ExperimentDB:
                             row.get("attempt_number", 0) if isinstance(row, dict) else 0,
                             "",
                             row.get("strategy_family", "") if isinstance(row, dict) else "",
-                            json.dumps(row),
+                            json_dumps_strict(row),
                             row.get("validator_status", "") if isinstance(row, dict) else "",
                             row.get("mechanism_dimension", "") if isinstance(row, dict) else "",
                             row.get("hypothesis", "") if isinstance(row, dict) else "",
@@ -438,7 +442,7 @@ class ExperimentDB:
                         row.get("attempt_number", 0),
                         row.get("thesis_id", ""),
                         row.get("strategy_family", ""),
-                        json.dumps(row.get("config_changes", {})),
+                        json_dumps_strict(row.get("config_changes", {})),
                         row.get("validator_status", ""),
                         row.get("mechanism_dimension", ""),
                         row.get("hypothesis", ""),
@@ -463,7 +467,11 @@ class ExperimentDB:
                 }
             )
         entries.extend(_research_round_to_entry(row) for row in self.list_research_rounds())
-        entries.extend(_record_to_entry(record, idx + 1) for idx, record in enumerate(self.all()))
+        primary_metric_name = self.primary_metric_name()
+        entries.extend(
+            _record_to_entry(record, idx + 1, primary_metric_name)
+            for idx, record in enumerate(self.all())
+        )
         return entries
 
     def import_entries(self, entries: list[dict[str, Any]]) -> None:
@@ -518,8 +526,8 @@ class ExperimentDB:
                 runtime_config=json.loads(row["runtime_config_json"]),
                 code_commit=row["code_commit"],
                 data_hash=row["data_hash"],
-                train_metrics=json.loads(row["train_metrics_json"]),
-                validation_metrics=json.loads(row["validation_metrics_json"]),
+                train_metrics=json_loads_metric_sentinels(row["train_metrics_json"]),
+                validation_metrics=json_loads_metric_sentinels(row["validation_metrics_json"]),
                 trade_count=row["trade_count"],
                 trades_file=row["trades_file"],
                 strategy_events_file=row["strategy_events_file"],
@@ -567,16 +575,16 @@ class ExperimentDB:
                         r.experiment_id,
                         r.thesis_id,
                         r.config_path,
-                        json.dumps(r.runtime_config),
+                        json_dumps_strict(r.runtime_config),
                         r.code_commit,
                         r.data_hash,
-                        json.dumps(r.train_metrics),
-                        json.dumps(r.validation_metrics),
+                        json_dumps_strict(r.train_metrics),
+                        json_dumps_strict(r.validation_metrics),
                         r.trade_count,
                         r.trades_file,
                         r.strategy_events_file,
                         r.diagnostics_file,
-                        json.dumps(r.strategy_diagnostics),
+                        json_dumps_strict(r.strategy_diagnostics),
                         int(r.accepted),
                         r.rejection_reason,
                         r.verdict_status,
@@ -587,8 +595,8 @@ class ExperimentDB:
                         r.hypothesis,
                         r.mechanism,
                         r.job,
-                        json.dumps(r.usage),
-                        json.dumps(getattr(r, "_asi_export", {})),
+                        json_dumps_strict(r.usage),
+                        json_dumps_strict(getattr(r, "_asi_export", {})),
                         getattr(r, "_description_export", ""),
                     ),
                 )
@@ -731,6 +739,8 @@ class BaselineTracker:
         # Rule J back-compat: pre-migration checkpoint files have int
         # epoch-ms timestamps; coerce to ISO-8601 UTC on load.
         for row in raw:
+            if "metrics" in row and isinstance(row["metrics"], dict):
+                row["metrics"] = json_loads_metric_sentinels(json.dumps(row["metrics"]))
             if "timestamp" in row:
                 row["timestamp"] = coerce_timestamp_to_iso8601_utc(row["timestamp"]) or ""
         self._checkpoints = [BaselineCheckpoint(**c) for c in raw]
@@ -738,7 +748,7 @@ class BaselineTracker:
 
     def _save(self) -> None:
         checkpoints = self._load()
-        write_text_atomic(self.path, json.dumps([asdict(c) for c in checkpoints], indent=2) + "\n")
+        write_text_atomic(self.path, json_dumps_strict([asdict(c) for c in checkpoints]) + "\n")
 
     def record(self, checkpoint: BaselineCheckpoint) -> None:
         checkpoints = self._load()
@@ -866,8 +876,10 @@ def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:
     if entry.get("type") in ("config", "research_round"):
         return None
     asi = entry.get("asi") or {}
-    metrics = dict(entry.get("metrics") or {})
-    primary_metric_name = metrics.get("primary_metric_name", "median_expectancy")
+    metrics = json_loads_metric_sentinels(json.dumps(entry.get("metrics") or {}))
+    primary_metric_name = entry.get("primary_metric_name") or metrics.get(
+        "primary_metric_name", "median_expectancy"
+    )
     if primary_metric_name not in metrics and entry.get("metric") is not None:
         metrics[primary_metric_name] = entry.get("metric")
     trade_analysis = asi.get("trade_analysis") or {}
@@ -904,13 +916,16 @@ def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:
     return record
 
 
-def _record_to_entry(record: ExperimentResult, run: int) -> dict[str, Any]:
-    primary_metric_name = "median_expectancy"
-    primary_metric_value = (
-        record.validation_metrics.get(primary_metric_name)
-        or record.train_metrics.get(primary_metric_name)
-        or 0.0
-    )
+def _record_to_entry(
+    record: ExperimentResult, run: int, primary_metric_name: str
+) -> dict[str, Any]:
+    primary_metric_value = record.validation_metrics.get(primary_metric_name)
+    if primary_metric_value is None:
+        primary_metric_value = record.train_metrics.get(primary_metric_name)
+    metrics = dict(record.train_metrics)
+    metrics.update(record.validation_metrics)
+    if primary_metric_name not in metrics and primary_metric_value is not None:
+        metrics[primary_metric_name] = primary_metric_value
     asi = getattr(record, "_asi_export", None) or {
         "config": record.config_path,
         "thesis_id": record.thesis_id,
@@ -922,8 +937,9 @@ def _record_to_entry(record: ExperimentResult, run: int) -> dict[str, Any]:
         "run_id": record.experiment_id,
         "experiment_id": record.experiment_id,
         "commit": record.code_commit,
-        "metric": primary_metric_value,
-        "metrics": dict(record.validation_metrics or record.train_metrics),
+        "metric": _coerce_metric_float(primary_metric_value),
+        "primary_metric_name": primary_metric_name,
+        "metrics": metrics,
         "status": "keep" if record.accepted else "discard",
         "description": getattr(
             record, "_description_export", f"strict-native loop: {Path(record.config_path).stem}"

@@ -90,6 +90,108 @@ def test_experiment_db_read_results_uses_configured_primary_metric(tmp_path) -> 
     assert results[0].metric == 2.5
 
 
+def test_experiment_db_export_entries_uses_configured_primary_metric(tmp_path) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="calmar", direction="higher")
+    db.add_from_sqlite_fields(
+        experiment_id="e1",
+        thesis_id="t1",
+        config_path="configs/ema_base.yaml",
+        runtime_config={"ema_length": 5},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"trade_count": 10, "calmar": 2.5},
+        trade_analysis={"trade_count": 10},
+        strategy_diagnostics={"rejection_breakdown": {}},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-1",
+        primary_metric_name="calmar",
+        primary_metric_value=2.5,
+    )
+
+    entries = db.export_entries()
+
+    assert entries[0]["type"] == "config"
+    assert entries[1]["primary_metric_name"] == "calmar"
+    assert entries[1]["metrics"]["calmar"] == 2.5
+    assert entries[1]["metric"] == 2.5
+
+
+def test_experiment_db_export_import_round_trip_preserves_custom_metric_name(tmp_path) -> None:
+    source_db_path = tmp_path / "source.db"
+    source_db = ExperimentDB(source_db_path)
+    source_db.init_session(name="ema", metric_name="calmar", direction="higher")
+    source_db.add_from_sqlite_fields(
+        experiment_id="e1",
+        thesis_id="t1",
+        config_path="configs/ema_base.yaml",
+        runtime_config={"ema_length": 5},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"trade_count": 10, "calmar": 2.5},
+        trade_analysis={"trade_count": 10},
+        strategy_diagnostics={"rejection_breakdown": {}},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-1",
+        primary_metric_name="calmar",
+        primary_metric_value=2.5,
+    )
+
+    exported = source_db.export_entries()
+
+    target_db_path = tmp_path / "target.db"
+    target_db = ExperimentDB(target_db_path)
+    target_db.init_session(name="ema", metric_name="calmar", direction="higher")
+    target_db.import_entries(exported)
+
+    imported_results = target_db.read_results()
+    assert len(imported_results) == 1
+    assert imported_results[0].metric == 2.5
+
+
+def test_experiment_db_serializes_non_finite_metrics_as_json_strings(tmp_path) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
+    db.add_from_sqlite_fields(
+        experiment_id="e1",
+        thesis_id="t1",
+        config_path="configs/ema_base.yaml",
+        runtime_config={"ema_length": 5},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"median_expectancy": 1.25, "profit_factor": float("inf")},
+        trade_analysis={"trade_count": 10},
+        strategy_diagnostics={"rejection_breakdown": {}},
+        decision_status="keep",
+        verdict_status="none",
+        verdict_summary="",
+        family="ema",
+        job_id=1,
+        run_id="run-1",
+        primary_metric_name="median_expectancy",
+        primary_metric_value=1.25,
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT validation_metrics_json FROM experiments WHERE experiment_id = 'e1'"
+        ).fetchone()
+
+    assert row is not None
+    assert '"Infinity"' in row[0]
+    assert json.loads(row[0])["profit_factor"] == "Infinity"
+
+
 def test_sqlite_session_meta_required_fields_are_non_empty(tmp_path: Path) -> None:
     db_path = tmp_path / "ema_experiments.db"
     db = ExperimentDB(db_path)

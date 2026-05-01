@@ -42,15 +42,14 @@ def read_session(path: str) -> tuple[dict[str, Any] | None, list[dict[str, Any]]
     config = db.session_meta() or None
     if config is not None:
         config["_segment"] = 0
+    primary_metric_name = (
+        config.get("metricName", "median_expectancy") if config else "median_expectancy"
+    )
     results = []
     for idx, record in enumerate(db.all(), start=1):
-        metric = (
-            record.validation_metrics.get(config.get("metricName", "median_expectancy"))
-            if config
-            else None
-        )
+        metric = record.validation_metrics.get(primary_metric_name) if config else None
         if metric is None:
-            metric = record.train_metrics.get("median_expectancy")
+            metric = record.train_metrics.get(primary_metric_name)
         results.append(
             {
                 "run": idx,

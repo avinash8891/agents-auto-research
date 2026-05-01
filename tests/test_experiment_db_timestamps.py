@@ -316,6 +316,25 @@ def test_baseline_checkpoint_disk_payload_is_iso_string(tmp_path: Path) -> None:
     assert raw[0]["timestamp"].endswith("+00:00")
 
 
+def test_baseline_checkpoint_serializes_non_finite_metrics_as_json_strings(tmp_path: Path) -> None:
+    path = tmp_path / "baseline.json"
+    tracker = BaselineTracker(path)
+    tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="d",
+            config_hash="c",
+            metrics={"profit_factor": float("inf")},
+            timestamp="2026-04-29T12:00:00+00:00",
+        )
+    )
+
+    raw = path.read_text()
+    assert '"Infinity"' in raw
+    parsed = json.loads(raw)
+    assert parsed[0]["metrics"]["profit_factor"] == "Infinity"
+
+
 def test_baseline_checkpoint_record_leaves_no_tmp_artifacts(tmp_path: Path) -> None:
     path = tmp_path / "baseline.json"
     tracker = BaselineTracker(path)
