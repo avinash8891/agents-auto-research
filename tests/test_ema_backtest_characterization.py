@@ -342,6 +342,39 @@ def test_load_runtime_config_rejects_invalid_runtime_config(
         load_runtime_config(str(path), family)
 
 
+@pytest.mark.parametrize(
+    ("family", "config", "expected"),
+    [
+        (
+            "ema",
+            {
+                "validation_start": "2024-01-01",
+                "validation_end": "2024-01-02",
+                "range_shift_lookback": "20",
+            },
+            "range_shift_lookback='20': must be numeric",
+        ),
+        (
+            "orb",
+            {
+                "validation_start": "2024-01-01",
+                "validation_end": "2024-01-02",
+                "or_minutes": "30",
+            },
+            "or_minutes='30': must be numeric",
+        ),
+    ],
+)
+def test_load_runtime_config_rejects_malformed_numeric_types(
+    tmp_path: Path, family: str, config: dict, expected: str
+) -> None:
+    path = tmp_path / f"{family}.json"
+    path.write_text(json.dumps({"runtime_config": config}) + "\n")
+
+    with pytest.raises(ValueError, match=f"Config validation failed.*{re.escape(expected)}"):
+        load_runtime_config(str(path), family)
+
+
 def test_filter_signals_to_days_clears_rejected_metadata() -> None:
     idx = pd.to_datetime(["2024-01-02 09:30", "2024-01-03 09:30", "2024-01-04 09:30"])
     frame = pd.DataFrame(index=idx)

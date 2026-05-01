@@ -73,6 +73,8 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
             )
     rsl = config.get("range_shift_lookback")
     if rsl is not None:
-        if not (5 <= int(rsl) <= 100):
+        if not isinstance(rsl, (int, float)):
+            violations.append(f"range_shift_lookback={rsl!r}: must be numeric")
+        elif not (5 <= int(rsl) <= 100):
             violations.append(f"range_shift_lookback={rsl}: must be between 5 and 100")
     return violations
