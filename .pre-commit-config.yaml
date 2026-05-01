@@ -13,3 +13,12 @@ repos:
     rev: 26.3.1
     hooks:
       - id: black
+
+  - repo: local
+    hooks:
+      - id: cubic-review
+        name: cubic review
+        entry: cubic review --base origin/main
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

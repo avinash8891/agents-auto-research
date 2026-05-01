@@ -21,7 +21,7 @@ def _profit_factor_from_pnl(group: pd.Series | np.ndarray) -> float:
     gross_profit = float(winners.sum()) if len(winners) else 0.0
     gross_loss = abs(float(losers.sum())) if len(losers) else 0.0
     if gross_loss == 0.0:
-        return 99.99 if gross_profit > 0.0 else 0.0
+        return float("inf") if gross_profit > 0.0 else 0.0
     return round(gross_profit / gross_loss, 4)
 
 
