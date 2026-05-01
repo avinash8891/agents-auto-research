@@ -1,0 +1,25 @@
+tests/test_experiment_db_sqlite_runtime.py
+  dbc5ae606013cb0f 11,210-245
+experiment_db.py
+  dbc5ae606013cb0f 204,208,216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "07ce05fad21b1879ba2c3c01b5b383b52c095065",
+  "prompts": {
+    "dbc5ae606013cb0f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de36d-cd36-7ad0-86bd-68166dfcd69b",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 42,
+      "total_deletions": 4,
+      "accepted_lines": 131,
+      "overriden_lines": 0
+    }
+  }
+}
