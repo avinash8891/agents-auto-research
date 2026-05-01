@@ -14,7 +14,7 @@ from research_subagents import _call_analyst, _call_web_researcher
 from research_tools_mcp import _build_research_tools_mcp
 from research_types import ResearchThesis
 from strategy_family import load_family
-from trace_logger import trace, trace_agent_prompt, trace_agent_response
+from trace_sdk import trace, trace_agent_prompt, trace_agent_response
 from trace_refinement import RefinementRecorder
 
 __all__ = [

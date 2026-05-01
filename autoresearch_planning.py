@@ -26,7 +26,7 @@ from autoresearch_state import ExperimentRecord
 from backtest.runtime_config import load_runtime_config
 from compiler_pipeline import compile_proposal_artifact
 from strategy_family import StrategyFamily
-from trace_logger import trace
+from trace_sdk import trace
 
 log = get_logger(__name__)
 

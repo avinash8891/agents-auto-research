@@ -84,7 +84,7 @@ from persistence_utils import write_text_atomic as _write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import StrategyFamily, load_family
 from trace_autonomy_ledger import AutonomyLedger
-from trace_logger import trace, trace_state_change
+from trace_sdk import trace, trace_state_change
 
 log = get_logger(__name__)
 
@@ -592,7 +592,7 @@ def main() -> int:
     state["job_usage"] = None  # reset token usage for new job
     controller.write_state(state)
 
-    from trace_logger import get_log_file, get_session_id, set_family
+    from trace_sdk import get_log_file, get_session_id, set_family
 
     set_family(args.family, job=job)
     trace(

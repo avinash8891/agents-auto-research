@@ -257,7 +257,7 @@ class ExperimentDB:
         usage: dict[str, Any] | None = None,
     ) -> None:
         from autoresearch_state import read_state
-        from trace_logger import current_hypothesis_id, get_run_id
+        from trace_sdk import current_hypothesis_id, get_run_id
 
         state = read_state(state_path)
         resolved_hypothesis_id = hypothesis_id or current_hypothesis_id() or thesis_id

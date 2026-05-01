@@ -43,7 +43,7 @@ from trace_adapters.recursive_improve import (
     build_recursive_improve_payload,
 )
 from trace_adapters.reflexio import build_reflexio_export_package, build_reflexio_payload
-from trace_logger import (
+from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
     trace,
@@ -943,7 +943,7 @@ def _invoke_conductor_round(
 
 def run_research(controller: "AutoresearchController", state: dict[str, Any]) -> dict[str, Any]:
     """Run one research round. Returns updated state dict."""
-    from trace_logger import begin_round
+    from trace_sdk import begin_round
 
     research_round = state.get("research_round", 0) + 1
     begin_round(research_round)

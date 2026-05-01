@@ -43,7 +43,7 @@ from experiment_db import (
     build_data_hash,
 )
 from persistence_utils import write_text_atomic
-from trace_logger import (
+from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
     trace,

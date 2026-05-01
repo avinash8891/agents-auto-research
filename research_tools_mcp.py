@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from trace_logger import trace
+from trace_sdk import trace
 
 
 def _build_research_tools_mcp(

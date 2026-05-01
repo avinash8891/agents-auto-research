@@ -318,7 +318,7 @@ def test_sqlite_research_fields_are_meaningfully_populated_from_real_ready_thesi
     state = controller.read_state()
 
     with (
-        patch("trace_logger.begin_round", lambda *_: None),
+        patch("trace_sdk.begin_round", lambda *_: None),
         patch("research_conductor.reset_round_usage", lambda: None),
         patch(
             "research_conductor.get_round_usage",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from trace_logger import record_event
+from trace_sdk import record_event
 
 
 class QualityHistory:

@@ -95,7 +95,7 @@ def _run_cli_agent(
     timeout: int = agent_infra.CLI_TIMEOUT_SECONDS,
 ) -> dict[str, Any] | None:
     """Run an agent via `claude --print` CLI subprocess."""
-    from trace_logger import trace, trace_agent_prompt, trace_agent_response
+    from trace_sdk import trace, trace_agent_prompt, trace_agent_response
 
     for attempt in range(1, retries + 1):
         trace_id = trace_agent_prompt(f"cli-{name}", user_prompt, system_prompt)
@@ -161,7 +161,7 @@ async def _run_single_agent(
     timeout: int = agent_infra.SDK_TIMEOUT_SECONDS,
 ) -> dict[str, Any] | None:
     """Run a single agent directly with its system prompt."""
-    from trace_logger import trace, trace_agent_prompt, trace_agent_response
+    from trace_sdk import trace, trace_agent_prompt, trace_agent_response
 
     for attempt in range(1, retries + 1):
         trace_id = trace_agent_prompt(f"sdk-{name}", prompt, agent_def.prompt)

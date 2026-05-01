@@ -21,7 +21,7 @@ import paramiko
 
 from strategies import STRATEGIES
 from strategy_family import StrategyFamily, load_family
-from trace_logger import trace, trace_ssh
+from trace_sdk import trace, trace_ssh
 
 LOCAL_ROOT = Path(__file__).resolve().parent
 SYNC_DIRS = ("backtest", "configs", "strategies")

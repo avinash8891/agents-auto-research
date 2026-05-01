@@ -17,7 +17,7 @@ format_result_history = agent_formatters.format_result_history
 format_insight_brief = agent_formatters.format_insight_brief
 format_web_findings = agent_formatters.format_web_findings
 _parse_json = agent_infra._parse_json
-from trace_logger import trace
+from trace_sdk import trace
 
 
 async def run_diagnostic_analysis(
