@@ -14,6 +14,7 @@ import ast
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -180,13 +181,19 @@ def _localize_remote_result_output(output: str, sftp: paramiko.SFTPClient) -> st
 
     try:
         sftp.get(str(remote_result_path), str(local_result_path))
-    except OSError:
-        return output
+    except OSError as exc:
+        shutil.rmtree(local_dir, ignore_errors=True)
+        raise RuntimeError(
+            f"Failed to fetch remote RESULT_JSON artifact: {remote_result_path}"
+        ) from exc
 
     try:
         payload = json.loads(local_result_path.read_text())
-    except Exception:
-        return output
+    except Exception as exc:
+        shutil.rmtree(local_dir, ignore_errors=True)
+        raise RuntimeError(
+            f"Failed to parse fetched remote RESULT_JSON artifact: {remote_result_path}"
+        ) from exc
 
     for key in ("trades_file", "strategy_events_file", "diagnostics_file"):
         remote_file = payload.get(key)
@@ -196,8 +203,11 @@ def _localize_remote_result_output(output: str, sftp: paramiko.SFTPClient) -> st
         local_file_path = local_dir / remote_file_path.name
         try:
             sftp.get(str(remote_file_path), str(local_file_path))
-        except OSError:
-            continue
+        except OSError as exc:
+            shutil.rmtree(local_dir, ignore_errors=True)
+            raise RuntimeError(
+                f"Failed to fetch remote result artifact referenced by {key}: {remote_file_path}"
+            ) from exc
         payload[key] = str(local_file_path)
 
     local_result_path.write_text(json.dumps(payload, indent=2) + "\n")
@@ -272,7 +282,14 @@ def main():
     exit_code = stdout.channel.recv_exit_status()
     elapsed = time.time() - t1
 
-    out = _localize_remote_result_output(out, sftp)
+    try:
+        out = _localize_remote_result_output(out, sftp)
+    except RuntimeError as exc:
+        trace("VPS_RUNNER", f"Artifact localization failed: {exc}")
+        client.close()
+        sftp.close()
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
     client.close()
     sftp.close()
 

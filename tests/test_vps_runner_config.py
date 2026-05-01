@@ -174,3 +174,66 @@ def test_localize_remote_result_output_fetches_remote_artifacts(monkeypatch, tmp
     assert localized["trades_file"] == str(local_dir / "trades.csv")
     assert localized["strategy_events_file"] == str(local_dir / "strategy_events.parquet")
     assert localized["diagnostics_file"] == str(local_dir / "diagnostics.json")
+
+
+def test_localize_remote_result_output_raises_when_result_json_missing(
+    monkeypatch, tmp_path
+) -> None:
+    remote_dir = tmp_path / "remote"
+    remote_dir.mkdir()
+    local_dir = tmp_path / "local"
+    local_dir.mkdir()
+
+    remote_result = remote_dir / "result.json"
+
+    class FakeSFTP:
+        def get(self, remote_path: str, local_path: str) -> None:
+            raise OSError("missing remote artifact")
+
+    monkeypatch.setattr("vps_runner.tempfile.mkdtemp", lambda prefix: str(local_dir))
+
+    with pytest.raises(RuntimeError, match="Failed to fetch remote RESULT_JSON artifact"):
+        _localize_remote_result_output(f"RESULT_JSON {remote_result}\n", FakeSFTP())
+
+    assert not (local_dir / "result.json").exists()
+
+
+def test_localize_remote_result_output_fails_closed_on_partial_artifact_fetch(
+    monkeypatch, tmp_path
+) -> None:
+    remote_dir = tmp_path / "remote"
+    remote_dir.mkdir()
+    local_dir = tmp_path / "local"
+    local_dir.mkdir()
+
+    remote_result = remote_dir / "result.json"
+    remote_trades = remote_dir / "trades.csv"
+    remote_events = remote_dir / "strategy_events.parquet"
+    remote_diag = remote_dir / "diagnostics.json"
+    remote_trades.write_text("t")
+    remote_events.write_text("e")
+    remote_diag.write_text("d")
+    remote_result.write_text(
+        json.dumps(
+            {
+                "trades_file": str(remote_trades),
+                "strategy_events_file": str(remote_events),
+                "diagnostics_file": str(remote_diag),
+            }
+        )
+    )
+
+    class FakeSFTP:
+        def get(self, remote_path: str, local_path: str) -> None:
+            if remote_path == str(remote_diag):
+                raise OSError("diagnostics missing")
+            Path(local_path).write_text(Path(remote_path).read_text())
+
+    monkeypatch.setattr("vps_runner.tempfile.mkdtemp", lambda prefix: str(local_dir))
+
+    with pytest.raises(RuntimeError, match="Failed to fetch remote result artifact referenced by"):
+        _localize_remote_result_output(f"RESULT_JSON {remote_result}\n", FakeSFTP())
+
+    assert not (local_dir / "result.json").exists()
+    assert not (local_dir / "trades.csv").exists()
+    assert not (local_dir / "strategy_events.parquet").exists()
