@@ -1,0 +1,81 @@
+autoresearch_planning.py
+  dbc5ae606013cb0f 12,49-54,56-59
+tests/test_autoresearch_state.py
+  dbc5ae606013cb0f 52-53
+persistence_utils.py
+  370668958b3e5f4e 21-23,60-70
+  cf3feb0734dbfe97 6,26-39
+  dbc5ae606013cb0f 16-20,43,76
+autoresearch_cli.py
+  dbc5ae606013cb0f 45-47,50,52
+experiment_db.py
+  dbc5ae606013cb0f 15-19,298,385,416,445,470-474,529-530,578,581-582,587,598-599,742-743,751,879-882,919-928,940-942
+tests/test_autoresearch_cli.py
+  370668958b3e5f4e 4,105-131
+  dbc5ae606013cb0f 96-104
+  cf3feb0734dbfe97 79-95,132-133
+tests/test_experiment_db_timestamps.py
+  02f4049cade25ba5 319-337
+tests/test_experiment_db_sqlite_runtime.py
+  370668958b3e5f4e 120-121,123-158
+  02f4049cade25ba5 93-119,122,159-194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "7c0e84f043835bcdce99a6881079b7de3ae0baad",
+  "prompts": {
+    "02f4049cade25ba5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de3df-f45e-7931-b7fa-7641f4c20b96",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 83,
+      "total_deletions": 0,
+      "accepted_lines": 83,
+      "overriden_lines": 0
+    },
+    "370668958b3e5f4e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de3da-55c3-7dd1-bc73-546746700785",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 91,
+      "total_deletions": 7,
+      "accepted_lines": 80,
+      "overriden_lines": 0
+    },
+    "cf3feb0734dbfe97": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de365-1cb5-7e80-9b1d-050490473277",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 35,
+      "total_deletions": 6,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    },
+    "dbc5ae606013cb0f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de36d-cd36-7ad0-86bd-68166dfcd69b",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 83,
+      "total_deletions": 47,
+      "accepted_lines": 87,
+      "overriden_lines": 0
+    }
+  }
+}
