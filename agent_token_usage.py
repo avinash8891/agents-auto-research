@@ -75,6 +75,8 @@ def _accumulate_result_usage(
             total_total += getattr(usage, "total_tokens", 0) or getattr(usage, "total", 0) or 0
 
     cost_usd = getattr(result, "total_cost_usd", None)
+    if cost_usd is None and raw_responses:
+        cost_usd = sum((getattr(resp, "total_cost_usd", 0.0) or 0.0) for resp in raw_responses)
     if cost_usd is None and not saw_usage:
         cost_usd = 0.0
 
