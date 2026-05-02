@@ -263,7 +263,7 @@ class AutoresearchController:
         return _planning_list_known_variant_configs(self.root, self.family)
 
     def pending_configs(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_pending_configs(self.root, self.family, results)
+        return _planning_pending_configs(self.root, self.family, self.run_queue_dir, results)
 
     def thesis_statuses(self, results: list[ExperimentRecord]) -> dict[str, dict[str, Any]]:
         return _planning_thesis_statuses(self.root, self.family, self.run_queue_dir, results)

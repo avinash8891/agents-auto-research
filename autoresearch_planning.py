@@ -1,6 +1,6 @@
 """Planning logic for autoresearch.
 
-Decides what experiment runs next: variant configs, thesis-queue artifacts,
+Decides what experiment runs next: baseline, thesis-queue artifacts,
 combinations of independent winners, ideas-backlog candidates, baseline
 reruns, or research blocking.
 """
@@ -71,8 +71,10 @@ def _write_yaml_atomic(path: Path, payload: Any) -> None:
 
 
 def list_known_variant_configs(root: Path, family: StrategyFamily) -> list[str]:
-    """Variant configs for this family: the family's seed list (those
-    that exist on disk) followed by every other yaml in configs/variants/."""
+    """Inventory variant configs for this family.
+
+    This helper is informational only; scheduling is queue/research-driven.
+    """
     known: list[str] = []
     for config in family.default_variants:
         if (root / config).exists():
@@ -81,18 +83,23 @@ def list_known_variant_configs(root: Path, family: StrategyFamily) -> list[str]:
     if variants_dir.exists():
         for path in sorted(variants_dir.glob("*.yaml")):
             rel = path.relative_to(root).as_posix()
-            if rel not in known and path.name != "README.keep":
+            if path.name == "README.keep":
+                continue
+            if family.variant_prefix and not path.stem.startswith(family.variant_prefix):
+                continue
+            if rel not in known:
                 known.append(rel)
     return known
 
 
 def pending_configs(
-    root: Path, family: StrategyFamily, results: list[ExperimentRecord]
+    root: Path,
+    family: StrategyFamily,
+    run_queue_dir: Path,
+    results: list[ExperimentRecord],
 ) -> list[str]:
-    attempted = {result.config for result in results if result.config}
-    return [
-        config for config in list_known_variant_configs(root, family) if config not in attempted
-    ]
+    _ = family  # Reserved for future family-specific queue policies.
+    return queue_from_thesis_artifacts(run_queue_dir, root, results)
 
 
 def thesis_statuses(
@@ -102,8 +109,6 @@ def thesis_statuses(
     results: list[ExperimentRecord],
 ) -> dict[str, dict[str, Any]]:
     statuses: dict[str, dict[str, Any]] = {}
-    for config in list_known_variant_configs(root, family):
-        statuses[config] = {"status": "pending", "source": "variants_dir"}
     for artifact in read_run_queue(run_queue_dir, root):
         config = artifact.get("config")
         if not config:
@@ -418,8 +423,6 @@ def should_terminate(
     research_dir: Path,
     results: list[ExperimentRecord],
 ) -> bool:
-    if pending_configs(root, family, results):
-        return False
     if queue_from_thesis_artifacts(run_queue_dir, root, results):
         return False
     research = read_research_artifacts(research_dir, root)
@@ -613,22 +616,14 @@ def plan_next_action(
     # Respect forced baseline reruns — don't overwrite them
     if state.get("next_action", {}).get("baseline_rerun_for_commit"):
         return state
-    pending = state.get("pending_configs", [])
-    if pending:
-        state.pop("finished_reason", None)
-        state.pop("research_stop_reasoning", None)
-    if pending:
-        next_config = pending[0]
-        state["state"] = "running"
-        state["current_thesis"] = {"config": next_config, "status": "ready_to_run"}
-        state["next_action"] = {
-            "type": "run_experiment",
-            "config": next_config,
-            "benchmark_command": family.benchmark_command(next_config),
-            "requires_trade_analysis": True,
-        }
-        state["blockers"] = []
-        return state
+    # Brand-new job policy: baseline always runs first for the family.
+    if not results:
+        baseline = _baseline_branch(root, family, results)
+        if baseline is not None:
+            state.update(baseline)
+            state.pop("finished_reason", None)
+            state.pop("research_stop_reasoning", None)
+            return state
 
     state.update(
         select_research_next_action(

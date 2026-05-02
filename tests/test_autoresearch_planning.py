@@ -60,21 +60,30 @@ def test_list_known_variant_configs_picks_up_yaml_files_in_variants_dir(
 def test_list_known_variant_configs_skips_readme_keep(tmp_path: Path, ema_family) -> None:
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
-    (variants / "real.yaml").write_text("k: v\n")
+    (variants / "ema_real.yaml").write_text("k: v\n")
     (variants / "README.keep").write_text("keepalive\n")
     out = list_known_variant_configs(tmp_path, ema_family)
-    assert out == ["configs/variants/real.yaml"]
+    assert out == ["configs/variants/ema_real.yaml"]
 
 
-def test_pending_configs_excludes_already_attempted(tmp_path: Path, ema_family) -> None:
-    variants = tmp_path / "configs" / "variants"
-    variants.mkdir(parents=True)
-    (variants / "ema_a.yaml").write_text("k: v\n")
-    (variants / "ema_b.yaml").write_text("k: v\n")
+def test_pending_configs_returns_only_pending_run_queue_configs(tmp_path: Path, ema_family) -> None:
+    run_queue_dir = tmp_path / "queue"
+    run_queue_dir.mkdir(parents=True)
+    config_a = "configs/variants/ema_a.json"
+    config_b = "configs/variants/ema_b.json"
+    (tmp_path / config_a).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / config_a).write_text('{"runtime_config": {"ema_length": 5}}\n')
+    (tmp_path / config_b).write_text('{"runtime_config": {"ema_length": 7}}\n')
+    (run_queue_dir / "a.json").write_text(
+        json.dumps({"config": config_a, "status": "pending", "thesis_id": "a"})
+    )
+    (run_queue_dir / "b.json").write_text(
+        json.dumps({"config": config_b, "status": "pending", "thesis_id": "b"})
+    )
     results = [
-        ExperimentRecord("configs/variants/ema_a.yaml", 1.0, "keep", "", 1, {}),
+        ExperimentRecord(config_a, 1.0, "keep", "", 1, {}),
     ]
-    assert pending_configs(tmp_path, ema_family, results) == ["configs/variants/ema_b.yaml"]
+    assert pending_configs(tmp_path, ema_family, run_queue_dir, results) == [config_b]
 
 
 # ── thesis_statuses overlay precedence ──────────────────────────
@@ -390,10 +399,14 @@ def test_build_research_failure_state_marks_interrupted_research_failure(tmp_pat
 
 
 def test_should_terminate_false_when_pending_configs_exist(tmp_path: Path, ema_family) -> None:
-    variants = tmp_path / "configs" / "variants"
-    variants.mkdir(parents=True)
-    (variants / "ema_x.yaml").write_text("k: v\n")
     queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+    config = "configs/variants/ema_x.yaml"
+    (tmp_path / config).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / config).write_text("k: v\n")
+    (queue_dir / "ema_x.json").write_text(
+        json.dumps({"config": config, "status": "pending", "thesis_id": "ema_x"})
+    )
     research_dir = tmp_path / "research"
     assert should_terminate(tmp_path, ema_family, queue_dir, research_dir, []) is False
 
