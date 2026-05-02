@@ -75,11 +75,13 @@ def test_remote_command_uses_generic_runner_and_family_metadata() -> None:
     command = build_remote_command(config, family, config_path, resolved_sha)
 
     assert f"cd {shlex.quote(config.remote_dir)}" in command
-    assert "config_hash=$(python3 -c" in command
+    assert "if [ -x .venv/bin/python ]; then python_bin=.venv/bin/python;" in command
+    assert "elif [ -x venv/bin/python ]; then python_bin=venv/bin/python;" in command
+    assert 'config_hash=$("$python_bin" -c' in command
     output_root = f"{config.remote_dir}/{family.runs_dirname}/job-12/{resolved_sha}"
     assert f"output_dir={shlex.quote(output_root)}/$config_hash" in command
     assert (
-        f"python3 -m backtest.runner --strategy {shlex.quote(family.name)} "
+        f'"$python_bin" -m backtest.runner --strategy {shlex.quote(family.name)} '
         f'--config {shlex.quote(config_path)} --output-dir "$output_dir"'
     ) in command
     assert "/root/orb-research" not in command

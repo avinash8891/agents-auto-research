@@ -538,7 +538,7 @@ def _build_db_record(
 
 def _executed_code_commit(controller: "AutoresearchController", details: dict[str, Any]) -> str:
     git_sha = details.get("git_sha")
-    if isinstance(git_sha, str) and re.fullmatch(r"[0-9a-f]{40}", git_sha):
+    if isinstance(git_sha, str) and re.fullmatch(r"[0-9a-f]{7,40}", git_sha):
         return git_sha
     return controller.current_commit()
 

@@ -491,6 +491,36 @@ def test_build_db_record_prefers_executed_result_git_sha(tmp_path: Path) -> None
     assert record.code_commit == executed_sha
 
 
+def test_build_db_record_preserves_short_executed_result_git_sha(tmp_path: Path) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def current_commit(self) -> str:
+            return "local-controller-sha"
+
+    controller = _Controller()
+    controller.ctx.current_contract = None
+    controller.ctx.parent_experiment_id = ""
+    controller.ctx.latest_config_contents = {"ema_length": 5}
+
+    record = _build_db_record(
+        controller,
+        config="configs/ema_base.yaml",
+        decision="keep",
+        details={"trade_count": 2, "git_sha": "b96e64e"},
+        analysis={"trade_analysis": {}},
+        fallback_experiment_id="run-1",
+        state={"job": 3},
+    )
+
+    assert record.code_commit == "b96e64e"
+
+
 def test_log_experiment_result_uses_legacy_runtime_config_fallback(tmp_path: Path) -> None:
     class _Controller:
         def __init__(self) -> None:

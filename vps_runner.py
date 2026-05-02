@@ -140,11 +140,14 @@ def build_remote_command(
         f"cd {shlex.quote(config.remote_dir)} && "
         "export AUTORESEARCH_VPS=1 && "
         f"export AUTORESEARCH_RESOLVED_SHA={shlex.quote(resolved_sha)} && "
-        f"config_hash=$(python3 -c {shlex.quote(python_hash)} "
+        "if [ -x .venv/bin/python ]; then python_bin=.venv/bin/python; "
+        "elif [ -x venv/bin/python ]; then python_bin=venv/bin/python; "
+        "else python_bin=python3; fi && "
+        f'config_hash=$("$python_bin" -c {shlex.quote(python_hash)} '
         f"{shlex.quote(config_path)} {shlex.quote(family.name)}) && "
         f"output_dir={shlex.quote(output_root)}/$config_hash && "
         'mkdir -p "$output_dir" && '
-        f"python3 -m backtest.runner --strategy {shlex.quote(family.name)} "
+        f'"$python_bin" -m backtest.runner --strategy {shlex.quote(family.name)} '
         f'--config {shlex.quote(config_path)} --output-dir "$output_dir"'
     )
 
