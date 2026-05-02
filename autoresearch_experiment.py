@@ -506,12 +506,13 @@ def _build_db_record(
             if decision == "keep"
             else "rejected by primary metric comparison"
         )
+    code_commit = _executed_code_commit(controller, details)
     record = ExperimentResult(
         experiment_id=contract.experiment_id if contract else fallback_experiment_id,
         thesis_id=contract.thesis_id if contract else Path(config).stem,
         config_path=config,
         runtime_config=runtime_config,
-        code_commit=controller.current_commit(),
+        code_commit=code_commit,
         data_hash=build_data_hash(runtime_config),
         train_metrics=train_metrics,
         validation_metrics=details,
@@ -533,6 +534,13 @@ def _build_db_record(
         usage=state.get("_last_round_usage", {}),
     )
     return record
+
+
+def _executed_code_commit(controller: "AutoresearchController", details: dict[str, Any]) -> str:
+    git_sha = details.get("git_sha")
+    if isinstance(git_sha, str) and re.fullmatch(r"[0-9a-f]{40}", git_sha):
+        return git_sha
+    return controller.current_commit()
 
 
 def _build_export_entry(
@@ -558,7 +566,7 @@ def _build_export_entry(
         "run_id": run_id,
         "experiment_id": experiment_id,
         "hypothesis_id": identity,
-        "commit": controller.current_commit(),
+        "commit": _executed_code_commit(controller, details),
         "metric": metric,
         "metrics": details,
         "status": decision,
@@ -840,8 +848,9 @@ def _record_baseline_checkpoint(
     details: dict[str, Any],
     runtime_cfg: dict[str, Any],
 ) -> None:
+    code_commit = _executed_code_commit(controller, details)
     new_checkpoint = BaselineCheckpoint(
-        code_commit=controller.current_commit(),
+        code_commit=code_commit,
         data_hash=build_data_hash(runtime_cfg),
         config_hash=build_config_hash(runtime_cfg),
         metrics=details,
@@ -854,7 +863,7 @@ def _record_baseline_checkpoint(
     # and redundantly rerun the baseline. This is benign — no data is lost and
     # the rerun produces a valid new checkpoint.
     controller.baseline_tracker.record(new_checkpoint)
-    trace("BASELINE", f"checkpoint recorded commit={controller.current_commit()}")
+    trace("BASELINE", f"checkpoint recorded commit={code_commit}")
     if drift["drifted"]:
         drift_details = [d for d in drift["details"] if d.get("severity") == "critical"]
         trace("BASELINE", f"DRIFT DETECTED: {drift_details}")

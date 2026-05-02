@@ -460,6 +460,37 @@ def test_build_db_record_populates_expected_runtime_fields(tmp_path: Path) -> No
     assert record.parent_experiment_id == "parent-exp"
 
 
+def test_build_db_record_prefers_executed_result_git_sha(tmp_path: Path) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def current_commit(self) -> str:
+            return "local-controller-sha"
+
+    controller = _Controller()
+    controller.ctx.current_contract = None
+    controller.ctx.parent_experiment_id = ""
+    controller.ctx.latest_config_contents = {"ema_length": 5}
+    executed_sha = "0123456789abcdef0123456789abcdef01234567"
+
+    record = _build_db_record(
+        controller,
+        config="configs/ema_base.yaml",
+        decision="keep",
+        details={"trade_count": 2, "git_sha": executed_sha},
+        analysis={"trade_analysis": {}},
+        fallback_experiment_id="run-1",
+        state={"job": 3},
+    )
+
+    assert record.code_commit == executed_sha
+
+
 def test_log_experiment_result_uses_legacy_runtime_config_fallback(tmp_path: Path) -> None:
     class _Controller:
         def __init__(self) -> None:
@@ -642,7 +673,10 @@ def test_build_asi_and_entry_use_contract_identity_over_runtime_config_stem(tmp_
         config="experiments/ema5/runtime_config.json",
         metric=1.0,
         decision="keep",
-        details={"trade_count": 2},
+        details={
+            "trade_count": 2,
+            "git_sha": "0123456789abcdef0123456789abcdef01234567",
+        },
         asi=asi,
         next_run=1,
         state={"job": 1},
@@ -651,6 +685,7 @@ def test_build_asi_and_entry_use_contract_identity_over_runtime_config_stem(tmp_
     assert asi["hypothesis"] == "ema5"
     assert asi["artifact_dir"] == "ema_autoresearch-runs/job-1/c2821b0a43ba"
     assert entry["description"] == "strict-native loop: ema5"
+    assert entry["commit"] == "0123456789abcdef0123456789abcdef01234567"
 
 
 def test_build_asi_uses_real_artifact_hash_directory_for_contract_run(tmp_path: Path) -> None:
