@@ -613,6 +613,14 @@ def main() -> int:
         "job_usage": None,
         "heartbeat": {},
     }
+    # Preserve halted thesis metadata needed for requires_code_change resume
+    # flow across code deploys while still clearing ordinary next-action state.
+    if prior_state.get("halted_reason") == "requires_code_change" and prior_state.get(
+        "halted_thesis_id"
+    ):
+        for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
+            if key in prior_state:
+                state[key] = prior_state[key]
     controller.write_state(state)
 
     from trace_sdk import get_log_file, get_session_id, set_family
