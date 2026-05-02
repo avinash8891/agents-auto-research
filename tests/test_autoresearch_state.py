@@ -254,6 +254,20 @@ def test_render_current_md_includes_best_and_latest_when_present() -> None:
     assert "## Latest Insights" in md
 
 
+def test_render_current_md_uses_configured_metric_name() -> None:
+    md = render_current_md(
+        {
+            "state": "running",
+            "current_best": {"config": "configs/ema_base.yaml", "metric": 1.5},
+        },
+        [],
+        family_name="ema",
+        metric_name="median_expectancy",
+    )
+    assert "- median_expectancy: `1.5`" in md
+    assert "- profit_factor: `1.5`" not in md
+
+
 def test_render_current_md_handles_no_results_and_no_action() -> None:
     md = render_current_md(
         {"state": "blocked", "blockers": []},

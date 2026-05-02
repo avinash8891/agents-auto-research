@@ -118,7 +118,15 @@ def build_missing_primitives_for_state(
     trace("LOOP", f"building halted thesis={thesis_id}")
     import compiler_pipeline
 
-    builder_result = compiler_pipeline.build_missing_primitives(controller.root, thesis_id)
+    try:
+        builder_result = compiler_pipeline.build_missing_primitives(controller.root, thesis_id)
+    except Exception as exc:
+        builder_result = {
+            "status": "error",
+            "reason": f"builder exception for {thesis_id}: {exc}",
+            "generated_config": None,
+            "validation_passed": False,
+        }
     if builder_result.get("status") == "completed" and builder_result.get("validation_passed"):
         generated_config = builder_result.get("generated_config")
         if generated_config:

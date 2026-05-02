@@ -604,3 +604,43 @@ print(f"generated {config}")
     request = json.loads((tmp_path / "ema-builder-requests" / f"{thesis_id}.json").read_text())
     assert request["family"] == "ema"
     assert request["missing_primitives"] == ["ema_length"]
+
+
+def test_build_missing_primitives_rejects_unknown_structured_family(
+    tmp_path: Path,
+) -> None:
+    thesis_id = "halted_unknown_family"
+    experiment_dir = tmp_path / "experiments" / thesis_id
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    (experiment_dir / "thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                "strategy_family": "not-a-real-family",
+                "hypothesis": "tighten ema length",
+                "mechanism": "reduce lag",
+                "config_changes": {"ema_length": 7},
+            }
+        )
+        + "\n"
+    )
+    (experiment_dir / "contract.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": thesis_id,
+                "thesis_id": thesis_id,
+                "strategy_family": "not-a-real-family",
+                "baseline_config_path": "configs/ema_base.yaml",
+                "runtime_config": {},
+                "hypothesis": "tighten ema length",
+                "mechanism": "reduce lag",
+                "status": "needs_code",
+            }
+        )
+        + "\n"
+    )
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "error"
+    assert "unknown strategy family" in result["reason"]

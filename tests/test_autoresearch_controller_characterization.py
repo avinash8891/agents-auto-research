@@ -1037,6 +1037,40 @@ def test_resolve_next_action_marks_manual_review_when_builder_fails(controller, 
     assert manual_review[-1]["thesis_id"] == halted_thesis_id
 
 
+def test_resolve_next_action_marks_manual_review_when_builder_raises(controller, monkeypatch):
+    halted_thesis_id = "builder-raises"
+    halted_thesis = {
+        "thesis_id": halted_thesis_id,
+        "hypothesis": "tighten ema length",
+        "mechanism": "reduce lag",
+        "config_changes": {"ema_length": 7},
+    }
+    controller.write_state(
+        {
+            "state": "halted",
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": halted_thesis_id,
+            "halted_thesis": halted_thesis,
+            "job": 13,
+            "research_round": 5,
+        }
+    )
+
+    def raise_builder(*args, **kwargs):
+        raise RuntimeError("builder boom")
+
+    monkeypatch.setattr(controller, "_check_baseline_rerun", lambda: None)
+    monkeypatch.setattr(controller, "_try_resume_halted_thesis", lambda: None)
+    monkeypatch.setattr("compiler_pipeline.build_missing_primitives", raise_builder)
+
+    resolved = controller._resolve_next_action()
+
+    assert resolved["state"] == "blocked"
+    assert any(b.get("kind") == "manual_review" for b in resolved.get("blockers", []))
+    assert resolved["next_action"]["type"] == "manual_review"
+    assert resolved["manual_review_theses"][-1]["thesis_id"] == halted_thesis_id
+
+
 def test_execute_once_clears_stale_parent_experiment_id_before_logging(
     controller, monkeypatch, tmp_path
 ):

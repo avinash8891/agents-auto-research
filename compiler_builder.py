@@ -50,7 +50,15 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     if structured is not None:
         proposal, compilation, proposal_path, compilation_path = structured
         family_name = proposal.get("strategy_family") or compilation.get("strategy_family") or "orb"
-        family = load_family(family_name)
+        try:
+            family = load_family(family_name)
+        except (KeyError, ValueError) as exc:
+            return {
+                "status": "error",
+                "reason": f"unknown strategy family for structured thesis {thesis_id}: {exc}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
         normalized_contract = compilation.get("normalized_contract") or []
         missing_primitives = (
             proposal.get("requested_primitives")

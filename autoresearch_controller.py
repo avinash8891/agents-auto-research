@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -215,7 +216,19 @@ class AutoresearchController:
         self.experiment_db.import_entries(entries)
 
     def current_commit(self) -> str:
-        return _git_sha()
+        sha = _git_sha()
+        if sha == "unknown":
+            return sha
+        try:
+            dirty = subprocess.check_output(
+                ["git", "status", "--porcelain"],
+                cwd=str(self.root),
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+        except Exception:
+            dirty = ""
+        return f"{sha}-dirty" if dirty else sha
 
     def direction(self) -> str:
         return self.experiment_db.best_direction()
@@ -346,7 +359,12 @@ class AutoresearchController:
         )
 
     def render_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> str:
-        return _state_render_current_md(state, results, family_name=self.family.name)
+        return _state_render_current_md(
+            state,
+            results,
+            family_name=self.family.name,
+            metric_name=self.primary_metric_name(),
+        )
 
     def write_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> None:
         _state_write_current_md(
@@ -354,6 +372,7 @@ class AutoresearchController:
             state,
             results,
             family_name=self.family.name,
+            metric_name=self.primary_metric_name(),
         )
 
     def reconcile_state(self) -> dict[str, Any]:

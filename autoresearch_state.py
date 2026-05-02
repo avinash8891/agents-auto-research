@@ -279,7 +279,11 @@ def _format_blocker_lines(blockers: list[dict[str, Any]]) -> list[str]:
 
 
 def render_current_md(
-    state: dict[str, Any], results: list[ExperimentRecord], *, family_name: str | None = None
+    state: dict[str, Any],
+    results: list[ExperimentRecord],
+    *,
+    family_name: str | None = None,
+    metric_name: str = "profit_factor",
 ) -> str:
     best = state.get("current_best", {})
     next_action = state.get("next_action", {})
@@ -290,7 +294,7 @@ def render_current_md(
         "",
         "## Current Best",
         f"- `{best.get('config', 'unknown') if best else 'none'}`",
-        f"- profit_factor: `{best.get('metric', 'unknown') if best else 'none'}`",
+        f"- {metric_name}: `{best.get('metric', 'unknown') if best else 'none'}`",
         "",
         "## Latest Insights",
         *_format_latest_lines(latest_result(results), best),
@@ -321,5 +325,8 @@ def write_current_md(
     results: list[ExperimentRecord],
     *,
     family_name: str | None = None,
+    metric_name: str = "profit_factor",
 ) -> None:
-    current_md_path.write_text(render_current_md(state, results, family_name=family_name))
+    current_md_path.write_text(
+        render_current_md(state, results, family_name=family_name, metric_name=metric_name)
+    )
