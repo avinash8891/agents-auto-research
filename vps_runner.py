@@ -77,7 +77,10 @@ class VPSConfig:
 def _default_remote_dir(vps_user: str, strategy_name: str) -> str:
     base = "/root" if vps_user == "root" else f"/home/{vps_user}"
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-    return f"{base}/autoresearch-{strategy_name}-{stamp}"
+    # Add a sub-second suffix so multiple launches in the same second still
+    # get distinct remote roots.
+    nonce = f"{time.time_ns() % 1_000_000_000:09d}"
+    return f"{base}/autoresearch-{strategy_name}-{stamp}-{nonce}"
 
 
 def config_from_env(
