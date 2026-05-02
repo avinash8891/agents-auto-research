@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import logging
 import subprocess
 
 MEMPALACE_CMD = "mempalace"
 MEMPALACE_PALACE = "/Users/avinashvankadaru/.codex/mempalace/palace"
-log = logging.getLogger(__name__)
 
 
-def _run_mempalace(
-    args: list[str], timeout_seconds: int = 15
-) -> subprocess.CompletedProcess[str] | None:
+def _run_mempalace(args: list[str], timeout_seconds: int = 15) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             args,
@@ -18,8 +14,12 @@ def _run_mempalace(
             text=True,
             timeout=timeout_seconds,
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return None
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("mempalace command timed out") from exc
+    except FileNotFoundError as exc:
+        raise RuntimeError("mempalace CLI is not installed or not on PATH") from exc
+    except OSError as exc:
+        raise RuntimeError(f"mempalace CLI invocation failed: {exc}") from exc
 
 
 def _mempalace_search(query_text: str, wing: str = "autoresearch", n: int = 3) -> str:
@@ -37,11 +37,9 @@ def _mempalace_search(query_text: str, wing: str = "autoresearch", n: int = 3) -
             str(n),
         ]
     )
-    if result is None:
-        return "(memory search unavailable)"
     if result.returncode != 0:
-        log.warning("mempalace search failed rc=%s", result.returncode)
-        return "(memory search unavailable)"
+        stderr = (result.stderr or "").strip()
+        raise RuntimeError(f"mempalace search failed rc={result.returncode}: {stderr}")
     output = result.stdout.strip()
     return output if output else "(no prior memory found)"
 
@@ -61,11 +59,9 @@ def _mempalace_write(wing: str, room: str, content: str) -> bool:
             room,
         ]
     )
-    if result is None:
-        return False
     if result.returncode != 0:
-        log.warning("mempalace write failed rc=%s", result.returncode)
-        return False
+        stderr = (result.stderr or "").strip()
+        raise RuntimeError(f"mempalace write failed rc={result.returncode}: {stderr}")
     return True
 
 
@@ -84,9 +80,7 @@ def _mempalace_diary(agent_name: str, topic: str, entry: str) -> bool:
             topic,
         ]
     )
-    if result is None:
-        return False
     if result.returncode != 0:
-        log.warning("mempalace diary failed rc=%s", result.returncode)
-        return False
+        stderr = (result.stderr or "").strip()
+        raise RuntimeError(f"mempalace diary failed rc={result.returncode}: {stderr}")
     return True
