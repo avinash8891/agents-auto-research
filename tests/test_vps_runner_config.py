@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -11,6 +11,7 @@ from strategy_family import load_family
 from vps_runner import (
     VPSConfig,
     _localize_remote_result_output,
+    _sftp_mkdir_p,
     build_git_prepare_command,
     build_remote_command,
     config_from_env,
@@ -178,6 +179,23 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert "scp" not in command.lower()
 
 
+def test_git_prepare_command_uses_posix_remote_parent_on_windows(monkeypatch) -> None:
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+    monkeypatch.setattr("vps_runner.Path", PureWindowsPath)
+
+    command = build_git_prepare_command(config)
+
+    assert "mkdir -p /srv" in command
+    assert "\\srv" not in command
+
+
 def test_parse_resolved_sha_requires_exact_marker() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
 
@@ -258,6 +276,27 @@ def test_ssh_client_rejects_missing_known_hosts_file(monkeypatch, tmp_path) -> N
 
     with pytest.raises(FileNotFoundError, match="AUTORESEARCH_KNOWN_HOSTS"):
         create_verified_ssh_client()
+
+
+def test_sftp_mkdir_p_uses_posix_remote_parts_on_windows(monkeypatch) -> None:
+    created_dirs: list[str] = []
+
+    class FakeSFTP:
+        def stat(self, remote_path: str) -> None:
+            if remote_path not in {"/", "/srv", "/srv/autoresearch"} | set(created_dirs):
+                raise OSError("missing")
+
+        def mkdir(self, remote_path: str) -> None:
+            created_dirs.append(remote_path)
+
+    monkeypatch.setattr("vps_runner.Path", PureWindowsPath)
+
+    _sftp_mkdir_p(FakeSFTP(), "/srv/autoresearch/experiments/ema5")
+
+    assert created_dirs == [
+        "/srv/autoresearch/experiments",
+        "/srv/autoresearch/experiments/ema5",
+    ]
 
 
 def test_materialize_remote_config_skips_tracked_configs(monkeypatch, tmp_path) -> None:
@@ -341,6 +380,59 @@ def test_materialize_remote_config_uploads_generated_experiment_input(
     ]
     assert "/srv/autoresearch/experiments" in created_dirs
     assert "/srv/autoresearch/experiments/ema5" in created_dirs
+
+
+def test_materialize_remote_config_uses_posix_remote_parent_on_windows(
+    monkeypatch, tmp_path
+) -> None:
+    config_file = tmp_path / "experiments" / "ema5" / "runtime_config.json"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text('{"strategy": "ema"}\n')
+    created_dirs: list[str] = []
+
+    class FakeSFTP:
+        def stat(self, remote_path: str) -> None:
+            if remote_path not in {"/", "/srv", "/srv/autoresearch"} | set(created_dirs):
+                raise OSError("missing")
+
+        def mkdir(self, remote_path: str) -> None:
+            created_dirs.append(remote_path)
+
+        def put(self, local_path: str, remote_path: str) -> None:
+            assert local_path == str(config_file)
+            assert remote_path == "/srv/autoresearch/experiments/ema5/runtime_config.json"
+
+        def close(self) -> None:
+            pass
+
+    class FakeClient:
+        def open_sftp(self):
+            return FakeSFTP()
+
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    monkeypatch.setattr("vps_runner._repo_root", lambda: tmp_path)
+    monkeypatch.setattr("vps_runner._relative_repo_path", lambda path: Path(path))
+    monkeypatch.setattr("vps_runner._is_git_tracked", lambda rel_path: False)
+    monkeypatch.setattr("vps_runner.Path", PureWindowsPath)
+
+    materialize_remote_config_if_needed(
+        FakeClient(),
+        config,
+        "experiments/ema5/runtime_config.json",
+    )
+
+    assert created_dirs == [
+        "/srv/autoresearch/experiments",
+        "/srv/autoresearch/experiments/ema5",
+    ]
 
 
 def test_materialize_remote_config_rejects_untracked_non_experiment_configs(
