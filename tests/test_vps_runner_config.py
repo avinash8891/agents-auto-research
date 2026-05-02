@@ -76,6 +76,40 @@ def test_vps_config_rejects_implicit_or_unsafe_job_ids(monkeypatch) -> None:
         config_from_env()
 
 
+def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
+    monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
+    monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "job-12")
+
+    for bad_ref in ("feature/ema:refs/heads/main", "+main", "-main", "main..next", "main@{1}"):
+        monkeypatch.setenv("AUTORESEARCH_GIT_REF", bad_ref)
+        with pytest.raises(ValueError, match="AUTORESEARCH_GIT_REF"):
+            config_from_env()
+
+    monkeypatch.setenv("AUTORESEARCH_GIT_REF", "0123456789abcdef0123456789abcdef01234567")
+    assert config_from_env().git_ref == "0123456789abcdef0123456789abcdef01234567"
+
+
+def test_vps_config_rejects_unsafe_remote_dirs(monkeypatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
+    monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
+    monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "job-12")
+
+    for bad_dir in ("autoresearch", "/", "/root", "/root/orb-research", "/tmp/research"):
+        monkeypatch.setenv("AUTORESEARCH_VPS_DIR", bad_dir)
+        with pytest.raises(ValueError, match="AUTORESEARCH_VPS_DIR|legacy VPS root"):
+            config_from_env()
+
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch-2026-05-02")
+    assert config_from_env().remote_dir == "/srv/autoresearch-2026-05-02"
+
+
 def test_remote_command_uses_generic_runner_and_family_metadata() -> None:
     family = load_family("ema")
     config = VPSConfig(
@@ -93,8 +127,9 @@ def test_remote_command_uses_generic_runner_and_family_metadata() -> None:
     command = build_remote_command(config, family, config_path, resolved_sha)
 
     assert f"cd {shlex.quote(config.remote_dir)}" in command
-    assert "if [ -x .venv/bin/python ]; then python_bin=.venv/bin/python;" in command
-    assert "elif [ -x venv/bin/python ]; then python_bin=venv/bin/python;" in command
+    assert "python_bin=python3" in command
+    assert ".venv/bin/python" not in command
+    assert "venv/bin/python" not in command
     assert 'config_hash=$("$python_bin" -c' in command
     output_root = f"{config.remote_dir}/{family.runs_dirname}/job-12/{resolved_sha}"
     assert f"output_dir={shlex.quote(output_root)}/$config_hash" in command
@@ -124,8 +159,8 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert 'git checkout --detach "$resolved"' in command
     assert "git clean -ffdx" in command
     assert "-e '*_autoresearch-runs'" in command
-    assert "-e 'venv'" in command
-    assert "-e '.venv'" in command
+    assert "-e 'venv'" not in command
+    assert "-e '.venv'" not in command
     assert "-e 'data'" in command
     assert "-e 'experiments'" in command
     assert "-e 'proposals'" in command

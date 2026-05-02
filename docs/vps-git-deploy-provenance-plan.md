@@ -7,6 +7,8 @@
 - VPS runner uses `AUTORESEARCH_GIT_REF`.
 - `AUTORESEARCH_GIT_REF` can be a feature branch, `main`, or an exact commit SHA.
 - VPS runner requires explicit `AUTORESEARCH_JOB`; it never defaults to `job-0`.
+- `AUTORESEARCH_VPS_DIR` must be a dedicated absolute autoresearch checkout path.
+- The reusable checkout does not preserve `.venv` or `venv`; dependency state must not hide inside the code checkout.
 
 ## 2. Resolve every run to an exact commit SHA
 

@@ -21,7 +21,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit, urlunsplit
 
 import paramiko
@@ -33,6 +33,7 @@ from trace_sdk import trace, trace_ssh
 KNOWN_HOSTS_ENV = "AUTORESEARCH_KNOWN_HOSTS"
 RESOLVED_SHA_MARKER = "AUTORESEARCH_RESOLVED_SHA"
 LEGACY_REMOTE_ROOT = "/root/orb-research"
+REMOTE_ROOT_DENYLIST = {"/", "/root", "/home", "/srv", "/tmp", "/var", "/opt"}
 
 
 @dataclass(frozen=True)
@@ -60,11 +61,9 @@ def config_from_env() -> VPSConfig:
     if missing:
         raise ValueError("Missing VPS configuration environment variables: " + ", ".join(missing))
     remote_dir = os.environ["AUTORESEARCH_VPS_DIR"]
-    if remote_dir == LEGACY_REMOTE_ROOT:
-        raise ValueError(
-            "Refusing legacy VPS root /root/orb-research; set AUTORESEARCH_VPS_DIR "
-            "to a fresh remote root before launching."
-        )
+    _validate_remote_dir(remote_dir)
+    git_ref = os.environ["AUTORESEARCH_GIT_REF"]
+    _validate_git_ref(git_ref)
     job = os.environ["AUTORESEARCH_JOB"]
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", job):
         raise ValueError(
@@ -77,9 +76,51 @@ def config_from_env() -> VPSConfig:
         key=os.path.expanduser(os.environ["AUTORESEARCH_VPS_KEY"]),
         remote_dir=remote_dir,
         git_repo=os.environ["AUTORESEARCH_GIT_REPO"],
-        git_ref=os.environ["AUTORESEARCH_GIT_REF"],
+        git_ref=git_ref,
         job=job,
     )
+
+
+def _validate_remote_dir(remote_dir: str) -> None:
+    if remote_dir == LEGACY_REMOTE_ROOT:
+        raise ValueError(
+            "Refusing legacy VPS root /root/orb-research; set AUTORESEARCH_VPS_DIR "
+            "to a fresh remote root before launching."
+        )
+    path = PurePosixPath(remote_dir)
+    if not path.is_absolute() or str(path) != remote_dir:
+        raise ValueError("AUTORESEARCH_VPS_DIR must be an absolute normalized POSIX path.")
+    if remote_dir in REMOTE_ROOT_DENYLIST:
+        raise ValueError(
+            "AUTORESEARCH_VPS_DIR must point at a dedicated autoresearch checkout, "
+            f"not {remote_dir}."
+        )
+    if ".." in path.parts:
+        raise ValueError("AUTORESEARCH_VPS_DIR must not contain parent-directory segments.")
+    if not re.fullmatch(r"/[A-Za-z0-9._/-]+", remote_dir):
+        raise ValueError(
+            "AUTORESEARCH_VPS_DIR must use only path-safe letters, digits, underscore, "
+            "dot, dash, and slash."
+        )
+    if "autoresearch" not in path.name and "auto-research" not in path.name:
+        raise ValueError(
+            "AUTORESEARCH_VPS_DIR must end in a dedicated autoresearch checkout directory."
+        )
+
+
+def _validate_git_ref(git_ref: str) -> None:
+    if re.fullmatch(r"[0-9a-fA-F]{40}", git_ref):
+        return
+    if git_ref.startswith(("+", "-")) or ":" in git_ref:
+        raise ValueError(
+            "AUTORESEARCH_GIT_REF must be a branch, tag, or full commit SHA, not a refspec."
+        )
+    if any(token in git_ref for token in ("..", "@{", "\\")):
+        raise ValueError("AUTORESEARCH_GIT_REF contains unsafe Git ref syntax.")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/@-]*", git_ref):
+        raise ValueError(
+            "AUTORESEARCH_GIT_REF must be a path-safe branch, tag, or full commit SHA."
+        )
 
 
 def build_git_prepare_command(config: VPSConfig) -> str:
@@ -100,7 +141,6 @@ def build_git_prepare_command(config: VPSConfig) -> str:
         'git checkout --detach "$resolved" && '
         "git clean -ffdx "
         "-e '*_autoresearch-runs' -e '*_autoresearch-runs/**' "
-        "-e 'venv' -e 'venv/**' -e '.venv' -e '.venv/**' "
         "-e 'data' -e 'data/**' "
         "-e 'experiments' -e 'experiments/**' "
         "-e 'proposals' -e 'proposals/**' "
@@ -162,9 +202,7 @@ def build_remote_command(
         f"cd {shlex.quote(config.remote_dir)} && "
         "export AUTORESEARCH_VPS=1 && "
         f"export AUTORESEARCH_RESOLVED_SHA={shlex.quote(resolved_sha)} && "
-        "if [ -x .venv/bin/python ]; then python_bin=.venv/bin/python; "
-        "elif [ -x venv/bin/python ]; then python_bin=venv/bin/python; "
-        "else python_bin=python3; fi && "
+        "python_bin=python3 && "
         f'config_hash=$("$python_bin" -c {shlex.quote(python_hash)} '
         f"{shlex.quote(config_path)} {shlex.quote(family.name)}) && "
         f"output_dir={shlex.quote(output_root)}/$config_hash && "
