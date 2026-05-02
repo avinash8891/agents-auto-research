@@ -355,7 +355,7 @@ def _is_git_tracked(rel_path: Path) -> bool:
 
 def _sftp_mkdir_p(sftp: paramiko.SFTPClient, remote_dir: str) -> None:
     current = ""
-    for part in Path(remote_dir).parts:
+    for part in PurePosixPath(remote_dir).parts:
         if part == "/":
             current = "/"
             continue
@@ -387,7 +387,7 @@ def materialize_remote_config_if_needed(
         raise FileNotFoundError(f"Generated config is not present locally: {rel_path.as_posix()}")
 
     remote_path = f"{config.remote_dir.rstrip('/')}/{rel_path.as_posix()}"
-    remote_parent = str(Path(remote_path).parent)
+    remote_parent = str(PurePosixPath(remote_path).parent)
     sftp = client.open_sftp()
     try:
         _sftp_mkdir_p(sftp, remote_parent)
