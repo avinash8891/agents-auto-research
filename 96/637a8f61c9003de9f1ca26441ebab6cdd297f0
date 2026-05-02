@@ -1,0 +1,31 @@
+docs/vps-git-deploy-provenance-plan.md
+  dc8cf914dcec6328 7-8
+tests/test_vps_runner_config.py
+  dc8cf914dcec6328 35,54,67,80,96,107,109-112,123,126,144-145,147,151-156
+vps_runner.py
+  dc8cf914dcec6328 4,7,77,247-249,411-415,420-421
+.env.example
+  dc8cf914dcec6328 19
+autoresearch_controller.py
+  dc8cf914dcec6328 224-242,591-602
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "96637a8f61c9003de9f1ca26441ebab6cdd297f0",
+  "prompts": {
+    "dc8cf914dcec6328": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de81a-3102-7e81-b62d-39ed90f5dc00",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 68,
+      "total_deletions": 36,
+      "accepted_lines": 68,
+      "overriden_lines": 0
+    }
+  }
+}
