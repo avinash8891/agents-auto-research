@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""VPS runner using Git-based deployment for strategy backtests.
+"""VPS runner using Git-based deployment for strategy controller runs.
 
-Usage: python3 vps_runner.py --strategy <strategy-name> <config-path>
+Usage: python3 vps_runner.py --strategy <strategy-name>
 
 1. SSH to the VPS
 2. Clone/fetch AUTORESEARCH_GIT_REPO at AUTORESEARCH_GIT_REF
 3. Resolve that ref to an exact commit SHA and check it out detached
-4. Run the generic backtest runner with SHA-scoped output
-5. Print backtest output for autoresearch_loop to parse
+4. Launch the strategy-family autoresearch controller on the VPS
+5. Stream controller output
 """
 
 import argparse
@@ -71,7 +71,6 @@ class VPSConfig:
     remote_dir: str
     git_repo: str
     git_ref: str
-    job: str = "0"
     data_root: str = ""
 
 
@@ -83,7 +82,6 @@ def config_from_env() -> VPSConfig:
         "AUTORESEARCH_VPS_DIR",
         "AUTORESEARCH_GIT_REPO",
         "AUTORESEARCH_GIT_REF",
-        "AUTORESEARCH_JOB",
     )
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
@@ -92,14 +90,6 @@ def config_from_env() -> VPSConfig:
     _validate_remote_dir(remote_dir)
     git_ref = os.environ["AUTORESEARCH_GIT_REF"]
     _validate_git_ref(git_ref)
-    job = os.environ["AUTORESEARCH_JOB"]
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job):
-        raise ValueError(
-            "AUTORESEARCH_JOB must be an explicit path-safe job id "
-            "using only letters, digits, underscore, dot, or dash."
-        )
-    if job.startswith("job-"):
-        raise ValueError("AUTORESEARCH_JOB must be the raw job id, without the job- prefix.")
     vps_user = os.environ["AUTORESEARCH_VPS_USER"]
     data_root = os.environ.get(DATA_ROOT_ENV, "")
     if data_root:
@@ -112,7 +102,6 @@ def config_from_env() -> VPSConfig:
         remote_dir=remote_dir,
         git_repo=os.environ["AUTORESEARCH_GIT_REPO"],
         git_ref=git_ref,
-        job=job,
         data_root=data_root,
     )
 
@@ -246,16 +235,8 @@ def parse_resolved_sha(output: str) -> str:
 def build_remote_command(
     config: VPSConfig,
     family: StrategyFamily,
-    config_path: str,
     resolved_sha: str,
 ) -> str:
-    python_hash = (
-        "import sys; "
-        "from backtest.runtime_config import load_runtime_config; "
-        "from config_hash import _config_hash; "
-        "print(_config_hash(load_runtime_config(sys.argv[1], sys.argv[2])))"
-    )
-    output_root = f"{config.remote_dir}/{family.runs_dirname}/job-{config.job}/{resolved_sha}"
     segments = [
         "set -e",
         f"cd {shlex.quote(config.remote_dir)}",
@@ -266,16 +247,7 @@ def build_remote_command(
     segments.extend(
         [
             "python_bin=python3",
-            (
-                f'config_hash=$("$python_bin" -c {shlex.quote(python_hash)} '
-                f"{shlex.quote(config_path)} {shlex.quote(family.name)})"
-            ),
-            f"output_dir={shlex.quote(output_root)}/$config_hash",
-            'mkdir -p "$output_dir"',
-            (
-                f'"$python_bin" -m backtest.runner --strategy {shlex.quote(family.name)} '
-                f'--config {shlex.quote(config_path)} --output-dir "$output_dir"'
-            ),
+            (f'"$python_bin" autoresearch_controller.py ' f"--family {shlex.quote(family.name)}"),
         ]
     )
     return " && ".join(segments)
@@ -434,16 +406,14 @@ def _localize_remote_result_output(output: str, sftp: paramiko.SFTPClient) -> st
 def main():
     _load_local_env_file()
 
-    parser = argparse.ArgumentParser(description="Run a strategy backtest on the VPS")
+    parser = argparse.ArgumentParser(description="Run autoresearch controller on the VPS")
     parser.add_argument("--strategy", required=True, choices=sorted(STRATEGIES))
-    parser.add_argument("config_path")
     args = parser.parse_args()
 
-    config_path = args.config_path
     strategy_name = args.strategy
     family = load_family(strategy_name)
     vps_config = config_from_env()
-    trace("VPS_RUNNER", f"START strategy={strategy_name} config={config_path}")
+    trace("VPS_RUNNER", f"START strategy={strategy_name}")
 
     trace("VPS_RUNNER", f"Connecting to {vps_config.host} as {vps_config.user}")
     try:
@@ -482,14 +452,7 @@ def main():
         sys.exit(1)
     trace("VPS_RUNNER", f"Git prepare complete sha={resolved_sha} elapsed={time.time() - t0:.1f}s")
 
-    try:
-        config_path = materialize_remote_config_if_needed(client, vps_config, config_path)
-    except (FileNotFoundError, RuntimeError, ValueError) as exc:
-        client.close()
-        print(str(exc), file=sys.stderr)
-        sys.exit(1)
-
-    cmd = build_remote_command(vps_config, family, config_path, resolved_sha)
+    cmd = build_remote_command(vps_config, family, resolved_sha)
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()
     stdin, stdout, stderr = client.exec_command(cmd, timeout=600)
@@ -500,16 +463,6 @@ def main():
     exit_code = stdout.channel.recv_exit_status()
     elapsed = time.time() - t1
 
-    sftp = client.open_sftp()
-    try:
-        out = _localize_remote_result_output(out, sftp)
-    except RuntimeError as exc:
-        trace("VPS_RUNNER", f"Artifact localization failed: {exc}")
-        sftp.close()
-        client.close()
-        print(str(exc), file=sys.stderr)
-        sys.exit(1)
-    sftp.close()
     client.close()
 
     trace_ssh(cmd, exit_code, out, err)

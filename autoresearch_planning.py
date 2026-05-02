@@ -472,7 +472,7 @@ def _baseline_branch(
 ) -> dict[str, Any] | None:
     if results:
         return None
-    baseline_config = f"configs/{family.base_config_filename}"
+    baseline_config = family.baseline_config_path
     if not (root / baseline_config).exists():
         return None
     return _running_state(baseline_config, family, source="baseline")
@@ -681,7 +681,7 @@ def check_baseline_rerun(
     if already_reran:
         return None
 
-    baseline_config = f"configs/{family.base_config_filename}"
+    baseline_config = family.baseline_config_path
     trace("BASELINE", f"forcing rerun: {reason}")
     log.info(f"BASELINE_RERUN {reason}")
     return {

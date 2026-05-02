@@ -33,8 +33,6 @@ def test_vps_config_reads_remote_details_from_environment(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
-    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
-
     config = config_from_env()
 
     assert config.host == "203.0.113.10"
@@ -43,7 +41,6 @@ def test_vps_config_reads_remote_details_from_environment(monkeypatch) -> None:
     assert config.remote_dir == "/srv/autoresearch"
     assert config.git_repo == "https://github.com/example/repo.git"
     assert config.git_ref == "feature/ema"
-    assert config.job == "12"
     assert config.data_root == ""
 
 
@@ -54,7 +51,6 @@ def test_vps_config_reads_optional_remote_data_root_from_environment(monkeypatch
     monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
-    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/data/autoresearch")
 
     config = config_from_env()
@@ -69,7 +65,6 @@ def test_vps_config_expands_tilde_data_root_for_root_user(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
-    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "~/autoresearch-data")
 
     config = config_from_env()
@@ -84,7 +79,6 @@ def test_vps_config_expands_tilde_data_root_for_non_root_user(monkeypatch) -> No
     monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
-    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "~/autoresearch-data")
 
     config = config_from_env()
@@ -100,31 +94,10 @@ def test_vps_config_requires_explicit_environment(monkeypatch) -> None:
         "AUTORESEARCH_VPS_DIR",
         "AUTORESEARCH_GIT_REPO",
         "AUTORESEARCH_GIT_REF",
-        "AUTORESEARCH_JOB",
     ):
         monkeypatch.delenv(name, raising=False)
 
     with pytest.raises(ValueError, match="AUTORESEARCH_VPS_HOST"):
-        config_from_env()
-
-
-def test_vps_config_rejects_implicit_or_unsafe_job_ids(monkeypatch) -> None:
-    monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
-    monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
-    monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
-    monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
-    monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
-
-    with pytest.raises(ValueError, match="AUTORESEARCH_JOB"):
-        config_from_env()
-
-    monkeypatch.setenv("AUTORESEARCH_JOB", "../job-1")
-    with pytest.raises(ValueError, match="path-safe"):
-        config_from_env()
-
-    monkeypatch.setenv("AUTORESEARCH_JOB", "job-12")
-    with pytest.raises(ValueError, match="without the job- prefix"):
         config_from_env()
 
 
@@ -134,8 +107,6 @@ def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
     monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
-    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
-
     for bad_ref in ("feature/ema:refs/heads/main", "+main", "-main", "main..next", "main@{1}"):
         monkeypatch.setenv("AUTORESEARCH_GIT_REF", bad_ref)
         with pytest.raises(ValueError, match="AUTORESEARCH_GIT_REF"):
@@ -151,8 +122,6 @@ def test_vps_config_rejects_unsafe_remote_dirs(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
-    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
-
     for bad_dir in ("autoresearch", "/", "/root", "/root/orb-research", "/tmp/research"):
         monkeypatch.setenv("AUTORESEARCH_VPS_DIR", bad_dir)
         with pytest.raises(ValueError, match="AUTORESEARCH_VPS_DIR|legacy VPS root"):
@@ -162,7 +131,7 @@ def test_vps_config_rejects_unsafe_remote_dirs(monkeypatch) -> None:
     assert config_from_env().remote_dir == "/srv/autoresearch-2026-05-02"
 
 
-def test_remote_command_uses_generic_runner_and_family_metadata() -> None:
+def test_remote_command_runs_controller_for_family() -> None:
     family = load_family("ema")
     config = VPSConfig(
         host="203.0.113.10",
@@ -171,23 +140,16 @@ def test_remote_command_uses_generic_runner_and_family_metadata() -> None:
         remote_dir="/srv/autoresearch with spaces; rm -rf /",
         git_repo="https://github.com/example/repo.git",
         git_ref="feature/ema",
-        job="12",
     )
 
-    config_path = "configs/variants/ema aggressive/ema base.yaml"
     resolved_sha = "0123456789abcdef0123456789abcdef01234567"
-    command = build_remote_command(config, family, config_path, resolved_sha)
+    command = build_remote_command(config, family, resolved_sha)
 
     assert f"cd {shlex.quote(config.remote_dir)}" in command
     assert "python_bin=python3" in command
-    assert ".venv/bin/python" not in command
-    assert "venv/bin/python" not in command
-    assert 'config_hash=$("$python_bin" -c' in command
-    output_root = f"{config.remote_dir}/{family.runs_dirname}/job-12/{resolved_sha}"
-    assert f"output_dir={shlex.quote(output_root)}/$config_hash" in command
+    assert f"export AUTORESEARCH_RESOLVED_SHA={resolved_sha}" in command
     assert (
-        f'"$python_bin" -m backtest.runner --strategy {shlex.quote(family.name)} '
-        f'--config {shlex.quote(config_path)} --output-dir "$output_dir"'
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
     ) in command
     assert "/root/orb-research" not in command
     assert "backtest_5ema.py" not in command
@@ -203,11 +165,10 @@ def test_remote_command_exports_optional_data_root() -> None:
         remote_dir="/srv/autoresearch",
         git_repo="https://github.com/example/repo.git",
         git_ref="feature/ema",
-        job="12",
         data_root="/data/autoresearch",
     )
 
-    command = build_remote_command(config, family, "configs/ema_base.yaml", "0" * 40)
+    command = build_remote_command(config, family, "0" * 40)
 
     assert "export AUTORESEARCH_DATA_ROOT=/data/autoresearch &&" in command
 
