@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from pathlib import Path
 
 from research_paths import _ROOT
 
 _PALACE_DIR = str(_ROOT / "palace")
+log = logging.getLogger(__name__)
 
 
 def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor") -> dict:
@@ -13,52 +16,80 @@ def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor")
     import hashlib
     from datetime import datetime
 
-    from mempalace.palace import get_collection
+    try:
+        from mempalace.palace import get_collection
 
-    col = get_collection(_PALACE_DIR, create=True)
-    drawer_id = (
-        f"drawer_{wing}_{room}_"
-        f"{hashlib.sha256((wing + room + content).encode()).hexdigest()[:24]}"
-    )
-    col.upsert(
-        ids=[drawer_id],
-        documents=[content],
-        metadatas=[
-            {
-                "wing": wing,
-                "room": room,
-                "source_file": "",
-                "chunk_index": 0,
-                "added_by": added_by,
-                "filed_at": datetime.now().isoformat(),
-            }
-        ],
-    )
-    return {"success": True, "drawer_id": drawer_id}
+        col = get_collection(_PALACE_DIR, create=True)
+        drawer_id = (
+            f"drawer_{wing}_{room}_"
+            f"{hashlib.sha256((wing + room + content).encode()).hexdigest()[:24]}"
+        )
+        col.upsert(
+            ids=[drawer_id],
+            documents=[content],
+            metadatas=[
+                {
+                    "wing": wing,
+                    "room": room,
+                    "source_file": "",
+                    "chunk_index": 0,
+                    "added_by": added_by,
+                    "filed_at": datetime.now().isoformat(),
+                }
+            ],
+        )
+        return {"success": True, "drawer_id": drawer_id}
+    except Exception as exc:
+        log.warning(
+            "PALACE_ADD_FAILED wing=%s room=%s error=%s "
+            "| hint=falling back to local research_findings.jsonl if saving a finding",
+            wing,
+            room,
+            exc,
+        )
+        return {"success": False, "error": str(exc)}
 
 
 def _palace_search(
     query: str, wing: str | None = None, room: str | None = None, n_results: int = 10
 ) -> list[dict]:
     """Search the palace via mempalace.searcher.search_memories."""
-    from mempalace.searcher import search_memories
+    try:
+        from mempalace.searcher import search_memories
 
-    result = search_memories(
-        query=query,
-        palace_path=_PALACE_DIR,
-        wing=wing,
-        room=room,
-        n_results=n_results,
-    )
-    return result.get("results", [])
+        result = search_memories(
+            query=query,
+            palace_path=_PALACE_DIR,
+            wing=wing,
+            room=room,
+            n_results=n_results,
+        )
+        return result.get("results", [])
+    except Exception as exc:
+        log.warning(
+            "PALACE_SEARCH_FAILED wing=%s room=%s error=%s "
+            "| hint=memory search returned an error object to the conductor",
+            wing,
+            room,
+            exc,
+        )
+        return [{"error": str(exc)}]
 
 
 def _palace_status() -> dict:
     """Get palace overview via mempalace.layers.MemoryStack."""
-    from mempalace.layers import MemoryStack
+    try:
+        from mempalace.layers import MemoryStack
 
-    stack = MemoryStack(palace_path=_PALACE_DIR)
-    return stack.status()
+        stack = MemoryStack(palace_path=_PALACE_DIR)
+        return stack.status()
+    except Exception as exc:
+        log.warning(
+            "PALACE_STATUS_FAILED error=%s "
+            "| hint=memory status returned an error object to the conductor",
+            exc,
+        )
+        return {"error": str(exc)}
 
 
 def save_research_finding(
@@ -103,9 +134,19 @@ def save_research_finding(
         content=content,
     )
     if not result.get("success"):
-        raise RuntimeError(
-            f"PALACE_ADD_FAILED wing=research_findings room={finding_type}: {result.get('error', '')}"
-        )
+        findings_log = _ROOT / "research_findings.jsonl"
+        entry = {
+            "finding": finding,
+            "type": finding_type,
+            "status": status,
+            "evidence": evidence,
+            "scope": scope,
+            "expires_if": expires_if,
+            "timestamp": time.time(),
+        }
+        with open(findings_log, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+        return f"SAVED (local): {finding_type}/{status} — {finding[:80]}"
     return f"SAVED: {finding_type}/{status} — {finding[:80]}"
 
 
