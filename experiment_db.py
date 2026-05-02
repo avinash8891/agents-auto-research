@@ -39,6 +39,13 @@ def _metric_value_for_record(record: ExperimentResult, metric: str) -> Any:
     return record.train_metrics.get(metric)
 
 
+def _record_job_as_int(record: ExperimentResult) -> int | None:
+    try:
+        return int(getattr(record, "job", 0))
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass
 class ExperimentResult:
     """One complete experiment record."""
@@ -196,7 +203,7 @@ class ExperimentDB:
         direction = self.best_direction()
         records = self.all()
         if job_id is not None:
-            records = [record for record in records if int(getattr(record, "job", 0)) == job_id]
+            records = [record for record in records if _record_job_as_int(record) == job_id]
         if not records:
             return "keep"
         kept = [r for r in records if r.accepted]
