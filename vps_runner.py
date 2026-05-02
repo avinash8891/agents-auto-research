@@ -16,6 +16,7 @@ import os
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -94,12 +95,19 @@ def build_git_prepare_command(config: VPSConfig) -> str:
         "-e '*_autoresearch-runs' -e '*_autoresearch-runs/**' "
         "-e 'venv' -e 'venv/**' -e '.venv' -e '.venv/**' "
         "-e 'data' -e 'data/**' "
+        "-e 'experiments' -e 'experiments/**' "
         "-e 'proposals' -e 'proposals/**' "
+        "-e '*-proposals' -e '*-proposals/**' "
         "-e 'compilations' -e 'compilations/**' "
+        "-e '*-compilations' -e '*-compilations/**' "
         "-e 'contracts' -e 'contracts/**' "
+        "-e '*-contracts' -e '*-contracts/**' "
         "-e 'run-queue' -e 'run-queue/**' "
+        "-e '*-run-queue' -e '*-run-queue/**' "
         "-e 'research' -e 'research/**' "
+        "-e '*-research' -e '*-research/**' "
         "-e 'builder-requests' -e 'builder-requests/**' "
+        "-e '*-builder-requests' -e '*-builder-requests/**' "
         "-e '*_autoresearch.next.json' -e '*_autoresearch.current.md' "
         "-e '*_autoresearch.ideas.md' -e '*_baseline_checkpoints.json' "
         "-e '*_experiments.db' -e 'logs' -e 'logs/**' && "
@@ -157,6 +165,77 @@ def build_remote_command(
         f'"$python_bin" -m backtest.runner --strategy {shlex.quote(family.name)} '
         f'--config {shlex.quote(config_path)} --output-dir "$output_dir"'
     )
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def _relative_repo_path(path: str) -> Path:
+    repo_root = _repo_root()
+    local_path = Path(path)
+    if not local_path.is_absolute():
+        local_path = repo_root / local_path
+    try:
+        return local_path.resolve().relative_to(repo_root)
+    except ValueError as exc:
+        raise ValueError(f"Config path must be inside repository: {path}") from exc
+
+
+def _is_git_tracked(rel_path: Path) -> bool:
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", rel_path.as_posix()],
+        cwd=_repo_root(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _sftp_mkdir_p(sftp: paramiko.SFTPClient, remote_dir: str) -> None:
+    current = ""
+    for part in Path(remote_dir).parts:
+        if part == "/":
+            current = "/"
+            continue
+        current = f"{current.rstrip('/')}/{part}" if current else part
+        try:
+            sftp.stat(current)
+        except OSError:
+            sftp.mkdir(current)
+
+
+def materialize_remote_config_if_needed(
+    client: paramiko.SSHClient,
+    config: VPSConfig,
+    config_path: str,
+) -> str:
+    """Upload ignored generated experiment configs as run inputs, not code deployment."""
+    rel_path = _relative_repo_path(config_path)
+    if _is_git_tracked(rel_path):
+        return rel_path.as_posix()
+
+    if rel_path.parts[:1] != ("experiments",):
+        raise RuntimeError(
+            "VPS Git deployment only accepts tracked config files or generated "
+            f"experiments/ configs; refused untracked config: {rel_path.as_posix()}"
+        )
+
+    local_path = _repo_root() / rel_path
+    if not local_path.exists():
+        raise FileNotFoundError(f"Generated config is not present locally: {rel_path.as_posix()}")
+
+    remote_path = f"{config.remote_dir.rstrip('/')}/{rel_path.as_posix()}"
+    remote_parent = str(Path(remote_path).parent)
+    sftp = client.open_sftp()
+    try:
+        _sftp_mkdir_p(sftp, remote_parent)
+        sftp.put(str(local_path), remote_path)
+    finally:
+        sftp.close()
+    trace("VPS_RUNNER", f"Materialized generated config input: {rel_path.as_posix()}")
+    return rel_path.as_posix()
 
 
 def create_verified_ssh_client() -> paramiko.SSHClient:
@@ -286,6 +365,13 @@ def main():
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     trace("VPS_RUNNER", f"Git prepare complete sha={resolved_sha} elapsed={time.time() - t0:.1f}s")
+
+    try:
+        config_path = materialize_remote_config_if_needed(client, vps_config, config_path)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        client.close()
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
 
     cmd = build_remote_command(vps_config, family, config_path, resolved_sha)
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")

@@ -15,6 +15,7 @@ from vps_runner import (
     build_remote_command,
     config_from_env,
     create_verified_ssh_client,
+    materialize_remote_config_if_needed,
     parse_resolved_sha,
     redact_git_repo_url,
     redact_secrets,
@@ -109,8 +110,13 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert "-e 'venv'" in command
     assert "-e '.venv'" in command
     assert "-e 'data'" in command
+    assert "-e 'experiments'" in command
     assert "-e 'proposals'" in command
+    assert "-e '*-proposals'" in command
     assert "-e 'run-queue'" in command
+    assert "-e '*-run-queue'" in command
+    assert "-e '*-contracts'" in command
+    assert "-e '*-builder-requests'" in command
     assert "-e '*_experiments.db'" in command
     assert "AUTORESEARCH_RESOLVED_SHA %s" in command
     assert "scp" not in command.lower()
@@ -196,6 +202,118 @@ def test_ssh_client_rejects_missing_known_hosts_file(monkeypatch, tmp_path) -> N
 
     with pytest.raises(FileNotFoundError, match="AUTORESEARCH_KNOWN_HOSTS"):
         create_verified_ssh_client()
+
+
+def test_materialize_remote_config_skips_tracked_configs(monkeypatch, tmp_path) -> None:
+    config_file = tmp_path / "configs" / "ema_base.yaml"
+    config_file.parent.mkdir()
+    config_file.write_text("strategy: ema\n")
+
+    class FakeClient:
+        def open_sftp(self):  # pragma: no cover - should not be called
+            raise AssertionError("tracked configs must come from git, not SFTP")
+
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    monkeypatch.setattr("vps_runner._repo_root", lambda: tmp_path)
+    monkeypatch.setattr("vps_runner._is_git_tracked", lambda rel_path: True)
+
+    assert (
+        materialize_remote_config_if_needed(FakeClient(), config, "configs/ema_base.yaml")
+        == "configs/ema_base.yaml"
+    )
+
+
+def test_materialize_remote_config_uploads_generated_experiment_input(
+    monkeypatch, tmp_path
+) -> None:
+    config_file = tmp_path / "experiments" / "ema5" / "runtime_config.json"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text('{"strategy": "ema"}\n')
+    uploaded: list[tuple[str, str]] = []
+    created_dirs: list[str] = []
+
+    class FakeSFTP:
+        def stat(self, remote_path: str) -> None:
+            if remote_path not in {"/", "/srv", "/srv/autoresearch"} | set(created_dirs):
+                raise OSError("missing")
+
+        def mkdir(self, remote_path: str) -> None:
+            created_dirs.append(remote_path)
+
+        def put(self, local_path: str, remote_path: str) -> None:
+            uploaded.append((local_path, remote_path))
+
+        def close(self) -> None:
+            pass
+
+    class FakeClient:
+        def open_sftp(self):
+            return FakeSFTP()
+
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    monkeypatch.setattr("vps_runner._repo_root", lambda: tmp_path)
+    monkeypatch.setattr("vps_runner._is_git_tracked", lambda rel_path: False)
+
+    remote_config = materialize_remote_config_if_needed(
+        FakeClient(),
+        config,
+        "experiments/ema5/runtime_config.json",
+    )
+
+    assert remote_config == "experiments/ema5/runtime_config.json"
+    assert uploaded == [
+        (
+            str(config_file),
+            "/srv/autoresearch/experiments/ema5/runtime_config.json",
+        )
+    ]
+    assert "/srv/autoresearch/experiments" in created_dirs
+    assert "/srv/autoresearch/experiments/ema5" in created_dirs
+
+
+def test_materialize_remote_config_rejects_untracked_non_experiment_configs(
+    monkeypatch, tmp_path
+) -> None:
+    config_file = tmp_path / "tmp" / "runtime_config.json"
+    config_file.parent.mkdir()
+    config_file.write_text("{}\n")
+
+    class FakeClient:
+        def open_sftp(self):  # pragma: no cover - should not be called
+            raise AssertionError("unexpected upload")
+
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    monkeypatch.setattr("vps_runner._repo_root", lambda: tmp_path)
+    monkeypatch.setattr("vps_runner._is_git_tracked", lambda rel_path: False)
+
+    with pytest.raises(
+        RuntimeError, match="tracked config files or generated experiments/ configs"
+    ):
+        materialize_remote_config_if_needed(FakeClient(), config, "tmp/runtime_config.json")
 
 
 def test_localize_remote_result_output_fetches_remote_artifacts(monkeypatch, tmp_path) -> None:
