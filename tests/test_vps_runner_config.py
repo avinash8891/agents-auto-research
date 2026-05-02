@@ -52,10 +52,27 @@ def test_vps_config_requires_explicit_environment(monkeypatch) -> None:
         "AUTORESEARCH_VPS_DIR",
         "AUTORESEARCH_GIT_REPO",
         "AUTORESEARCH_GIT_REF",
+        "AUTORESEARCH_JOB",
     ):
         monkeypatch.delenv(name, raising=False)
 
     with pytest.raises(ValueError, match="AUTORESEARCH_VPS_HOST"):
+        config_from_env()
+
+
+def test_vps_config_rejects_implicit_or_unsafe_job_ids(monkeypatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
+    monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
+    monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
+
+    with pytest.raises(ValueError, match="AUTORESEARCH_JOB"):
+        config_from_env()
+
+    monkeypatch.setenv("AUTORESEARCH_JOB", "../job-1")
+    with pytest.raises(ValueError, match="path-safe"):
         config_from_env()
 
 

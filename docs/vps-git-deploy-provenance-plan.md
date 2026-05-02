@@ -6,6 +6,7 @@
 - VPS runner uses `AUTORESEARCH_GIT_REPO`.
 - VPS runner uses `AUTORESEARCH_GIT_REF`.
 - `AUTORESEARCH_GIT_REF` can be a feature branch, `main`, or an exact commit SHA.
+- VPS runner requires explicit `AUTORESEARCH_JOB`; it never defaults to `job-0`.
 
 ## 2. Resolve every run to an exact commit SHA
 

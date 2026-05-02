@@ -54,6 +54,7 @@ def config_from_env() -> VPSConfig:
         "AUTORESEARCH_VPS_DIR",
         "AUTORESEARCH_GIT_REPO",
         "AUTORESEARCH_GIT_REF",
+        "AUTORESEARCH_JOB",
     )
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
@@ -64,6 +65,12 @@ def config_from_env() -> VPSConfig:
             "Refusing legacy VPS root /root/orb-research; set AUTORESEARCH_VPS_DIR "
             "to a fresh remote root before launching."
         )
+    job = os.environ["AUTORESEARCH_JOB"]
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job):
+        raise ValueError(
+            "AUTORESEARCH_JOB must be an explicit path-safe job id "
+            "using only letters, digits, underscore, dot, or dash."
+        )
     return VPSConfig(
         host=os.environ["AUTORESEARCH_VPS_HOST"],
         user=os.environ["AUTORESEARCH_VPS_USER"],
@@ -71,7 +78,7 @@ def config_from_env() -> VPSConfig:
         remote_dir=remote_dir,
         git_repo=os.environ["AUTORESEARCH_GIT_REPO"],
         git_ref=os.environ["AUTORESEARCH_GIT_REF"],
-        job=os.environ.get("AUTORESEARCH_JOB", "0"),
+        job=job,
     )
 
 
