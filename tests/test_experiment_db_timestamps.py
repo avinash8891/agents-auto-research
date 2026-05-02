@@ -133,7 +133,7 @@ def test_build_config_hash_matches_result_schema_hash_policy() -> None:
 def test_build_data_hash_uses_12_char_policy() -> None:
     config = {
         "symbols": ["SPY"],
-        "data_dir": "data",
+        "data_universe": "nasdaq8",
         "validation_start": "2024-01-01",
         "validation_end": "2024-01-31",
     }

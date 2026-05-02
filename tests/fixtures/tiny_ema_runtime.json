@@ -1,6 +1,6 @@
 {
   "family": "ema",
-  "data_dir": "tests/fixtures/tiny_ema_data",
+  "data_universe": "tiny_ema_data",
   "symbols": [
     "AAA",
     "BBB"

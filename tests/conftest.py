@@ -9,7 +9,9 @@ status strings) elsewhere.
 from __future__ import annotations
 
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -19,6 +21,18 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Install a test data-universe root for subprocess-based runtime tests."""
+    data_root = Path(tempfile.mkdtemp(prefix="autoresearch-test-data-"))
+    universes = data_root / "universes"
+    universes.mkdir(parents=True, exist_ok=True)
+    tiny_target = universes / "tiny_ema_data"
+    tiny_source = FIXTURES_DIR / "tiny_ema_data"
+    if not tiny_target.exists():
+        tiny_target.symlink_to(tiny_source, target_is_directory=True)
+    os.environ.setdefault("AUTORESEARCH_DATA_ROOT", str(data_root))
 
 
 @pytest.fixture

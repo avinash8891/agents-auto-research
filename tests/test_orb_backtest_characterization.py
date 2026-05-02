@@ -10,8 +10,8 @@ def test_orb_backtest_returns_empty_metrics_for_empty_validation_window(monkeypa
     empty = pd.DataFrame()
 
     monkeypatch.setattr(
-        "strategies.orb.runner.load_data",
-        lambda *args, **kwargs: {
+        "strategies.orb.runner.load_universe_data",
+        lambda config: {
             "open": empty,
             "high": empty,
             "low": empty,
@@ -24,7 +24,7 @@ def test_orb_backtest_returns_empty_metrics_for_empty_validation_window(monkeypa
         {
             "validation_start": "2024-01-01",
             "validation_end": "2024-01-02",
-            "data_dir": "data",
+            "data_universe": "nasdaq143",
         }
     )
 

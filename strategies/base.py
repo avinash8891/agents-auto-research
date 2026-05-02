@@ -35,6 +35,7 @@ class Strategy(Protocol):
     default_variants: tuple[str, ...]
     thesis_family_by_slug: dict[str, str]
     combination_rules: dict[tuple[str, str], str]
+    requires_data_universe: bool
 
     def run(self, config: dict[str, Any]) -> dict[str, Any]: ...
     def get_defaults(self) -> dict[str, Any]: ...
@@ -62,6 +63,7 @@ class BaseStrategy:
     default_variants: tuple[str, ...] = ()
     thesis_family_by_slug: dict[str, str] = {}
     combination_rules: dict[tuple[str, str], str] = {}
+    requires_data_universe = True
     research_spec: FamilyResearchSpec
 
     @property

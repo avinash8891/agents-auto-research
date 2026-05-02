@@ -459,7 +459,7 @@ root = pathlib.Path(re.search(r"- Repo root: (.+)", prompt).group(1))
 config = re.search(r"- Expected config path: (.+)", prompt).group(1)
 target = root / config
 target.parent.mkdir(parents=True, exist_ok=True)
-target.write_text("builder_probe: true\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
+target.write_text("data_universe: nasdaq8\\nbuilder_probe: true\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
 print(f"generated {config}")
 """)
     codex.chmod(0o755)

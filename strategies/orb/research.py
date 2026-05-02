@@ -15,7 +15,7 @@ All config_changes keys MUST come from this list:
 {_ORB_SUPPORTED_KEYS}
 
 Data & dates (do NOT change these):
-  data_dir: "data"
+  data_universe: "nasdaq143"
   symbols: null
   discovery_start/end, validation_start/end, holdout_start/end
 

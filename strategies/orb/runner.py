@@ -11,7 +11,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-from data_loader import load_data
+from backtest.data_universe import load_universe_data
 from metrics import compute_metrics, empty_metrics
 from strategy_event_logger import StrategyEventLogger
 
@@ -26,12 +26,7 @@ def run_backtest(config: dict) -> dict:
     )
     from strategies.orb.signals import generate_orb_signals
 
-    val_start = config.get("validation_start", "2020-01-01")
-    val_end = config.get("validation_end", "2023-12-31")
-    data_dir = config.get("data_dir", "data")
-    symbols = config.get("symbols")
-
-    batch = load_data(data_dir, symbols=symbols, start_date=val_start, end_date=val_end)
+    batch = load_universe_data(config)
     open_ = batch["open"]
     high = batch["high"]
     low = batch["low"]

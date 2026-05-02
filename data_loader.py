@@ -1,6 +1,6 @@
 """Shared OHLCV data loading for all strategy backtests.
 
-Loads wide-format parquets (open/high/low/close/volume) from a data directory.
+Loads wide-format parquets (open/high/low/close/volume) from a filesystem path.
 Also supports per-symbol subdirectories and flat parquets for ORB compatibility.
 """
 
@@ -16,17 +16,17 @@ class DataLoadError(RuntimeError):
 
 
 def load_data(
-    data_dir: str,
+    source_path: str,
     symbols: list[str] | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """Load OHLCV data from a data directory.
+    """Load OHLCV data from a filesystem path.
 
     Tries wide format first (close.parquet, open.parquet, ...),
     then per-symbol subdirectories, then flat parquets.
     """
-    data_path = Path(data_dir)
+    data_path = Path(source_path)
     if not data_path.exists():
         # Try relative to caller's parent (for orb-research/data)
         repo_relative = Path(__file__).resolve().parent.parent / data_path
@@ -48,7 +48,7 @@ def load_data(
     if parquets:
         return _load_flat(parquets, start_date, end_date)
 
-    raise FileNotFoundError(f"Could not load data from {data_dir}")
+    raise FileNotFoundError(f"Could not load data from {source_path}")
 
 
 def _load_wide(

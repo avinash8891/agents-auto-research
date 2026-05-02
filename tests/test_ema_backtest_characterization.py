@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -14,8 +15,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from backtest.data_universe import load_universe_data
 from backtest.filters import _exclude_signals_on_days, _filter_signals_to_days
 from backtest.runtime_config import load_runtime_config, validate_runtime_config_scope
+from config_hash import _config_hash
 from strategies import STRATEGIES
 from strategies.ema.contract import compile_ema_contract, map_ema_config_changes_to_contract
 from strategies.ema.signals import generate_signals_for_frame
@@ -25,8 +28,42 @@ FIXTURES = REPO_ROOT / "tests" / "fixtures"
 TINY_CONFIG = FIXTURES / "tiny_ema_runtime.json"
 
 
+@pytest.fixture(autouse=True)
+def tiny_data_universe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    data_root = tmp_path / "autoresearch-data"
+    _write_wide_dataset(data_root / "universes" / "tiny_ema_data", ["AAA", "BBB"])
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+
+
 def _tiny_config() -> dict:
     return json.loads(TINY_CONFIG.read_text())
+
+
+def _write_wide_dataset(universe_path: Path, symbols: list[str]) -> None:
+    universe_path.mkdir(parents=True)
+    index = pd.to_datetime(["2024-01-02 09:30", "2024-01-02 09:35"]).tz_localize("US/Eastern")
+    for name, value in {
+        "open": 100.0,
+        "high": 101.0,
+        "low": 99.0,
+        "close": 100.5,
+        "volume": 1000,
+    }.items():
+        pd.DataFrame({symbol: [value, value] for symbol in symbols}, index=index).to_parquet(
+            universe_path / f"{name}.parquet"
+        )
+    (universe_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "data_universe": universe_path.name,
+                "symbol_count": len(symbols),
+                "symbols": symbols,
+                "start": "2024-01-02",
+                "end": "2024-01-02",
+            }
+        )
+        + "\n"
+    )
 
 
 def test_ema_strategy_run_returns_event_logger_keys() -> None:
@@ -308,6 +345,153 @@ def test_load_runtime_config_accepts_runtime_config_wrapper(tmp_path: Path) -> N
     assert loaded["ema_length"] == _tiny_config()["ema_length"]
 
 
+def test_load_runtime_config_resolves_explicit_data_universe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "autoresearch-data"
+    _write_wide_dataset(data_root / "universes" / "nasdaq2", ["SPY", "AAPL"])
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    config = _tiny_config()
+    config["data_universe"] = "nasdaq2"
+    path = tmp_path / "runtime.json"
+    path.write_text(json.dumps({"runtime_config": config}) + "\n")
+
+    loaded = load_runtime_config(str(path), "ema")
+
+    assert loaded["data_universe"] == "nasdaq2"
+    assert loaded["data_provenance"] == {
+        "data_universe": "nasdaq2",
+        "universe_path": str(data_root / "universes" / "nasdaq2"),
+        "symbol_count": 2,
+        "symbols_hash": "28f6daa9e0fb",
+        "start": "2024-01-02",
+        "end": "2024-01-02",
+        "manifest_path": str(data_root / "universes" / "nasdaq2" / "manifest.json"),
+    }
+
+
+def test_load_runtime_config_rejects_missing_data_universe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "autoresearch-data"
+    (data_root / "universes" / "nasdaq2").mkdir(parents=True)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    config = _tiny_config()
+    config["data_universe"] = "nasdaq_missing"
+    path = tmp_path / "runtime.json"
+    path.write_text(json.dumps({"runtime_config": config}) + "\n")
+
+    loaded = load_runtime_config(str(path), "ema")
+
+    with pytest.raises(
+        FileNotFoundError,
+        match=(
+            "Data universe 'nasdaq_missing' not found.*AUTORESEARCH_DATA_ROOT="
+            f"{re.escape(str(data_root))}.*Available universes: nasdaq2"
+        ),
+    ):
+        load_universe_data(loaded)
+
+
+def test_load_runtime_config_rejects_path_based_market_data_selector(tmp_path: Path) -> None:
+    legacy_path = tmp_path / "legacy-data"
+    _write_wide_dataset(legacy_path, ["SPY"])
+    config = _tiny_config()
+    config["data" + "_" + "dir"] = str(legacy_path)
+    path = tmp_path / "runtime.json"
+    path.write_text(json.dumps({"runtime_config": config}) + "\n")
+
+    with pytest.raises(
+        ValueError,
+        match="Path-based market data selectors are not supported.*data_universe",
+    ):
+        load_runtime_config(str(path), "ema")
+
+
+def test_result_json_includes_data_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "autoresearch-data"
+    _write_wide_dataset(data_root / "universes" / "nasdaq2", ["AAA", "BBB"])
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    config = _tiny_config()
+    config["data_universe"] = "nasdaq2"
+    config_path = tmp_path / "runtime.json"
+    config_path.write_text(json.dumps({"runtime_config": config}) + "\n")
+
+    subprocess.run(
+        [
+            "python3",
+            str(REPO_ROOT / "backtest" / "runner.py"),
+            "--strategy",
+            "ema",
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+        env={**os.environ, "AUTORESEARCH_DATA_ROOT": str(data_root)},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    payload = json.loads((tmp_path / "out" / "result.json").read_text())
+
+    assert payload["data_provenance"]["data_universe"] == "nasdaq2"
+    assert payload["data_provenance"]["symbol_count"] == 2
+
+
+def test_load_runtime_config_resolves_data_universe_for_orb(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "autoresearch-data"
+    _write_wide_dataset(data_root / "universes" / "nasdaq8", ["SPY"])
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    config = {
+        "data_universe": "nasdaq8",
+        "symbols": None,
+        "validation_start": "2024-01-01",
+        "validation_end": "2024-01-02",
+        "or_minutes": 30,
+        "timeframe_minutes": 5,
+        "rr_ratio": 2.0,
+    }
+    path = tmp_path / "orb.json"
+    path.write_text(json.dumps({"runtime_config": config}) + "\n")
+
+    loaded = load_runtime_config(str(path), "orb")
+
+    assert loaded["data_provenance"]["data_universe"] == "nasdaq8"
+
+
+def test_config_hash_for_data_universe_ignores_machine_specific_paths() -> None:
+    left = {
+        "ema_length": 5,
+        "data_universe": "nasdaq8",
+        "data_provenance": {
+            "data_universe": "nasdaq8",
+            "universe_path": "/root/autoresearch-data/universes/nasdaq8",
+            "manifest_path": "/root/autoresearch-data/universes/nasdaq8/manifest.json",
+            "symbol_count": 8,
+            "symbols_hash": "abc123",
+        },
+    }
+    right = {
+        "ema_length": 5,
+        "data_universe": "nasdaq8",
+        "data_provenance": {
+            "data_universe": "nasdaq8",
+            "universe_path": "/Users/me/autoresearch-data/universes/nasdaq8",
+            "manifest_path": "/Users/me/autoresearch-data/universes/nasdaq8/manifest.json",
+            "symbol_count": 8,
+            "symbols_hash": "abc123",
+        },
+    }
+
+    assert _config_hash(left) == _config_hash(right)
+
+
 @pytest.mark.parametrize(
     ("family", "config", "expected"),
     [
@@ -335,6 +519,8 @@ def test_load_runtime_config_accepts_runtime_config_wrapper(tmp_path: Path) -> N
 def test_load_runtime_config_rejects_invalid_runtime_config(
     tmp_path: Path, family: str, config: dict, expected: str
 ) -> None:
+    if family in {"ema", "orb"}:
+        config = {"data_universe": "tiny_ema_data", **config}
     path = tmp_path / f"{family}.json"
     path.write_text(json.dumps({"runtime_config": config}) + "\n")
 
@@ -386,6 +572,8 @@ def test_load_runtime_config_rejects_invalid_runtime_config(
 def test_load_runtime_config_rejects_malformed_numeric_types(
     tmp_path: Path, family: str, config: dict, expected: str
 ) -> None:
+    if family in {"ema", "orb"}:
+        config = {"data_universe": "tiny_ema_data", **config}
     path = tmp_path / f"{family}.json"
     path.write_text(json.dumps({"runtime_config": config}) + "\n")
 

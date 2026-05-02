@@ -24,6 +24,7 @@ class DemoStrategy(BaseStrategy):
     name = "_demo"
     description_for_research = DESCRIPTION_FOR_RESEARCH
     research_spec = DEMO_RESEARCH_SPEC
+    requires_data_universe = False
 
     def run(self, config: dict[str, Any]) -> dict[str, Any]:
         result = empty_metrics()
