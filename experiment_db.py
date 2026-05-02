@@ -194,7 +194,7 @@ class ExperimentDB:
             conn.commit()
 
     def primary_metric_name(self) -> str:
-        return self.session_meta().get("metricName", "median_expectancy")
+        return self.session_meta().get("metricName", "profit_factor")
 
     def best_direction(self) -> str:
         return self.session_meta().get("bestDirection", "higher")
@@ -904,7 +904,7 @@ def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:
     asi = entry.get("asi") or {}
     metrics = json_loads_metric_sentinels(json.dumps(entry.get("metrics") or {}))
     primary_metric_name = entry.get("primary_metric_name") or metrics.get(
-        "primary_metric_name", "median_expectancy"
+        "primary_metric_name", "profit_factor"
     )
     if primary_metric_name not in metrics and entry.get("metric") is not None:
         metrics[primary_metric_name] = entry.get("metric")

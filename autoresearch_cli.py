@@ -53,9 +53,7 @@ def read_session(path: str) -> tuple[dict[str, Any] | None, list[dict[str, Any]]
     config = db.session_meta() or None
     if config is not None:
         config["_segment"] = 0
-    primary_metric_name = (
-        config.get("metricName", "median_expectancy") if config else "median_expectancy"
-    )
+    primary_metric_name = config.get("metricName", "profit_factor") if config else "profit_factor"
     results = []
     for idx, record in enumerate(db.all(), start=1):
         metric = record.validation_metrics.get(primary_metric_name) if config else None
@@ -234,9 +232,7 @@ def cmd_log(args):
         except json.JSONDecodeError:
             _log.error(f"Warning: could not parse --asi JSON: {args.asi}")
 
-    primary_metric_name = (
-        config.get("metricName", "median_expectancy") if config else "median_expectancy"
-    )
+    primary_metric_name = config.get("metricName", "profit_factor") if config else "profit_factor"
     merged_metrics = dict(extra_metrics)
     merged_metrics[primary_metric_name] = args.metric
 

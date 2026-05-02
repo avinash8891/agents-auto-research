@@ -1409,6 +1409,59 @@ def test_main_exits_on_persisted_blocked_state(monkeypatch, tmp_path):
     assert loop_mod.main() == 1
 
 
+def test_main_continues_from_baseline_blocked_research_handoff(monkeypatch, tmp_path):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.calls = 0
+            self.state = {
+                "state": "running",
+                "blockers": [],
+                "job": 1,
+                "research_round": 0,
+                "job_usage": None,
+            }
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            self.state = dict(state)
+
+        def execute_once(self):
+            self.calls += 1
+            if self.calls == 1:
+                self.state = {
+                    "state": "blocked",
+                    "blockers": [{"kind": "research_required"}],
+                }
+                return 0
+            self.state = {"state": "finished", "blockers": [], "finished_reason": "done"}
+            return 0
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr("trace_sdk.get_log_file", lambda: "test.log")
+    monkeypatch.setattr("trace_sdk.get_session_id", lambda: "session-1")
+    monkeypatch.setattr("trace_sdk.set_family", lambda *args, **kwargs: None)
+    monkeypatch.setattr(loop_mod, "trace", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sys, "argv", ["autoresearch_controller.py", "--family", "ema"])
+
+    assert loop_mod.main() == 0
+
+
 def test_main_preserves_halted_thesis_resume_metadata(monkeypatch, tmp_path):
     family = load_family("ema")
 

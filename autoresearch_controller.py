@@ -460,7 +460,7 @@ class AutoresearchController:
     def primary_metric_name(self) -> str:
         return self.experiment_db.primary_metric_name()
 
-    def parse_metric(self, output: str, name: str = "median_expectancy") -> float | None:
+    def parse_metric(self, output: str, name: str = "profit_factor") -> float | None:
         return _experiment_parse_metric(output, name)
 
     def evaluate_metric(self, metric: float) -> str:
@@ -639,6 +639,9 @@ def main() -> int:
         if current in ("finished", "interrupted", "halted"):
             return 0
         if current == "blocked":
+            blockers = state.get("blockers", [])
+            if any(b.get("kind") == "research_required" for b in blockers):
+                continue
             # `execute_once()` already performs the only recoverable blocked
             # transition (`research_required`). Any remaining blocked state is
             # terminal for the process.

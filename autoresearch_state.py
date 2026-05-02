@@ -283,7 +283,7 @@ def render_current_md(
         "",
         "## Current Best",
         f"- `{best.get('config', 'unknown') if best else 'none'}`",
-        f"- median_expectancy: `{best.get('metric', 'unknown') if best else 'none'}`",
+        f"- profit_factor: `{best.get('metric', 'unknown') if best else 'none'}`",
         "",
         "## Latest Insights",
         *_format_latest_lines(latest_result(results), best),

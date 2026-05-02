@@ -233,15 +233,15 @@ def parse_benchmark_details_legacy(output: str) -> dict[str, Any]:
 def primary_metric_name(entries: list[dict[str, Any]]) -> str:
     """Read the primary metric name from exported session entries."""
     if not entries:
-        return "median_expectancy"
+        return "profit_factor"
     for entry in entries:
         if entry.get("type") == "config":
-            return entry.get("metricName", "median_expectancy")
-    return "median_expectancy"
+            return entry.get("metricName", "profit_factor")
+    return "profit_factor"
 
 
 def parse_metric(
-    output: str, name: str = "median_expectancy", *, allow_legacy: bool = False
+    output: str, name: str = "profit_factor", *, allow_legacy: bool = False
 ) -> float | None:
     result_json = parse_result_json(output)
     if result_json:
@@ -837,7 +837,12 @@ def _evaluate_against_thesis(
         from experiment_evaluator import evaluate_experiment
 
         candidate_metrics = dict(details)
-        candidate_metrics["median_expectancy"] = metric
+        primary_metric_name = (
+            controller.primary_metric_name()
+            if hasattr(controller, "primary_metric_name")
+            else "profit_factor"
+        )
+        candidate_metrics[primary_metric_name] = metric
         verdict = evaluate_experiment(
             thesis=_build_thesis_for_eval(contract),
             baseline_metrics=_baseline_metrics_from_first_result(controller),
