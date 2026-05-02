@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
-"""VPS runner using paramiko for strategy backtests.
+"""VPS runner using Git-based deployment for strategy backtests.
 
 Usage: python3 vps_runner.py --strategy <strategy-name> <config-path>
 
-1. Syntax-check local files
-2. SCP files to VPS
-3. SSH to run the generic backtest runner
-4. Print backtest output for autoresearch_loop to parse
+1. SSH to the VPS
+2. Clone/fetch AUTORESEARCH_GIT_REPO at AUTORESEARCH_GIT_REF
+3. Resolve that ref to an exact commit SHA and check it out detached
+4. Run the generic backtest runner with SHA-scoped output
+5. Print backtest output for autoresearch_loop to parse
 """
 
 import argparse
-import ast
 import json
 import os
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, replace
+from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit, urlunsplit
 
 import paramiko
 
@@ -28,19 +30,10 @@ from strategies import STRATEGIES
 from strategy_family import StrategyFamily, load_family
 from trace_sdk import trace, trace_ssh
 
-LOCAL_ROOT = Path(__file__).resolve().parent
-SYNC_DIRS = ("backtest", "configs", "strategies", "trace_adapters")
-SYNC_TOP_LEVEL_SUFFIXES = (".py", ".yaml", ".yml", ".json")
-SYNC_EXCLUDED_DIRS = {
-    ".git",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    "__pycache__",
-    "experiments",
-    "logs",
-}
 KNOWN_HOSTS_ENV = "AUTORESEARCH_KNOWN_HOSTS"
+RESOLVED_SHA_MARKER = "AUTORESEARCH_RESOLVED_SHA"
+LEGACY_REMOTE_ROOT = "/root/orb-research"
+REMOTE_ROOT_DENYLIST = {"/", "/root", "/home", "/srv", "/tmp", "/var", "/opt"}
 
 
 @dataclass(frozen=True)
@@ -49,6 +42,9 @@ class VPSConfig:
     user: str
     key: str
     remote_dir: str
+    git_repo: str
+    git_ref: str
+    job: str = "0"
 
 
 def config_from_env() -> VPSConfig:
@@ -57,79 +53,236 @@ def config_from_env() -> VPSConfig:
         "AUTORESEARCH_VPS_USER",
         "AUTORESEARCH_VPS_KEY",
         "AUTORESEARCH_VPS_DIR",
+        "AUTORESEARCH_GIT_REPO",
+        "AUTORESEARCH_GIT_REF",
+        "AUTORESEARCH_JOB",
     )
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
         raise ValueError("Missing VPS configuration environment variables: " + ", ".join(missing))
+    remote_dir = os.environ["AUTORESEARCH_VPS_DIR"]
+    _validate_remote_dir(remote_dir)
+    git_ref = os.environ["AUTORESEARCH_GIT_REF"]
+    _validate_git_ref(git_ref)
+    job = os.environ["AUTORESEARCH_JOB"]
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job):
+        raise ValueError(
+            "AUTORESEARCH_JOB must be an explicit path-safe job id "
+            "using only letters, digits, underscore, dot, or dash."
+        )
+    if job.startswith("job-"):
+        raise ValueError("AUTORESEARCH_JOB must be the raw job id, without the job- prefix.")
     return VPSConfig(
         host=os.environ["AUTORESEARCH_VPS_HOST"],
         user=os.environ["AUTORESEARCH_VPS_USER"],
         key=os.path.expanduser(os.environ["AUTORESEARCH_VPS_KEY"]),
-        remote_dir=os.environ["AUTORESEARCH_VPS_DIR"],
+        remote_dir=remote_dir,
+        git_repo=os.environ["AUTORESEARCH_GIT_REPO"],
+        git_ref=git_ref,
+        job=job,
     )
 
 
-def build_remote_command(config: VPSConfig, family: StrategyFamily, config_path: str) -> str:
-    config_basename = os.path.basename(config_path)
-    config_dirname = os.path.dirname(config_path) or "."
+def _validate_remote_dir(remote_dir: str) -> None:
+    if remote_dir == LEGACY_REMOTE_ROOT:
+        raise ValueError(
+            "Refusing legacy VPS root /root/orb-research; set AUTORESEARCH_VPS_DIR "
+            "to a fresh remote root before launching."
+        )
+    path = PurePosixPath(remote_dir)
+    if not path.is_absolute() or str(path) != remote_dir:
+        raise ValueError("AUTORESEARCH_VPS_DIR must be an absolute normalized POSIX path.")
+    if remote_dir in REMOTE_ROOT_DENYLIST:
+        raise ValueError(
+            "AUTORESEARCH_VPS_DIR must point at a dedicated autoresearch checkout, "
+            f"not {remote_dir}."
+        )
+    if ".." in path.parts:
+        raise ValueError("AUTORESEARCH_VPS_DIR must not contain parent-directory segments.")
+    if not re.fullmatch(r"/[A-Za-z0-9._/-]+", remote_dir):
+        raise ValueError(
+            "AUTORESEARCH_VPS_DIR must use only path-safe letters, digits, underscore, "
+            "dot, dash, and slash."
+        )
+    if "autoresearch" not in path.name and "auto-research" not in path.name:
+        raise ValueError(
+            "AUTORESEARCH_VPS_DIR must end in a dedicated autoresearch checkout directory."
+        )
+
+
+def _validate_git_ref(git_ref: str) -> None:
+    if re.fullmatch(r"[0-9a-fA-F]{40}", git_ref):
+        return
+    if git_ref.startswith(("+", "-")) or ":" in git_ref:
+        raise ValueError(
+            "AUTORESEARCH_GIT_REF must be a branch, tag, or full commit SHA, not a refspec."
+        )
+    if any(token in git_ref for token in ("..", "@{", "\\")):
+        raise ValueError("AUTORESEARCH_GIT_REF contains unsafe Git ref syntax.")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/@-]*", git_ref):
+        raise ValueError(
+            "AUTORESEARCH_GIT_REF must be a path-safe branch, tag, or full commit SHA."
+        )
+
+
+def build_git_prepare_command(config: VPSConfig) -> str:
+    remote_dir = shlex.quote(config.remote_dir)
+    remote_parent = shlex.quote(str(PurePosixPath(config.remote_dir).parent))
+    git_repo = shlex.quote(config.git_repo)
+    git_ref = shlex.quote(config.git_ref)
     return (
+        "set -e && "
+        f"mkdir -p {remote_parent} && "
+        f"if [ ! -d {remote_dir}/.git ]; then "
+        f"git clone --no-checkout {git_repo} {remote_dir}; "
+        "fi && "
+        f"cd {remote_dir} && "
+        f"git remote set-url origin {git_repo} && "
+        f"git fetch --prune origin {git_ref} && "
+        "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
+        'git checkout --detach "$resolved" && '
+        "git clean -ffdx "
+        "-e '*_autoresearch-runs' -e '*_autoresearch-runs/**' "
+        "-e 'data' -e 'data/**' "
+        "-e 'experiments' -e 'experiments/**' "
+        "-e 'proposals' -e 'proposals/**' "
+        "-e '*-proposals' -e '*-proposals/**' "
+        "-e 'compilations' -e 'compilations/**' "
+        "-e '*-compilations' -e '*-compilations/**' "
+        "-e 'contracts' -e 'contracts/**' "
+        "-e '*-contracts' -e '*-contracts/**' "
+        "-e 'run-queue' -e 'run-queue/**' "
+        "-e '*-run-queue' -e '*-run-queue/**' "
+        "-e 'research' -e 'research/**' "
+        "-e '*-research' -e '*-research/**' "
+        "-e 'builder-requests' -e 'builder-requests/**' "
+        "-e '*-builder-requests' -e '*-builder-requests/**' "
+        "-e '*_autoresearch.next.json' -e '*_autoresearch.current.md' "
+        "-e '*_autoresearch.ideas.md' -e '*_baseline_checkpoints.json' "
+        "-e '*_experiments.db' -e 'logs' -e 'logs/**' && "
+        f"printf '{RESOLVED_SHA_MARKER} %s\\n' \"$resolved\""
+    )
+
+
+def redact_git_repo_url(git_repo: str) -> str:
+    parsed = urlsplit(git_repo)
+    if not parsed.scheme or "@" not in parsed.netloc:
+        return git_repo
+    host = parsed.hostname or ""
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+    return urlunsplit((parsed.scheme, f"***@{host}", parsed.path, parsed.query, parsed.fragment))
+
+
+def redact_secrets(text: str, config: VPSConfig) -> str:
+    redacted = text.replace(config.git_repo, redact_git_repo_url(config.git_repo))
+    return re.sub(r"(https?://)[^/\s@]+@", r"\1***@", redacted)
+
+
+def parse_resolved_sha(output: str) -> str:
+    match = re.search(rf"^{RESOLVED_SHA_MARKER} ([0-9a-f]{{40}})$", output, flags=re.MULTILINE)
+    if not match:
+        raise RuntimeError("VPS Git prepare did not report a resolved commit SHA")
+    return match.group(1)
+
+
+def build_remote_command(
+    config: VPSConfig,
+    family: StrategyFamily,
+    config_path: str,
+    resolved_sha: str,
+) -> str:
+    python_hash = (
+        "import sys; "
+        "from backtest.runtime_config import load_runtime_config; "
+        "from config_hash import _config_hash; "
+        "print(_config_hash(load_runtime_config(sys.argv[1], sys.argv[2])))"
+    )
+    output_root = f"{config.remote_dir}/{family.runs_dirname}/job-{config.job}/{resolved_sha}"
+    return (
+        "set -e && "
         f"cd {shlex.quote(config.remote_dir)} && "
-        f"mkdir -p {shlex.quote(config_dirname)} && "
-        f"(cp {shlex.quote(config_basename)} {shlex.quote(config_path)} 2>/dev/null || true) && "
-        f"find . -name __pycache__ -type d -exec rm -rf {{}} + 2>/dev/null || true && "
-        f"python3 backtest/runner.py --strategy {shlex.quote(family.name)} "
-        f"--config {shlex.quote(config_path)}"
+        "export AUTORESEARCH_VPS=1 && "
+        f"export AUTORESEARCH_RESOLVED_SHA={shlex.quote(resolved_sha)} && "
+        "python_bin=python3 && "
+        f'config_hash=$("$python_bin" -c {shlex.quote(python_hash)} '
+        f"{shlex.quote(config_path)} {shlex.quote(family.name)}) && "
+        f"output_dir={shlex.quote(output_root)}/$config_hash && "
+        'mkdir -p "$output_dir" && '
+        f'"$python_bin" -m backtest.runner --strategy {shlex.quote(family.name)} '
+        f'--config {shlex.quote(config_path)} --output-dir "$output_dir"'
     )
 
 
-def syntax_check(paths: list[Path]) -> bool:
-    for path in paths:
-        if path.suffix != ".py":
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def _relative_repo_path(path: str) -> Path:
+    repo_root = _repo_root()
+    local_path = Path(path)
+    if not local_path.is_absolute():
+        local_path = repo_root / local_path
+    try:
+        return local_path.resolve().relative_to(repo_root)
+    except ValueError as exc:
+        raise ValueError(f"Config path must be inside repository: {path}") from exc
+
+
+def _is_git_tracked(rel_path: Path) -> bool:
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", rel_path.as_posix()],
+        cwd=_repo_root(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _sftp_mkdir_p(sftp: paramiko.SFTPClient, remote_dir: str) -> None:
+    current = ""
+    for part in PurePosixPath(remote_dir).parts:
+        if part == "/":
+            current = "/"
             continue
+        current = f"{current.rstrip('/')}/{part}" if current else part
         try:
-            ast.parse(path.read_text())
-        except SyntaxError as e:
-            try:
-                rel = path.relative_to(LOCAL_ROOT)
-            except ValueError:
-                rel = path
-            print(f"SYNTAX ERROR in {rel}: {e}", file=sys.stderr)
-            return False
-    return True
+            sftp.stat(current)
+        except OSError:
+            sftp.mkdir(current)
 
 
-def _is_runtime_top_level_file(rel: Path) -> bool:
-    name = rel.as_posix()
-    return (
-        name.endswith("_autoresearch.current.md")
-        or name.endswith("_autoresearch.next.json")
-        or name.endswith("_baseline_checkpoints.json")
-        or name.endswith("_experiments.db")
-        or name == "research_findings.jsonl"
-    )
+def materialize_remote_config_if_needed(
+    client: paramiko.SSHClient,
+    config: VPSConfig,
+    config_path: str,
+) -> str:
+    """Upload ignored generated experiment configs as run inputs, not code deployment."""
+    rel_path = _relative_repo_path(config_path)
+    if _is_git_tracked(rel_path):
+        return rel_path.as_posix()
 
+    if rel_path.parts[:1] != ("experiments",):
+        raise RuntimeError(
+            "VPS Git deployment only accepts tracked config files or generated "
+            f"experiments/ configs; refused untracked config: {rel_path.as_posix()}"
+        )
 
-def _is_syncable_path(path: Path, root: Path) -> bool:
-    rel = path.relative_to(root)
-    if any(part.endswith("_autoresearch-runs") for part in rel.parts):
-        return False
-    if any(part in SYNC_EXCLUDED_DIRS for part in rel.parts):
-        return False
-    if len(rel.parts) == 1:
-        return path.suffix in SYNC_TOP_LEVEL_SUFFIXES and not _is_runtime_top_level_file(rel)
-    return rel.parts[0] in SYNC_DIRS and path.suffix in SYNC_TOP_LEVEL_SUFFIXES
+    local_path = _repo_root() / rel_path
+    if not local_path.exists():
+        raise FileNotFoundError(f"Generated config is not present locally: {rel_path.as_posix()}")
 
-
-def sync_relative_paths(root: Path = LOCAL_ROOT) -> list[str]:
-    return [
-        path.relative_to(root).as_posix()
-        for path in sorted(root.rglob("*"))
-        if path.is_file() and _is_syncable_path(path, root)
-    ]
-
-
-def _iter_sync_paths(root: Path = LOCAL_ROOT) -> list[Path]:
-    return [root / rel for rel in sync_relative_paths(root)]
+    remote_path = f"{config.remote_dir.rstrip('/')}/{rel_path.as_posix()}"
+    remote_parent = str(PurePosixPath(remote_path).parent)
+    sftp = client.open_sftp()
+    try:
+        _sftp_mkdir_p(sftp, remote_parent)
+        sftp.put(str(local_path), remote_path)
+    finally:
+        sftp.close()
+    trace("VPS_RUNNER", f"Materialized generated config input: {rel_path.as_posix()}")
+    return rel_path.as_posix()
 
 
 def create_verified_ssh_client() -> paramiko.SSHClient:
@@ -158,17 +311,6 @@ def connect_verified_ssh_client(vps_config: VPSConfig) -> paramiko.SSHClient:
             "to a known_hosts file containing the VPS host key."
         ) from exc
     return client
-
-
-def _ensure_remote_dir(sftp: paramiko.SFTPClient, remote_path: str) -> None:
-    parts = Path(remote_path).parts
-    current = ""
-    for part in parts[:-1]:
-        current = f"{current}/{part}" if current else part
-        try:
-            sftp.mkdir(current)
-        except IOError:
-            pass
 
 
 def _localize_remote_result_output(output: str, sftp: paramiko.SFTPClient) -> str:
@@ -233,18 +375,6 @@ def main():
     family = load_family(strategy_name)
     vps_config = config_from_env()
     trace("VPS_RUNNER", f"START strategy={strategy_name} config={config_path}")
-    if not (LOCAL_ROOT / config_path).exists():
-        trace("VPS_RUNNER", f"Config not found: {config_path}")
-        print(f"Config not found: {config_path}", file=sys.stderr)
-        sys.exit(1)
-
-    sync_paths = _iter_sync_paths()
-    trace("VPS_RUNNER", f"Syntax checking {len(sync_paths)} synced files")
-    if not syntax_check(sync_paths):
-        trace("VPS_RUNNER", "SYNTAX CHECK FAILED")
-        print("SYNTAX ERROR")
-        sys.exit(1)
-    trace("VPS_RUNNER", "Syntax check passed")
 
     trace("VPS_RUNNER", f"Connecting to {vps_config.host} as {vps_config.user}")
     try:
@@ -253,27 +383,44 @@ def main():
         trace("VPS_RUNNER", f"SSH setup failed: {exc}")
         print(str(exc), file=sys.stderr)
         sys.exit(1)
-    sftp = client.open_sftp()
     trace("VPS_RUNNER", "Connected")
 
-    t0 = time.time()
-    for path in sync_paths:
-        rel = path.relative_to(LOCAL_ROOT).as_posix()
-        remote = f"{vps_config.remote_dir}/{rel}"
-        _ensure_remote_dir(sftp, remote)
-        sftp.put(str(path), remote)
-        trace("VPS_RUNNER", f"SCP {rel} -> {remote}")
-
-    config_basename = os.path.basename(config_path)
-    sftp.put(str(LOCAL_ROOT / config_path), f"{vps_config.remote_dir}/{config_basename}")
-    trace(
-        "VPS_RUNNER",
-        f"SCP config {config_path} -> {vps_config.remote_dir}/{config_basename}",
+    prepare_cmd = build_git_prepare_command(vps_config)
+    safe_prepare_cmd = build_git_prepare_command(
+        replace(vps_config, git_repo=redact_git_repo_url(vps_config.git_repo))
     )
+    trace("VPS_RUNNER", f"SSH PREPARE: {safe_prepare_cmd}")
+    t0 = time.time()
+    _, prepare_stdout, prepare_stderr = client.exec_command(prepare_cmd, timeout=600)
+    prepare_out = prepare_stdout.read().decode()
+    prepare_err = prepare_stderr.read().decode()
+    safe_prepare_out = redact_secrets(prepare_out, vps_config)
+    safe_prepare_err = redact_secrets(prepare_err, vps_config)
+    prepare_exit = prepare_stdout.channel.recv_exit_status()
+    trace_ssh(safe_prepare_cmd, prepare_exit, safe_prepare_out, safe_prepare_err)
+    if prepare_exit != 0:
+        client.close()
+        if safe_prepare_out:
+            print(safe_prepare_out, end="")
+        if safe_prepare_err:
+            print(safe_prepare_err, end="", file=sys.stderr)
+        sys.exit(prepare_exit)
+    try:
+        resolved_sha = parse_resolved_sha(prepare_out)
+    except RuntimeError as exc:
+        client.close()
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    trace("VPS_RUNNER", f"Git prepare complete sha={resolved_sha} elapsed={time.time() - t0:.1f}s")
 
-    trace("VPS_RUNNER", f"SCP complete in {time.time() - t0:.1f}s")
+    try:
+        config_path = materialize_remote_config_if_needed(client, vps_config, config_path)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        client.close()
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
 
-    cmd = build_remote_command(vps_config, family, config_path)
+    cmd = build_remote_command(vps_config, family, config_path, resolved_sha)
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()
     stdin, stdout, stderr = client.exec_command(cmd, timeout=600)
@@ -284,16 +431,17 @@ def main():
     exit_code = stdout.channel.recv_exit_status()
     elapsed = time.time() - t1
 
+    sftp = client.open_sftp()
     try:
         out = _localize_remote_result_output(out, sftp)
     except RuntimeError as exc:
         trace("VPS_RUNNER", f"Artifact localization failed: {exc}")
-        client.close()
         sftp.close()
+        client.close()
         print(str(exc), file=sys.stderr)
         sys.exit(1)
-    client.close()
     sftp.close()
+    client.close()
 
     trace_ssh(cmd, exit_code, out, err)
     trace(

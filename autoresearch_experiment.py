@@ -36,7 +36,7 @@ from autoresearch_state import (
     read_state,
     write_state,
 )
-from config_hash import _config_hash
+from config_hash import _config_hash, _git_sha
 from experiment_db import (
     BaselineCheckpoint,
     ExperimentResult,
@@ -506,12 +506,13 @@ def _build_db_record(
             if decision == "keep"
             else "rejected by primary metric comparison"
         )
+    code_commit = _executed_code_commit(controller, details)
     record = ExperimentResult(
         experiment_id=contract.experiment_id if contract else fallback_experiment_id,
         thesis_id=contract.thesis_id if contract else Path(config).stem,
         config_path=config,
         runtime_config=runtime_config,
-        code_commit=controller.current_commit(),
+        code_commit=code_commit,
         data_hash=build_data_hash(runtime_config),
         train_metrics=train_metrics,
         validation_metrics=details,
@@ -533,6 +534,13 @@ def _build_db_record(
         usage=state.get("_last_round_usage", {}),
     )
     return record
+
+
+def _executed_code_commit(controller: "AutoresearchController", details: dict[str, Any]) -> str:
+    git_sha = details.get("git_sha")
+    if isinstance(git_sha, str) and re.fullmatch(r"[0-9a-f]{7,40}", git_sha):
+        return git_sha
+    return controller.current_commit()
 
 
 def _build_export_entry(
@@ -558,7 +566,7 @@ def _build_export_entry(
         "run_id": run_id,
         "experiment_id": experiment_id,
         "hypothesis_id": identity,
-        "commit": controller.current_commit(),
+        "commit": _executed_code_commit(controller, details),
         "metric": metric,
         "metrics": details,
         "status": decision,
@@ -577,6 +585,37 @@ def _write_run_artifacts(artifact_dir: Path, output: str, analysis: dict[str, An
     write_json_atomic_strict(artifact_dir / "analysis.json", analysis)
 
 
+def _artifact_dir_for_executed_commit(
+    controller: "AutoresearchController",
+    artifact_dir: Path,
+    details: dict[str, Any],
+) -> Path:
+    executed_commit = _executed_code_commit(controller, details)
+    current_commit = controller.current_commit()
+    if executed_commit == current_commit:
+        return artifact_dir
+
+    target_dir = artifact_dir.parent.parent / executed_commit / artifact_dir.name
+    if target_dir == artifact_dir:
+        return artifact_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if artifact_dir.exists():
+        for child in artifact_dir.iterdir():
+            dest = target_dir / child.name
+            if dest.exists():
+                if dest.is_dir():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+            shutil.move(str(child), str(dest))
+        try:
+            artifact_dir.rmdir()
+            artifact_dir.parent.rmdir()
+        except OSError:
+            pass
+    return target_dir
+
+
 def log_experiment_result(
     controller: "AutoresearchController",
     *,
@@ -590,6 +629,8 @@ def log_experiment_result(
 ) -> None:
     controller.sanitize_duplicate_entries(config)
     artifact_dir = _resolve_artifact_dir(controller, config, artifact_dir=artifact_dir)
+    details = parse_benchmark_details(output)
+    artifact_dir = _artifact_dir_for_executed_commit(controller, artifact_dir, details)
     _write_run_artifacts(artifact_dir, output, analysis)
 
     thesis_id, config_changes = _read_thesis_metadata(controller, config)
@@ -605,7 +646,6 @@ def log_experiment_result(
         config_changes=config_changes,
         next_action=next_action,
     )
-    details = parse_benchmark_details(output)
     next_run = 1 + controller.experiment_db.count()
     state = controller.read_state()
     entry = _build_export_entry(
@@ -658,7 +698,10 @@ def _compute_run_output_dir(controller: "AutoresearchController", config: str) -
         if controller.runs_dir.is_absolute()
         else controller.root / controller.runs_dir
     )
-    run_output_dir = runs_dir / f"job-{job}" / config_hash
+    current_commit = (
+        controller.current_commit() if hasattr(controller, "current_commit") else _git_sha()
+    )
+    run_output_dir = runs_dir / f"job-{job}" / current_commit / config_hash
     run_output_dir.mkdir(parents=True, exist_ok=True)
     return run_output_dir, config_path_full
 
@@ -837,8 +880,9 @@ def _record_baseline_checkpoint(
     details: dict[str, Any],
     runtime_cfg: dict[str, Any],
 ) -> None:
+    code_commit = _executed_code_commit(controller, details)
     new_checkpoint = BaselineCheckpoint(
-        code_commit=controller.current_commit(),
+        code_commit=code_commit,
         data_hash=build_data_hash(runtime_cfg),
         config_hash=build_config_hash(runtime_cfg),
         metrics=details,
@@ -851,7 +895,7 @@ def _record_baseline_checkpoint(
     # and redundantly rerun the baseline. This is benign — no data is lost and
     # the rerun produces a valid new checkpoint.
     controller.baseline_tracker.record(new_checkpoint)
-    trace("BASELINE", f"checkpoint recorded commit={controller.current_commit()}")
+    trace("BASELINE", f"checkpoint recorded commit={code_commit}")
     if drift["drifted"]:
         drift_details = [d for d in drift["details"] if d.get("severity") == "critical"]
         trace("BASELINE", f"DRIFT DETECTED: {drift_details}")

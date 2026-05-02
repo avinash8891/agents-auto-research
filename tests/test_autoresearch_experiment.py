@@ -161,12 +161,14 @@ def test_compute_run_output_dir_for_missing_config_uses_12_char_hash_slug(tmp_pa
         root=tmp_path,
         runs_dir=tmp_path / "runs",
         read_state=lambda: {"job": 3},
+        current_commit=lambda: "abc123",
     )
 
     run_dir, config_path_full = _compute_run_output_dir(controller, "configs/missing.yaml")
 
     assert config_path_full == tmp_path / "configs/missing.yaml"
-    assert run_dir.parent.name == "job-3"
+    assert run_dir.parent.name == "abc123"
+    assert run_dir.parent.parent.name == "job-3"
     assert len(run_dir.name) == 12
 
 
@@ -361,6 +363,9 @@ def test_compute_run_output_dir_anchors_relative_runs_dir_to_controller_root(
         def read_state(self) -> dict[str, object]:
             return {"job": 7}
 
+        def current_commit(self) -> str:
+            return "abc123"
+
     controller = _Controller()
     run_output_dir, config_path_full = _compute_run_output_dir(
         controller, "configs/variants/missing.yaml"
@@ -368,7 +373,9 @@ def test_compute_run_output_dir_anchors_relative_runs_dir_to_controller_root(
 
     expected_hash = _config_hash({"config_path": "configs/variants/missing.yaml"})
     assert config_path_full == tmp_path / "configs/variants/missing.yaml"
-    assert run_output_dir == tmp_path / "ema_autoresearch-runs" / "job-7" / expected_hash
+    assert run_output_dir == (
+        tmp_path / "ema_autoresearch-runs" / "job-7" / "abc123" / expected_hash
+    )
 
 
 def test_evaluate_effect_returns_none_when_metric_is_missing() -> None:
@@ -453,6 +460,67 @@ def test_build_db_record_populates_expected_runtime_fields(tmp_path: Path) -> No
     assert record.parent_experiment_id == "parent-exp"
 
 
+def test_build_db_record_prefers_executed_result_git_sha(tmp_path: Path) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def current_commit(self) -> str:
+            return "local-controller-sha"
+
+    controller = _Controller()
+    controller.ctx.current_contract = None
+    controller.ctx.parent_experiment_id = ""
+    controller.ctx.latest_config_contents = {"ema_length": 5}
+    executed_sha = "0123456789abcdef0123456789abcdef01234567"
+
+    record = _build_db_record(
+        controller,
+        config="configs/ema_base.yaml",
+        decision="keep",
+        details={"trade_count": 2, "git_sha": executed_sha},
+        analysis={"trade_analysis": {}},
+        fallback_experiment_id="run-1",
+        state={"job": 3},
+    )
+
+    assert record.code_commit == executed_sha
+
+
+def test_build_db_record_preserves_short_executed_result_git_sha(tmp_path: Path) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def current_commit(self) -> str:
+            return "local-controller-sha"
+
+    controller = _Controller()
+    controller.ctx.current_contract = None
+    controller.ctx.parent_experiment_id = ""
+    controller.ctx.latest_config_contents = {"ema_length": 5}
+
+    record = _build_db_record(
+        controller,
+        config="configs/ema_base.yaml",
+        decision="keep",
+        details={"trade_count": 2, "git_sha": "b96e64e"},
+        analysis={"trade_analysis": {}},
+        fallback_experiment_id="run-1",
+        state={"job": 3},
+    )
+
+    assert record.code_commit == "b96e64e"
+
+
 def test_log_experiment_result_uses_legacy_runtime_config_fallback(tmp_path: Path) -> None:
     class _Controller:
         def __init__(self) -> None:
@@ -501,6 +569,69 @@ def test_log_experiment_result_uses_legacy_runtime_config_fallback(tmp_path: Pat
 
     assert row is not None
     assert json.loads(row[0]) == {"ema_length": 5}
+
+
+def test_log_experiment_result_moves_artifacts_to_executed_vps_commit(
+    tmp_path: Path,
+) -> None:
+    launcher_sha = "abc1234"
+    executed_sha = "0123456789abcdef0123456789abcdef01234567"
+
+    class _Controller:
+        def __init__(self) -> None:
+            self.root = tmp_path
+            self.state_path = tmp_path / "ema_autoresearch.next.json"
+            self.runs_dir = tmp_path / "ema_autoresearch-runs"
+            self.family = SimpleNamespace(name="ema")
+            self.experiment_db = ExperimentDB(tmp_path / "ema_experiments.db")
+            self.ctx = SimpleNamespace(
+                current_contract=None,
+                parent_experiment_id="parent-exp",
+                latest_config_contents={"ema_length": 5},
+            )
+
+        def sanitize_duplicate_entries(self, config: str) -> None:
+            return None
+
+        def current_commit(self) -> str:
+            return launcher_sha
+
+        def read_state(self) -> dict[str, object]:
+            return {"state": "running", "job": 1, "_last_round_usage": {}}
+
+    controller = _Controller()
+    controller.state_path.write_text(json.dumps({"state": "running", "job": 1}))
+    source_artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-1" / launcher_sha / "configabc"
+    source_artifact_dir.mkdir(parents=True)
+    (source_artifact_dir / "config.json").write_text("{}\n")
+    result_path = tmp_path / "result.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "metrics": {"median_expectancy": 1.25, "trade_count": 10},
+                "git_sha": executed_sha,
+            }
+        )
+    )
+
+    experiment_mod.log_experiment_result(
+        controller,
+        config="configs/ema_base.yaml",
+        metric=1.25,
+        decision="keep",
+        output=f"RESULT_JSON {result_path}\n",
+        analysis={"trade_analysis": {}},
+        artifact_dir=source_artifact_dir,
+    )
+
+    target_artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-1" / executed_sha / "configabc"
+    assert not source_artifact_dir.exists()
+    assert (target_artifact_dir / "config.json").exists()
+    assert (target_artifact_dir / "benchmark_output.txt").exists()
+
+    entry = controller.experiment_db.export_entries()[-1]
+    assert entry["commit"] == executed_sha
+    assert entry["asi"]["artifact_dir"] == (f"ema_autoresearch-runs/job-1/{executed_sha}/configabc")
 
 
 def test_run_experiment_uses_runtime_config_fallback_for_baseline_checkpoint(
@@ -635,7 +766,10 @@ def test_build_asi_and_entry_use_contract_identity_over_runtime_config_stem(tmp_
         config="experiments/ema5/runtime_config.json",
         metric=1.0,
         decision="keep",
-        details={"trade_count": 2},
+        details={
+            "trade_count": 2,
+            "git_sha": "0123456789abcdef0123456789abcdef01234567",
+        },
         asi=asi,
         next_run=1,
         state={"job": 1},
@@ -644,6 +778,7 @@ def test_build_asi_and_entry_use_contract_identity_over_runtime_config_stem(tmp_
     assert asi["hypothesis"] == "ema5"
     assert asi["artifact_dir"] == "ema_autoresearch-runs/job-1/c2821b0a43ba"
     assert entry["description"] == "strict-native loop: ema5"
+    assert entry["commit"] == "0123456789abcdef0123456789abcdef01234567"
 
 
 def test_build_asi_uses_real_artifact_hash_directory_for_contract_run(tmp_path: Path) -> None:
