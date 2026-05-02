@@ -134,6 +134,13 @@ def write_state(state_path: Path, state: dict[str, Any]) -> None:
 # ── Results ────────────────────────────────────────────────────────
 
 
+def _coerce_job_to_int(job_value: Any) -> int:
+    try:
+        return int(job_value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def read_results(entries: list[dict[str, Any]]) -> list[ExperimentRecord]:
     results: list[ExperimentRecord] = []
     for entry in entries:
@@ -149,7 +156,7 @@ def read_results(entries: list[dict[str, Any]]) -> list[ExperimentRecord]:
                 timestamp=coerce_timestamp_to_iso8601_utc(entry.get("timestamp", 0))
                 or "1970-01-01T00:00:00+00:00",
                 asi=asi,
-                job=int(entry.get("job") or 0),
+                job=_coerce_job_to_int(entry.get("job")),
             )
         )
     return results

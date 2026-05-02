@@ -138,6 +138,24 @@ def test_latest_result_returns_none_for_empty_list() -> None:
     assert latest_result([]) is None
 
 
+def test_read_results_treats_legacy_string_job_ids_as_zero() -> None:
+    entries = [
+        {
+            "metric": 1.25,
+            "status": "keep",
+            "description": "legacy",
+            "timestamp": 1700000000,
+            "job": "2026-05-02",
+            "asi": {"config": "configs/ema_base.yaml"},
+        }
+    ]
+
+    results = read_results(entries)
+
+    assert len(results) == 1
+    assert results[0].job == 0
+
+
 # ── read_results filtering ───────────────────────────────────────
 
 
