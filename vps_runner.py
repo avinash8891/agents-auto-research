@@ -92,6 +92,7 @@ def build_git_prepare_command(config: VPSConfig) -> str:
         'git checkout --detach "$resolved" && '
         "git clean -ffdx "
         "-e '*_autoresearch-runs' -e '*_autoresearch-runs/**' "
+        "-e 'venv' -e 'venv/**' -e '.venv' -e '.venv/**' "
         "-e '*_autoresearch.next.json' -e '*_autoresearch.current.md' "
         "-e '*_autoresearch.ideas.md' -e '*_baseline_checkpoints.json' "
         "-e '*_experiments.db' -e 'logs' -e 'logs/**' && "
@@ -107,6 +108,11 @@ def redact_git_repo_url(git_repo: str) -> str:
     if parsed.port:
         host = f"{host}:{parsed.port}"
     return urlunsplit((parsed.scheme, f"***@{host}", parsed.path, parsed.query, parsed.fragment))
+
+
+def redact_secrets(text: str, config: VPSConfig) -> str:
+    redacted = text.replace(config.git_repo, redact_git_repo_url(config.git_repo))
+    return re.sub(r"(https?://)[^/\s@]+@", r"\1***@", redacted)
 
 
 def parse_resolved_sha(output: str) -> str:
@@ -252,14 +258,16 @@ def main():
     _, prepare_stdout, prepare_stderr = client.exec_command(prepare_cmd, timeout=600)
     prepare_out = prepare_stdout.read().decode()
     prepare_err = prepare_stderr.read().decode()
+    safe_prepare_out = redact_secrets(prepare_out, vps_config)
+    safe_prepare_err = redact_secrets(prepare_err, vps_config)
     prepare_exit = prepare_stdout.channel.recv_exit_status()
-    trace_ssh(safe_prepare_cmd, prepare_exit, prepare_out, prepare_err)
+    trace_ssh(safe_prepare_cmd, prepare_exit, safe_prepare_out, safe_prepare_err)
     if prepare_exit != 0:
         client.close()
-        if prepare_out:
-            print(prepare_out, end="")
-        if prepare_err:
-            print(prepare_err, end="", file=sys.stderr)
+        if safe_prepare_out:
+            print(safe_prepare_out, end="")
+        if safe_prepare_err:
+            print(safe_prepare_err, end="", file=sys.stderr)
         sys.exit(prepare_exit)
     try:
         resolved_sha = parse_resolved_sha(prepare_out)

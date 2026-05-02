@@ -17,6 +17,7 @@ from vps_runner import (
     create_verified_ssh_client,
     parse_resolved_sha,
     redact_git_repo_url,
+    redact_secrets,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -103,6 +104,8 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert 'git checkout --detach "$resolved"' in command
     assert "git clean -ffdx" in command
     assert "-e '*_autoresearch-runs'" in command
+    assert "-e 'venv'" in command
+    assert "-e '.venv'" in command
     assert "-e '*_experiments.db'" in command
     assert "AUTORESEARCH_RESOLVED_SHA %s" in command
     assert "scp" not in command.lower()
@@ -129,6 +132,28 @@ def test_redact_git_repo_url_hides_https_credentials() -> None:
     assert (
         redact_git_repo_url("git@github.com:example/repo.git") == "git@github.com:example/repo.git"
     )
+
+
+def test_redact_secrets_hides_git_credentials_from_output() -> None:
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://token123@github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+    output = (
+        "fatal: unable to access 'https://token123@github.com/example/repo.git/'\n"
+        "remote https://other-token@github.com/other/repo.git failed\n"
+    )
+
+    redacted = redact_secrets(output, config)
+
+    assert "token123" not in redacted
+    assert "other-token" not in redacted
+    assert "https://***@github.com/example/repo.git" in redacted
+    assert "https://***@github.com/other/repo.git" in redacted
 
 
 def test_ssh_client_requires_pretrusted_host_keys(monkeypatch, tmp_path) -> None:
