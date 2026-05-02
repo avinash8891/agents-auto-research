@@ -408,6 +408,14 @@ def test_load_runtime_config_rejects_path_based_market_data_selector(tmp_path: P
         load_runtime_config(str(path), "ema")
 
 
+def test_load_universe_data_rejects_path_traversal_names() -> None:
+    with pytest.raises(ValueError, match="must be a simple universe name"):
+        load_universe_data({"data_universe": "../escape"})
+
+    with pytest.raises(ValueError, match="must be a simple universe name"):
+        load_universe_data({"data_universe": "nested/universe"})
+
+
 def test_result_json_includes_data_provenance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

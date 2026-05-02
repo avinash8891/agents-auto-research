@@ -26,8 +26,6 @@ def resolve_data_universe(config: dict[str, Any]) -> dict[str, Any]:
             "use data_universe."
         )
     universe = _normalize_universe_name(config.get("data_universe"))
-    if "/" in universe or "\\" in universe or universe in {".", ".."} or ".." in universe:
-        raise ValueError(f"data_universe={universe!r} must be a simple universe name.")
 
     universe_dir = data_universe_path(universe)
     manifest_path = manifest_for_universe(universe)
@@ -85,6 +83,8 @@ def _normalize_universe_name(value: Any) -> str:
         value = str(value)
     if not isinstance(value, str) or not value:
         raise ValueError("data_universe must be a non-empty string or integer universe name.")
+    if "/" in value or "\\" in value or value in {".", ".."} or ".." in value:
+        raise ValueError(f"data_universe={value!r} must be a simple universe name.")
     return value
 
 

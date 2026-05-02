@@ -26,6 +26,10 @@ def run_backtest(config: dict) -> dict:
     )
     from strategies.orb.signals import generate_orb_signals
 
+    config = dict(config)
+    config.setdefault("validation_start", "2020-01-01")
+    config.setdefault("validation_end", "2023-12-31")
+
     batch = load_universe_data(config)
     open_ = batch["open"]
     high = batch["high"]

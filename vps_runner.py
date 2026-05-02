@@ -74,12 +74,14 @@ def config_from_env() -> VPSConfig:
         )
     if job.startswith("job-"):
         raise ValueError("AUTORESEARCH_JOB must be the raw job id, without the job- prefix.")
+    vps_user = os.environ["AUTORESEARCH_VPS_USER"]
     data_root = os.environ.get(DATA_ROOT_ENV, "")
     if data_root:
+        data_root = _expand_remote_user_path(data_root, vps_user)
         _validate_remote_data_root(data_root)
     return VPSConfig(
         host=os.environ["AUTORESEARCH_VPS_HOST"],
-        user=os.environ["AUTORESEARCH_VPS_USER"],
+        user=vps_user,
         key=os.path.expanduser(os.environ["AUTORESEARCH_VPS_KEY"]),
         remote_dir=remote_dir,
         git_repo=os.environ["AUTORESEARCH_GIT_REPO"],
@@ -142,6 +144,16 @@ def _validate_remote_data_root(data_root: str) -> None:
             f"{DATA_ROOT_ENV} must use only path-safe letters, digits, underscore, "
             "dot, dash, and slash."
         )
+
+
+def _expand_remote_user_path(path: str, user: str) -> str:
+    if path == "~":
+        return "/root" if user == "root" else f"/home/{user}"
+    if path.startswith("~/"):
+        home = "/root" if user == "root" else f"/home/{user}"
+        suffix = path[2:]
+        return f"{home}/{suffix}" if suffix else home
+    return path
 
 
 def build_git_prepare_command(config: VPSConfig) -> str:

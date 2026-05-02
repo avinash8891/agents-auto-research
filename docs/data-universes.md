@@ -55,7 +55,7 @@ The only config entry point for market data is `data_universe`.
 {
   "data_universe": "nasdaq8",
   "symbol_count": 8,
-  "symbols": ["SPY"],
+  "symbols": ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "SPY"],
   "start": "2020-01-01",
   "end": "2023-12-31"
 }

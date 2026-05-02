@@ -62,6 +62,36 @@ def test_vps_config_reads_optional_remote_data_root_from_environment(monkeypatch
     assert config.data_root == "/data/autoresearch"
 
 
+def test_vps_config_expands_tilde_data_root_for_root_user(monkeypatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
+    monkeypatch.setenv("AUTORESEARCH_VPS_USER", "root")
+    monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "~/autoresearch-data")
+
+    config = config_from_env()
+
+    assert config.data_root == "/root/autoresearch-data"
+
+
+def test_vps_config_expands_tilde_data_root_for_non_root_user(monkeypatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
+    monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
+    monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "~/autoresearch-data")
+
+    config = config_from_env()
+
+    assert config.data_root == "/home/researcher/autoresearch-data"
+
+
 def test_vps_config_requires_explicit_environment(monkeypatch) -> None:
     for name in (
         "AUTORESEARCH_VPS_HOST",
