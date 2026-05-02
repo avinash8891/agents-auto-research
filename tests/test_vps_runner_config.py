@@ -108,6 +108,9 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert "-e '*_autoresearch-runs'" in command
     assert "-e 'venv'" in command
     assert "-e '.venv'" in command
+    assert "-e 'data'" in command
+    assert "-e 'proposals'" in command
+    assert "-e 'run-queue'" in command
     assert "-e '*_experiments.db'" in command
     assert "AUTORESEARCH_RESOLVED_SHA %s" in command
     assert "scp" not in command.lower()
