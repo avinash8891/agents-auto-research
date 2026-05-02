@@ -307,7 +307,7 @@ def build_remote_command(
     segments = [
         "set -e",
         f"cd {shlex.quote(config.remote_dir)}",
-        f'if [ -f "{REMOTE_RUNTIME_ENV_FILENAME}" ]; then (set -a; . ./{REMOTE_RUNTIME_ENV_FILENAME}; set +a); fi',
+        f'if [ -f "{REMOTE_RUNTIME_ENV_FILENAME}" ]; then set -a; . ./{REMOTE_RUNTIME_ENV_FILENAME}; set +a; fi',
         f"export AUTORESEARCH_RESOLVED_SHA={shlex.quote(resolved_sha)}",
     ]
     if config.data_root:
@@ -346,6 +346,7 @@ def materialize_remote_runtime_env(
             remote_parent = str(PurePosixPath(remote_path).parent)
             _sftp_mkdir_p(sftp, remote_parent)
             sftp.put(local_tmp.name, remote_path)
+            sftp.chmod(remote_path, 0o600)
         finally:
             sftp.close()
     finally:
