@@ -29,7 +29,8 @@ REGIME_ALIASES: dict[str, str] = {
 }
 
 SUPPORTED_CONFIG_KEYS: tuple[str, ...] = (
-    "data_dir",
+    "data_universe",
+    "data_provenance",
     "symbols",
     "discovery_start",
     "discovery_end",

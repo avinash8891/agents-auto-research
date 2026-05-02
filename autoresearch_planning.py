@@ -26,6 +26,7 @@ from autoresearch_logging import get_logger
 from autoresearch_state import ExperimentRecord
 from backtest.runtime_config import load_runtime_config
 from compiler_pipeline import compile_proposal_artifact
+from strategies import STRATEGIES
 from strategy_family import StrategyFamily
 from trace_sdk import trace
 
@@ -248,6 +249,7 @@ def _merge_combo_configs(
     b: ExperimentRecord,
     family_a: str,
     family_b: str,
+    family: StrategyFamily,
     combo_slug: str,
     root: Path,
     combo_config_yaml: str,
@@ -265,6 +267,9 @@ def _merge_combo_configs(
         _write_text_atomic(out, json.dumps(merged, indent=2) + "\n")
         return merged, final_path
     merged = {**cfg_a, **cfg_b}
+    defaults = STRATEGIES[family.name].get_defaults()
+    if "data_universe" in defaults:
+        merged.setdefault("data_universe", defaults["data_universe"])
     if family_a == "universe" and family_b == "exit":
         merged.setdefault("validation_start", "2020-01-01")
         merged.setdefault("validation_end", "2023-12-31")
@@ -349,6 +354,7 @@ def _try_combine_pair(
         b=b,
         family_a=family_a,
         family_b=family_b,
+        family=family,
         combo_slug=combo_slug,
         root=root,
         combo_config_yaml=combo_config_yaml,

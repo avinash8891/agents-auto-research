@@ -10,8 +10,8 @@ def test_orb_backtest_returns_empty_metrics_for_empty_validation_window(monkeypa
     empty = pd.DataFrame()
 
     monkeypatch.setattr(
-        "strategies.orb.runner.load_data",
-        lambda *args, **kwargs: {
+        "strategies.orb.runner.load_universe_data",
+        lambda config: {
             "open": empty,
             "high": empty,
             "low": empty,
@@ -24,13 +24,36 @@ def test_orb_backtest_returns_empty_metrics_for_empty_validation_window(monkeypa
         {
             "validation_start": "2024-01-01",
             "validation_end": "2024-01-02",
-            "data_dir": "data",
+            "data_universe": "nasdaq143",
         }
     )
 
     assert result["trade_count"] == 0
     assert result["_trades_df"].empty
     assert result["_event_logger"] is None
+
+
+def test_orb_backtest_applies_legacy_default_validation_window(monkeypatch) -> None:
+    observed: dict[str, str] = {}
+    empty = pd.DataFrame()
+
+    def _capture(config: dict) -> dict[str, pd.DataFrame | None]:
+        observed["validation_start"] = config.get("validation_start")
+        observed["validation_end"] = config.get("validation_end")
+        return {
+            "open": empty,
+            "high": empty,
+            "low": empty,
+            "close": empty,
+            "volume": None,
+        }
+
+    monkeypatch.setattr("strategies.orb.runner.load_universe_data", _capture)
+
+    run_backtest({"data_universe": "nasdaq143"})
+
+    assert observed["validation_start"] == "2020-01-01"
+    assert observed["validation_end"] == "2023-12-31"
 
 
 def test_orb_max_one_entry_per_day_limits_both_directions() -> None:

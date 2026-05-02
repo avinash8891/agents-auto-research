@@ -1,7 +1,7 @@
 # 5 EMA autoresearch base configuration
 # Grounded in transcripts: T1 (Modified), T2 (Best Use), T4 (Game Changer)
 family: "ema"
-data_dir: "data"
+data_universe: "nasdaq8"
 symbols: null
 
 validation_start: "2020-01-01"

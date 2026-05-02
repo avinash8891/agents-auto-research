@@ -26,6 +26,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import paramiko
 
+from backtest.data_universe import DATA_ROOT_ENV
 from strategies import STRATEGIES
 from strategy_family import StrategyFamily, load_family
 from trace_sdk import trace, trace_ssh
@@ -45,6 +46,7 @@ class VPSConfig:
     git_repo: str
     git_ref: str
     job: str = "0"
+    data_root: str = ""
 
 
 def config_from_env() -> VPSConfig:
@@ -72,14 +74,20 @@ def config_from_env() -> VPSConfig:
         )
     if job.startswith("job-"):
         raise ValueError("AUTORESEARCH_JOB must be the raw job id, without the job- prefix.")
+    vps_user = os.environ["AUTORESEARCH_VPS_USER"]
+    data_root = os.environ.get(DATA_ROOT_ENV, "")
+    if data_root:
+        data_root = _expand_remote_user_path(data_root, vps_user)
+        _validate_remote_data_root(data_root)
     return VPSConfig(
         host=os.environ["AUTORESEARCH_VPS_HOST"],
-        user=os.environ["AUTORESEARCH_VPS_USER"],
+        user=vps_user,
         key=os.path.expanduser(os.environ["AUTORESEARCH_VPS_KEY"]),
         remote_dir=remote_dir,
         git_repo=os.environ["AUTORESEARCH_GIT_REPO"],
         git_ref=git_ref,
         job=job,
+        data_root=data_root,
     )
 
 
@@ -123,6 +131,29 @@ def _validate_git_ref(git_ref: str) -> None:
         raise ValueError(
             "AUTORESEARCH_GIT_REF must be a path-safe branch, tag, or full commit SHA."
         )
+
+
+def _validate_remote_data_root(data_root: str) -> None:
+    path = PurePosixPath(data_root)
+    if not path.is_absolute() or str(path) != data_root:
+        raise ValueError(f"{DATA_ROOT_ENV} must be an absolute normalized POSIX path.")
+    if ".." in path.parts:
+        raise ValueError(f"{DATA_ROOT_ENV} must not contain parent-directory segments.")
+    if not re.fullmatch(r"/[A-Za-z0-9._/-]+", data_root):
+        raise ValueError(
+            f"{DATA_ROOT_ENV} must use only path-safe letters, digits, underscore, "
+            "dot, dash, and slash."
+        )
+
+
+def _expand_remote_user_path(path: str, user: str) -> str:
+    if path == "~":
+        return "/root" if user == "root" else f"/home/{user}"
+    if path.startswith("~/"):
+        home = "/root" if user == "root" else f"/home/{user}"
+        suffix = path[2:]
+        return f"{home}/{suffix}" if suffix else home
+    return path
 
 
 def build_git_prepare_command(config: VPSConfig) -> str:
@@ -199,19 +230,30 @@ def build_remote_command(
         "print(_config_hash(load_runtime_config(sys.argv[1], sys.argv[2])))"
     )
     output_root = f"{config.remote_dir}/{family.runs_dirname}/job-{config.job}/{resolved_sha}"
-    return (
-        "set -e && "
-        f"cd {shlex.quote(config.remote_dir)} && "
-        "export AUTORESEARCH_VPS=1 && "
-        f"export AUTORESEARCH_RESOLVED_SHA={shlex.quote(resolved_sha)} && "
-        "python_bin=python3 && "
-        f'config_hash=$("$python_bin" -c {shlex.quote(python_hash)} '
-        f"{shlex.quote(config_path)} {shlex.quote(family.name)}) && "
-        f"output_dir={shlex.quote(output_root)}/$config_hash && "
-        'mkdir -p "$output_dir" && '
-        f'"$python_bin" -m backtest.runner --strategy {shlex.quote(family.name)} '
-        f'--config {shlex.quote(config_path)} --output-dir "$output_dir"'
+    segments = [
+        "set -e",
+        f"cd {shlex.quote(config.remote_dir)}",
+        "export AUTORESEARCH_VPS=1",
+        f"export AUTORESEARCH_RESOLVED_SHA={shlex.quote(resolved_sha)}",
+    ]
+    if config.data_root:
+        segments.append(f"export {DATA_ROOT_ENV}={shlex.quote(config.data_root)}")
+    segments.extend(
+        [
+            "python_bin=python3",
+            (
+                f'config_hash=$("$python_bin" -c {shlex.quote(python_hash)} '
+                f"{shlex.quote(config_path)} {shlex.quote(family.name)})"
+            ),
+            f"output_dir={shlex.quote(output_root)}/$config_hash",
+            'mkdir -p "$output_dir"',
+            (
+                f'"$python_bin" -m backtest.runner --strategy {shlex.quote(family.name)} '
+                f'--config {shlex.quote(config_path)} --output-dir "$output_dir"'
+            ),
+        ]
     )
+    return " && ".join(segments)
 
 
 def _repo_root() -> Path:

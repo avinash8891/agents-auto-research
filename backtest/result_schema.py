@@ -36,6 +36,8 @@ def build_result_payload(
         "strategy_events_file": file_paths["strategy_events_file"],
         "diagnostics_file": file_paths["diagnostics_file"],
     }
+    if config.get("data_provenance"):
+        payload["data_provenance"] = config["data_provenance"]
     for key, value in result.items():
         if key not in payload and key not in METRIC_KEYS and not key.startswith("_"):
             payload[key] = value

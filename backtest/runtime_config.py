@@ -4,26 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from backtest.data_universe import resolve_data_universe
 from strategies import STRATEGIES
-
-
-def _resolve_relative_data_dir(config: dict[str, Any], source_path: Path) -> dict[str, Any]:
-    data_dir = config.get("data_dir")
-    if not isinstance(data_dir, str) or not data_dir:
-        return config
-    data_path = Path(data_dir)
-    if data_path.is_absolute():
-        return config
-
-    module_root = Path(__file__).resolve().parents[1]
-    search_roots = [source_path.parent, *source_path.parents, Path.cwd(), module_root]
-    for root in search_roots:
-        candidate = root / data_path
-        if candidate.exists():
-            resolved = dict(config)
-            resolved["data_dir"] = str(candidate)
-            return resolved
-    return config
 
 
 def load_runtime_config(path: str, strategy_name: str) -> dict[str, Any]:
@@ -40,19 +22,27 @@ def load_runtime_config(path: str, strategy_name: str) -> dict[str, Any]:
     elif isinstance(payload, dict):
         config = payload
     else:
-        compilation = strategy.compile_contract(payload)
-        if compilation.status != "ready_to_run":
-            raise ValueError(
-                f"{strategy_name} contract is not runnable: status={compilation.status} "
-                f"missing={compilation.missing_primitives}"
-            )
-        config = compilation.runtime_config
-    config = _resolve_relative_data_dir(config, p)
+        config = _compile_contract_runtime_config(strategy_name, strategy, payload)
+    if strategy.requires_data_universe:
+        config = resolve_data_universe(config)
     config = strategy.validate_runtime_config_scope(config, source_path=p)
     violations = strategy.validate_runtime_config(config)
     if violations:
         raise ValueError(f"Config validation failed for {p}: " + "; ".join(violations))
     return config
+
+
+def _compile_contract_runtime_config(
+    strategy_name: str, strategy: Any, payload: Any
+) -> dict[str, Any]:
+    compilation = strategy.compile_contract(payload)
+    if compilation.status != "ready_to_run":
+        raise ValueError(
+            f"{strategy_name} contract is not runnable: status={compilation.status} "
+            f"missing={compilation.missing_primitives}"
+        )
+    defaults = strategy.get_defaults()
+    return {**defaults, **compilation.runtime_config}
 
 
 def validate_runtime_config_scope(

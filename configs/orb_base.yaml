@@ -2,7 +2,7 @@
 # This is the baseline config (Experiment #1). All variants compare against this.
 
 # --- Data ---
-data_dir: "data"
+data_universe: "nasdaq143"
 symbols: null  # null = all available symbols
 
 # --- Date Splits (STRICT: no overlap allowed) ---

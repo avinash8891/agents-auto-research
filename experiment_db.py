@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import sqlite3
@@ -12,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
+from config_hash import _config_hash
 from persistence_utils import (
     json_dumps_strict,
     json_loads_metric_sentinels,
@@ -872,16 +872,20 @@ class BaselineTracker:
 
 def build_config_hash(config: dict[str, Any]) -> str:
     """Deterministic hash of the full runtime config."""
-    blob = json.dumps(config, sort_keys=True).encode()
-    return hashlib.sha256(blob).hexdigest()[:12]
+    return _config_hash(config)
 
 
 def build_data_hash(config: dict[str, Any]) -> str:
     """Deterministic hash of data-affecting config fields."""
-    data_keys = ["data_dir", "symbols", "validation_start", "validation_end"]
+    data_keys = [
+        "data_universe",
+        "data_provenance",
+        "symbols",
+        "validation_start",
+        "validation_end",
+    ]
     data_fields = {k: config.get(k) for k in data_keys if config.get(k) is not None}
-    blob = json.dumps(data_fields, sort_keys=True).encode()
-    return hashlib.sha256(blob).hexdigest()[:12]
+    return _config_hash(data_fields)
 
 
 def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:

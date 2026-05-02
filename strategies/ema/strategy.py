@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from backtest.data_universe import load_universe_data
 from backtest.filters import (
     _compute_gap_down_days,
     _compute_gap_up_days,
@@ -13,7 +14,6 @@ from backtest.filters import (
     _filter_signals_to_days,
 )
 from backtest.resample import build_timeframe_frame
-from data_loader import load_data
 from metrics import compute_metrics, empty_metrics
 from strategies.base import BaseStrategy
 from strategies.ema.contract import compile_ema_contract, map_ema_config_changes_to_contract
@@ -110,12 +110,7 @@ def run_backtest(config: dict) -> dict:
 
     event_logger = StrategyEventLogger()
 
-    batch = load_data(
-        config.get("data_dir", "data"),
-        symbols=config.get("symbols"),
-        start_date=config.get("validation_start"),
-        end_date=config.get("validation_end"),
-    )
+    batch = load_universe_data(config)
     close = batch["close"]
     high = batch["high"]
     low = batch["low"]
