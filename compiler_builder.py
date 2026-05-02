@@ -19,73 +19,120 @@ def _find_cli() -> str | None:
     return None
 
 
+def _read_json_artifact(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _load_structured_thesis_artifacts(
+    root: Path, thesis_id: str
+) -> tuple[dict[str, Any], dict[str, Any], Path, Path] | None:
+    experiment_dir = root / "experiments" / thesis_id
+    thesis_path = experiment_dir / "thesis.json"
+    contract_path = experiment_dir / "contract.json"
+    thesis = _read_json_artifact(thesis_path)
+    contract = _read_json_artifact(contract_path)
+    if thesis is None or contract is None:
+        return None
+    return thesis, contract, thesis_path, contract_path
+
+
 def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     """Dispatch CLI builder to implement missing primitives for a thesis."""
-    compilation_family_name = None
-    for candidate_family in sorted(STRATEGIES):
-        candidate_proposal_path = (
-            root / load_family(candidate_family).proposals_dirname / f"{thesis_id}.json"
+    structured = _load_structured_thesis_artifacts(root, thesis_id)
+    if structured is not None:
+        proposal, compilation, proposal_path, compilation_path = structured
+        family_name = proposal.get("strategy_family") or compilation.get("strategy_family") or "orb"
+        family = load_family(family_name)
+        normalized_contract = compilation.get("normalized_contract") or []
+        missing_primitives = (
+            proposal.get("requested_primitives")
+            or compilation.get("missing_primitives")
+            or sorted((proposal.get("config_changes") or {}).keys())
         )
-        if candidate_proposal_path.exists():
-            compilation_family_name = candidate_family
-            break
+        generated_name = f"experiments/{thesis_id}/runtime_config.json"
+        config_path = generated_name
+        builder_requests_dir = root / family.builder_requests_dirname
+        prompt_extras = [
+            "- Thesis artifact: experiments/{thesis_id}/thesis.json",
+            "- Contract artifact: experiments/{thesis_id}/contract.json",
+            "- Thesis payload: {thesis_payload}",
+            "- Contract payload: {contract_payload}",
+        ]
+    else:
+        compilation_family_name = None
+        for candidate_family in sorted(STRATEGIES):
+            candidate_proposal_path = (
+                root / load_family(candidate_family).proposals_dirname / f"{thesis_id}.json"
+            )
+            if candidate_proposal_path.exists():
+                compilation_family_name = candidate_family
+                break
 
-    if compilation_family_name is None:
-        return {
-            "status": "error",
-            "reason": f"missing proposal artifact for {thesis_id}",
-            "generated_config": None,
-            "validation_passed": False,
-        }
+        if compilation_family_name is None:
+            return {
+                "status": "error",
+                "reason": f"missing proposal artifact for {thesis_id}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
 
-    family = load_family(compilation_family_name)
-    proposal_path = root / family.proposals_dirname / f"{thesis_id}.json"
-    compilation_path = root / family.compilations_dirname / f"{thesis_id}.json"
-    if not proposal_path.exists():
-        return {
-            "status": "error",
-            "reason": f"missing proposal artifact for {thesis_id}",
-            "generated_config": None,
-            "validation_passed": False,
-        }
-    if not compilation_path.exists():
-        return {
-            "status": "error",
-            "reason": f"missing compilation artifact for {thesis_id}",
-            "generated_config": None,
-            "validation_passed": False,
-        }
+        family = load_family(compilation_family_name)
+        proposal_path = root / family.proposals_dirname / f"{thesis_id}.json"
+        compilation_path = root / family.compilations_dirname / f"{thesis_id}.json"
+        if not proposal_path.exists():
+            return {
+                "status": "error",
+                "reason": f"missing proposal artifact for {thesis_id}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
+        if not compilation_path.exists():
+            return {
+                "status": "error",
+                "reason": f"missing compilation artifact for {thesis_id}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
 
-    try:
-        proposal = json.loads(proposal_path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        return {
-            "status": "error",
-            "reason": f"malformed proposal artifact for {thesis_id}: {exc}",
-            "generated_config": None,
-            "validation_passed": False,
-        }
-    try:
-        compilation = json.loads(compilation_path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        return {
-            "status": "error",
-            "reason": f"malformed compilation artifact for {thesis_id}: {exc}",
-            "generated_config": None,
-            "validation_passed": False,
-        }
-    family_name = proposal.get("strategy_family") or proposal["family"]
-    family = load_family(family_name)
-    normalized_contract = compilation.get("normalized_contract") or []
-    missing_primitives = compilation.get("missing_primitives") or []
-    generated_name = (
-        f"{family.name}_{thesis_id}.yaml"
-        if not thesis_id.startswith(f"{family.name}_")
-        else f"{thesis_id}.yaml"
-    )
-    config_path = f"configs/variants/{generated_name}"
+        try:
+            proposal = json.loads(proposal_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            return {
+                "status": "error",
+                "reason": f"malformed proposal artifact for {thesis_id}: {exc}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
+        try:
+            compilation = json.loads(compilation_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            return {
+                "status": "error",
+                "reason": f"malformed compilation artifact for {thesis_id}: {exc}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
+        family_name = proposal.get("strategy_family") or proposal["family"]
+        normalized_contract = compilation.get("normalized_contract") or []
+        missing_primitives = compilation.get("missing_primitives") or []
+        generated_name = (
+            f"{family.name}_{thesis_id}.yaml"
+            if not thesis_id.startswith(f"{family.name}_")
+            else f"{thesis_id}.yaml"
+        )
+        config_path = f"configs/variants/{generated_name}"
+        builder_requests_dir = root / family.builder_requests_dirname
+        prompt_extras = []
     write_json_artifact(
-        root / family.builder_requests_dirname / f"{thesis_id}.json",
+        builder_requests_dir / f"{thesis_id}.json",
         {
             "thesis_id": thesis_id,
             "family": family_name,
@@ -127,6 +174,11 @@ Context:
 - Missing primitives: {json.dumps(missing_primitives, indent=2)}
 - Normalized contract: {json.dumps(normalized_contract, indent=2)}
 - Hypothesis: {proposal.get("hypothesis", "")}
+{chr(10).join(prompt_extras).format(
+    thesis_id=thesis_id,
+    thesis_payload=json.dumps(proposal, indent=2),
+    contract_payload=json.dumps(compilation, indent=2),
+) if prompt_extras else ""}
 
 Requirements:
 - Write the necessary code changes in this repo.

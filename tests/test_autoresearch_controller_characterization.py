@@ -430,9 +430,9 @@ def test_execute_once_blocked_research_generates_config(controller, monkeypatch,
 
 
 # ────────────────────────────────────────────────────────────────────
-# 4. Research returns needs_code -> halted
+# 4. Research returns needs_code -> builder handoff
 # ────────────────────────────────────────────────────────────────────
-def test_execute_once_research_needs_code_halts(controller, monkeypatch):
+def test_execute_once_research_needs_code_invokes_builder(controller, monkeypatch):
     _seed_existing_result(controller, BASELINE_CONFIG)
 
     def fake_research(self):
@@ -452,9 +452,34 @@ def test_execute_once_research_needs_code_halts(controller, monkeypatch):
             },
         }
 
+    def fake_builder(controller_obj, state, thesis_id, thesis, *, research_round=None):
+        state = dict(state)
+        state["state"] = "running"
+        state["current_thesis"] = {
+            "config": "experiments/needs-code-thesis/runtime_config.json",
+            "status": "ready_to_run",
+        }
+        state["next_action"] = {
+            "type": "run_experiment",
+            "config": "experiments/needs-code-thesis/runtime_config.json",
+            "benchmark_command": controller_obj.family.benchmark_command(
+                "experiments/needs-code-thesis/runtime_config.json"
+            ),
+            "requires_trade_analysis": True,
+            "source": "builder",
+            "builder_thesis_id": thesis_id,
+        }
+        state["blockers"] = []
+        controller_obj.write_state(state)
+        return state
+
     # execute_research_one calls the LLM research conductor — an external service.
     # Mocking it is allowed under rule G.
     monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
+    monkeypatch.setattr(
+        "autoresearch_research._orchestration_build_missing_primitives_for_state", fake_builder
+    )
+    monkeypatch.setattr(AutoresearchController, "_run_experiment", lambda self, state: 0)
 
     import research_conductor
 
@@ -465,9 +490,9 @@ def test_execute_once_research_needs_code_halts(controller, monkeypatch):
 
     assert rc == 0
     state = controller.read_state()
-    assert state["state"] == "halted"
-    assert state["halted_reason"] == "requires_code_change"
-    assert state["halted_thesis_id"] == "needs-code-thesis"
+    assert state["state"] == "running"
+    assert state["next_action"]["source"] == "builder"
+    assert state["next_action"]["builder_thesis_id"] == "needs-code-thesis"
 
 
 def test_execute_once_research_failure_transitions_to_terminal_failure(controller, monkeypatch):
@@ -928,6 +953,90 @@ def test_execute_once_resumes_halted_thesis_preserves_metadata(controller, monke
     assert latest.parent_experiment_id == ""
 
 
+def test_resolve_next_action_builds_halted_thesis_when_resume_fails(controller, monkeypatch):
+    halted_thesis_id = "needs-builder"
+    halted_thesis = {
+        "thesis_id": halted_thesis_id,
+        "hypothesis": "tighten ema length",
+        "mechanism": "reduce lag",
+        "config_changes": {"ema_length": 7},
+    }
+    controller.write_state(
+        {
+            "state": "halted",
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": halted_thesis_id,
+            "halted_thesis": halted_thesis,
+            "job": 11,
+            "research_round": 3,
+        }
+    )
+
+    def fake_builder(controller_obj, state, thesis_id, thesis, *, research_round=None):
+        built_state = dict(state)
+        built_state["state"] = "running"
+        built_state["current_thesis"] = {
+            "config": f"experiments/{thesis_id}/runtime_config.json",
+            "status": "ready_to_run",
+        }
+        built_state["next_action"] = {
+            "type": "run_experiment",
+            "config": f"experiments/{thesis_id}/runtime_config.json",
+            "benchmark_command": controller_obj.family.benchmark_command(
+                f"experiments/{thesis_id}/runtime_config.json"
+            ),
+            "requires_trade_analysis": True,
+            "source": "builder",
+            "builder_thesis_id": thesis_id,
+        }
+        built_state["blockers"] = []
+        return built_state
+
+    monkeypatch.setattr(controller, "_check_baseline_rerun", lambda: None)
+    monkeypatch.setattr(controller, "_try_resume_halted_thesis", lambda: None)
+    monkeypatch.setattr(
+        "autoresearch_orchestration.build_missing_primitives_for_state", fake_builder
+    )
+
+    resolved = controller._resolve_next_action()
+
+    assert resolved["state"] == "running"
+    assert resolved["next_action"]["source"] == "builder"
+    assert resolved["next_action"]["builder_thesis_id"] == halted_thesis_id
+
+
+def test_resolve_next_action_marks_manual_review_when_builder_fails(controller, monkeypatch):
+    halted_thesis_id = "builder-fails"
+    halted_thesis = {
+        "thesis_id": halted_thesis_id,
+        "hypothesis": "tighten ema length",
+        "mechanism": "reduce lag",
+        "config_changes": {"ema_length": 7},
+    }
+    controller.write_state(
+        {
+            "state": "halted",
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": halted_thesis_id,
+            "halted_thesis": halted_thesis,
+            "job": 12,
+            "research_round": 4,
+        }
+    )
+
+    monkeypatch.setattr(controller, "_check_baseline_rerun", lambda: None)
+    monkeypatch.setattr(controller, "_try_resume_halted_thesis", lambda: None)
+
+    resolved = controller._resolve_next_action()
+
+    assert resolved["state"] == "blocked"
+    assert any(b.get("kind") == "manual_review" for b in resolved.get("blockers", []))
+    assert resolved["next_action"]["type"] == "manual_review"
+    manual_review = resolved.get("manual_review_theses", [])
+    assert manual_review
+    assert manual_review[-1]["thesis_id"] == halted_thesis_id
+
+
 def test_execute_once_clears_stale_parent_experiment_id_before_logging(
     controller, monkeypatch, tmp_path
 ):
@@ -1015,9 +1124,10 @@ def test_execute_once_does_not_resume_halted_thesis_when_runtime_scope_is_invali
     assert rc == 0
     assert not (controller.root / f"experiments/{halted_thesis_id}/runtime_config.json").exists()
     state = controller.read_state()
-    assert state["state"] == "halted"
-    assert state["halted_thesis_id"] == halted_thesis_id
-    assert state["halted_reason"] == "requires_code_change"
+    assert state["state"] == "blocked"
+    assert state["next_action"]["type"] == "manual_review"
+    assert any(b.get("kind") == "manual_review" for b in state.get("blockers", []))
+    assert state["manual_review_theses"][-1]["thesis_id"] == halted_thesis_id
 
 
 def test_execute_once_resume_halted_thesis_leaves_no_tmp_artifacts(

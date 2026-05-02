@@ -26,6 +26,9 @@ from autoresearch_constants import (
     MAX_VALIDATION_RETRIES,
 )
 from autoresearch_logging import get_logger
+from autoresearch_orchestration import (
+    build_missing_primitives_for_state as _orchestration_build_missing_primitives_for_state,
+)
 from autoresearch_planning import build_research_failure_state
 from autoresearch_state import (
     ExperimentRecord,
@@ -984,7 +987,15 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
     if result.get("should_stop"):
         return _handle_should_stop(controller, state, result)
     if result.get("generated_config_needs_build"):
-        return _handle_needs_code(controller, state, result)
+        state = _handle_needs_code(controller, state, result)
+        thesis_id = result.get("generated_thesis_id", "unknown")
+        return _orchestration_build_missing_primitives_for_state(
+            controller,
+            state,
+            thesis_id,
+            result.get("thesis", {}),
+            research_round=research_round,
+        )
     if result.get("generated_config"):
         return _handle_success(controller, state, result, research_round)
     return _handle_round_failure(controller, state, result, research_round)
