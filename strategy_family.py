@@ -52,8 +52,9 @@ class StrategyFamily:
 
     def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
         config_path_str = str(config_path)
+        python_bin = os.environ.get("AUTORESEARCH_PYTHON_BIN", "python3")
         cmd = (
-            f"python3 -m backtest.runner --strategy {shlex.quote(self.name)} "
+            f"{shlex.quote(python_bin)} -m backtest.runner --strategy {shlex.quote(self.name)} "
             f"--config {shlex.quote(config_path_str)}"
         )
         if output_dir:
