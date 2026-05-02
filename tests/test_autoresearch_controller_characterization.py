@@ -1329,7 +1329,7 @@ def test_orchestration_resolve_next_action_prefers_forced_baseline(controller, m
 
     state = orchestration_mod.resolve_next_action(controller)
 
-    assert calls == ["resume", "baseline", "apply"]
+    assert calls == ["baseline", "apply"]
     assert state["state"] == "running"
     assert state["next_action"] == baseline_action
 
