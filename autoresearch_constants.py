@@ -43,4 +43,3 @@ MILLISECONDS_PER_SECOND = 1000
 # ── Conductor + research ─────────────────────────────────────────
 MAX_RESEARCH_ROUNDS = 100  # safeguard: max single-thesis research iterations
 MAX_VALIDATION_RETRIES = 3
-BASELINE_RERUN_INTERVAL = 5  # experiments between forced baseline reruns
