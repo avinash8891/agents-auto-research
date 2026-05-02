@@ -221,7 +221,25 @@ class AutoresearchController:
         return self.experiment_db.best_direction()
 
     def read_results(self) -> list[ExperimentRecord]:
-        return self.experiment_db.read_results()
+        all_results = self.experiment_db.read_results()
+        state = self.read_state()
+        job = state.get("job")
+        if job is None:
+            return all_results
+        try:
+            current_job = int(job)
+        except (TypeError, ValueError):
+            return all_results
+
+        scoped: list[ExperimentRecord] = []
+        for result in all_results:
+            try:
+                result_job = int(getattr(result, "job", -1))
+            except (TypeError, ValueError):
+                continue
+            if result_job == current_job:
+                scoped.append(result)
+        return scoped
 
     def read_json_artifacts(self, directory: Path) -> list[dict[str, Any]]:
         return _artifacts_read_artifacts_relative_to_root(directory, self.root)
@@ -570,11 +588,18 @@ def main() -> int:
         runs_dir=runs_dir,
     )
     # Increment job number on each loop start
-    state = controller.read_state()
-    job = state.get("job", 0) + 1
-    state["job"] = job
-    state["research_round"] = 0  # reset round counter for clean job isolation
-    state["job_usage"] = None  # reset token usage for new job
+    prior_state = controller.read_state()
+    job = prior_state.get("job", 0) + 1
+    # New job starts from a clean controller state. This prevents stale
+    # next_action/current_thesis/blockers from prior jobs from skipping
+    # baseline-first planning on launch.
+    state = {
+        "state": "running",
+        "job": job,
+        "research_round": 0,
+        "job_usage": None,
+        "heartbeat": {},
+    }
     controller.write_state(state)
 
     from trace_sdk import get_log_file, get_session_id, set_family

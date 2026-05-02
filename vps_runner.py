@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """VPS runner using Git-based deployment for strategy controller runs.
 
-Usage: python3 vps_runner.py --strategy <strategy-name>
+Usage: python3 vps_runner.py --strategy <strategy-name> --git-ref <branch|tag|sha>
 
 1. SSH to the VPS
-2. Clone/fetch AUTORESEARCH_GIT_REPO at AUTORESEARCH_GIT_REF
+2. Clone/fetch AUTORESEARCH_GIT_REPO at the requested --git-ref
 3. Resolve that ref to an exact commit SHA and check it out detached
 4. Launch the strategy-family autoresearch controller on the VPS
 5. Stream controller output
@@ -74,21 +74,19 @@ class VPSConfig:
     data_root: str = ""
 
 
-def config_from_env() -> VPSConfig:
+def config_from_env(*, git_ref: str) -> VPSConfig:
     required = (
         "AUTORESEARCH_VPS_HOST",
         "AUTORESEARCH_VPS_USER",
         "AUTORESEARCH_VPS_KEY",
         "AUTORESEARCH_VPS_DIR",
         "AUTORESEARCH_GIT_REPO",
-        "AUTORESEARCH_GIT_REF",
     )
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
         raise ValueError("Missing VPS configuration environment variables: " + ", ".join(missing))
     remote_dir = os.environ["AUTORESEARCH_VPS_DIR"]
     _validate_remote_dir(remote_dir)
-    git_ref = os.environ["AUTORESEARCH_GIT_REF"]
     _validate_git_ref(git_ref)
     vps_user = os.environ["AUTORESEARCH_VPS_USER"]
     data_root = os.environ.get(DATA_ROOT_ENV, "")
@@ -246,7 +244,9 @@ def build_remote_command(
         segments.append(f"export {DATA_ROOT_ENV}={shlex.quote(config.data_root)}")
     segments.extend(
         [
-            "python_bin=python3",
+            'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi',
+            "python_bin=.venv/bin/python",
+            '"$python_bin" -m pip install -e .',
             (f'"$python_bin" autoresearch_controller.py ' f"--family {shlex.quote(family.name)}"),
         ]
     )
@@ -408,12 +408,17 @@ def main():
 
     parser = argparse.ArgumentParser(description="Run autoresearch controller on the VPS")
     parser.add_argument("--strategy", required=True, choices=sorted(STRATEGIES))
+    parser.add_argument(
+        "--git-ref",
+        required=True,
+        help="Git branch, tag, or full commit SHA to deploy on VPS",
+    )
     args = parser.parse_args()
 
     strategy_name = args.strategy
     family = load_family(strategy_name)
-    vps_config = config_from_env()
-    trace("VPS_RUNNER", f"START strategy={strategy_name}")
+    vps_config = config_from_env(git_ref=args.git_ref)
+    trace("VPS_RUNNER", f"START strategy={strategy_name} git_ref={args.git_ref}")
 
     trace("VPS_RUNNER", f"Connecting to {vps_config.host} as {vps_config.user}")
     try:
