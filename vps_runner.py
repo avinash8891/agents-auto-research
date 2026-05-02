@@ -74,6 +74,10 @@ class VPSConfig:
     data_root: str = ""
 
 
+def _is_commitish_ref(git_ref: str) -> bool:
+    return bool(re.fullmatch(r"[0-9a-fA-F]{7,40}", git_ref))
+
+
 def _default_remote_dir(vps_user: str, strategy_name: str) -> str:
     base = "/root" if vps_user == "root" else f"/home/{vps_user}"
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
@@ -181,6 +185,16 @@ def build_git_prepare_command(config: VPSConfig) -> str:
     remote_parent = shlex.quote(str(PurePosixPath(config.remote_dir).parent))
     git_repo = shlex.quote(config.git_repo)
     git_ref = shlex.quote(config.git_ref)
+    if _is_commitish_ref(config.git_ref):
+        fetch_and_resolve = (
+            "git fetch --prune origin && "
+            f"resolved=$(git rev-parse --verify {git_ref}^{{commit}}) && "
+        )
+    else:
+        fetch_and_resolve = (
+            f"git fetch --prune origin {git_ref} && "
+            "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
+        )
     return (
         "set -e && "
         f"mkdir -p {remote_parent} && "
@@ -189,8 +203,7 @@ def build_git_prepare_command(config: VPSConfig) -> str:
         "fi && "
         f"cd {remote_dir} && "
         f"git remote set-url origin {git_repo} && "
-        f"git fetch --prune origin {git_ref} && "
-        "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
+        f"{fetch_and_resolve}"
         'git checkout --detach "$resolved" && '
         "git clean -ffdx "
         "-e '*_autoresearch-runs' -e '*_autoresearch-runs/**' "

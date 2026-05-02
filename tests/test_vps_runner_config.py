@@ -118,6 +118,15 @@ def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
 
     assert (
         config_from_env(
+            git_ref="0ad8abf",
+            strategy_name="ema",
+            remote_dir="/srv/autoresearch",
+        ).git_ref
+        == "0ad8abf"
+    )
+
+    assert (
+        config_from_env(
             git_ref="0123456789abcdef0123456789abcdef01234567",
             strategy_name="ema",
             remote_dir="/srv/autoresearch",
@@ -220,6 +229,7 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
 
     assert "git clone --no-checkout" in command
     assert f"git fetch --prune origin {shlex.quote(config.git_ref)}" in command
+    assert "resolved=$(git rev-parse --verify FETCH_HEAD^{commit})" in command
     assert 'git checkout --detach "$resolved"' in command
     assert "git clean -ffdx" in command
     assert "-e '*_autoresearch-runs'" in command
@@ -236,6 +246,23 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert "-e '*_experiments.db'" in command
     assert "AUTORESEARCH_RESOLVED_SHA %s" in command
     assert "scp" not in command.lower()
+
+
+def test_git_prepare_command_uses_commit_ref_resolution_for_sha() -> None:
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch code",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="0ad8abf",
+    )
+
+    command = build_git_prepare_command(config)
+
+    assert "git fetch --prune origin &&" in command
+    assert f"resolved=$(git rev-parse --verify {shlex.quote(config.git_ref)}^{{commit}})" in command
+    assert "FETCH_HEAD^{commit}" not in command
 
 
 def test_git_prepare_command_uses_posix_remote_parent_on_windows(monkeypatch) -> None:
