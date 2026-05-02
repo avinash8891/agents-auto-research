@@ -75,6 +75,10 @@ def test_vps_config_rejects_implicit_or_unsafe_job_ids(monkeypatch) -> None:
     with pytest.raises(ValueError, match="path-safe"):
         config_from_env()
 
+    monkeypatch.setenv("AUTORESEARCH_JOB", "job-12")
+    with pytest.raises(ValueError, match="without the job- prefix"):
+        config_from_env()
+
 
 def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
@@ -82,7 +86,7 @@ def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
     monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
-    monkeypatch.setenv("AUTORESEARCH_JOB", "job-12")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
 
     for bad_ref in ("feature/ema:refs/heads/main", "+main", "-main", "main..next", "main@{1}"):
         monkeypatch.setenv("AUTORESEARCH_GIT_REF", bad_ref)
@@ -99,7 +103,7 @@ def test_vps_config_rejects_unsafe_remote_dirs(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
-    monkeypatch.setenv("AUTORESEARCH_JOB", "job-12")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
 
     for bad_dir in ("autoresearch", "/", "/root", "/root/orb-research", "/tmp/research"):
         monkeypatch.setenv("AUTORESEARCH_VPS_DIR", bad_dir)

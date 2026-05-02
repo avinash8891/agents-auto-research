@@ -70,6 +70,8 @@ def config_from_env() -> VPSConfig:
             "AUTORESEARCH_JOB must be an explicit path-safe job id "
             "using only letters, digits, underscore, dot, or dash."
         )
+    if job.startswith("job-"):
+        raise ValueError("AUTORESEARCH_JOB must be the raw job id, without the job- prefix.")
     return VPSConfig(
         host=os.environ["AUTORESEARCH_VPS_HOST"],
         user=os.environ["AUTORESEARCH_VPS_USER"],
