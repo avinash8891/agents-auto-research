@@ -83,6 +83,7 @@ class ExperimentRecord:
     description: str
     timestamp: str
     asi: dict[str, Any]
+    job: int = 0
 
 
 @dataclass
@@ -148,6 +149,7 @@ def read_results(entries: list[dict[str, Any]]) -> list[ExperimentRecord]:
                 timestamp=coerce_timestamp_to_iso8601_utc(entry.get("timestamp", 0))
                 or "1970-01-01T00:00:00+00:00",
                 asi=asi,
+                job=int(entry.get("job") or 0),
             )
         )
     return results

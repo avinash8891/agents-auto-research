@@ -234,7 +234,7 @@ class AutoresearchController:
         scoped: list[ExperimentRecord] = []
         for result in all_results:
             try:
-                result_job = int(getattr(result, "job", -1))
+                result_job = int(result.job)
             except (TypeError, ValueError):
                 continue
             if result_job == current_job:
@@ -464,7 +464,20 @@ class AutoresearchController:
         return _experiment_parse_metric(output, name)
 
     def evaluate_metric(self, metric: float) -> str:
-        return _experiment_evaluate_metric(self.root, self.experiment_db.path.name, metric)
+        state = self.read_state()
+        raw_job = state.get("job")
+        job_id: int | None = None
+        try:
+            if raw_job is not None:
+                job_id = int(raw_job)
+        except (TypeError, ValueError):
+            job_id = None
+        return _experiment_evaluate_metric(
+            self.root,
+            self.experiment_db.path.name,
+            metric,
+            job_id=job_id,
+        )
 
     def derive_trade_analysis(
         self, config: str, metric: float, decision: str, output: str = ""

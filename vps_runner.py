@@ -403,6 +403,49 @@ def _localize_remote_result_output(output: str, sftp: paramiko.SFTPClient) -> st
     )
 
 
+def _stream_remote_command(
+    stdout: paramiko.channel.ChannelFile,
+    stderr: paramiko.channel.ChannelStderrFile,
+) -> tuple[int, str, str]:
+    """Stream SSH command output while collecting stdout/stderr."""
+    channel = stdout.channel
+    out_chunks: list[str] = []
+    err_chunks: list[str] = []
+
+    while True:
+        progressed = False
+
+        while channel.recv_ready():
+            chunk = channel.recv(4096)
+            if not chunk:
+                break
+            text = chunk.decode(errors="replace")
+            out_chunks.append(text)
+            print(text, end="", flush=True)
+            progressed = True
+
+        while channel.recv_stderr_ready():
+            chunk = channel.recv_stderr(4096)
+            if not chunk:
+                break
+            text = chunk.decode(errors="replace")
+            err_chunks.append(text)
+            print(text, end="", file=sys.stderr, flush=True)
+            progressed = True
+
+        if (
+            channel.exit_status_ready()
+            and not channel.recv_ready()
+            and not channel.recv_stderr_ready()
+        ):
+            break
+        if not progressed:
+            time.sleep(0.1)
+
+    exit_code = channel.recv_exit_status()
+    return exit_code, "".join(out_chunks), "".join(err_chunks)
+
+
 def main():
     _load_local_env_file()
 
@@ -461,10 +504,8 @@ def main():
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()
     # Controller runs are long-lived; do not enforce a 10-minute SSH timeout.
-    stdin, stdout, stderr = client.exec_command(cmd)
-    out = stdout.read().decode()
-    err = stderr.read().decode()
-    exit_code = stdout.channel.recv_exit_status()
+    _stdin, stdout, stderr = client.exec_command(cmd)
+    exit_code, out, err = _stream_remote_command(stdout, stderr)
     elapsed = time.time() - t1
 
     client.close()
@@ -474,11 +515,6 @@ def main():
         "VPS_RUNNER",
         f"DONE exit={exit_code} elapsed={elapsed:.1f}s stdout_len={len(out)} stderr_len={len(err)}",
     )
-
-    if out:
-        print(out, end="")
-    if err:
-        print(err, end="", file=sys.stderr)
 
     sys.exit(exit_code)
 
