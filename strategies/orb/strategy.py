@@ -19,7 +19,6 @@ from strategies.orb.validate import validate_orb_runtime_config
 class ORBStrategy(BaseStrategy):
     name = "orb"
     benchmark_script = "backtest_orb_v2.py"
-    vps_benchmark_script = "backtest_orb_v2.py"
     description_for_research = DESCRIPTION_FOR_RESEARCH
     research_spec = ORB_RESEARCH_SPEC
     default_variants = (

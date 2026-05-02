@@ -472,9 +472,9 @@ def test_check_baseline_rerun_fires_on_code_commit_change(tmp_path, ema_family) 
     assert "code changed old -> new" in out["rerun_reason"]
 
 
-def test_check_baseline_rerun_fires_on_periodic_interval(tmp_path, ema_family) -> None:
+def test_check_baseline_rerun_does_not_fire_on_periodic_interval(tmp_path, ema_family) -> None:
     tracker = _FakeBaselineTracker(latest=_FakeCheckpoint(code_commit="same", timestamp=100))
-    # 5 experiments since checkpoint timestamp (BASELINE_RERUN_INTERVAL = 5).
+    # Same commit must not trigger baseline rerun, regardless of experiment count.
     results = [
         ExperimentRecord("c1", 1.0, "keep", "", 200, {}),
         ExperimentRecord("c2", 1.0, "keep", "", 300, {}),
@@ -482,9 +482,7 @@ def test_check_baseline_rerun_fires_on_periodic_interval(tmp_path, ema_family) -
         ExperimentRecord("c4", 1.0, "keep", "", 500, {}),
         ExperimentRecord("c5", 1.0, "keep", "", 600, {}),
     ]
-    out = check_baseline_rerun(tmp_path, ema_family, tracker, "same", results)
-    assert out is not None
-    assert "periodic rerun" in out["rerun_reason"]
+    assert check_baseline_rerun(tmp_path, ema_family, tracker, "same", results) is None
 
 
 def test_check_baseline_rerun_skips_when_already_reran_for_commit(tmp_path, ema_family) -> None:

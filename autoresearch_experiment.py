@@ -253,11 +253,11 @@ def parse_metric(
     return float(match.group(1)) if match else None
 
 
-def evaluate_metric(root: Path, db_name: str, metric: float) -> str:
+def evaluate_metric(root: Path, db_name: str, metric: float, *, job_id: int | None = None) -> str:
     from experiment_db import ExperimentDB
 
     db = ExperimentDB(root / db_name)
-    return db.evaluate_metric(metric)
+    return db.evaluate_metric(metric, job_id=job_id)
 
 
 # ── Trade analysis (sets transient controller fields) ────────────

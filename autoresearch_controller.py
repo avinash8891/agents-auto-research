@@ -221,7 +221,25 @@ class AutoresearchController:
         return self.experiment_db.best_direction()
 
     def read_results(self) -> list[ExperimentRecord]:
-        return self.experiment_db.read_results()
+        all_results = self.experiment_db.read_results()
+        state = self.read_state()
+        job = state.get("job")
+        if job is None:
+            return all_results
+        try:
+            current_job = int(job)
+        except (TypeError, ValueError):
+            return all_results
+
+        scoped: list[ExperimentRecord] = []
+        for result in all_results:
+            try:
+                result_job = int(result.job)
+            except (TypeError, ValueError):
+                continue
+            if result_job == current_job:
+                scoped.append(result)
+        return scoped
 
     def read_json_artifacts(self, directory: Path) -> list[dict[str, Any]]:
         return _artifacts_read_artifacts_relative_to_root(directory, self.root)
@@ -446,7 +464,20 @@ class AutoresearchController:
         return _experiment_parse_metric(output, name)
 
     def evaluate_metric(self, metric: float) -> str:
-        return _experiment_evaluate_metric(self.root, self.experiment_db.path.name, metric)
+        state = self.read_state()
+        raw_job = state.get("job")
+        job_id: int | None = None
+        try:
+            if raw_job is not None:
+                job_id = int(raw_job)
+        except (TypeError, ValueError):
+            job_id = None
+        return _experiment_evaluate_metric(
+            self.root,
+            self.experiment_db.path.name,
+            metric,
+            job_id=job_id,
+        )
 
     def derive_trade_analysis(
         self, config: str, metric: float, decision: str, output: str = ""
@@ -570,11 +601,26 @@ def main() -> int:
         runs_dir=runs_dir,
     )
     # Increment job number on each loop start
-    state = controller.read_state()
-    job = state.get("job", 0) + 1
-    state["job"] = job
-    state["research_round"] = 0  # reset round counter for clean job isolation
-    state["job_usage"] = None  # reset token usage for new job
+    prior_state = controller.read_state()
+    job = prior_state.get("job", 0) + 1
+    # New job starts from a clean controller state. This prevents stale
+    # next_action/current_thesis/blockers from prior jobs from skipping
+    # baseline-first planning on launch.
+    state = {
+        "state": "running",
+        "job": job,
+        "research_round": 0,
+        "job_usage": None,
+        "heartbeat": {},
+    }
+    # Preserve halted thesis metadata needed for requires_code_change resume
+    # flow across code deploys while still clearing ordinary next-action state.
+    if prior_state.get("halted_reason") == "requires_code_change" and prior_state.get(
+        "halted_thesis_id"
+    ):
+        for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
+            if key in prior_state:
+                state[key] = prior_state[key]
     controller.write_state(state)
 
     from trace_sdk import get_log_file, get_session_id, set_family

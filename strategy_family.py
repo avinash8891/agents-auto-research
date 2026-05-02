@@ -7,16 +7,12 @@ from functools import lru_cache
 
 from strategies import STRATEGIES
 
-# When running on VPS, set AUTORESEARCH_VPS=1 to use direct backtest instead of vps_runner
-IS_VPS = os.environ.get("AUTORESEARCH_VPS", "") == "1"
-
 
 @dataclass(frozen=True)
 class StrategyFamily:
     name: str
     benchmark_script: str
     description_for_research: str = ""
-    vps_benchmark_script: str = ""  # direct script when running on VPS
     proposals_dirname: str = "proposals"
     compilations_dirname: str = "compilations"
     contracts_dirname: str = "contracts"
@@ -55,10 +51,10 @@ class StrategyFamily:
         return _Path(config_path).stem.removeprefix(self.variant_prefix)
 
     def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
-        python = "./venv/bin/python3" if IS_VPS else "python3"
         config_path_str = str(config_path)
+        python_bin = os.environ.get("AUTORESEARCH_PYTHON_BIN", "python3")
         cmd = (
-            f"{python} -m backtest.runner --strategy {shlex.quote(self.name)} "
+            f"{shlex.quote(python_bin)} -m backtest.runner --strategy {shlex.quote(self.name)} "
             f"--config {shlex.quote(config_path_str)}"
         )
         if output_dir:
@@ -88,7 +84,6 @@ def _families() -> dict[str, StrategyFamily]:
             name=name,
             benchmark_script=strategy.benchmark_script or f"backtest_{name}.py",
             description_for_research=strategy.description_for_research,
-            vps_benchmark_script=strategy.vps_benchmark_script or f"backtest_{name}.py",
             proposals_dirname=strategy.family_dirnames.proposals,
             compilations_dirname=strategy.family_dirnames.compilations,
             contracts_dirname=strategy.family_dirnames.contracts,

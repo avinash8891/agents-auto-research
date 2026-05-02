@@ -59,7 +59,6 @@ def test_orb_family_is_built_from_registered_strategy_metadata() -> None:
     family = load_family("orb")
 
     assert family.benchmark_script == strategy.benchmark_script
-    assert family.vps_benchmark_script == strategy.vps_benchmark_script
     assert family.description_for_research == strategy.description_for_research
     assert family.proposals_dirname == strategy.family_dirnames.proposals
     assert family.compilations_dirname == strategy.family_dirnames.compilations

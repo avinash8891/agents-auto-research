@@ -21,7 +21,6 @@ from autoresearch_artifacts import (
     read_run_queue,
     read_thesis_artifacts,
 )
-from autoresearch_constants import BASELINE_RERUN_INTERVAL
 from autoresearch_logging import get_logger
 from autoresearch_state import ExperimentRecord
 from backtest.runtime_config import load_runtime_config
@@ -473,7 +472,7 @@ def _baseline_branch(
 ) -> dict[str, Any] | None:
     if results:
         return None
-    baseline_config = f"configs/{family.base_config_filename}"
+    baseline_config = family.baseline_config_path
     if not (root / baseline_config).exists():
         return None
     return _running_state(baseline_config, family, source="baseline")
@@ -663,28 +662,17 @@ def check_baseline_rerun(
     if not last_checkpoint:
         return None
 
+    if last_checkpoint.code_commit == current_commit:
+        return None
+
+    reason = f"code changed {last_checkpoint.code_commit} -> {current_commit}"
+
     # Coerce both timestamps to epoch-ms for comparison.
     # ExperimentRecord.timestamp is now ISO-8601 UTC str (rule J).
     # checkpoint.timestamp may be ISO string or legacy int; coerce both.
     from autoresearch_state import coerce_timestamp_to_epoch_ms
 
     checkpoint_ts_ms = coerce_timestamp_to_epoch_ms(last_checkpoint.timestamp)
-    needs_rerun = False
-    reason = ""
-    if last_checkpoint.code_commit != current_commit:
-        needs_rerun = True
-        reason = f"code changed {last_checkpoint.code_commit} -> {current_commit}"
-    else:
-        experiments_since = sum(
-            1 for r in results if coerce_timestamp_to_epoch_ms(r.timestamp) > checkpoint_ts_ms
-        )
-        if experiments_since >= BASELINE_RERUN_INTERVAL:
-            needs_rerun = True
-            reason = f"periodic rerun ({experiments_since} experiments since last baseline)"
-
-    if not needs_rerun:
-        return None
-
     already_reran = any(
         r.asi.get("baseline_rerun_for_commit") == current_commit
         and coerce_timestamp_to_epoch_ms(r.timestamp) > checkpoint_ts_ms
@@ -693,7 +681,7 @@ def check_baseline_rerun(
     if already_reran:
         return None
 
-    baseline_config = f"configs/{family.base_config_filename}"
+    baseline_config = family.baseline_config_path
     trace("BASELINE", f"forcing rerun: {reason}")
     log.info(f"BASELINE_RERUN {reason}")
     return {

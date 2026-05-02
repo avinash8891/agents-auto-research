@@ -192,9 +192,11 @@ class ExperimentDB:
     def best_direction(self) -> str:
         return self.session_meta().get("bestDirection", "higher")
 
-    def evaluate_metric(self, metric: float) -> str:
+    def evaluate_metric(self, metric: float, *, job_id: int | None = None) -> str:
         direction = self.best_direction()
         records = self.all()
+        if job_id is not None:
+            records = [record for record in records if int(getattr(record, "job", 0)) == job_id]
         if not records:
             return "keep"
         kept = [r for r in records if r.accepted]
@@ -549,6 +551,7 @@ class ExperimentDB:
                     description=f"strict-native loop: {Path(record.config_path).stem}",
                     timestamp=record.timestamp or "1970-01-01T00:00:00+00:00",
                     asi={"config": record.config_path, "thesis_id": record.thesis_id},
+                    job=record.job,
                 )
             )
         return results
