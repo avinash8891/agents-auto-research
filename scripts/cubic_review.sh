@@ -17,4 +17,4 @@ trap cleanup EXIT
 git -C "$repo_root" worktree add --detach "$review_dir" HEAD >/dev/null
 
 cd "$review_dir"
-PATH="$HOME/.cubic/bin:$PATH" exec cubic review --base "$base_ref" "$@"
+PATH="$HOME/.cubic/bin:$PATH" cubic review --base "$base_ref" "$@"
