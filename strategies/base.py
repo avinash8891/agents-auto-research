@@ -28,7 +28,6 @@ class FamilyDirnames:
 class Strategy(Protocol):
     name: str
     benchmark_script: str
-    vps_benchmark_script: str
     description_for_research: str
     research_spec: FamilyResearchSpec
     discord_webhook: str
@@ -58,7 +57,6 @@ class Strategy(Protocol):
 class BaseStrategy:
     name = ""
     benchmark_script = ""
-    vps_benchmark_script = ""
     description_for_research = ""
     default_variants: tuple[str, ...] = ()
     thesis_family_by_slug: dict[str, str] = {}

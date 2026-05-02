@@ -37,6 +37,32 @@ LEGACY_REMOTE_ROOT = "/root/orb-research"
 REMOTE_ROOT_DENYLIST = {"/", "/root", "/home", "/srv", "/tmp", "/var", "/opt"}
 
 
+def _load_local_env_file() -> None:
+    """Load repo-local .env defaults for CLI runs without overriding shell env."""
+    env_file = Path(__file__).resolve().parent / ".env"
+    if not env_file.exists():
+        return
+
+    for raw_line in env_file.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        if key in os.environ:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        os.environ[key] = value
+
+
 @dataclass(frozen=True)
 class VPSConfig:
     host: str
@@ -233,7 +259,6 @@ def build_remote_command(
     segments = [
         "set -e",
         f"cd {shlex.quote(config.remote_dir)}",
-        "export AUTORESEARCH_VPS=1",
         f"export AUTORESEARCH_RESOLVED_SHA={shlex.quote(resolved_sha)}",
     ]
     if config.data_root:
@@ -407,6 +432,8 @@ def _localize_remote_result_output(output: str, sftp: paramiko.SFTPClient) -> st
 
 
 def main():
+    _load_local_env_file()
+
     parser = argparse.ArgumentParser(description="Run a strategy backtest on the VPS")
     parser.add_argument("--strategy", required=True, choices=sorted(STRATEGIES))
     parser.add_argument("config_path")
