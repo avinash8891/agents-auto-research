@@ -571,6 +571,69 @@ def test_log_experiment_result_uses_legacy_runtime_config_fallback(tmp_path: Pat
     assert json.loads(row[0]) == {"ema_length": 5}
 
 
+def test_log_experiment_result_moves_artifacts_to_executed_vps_commit(
+    tmp_path: Path,
+) -> None:
+    launcher_sha = "abc1234"
+    executed_sha = "0123456789abcdef0123456789abcdef01234567"
+
+    class _Controller:
+        def __init__(self) -> None:
+            self.root = tmp_path
+            self.state_path = tmp_path / "ema_autoresearch.next.json"
+            self.runs_dir = tmp_path / "ema_autoresearch-runs"
+            self.family = SimpleNamespace(name="ema")
+            self.experiment_db = ExperimentDB(tmp_path / "ema_experiments.db")
+            self.ctx = SimpleNamespace(
+                current_contract=None,
+                parent_experiment_id="parent-exp",
+                latest_config_contents={"ema_length": 5},
+            )
+
+        def sanitize_duplicate_entries(self, config: str) -> None:
+            return None
+
+        def current_commit(self) -> str:
+            return launcher_sha
+
+        def read_state(self) -> dict[str, object]:
+            return {"state": "running", "job": 1, "_last_round_usage": {}}
+
+    controller = _Controller()
+    controller.state_path.write_text(json.dumps({"state": "running", "job": 1}))
+    source_artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-1" / launcher_sha / "configabc"
+    source_artifact_dir.mkdir(parents=True)
+    (source_artifact_dir / "config.json").write_text("{}\n")
+    result_path = tmp_path / "result.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "metrics": {"median_expectancy": 1.25, "trade_count": 10},
+                "git_sha": executed_sha,
+            }
+        )
+    )
+
+    experiment_mod.log_experiment_result(
+        controller,
+        config="configs/ema_base.yaml",
+        metric=1.25,
+        decision="keep",
+        output=f"RESULT_JSON {result_path}\n",
+        analysis={"trade_analysis": {}},
+        artifact_dir=source_artifact_dir,
+    )
+
+    target_artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-1" / executed_sha / "configabc"
+    assert not source_artifact_dir.exists()
+    assert (target_artifact_dir / "config.json").exists()
+    assert (target_artifact_dir / "benchmark_output.txt").exists()
+
+    entry = controller.experiment_db.export_entries()[-1]
+    assert entry["commit"] == executed_sha
+    assert entry["asi"]["artifact_dir"] == (f"ema_autoresearch-runs/job-1/{executed_sha}/configabc")
+
+
 def test_run_experiment_uses_runtime_config_fallback_for_baseline_checkpoint(
     tmp_path: Path, monkeypatch
 ) -> None:

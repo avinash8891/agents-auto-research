@@ -585,6 +585,37 @@ def _write_run_artifacts(artifact_dir: Path, output: str, analysis: dict[str, An
     write_json_atomic_strict(artifact_dir / "analysis.json", analysis)
 
 
+def _artifact_dir_for_executed_commit(
+    controller: "AutoresearchController",
+    artifact_dir: Path,
+    details: dict[str, Any],
+) -> Path:
+    executed_commit = _executed_code_commit(controller, details)
+    current_commit = controller.current_commit()
+    if executed_commit == current_commit:
+        return artifact_dir
+
+    target_dir = artifact_dir.parent.parent / executed_commit / artifact_dir.name
+    if target_dir == artifact_dir:
+        return artifact_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if artifact_dir.exists():
+        for child in artifact_dir.iterdir():
+            dest = target_dir / child.name
+            if dest.exists():
+                if dest.is_dir():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+            shutil.move(str(child), str(dest))
+        try:
+            artifact_dir.rmdir()
+            artifact_dir.parent.rmdir()
+        except OSError:
+            pass
+    return target_dir
+
+
 def log_experiment_result(
     controller: "AutoresearchController",
     *,
@@ -598,6 +629,8 @@ def log_experiment_result(
 ) -> None:
     controller.sanitize_duplicate_entries(config)
     artifact_dir = _resolve_artifact_dir(controller, config, artifact_dir=artifact_dir)
+    details = parse_benchmark_details(output)
+    artifact_dir = _artifact_dir_for_executed_commit(controller, artifact_dir, details)
     _write_run_artifacts(artifact_dir, output, analysis)
 
     thesis_id, config_changes = _read_thesis_metadata(controller, config)
@@ -613,7 +646,6 @@ def log_experiment_result(
         config_changes=config_changes,
         next_action=next_action,
     )
-    details = parse_benchmark_details(output)
     next_run = 1 + controller.experiment_db.count()
     state = controller.read_state()
     entry = _build_export_entry(
