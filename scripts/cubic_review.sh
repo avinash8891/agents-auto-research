@@ -7,7 +7,9 @@ if [[ $# -gt 0 ]]; then
 fi
 
 # Prevent indefinite pre-push hangs if cubic blocks on network/service calls.
-timeout_seconds="${CUBIC_REVIEW_TIMEOUT_SECONDS:-300}"
+# Default to 20 minutes so normal large diffs do not fail pre-push simply due
+# to a short watchdog window.
+timeout_seconds="${CUBIC_REVIEW_TIMEOUT_SECONDS:-1200}"
 if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
   echo "CUBIC_REVIEW_TIMEOUT_SECONDS must be a positive integer: $timeout_seconds" >&2
   exit 2
