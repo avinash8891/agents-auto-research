@@ -221,7 +221,7 @@ class AutoresearchController:
             return sha
         try:
             dirty = subprocess.check_output(
-                ["git", "status", "--porcelain"],
+                ["git", "status", "--porcelain", "--untracked-files=no"],
                 cwd=str(self.root),
                 stderr=subprocess.DEVNULL,
                 text=True,

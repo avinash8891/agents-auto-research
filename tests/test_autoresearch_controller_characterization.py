@@ -116,6 +116,21 @@ def test_controller_anchors_relative_paths_to_root(tmp_path):
     assert controller.run_queue_dir == tmp_path / family.run_queue_dirname
 
 
+def test_current_commit_ignores_untracked_runtime_files(controller, monkeypatch):
+    monkeypatch.setattr(loop_mod, "_git_sha", lambda: "abc1234")
+
+    captured: dict[str, Any] = {}
+
+    def fake_check_output(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return ""
+
+    monkeypatch.setattr(loop_mod.subprocess, "check_output", fake_check_output)
+
+    assert controller.current_commit() == "abc1234"
+    assert captured["cmd"] == ["git", "status", "--porcelain", "--untracked-files=no"]
+
+
 def test_execute_once_anchors_absolute_runs_dir_through_resolved_root(tmp_path, monkeypatch):
     family = load_family("ema")
     real_root = tmp_path / "real-root"
