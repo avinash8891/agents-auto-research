@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import json
 import os
 import shlex
@@ -12,10 +11,11 @@ from strategy_family import load_family
 from vps_runner import (
     VPSConfig,
     _localize_remote_result_output,
+    build_git_prepare_command,
     build_remote_command,
     config_from_env,
     create_verified_ssh_client,
-    sync_relative_paths,
+    parse_resolved_sha,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +26,9 @@ def test_vps_config_reads_remote_details_from_environment(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
     monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REF", "feature/ema")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "12")
 
     config = config_from_env()
 
@@ -33,6 +36,9 @@ def test_vps_config_reads_remote_details_from_environment(monkeypatch) -> None:
     assert config.user == "researcher"
     assert config.key == os.path.expanduser("~/.ssh/research_key")
     assert config.remote_dir == "/srv/autoresearch"
+    assert config.git_repo == "https://github.com/example/repo.git"
+    assert config.git_ref == "feature/ema"
+    assert config.job == "12"
 
 
 def test_vps_config_requires_explicit_environment(monkeypatch) -> None:
@@ -41,23 +47,13 @@ def test_vps_config_requires_explicit_environment(monkeypatch) -> None:
         "AUTORESEARCH_VPS_USER",
         "AUTORESEARCH_VPS_KEY",
         "AUTORESEARCH_VPS_DIR",
+        "AUTORESEARCH_GIT_REPO",
+        "AUTORESEARCH_GIT_REF",
     ):
         monkeypatch.delenv(name, raising=False)
 
     with pytest.raises(ValueError, match="AUTORESEARCH_VPS_HOST"):
         config_from_env()
-
-
-def test_syntax_check_reports_external_python_path_without_crashing(tmp_path, capsys) -> None:
-    from vps_runner import syntax_check
-
-    bad = tmp_path / "bad.py"
-    bad.write_text("def broken(:\n    pass\n")
-
-    assert syntax_check([bad]) is False
-    err = capsys.readouterr().err
-    assert "SYNTAX ERROR in" in err
-    assert str(bad) in err
 
 
 def test_remote_command_uses_generic_runner_and_family_metadata() -> None:
@@ -67,41 +63,57 @@ def test_remote_command_uses_generic_runner_and_family_metadata() -> None:
         user="researcher",
         key="/tmp/key",
         remote_dir="/srv/autoresearch with spaces; rm -rf /",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+        job="12",
     )
 
     config_path = "configs/variants/ema aggressive/ema base.yaml"
-    command = build_remote_command(config, family, config_path)
+    resolved_sha = "0123456789abcdef0123456789abcdef01234567"
+    command = build_remote_command(config, family, config_path, resolved_sha)
 
     assert f"cd {shlex.quote(config.remote_dir)}" in command
-    assert f"mkdir -p {shlex.quote(os.path.dirname(config_path) or '.')}" in command
+    assert "config_hash=$(python3 -c" in command
+    output_root = f"{config.remote_dir}/{family.runs_dirname}/job-12/{resolved_sha}"
+    assert f"output_dir={shlex.quote(output_root)}/$config_hash" in command
     assert (
-        f"(cp {shlex.quote(os.path.basename(config_path))} {shlex.quote(config_path)} 2>/dev/null || true)"
-        in command
-    )
-    assert (
-        f"python3 backtest/runner.py --strategy {shlex.quote(family.name)} "
-        f"--config {shlex.quote(config_path)}"
+        f"python3 -m backtest.runner --strategy {shlex.quote(family.name)} "
+        f'--config {shlex.quote(config_path)} --output-dir "$output_dir"'
     ) in command
     assert "/root/orb-research" not in command
     assert "backtest_5ema.py" not in command
+    assert "scp" not in command.lower()
 
 
-def test_sync_manifest_includes_autoresearch_loop_imported_modules() -> None:
-    tree = ast.parse((REPO_ROOT / "autoresearch_controller.py").read_text())
-    imported_local_modules = {
-        node.module
-        for node in tree.body
-        if isinstance(node, ast.ImportFrom)
-        and node.module is not None
-        and node.module.startswith("autoresearch_")
-    }
+def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() -> None:
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch code",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
 
-    synced = sync_relative_paths(REPO_ROOT)
+    command = build_git_prepare_command(config)
 
-    assert imported_local_modules
-    for module_name in imported_local_modules:
-        assert f"{module_name}.py" in synced
-    assert any(path.startswith("trace_adapters/") for path in synced)
+    assert "git clone --no-checkout" in command
+    assert f"git fetch --prune origin {shlex.quote(config.git_ref)}" in command
+    assert 'git checkout --detach "$resolved"' in command
+    assert "git clean -ffdx" in command
+    assert "-e '*_autoresearch-runs'" in command
+    assert "-e '*_experiments.db'" in command
+    assert "AUTORESEARCH_RESOLVED_SHA %s" in command
+    assert "scp" not in command.lower()
+
+
+def test_parse_resolved_sha_requires_exact_marker() -> None:
+    sha = "0123456789abcdef0123456789abcdef01234567"
+
+    assert parse_resolved_sha(f"noise\nAUTORESEARCH_RESOLVED_SHA {sha}\n") == sha
+
+    with pytest.raises(RuntimeError, match="resolved commit SHA"):
+        parse_resolved_sha("AUTORESEARCH_RESOLVED_SHA not-a-sha\n")
 
 
 def test_ssh_client_requires_pretrusted_host_keys(monkeypatch, tmp_path) -> None:

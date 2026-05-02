@@ -16,7 +16,7 @@ def _git_sha() -> str:
     """Current git SHA, or 'unknown' if not in a repo."""
     try:
         return subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
+            ["git", "rev-parse", "HEAD"],
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()

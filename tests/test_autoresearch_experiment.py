@@ -161,12 +161,14 @@ def test_compute_run_output_dir_for_missing_config_uses_12_char_hash_slug(tmp_pa
         root=tmp_path,
         runs_dir=tmp_path / "runs",
         read_state=lambda: {"job": 3},
+        current_commit=lambda: "abc123",
     )
 
     run_dir, config_path_full = _compute_run_output_dir(controller, "configs/missing.yaml")
 
     assert config_path_full == tmp_path / "configs/missing.yaml"
-    assert run_dir.parent.name == "job-3"
+    assert run_dir.parent.name == "abc123"
+    assert run_dir.parent.parent.name == "job-3"
     assert len(run_dir.name) == 12
 
 
@@ -361,6 +363,9 @@ def test_compute_run_output_dir_anchors_relative_runs_dir_to_controller_root(
         def read_state(self) -> dict[str, object]:
             return {"job": 7}
 
+        def current_commit(self) -> str:
+            return "abc123"
+
     controller = _Controller()
     run_output_dir, config_path_full = _compute_run_output_dir(
         controller, "configs/variants/missing.yaml"
@@ -368,7 +373,9 @@ def test_compute_run_output_dir_anchors_relative_runs_dir_to_controller_root(
 
     expected_hash = _config_hash({"config_path": "configs/variants/missing.yaml"})
     assert config_path_full == tmp_path / "configs/variants/missing.yaml"
-    assert run_output_dir == tmp_path / "ema_autoresearch-runs" / "job-7" / expected_hash
+    assert run_output_dir == (
+        tmp_path / "ema_autoresearch-runs" / "job-7" / "abc123" / expected_hash
+    )
 
 
 def test_evaluate_effect_returns_none_when_metric_is_missing() -> None:

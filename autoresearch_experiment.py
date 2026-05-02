@@ -36,7 +36,7 @@ from autoresearch_state import (
     read_state,
     write_state,
 )
-from config_hash import _config_hash
+from config_hash import _config_hash, _git_sha
 from experiment_db import (
     BaselineCheckpoint,
     ExperimentResult,
@@ -658,7 +658,10 @@ def _compute_run_output_dir(controller: "AutoresearchController", config: str) -
         if controller.runs_dir.is_absolute()
         else controller.root / controller.runs_dir
     )
-    run_output_dir = runs_dir / f"job-{job}" / config_hash
+    current_commit = (
+        controller.current_commit() if hasattr(controller, "current_commit") else _git_sha()
+    )
+    run_output_dir = runs_dir / f"job-{job}" / current_commit / config_hash
     run_output_dir.mkdir(parents=True, exist_ok=True)
     return run_output_dir, config_path_full
 
