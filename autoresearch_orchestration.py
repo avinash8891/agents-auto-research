@@ -250,6 +250,14 @@ def resolve_next_action(controller: "AutoresearchController") -> dict[str, Any]:
         return controller._apply_forced_baseline_rerun(baseline_action)
 
     state = controller.read_state()
+    results = controller.read_results()
+
+    # Fresh jobs must always plan baseline first when the controller has been
+    # reset to `running`, even if a previous halted thesis was preserved in
+    # state for later recovery.
+    if state.get("state") == "running" and not results:
+        return controller.reconcile_state()
+
     halted_id = state.get("halted_thesis_id")
     if halted_id and state.get("halted_reason") == "requires_code_change":
         resumed = controller._try_resume_halted_thesis()

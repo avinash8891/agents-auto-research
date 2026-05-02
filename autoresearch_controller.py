@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -216,19 +215,7 @@ class AutoresearchController:
         self.experiment_db.import_entries(entries)
 
     def current_commit(self) -> str:
-        sha = _git_sha()
-        if sha == "unknown":
-            return sha
-        try:
-            dirty = subprocess.check_output(
-                ["git", "status", "--porcelain", "--untracked-files=no"],
-                cwd=str(self.root),
-                stderr=subprocess.DEVNULL,
-                text=True,
-            ).strip()
-        except Exception:
-            dirty = ""
-        return f"{sha}-dirty" if dirty else sha
+        return _git_sha()
 
     def direction(self) -> str:
         return self.experiment_db.best_direction()

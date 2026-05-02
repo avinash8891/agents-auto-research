@@ -116,19 +116,10 @@ def test_controller_anchors_relative_paths_to_root(tmp_path):
     assert controller.run_queue_dir == tmp_path / family.run_queue_dirname
 
 
-def test_current_commit_ignores_untracked_runtime_files(controller, monkeypatch):
+def test_current_commit_returns_git_sha(controller, monkeypatch):
     monkeypatch.setattr(loop_mod, "_git_sha", lambda: "abc1234")
 
-    captured: dict[str, Any] = {}
-
-    def fake_check_output(cmd, **kwargs):
-        captured["cmd"] = cmd
-        return ""
-
-    monkeypatch.setattr(loop_mod.subprocess, "check_output", fake_check_output)
-
     assert controller.current_commit() == "abc1234"
-    assert captured["cmd"] == ["git", "status", "--porcelain", "--untracked-files=no"]
 
 
 def test_execute_once_anchors_absolute_runs_dir_through_resolved_root(tmp_path, monkeypatch):
@@ -1491,6 +1482,45 @@ def test_orchestration_resolve_next_action_prefers_forced_baseline(controller, m
     assert calls == ["baseline", "apply"]
     assert state["state"] == "running"
     assert state["next_action"] == baseline_action
+
+
+def test_resolve_next_action_baseline_first_on_fresh_job_with_halted_metadata(
+    controller, monkeypatch
+):
+    calls: list[str] = []
+
+    controller.write_state(
+        {
+            "state": "running",
+            "job": 9,
+            "research_round": 0,
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": "stale-thesis",
+            "halted_thesis": {"thesis_id": "stale-thesis", "config_changes": {"ema_length": 21}},
+        }
+    )
+    monkeypatch.setattr(controller, "_check_baseline_rerun", lambda: None)
+    monkeypatch.setattr(controller, "read_results", lambda: [])
+    monkeypatch.setattr(
+        controller,
+        "reconcile_state",
+        lambda: calls.append("reconcile")
+        or {"state": "running", "next_action": {"type": "run_experiment", "source": "baseline"}},
+    )
+    monkeypatch.setattr(
+        controller,
+        "_try_resume_halted_thesis",
+        lambda: calls.append("resume") or None,
+    )
+    monkeypatch.setattr(
+        "autoresearch_orchestration.build_missing_primitives_for_state",
+        lambda *args, **kwargs: calls.append("build") or {"state": "blocked"},
+    )
+
+    state = orchestration_mod.resolve_next_action(controller)
+
+    assert calls == ["reconcile"]
+    assert state["next_action"]["source"] == "baseline"
 
 
 def test_controller_resolve_next_action_does_not_pre_read_state(controller, monkeypatch) -> None:
