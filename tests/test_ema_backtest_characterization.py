@@ -481,6 +481,23 @@ def test_load_runtime_config_resolves_data_universe_for_orb(
     assert loaded["data_provenance"]["data_universe"] == "nasdaq8"
 
 
+def test_load_runtime_config_contract_payload_merges_orb_defaults_for_data_universe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "autoresearch-data"
+    _write_wide_dataset(data_root / "universes" / "nasdaq143", ["SPY"])
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    contract = [{"type": "opening_range", "or_minutes": 15}]
+    path = tmp_path / "orb-contract.json"
+    path.write_text(json.dumps(contract) + "\n")
+
+    loaded = load_runtime_config(str(path), "orb")
+
+    assert loaded["or_minutes"] == 15
+    assert loaded["timeframe_minutes"] == 5
+    assert loaded["data_provenance"]["data_universe"] == "nasdaq143"
+
+
 def test_config_hash_for_data_universe_ignores_machine_specific_paths() -> None:
     left = {
         "ema_length": 5,

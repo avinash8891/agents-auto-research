@@ -22,13 +22,7 @@ def load_runtime_config(path: str, strategy_name: str) -> dict[str, Any]:
     elif isinstance(payload, dict):
         config = payload
     else:
-        compilation = strategy.compile_contract(payload)
-        if compilation.status != "ready_to_run":
-            raise ValueError(
-                f"{strategy_name} contract is not runnable: status={compilation.status} "
-                f"missing={compilation.missing_primitives}"
-            )
-        config = compilation.runtime_config
+        config = _compile_contract_runtime_config(strategy_name, strategy, payload)
     if strategy.requires_data_universe:
         config = resolve_data_universe(config)
     config = strategy.validate_runtime_config_scope(config, source_path=p)
@@ -36,6 +30,19 @@ def load_runtime_config(path: str, strategy_name: str) -> dict[str, Any]:
     if violations:
         raise ValueError(f"Config validation failed for {p}: " + "; ".join(violations))
     return config
+
+
+def _compile_contract_runtime_config(
+    strategy_name: str, strategy: Any, payload: Any
+) -> dict[str, Any]:
+    compilation = strategy.compile_contract(payload)
+    if compilation.status != "ready_to_run":
+        raise ValueError(
+            f"{strategy_name} contract is not runnable: status={compilation.status} "
+            f"missing={compilation.missing_primitives}"
+        )
+    defaults = strategy.get_defaults()
+    return {**defaults, **compilation.runtime_config}
 
 
 def validate_runtime_config_scope(
