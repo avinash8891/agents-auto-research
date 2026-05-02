@@ -455,9 +455,8 @@ def main():
     cmd = build_remote_command(vps_config, family, resolved_sha)
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()
-    stdin, stdout, stderr = client.exec_command(cmd, timeout=600)
-    stdout.channel.settimeout(600)
-    stderr.channel.settimeout(600)
+    # Controller runs are long-lived; do not enforce a 10-minute SSH timeout.
+    stdin, stdout, stderr = client.exec_command(cmd)
     out = stdout.read().decode()
     err = stderr.read().decode()
     exit_code = stdout.channel.recv_exit_status()
