@@ -1,0 +1,37 @@
+tests/test_orb_backtest_characterization.py
+  c6764ab5a64b40e0 36-58
+backtest/data_universe.py
+  c6764ab5a64b40e0 86-87
+strategies/orb/runner.py
+  c6764ab5a64b40e0 29-32
+tests/test_vps_runner_config.py
+  c6764ab5a64b40e0 65-94
+tests/test_ema_backtest_characterization.py
+  c6764ab5a64b40e0 411-418
+scripts/cubic_review.sh
+  c6764ab5a64b40e0 23,27-28
+docs/data-universes.md
+  c6764ab5a64b40e0 58
+vps_runner.py
+  c6764ab5a64b40e0 77,80,84,149-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "03f6588ae3e40c39b17d12e299288a3e51e523a3",
+  "prompts": {
+    "c6764ab5a64b40e0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de78d-e526-7713-bd7d-2b58420b3c7d",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 138,
+      "total_deletions": 17,
+      "accepted_lines": 138,
+      "overriden_lines": 0
+    }
+  }
+}
