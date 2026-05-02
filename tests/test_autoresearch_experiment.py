@@ -519,6 +519,8 @@ def test_build_db_record_preserves_short_executed_result_git_sha(tmp_path: Path)
     )
 
     assert record.code_commit == "b96e64e"
+
+
 def test_log_experiment_result_uses_legacy_runtime_config_fallback(tmp_path: Path) -> None:
     class _Controller:
         def __init__(self) -> None:
