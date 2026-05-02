@@ -16,6 +16,7 @@ from vps_runner import (
     config_from_env,
     create_verified_ssh_client,
     parse_resolved_sha,
+    redact_git_repo_url,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -114,6 +115,20 @@ def test_parse_resolved_sha_requires_exact_marker() -> None:
 
     with pytest.raises(RuntimeError, match="resolved commit SHA"):
         parse_resolved_sha("AUTORESEARCH_RESOLVED_SHA not-a-sha\n")
+
+
+def test_redact_git_repo_url_hides_https_credentials() -> None:
+    assert (
+        redact_git_repo_url("https://token123@github.com/example/repo.git")
+        == "https://***@github.com/example/repo.git"
+    )
+    assert (
+        redact_git_repo_url("https://user:token123@github.com:443/example/repo.git")
+        == "https://***@github.com:443/example/repo.git"
+    )
+    assert (
+        redact_git_repo_url("git@github.com:example/repo.git") == "git@github.com:example/repo.git"
+    )
 
 
 def test_ssh_client_requires_pretrusted_host_keys(monkeypatch, tmp_path) -> None:

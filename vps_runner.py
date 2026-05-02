@@ -19,8 +19,9 @@ import shutil
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import paramiko
 
@@ -96,6 +97,16 @@ def build_git_prepare_command(config: VPSConfig) -> str:
         "-e '*_experiments.db' -e 'logs' -e 'logs/**' && "
         f"printf '{RESOLVED_SHA_MARKER} %s\\n' \"$resolved\""
     )
+
+
+def redact_git_repo_url(git_repo: str) -> str:
+    parsed = urlsplit(git_repo)
+    if not parsed.scheme or "@" not in parsed.netloc:
+        return git_repo
+    host = parsed.hostname or ""
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+    return urlunsplit((parsed.scheme, f"***@{host}", parsed.path, parsed.query, parsed.fragment))
 
 
 def parse_resolved_sha(output: str) -> str:
@@ -233,13 +244,16 @@ def main():
     trace("VPS_RUNNER", "Connected")
 
     prepare_cmd = build_git_prepare_command(vps_config)
-    trace("VPS_RUNNER", f"SSH PREPARE: {prepare_cmd}")
+    safe_prepare_cmd = build_git_prepare_command(
+        replace(vps_config, git_repo=redact_git_repo_url(vps_config.git_repo))
+    )
+    trace("VPS_RUNNER", f"SSH PREPARE: {safe_prepare_cmd}")
     t0 = time.time()
     _, prepare_stdout, prepare_stderr = client.exec_command(prepare_cmd, timeout=600)
     prepare_out = prepare_stdout.read().decode()
     prepare_err = prepare_stderr.read().decode()
     prepare_exit = prepare_stdout.channel.recv_exit_status()
-    trace_ssh(prepare_cmd, prepare_exit, prepare_out, prepare_err)
+    trace_ssh(safe_prepare_cmd, prepare_exit, prepare_out, prepare_err)
     if prepare_exit != 0:
         client.close()
         if prepare_out:
