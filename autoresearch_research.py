@@ -37,6 +37,7 @@ from autoresearch_state import (
 )
 from config_hash import _config_hash
 from persistence_utils import write_text_atomic as _write_text_atomic
+from research_types import ResearchThesis
 from strategy_family import StrategyFamily
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
 from trace_adapters.halo import build_halo_export_package, build_halo_payload
@@ -856,6 +857,20 @@ def _handle_needs_code(
     thesis_id = result.get("generated_thesis_id", "unknown")
     thesis = result.get("thesis", {})
     log.warning(f"LOOP_HALT thesis={thesis_id} requires code change")
+    try:
+        thesis_payload = dict(thesis)
+        thesis_payload.setdefault("thesis_id", thesis_id)
+        thesis_payload.setdefault("strategy_family", controller.family.name)
+        thesis_payload["requires_code_change"] = True
+        from compiler_pipeline import compile_research_thesis
+
+        compile_research_thesis(ResearchThesis.model_validate(thesis_payload), controller.root)
+    except Exception as exc:
+        log.warning(
+            "LOOP_HALT thesis=%s could not materialize builder artifacts: %s",
+            thesis_id,
+            exc,
+        )
     state["state"] = "halted"
     state["halted_reason"] = "requires_code_change"
     state["halted_thesis_id"] = thesis_id

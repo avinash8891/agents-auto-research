@@ -459,6 +459,9 @@ def test_execute_once_research_needs_code_invokes_builder(controller, monkeypatc
         }
 
     def fake_builder(controller_obj, state, thesis_id, thesis, *, research_round=None):
+        experiment_dir = controller_obj.root / "experiments" / thesis_id
+        assert (experiment_dir / "thesis.json").exists()
+        assert (experiment_dir / "contract.json").exists()
         state = dict(state)
         state["state"] = "running"
         state["current_thesis"] = {
