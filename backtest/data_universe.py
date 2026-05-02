@@ -79,6 +79,8 @@ def manifest_for_universe(universe: str) -> Path:
 
 
 def _normalize_universe_name(value: Any) -> str:
+    if isinstance(value, bool):
+        raise ValueError("data_universe must be a non-empty string or integer universe name.")
     if isinstance(value, int):
         value = str(value)
     if not isinstance(value, str) or not value:

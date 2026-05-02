@@ -32,7 +32,7 @@ def pytest_configure(config: pytest.Config) -> None:
     tiny_source = FIXTURES_DIR / "tiny_ema_data"
     if not tiny_target.exists():
         tiny_target.symlink_to(tiny_source, target_is_directory=True)
-    os.environ.setdefault("AUTORESEARCH_DATA_ROOT", str(data_root))
+    os.environ["AUTORESEARCH_DATA_ROOT"] = str(data_root)
 
 
 @pytest.fixture

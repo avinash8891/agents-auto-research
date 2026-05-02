@@ -416,6 +416,14 @@ def test_load_universe_data_rejects_path_traversal_names() -> None:
         load_universe_data({"data_universe": "nested/universe"})
 
 
+def test_load_universe_data_rejects_boolean_universe_names() -> None:
+    with pytest.raises(ValueError, match="non-empty string or integer universe name"):
+        load_universe_data({"data_universe": True})
+
+    with pytest.raises(ValueError, match="non-empty string or integer universe name"):
+        load_universe_data({"data_universe": False})
+
+
 def test_result_json_includes_data_provenance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
