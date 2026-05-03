@@ -99,7 +99,7 @@ class VPSConfig:
 
 
 def _is_commitish_ref(git_ref: str) -> bool:
-    return bool(re.fullmatch(r"[0-9a-fA-F]{7,40}", git_ref))
+    return bool(re.fullmatch(r"[0-9a-fA-F]{40}", git_ref))
 
 
 def _default_remote_dir(vps_user: str, strategy_name: str) -> str:
@@ -169,6 +169,8 @@ def _validate_remote_dir(remote_dir: str) -> None:
 def _validate_git_ref(git_ref: str) -> None:
     if re.fullmatch(r"[0-9a-fA-F]{40}", git_ref):
         return
+    if re.fullmatch(r"[0-9a-fA-F]{7,39}", git_ref):
+        raise ValueError("AUTORESEARCH_GIT_REF must be a branch, tag, or full 40-char commit SHA.")
     if git_ref.startswith(("+", "-")) or ":" in git_ref:
         raise ValueError(
             "AUTORESEARCH_GIT_REF must be a branch, tag, or full commit SHA, not a refspec."

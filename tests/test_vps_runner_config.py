@@ -118,14 +118,8 @@ def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
         with pytest.raises(ValueError, match="AUTORESEARCH_GIT_REF"):
             config_from_env(git_ref=bad_ref, strategy_name="ema", remote_dir="/srv/autoresearch")
 
-    assert (
-        config_from_env(
-            git_ref="0ad8abf",
-            strategy_name="ema",
-            remote_dir="/srv/autoresearch",
-        ).git_ref
-        == "0ad8abf"
-    )
+    with pytest.raises(ValueError, match="full 40-char commit SHA"):
+        config_from_env(git_ref="0ad8abf", strategy_name="ema", remote_dir="/srv/autoresearch")
 
     assert (
         config_from_env(
@@ -345,7 +339,7 @@ def test_git_prepare_command_uses_commit_ref_resolution_for_sha() -> None:
         key="/tmp/key",
         remote_dir="/srv/autoresearch code",
         git_repo="https://github.com/example/repo.git",
-        git_ref="0ad8abf",
+        git_ref="0123456789abcdef0123456789abcdef01234567",
     )
 
     command = build_git_prepare_command(config)
