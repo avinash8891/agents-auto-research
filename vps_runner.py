@@ -236,8 +236,8 @@ def build_git_prepare_command(config: VPSConfig) -> str:
     git_ref = shlex.quote(config.git_ref)
     if _is_commitish_ref(config.git_ref):
         fetch_and_resolve = (
-            "git fetch --prune origin && "
-            f"resolved=$(git rev-parse --verify {git_ref}^{{commit}}) && "
+            f"git fetch --prune origin {git_ref} && "
+            "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
         )
     else:
         fetch_and_resolve = (
