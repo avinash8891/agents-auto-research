@@ -620,7 +620,13 @@ def main():
         sys.exit(1)
     trace("VPS_RUNNER", f"Git prepare complete sha={resolved_sha} elapsed={time.time() - t0:.1f}s")
 
-    materialize_remote_runtime_env(client, vps_config)
+    try:
+        materialize_remote_runtime_env(client, vps_config)
+    except (OSError, RuntimeError) as exc:
+        client.close()
+        trace("VPS_RUNNER", f"Runtime env upload failed: {exc}")
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
 
     cmd = build_remote_command(vps_config, family, resolved_sha)
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
