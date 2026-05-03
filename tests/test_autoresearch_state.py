@@ -197,12 +197,14 @@ def test_deduplicate_entries_keeps_single_entry_unchanged() -> None:
 def test_deduplicate_entries_picks_richer_of_two_for_same_config() -> None:
     sparse = {
         "run": 1,
+        "job": 1,
         "metric": 1.0,
         "status": "keep",
         "asi": {"config": "configs/ema_base.yaml"},
     }
     rich = {
         "run": 2,
+        "job": 1,
         "metric": 1.0,
         "status": "keep",
         "asi": {
@@ -214,6 +216,28 @@ def test_deduplicate_entries_picks_richer_of_two_for_same_config() -> None:
     out = deduplicate_entries([sparse, rich])
     assert len(out) == 1
     assert out[0]["asi"].get("trade_analysis") == {"trade_count": 287}
+
+
+def test_deduplicate_entries_keeps_same_config_across_different_jobs() -> None:
+    job_one = {
+        "run": 1,
+        "job": 1,
+        "metric": 1.0,
+        "status": "keep",
+        "asi": {"config": "configs/ema_base.yaml"},
+    }
+    job_two = {
+        "run": 2,
+        "job": 2,
+        "metric": 1.5,
+        "status": "keep",
+        "asi": {"config": "configs/ema_base.yaml", "trade_analysis": {"trade_count": 10}},
+    }
+
+    out = deduplicate_entries([job_one, job_two])
+
+    assert len(out) == 2
+    assert {entry["job"] for entry in out} == {1, 2}
 
 
 def test_deduplicate_entries_preserves_non_experiment_rows() -> None:

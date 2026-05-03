@@ -202,9 +202,9 @@ def promote_missing_known_results(entries: list[dict[str, Any]]) -> list[dict[st
 
 
 def deduplicate_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep only the richest entry per config. Drop low-info duplicates."""
-    config_entries: dict[str, list[tuple[int, dict[str, Any]]]] = {}
-    config_order: list[str] = []
+    """Keep only the richest entry per (job, config). Drop low-info duplicates."""
+    config_entries: dict[tuple[int, str], list[tuple[int, dict[str, Any]]]] = {}
+    config_order: list[tuple[int, str]] = []
     non_experiment: list[dict[str, Any]] = []
 
     for idx, entry in enumerate(entries):
@@ -216,14 +216,16 @@ def deduplicate_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not config:
             non_experiment.append(entry)
             continue
-        if config not in config_entries:
-            config_entries[config] = []
-            config_order.append(config)
-        config_entries[config].append((idx, entry))
+        job = _coerce_job_to_int(entry.get("job"))
+        key = (job, config)
+        if key not in config_entries:
+            config_entries[key] = []
+            config_order.append(key)
+        config_entries[key].append((idx, entry))
 
     deduped: list[dict[str, Any]] = list(non_experiment)
-    for config in config_order:
-        group = config_entries[config]
+    for key in config_order:
+        group = config_entries[key]
         if len(group) == 1:
             deduped.append(group[0][1])
             continue
