@@ -75,6 +75,7 @@ from autoresearch_research import queue_variants as _research_queue_variants
 from autoresearch_research import results_to_dicts as _research_results_to_dicts
 from autoresearch_research import run_research as _research_run_research
 from autoresearch_state import ExperimentRecord, RunContext
+from autoresearch_state import _coerce_job_to_int as _state_coerce_job_to_int
 from autoresearch_state import best_result as _state_best_result
 from autoresearch_state import deduplicate_entries as _state_deduplicate_entries
 from autoresearch_state import is_better as _state_is_better
@@ -608,7 +609,7 @@ def main() -> int:
     )
     # Increment job number on each loop start
     prior_state = controller.read_state()
-    job = prior_state.get("job", 0) + 1
+    job = _state_coerce_job_to_int(prior_state.get("job")) + 1
     # New job starts from a clean controller state. This prevents stale
     # next_action/current_thesis/blockers from prior jobs from skipping
     # baseline-first planning on launch.

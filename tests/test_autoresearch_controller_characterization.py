@@ -1657,6 +1657,54 @@ def test_main_continues_from_baseline_blocked_research_handoff(monkeypatch, tmp_
     assert loop_mod.main() == 0
 
 
+def test_main_handles_legacy_string_job_state(monkeypatch, tmp_path):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    captured: dict[str, dict] = {}
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.state = {
+                "state": "running",
+                "job": "2026-05-02",
+                "research_round": 0,
+                "job_usage": None,
+            }
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            self.state = dict(state)
+            captured["written_state"] = dict(state)
+
+        def execute_once(self):
+            self.state = {"state": "finished", "blockers": [], "finished_reason": "done"}
+            return 0
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr("trace_sdk.get_log_file", lambda: "test.log")
+    monkeypatch.setattr("trace_sdk.get_session_id", lambda: "session-1")
+    monkeypatch.setattr("trace_sdk.set_family", lambda *args, **kwargs: None)
+    monkeypatch.setattr(loop_mod, "trace", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sys, "argv", ["autoresearch_controller.py", "--family", "ema"])
+
+    assert loop_mod.main() == 0
+    assert captured["written_state"]["job"] == 1
+
+
 def test_main_preserves_halted_thesis_resume_metadata(monkeypatch, tmp_path):
     family = load_family("ema")
 
