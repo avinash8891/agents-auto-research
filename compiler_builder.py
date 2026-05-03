@@ -3,13 +3,17 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
 from artifact_io import timestamp_now, write_json_artifact
 from backtest.runtime_config import load_runtime_config
+from persistence_utils import write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import load_family
+
+BUILDER_CLI_TIMEOUT_SECONDS = 300
 
 
 def _find_cli() -> str | None:
@@ -44,8 +48,40 @@ def _load_structured_thesis_artifacts(
     return thesis, contract, thesis_path, contract_path
 
 
+def _builder_artifact_dir(root: Path, family_name: str, thesis_id: str) -> Path:
+    family = load_family(family_name)
+    return root / family.builder_requests_dirname / thesis_id
+
+
+def _write_builder_attempt_artifacts(
+    *,
+    artifact_dir: Path,
+    prompt: str,
+    command: list[str],
+    cwd: Path,
+    timeout_seconds: int,
+    result: dict[str, Any],
+    stdout: str = "",
+    stderr: str = "",
+) -> None:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(artifact_dir / "prompt.txt", prompt)
+    write_json_artifact(
+        artifact_dir / "command.json",
+        {
+            "command": command,
+            "cwd": str(cwd),
+            "timeout_seconds": timeout_seconds,
+        },
+    )
+    write_text_atomic(artifact_dir / "stdout.log", stdout)
+    write_text_atomic(artifact_dir / "stderr.log", stderr)
+    write_json_artifact(artifact_dir / "result.json", result)
+
+
 def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     """Dispatch CLI builder to implement missing primitives for a thesis."""
+    started_at = time.monotonic()
     structured = _load_structured_thesis_artifacts(root, thesis_id)
     if structured is not None:
         proposal, compilation, proposal_path, compilation_path = structured
@@ -68,6 +104,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         generated_name = f"experiments/{thesis_id}/runtime_config.json"
         config_path = generated_name
         builder_requests_dir = root / family.builder_requests_dirname
+        attempt_dir = _builder_artifact_dir(root, family_name, thesis_id)
         prompt_extras = [
             "- Thesis artifact: experiments/{thesis_id}/thesis.json",
             "- Contract artifact: experiments/{thesis_id}/contract.json",
@@ -138,39 +175,21 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         )
         config_path = f"configs/variants/{generated_name}"
         builder_requests_dir = root / family.builder_requests_dirname
+        attempt_dir = _builder_artifact_dir(root, family_name, thesis_id)
         prompt_extras = []
-    write_json_artifact(
-        builder_requests_dir / f"{thesis_id}.json",
-        {
-            "thesis_id": thesis_id,
-            "family": family_name,
-            "proposal_path": proposal_path.relative_to(root).as_posix(),
-            "compilation_path": compilation_path.relative_to(root).as_posix(),
-            "missing_primitives": missing_primitives,
-            "normalized_contract": normalized_contract,
-            "status": "requested",
-            "timestamp": timestamp_now(),
-        },
-    )
+    request_payload = {
+        "thesis_id": thesis_id,
+        "family": family_name,
+        "proposal_path": proposal_path.relative_to(root).as_posix(),
+        "compilation_path": compilation_path.relative_to(root).as_posix(),
+        "missing_primitives": missing_primitives,
+        "normalized_contract": normalized_contract,
+        "status": "requested",
+        "timestamp": timestamp_now(),
+    }
+    write_json_artifact(builder_requests_dir / f"{thesis_id}.json", request_payload)
 
     config_abspath = root / config_path
-    if config_abspath.exists():
-        try:
-            load_runtime_config(str(config_abspath), family_name)
-        except Exception as exc:
-            return {
-                "status": "error",
-                "reason": f"generated config failed validation: {exc}",
-                "generated_config": None,
-                "validation_passed": False,
-            }
-        return {
-            "status": "completed",
-            "reason": "config already exists",
-            "generated_config": config_path,
-            "validation_passed": True,
-        }
-
     prompt = f"""Goal:
 Automatically implement the missing primitive(s) for thesis `{thesis_id}` and create the resulting config artifact.
 
@@ -202,25 +221,106 @@ Constraints:
 - Preserve existing behavior except for the new primitive support.
 - If implementation cannot be completed safely, explain why.
 """
+    _write_builder_attempt_artifacts(
+        artifact_dir=attempt_dir,
+        prompt=prompt,
+        command=["codex", "exec", prompt],
+        cwd=root,
+        timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+        result={
+            "status": "requested",
+            "reason": "builder queued",
+            "generated_config": None,
+            "validation_passed": False,
+        },
+    )
+
+    if config_abspath.exists():
+        try:
+            load_runtime_config(str(config_abspath), family_name)
+        except Exception as exc:
+            result = {
+                "status": "error",
+                "reason": f"generated config failed validation: {exc}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
+            _write_builder_attempt_artifacts(
+                artifact_dir=attempt_dir,
+                prompt=prompt,
+                command=["codex", "exec", prompt],
+                cwd=root,
+                timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+                result=result,
+            )
+            return result
+        result = {
+            "status": "completed",
+            "reason": "config already exists",
+            "generated_config": config_path,
+            "validation_passed": True,
+        }
+        _write_builder_attempt_artifacts(
+            artifact_dir=attempt_dir,
+            prompt=prompt,
+            command=["codex", "exec", prompt],
+            cwd=root,
+            timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+            result=result,
+        )
+        return result
 
     cli = _find_cli()
     if not cli:
-        return {
+        result = {
             "status": "error",
             "reason": "No CLI available for builder dispatch",
             "generated_config": None,
             "validation_passed": False,
         }
+        _write_builder_attempt_artifacts(
+            artifact_dir=attempt_dir,
+            prompt=prompt,
+            command=["codex", "exec", prompt],
+            cwd=root,
+            timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+            result=result,
+        )
+        return result
 
     cmd = ["codex", "exec", prompt]
 
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        cwd=str(root),
-        timeout=900,
-    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+            timeout=BUILDER_CLI_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = _coerce_subprocess_output(getattr(exc, "stdout", ""))
+        stderr = _coerce_subprocess_output(getattr(exc, "stderr", ""))
+        result = {
+            "status": "error",
+            "reason": f"builder timed out after {BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}",
+            "generated_config": None,
+            "validation_passed": False,
+            "timed_out": True,
+            "exit_code": None,
+            "duration_seconds": round(time.monotonic() - started_at, 3),
+        }
+        _write_builder_attempt_artifacts(
+            artifact_dir=attempt_dir,
+            prompt=prompt,
+            command=cmd,
+            cwd=root,
+            timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+            result=result,
+            stdout=stdout,
+            stderr=stderr,
+        )
+        return result
     result = (proc.stdout or "") + (proc.stderr or "")
 
     generated = config_path if config_abspath.exists() else None
@@ -228,15 +328,51 @@ Constraints:
         try:
             load_runtime_config(str(config_abspath), family_name)
         except Exception as exc:
-            return {
+            out = {
                 "status": "error",
                 "reason": f"generated config failed validation: {exc}",
                 "generated_config": None,
                 "validation_passed": False,
+                "exit_code": proc.returncode,
+                "timed_out": False,
+                "duration_seconds": round(time.monotonic() - started_at, 3),
             }
-    return {
+            _write_builder_attempt_artifacts(
+                artifact_dir=attempt_dir,
+                prompt=prompt,
+                command=cmd,
+                cwd=root,
+                timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+                result=out,
+                stdout=proc.stdout or "",
+                stderr=proc.stderr or "",
+            )
+            return out
+    out = {
         "status": "completed" if generated else "error",
         "reason": result,
         "generated_config": generated,
         "validation_passed": bool(generated),
+        "exit_code": proc.returncode,
+        "timed_out": False,
+        "duration_seconds": round(time.monotonic() - started_at, 3),
     }
+    _write_builder_attempt_artifacts(
+        artifact_dir=attempt_dir,
+        prompt=prompt,
+        command=cmd,
+        cwd=root,
+        timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+        result=out,
+        stdout=proc.stdout or "",
+        stderr=proc.stderr or "",
+    )
+    return out
+
+
+def _coerce_subprocess_output(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)

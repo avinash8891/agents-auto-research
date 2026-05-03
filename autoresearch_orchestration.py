@@ -112,6 +112,7 @@ def build_missing_primitives_for_state(
     *,
     research_round: int | None = None,
 ) -> dict[str, Any]:
+    trace("BUILDER", f"start thesis={thesis_id}")
     trace("LOOP", f"building halted thesis={thesis_id}")
     import compiler_pipeline
 
@@ -124,6 +125,11 @@ def build_missing_primitives_for_state(
             "generated_config": None,
             "validation_passed": False,
         }
+    trace(
+        "BUILDER",
+        f"finish thesis={thesis_id} status={builder_result.get('status')} "
+        f"generated={builder_result.get('generated_config') or ''}",
+    )
     if builder_result.get("status") == "completed" and builder_result.get("validation_passed"):
         generated_config = builder_result.get("generated_config")
         if generated_config:

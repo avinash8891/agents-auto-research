@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """VPS runner using Git-based deployment for strategy controller runs.
 
-Usage: python3 vps_runner.py --strategy <strategy-name> --git-ref <branch|tag|sha> [--vps-dir <abs-path>]
+Usage:
+  python3 vps_runner.py --strategy <strategy-name> --git-ref <branch|tag>
+  python3 vps_runner.py --strategy <strategy-name> --git-sha <full-commit-sha>
+  [--vps-dir <abs-path>]
 
 1. SSH to the VPS
-2. Clone/fetch AUTORESEARCH_GIT_REPO at the requested --git-ref
-3. Resolve that ref to an exact commit SHA and check it out detached
+2. Clone/fetch AUTORESEARCH_GIT_REPO at the requested Git ref or exact SHA
+3. Resolve that deploy spec to an exact commit SHA and check it out detached
 4. Launch the strategy-family autoresearch controller on the VPS
 5. Stream controller output
 """
@@ -95,11 +98,12 @@ class VPSConfig:
     remote_dir: str
     git_repo: str
     git_ref: str
+    git_sha: str = ""
     data_root: str = ""
 
-
-def _is_commitish_ref(git_ref: str) -> bool:
-    return bool(re.fullmatch(r"[0-9a-fA-F]{40}", git_ref))
+    @property
+    def deploy_spec(self) -> str:
+        return self.git_sha or self.git_ref
 
 
 def _default_remote_dir(vps_user: str, strategy_name: str) -> str:
@@ -112,7 +116,7 @@ def _default_remote_dir(vps_user: str, strategy_name: str) -> str:
 
 
 def config_from_env(
-    *, git_ref: str, strategy_name: str, remote_dir: str | None = None
+    *, git_ref: str = "", git_sha: str = "", strategy_name: str, remote_dir: str | None = None
 ) -> VPSConfig:
     required = (
         "AUTORESEARCH_VPS_HOST",
@@ -123,7 +127,12 @@ def config_from_env(
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
         raise ValueError("Missing VPS configuration environment variables: " + ", ".join(missing))
-    _validate_git_ref(git_ref)
+    if bool(git_ref) == bool(git_sha):
+        raise ValueError("Specify exactly one of git_ref or git_sha for VPS deployment.")
+    if git_ref:
+        _validate_git_ref(git_ref)
+    if git_sha:
+        _validate_git_sha(git_sha)
     vps_user = os.environ["AUTORESEARCH_VPS_USER"]
     resolved_remote_dir = remote_dir or _default_remote_dir(vps_user, strategy_name)
     _validate_remote_dir(resolved_remote_dir)
@@ -138,6 +147,7 @@ def config_from_env(
         remote_dir=resolved_remote_dir,
         git_repo=os.environ["AUTORESEARCH_GIT_REPO"],
         git_ref=git_ref,
+        git_sha=git_sha,
         data_root=data_root,
     )
 
@@ -168,19 +178,22 @@ def _validate_remote_dir(remote_dir: str) -> None:
 
 def _validate_git_ref(git_ref: str) -> None:
     if re.fullmatch(r"[0-9a-fA-F]{40}", git_ref):
-        return
+        raise ValueError("AUTORESEARCH_GIT_REF must be a branch or tag, not a commit SHA.")
     if re.fullmatch(r"[0-9a-fA-F]{7,39}", git_ref):
-        raise ValueError("AUTORESEARCH_GIT_REF must be a branch, tag, or full 40-char commit SHA.")
-    if git_ref.startswith(("+", "-")) or ":" in git_ref:
         raise ValueError(
-            "AUTORESEARCH_GIT_REF must be a branch, tag, or full commit SHA, not a refspec."
+            "AUTORESEARCH_GIT_REF must be a branch or tag, not a commit SHA abbreviation."
         )
+    if git_ref.startswith(("+", "-")) or ":" in git_ref:
+        raise ValueError("AUTORESEARCH_GIT_REF must be a branch or tag, not a refspec.")
     if any(token in git_ref for token in ("..", "@{", "\\")):
         raise ValueError("AUTORESEARCH_GIT_REF contains unsafe Git ref syntax.")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/@-]*", git_ref):
-        raise ValueError(
-            "AUTORESEARCH_GIT_REF must be a path-safe branch, tag, or full commit SHA."
-        )
+        raise ValueError("AUTORESEARCH_GIT_REF must be a path-safe branch or tag.")
+
+
+def _validate_git_sha(git_sha: str) -> None:
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", git_sha):
+        raise ValueError("AUTORESEARCH_GIT_SHA must be a full 40-char commit SHA.")
 
 
 def _validate_remote_data_root(data_root: str) -> None:
@@ -235,17 +248,11 @@ def build_git_prepare_command(config: VPSConfig) -> str:
     remote_dir = shlex.quote(config.remote_dir)
     remote_parent = shlex.quote(str(PurePosixPath(config.remote_dir).parent))
     git_repo = shlex.quote(config.git_repo)
-    git_ref = shlex.quote(config.git_ref)
-    if _is_commitish_ref(config.git_ref):
-        fetch_and_resolve = (
-            f"git fetch --prune origin {git_ref} && "
-            "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
-        )
-    else:
-        fetch_and_resolve = (
-            f"git fetch --prune origin {git_ref} && "
-            "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
-        )
+    deploy_spec = shlex.quote(config.deploy_spec)
+    fetch_and_resolve = (
+        f"git fetch --prune origin {deploy_spec} && "
+        "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
+    )
     return (
         "set -e && "
         f"mkdir -p {remote_parent} && "
@@ -559,10 +566,14 @@ def main():
 
     parser = argparse.ArgumentParser(description="Run autoresearch controller on the VPS")
     parser.add_argument("--strategy", required=True, choices=sorted(STRATEGIES))
-    parser.add_argument(
+    deploy_group = parser.add_mutually_exclusive_group(required=True)
+    deploy_group.add_argument(
         "--git-ref",
-        required=True,
-        help="Git branch, tag, or full commit SHA to deploy on VPS",
+        help="Git branch or tag to deploy on VPS",
+    )
+    deploy_group.add_argument(
+        "--git-sha",
+        help="Exact 40-char commit SHA to deploy on VPS",
     )
     parser.add_argument(
         "--vps-dir",
@@ -576,13 +587,16 @@ def main():
     strategy_name = args.strategy
     family = load_family(strategy_name)
     vps_config = config_from_env(
-        git_ref=args.git_ref,
+        git_ref=args.git_ref or "",
+        git_sha=args.git_sha or "",
         strategy_name=strategy_name,
         remote_dir=args.vps_dir,
     )
+    deploy_label = "sha" if args.git_sha else "ref"
+    deploy_value = args.git_sha or args.git_ref or ""
     trace(
         "VPS_RUNNER",
-        f"START strategy={strategy_name} git_ref={args.git_ref} remote_dir={vps_config.remote_dir}",
+        f"START strategy={strategy_name} deploy={deploy_label}:{deploy_value} remote_dir={vps_config.remote_dir}",
     )
 
     trace("VPS_RUNNER", f"Connecting to {vps_config.host} as {vps_config.user}")

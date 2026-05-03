@@ -71,6 +71,8 @@ class JsonLineTraceExporter(SpanExporter):
             return SpanExportResult.SUCCESS
         with self._event_file.open("a", encoding="utf-8") as handle:
             for span in spans:
+                if not span.attributes.get("autoresearch.event_id"):
+                    continue
                 artifact_paths = _coerce_sequence(
                     span.attributes.get("autoresearch.artifact_paths")
                 )

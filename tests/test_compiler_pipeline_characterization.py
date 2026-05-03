@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import compiler_builder
 import compiler_operationalize as co
 import persistence_utils
 from compiler_operationalize import finalize_thesis_config_changes
@@ -415,6 +416,86 @@ def test_build_missing_primitives_returns_error_when_no_cli(
         "generated_config": None,
         "validation_passed": False,
     }
+
+
+def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    family = load_family("ema")
+    thesis_id = "ema_timeout_probe"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"thesis_id": thesis_id, "strategy_family": "ema"}) + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"normalized_contract": [], "missing_primitives": ["probe"]}) + "\n"
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, capture_output, text, cwd, timeout):
+        captured["cmd"] = cmd
+        captured["capture_output"] = capture_output
+        captured["text"] = text
+        captured["cwd"] = cwd
+        captured["timeout"] = timeout
+        target = tmp_path / "configs" / "variants" / f"{thesis_id}.yaml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "data_universe: nasdaq8\nvalidation_start: 2020-01-01\nvalidation_end: 2020-12-31\n"
+        )
+        return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
+
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert captured["timeout"] == compiler_builder.BUILDER_CLI_TIMEOUT_SECONDS
+    assert result["status"] == "completed"
+    attempt_dir = tmp_path / family.builder_requests_dirname / thesis_id
+    assert (attempt_dir / "prompt.txt").exists()
+    assert (attempt_dir / "command.json").exists()
+    assert (attempt_dir / "stdout.log").exists()
+    assert (attempt_dir / "stderr.log").exists()
+    assert (attempt_dir / "result.json").exists()
+    assert json.loads((attempt_dir / "result.json").read_text())["exit_code"] == 0
+
+
+def test_build_missing_primitives_reports_timeout_explicitly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    family = load_family("ema")
+    thesis_id = "ema_timeout_expired"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"thesis_id": thesis_id, "strategy_family": "ema"}) + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"normalized_contract": [], "missing_primitives": ["probe"]}) + "\n"
+    )
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=kwargs.get("cmd") or args[0], timeout=kwargs["timeout"])
+
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "error"
+    assert "timed out after" in result["reason"]
+    attempt_dir = tmp_path / family.builder_requests_dirname / thesis_id
+    assert (attempt_dir / "result.json").exists()
+    assert json.loads((attempt_dir / "result.json").read_text())["timed_out"] is True
 
 
 @pytest.mark.parametrize("family_name,thesis_id", [("ema", "ema_missing"), ("orb", "orb_missing")])

@@ -4,8 +4,9 @@
 
 - Stop using SCP for code deployment.
 - VPS runner uses `AUTORESEARCH_GIT_REPO`.
-- VPS runner requires `--git-ref` on every invocation.
-- `--git-ref` can be a feature branch, `main`, or an exact commit SHA.
+- VPS runner requires exactly one explicit deploy spec on every invocation:
+  - `--git-ref` for a branch or tag
+  - `--git-sha` for an exact 40-char commit SHA
 - Job identity is created by controller state on each launch, not by VPS runner env.
 - VPS checkout directory is a runtime input via `--vps-dir`, or auto-generated per run when omitted.
 - The reusable checkout does not preserve `.venv` or `venv`; dependency state must not hide inside the code checkout.
@@ -60,7 +61,7 @@ Builder primitive flow is special before the run:
 3. Builder generates code locally.
 4. Human reviews generated code.
 5. Commit and push builder code to the feature branch.
-6. VPS deploys that branch or ref.
+6. VPS deploys that branch/tag or exact SHA.
 7. VPS resolves the exact SHA.
 8. Baseline reruns because the commit changed.
 9. Halted thesis resumes and runs under that SHA.

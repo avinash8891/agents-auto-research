@@ -118,17 +118,35 @@ def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
         with pytest.raises(ValueError, match="AUTORESEARCH_GIT_REF"):
             config_from_env(git_ref=bad_ref, strategy_name="ema", remote_dir="/srv/autoresearch")
 
-    with pytest.raises(ValueError, match="full 40-char commit SHA"):
-        config_from_env(git_ref="0ad8abf", strategy_name="ema", remote_dir="/srv/autoresearch")
+    with pytest.raises(ValueError, match="AUTORESEARCH_GIT_SHA"):
+        config_from_env(git_sha="0ad8abf", strategy_name="ema", remote_dir="/srv/autoresearch")
 
     assert (
         config_from_env(
-            git_ref="0123456789abcdef0123456789abcdef01234567",
+            git_sha="0123456789abcdef0123456789abcdef01234567",
             strategy_name="ema",
             remote_dir="/srv/autoresearch",
-        ).git_ref
+        ).git_sha
         == "0123456789abcdef0123456789abcdef01234567"
     )
+
+
+def test_vps_config_requires_exactly_one_deploy_spec(monkeypatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
+    monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
+    monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+
+    with pytest.raises(ValueError, match="exactly one"):
+        config_from_env(strategy_name="ema", remote_dir="/srv/autoresearch")
+
+    with pytest.raises(ValueError, match="exactly one"):
+        config_from_env(
+            git_ref="feature/ema",
+            git_sha="0123456789abcdef0123456789abcdef01234567",
+            strategy_name="ema",
+            remote_dir="/srv/autoresearch",
+        )
 
 
 def test_vps_config_rejects_unsafe_remote_dirs(monkeypatch) -> None:
@@ -339,12 +357,13 @@ def test_git_prepare_command_uses_commit_ref_resolution_for_sha() -> None:
         key="/tmp/key",
         remote_dir="/srv/autoresearch code",
         git_repo="https://github.com/example/repo.git",
-        git_ref="0123456789abcdef0123456789abcdef01234567",
+        git_ref="",
+        git_sha="0123456789abcdef0123456789abcdef01234567",
     )
 
     command = build_git_prepare_command(config)
 
-    assert f"git fetch --prune origin {shlex.quote(config.git_ref)} &&" in command
+    assert f"git fetch --prune origin {shlex.quote(config.deploy_spec)} &&" in command
     assert "resolved=$(git rev-parse --verify FETCH_HEAD^{commit})" in command
 
 
