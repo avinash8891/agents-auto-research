@@ -99,9 +99,6 @@ def _mark_builder_manual_review(
         "requires_subagent": False,
         "artifact_dir": f"{controller.family.name}-manual-review",
     }
-    state.pop("halted_thesis_id", None)
-    state.pop("halted_reason", None)
-    state.pop("halted_thesis", None)
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
     return state

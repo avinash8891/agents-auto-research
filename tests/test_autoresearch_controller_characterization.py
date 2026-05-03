@@ -1078,6 +1078,9 @@ def test_resolve_next_action_marks_manual_review_when_builder_raises(controller,
     assert any(b.get("kind") == "manual_review" for b in resolved.get("blockers", []))
     assert resolved["next_action"]["type"] == "manual_review"
     assert resolved["manual_review_theses"][-1]["thesis_id"] == halted_thesis_id
+    assert resolved["halted_reason"] == "requires_code_change"
+    assert resolved["halted_thesis_id"] == halted_thesis_id
+    assert resolved["halted_thesis"]["thesis_id"] == halted_thesis_id
 
 
 def test_execute_once_clears_stale_parent_experiment_id_before_logging(
