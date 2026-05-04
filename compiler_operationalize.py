@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 import json
-import threading
 from types import SimpleNamespace
 from typing import Any
 
-from agent_infra import _is_error_result
+from agent_infra import _is_error_result, _run_coroutine_sync
+from autoresearch_logging import get_logger
+from research_paths import _CONDUCTOR_MODEL
 from strategies import STRATEGIES
+
+log = get_logger(__name__)
 
 AMBIGUOUS_PATTERNS = {
     "stocks_in_play": ("stocks in play", "stocks-in-play", "stocks_in_play"),
@@ -97,9 +99,6 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
     strategy = STRATEGIES[family_name]
     needs_operationalization = thesis_needs_operationalization(thesis)
     if needs_operationalization:
-        # If the thesis already carries concrete config_changes, preserve them
-        # and avoid invoking the external resolver. The caller can still map the
-        # config deltas into a primitive contract later if needed.
         if thesis.get("config_changes"):
             thesis["primitive_contract"] = thesis.get("primitive_contract", [])
             thesis["requires_code_change"] = thesis.get("requires_code_change", False)
@@ -107,7 +106,6 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
         clarification = _run_operationalization_agent(thesis)
         return finalize_thesis_config_changes(thesis, clarification)
 
-    # Direct config_changes → primitive_contract mapping
     if thesis.get("config_changes"):
         thesis["primitive_contract"] = thesis.get(
             "primitive_contract"
@@ -115,35 +113,11 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
         thesis["requires_code_change"] = thesis.get("requires_code_change", False)
         return thesis
 
-    # Clear thesis — just render the contract
     thesis["primitive_contract"] = thesis.get("primitive_contract", [])
     thesis["config_changes"] = strategy.render_contract_to_runtime_config(
         thesis["primitive_contract"]
     )
     return thesis
-
-
-def _run_coroutine_sync(coro):
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-
-    result_box: dict[str, Any] = {}
-    error_box: dict[str, BaseException] = {}
-
-    def _runner() -> None:
-        try:
-            result_box["value"] = asyncio.run(coro)
-        except BaseException as exc:  # pragma: no cover - exercised via regression test
-            error_box["error"] = exc
-
-    thread = threading.Thread(target=_runner, daemon=True)
-    thread.start()
-    thread.join()
-    if error_box:
-        raise error_box["error"]
-    return result_box.get("value")
 
 
 def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
@@ -159,7 +133,7 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
             description="Resolves ambiguous trading theses into exact executable contracts.",
             prompt=_build_operationalization_prompt(thesis),
             tools=[],
-            model="gpt-5.5",
+            model=_CONDUCTOR_MODEL,
             maxTurns=3,
         )
 
@@ -172,9 +146,11 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
         )
 
         if _is_error_result(result):
-            print(
-                f"OPERATIONALIZE: agent failed for {thesis.get('thesis_id')} "
-                f"({result.get('kind')}): {result.get('message')}"
+            log.warning(
+                "OPERATIONALIZE: agent failed thesis=%s kind=%s message=%s",
+                thesis.get("thesis_id"),
+                result.get("kind"),
+                result.get("message"),
             )
             return {
                 "resolved_changes": {},
@@ -186,7 +162,7 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
         if result:
             return result
 
-        print(f"OPERATIONALIZE: agent returned None for {thesis.get('thesis_id')}")
+        log.warning("OPERATIONALIZE: agent returned None thesis=%s", thesis.get("thesis_id"))
         return {
             "resolved_changes": {},
             "requires_code_change": True,
@@ -195,7 +171,7 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
         }
 
     except Exception as exc:
-        print(f"OPERATIONALIZE: SDK error for {thesis.get('thesis_id')}: {exc}")
+        log.warning("OPERATIONALIZE: SDK error thesis=%s error=%s", thesis.get("thesis_id"), exc)
         return {
             "resolved_changes": {},
             "requires_code_change": True,

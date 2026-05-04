@@ -72,11 +72,9 @@ def compile_config_thesis(
     contracts_dir.mkdir(parents=True, exist_ok=True)
     config_path = contracts_dir / f"{config_hash}.json"
 
-    # Skip write if identical config already exists (dedup)
     if not config_path.exists():
         write_text_atomic(config_path, json.dumps(runtime_config, indent=2) + "\n")
 
-    # Write queue entry (also keyed by hash)
     run_queue_dir = root / family.run_queue_dirname
     run_queue_dir.mkdir(parents=True, exist_ok=True)
     write_json_artifact(
@@ -312,6 +310,7 @@ def write_research_artifact(
     external_research_attempted: bool = True,
     external_research_attempts: int = 1,
     fallback_reason: str | None = None,
+    job: int | None = None,
 ) -> Path:
     """Write completed research artifact to disk."""
     research_dir.mkdir(parents=True, exist_ok=True)
@@ -322,6 +321,7 @@ def write_research_artifact(
         "status": "completed",
         "timestamp": timestamp_now(),
         "research_mode": research_mode,
+        "job": job if job is not None else request.get("job"),
         "external_research_attempted": external_research_attempted,
         "external_research_attempts": external_research_attempts,
         "findings": parsed.get("findings", []),

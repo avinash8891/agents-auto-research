@@ -6,12 +6,12 @@ Optional columns for richer diagnostics: direction, entry_price, stop, target.
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 import pandas as pd
 
-log = logging.getLogger(__name__)
+from autoresearch_logging import get_logger
+
+log = get_logger(__name__)
 
 
 def _profit_factor_from_pnl(group: pd.Series | np.ndarray) -> float:

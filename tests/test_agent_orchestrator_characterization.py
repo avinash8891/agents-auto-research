@@ -609,6 +609,22 @@ def test_mempalace_helpers_propagate_unexpected_exceptions(monkeypatch):
         agent_memory._mempalace_diary("agent", "topic", "entry")
 
 
+def test_mempalace_helpers_fall_back_when_cli_fails(monkeypatch):
+    def fail(*args, **kwargs):
+        return agent_memory.subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="mempalace unavailable",
+        )
+
+    monkeypatch.setattr(agent_memory.subprocess, "run", fail)
+
+    assert agent_memory._mempalace_search("query") == "(memory search unavailable)"
+    assert agent_memory._mempalace_write("wing", "room", "content") is False
+    assert agent_memory._mempalace_diary("agent", "topic", "entry") is False
+
+
 def test_validate_output_rejects_diagnostic_without_pattern():
     assert (
         agent_runners._validate_output(

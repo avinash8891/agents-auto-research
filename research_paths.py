@@ -1,37 +1,25 @@
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
+from agent_infra import _OAUTH_PROXY_PORT, _OAUTH_PROXY_URL, _ensure_oauth_proxy, _get_openai_client
+from autoresearch_constants import DEFAULT_AGENT_MODEL as _CONDUCTOR_MODEL
+from autoresearch_logging import get_logger
+
 _ROOT = Path(__file__).resolve().parent
-_OAUTH_PROXY_PORT = 10531
-_OAUTH_PROXY_URL = f"http://127.0.0.1:{_OAUTH_PROXY_PORT}/v1"
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
-
-def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
-    import socket
-    import time
-
-    deadline = time.monotonic() + timeout_seconds
-    last_error: OSError | None = None
-    while True:
-        try:
-            with socket.create_connection(("127.0.0.1", _OAUTH_PROXY_PORT), timeout=1):
-                return
-        except OSError as exc:
-            last_error = exc
-        if time.monotonic() >= deadline:
-            break
-        time.sleep(0.5)
-
-    raise RuntimeError(
-        f"openai-oauth proxy is not listening at {_OAUTH_PROXY_URL}. "
-        "Start openai-oauth.service before running research jobs. "
-        f"Last error: {last_error}"
-    )
+__all__ = [
+    "_CONDUCTOR_MODEL",
+    "_get_openai_client",
+    "_OAUTH_PROXY_PORT",
+    "_OAUTH_PROXY_URL",
+    "_ROOT",
+    "_ensure_oauth_proxy",
+    "_parse_json",
+]
 
 
 def _parse_json(text: str) -> dict[str, Any] | None:

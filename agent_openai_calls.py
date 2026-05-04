@@ -7,7 +7,38 @@ import agent_infra
 import agent_prompts
 from agent_runners import _validate_output
 from agent_token_usage import _accumulate_result_usage
+from autoresearch_constants import DEFAULT_AGENT_MODEL as _OPENAI_AGENT_MODEL
+from autoresearch_logging import get_logger
 from trace_sdk import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
+
+log = get_logger(__name__)
+
+_PROVIDER = "openai"
+_MODEL = _OPENAI_AGENT_MODEL
+
+
+def _trace(component: str, message: str, data: dict | None = None) -> None:
+    trace(component, message, data, model_provider=_PROVIDER, model_name=_MODEL)
+
+
+def _trace_prompt(agent_name: str, prompt: str, system_prompt: str = "") -> str:
+    return trace_agent_prompt(
+        agent_name, prompt, system_prompt, model_provider=_PROVIDER, model_name=_MODEL
+    )
+
+
+def _trace_response(
+    agent_name: str, trace_id: str, raw_text: str, parsed: dict | None = None
+) -> None:
+    trace_agent_response(
+        agent_name, trace_id, raw_text, parsed, model_provider=_PROVIDER, model_name=_MODEL
+    )
+
+
+def _trace_tool(agent_name: str, trace_id: str, tool_name: str, tool_input: str = "") -> None:
+    trace_agent_tool_call(
+        agent_name, trace_id, tool_name, tool_input, model_provider=_PROVIDER, model_name=_MODEL
+    )
 
 
 async def _run_web_research_openai(
@@ -21,12 +52,11 @@ async def _run_web_research_openai(
     from agents import Runner as OAIRunner
     from agents import WebSearchTool
     from agents.models.openai_responses import OpenAIResponsesModel
-    from openai import AsyncOpenAI
 
     agent_infra._ensure_oauth_proxy()
 
-    client = AsyncOpenAI(api_key="unused", base_url=agent_infra._OAUTH_PROXY_URL)
-    model = OpenAIResponsesModel(model="gpt-5.5", openai_client=client)
+    client = agent_infra._get_openai_client(agent_infra._OAUTH_PROXY_URL)
+    model = OpenAIResponsesModel(model=_OPENAI_AGENT_MODEL, openai_client=client)
 
     agent = OAIAgent(
         name="web-researcher",
@@ -36,12 +66,14 @@ async def _run_web_research_openai(
     )
 
     for attempt in range(1, retries + 1):
-        trace_id = trace_agent_prompt(
-            "openai-web-researcher", prompt, agent_prompts.WEB_RESEARCHER_SYSTEM_PROMPT
+        trace_id = _trace_prompt(
+            "openai-web-researcher",
+            prompt,
+            agent_prompts.WEB_RESEARCHER_SYSTEM_PROMPT,
         )
-        trace(
+        _trace(
             "OPENAI_AGENT",
-            f"web-researcher attempt={attempt}/{retries} model=gpt-5.5 api=responses",
+            f"web-researcher attempt={attempt}/{retries} model={_MODEL} api=responses",
         )
         try:
             result = OAIRunner.run_streamed(
@@ -56,14 +88,14 @@ async def _run_web_research_openai(
                 pass
 
             output = result.final_output or ""
-            _accumulate_result_usage("web-researcher", result)
+            _accumulate_result_usage("web-researcher", result, provider=_PROVIDER, model=_MODEL)
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
-            trace_agent_response("openai-web-researcher", trace_id, output, parsed)
+            _trace_response("openai-web-researcher", trace_id, output, parsed)
             if parsed is not None and _validate_output("web-researcher", parsed):
-                trace("OPENAI_AGENT", "web-researcher VALIDATED OK")
+                _trace("OPENAI_AGENT", "web-researcher VALIDATED OK")
                 return parsed
-            trace("OPENAI_AGENT", "web-researcher validate FAILED")
+            _trace("OPENAI_AGENT", "web-researcher validate FAILED")
             error = agent_infra._structured_error(
                 "web-researcher",
                 "validation" if parsed is not None else parsed_result.get("kind", "parse"),
@@ -77,14 +109,17 @@ async def _run_web_research_openai(
                 excerpt=parsed_result.get("excerpt") or (output[:200] if output else None),
             )
         except Exception as exc:
-            trace("OPENAI_AGENT", f"web-researcher ERROR: {exc.__class__.__name__}")
-            _accumulate_result_usage("web-researcher", None)
+            _trace("OPENAI_AGENT", f"web-researcher ERROR: {exc.__class__.__name__}: {exc}")
+            log.warning(
+                "web-researcher attempt=%d failed: %s: %s", attempt, exc.__class__.__name__, exc
+            )
+            _accumulate_result_usage("web-researcher", None, provider=_PROVIDER, model=_MODEL)
             error = agent_infra._structured_error(
                 "web-researcher",
                 "transport",
                 "Web research execution failed",
                 attempt=attempt,
-                details=exc.__class__.__name__,
+                details=f"{exc.__class__.__name__}: {exc}",
             )
 
         if attempt < retries:
@@ -116,7 +151,6 @@ async def _run_diagnostic_analyst_openai(
     from agents import Runner as OAIRunner
     from agents import function_tool
     from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-    from openai import AsyncOpenAI
 
     agent_infra._ensure_oauth_proxy()
     current_trace_id = "active"
@@ -124,7 +158,7 @@ async def _run_diagnostic_analyst_openai(
     @function_tool
     def read_file(file_path: str) -> str:
         """Read a file from the local filesystem and return its contents."""
-        trace_agent_tool_call("codex-analyst", current_trace_id, "read_file", file_path)
+        _trace_tool("codex-analyst", current_trace_id, "read_file", file_path)
         try:
             with open(file_path) as f:
                 content = f.read()
@@ -132,12 +166,13 @@ async def _run_diagnostic_analyst_openai(
                 return content[:50000] + f"\n... (truncated, {len(content)} total chars)"
             return content
         except Exception as e:
+            log.warning("read_file tool failed for path=%s: %s", file_path, e)
             return f"ERROR: {e}"
 
     @function_tool
     def run_python(code: str) -> str:
         """Execute Python code locally and return stdout + stderr."""
-        trace_agent_tool_call("codex-analyst", current_trace_id, "run_python", code)
+        _trace_tool("codex-analyst", current_trace_id, "run_python", code)
         try:
             result = subprocess.run(
                 [_sys.executable, "-c", code],
@@ -156,10 +191,11 @@ async def _run_diagnostic_analyst_openai(
         except subprocess.TimeoutExpired:
             return "ERROR: Code execution timed out (60s limit)"
         except Exception as e:
+            log.warning("run_python tool failed: %s", e)
             return f"ERROR: {e}"
 
-    client = AsyncOpenAI(api_key="unused", base_url=agent_infra._OAUTH_PROXY_URL)
-    model = OpenAIChatCompletionsModel(model="gpt-5.5", openai_client=client)
+    client = agent_infra._get_openai_client(agent_infra._OAUTH_PROXY_URL)
+    model = OpenAIChatCompletionsModel(model=_OPENAI_AGENT_MODEL, openai_client=client)
 
     agent = OAIAgent(
         name="codex-diagnostic-analyst",
@@ -169,11 +205,10 @@ async def _run_diagnostic_analyst_openai(
     )
 
     for attempt in range(1, retries + 1):
-        trace_id = trace_agent_prompt("codex-analyst", prompt, DIAGNOSTIC_ANALYST_PROMPT)
+        trace_id = _trace_prompt("codex-analyst", prompt, DIAGNOSTIC_ANALYST_PROMPT)
         current_trace_id = trace_id
-        trace(
-            "OPENAI_AGENT",
-            f"codex-analyst attempt={attempt}/{retries} model=gpt-5.5 api=chatcmpl",
+        _trace(
+            "OPENAI_AGENT", f"codex-analyst attempt={attempt}/{retries} model={_MODEL} api=chatcmpl"
         )
         try:
             result = OAIRunner.run_streamed(
@@ -187,14 +222,14 @@ async def _run_diagnostic_analyst_openai(
                 pass
 
             output = result.final_output or ""
-            _accumulate_result_usage("codex-analyst", result)
+            _accumulate_result_usage("codex-analyst", result, provider=_PROVIDER, model=_MODEL)
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
-            trace_agent_response("codex-analyst", trace_id, output, parsed)
+            _trace_response("codex-analyst", trace_id, output, parsed)
             if parsed is not None and _validate_output("diagnostic-analyst", parsed):
-                trace("OPENAI_AGENT", "codex-analyst VALIDATED OK")
+                _trace("OPENAI_AGENT", "codex-analyst VALIDATED OK")
                 return parsed
-            trace("OPENAI_AGENT", "codex-analyst validate FAILED")
+            _trace("OPENAI_AGENT", "codex-analyst validate FAILED")
             error = agent_infra._structured_error(
                 "diagnostic-analyst",
                 "validation" if parsed is not None else parsed_result.get("kind", "parse"),
@@ -208,8 +243,11 @@ async def _run_diagnostic_analyst_openai(
                 excerpt=parsed_result.get("excerpt") or (output[:200] if output else None),
             )
         except Exception as exc:
-            trace("OPENAI_AGENT", f"codex-analyst ERROR: {exc.__class__.__name__}")
-            _accumulate_result_usage("codex-analyst", None)
+            _trace("OPENAI_AGENT", f"codex-analyst ERROR: {exc.__class__.__name__}: {exc}")
+            log.warning(
+                "codex-analyst attempt=%d failed: %s: %s", attempt, exc.__class__.__name__, exc
+            )
+            _accumulate_result_usage("codex-analyst", None, provider=_PROVIDER, model=_MODEL)
             error = agent_infra._structured_error(
                 "diagnostic-analyst",
                 "transport",

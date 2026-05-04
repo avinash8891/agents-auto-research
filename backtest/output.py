@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from backtest.result_schema import build_result_payload
-from persistence_utils import write_json_atomic_strict
+from persistence_utils import write_json_atomic
 
 
 def write_all(
@@ -52,7 +52,7 @@ def write_all(
         },
     )
     result_json_path = output_path / "result.json"
-    write_json_atomic_strict(result_json_path, result_payload)
+    write_json_atomic(result_json_path, result_payload)
 
     print(f"RESULT_JSON {result_json_path}")
     if events_path:

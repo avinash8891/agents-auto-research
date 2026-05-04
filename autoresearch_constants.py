@@ -44,6 +44,12 @@ MILLISECONDS_PER_SECOND = 1000
 MAX_RESEARCH_ROUNDS = 100  # safeguard: max single-thesis research iterations
 MAX_VALIDATION_RETRIES = 3
 
+# ── Model selection ───────────────────────────────────────────────
+# Single source of truth for the OpenAI model used by research agents and
+# the compiler operationalize pipeline. Replaces _CONDUCTOR_MODEL in
+# research_paths.py and _OPENAI_AGENT_MODEL in agent_openai_calls.py.
+DEFAULT_AGENT_MODEL = "gpt-5.5"
+
 # ── Improvement-loop feature flags (env var names) ───────────────
 # All default off. Each flag gates exactly one arrow in the improvement
 # loop. Default-off is byte-identical to pre-improvement-loop behavior.

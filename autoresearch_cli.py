@@ -3,7 +3,6 @@
 
 import argparse
 import json
-import logging
 import math
 import statistics
 import sys
@@ -11,28 +10,19 @@ from pathlib import Path
 from typing import Any
 
 from artifact_io import timestamp_now
+from autoresearch_logging import get_logger
 from experiment_db import ExperimentDB, ExperimentResult
 from persistence_utils import json_loads_metric_sentinels
 
-
-def _make_stdout_logger() -> logging.Logger:
-    """Stdlib-only logger that emits %(message)s to stdout, byte-identical
-    to print() output. Preserves the `DECISION: keep` / `DECISION: discard`
-    stdout contract that autoresearch_experiment.evaluate_metric parses."""
-    logger = logging.getLogger("autoresearch_cli")
-    if not any(
-        isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stdout
-        for h in logger.handlers
-    ):
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        logger.propagate = False
-    return logger
+_log = get_logger("autoresearch_cli")
 
 
-_log = _make_stdout_logger()
+def _confidence_label(confidence: float) -> str:
+    if confidence >= 2.0:
+        return "likely real"
+    if confidence >= 1.0:
+        return "marginal"
+    return "within noise"
 
 
 def _db(path: str) -> ExperimentDB:
@@ -295,11 +285,7 @@ def cmd_log(args):
         delta_pct = ((best - baseline) / baseline) * 100
         _log.info(f"  Best kept: {best} ({delta_pct:+.1f}%)")
     if confidence is not None:
-        label = (
-            "likely real"
-            if confidence >= 2.0
-            else "marginal" if confidence >= 1.0 else "within noise"
-        )
+        label = _confidence_label(confidence)
         _log.info(f"  Confidence: {confidence}x ({label})")
 
 
@@ -344,11 +330,7 @@ def cmd_evaluate(args):
     _log.info(f"  Direction: {direction} is better")
 
     if confidence is not None:
-        label = (
-            "likely real"
-            if confidence >= 2.0
-            else "marginal" if confidence >= 1.0 else "within noise"
-        )
+        label = _confidence_label(confidence)
         _log.info(f"  Confidence: {confidence}x ({label})")
         if confidence < 1.0 and improved:
             _log.info(
@@ -392,11 +374,7 @@ def cmd_summary(args):
         delta_pct = ((best - baseline) / baseline) * 100
         _log.info(f"Best kept: {best} ({delta_pct:+.1f}% from baseline)")
     if confidence is not None:
-        label = (
-            "likely real"
-            if confidence >= 2.0
-            else "marginal" if confidence >= 1.0 else "within noise"
-        )
+        label = _confidence_label(confidence)
         _log.info(f"Confidence: {confidence}x ({label})")
 
     _log.info("")

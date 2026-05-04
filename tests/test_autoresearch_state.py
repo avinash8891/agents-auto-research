@@ -20,7 +20,6 @@ from autoresearch_state import (
     deduplicate_entries,
     direction,
     is_better,
-    iso8601_utc_now,
     latest_result,
     promote_missing_known_results,
     read_results,
@@ -29,6 +28,7 @@ from autoresearch_state import (
     write_current_md,
     write_state,
 )
+from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 
 # ── State JSON round-trip ────────────────────────────────────────
 
@@ -138,6 +138,24 @@ def test_latest_result_returns_none_for_empty_list() -> None:
     assert latest_result([]) is None
 
 
+def test_read_results_treats_legacy_string_job_ids_as_zero() -> None:
+    entries = [
+        {
+            "metric": 1.25,
+            "status": "keep",
+            "description": "legacy",
+            "timestamp": 1700000000,
+            "job": "2026-05-02",
+            "asi": {"config": "configs/ema_base.yaml"},
+        }
+    ]
+
+    results = read_results(entries)
+
+    assert len(results) == 1
+    assert results[0].job == 0
+
+
 # ── read_results filtering ───────────────────────────────────────
 
 
@@ -179,12 +197,14 @@ def test_deduplicate_entries_keeps_single_entry_unchanged() -> None:
 def test_deduplicate_entries_picks_richer_of_two_for_same_config() -> None:
     sparse = {
         "run": 1,
+        "job": 1,
         "metric": 1.0,
         "status": "keep",
         "asi": {"config": "configs/ema_base.yaml"},
     }
     rich = {
         "run": 2,
+        "job": 1,
         "metric": 1.0,
         "status": "keep",
         "asi": {
@@ -196,6 +216,28 @@ def test_deduplicate_entries_picks_richer_of_two_for_same_config() -> None:
     out = deduplicate_entries([sparse, rich])
     assert len(out) == 1
     assert out[0]["asi"].get("trade_analysis") == {"trade_count": 287}
+
+
+def test_deduplicate_entries_keeps_same_config_across_different_jobs() -> None:
+    job_one = {
+        "run": 1,
+        "job": 1,
+        "metric": 1.0,
+        "status": "keep",
+        "asi": {"config": "configs/ema_base.yaml"},
+    }
+    job_two = {
+        "run": 2,
+        "job": 2,
+        "metric": 1.5,
+        "status": "keep",
+        "asi": {"config": "configs/ema_base.yaml", "trade_analysis": {"trade_count": 10}},
+    }
+
+    out = deduplicate_entries([job_one, job_two])
+
+    assert len(out) == 2
+    assert {entry["job"] for entry in out} == {1, 2}
 
 
 def test_deduplicate_entries_preserves_non_experiment_rows() -> None:
@@ -234,6 +276,20 @@ def test_render_current_md_includes_best_and_latest_when_present() -> None:
     assert "configs/variants/ema_b.yaml" in md
     assert "## Current Best" in md
     assert "## Latest Insights" in md
+
+
+def test_render_current_md_uses_configured_metric_name() -> None:
+    md = render_current_md(
+        {
+            "state": "running",
+            "current_best": {"config": "configs/ema_base.yaml", "metric": 1.5},
+        },
+        [],
+        family_name="ema",
+        metric_name="median_expectancy",
+    )
+    assert "- median_expectancy: `1.5`" in md
+    assert "- profit_factor: `1.5`" not in md
 
 
 def test_render_current_md_handles_no_results_and_no_action() -> None:

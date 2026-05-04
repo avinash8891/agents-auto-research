@@ -240,7 +240,7 @@ def test_parse_metric_returns_none_when_no_signal() -> None:
 
 
 def test_primary_metric_name_default_when_no_config_header() -> None:
-    assert primary_metric_name([]) == "median_expectancy"
+    assert primary_metric_name([]) == "profit_factor"
 
 
 def test_primary_metric_name_reads_from_config_header() -> None:

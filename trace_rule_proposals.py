@@ -36,7 +36,7 @@ class RuleProposalRegistry:
             action="create",
             summary=title,
             payload=payload,
-            artifact_paths=list(artifact_paths or []),
+            artifact_paths=artifact_paths,
         )
         return payload
 
@@ -59,6 +59,6 @@ class RuleProposalRegistry:
             action="status_update",
             summary=f"{proposal_id} -> {status}",
             payload=payload,
-            artifact_paths=list(artifact_paths or []),
+            artifact_paths=artifact_paths,
         )
         return payload

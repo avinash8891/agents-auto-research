@@ -7,7 +7,9 @@ if [[ $# -gt 0 ]]; then
 fi
 
 # Prevent indefinite pre-push hangs if cubic blocks on network/service calls.
-timeout_seconds="${CUBIC_REVIEW_TIMEOUT_SECONDS:-300}"
+# Default to 60 minutes so large diffs have enough time to complete review
+# without requiring a manual override.
+timeout_seconds="${CUBIC_REVIEW_TIMEOUT_SECONDS:-3600}"
 if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
   echo "CUBIC_REVIEW_TIMEOUT_SECONDS must be a positive integer: $timeout_seconds" >&2
   exit 2
@@ -28,7 +30,7 @@ cd "$review_dir"
 
 if perl -e 'alarm shift @ARGV; exec @ARGV' \
   "$timeout_seconds" \
-  env PATH="$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_ref" "$@"
+  env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_ref" "$@"
 then
   :
 else

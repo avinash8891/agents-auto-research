@@ -4,7 +4,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -236,6 +236,7 @@ def test_accumulate_usage_tracks_tokens_across_agents():
         "total_tokens": 31,
         "cost_usd": pytest.approx(0.16),
         "calls": 3,
+        "failed_calls": 0,
     }
     assert round_usage["by_agent"]["analyst"]["calls"] == 1
     assert round_usage["by_agent"]["web_researcher"]["total_tokens"] == 9
@@ -250,6 +251,7 @@ def test_accumulate_usage_tracks_tokens_across_agents():
             "total_tokens": 0,
             "cost_usd": 0.0,
             "calls": 0,
+            "failed_calls": 0,
         },
     }
 
@@ -351,6 +353,67 @@ def test_save_research_finding_rejects_bad_type(monkeypatch):
     )
 
     assert "REJECTED" in result
+
+
+def test_save_research_finding_falls_back_to_local_log(monkeypatch, tmp_path):
+    monkeypatch.setattr(memory, "_ROOT", tmp_path)
+    monkeypatch.setattr(memory, "_PALACE_DIR", str(tmp_path / "palace"))
+    monkeypatch.setattr(
+        memory,
+        "_palace_add",
+        lambda *a, **k: {"success": False, "error": "palace unavailable"},
+    )
+
+    result = memory.save_research_finding(
+        finding="window tightened",
+        finding_type="observation",
+        status="validated",
+        evidence="round_001",
+        scope="full_sample",
+        expires_if="baseline drift",
+    )
+
+    assert result == "SAVED (local): observation/validated — window tightened"
+    log_path = tmp_path / "research_findings.jsonl"
+    assert log_path.exists()
+    payload = json.loads(log_path.read_text().strip())
+    assert payload["finding"] == "window tightened"
+    assert payload["type"] == "observation"
+    assert payload["status"] == "validated"
+
+
+def test_palace_helpers_return_error_objects_when_unavailable(monkeypatch):
+    fake_mempalace = ModuleType("mempalace")
+    fake_mempalace.__path__ = []  # type: ignore[attr-defined]
+    fake_palace = ModuleType("mempalace.palace")
+    fake_searcher = ModuleType("mempalace.searcher")
+    fake_layers = ModuleType("mempalace.layers")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("palace offline")
+
+    class _BoomStack:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("palace offline")
+
+    fake_palace.get_collection = boom
+    fake_searcher.search_memories = boom
+    fake_layers.MemoryStack = _BoomStack
+    fake_mempalace.searcher = fake_searcher
+    fake_mempalace.layers = fake_layers
+    fake_mempalace.palace = fake_palace
+
+    monkeypatch.setitem(sys.modules, "mempalace", fake_mempalace)
+    monkeypatch.setitem(sys.modules, "mempalace.palace", fake_palace)
+    monkeypatch.setitem(sys.modules, "mempalace.searcher", fake_searcher)
+    monkeypatch.setitem(sys.modules, "mempalace.layers", fake_layers)
+
+    assert memory._palace_add("wing", "room", "content") == {
+        "success": False,
+        "error": "palace offline",
+    }
+    assert memory._palace_search("query") == [{"error": "palace offline"}]
+    assert memory._palace_status() == {"error": "palace offline"}
 
 
 def test_list_past_theses_reads_sqlite_history(monkeypatch, tmp_path):

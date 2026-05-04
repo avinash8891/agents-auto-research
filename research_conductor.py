@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
 from typing import Any
 
 from agents import Agent as OAIAgent
@@ -11,19 +10,29 @@ from agents import RunConfig as OAIRunConfig
 from agents import Runner as OAIRunner
 from agents import function_tool
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-from openai import AsyncOpenAI
 
-from agent_token_usage import _accumulate_usage, get_round_usage, reset_round_usage
+from agent_infra import _run_coroutine_sync
+from agent_token_usage import _accumulate_result_usage, get_round_usage, reset_round_usage
+from autoresearch_logging import get_logger
 from research_memory import _palace_search, _palace_status
 from research_memory import list_past_theses as list_past_theses_for_root
 from research_memory import save_research_finding
-from research_paths import _OAUTH_PROXY_URL, _ROOT, _ensure_oauth_proxy, _parse_json
+from research_paths import (
+    _CONDUCTOR_MODEL,
+    _OAUTH_PROXY_URL,
+    _ROOT,
+    _ensure_oauth_proxy,
+    _get_openai_client,
+    _parse_json,
+)
 from research_prompts import _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
 from strategy_family import load_family
 from thesis_validator import validate_thesis_dict
 from trace_refinement import RefinementRecorder
 from trace_sdk import trace, trace_agent_prompt, trace_agent_response
+
+log = get_logger(__name__)
 
 __all__ = [
     "run_research_conductor",
@@ -33,29 +42,6 @@ __all__ = [
 ]
 
 _REFINEMENT_RECORDER = RefinementRecorder()
-
-
-def _run_coroutine_sync(coro):
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-
-    result_box: dict[str, Any] = {}
-    error_box: dict[str, BaseException] = {}
-
-    def _runner() -> None:
-        try:
-            result_box["value"] = asyncio.run(coro)
-        except BaseException as exc:  # pragma: no cover - exercised via regression test
-            error_box["error"] = exc
-
-    thread = threading.Thread(target=_runner, daemon=True)
-    thread.start()
-    thread.join()
-    if error_box:
-        raise error_box["error"]
-    return result_box.get("value")
 
 
 def _strategy_description_for(family_name: str) -> str:
@@ -123,6 +109,8 @@ async def run_research_conductor(
     trace(
         "CONDUCTOR",
         f"START round={research_round} trades={'YES' if trades_file else 'NO'}",
+        model_provider="openai",
+        model_name=_CONDUCTOR_MODEL,
     )
     refinement_session = _REFINEMENT_RECORDER.start_session(
         summary=f"research round {research_round}",
@@ -134,13 +122,19 @@ async def run_research_conductor(
             "rejection_feedback": rejection_feedback,
         },
     )
-    trace_id = trace_agent_prompt("research-conductor", user_prompt, system_prompt)
+    trace_id = trace_agent_prompt(
+        "research-conductor",
+        user_prompt,
+        system_prompt,
+        model_provider="openai",
+        model_name=_CONDUCTOR_MODEL,
+    )
     result_text = ""
     session_finished = False
     try:
         _ensure_oauth_proxy()
-        client = AsyncOpenAI(api_key="unused", base_url=_OAUTH_PROXY_URL)
-        model = OpenAIChatCompletionsModel(model="gpt-5.5", openai_client=client)
+        client = _get_openai_client(_OAUTH_PROXY_URL)
+        model = OpenAIChatCompletionsModel(model=_CONDUCTOR_MODEL, openai_client=client)
 
         @function_tool
         async def analyze_trades(focus_question: str) -> str:
@@ -169,6 +163,8 @@ async def run_research_conductor(
             trace(
                 "CONDUCTOR",
                 f"save_finding type={finding_type} status={status} finding='{finding[:80]}'",
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
             )
             result = save_research_finding(
                 finding=finding,
@@ -240,7 +236,8 @@ async def run_research_conductor(
         if hasattr(result, "final_output_as"):
             try:
                 result_text = result.final_output_as(str) or ""
-            except Exception:
+            except Exception as exc:
+                log.warning("final_output_as failed for conductor: %s", exc)
                 result_text = ""
         if not result_text:
             final_output = getattr(result, "final_output", None)
@@ -249,52 +246,14 @@ async def run_research_conductor(
             elif final_output is not None:
                 result_text = json.dumps(final_output, default=str)
 
-        saw_raw_usage = False
-        raw_responses = getattr(result, "raw_responses", []) or []
-        for resp in raw_responses:
-            u = getattr(resp, "usage", None)
-            if u:
-                saw_raw_usage = True
-                trace(
-                    "CONDUCTOR",
-                    f"USAGE conductor raw_keys={list(u.__dict__.keys()) if hasattr(u, '__dict__') else []} usage={u}",
-                )
-                _accumulate_usage(
-                    "conductor",
-                    {
-                        "input_tokens": getattr(u, "input_tokens", 0),
-                        "output_tokens": getattr(u, "output_tokens", 0),
-                        "total_tokens": getattr(u, "total_tokens", 0),
-                    },
-                    cost_usd=getattr(resp, "total_cost_usd", 0.0) or 0.0,
-                    dedupe_key=f"conductor-response-{id(resp)}",
-                )
-        if not raw_responses or not saw_raw_usage:
-            top_usage = getattr(result, "usage", None) or getattr(result, "model_usage", None)
-            top_cost = getattr(result, "total_cost_usd", None)
-            if top_usage is not None or top_cost is not None:
-                _accumulate_usage(
-                    "conductor",
-                    (
-                        {
-                            "input_tokens": (
-                                getattr(top_usage, "input_tokens", 0) if top_usage else 0
-                            ),
-                            "output_tokens": (
-                                getattr(top_usage, "output_tokens", 0) if top_usage else 0
-                            ),
-                            "total_tokens": (
-                                getattr(top_usage, "total_tokens", 0) if top_usage else 0
-                            ),
-                        }
-                        if top_usage
-                        else None
-                    ),
-                    cost_usd=top_cost if top_cost is not None else 0.0,
-                    dedupe_key=f"conductor-result-{id(result)}",
-                )
+        _accumulate_result_usage("conductor", result, provider="openai", model=_CONDUCTOR_MODEL)
     except asyncio.TimeoutError:
-        trace("CONDUCTOR", "TIMEOUT")
+        trace(
+            "CONDUCTOR",
+            "TIMEOUT",
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
         _REFINEMENT_RECORDER.finish_session(
             session_id=refinement_session["session_id"],
             stopping_reason="timeout",
@@ -310,7 +269,12 @@ async def run_research_conductor(
     except Exception as exc:
         error_text = str(exc)
         error_kind = "proxy_unavailable" if "openai-oauth proxy" in error_text else "exception"
-        trace("CONDUCTOR", f"ERROR: {error_kind}")
+        trace(
+            "CONDUCTOR",
+            f"ERROR: {error_kind}",
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
         _REFINEMENT_RECORDER.finish_session(
             session_id=refinement_session["session_id"],
             stopping_reason="exception",
@@ -326,7 +290,14 @@ async def run_research_conductor(
         }
 
     parsed = _parse_json(result_text)
-    trace_agent_response("research-conductor", trace_id, result_text, parsed)
+    trace_agent_response(
+        "research-conductor",
+        trace_id,
+        result_text,
+        parsed,
+        model_provider="openai",
+        model_name=_CONDUCTOR_MODEL,
+    )
     _REFINEMENT_RECORDER.record_iteration(
         session_id=refinement_session["session_id"],
         iteration=1,
@@ -347,7 +318,12 @@ async def run_research_conductor(
     if parsed:
         theses = parsed.get("suggested_theses", [])
         if parsed.get("should_stop"):
-            trace("CONDUCTOR", "recommends STOP")
+            trace(
+                "CONDUCTOR",
+                "recommends STOP",
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
             _REFINEMENT_RECORDER.finish_session(
                 session_id=refinement_session["session_id"],
                 stopping_reason="should_stop",
@@ -362,9 +338,19 @@ async def run_research_conductor(
             try:
                 validate_thesis_dict(candidate)
             except Exception as exc:
-                trace("CONDUCTOR", f"validate failed thesis={t.get('thesis_id', 'unknown')}: {exc}")
+                trace(
+                    "CONDUCTOR",
+                    f"validate failed thesis={t.get('thesis_id', 'unknown')}: {exc}",
+                    model_provider="openai",
+                    model_name=_CONDUCTOR_MODEL,
+                )
             else:
-                trace("CONDUCTOR", f"OK thesis={t['thesis_id']}")
+                trace(
+                    "CONDUCTOR",
+                    f"OK thesis={t['thesis_id']}",
+                    model_provider="openai",
+                    model_name=_CONDUCTOR_MODEL,
+                )
                 _REFINEMENT_RECORDER.finish_session(
                     session_id=refinement_session["session_id"],
                     stopping_reason="valid_thesis",
@@ -372,7 +358,12 @@ async def run_research_conductor(
                 )
                 session_finished = True
                 return parsed
-        trace("CONDUCTOR", f"validate failed (len={len(result_text)})")
+        trace(
+            "CONDUCTOR",
+            f"validate failed (len={len(result_text)})",
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
         failure = {
             "status": "conductor_error",
             "error": "validation_failed",
@@ -381,7 +372,12 @@ async def run_research_conductor(
             "should_stop": False,
         }
     else:
-        trace("CONDUCTOR", f"parse failed (len={len(result_text)})")
+        trace(
+            "CONDUCTOR",
+            f"parse failed (len={len(result_text)})",
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
         failure = {
             "status": "conductor_error",
             "error": "parse_failed",

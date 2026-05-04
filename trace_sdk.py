@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from itertools import count
 from pathlib import Path
-from typing import Any, Iterator
+from typing import IO, Any, Iterator
 
 from openinference.instrumentation import using_attributes
 from openinference.instrumentation.openai import OpenAIInstrumentor
@@ -18,16 +19,14 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, Sp
 from traceloop.sdk import Traceloop
 from traceloop.sdk.instruments import Instruments
 
+from persistence_utils import write_text_atomic
+
 # Traceloop SDK is the OpenLLMetry layer used for model/workflow instrumentation.
 
 _LOG_DIR = Path(__file__).resolve().parent / "logs"
 _LOG_DIR.mkdir(exist_ok=True)
 
 _SESSION_ID = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-
-
-def _ts() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] + "Z"
 
 
 def _canonical_ts() -> str:
@@ -44,6 +43,8 @@ class TraceEvent:
     session_id: str
     family: str
     job: int
+    model_provider: str
+    model_name: str
     hypothesis_id: str | None
     hypothesis_name: str | None
     seq: int
@@ -61,6 +62,7 @@ class JsonLineTraceExporter(SpanExporter):
     def __init__(self, event_file: Path) -> None:
         self._event_file = event_file
         self._event_file.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
 
     @property
     def event_file(self) -> Path:
@@ -69,8 +71,10 @@ class JsonLineTraceExporter(SpanExporter):
     def export(self, spans: list[ReadableSpan]) -> SpanExportResult:
         if not spans:
             return SpanExportResult.SUCCESS
-        with self._event_file.open("a", encoding="utf-8") as handle:
+        with self._lock, self._event_file.open("a", encoding="utf-8") as handle:
             for span in spans:
+                if not span.attributes.get("autoresearch.event_id"):
+                    continue
                 artifact_paths = _coerce_sequence(
                     span.attributes.get("autoresearch.artifact_paths")
                 )
@@ -84,6 +88,8 @@ class JsonLineTraceExporter(SpanExporter):
                     session_id=_string_attr(span, "autoresearch.session_id"),
                     family=_string_attr(span, "autoresearch.family"),
                     job=int(span.attributes.get("autoresearch.job", 0)),
+                    model_provider=_string_attr(span, "autoresearch.model_provider"),
+                    model_name=_string_attr(span, "autoresearch.model_name"),
                     hypothesis_id=_optional_string(
                         span.attributes.get("autoresearch.hypothesis_id")
                     ),
@@ -119,6 +125,7 @@ class TraceRuntimeState:
     current_hypothesis_name: str | None = None
     event_counter: count = field(default_factory=lambda: count(1))
     exporter: JsonLineTraceExporter | None = None
+    log_handle: IO[str] | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not self.run_id:
@@ -139,7 +146,20 @@ class TraceRuntimeState:
     def next_event_id(self) -> str:
         return f"evt-{next(self.event_counter):08d}"
 
+    def get_log_handle(self) -> IO[str]:
+        if self.log_handle is None:
+            if self.log_file is None:
+                raise RuntimeError("TraceRuntimeState.log_file is not set")
+            try:
+                self.log_handle = self.log_file.open("a", encoding="utf-8")
+            except OSError as exc:
+                raise RuntimeError(f"Cannot open trace log {self.log_file}: {exc}") from exc
+        return self.log_handle
+
     def reset_for_round(self, round_number: int) -> None:
+        if self.log_handle is not None:
+            self.log_handle.close()
+            self.log_handle = None
         self.seq = 0
         self.hypothesis_counter = 0
         prefix = f"{self.family}-" if self.family else ""
@@ -185,11 +205,36 @@ _INITIALIZED = False
 _OPENAI_INSTRUMENTED = False
 _OPENAI_INSTRUMENTOR = OpenAIInstrumentor()
 
+import logging as _logging
+
+_log = _logging.getLogger(__name__)
+
 
 def _write_text(path: Path, content: str) -> str:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    write_text_atomic(path, content)
     return str(path)
+
+
+def _render_artifact_header(
+    *,
+    run_id: str,
+    hypothesis_id: str | None,
+    hypothesis_name: str | None,
+    timestamp: str,
+    agent_name: str | None = None,
+    trace_id: str | None = None,
+) -> list[str]:
+    lines = [
+        f"=== RUN_ID: {run_id} ===",
+        f"=== HYPOTHESIS_ID: {hypothesis_id or ''} ===",
+        f"=== HYPOTHESIS_NAME: {hypothesis_name or ''} ===",
+    ]
+    if agent_name is not None:
+        lines.append(f"=== AGENT: {agent_name} ===")
+    lines.append(f"=== TIMESTAMP: {timestamp} ===")
+    if trace_id is not None:
+        lines.append(f"=== TRACE_ID: {trace_id} ===")
+    return lines
 
 
 def _render_prompt_artifact(
@@ -203,13 +248,14 @@ def _render_prompt_artifact(
     prompt: str,
     system_prompt: str,
 ) -> str:
-    lines = [
-        f"=== RUN_ID: {run_id} ===",
-        f"=== HYPOTHESIS_ID: {hypothesis_id or ''} ===",
-        f"=== HYPOTHESIS_NAME: {hypothesis_name or ''} ===",
-        f"=== AGENT: {agent_name} ===",
-        f"=== TIMESTAMP: {timestamp} ===",
-        f"=== TRACE_ID: {trace_id} ===",
+    lines = _render_artifact_header(
+        run_id=run_id,
+        hypothesis_id=hypothesis_id,
+        hypothesis_name=hypothesis_name,
+        timestamp=timestamp,
+        agent_name=agent_name,
+        trace_id=trace_id,
+    ) + [
         "",
         "--- SYSTEM PROMPT ---",
         system_prompt,
@@ -232,13 +278,14 @@ def _render_response_artifact(
     raw_text: str,
     parsed: dict[str, Any] | None,
 ) -> str:
-    lines = [
-        f"=== RUN_ID: {run_id} ===",
-        f"=== HYPOTHESIS_ID: {hypothesis_id or ''} ===",
-        f"=== HYPOTHESIS_NAME: {hypothesis_name or ''} ===",
-        f"=== AGENT: {agent_name} ===",
-        f"=== TIMESTAMP: {timestamp} ===",
-        f"=== TRACE_ID: {trace_id} ===",
+    lines = _render_artifact_header(
+        run_id=run_id,
+        hypothesis_id=hypothesis_id,
+        hypothesis_name=hypothesis_name,
+        timestamp=timestamp,
+        agent_name=agent_name,
+        trace_id=trace_id,
+    ) + [
         "",
         "--- RAW RESPONSE ---",
         raw_text,
@@ -261,11 +308,12 @@ def _render_ssh_artifact(
     stdout: str,
     stderr: str,
 ) -> str:
-    lines = [
-        f"=== RUN_ID: {run_id} ===",
-        f"=== HYPOTHESIS_ID: {hypothesis_id or ''} ===",
-        f"=== HYPOTHESIS_NAME: {hypothesis_name or ''} ===",
-        f"=== TIMESTAMP: {timestamp} ===",
+    lines = _render_artifact_header(
+        run_id=run_id,
+        hypothesis_id=hypothesis_id,
+        hypothesis_name=hypothesis_name,
+        timestamp=timestamp,
+    ) + [
         "",
         "--- COMMAND ---",
         command,
@@ -315,13 +363,14 @@ def _decode_json_attribute(value: Any) -> dict[str, Any]:
 
 def _log_line(component: str, message: str, data: dict[str, Any] | None, seq: int) -> None:
     htag = _hyp_tag()
-    timestamp = _ts()
+    timestamp = _canonical_ts()
     line = f"[{timestamp}] [{_STATE.run_id}]{htag} [{seq:05d}] [{component}] {message}"
     if data:
         line += f" | {json.dumps(data, default=str)}"
     line += "\n"
-    with _STATE.log_file.open("a", encoding="utf-8") as handle:
-        handle.write(line)
+    handle = _STATE.get_log_handle()
+    handle.write(line)
+    handle.flush()
     print(f"TRACE {_STATE.run_id}{htag} [{component}] {message}")
 
 
@@ -356,21 +405,28 @@ def _initialize_tracing() -> None:
     if _INITIALIZED:
         return
     _PROVIDER = _build_provider()
-    Traceloop.init(
-        app_name="agents-auto-research",
-        disable_batch=True,
-        exporter=_STATE.exporter,
-        telemetry_enabled=False,
-        api_key=os.getenv("TRACELOOP_API_KEY", "local-dev"),
-        endpoint_is_traceloop=False,
-        instruments={
-            Instruments.OPENAI,
-            Instruments.OPENAI_AGENTS,
-            Instruments.REQUESTS,
-            Instruments.URLLIB3,
-        },
-        resource_attributes={"autoresearch.session_id": _STATE.session_id},
-    )
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        _bind_instrumentation()
+        _INITIALIZED = True
+        return
+    try:
+        Traceloop.init(
+            app_name="agents-auto-research",
+            disable_batch=True,
+            exporter=_STATE.exporter,
+            telemetry_enabled=False,
+            api_key=os.getenv("TRACELOOP_API_KEY", "local-dev"),
+            endpoint_is_traceloop=False,
+            instruments={
+                Instruments.OPENAI,
+                Instruments.OPENAI_AGENTS,
+                Instruments.REQUESTS,
+                Instruments.URLLIB3,
+            },
+            resource_attributes={"autoresearch.session_id": _STATE.session_id},
+        )
+    except Exception as exc:
+        _log.warning("Traceloop.init failed (suppressed): %s", exc)
     _bind_instrumentation()
     _INITIALIZED = True
 
@@ -398,6 +454,8 @@ def _event_span(
     summary: str,
     payload: dict[str, Any] | None = None,
     artifact_paths: list[str] | None = None,
+    model_provider: str = "",
+    model_name: str = "",
 ) -> Iterator[None]:
     payload = payload or {}
     artifact_paths = list(artifact_paths or [])
@@ -410,6 +468,8 @@ def _event_span(
             "run_id": _STATE.run_id,
             "family": _STATE.family,
             "job": _STATE.job,
+            "model_provider": model_provider,
+            "model_name": model_name,
             "hypothesis_id": _STATE.current_hypothesis_id or "",
             "hypothesis_name": _STATE.current_hypothesis_name or "",
             "category": category,
@@ -425,6 +485,8 @@ def _event_span(
             span.set_attribute("autoresearch.session_id", _STATE.session_id)
             span.set_attribute("autoresearch.family", _STATE.family)
             span.set_attribute("autoresearch.job", _STATE.job)
+            span.set_attribute("autoresearch.model_provider", model_provider)
+            span.set_attribute("autoresearch.model_name", model_name)
             span.set_attribute("autoresearch.hypothesis_id", _STATE.current_hypothesis_id or "")
             span.set_attribute("autoresearch.hypothesis_name", _STATE.current_hypothesis_name or "")
             span.set_attribute("autoresearch.seq", seq)
@@ -440,6 +502,7 @@ def _event_span(
 def begin_hypothesis(name: str) -> str:
     hypothesis_id = _STATE.begin_hypothesis(name)
     trace("HYPOTHESIS", f"BEGIN {hypothesis_id} name={name}")
+    _STATE.next_seq()
     _record_event(
         source_module="trace_sdk",
         category="lifecycle",
@@ -482,6 +545,8 @@ def _record_event(
     summary: str,
     payload: dict[str, Any] | None = None,
     artifact_paths: list[str] | None = None,
+    model_provider: str = "",
+    model_name: str = "",
 ) -> None:
     with _event_span(
         span_name=f"{category}.{action}",
@@ -491,11 +556,20 @@ def _record_event(
         summary=summary,
         payload=payload,
         artifact_paths=artifact_paths,
+        model_provider=model_provider,
+        model_name=model_name,
     ):
         pass
 
 
-def trace(component: str, message: str, data: dict | None = None) -> None:
+def trace(
+    component: str,
+    message: str,
+    data: dict | None = None,
+    *,
+    model_provider: str = "",
+    model_name: str = "",
+) -> None:
     seq = _STATE.next_seq()
     _log_line(component, message, data, seq)
     _record_event(
@@ -504,14 +578,62 @@ def trace(component: str, message: str, data: dict | None = None) -> None:
         action=component.lower(),
         summary=message,
         payload={"component": component, "data": data or {}},
+        model_provider=model_provider,
+        model_name=model_name,
     )
 
 
-def trace_agent_prompt(agent_name: str, prompt: str, system_prompt: str = "") -> str:
+def record_usage_event(
+    agent: str,
+    *,
+    model_provider: str = "",
+    model_name: str = "",
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    total_tokens: int = 0,
+    cost_usd: float = 0.0,
+    dedupe_key: str | None = None,
+) -> None:
+    """Emit a per-call token-usage trace event into trace-events.jsonl.
+
+    Reuses run_id / job / hypothesis_id correlation fields from the trace runtime.
+    Fail-open: any exception during emission must not block the caller.
+    """
+    try:
+        _STATE.next_seq()  # advance seq; _event_span reads _STATE.seq passively (no second increment)
+        _record_event(
+            source_module="agent_token_usage",
+            category="usage",
+            action="accumulate",
+            summary=f"USAGE {agent} in={input_tokens} out={output_tokens} cost={cost_usd:.6f}",
+            payload={
+                "agent": agent,
+                "input_tokens": int(input_tokens or 0),
+                "output_tokens": int(output_tokens or 0),
+                "total_tokens": int(total_tokens or 0),
+                "cost_usd": float(cost_usd or 0.0),
+                "dedupe_key": dedupe_key,
+            },
+            model_provider=model_provider or "",
+            model_name=model_name or "",
+        )
+    except Exception as exc:
+        # observability never blocks business logic
+        _log.debug("record_usage_event failed (suppressed): %s", exc)
+
+
+def trace_agent_prompt(
+    agent_name: str,
+    prompt: str,
+    system_prompt: str = "",
+    *,
+    model_provider: str = "",
+    model_name: str = "",
+) -> str:
     seq = _STATE.next_seq()
     hid = _STATE.current_hypothesis_id or "global"
     trace_id = f"{hid}-{agent_name}-{seq:05d}"
-    timestamp = _ts()
+    timestamp = _canonical_ts()
     prompt_file = _STATE.hypothesis_dir / f"{trace_id}-prompt.txt"
     prompt_path = _write_text(
         prompt_file,
@@ -545,6 +667,8 @@ def trace_agent_prompt(agent_name: str, prompt: str, system_prompt: str = "") ->
             "preview_len": min(len(prompt), 200),
         },
         artifact_paths=[prompt_path],
+        model_provider=model_provider,
+        model_name=model_name,
     )
     return trace_id
 
@@ -554,9 +678,12 @@ def trace_agent_response(
     trace_id: str,
     raw_text: str,
     parsed: dict | None = None,
+    *,
+    model_provider: str = "",
+    model_name: str = "",
 ) -> None:
     seq = _STATE.next_seq()
-    timestamp = _ts()
+    timestamp = _canonical_ts()
     response_file = _STATE.hypothesis_dir / f"{trace_id}-response.txt"
     response_path = _write_text(
         response_file,
@@ -592,6 +719,8 @@ def trace_agent_response(
             "parsed_keys": sorted(parsed.keys()) if parsed else [],
         },
         artifact_paths=[response_path],
+        model_provider=model_provider,
+        model_name=model_name,
     )
 
 
@@ -600,6 +729,9 @@ def trace_agent_tool_call(
     trace_id: str,
     tool_name: str,
     tool_input: str = "",
+    *,
+    model_provider: str = "",
+    model_name: str = "",
 ) -> None:
     seq = _STATE.next_seq()
     input_preview = tool_input[:300].replace("\n", " ") if tool_input else ""
@@ -615,12 +747,14 @@ def trace_agent_tool_call(
             "tool_name": tool_name,
             "tool_input_preview": input_preview,
         },
+        model_provider=model_provider,
+        model_name=model_name,
     )
 
 
 def trace_ssh(command: str, exit_code: int, stdout: str = "", stderr: str = "") -> None:
     seq = _STATE.next_seq()
-    timestamp = _ts()
+    timestamp = _canonical_ts()
     stdout_preview = stdout[:500].replace("\n", " | ") if stdout else ""
     stderr_preview = stderr[:300].replace("\n", " | ") if stderr else ""
     ssh_file = _STATE.hypothesis_dir / f"ssh-{seq:05d}.txt"
@@ -700,6 +834,8 @@ def record_event(
     summary: str,
     payload: dict[str, Any] | None = None,
     artifact_paths: list[str] | None = None,
+    model_provider: str = "",
+    model_name: str = "",
 ) -> dict[str, Any]:
     seq = _STATE.next_seq()
     event_payload = payload or {}
@@ -710,6 +846,8 @@ def record_event(
         summary=summary,
         payload=event_payload,
         artifact_paths=artifact_paths,
+        model_provider=model_provider,
+        model_name=model_name,
     )
     return {
         "source_module": source_module,
@@ -718,6 +856,8 @@ def record_event(
         "summary": summary,
         **event_payload,
         "artifact_paths": list(artifact_paths or []),
+        "model_provider": model_provider,
+        "model_name": model_name,
         "run_id": _STATE.run_id,
         "seq": seq,
     }

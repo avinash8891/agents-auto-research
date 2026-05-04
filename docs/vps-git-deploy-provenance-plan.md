@@ -60,7 +60,7 @@ Builder primitive flow is special before the run:
 3. Builder generates code locally.
 4. Human reviews generated code.
 5. Commit and push builder code to the feature branch.
-6. VPS deploys that branch or ref.
+6. VPS deploys that branch/tag or exact SHA.
 7. VPS resolves the exact SHA.
 8. Baseline reruns because the commit changed.
 9. Halted thesis resumes and runs under that SHA.

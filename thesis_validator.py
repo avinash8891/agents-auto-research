@@ -14,14 +14,14 @@ Three guardrails inspired by AlphaAgent (arxiv 2502.16789v2):
 from __future__ import annotations
 
 import json
-import logging
 import re
 from pathlib import Path
 from typing import Any
 
+from autoresearch_logging import get_logger
 from research_types import MECHANISM_DIMENSIONS, ResearchThesis
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # Metrics the backtest engine always produces (no custom diagnostics needed)
 BUILTIN_METRICS = {
@@ -334,6 +334,7 @@ def check_hypothesis_alignment(
 
 
 ALIGNMENT_THRESHOLD = 0.4  # reject if less than 40% of keys align
+_MIN_NOVELTY_EXPLANATION_CHARS = 30
 
 
 # ---------------------------------------------------------------------------
@@ -422,7 +423,6 @@ def validate_research_thesis(
     if not thesis.mechanism.strip():
         raise ThesisValidationError("Missing mechanism")
 
-    # Mechanism dimension validation — REQUIRED, not optional
     if not thesis.mechanism_dimension.strip():
         raise ThesisValidationError(
             "Missing mechanism_dimension. Every thesis must declare which "
@@ -464,13 +464,11 @@ def validate_research_thesis(
                     f"and is not listed in required_diagnostics"
                 )
 
-    # --- Guardrail 1: Config-key overlap ---
     if prior_theses and thesis.config_changes:
         is_dup, reason = config_key_overlap(thesis.config_changes, prior_theses)
         if is_dup:
             raise ThesisValidationError(f"Config-key overlap: {reason}")
 
-    # --- Guardrail 1b: Dimension rotation ---
     if prior_theses and thesis.mechanism_dimension:
         same_dim = [
             p for p in prior_theses if p.get("mechanism_dimension") == thesis.mechanism_dimension
@@ -480,14 +478,13 @@ def validate_research_thesis(
             # Not a hard reject — the prompt already told the conductor to
             # pick a different dimension. But if dimension_novelty doesn't
             # convincingly explain why this is different, warn loudly.
-            if len(thesis.dimension_novelty) < 30:
+            if len(thesis.dimension_novelty) < _MIN_NOVELTY_EXPLANATION_CHARS:
                 raise ThesisValidationError(
                     f"Dimension '{thesis.mechanism_dimension}' was already explored "
                     f"by {prior_ids}. dimension_novelty must explain (>30 chars) "
                     f"what fundamentally new mechanism this tests within that dimension."
                 )
 
-    # --- Guardrail 2: Hypothesis-config alignment ---
     if thesis.config_changes:
         score, explanation = check_hypothesis_alignment(
             thesis.hypothesis,

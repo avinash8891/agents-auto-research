@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import compiler_builder
 import compiler_operationalize as co
 import persistence_utils
 from compiler_operationalize import finalize_thesis_config_changes
@@ -417,6 +418,94 @@ def test_build_missing_primitives_returns_error_when_no_cli(
     }
 
 
+def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    family = load_family("ema")
+    thesis_id = "ema_timeout_probe"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"thesis_id": thesis_id, "strategy_family": "ema"}) + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"normalized_contract": [], "missing_primitives": ["probe"]}) + "\n"
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, capture_output, text, cwd, timeout):
+        captured["cmd"] = cmd
+        captured["capture_output"] = capture_output
+        captured["text"] = text
+        captured["cwd"] = cwd
+        captured["timeout"] = timeout
+        target = tmp_path / "configs" / "variants" / f"{thesis_id}.yaml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "data_universe: nasdaq8\nvalidation_start: 2020-01-01\nvalidation_end: 2020-12-31\n"
+        )
+        return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
+
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert captured["cmd"][:6] == [
+        "codex",
+        "exec",
+        "--model",
+        "gpt-5.4-mini",
+        "-c",
+        'model_reasoning_effort="medium"',
+    ]
+    assert captured["timeout"] == compiler_builder.BUILDER_CLI_TIMEOUT_SECONDS
+    assert result["status"] == "completed"
+    attempt_dir = tmp_path / family.builder_requests_dirname / thesis_id
+    assert (attempt_dir / "prompt.txt").exists()
+    assert (attempt_dir / "command.json").exists()
+    assert (attempt_dir / "stdout.log").exists()
+    assert (attempt_dir / "stderr.log").exists()
+    assert (attempt_dir / "result.json").exists()
+    assert json.loads((attempt_dir / "result.json").read_text())["exit_code"] == 0
+
+
+def test_build_missing_primitives_reports_timeout_explicitly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    family = load_family("ema")
+    thesis_id = "ema_timeout_expired"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"thesis_id": thesis_id, "strategy_family": "ema"}) + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"normalized_contract": [], "missing_primitives": ["probe"]}) + "\n"
+    )
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=kwargs.get("cmd") or args[0], timeout=kwargs["timeout"])
+
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "error"
+    assert "timed out after" in result["reason"]
+    attempt_dir = tmp_path / family.builder_requests_dirname / thesis_id
+    assert (attempt_dir / "result.json").exists()
+    assert json.loads((attempt_dir / "result.json").read_text())["timed_out"] is True
+
+
 @pytest.mark.parametrize("family_name,thesis_id", [("ema", "ema_missing"), ("orb", "orb_missing")])
 def test_build_missing_primitives_dispatches_family_request_to_cli_boundary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, family_name: str, thesis_id: str
@@ -540,3 +629,141 @@ def test_build_missing_primitives_reports_malformed_upstream_artifacts(tmp_path:
 
     assert result["status"] == "error"
     assert "malformed" in result["reason"].lower()
+
+
+def test_build_missing_primitives_uses_structured_halted_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    thesis_id = "halted_thesis"
+    experiment_dir = tmp_path / "experiments" / thesis_id
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    (experiment_dir / "thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "hypothesis": "tighten ema length",
+                "mechanism": "reduce lag",
+                "config_changes": {"ema_length": 7},
+                "requested_primitives": ["ema_length"],
+            }
+        )
+        + "\n"
+    )
+    (experiment_dir / "contract.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": thesis_id,
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "baseline_config_path": "configs/ema_base.yaml",
+                "runtime_config": {},
+                "hypothesis": "tighten ema length",
+                "mechanism": "reduce lag",
+                "status": "needs_code",
+            }
+        )
+        + "\n"
+    )
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    codex = bin_dir / "codex"
+    codex.write_text("""#!/usr/bin/env python3
+import pathlib
+import re
+import sys
+
+prompt = sys.argv[-1]
+root = pathlib.Path(re.search(r"- Repo root: (.+)", prompt).group(1))
+config = re.search(r"- Expected config path: (.+)", prompt).group(1)
+target = root / config
+target.parent.mkdir(parents=True, exist_ok=True)
+target.write_text('''{"data_universe": "nasdaq8", "allow_unbounded_research_backtest": true, "validation_start": "2020-01-01", "validation_end": "2020-12-31", "timeframe_long": 15, "timeframe_short": 5, "ema_length": 7, "rr_ratio": 2.5}''')
+print(f"generated {config}")
+""")
+    codex.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "completed"
+    assert result["generated_config"] == f"experiments/{thesis_id}/runtime_config.json"
+    assert (experiment_dir / "runtime_config.json").exists()
+    request = json.loads((tmp_path / "ema-builder-requests" / f"{thesis_id}.json").read_text())
+    assert request["family"] == "ema"
+    assert request["missing_primitives"] == ["ema_length"]
+
+
+def test_build_missing_primitives_rejects_unknown_structured_family(
+    tmp_path: Path,
+) -> None:
+    thesis_id = "halted_unknown_family"
+    experiment_dir = tmp_path / "experiments" / thesis_id
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    (experiment_dir / "thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                "strategy_family": "not-a-real-family",
+                "hypothesis": "tighten ema length",
+                "mechanism": "reduce lag",
+                "config_changes": {"ema_length": 7},
+            }
+        )
+        + "\n"
+    )
+    (experiment_dir / "contract.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": thesis_id,
+                "thesis_id": thesis_id,
+                "strategy_family": "not-a-real-family",
+                "baseline_config_path": "configs/ema_base.yaml",
+                "runtime_config": {},
+                "hypothesis": "tighten ema length",
+                "mechanism": "reduce lag",
+                "status": "needs_code",
+            }
+        )
+        + "\n"
+    )
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "error"
+    assert "unknown strategy family" in result["reason"]
+
+
+def test_build_missing_primitives_reports_error_when_proposal_has_no_family_field(
+    tmp_path: Path,
+) -> None:
+    # Covers the legacy path guard added for compiler_builder.py:196 —
+    # proposal with neither strategy_family nor family must return a clean error dict,
+    # not raise KeyError.
+    family = load_family("ema")
+    thesis_id = "ema_no_family_field"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                # intentionally omit both strategy_family and family
+                "hypothesis": "missing family field probe",
+            }
+        )
+        + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"normalized_contract": [], "missing_primitives": ["probe"]}) + "\n"
+    )
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "error"
+    assert "missing strategy_family/family" in result["reason"]
+    assert result["generated_config"] is None
+    assert result["validation_passed"] is False

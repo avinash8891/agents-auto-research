@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from strategies.base import BaseStrategy, FamilyDirnames
+from strategies.base import BaseStrategy
 from strategies.orb.contract import (
     compile_contract,
     render_contract_to_runtime_config,
@@ -21,6 +20,7 @@ class ORBStrategy(BaseStrategy):
     benchmark_script = "backtest_orb_v2.py"
     description_for_research = DESCRIPTION_FOR_RESEARCH
     research_spec = ORB_RESEARCH_SPEC
+    _research_dirname_suffix = "research-artifacts"
     default_variants = (
         "configs/variants/orb_spy_only.yaml",
         "configs/variants/orb_stocks_in_play.yaml",
@@ -58,39 +58,11 @@ class ORBStrategy(BaseStrategy):
         ("regime", "regime"): "review_required",
     }
 
-    @property
-    def family_dirnames(self) -> FamilyDirnames:
-        return FamilyDirnames(
-            proposals="orb-proposals",
-            compilations="orb-compilations",
-            contracts="orb-contracts",
-            run_queue="orb-run-queue",
-            research="orb-research-artifacts",
-            builder_requests="orb-builder-requests",
-            base_config_filename="orb_base.yaml",
-            runs="orb_autoresearch-runs",
-            variant_prefix="orb_",
-        )
-
     def run(self, config: dict[str, Any]) -> dict[str, Any]:
         return run_backtest(config)
 
     def get_defaults(self) -> dict[str, Any]:
         return _get_orb_defaults()
-
-    def validate_runtime_config_scope(
-        self, config: dict[str, Any], source_path: Path | None = None
-    ) -> dict[str, Any]:
-        missing = [key for key in ("validation_start", "validation_end") if not config.get(key)]
-        if missing and not config.get("allow_unbounded_research_backtest"):
-            source = f" for {source_path}" if source_path is not None else ""
-            raise ValueError(
-                "Refusing unbounded ORB backtest"
-                f"{source}: missing {', '.join(missing)}. "
-                "Set validation_start and validation_end, or explicitly set "
-                "allow_unbounded_research_backtest=true."
-            )
-        return config
 
     def validate_runtime_config(self, config: dict[str, Any]) -> list[str]:
         return validate_orb_runtime_config(config)

@@ -230,3 +230,4 @@ logs/
 *_baseline_checkpoints.json
 experiments/
 research_findings.jsonl
+.remember/

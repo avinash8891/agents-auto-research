@@ -17,9 +17,11 @@ from vps_runner import (
     config_from_env,
     create_verified_ssh_client,
     materialize_remote_config_if_needed,
+    materialize_remote_runtime_env,
     parse_resolved_sha,
     redact_git_repo_url,
     redact_secrets,
+    render_runtime_env_file,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -30,8 +32,8 @@ def test_vps_config_reads_remote_details_from_environment(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     config = config_from_env(git_ref="feature/ema")
 
     assert config.host == "203.0.113.10"
@@ -47,10 +49,9 @@ def test_vps_config_reads_optional_remote_data_root_from_environment(monkeypatch
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/data/autoresearch")
-
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     config = config_from_env(git_ref="feature/ema")
 
     assert config.data_root == "/data/autoresearch"
@@ -60,10 +61,9 @@ def test_vps_config_expands_tilde_data_root_for_root_user(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "root")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "~/autoresearch-data")
-
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/root/autoresearch")
     config = config_from_env(git_ref="feature/ema")
 
     assert config.data_root == "/root/autoresearch-data"
@@ -73,10 +73,9 @@ def test_vps_config_expands_tilde_data_root_for_non_root_user(monkeypatch) -> No
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "~/autoresearch-data")
-
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/home/researcher/autoresearch")
     config = config_from_env(git_ref="feature/ema")
 
     assert config.data_root == "/home/researcher/autoresearch-data"
@@ -87,7 +86,6 @@ def test_vps_config_requires_explicit_environment(monkeypatch) -> None:
         "AUTORESEARCH_VPS_HOST",
         "AUTORESEARCH_VPS_USER",
         "AUTORESEARCH_VPS_KEY",
-        "AUTORESEARCH_VPS_DIR",
         "AUTORESEARCH_GIT_REPO",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -100,8 +98,8 @@ def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     for bad_ref in ("feature/ema:refs/heads/main", "+main", "-main", "main..next", "main@{1}"):
         with pytest.raises(ValueError, match="AUTORESEARCH_GIT_REF"):
             config_from_env(git_ref=bad_ref)
@@ -176,6 +174,101 @@ def test_remote_command_exports_optional_data_root() -> None:
     assert "export AUTORESEARCH_DATA_ROOT=/data/autoresearch &&" in command
 
 
+def test_remote_command_sources_runtime_env_file() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_command(config, family, "0" * 40)
+
+    assert (
+        'if [ -f ".env.autoresearch" ]; then set -a; . ./.env.autoresearch; set +a; fi' in command
+    )
+
+
+def test_render_runtime_env_file_includes_runtime_env_and_skips_runner_only_keys(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_DISCORD_WEBHOOK_EMA", "https://example.com/webhook")
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/data/autoresearch")
+    monkeypatch.setenv("TRACELOOP_API_KEY", "trace-key")
+    monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "9")
+
+    content = render_runtime_env_file()
+
+    assert "AUTORESEARCH_DATA_ROOT" in content
+    assert "AUTORESEARCH_JOB" in content
+    assert "AUTORESEARCH_DISCORD_WEBHOOK_EMA" not in content
+    assert "TRACELOOP_API_KEY" not in content
+    assert "AUTORESEARCH_VPS_KEY" not in content
+    assert "AUTORESEARCH_GIT_REPO" not in content
+
+
+def test_materialize_remote_runtime_env_uploads_autogenerated_env_file(monkeypatch) -> None:
+    class FakeSFTP:
+        def __init__(self) -> None:
+            self.put_calls: list[tuple[str, str]] = []
+            self.put_contents: list[str] = []
+            self.mkdirs: list[str] = []
+            self.chmod_calls: list[tuple[str, int]] = []
+
+        def stat(self, remote_path: str) -> None:
+            if remote_path not in {"/", "/srv", "/srv/autoresearch"} | set(self.mkdirs):
+                raise OSError("missing")
+
+        def mkdir(self, remote_path: str) -> None:
+            self.mkdirs.append(remote_path)
+
+        def put(self, local_path: str, remote_path: str) -> None:
+            self.put_calls.append((local_path, remote_path))
+            self.put_contents.append(Path(local_path).read_text(encoding="utf-8"))
+
+        def chmod(self, remote_path: str, mode: int) -> None:
+            self.chmod_calls.append((remote_path, mode))
+
+        def close(self) -> None:
+            pass
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.sftp = FakeSFTP()
+
+        def open_sftp(self):
+            return self.sftp
+
+    monkeypatch.setenv("AUTORESEARCH_DISCORD_WEBHOOK_EMA", "https://example.com/webhook")
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/data/autoresearch")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "9")
+
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    client = FakeClient()
+    remote_path = materialize_remote_runtime_env(client, config)
+
+    assert remote_path == "/srv/autoresearch/.env.autoresearch"
+    assert client.sftp.put_calls
+    assert client.sftp.put_calls[0][1] == remote_path
+    assert client.sftp.chmod_calls == [(remote_path, 0o600)]
+    content = client.sftp.put_contents[0]
+    assert "AUTORESEARCH_DISCORD_WEBHOOK_EMA" not in content
+    assert "AUTORESEARCH_DATA_ROOT" in content
+    assert "AUTORESEARCH_JOB" in content
+
+
 def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() -> None:
     config = VPSConfig(
         host="203.0.113.10",
@@ -190,6 +283,7 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
 
     assert "git clone --no-checkout" in command
     assert f"git fetch --prune origin {shlex.quote(config.git_ref)}" in command
+    assert "resolved=$(git rev-parse --verify FETCH_HEAD^{commit})" in command
     assert 'git checkout --detach "$resolved"' in command
     assert "git clean -ffdx" in command
     assert "-e '*_autoresearch-runs'" in command
@@ -206,6 +300,24 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert "-e '*_experiments.db'" in command
     assert "AUTORESEARCH_RESOLVED_SHA %s" in command
     assert "scp" not in command.lower()
+
+
+def test_git_prepare_command_uses_commit_ref_resolution_for_sha() -> None:
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch code",
+        git_repo="https://github.com/example/repo.git",
+        git_ref=sha,
+    )
+
+    command = build_git_prepare_command(config)
+
+    # Full SHA deploys fetch all refs (SHAs cannot be used as refspecs) then resolve locally.
+    assert "git fetch --prune origin &&" in command
+    assert f"resolved=$(git rev-parse --verify {shlex.quote(sha)}^{{commit}})" in command
 
 
 def test_git_prepare_command_uses_posix_remote_parent_on_windows(monkeypatch) -> None:

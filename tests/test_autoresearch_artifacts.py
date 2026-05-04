@@ -109,10 +109,14 @@ def test_read_artifacts_returns_sorted_by_filename(tmp_path: Path) -> None:
 
 def test_read_research_artifacts_uses_research_dir(tmp_path: Path) -> None:
     research_dir = tmp_path / "ema-research"
-    _write_artifact(research_dir, "round-1.json", {"status": "completed"})
+    _write_artifact(research_dir, "round-1.json", {"status": "completed", "job": 1})
+    _write_artifact(research_dir, "round-2.json", {"status": "completed", "job": 2})
     out = read_research_artifacts(research_dir, tmp_path)
-    assert len(out) == 1
+    assert len(out) == 2
     assert out[0]["artifact_path"] == "ema-research/round-1.json"
+    assert read_research_artifacts(research_dir, tmp_path, job=2)[0]["artifact_path"] == (
+        "ema-research/round-2.json"
+    )
 
 
 def test_read_thesis_artifacts_uses_proposals_dir(tmp_path: Path) -> None:

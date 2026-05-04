@@ -75,6 +75,7 @@ from autoresearch_research import queue_variants as _research_queue_variants
 from autoresearch_research import results_to_dicts as _research_results_to_dicts
 from autoresearch_research import run_research as _research_run_research
 from autoresearch_state import ExperimentRecord, RunContext
+from autoresearch_state import _coerce_job_to_int as _state_coerce_job_to_int
 from autoresearch_state import best_result as _state_best_result
 from autoresearch_state import deduplicate_entries as _state_deduplicate_entries
 from autoresearch_state import is_better as _state_is_better
@@ -263,7 +264,7 @@ class AutoresearchController:
         return _planning_list_known_variant_configs(self.root, self.family)
 
     def pending_configs(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_pending_configs(self.root, self.family, results)
+        return _planning_pending_configs(self.root, self.family, self.run_queue_dir, results)
 
     def thesis_statuses(self, results: list[ExperimentRecord]) -> dict[str, dict[str, Any]]:
         return _planning_thesis_statuses(self.root, self.family, self.run_queue_dir, results)
@@ -346,7 +347,12 @@ class AutoresearchController:
         )
 
     def render_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> str:
-        return _state_render_current_md(state, results, family_name=self.family.name)
+        return _state_render_current_md(
+            state,
+            results,
+            family_name=self.family.name,
+            metric_name=self.primary_metric_name(),
+        )
 
     def write_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> None:
         _state_write_current_md(
@@ -354,6 +360,7 @@ class AutoresearchController:
             state,
             results,
             family_name=self.family.name,
+            metric_name=self.primary_metric_name(),
         )
 
     def reconcile_state(self) -> dict[str, Any]:
@@ -460,7 +467,7 @@ class AutoresearchController:
     def primary_metric_name(self) -> str:
         return self.experiment_db.primary_metric_name()
 
-    def parse_metric(self, output: str, name: str = "median_expectancy") -> float | None:
+    def parse_metric(self, output: str, name: str = "profit_factor") -> float | None:
         return _experiment_parse_metric(output, name)
 
     def evaluate_metric(self, metric: float) -> str:
@@ -600,17 +607,30 @@ def main() -> int:
         ideas_md_path=ideas_md_path,
         runs_dir=runs_dir,
     )
-    # Increment job number on each loop start
     prior_state = controller.read_state()
-    job = prior_state.get("job", 0) + 1
-    # New job starts from a clean controller state. This prevents stale
-    # next_action/current_thesis/blockers from prior jobs from skipping
-    # baseline-first planning on launch.
+    resume_manual_review = (
+        prior_state.get("state") == "blocked"
+        and isinstance(prior_state.get("next_action"), dict)
+        and prior_state["next_action"].get("type") == "manual_review"
+        and (
+            prior_state.get("halted_thesis_id")
+            or prior_state.get("manual_review_theses")
+            or prior_state.get("halted_reason") == "requires_code_change"
+        )
+    )
+    job = _state_coerce_job_to_int(prior_state.get("job"))
+    if not resume_manual_review:
+        # Fresh jobs start from the next job number so new launches stay
+        # distinguishable from earlier runs in traces and experiment rows.
+        job += 1
+    # Fresh jobs start from a clean controller state. Manual-review restarts
+    # preserve the pending thesis metadata and job-scoped counters so the same
+    # run can continue natively on the latest code.
     state = {
         "state": "running",
         "job": job,
-        "research_round": 0,
-        "job_usage": None,
+        "research_round": prior_state.get("research_round", 0) if resume_manual_review else 0,
+        "job_usage": prior_state.get("job_usage") if resume_manual_review else None,
         "heartbeat": {},
     }
     # Preserve halted thesis metadata needed for requires_code_change resume
@@ -621,6 +641,10 @@ def main() -> int:
         for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
             if key in prior_state:
                 state[key] = prior_state[key]
+    # Preserve manual_review_theses unconditionally: resume_manual_review is
+    # also triggered by this list alone, without halted_reason being set.
+    if prior_state.get("manual_review_theses"):
+        state["manual_review_theses"] = list(prior_state["manual_review_theses"])
     controller.write_state(state)
 
     from trace_sdk import get_log_file, get_session_id, set_family
@@ -639,6 +663,9 @@ def main() -> int:
         if current in ("finished", "interrupted", "halted"):
             return 0
         if current == "blocked":
+            blockers = state.get("blockers", [])
+            if any(b.get("kind") == "research_required" for b in blockers):
+                continue
             # `execute_once()` already performs the only recoverable blocked
             # transition (`research_required`). Any remaining blocked state is
             # terminal for the process.

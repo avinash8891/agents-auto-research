@@ -6,6 +6,27 @@ from typing import Any
 import agent_memory
 
 
+def _persist_to_memory(
+    result: dict[str, Any],
+    *,
+    wing: str,
+    room: str,
+    content: str,
+    agent_name: str,
+    diary_key: str,
+    diary_summary: str,
+) -> dict[str, Any]:
+    errors: list[str] = []
+    if not agent_memory._mempalace_write(wing, room, content):
+        errors.append("memory_write_failed")
+    if not agent_memory._mempalace_diary(agent_name, diary_key, diary_summary):
+        errors.append("diary_write_failed")
+    if errors:
+        result = dict(result)
+        result["persistence_errors"] = errors
+    return result
+
+
 def _build_diagnostic_prompt(
     trades_file: str,
     config: str,
@@ -50,19 +71,15 @@ def _persist_diagnostic_result(
             for a in anomalies
         )
     )
-    persistence_errors: list[str] = []
-    if not agent_memory._mempalace_write("autoresearch", f"{family}-diagnostics", content):
-        persistence_errors.append("memory_write_failed")
-    if not agent_memory._mempalace_diary(
-        "diagnostic-analyst",
-        f"{family}-analysis",
-        f"CONFIG:{config}|PF:{metric}|ANOMALIES:{len(anomalies)}|{summary[:100]}",
-    ):
-        persistence_errors.append("diary_write_failed")
-    if persistence_errors:
-        result = dict(result)
-        result["persistence_errors"] = persistence_errors
-    return result
+    return _persist_to_memory(
+        result,
+        wing="autoresearch",
+        room=f"{family}-diagnostics",
+        content=content,
+        agent_name="diagnostic-analyst",
+        diary_key=f"{family}-analysis",
+        diary_summary=f"CONFIG:{config}|PF:{metric}|ANOMALIES:{len(anomalies)}|{summary[:100]}",
+    )
 
 
 def _build_web_research_prompt(
@@ -99,19 +116,15 @@ def _persist_web_research_result(
         )
         + (f"\nGAPS: {gaps}" if gaps else "")
     )
-    persistence_errors: list[str] = []
-    if not agent_memory._mempalace_write("autoresearch", f"{family}-web-research", content):
-        persistence_errors.append("memory_write_failed")
-    if not agent_memory._mempalace_diary(
-        "web-researcher",
-        f"{family}-research",
-        f"ROUND:{research_round}|FINDINGS:{len(findings)}|{summary[:100]}",
-    ):
-        persistence_errors.append("diary_write_failed")
-    if persistence_errors:
-        result = dict(result)
-        result["persistence_errors"] = persistence_errors
-    return result
+    return _persist_to_memory(
+        result,
+        wing="autoresearch",
+        room=f"{family}-web-research",
+        content=content,
+        agent_name="web-researcher",
+        diary_key=f"{family}-research",
+        diary_summary=f"ROUND:{research_round}|FINDINGS:{len(findings)}|{summary[:100]}",
+    )
 
 
 def _build_research_prompt(context: dict[str, Any], family_name: str, spec: Any) -> str:
@@ -156,17 +169,15 @@ def _persist_research_thesis(
         f"MECHANISM: {thesis.get('mechanism', '')}\n"
         f"REASONING: {parsed.get('reasoning', '')}"
     )
-    persistence_errors: list[str] = []
-    if not agent_memory._mempalace_write("autoresearch", f"{family_name}-theses", content):
-        persistence_errors.append("memory_write_failed")
-    if not agent_memory._mempalace_diary(
-        "research-agent",
-        f"{family_name}-thesis",
-        f"ROUND:{research_round}|THESIS:{thesis.get('thesis_id', '?')}|"
-        f"{parsed.get('reasoning', '')[:100]}",
-    ):
-        persistence_errors.append("diary_write_failed")
-    if persistence_errors:
-        parsed = dict(parsed)
-        parsed["persistence_errors"] = persistence_errors
-    return parsed
+    return _persist_to_memory(
+        parsed,
+        wing="autoresearch",
+        room=f"{family_name}-theses",
+        content=content,
+        agent_name="research-agent",
+        diary_key=f"{family_name}-thesis",
+        diary_summary=(
+            f"ROUND:{research_round}|THESIS:{thesis.get('thesis_id', '?')}|"
+            f"{parsed.get('reasoning', '')[:100]}"
+        ),
+    )

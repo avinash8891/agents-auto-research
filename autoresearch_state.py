@@ -17,15 +17,6 @@ from persistence_utils import write_text_atomic
 # ── Time helpers (rule J: UTC in persistent state) ───────────────
 
 
-def iso8601_utc_now() -> str:
-    """Current time as an ISO-8601 string with explicit UTC offset.
-
-    Project rule J: stored timestamps must be UTC with timezone. Naive
-    datetimes (and naive epoch-ms ints) are banned from persistent state.
-    """
-    return datetime.now(timezone.utc).isoformat()
-
-
 def coerce_timestamp_to_iso8601_utc(value: Any) -> str | None:
     """Normalize a stored timestamp to ISO-8601 UTC, or None if unparseable.
 
@@ -134,6 +125,13 @@ def write_state(state_path: Path, state: dict[str, Any]) -> None:
 # ── Results ────────────────────────────────────────────────────────
 
 
+def _coerce_job_to_int(job_value: Any) -> int:
+    try:
+        return int(job_value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def read_results(entries: list[dict[str, Any]]) -> list[ExperimentRecord]:
     results: list[ExperimentRecord] = []
     for entry in entries:
@@ -149,7 +147,7 @@ def read_results(entries: list[dict[str, Any]]) -> list[ExperimentRecord]:
                 timestamp=coerce_timestamp_to_iso8601_utc(entry.get("timestamp", 0))
                 or "1970-01-01T00:00:00+00:00",
                 asi=asi,
-                job=int(entry.get("job") or 0),
+                job=_coerce_job_to_int(entry.get("job")),
             )
         )
     return results
@@ -195,9 +193,9 @@ def promote_missing_known_results(entries: list[dict[str, Any]]) -> list[dict[st
 
 
 def deduplicate_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep only the richest entry per config. Drop low-info duplicates."""
-    config_entries: dict[str, list[tuple[int, dict[str, Any]]]] = {}
-    config_order: list[str] = []
+    """Keep only the richest entry per (job, config). Drop low-info duplicates."""
+    config_entries: dict[tuple[int, str], list[tuple[int, dict[str, Any]]]] = {}
+    config_order: list[tuple[int, str]] = []
     non_experiment: list[dict[str, Any]] = []
 
     for idx, entry in enumerate(entries):
@@ -209,14 +207,16 @@ def deduplicate_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not config:
             non_experiment.append(entry)
             continue
-        if config not in config_entries:
-            config_entries[config] = []
-            config_order.append(config)
-        config_entries[config].append((idx, entry))
+        job = _coerce_job_to_int(entry.get("job"))
+        key = (job, config)
+        if key not in config_entries:
+            config_entries[key] = []
+            config_order.append(key)
+        config_entries[key].append((idx, entry))
 
     deduped: list[dict[str, Any]] = list(non_experiment)
-    for config in config_order:
-        group = config_entries[config]
+    for key in config_order:
+        group = config_entries[key]
         if len(group) == 1:
             deduped.append(group[0][1])
             continue
@@ -272,7 +272,11 @@ def _format_blocker_lines(blockers: list[dict[str, Any]]) -> list[str]:
 
 
 def render_current_md(
-    state: dict[str, Any], results: list[ExperimentRecord], *, family_name: str | None = None
+    state: dict[str, Any],
+    results: list[ExperimentRecord],
+    *,
+    family_name: str | None = None,
+    metric_name: str = "profit_factor",
 ) -> str:
     best = state.get("current_best", {})
     next_action = state.get("next_action", {})
@@ -283,7 +287,7 @@ def render_current_md(
         "",
         "## Current Best",
         f"- `{best.get('config', 'unknown') if best else 'none'}`",
-        f"- median_expectancy: `{best.get('metric', 'unknown') if best else 'none'}`",
+        f"- {metric_name}: `{best.get('metric', 'unknown') if best else 'none'}`",
         "",
         "## Latest Insights",
         *_format_latest_lines(latest_result(results), best),
@@ -314,5 +318,9 @@ def write_current_md(
     results: list[ExperimentRecord],
     *,
     family_name: str | None = None,
+    metric_name: str = "profit_factor",
 ) -> None:
-    current_md_path.write_text(render_current_md(state, results, family_name=family_name))
+    write_text_atomic(
+        current_md_path,
+        render_current_md(state, results, family_name=family_name, metric_name=metric_name),
+    )

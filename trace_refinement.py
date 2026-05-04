@@ -30,7 +30,7 @@ class RefinementRecorder:
             action="session_start",
             summary=summary,
             payload=payload,
-            artifact_paths=list(artifact_paths or []),
+            artifact_paths=artifact_paths,
         )
         return payload
 
@@ -59,7 +59,7 @@ class RefinementRecorder:
             action="iteration",
             summary=f"{session_id} iteration {iteration}",
             payload=payload,
-            artifact_paths=list(artifact_paths or []),
+            artifact_paths=artifact_paths,
         )
         return payload
 
@@ -82,6 +82,6 @@ class RefinementRecorder:
             action="session_finish",
             summary=f"{session_id} finished",
             payload=payload,
-            artifact_paths=list(artifact_paths or []),
+            artifact_paths=artifact_paths,
         )
         return payload

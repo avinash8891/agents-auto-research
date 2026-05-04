@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
-import logging
+import time
 from pathlib import Path
 
+from autoresearch_logging import get_logger
 from research_paths import _ROOT
 
 _PALACE_DIR = str(_ROOT / "palace")
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor") -> dict:
@@ -132,22 +133,21 @@ def save_research_finding(
         room=finding_type,
         content=content,
     )
-    if result.get("success"):
-        return f"SAVED: {finding_type}/{status} — {finding[:80]}"
-
-    findings_log = _ROOT / "research_findings.jsonl"
-    entry = {
-        "finding": finding,
-        "type": finding_type,
-        "status": status,
-        "evidence": evidence,
-        "scope": scope,
-        "expires_if": expires_if,
-        "timestamp": __import__("time").time(),
-    }
-    with open(findings_log, "a") as f:
-        f.write(json.dumps(entry) + "\n")
-    return f"SAVED (local): {finding_type}/{status} — {finding[:80]}"
+    if not result.get("success"):
+        findings_log = _ROOT / "research_findings.jsonl"
+        entry = {
+            "finding": finding,
+            "type": finding_type,
+            "status": status,
+            "evidence": evidence,
+            "scope": scope,
+            "expires_if": expires_if,
+            "timestamp": time.time(),
+        }
+        with open(findings_log, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+        return f"SAVED (local): {finding_type}/{status} — {finding[:80]}"
+    return f"SAVED: {finding_type}/{status} — {finding[:80]}"
 
 
 def list_past_theses(root: Path) -> str:

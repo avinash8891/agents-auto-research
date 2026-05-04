@@ -32,7 +32,6 @@ from autoresearch_constants import (
 from autoresearch_logging import get_logger
 from autoresearch_planning import build_research_failure_state
 from autoresearch_state import (
-    iso8601_utc_now,
     read_state,
     write_state,
 )
@@ -43,7 +42,8 @@ from experiment_db import (
     build_config_hash,
     build_data_hash,
 )
-from persistence_utils import write_json_atomic_strict, write_text_atomic
+from persistence_utils import utc_now_iso8601 as iso8601_utc_now
+from persistence_utils import write_json_atomic, write_text_atomic
 from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
@@ -233,15 +233,15 @@ def parse_benchmark_details_legacy(output: str) -> dict[str, Any]:
 def primary_metric_name(entries: list[dict[str, Any]]) -> str:
     """Read the primary metric name from exported session entries."""
     if not entries:
-        return "median_expectancy"
+        return "profit_factor"
     for entry in entries:
         if entry.get("type") == "config":
-            return entry.get("metricName", "median_expectancy")
-    return "median_expectancy"
+            return entry.get("metricName", "profit_factor")
+    return "profit_factor"
 
 
 def parse_metric(
-    output: str, name: str = "median_expectancy", *, allow_legacy: bool = False
+    output: str, name: str = "profit_factor", *, allow_legacy: bool = False
 ) -> float | None:
     result_json = parse_result_json(output)
     if result_json:
@@ -422,9 +422,14 @@ def _contract_from_sidecar(controller: "AutoresearchController", config: str) ->
     )
 
 
+def _resolve_identity(contract: Any | None, config: str) -> str:
+    return (
+        contract.thesis_id if contract and getattr(contract, "thesis_id", "") else Path(config).stem
+    )
+
+
 def _analysis_identity(controller: "AutoresearchController", config: str) -> str:
-    contract = _contract_from_sidecar(controller, config)
-    return contract.thesis_id if contract else Path(config).stem
+    return _resolve_identity(_contract_from_sidecar(controller, config), config)
 
 
 def _serialize_artifact_dir(controller: "AutoresearchController", artifact_dir: Path) -> str:
@@ -450,12 +455,11 @@ def _build_asi_dict(
     next_action: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     contract = controller.ctx.current_contract
-    identity = (
-        contract.thesis_id if contract and getattr(contract, "thesis_id", "") else Path(config).stem
-    )
-    run_id = f"job-{controller.read_state().get('job', 0)}-run-1-{identity}"
+    identity = _resolve_identity(contract, config)
+    state = controller.read_state()
+    run_id = f"job-{state.get('job', 0)}-run-1-{identity}"
     asi = {
-        "job": controller.read_state().get("job"),
+        "job": state.get("job"),
         "run_id": run_id,
         "hypothesis_id": identity,
         "hypothesis": identity,
@@ -555,9 +559,7 @@ def _build_export_entry(
     state: dict[str, Any],
 ) -> dict[str, Any]:
     contract = _contract_from_sidecar(controller, config)
-    identity = (
-        contract.thesis_id if contract and getattr(contract, "thesis_id", "") else Path(config).stem
-    )
+    identity = _resolve_identity(contract, config)
     run_id = f"job-{state.get('job', 0)}-run-{next_run}-{identity}"
     experiment_id = contract.experiment_id if contract else run_id
     return {
@@ -582,7 +584,7 @@ def _build_export_entry(
 
 def _write_run_artifacts(artifact_dir: Path, output: str, analysis: dict[str, Any]) -> None:
     write_text_atomic(artifact_dir / "benchmark_output.txt", output)
-    write_json_atomic_strict(artifact_dir / "analysis.json", analysis)
+    write_json_atomic(artifact_dir / "analysis.json", analysis)
 
 
 def _artifact_dir_for_executed_commit(
@@ -837,7 +839,12 @@ def _evaluate_against_thesis(
         from experiment_evaluator import evaluate_experiment
 
         candidate_metrics = dict(details)
-        candidate_metrics["median_expectancy"] = metric
+        primary_metric_name = (
+            controller.primary_metric_name()
+            if hasattr(controller, "primary_metric_name")
+            else "profit_factor"
+        )
+        candidate_metrics[primary_metric_name] = metric
         verdict = evaluate_experiment(
             thesis=_build_thesis_for_eval(contract),
             baseline_metrics=_baseline_metrics_from_first_result(controller),

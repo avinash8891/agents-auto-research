@@ -54,7 +54,7 @@ class QualityHistory:
             action="append_run",
             summary=summary,
             payload=payload,
-            artifact_paths=list(artifact_paths or []),
+            artifact_paths=artifact_paths,
         )
         self._last_scores = current_scores
         return payload

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
-import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any
+
+from openai import AsyncOpenAI as _AsyncOpenAI
 
 _OAUTH_TOKEN_FILE = Path.home() / ".claude_oauth_token"
 
@@ -49,7 +52,10 @@ def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
 
 
 SDK_TIMEOUT_SECONDS = 300  # Max seconds for a single SDK agent call (analyst needs Execute time)
-log = logging.getLogger(__name__)
+
+from autoresearch_logging import get_logger
+
+log = get_logger(__name__)
 
 
 def _parse_json(text: str) -> dict[str, Any] | None:
@@ -92,6 +98,60 @@ def _structured_error(
 
 def _is_error_result(result: Any) -> bool:
     return isinstance(result, dict) and result.get("status") == "error"
+
+
+def _run_coroutine_sync(coro: Any) -> Any:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result_box: dict[str, Any] = {}
+    error_box: dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            # wait_for cancels the task at the timeout boundary so httpx
+            # connections are cleaned up cooperatively, not abandoned.
+            result_box["value"] = loop.run_until_complete(
+                asyncio.wait_for(coro, timeout=SDK_TIMEOUT_SECONDS)
+            )
+        except asyncio.TimeoutError:
+            error_box["error"] = TimeoutError(
+                f"_run_coroutine_sync: coroutine did not complete within {SDK_TIMEOUT_SECONDS}s"
+            )
+        except BaseException as exc:
+            error_box["error"] = exc
+        finally:
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.close()
+
+    # Give the thread SDK_TIMEOUT_SECONDS + 5s for task-cancel cleanup before
+    # treating it as a hard hang.
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join(timeout=SDK_TIMEOUT_SECONDS + 5)
+    if thread.is_alive():
+        raise TimeoutError(
+            f"_run_coroutine_sync: coroutine did not complete within {SDK_TIMEOUT_SECONDS}s"
+        )
+    if error_box:
+        raise error_box["error"]
+    if "value" not in result_box:
+        raise RuntimeError("coroutine thread exited without setting a result")
+    return result_box["value"]
+
+
+def _get_openai_client(base_url: str) -> _AsyncOpenAI:
+    # New client per call: AsyncOpenAI's httpx transport is loop-bound; caching across
+    # asyncio.run() boundaries (each of which closes its loop) triggers "Event loop is closed".
+    return _AsyncOpenAI(api_key="unused", base_url=base_url)
 
 
 def _parse_json_detailed(text: str) -> dict[str, Any]:
