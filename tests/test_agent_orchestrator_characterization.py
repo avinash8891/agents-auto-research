@@ -24,6 +24,11 @@ import agent_runners
 import agent_token_usage as usage
 
 
+@pytest.mark.skip(
+    reason="DEAD CODE — diagnostic analyst superseded by research_subagents._call_analyst. "
+    "Production code is commented out; re-enable / rewrite when the live analyst absorbs "
+    "the missing behaviors (mempalace persistence, prior-diagnostics recall, broad-sweep mode)."
+)
 def test_run_diagnostic_analysis_returns_validated_result_and_writes_memory(monkeypatch):
     result_payload = {
         "key_anomalies": [
@@ -556,6 +561,11 @@ def test_sync_wrappers_work_from_running_event_loop(monkeypatch):
     assert asyncio.run(main()) == {"status": "ok", "family": "ema", "context": {"seed": 1}}
 
 
+@pytest.mark.skip(
+    reason="DEAD CODE — diagnostic analyst superseded by research_subagents._call_analyst. "
+    "Production code is commented out; re-enable / rewrite when the live analyst absorbs "
+    "the missing behaviors (mempalace persistence, prior-diagnostics recall, broad-sweep mode)."
+)
 def test_run_diagnostic_analysis_reports_persistence_failures(monkeypatch):
     result_payload = {
         "key_anomalies": [

@@ -6,72 +6,19 @@ MAX_TURNS_RESEARCH = 15
 MAX_RETRIES = 2
 
 
-DIAGNOSTIC_ANALYST_SYSTEM_PROMPT = """You are a quantitative trading analyst. You receive:
-1. A path to a CSV file containing raw trades from a backtest
-2. The strategy config (what settings are applied)
-3. The backtest results summary
-
-Your job: load the raw trades, run your own analysis code, and find patterns
-that explain the strategy's performance.
-
-RAW TRADES CSV SCHEMA (one row per trade):
-  entry_date    - datetime, when the trade was entered
-  exit_date     - datetime, when the trade was exited
-  direction     - str, "long" or "short"
-  entry_price   - float, entry price (includes slippage)
-  exit_price    - float, exit price (includes slippage)
-  stop          - float, stop loss price
-  target        - float, target price
-  pnl_pct       - float, PnL as fraction of entry price (0.01 = 1%)
-  exit_reason   - str, "stop_loss", "target", or "timeout"
-  symbol        - str, ticker symbol (e.g. "AAPL")
-
-WORKFLOW:
-1. Use run_python to execute pandas analysis code. Use read_file to inspect the CSV
-   if needed. The file path is given in the user prompt.
-2. Perform AT MINIMUM these analyses:
-   a. PF by entry hour (split 09:30 vs 09:35 vs later)
-   b. PF by direction
-   c. PF by exit_reason (counts + mean pnl)
-   d. PF by day of week
-   e. PF by year
-   f. PF by symbol (top 10 best, top 10 worst by PF, min 5 trades each)
-   g. Trade duration (winners vs losers in minutes)
-   h. Realized R:R vs planned (avg win pnl / avg loss pnl)
-   i. Max consecutive losses
-   j. Stop distance analysis (stop dist from entry vs PF by quintile)
-   k. Losing streak clustering by date range
-3. Go BEYOND the minimum. Look for anything predefined slices miss.
-   Examples: per-symbol PF variance, exit_reason by hour, seasonal patterns,
-   hold duration vs PnL correlation, gap between planned target and realized gain.
-4. Cross-reference findings with the strategy config provided. If config says
-   short_only but you see long trades, flag it. If cutoff is 10:00 but trades
-   appear after 10:00, flag it. Verify the config is correctly applied.
-
-CRITICAL RULES:
-- PF = sum(pnl_pct where pnl_pct > 0) / abs(sum(pnl_pct where pnl_pct <= 0))
-- Only flag patterns with >100 trades per bucket
-- Cite exact numbers from your code output
-- Do NOT invent data
-- Run ALL analysis in a SINGLE run_python call to save time
-
-OUTPUT FORMAT:
-After analysis, return ONLY a JSON object:
-{
-  "key_anomalies": [
-    {
-      "pattern": "one-line description",
-      "numbers": "exact computed values",
-      "sample_size": "trades in bucket",
-      "suggested_exploit": "specific structural change",
-      "confidence": "high/medium/low"
-    }
-  ],
-  "overall_diagnosis": "2-3 sentence summary",
-  "discovery_questions": ["questions needing more data"]
-}
-
-Be brutally honest."""
+# DEAD CODE — diagnostic analyst superseded by research_subagents._call_analyst
+# (the live "codex-diagnostic-analyst" agent the conductor dispatches via its
+# analyze_trades tool). Same forensic role, same output schema, but driven by
+# focus questions instead of a fixed-menu sweep. Kept commented out temporarily;
+# will be deleted after the live analyst absorbs the missing behaviors:
+#   1. auto-persist findings to _mempalace + per-agent diary
+#   2. inject prior-diagnostics recall into the analyst prompt
+#   3. optional broad-sweep mode (no focus question -> the 11-dimension menu
+#      that lived in this prompt: PF by hour/direction/exit_reason/day-of-week/
+#      year/symbol/duration/realized-vs-planned-R:R/max-consec-losses/
+#      stop-distance-quintiles/losing-streak-clustering)
+# See research_subagents.py::_call_analyst for the live implementation.
+DIAGNOSTIC_ANALYST_SYSTEM_PROMPT = None  # type: ignore[assignment]
 
 
 WEB_RESEARCHER_SYSTEM_PROMPT = """You are a research agent specializing in quantitative trading strategies.
