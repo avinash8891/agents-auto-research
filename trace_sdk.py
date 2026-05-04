@@ -586,7 +586,7 @@ def record_usage_event(
     Fail-open: any exception during emission must not block the caller.
     """
     try:
-        _STATE.next_seq()  # seq read passively by _event_span via _STATE.seq
+        _STATE.next_seq()  # advance seq; _event_span reads _STATE.seq passively (no second increment)
         _record_event(
             source_module="agent_token_usage",
             category="usage",

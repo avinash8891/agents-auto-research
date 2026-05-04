@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--strategy", required=True, choices=sorted(STRATEGIES))
     parser.add_argument("--config", required=True)
     parser.add_argument(
-        "--output-dir", default=".", help="Directory to write result.json and trades CSV"
+        "--output-dir", default="/tmp", help="Directory to write result.json and trades CSV"
     )
     return parser
 

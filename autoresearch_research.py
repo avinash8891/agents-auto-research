@@ -856,7 +856,7 @@ def _handle_needs_code(
     _close_run(
         controller,
         state,
-        f"🛑 {controller.family.name.upper()} HALTED — needs code change",
+        f"🔧 {controller.family.name.upper()} needs code change — attempting auto-build",
         f"**Thesis:** `{thesis_id}`\n"
         f"**Best PF:** {best.get('metric', '?')}\n\n"
         f"**Hypothesis:** {thesis.get('hypothesis', '(no details captured)')}\n\n"

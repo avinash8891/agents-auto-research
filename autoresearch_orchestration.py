@@ -132,7 +132,7 @@ def build_missing_primitives_for_state(
     )
     if builder_result.get("status") == "completed" and builder_result.get("validation_passed"):
         generated_config = builder_result.get("generated_config")
-        if generated_config:
+        if generated_config and (controller.root / generated_config).exists():
             state = _activate_builder_config(
                 controller,
                 state,
