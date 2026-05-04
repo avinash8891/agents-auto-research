@@ -7,6 +7,7 @@ import agent_infra
 import agent_prompts
 from agent_runners import _validate_output
 from agent_token_usage import _accumulate_result_usage
+from autoresearch_constants import DEFAULT_AGENT_MODEL as _OPENAI_AGENT_MODEL
 from trace_sdk import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
 
 
@@ -21,12 +22,11 @@ async def _run_web_research_openai(
     from agents import Runner as OAIRunner
     from agents import WebSearchTool
     from agents.models.openai_responses import OpenAIResponsesModel
-    from openai import AsyncOpenAI
 
     agent_infra._ensure_oauth_proxy()
 
-    client = AsyncOpenAI(api_key="unused", base_url=agent_infra._OAUTH_PROXY_URL)
-    model = OpenAIResponsesModel(model="gpt-5.5", openai_client=client)
+    client = agent_infra._get_openai_client(agent_infra._OAUTH_PROXY_URL)
+    model = OpenAIResponsesModel(model=_OPENAI_AGENT_MODEL, openai_client=client)
 
     agent = OAIAgent(
         name="web-researcher",
@@ -41,13 +41,13 @@ async def _run_web_research_openai(
             prompt,
             agent_prompts.WEB_RESEARCHER_SYSTEM_PROMPT,
             model_provider="openai",
-            model_name="gpt-5.5",
+            model_name=_OPENAI_AGENT_MODEL,
         )
         trace(
             "OPENAI_AGENT",
-            f"web-researcher attempt={attempt}/{retries} model=gpt-5.5 api=responses",
+            f"web-researcher attempt={attempt}/{retries} model={_OPENAI_AGENT_MODEL} api=responses",
             model_provider="openai",
-            model_name="gpt-5.5",
+            model_name=_OPENAI_AGENT_MODEL,
         )
         try:
             result = OAIRunner.run_streamed(
@@ -62,7 +62,9 @@ async def _run_web_research_openai(
                 pass
 
             output = result.final_output or ""
-            _accumulate_result_usage("web-researcher", result, provider="openai", model="gpt-5.5")
+            _accumulate_result_usage(
+                "web-researcher", result, provider="openai", model=_OPENAI_AGENT_MODEL
+            )
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
             trace_agent_response(
@@ -71,21 +73,21 @@ async def _run_web_research_openai(
                 output,
                 parsed,
                 model_provider="openai",
-                model_name="gpt-5.5",
+                model_name=_OPENAI_AGENT_MODEL,
             )
             if parsed is not None and _validate_output("web-researcher", parsed):
                 trace(
                     "OPENAI_AGENT",
                     "web-researcher VALIDATED OK",
                     model_provider="openai",
-                    model_name="gpt-5.5",
+                    model_name=_OPENAI_AGENT_MODEL,
                 )
                 return parsed
             trace(
                 "OPENAI_AGENT",
                 "web-researcher validate FAILED",
                 model_provider="openai",
-                model_name="gpt-5.5",
+                model_name=_OPENAI_AGENT_MODEL,
             )
             error = agent_infra._structured_error(
                 "web-researcher",
@@ -104,9 +106,11 @@ async def _run_web_research_openai(
                 "OPENAI_AGENT",
                 f"web-researcher ERROR: {exc.__class__.__name__}",
                 model_provider="openai",
-                model_name="gpt-5.5",
+                model_name=_OPENAI_AGENT_MODEL,
             )
-            _accumulate_result_usage("web-researcher", None, provider="openai", model="gpt-5.5")
+            _accumulate_result_usage(
+                "web-researcher", None, provider="openai", model=_OPENAI_AGENT_MODEL
+            )
             error = agent_infra._structured_error(
                 "web-researcher",
                 "transport",
@@ -144,7 +148,6 @@ async def _run_diagnostic_analyst_openai(
     from agents import Runner as OAIRunner
     from agents import function_tool
     from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-    from openai import AsyncOpenAI
 
     agent_infra._ensure_oauth_proxy()
     current_trace_id = "active"
@@ -158,7 +161,7 @@ async def _run_diagnostic_analyst_openai(
             "read_file",
             file_path,
             model_provider="openai",
-            model_name="gpt-5.5",
+            model_name=_OPENAI_AGENT_MODEL,
         )
         try:
             with open(file_path) as f:
@@ -178,7 +181,7 @@ async def _run_diagnostic_analyst_openai(
             "run_python",
             code,
             model_provider="openai",
-            model_name="gpt-5.5",
+            model_name=_OPENAI_AGENT_MODEL,
         )
         try:
             result = subprocess.run(
@@ -200,8 +203,8 @@ async def _run_diagnostic_analyst_openai(
         except Exception as e:
             return f"ERROR: {e}"
 
-    client = AsyncOpenAI(api_key="unused", base_url=agent_infra._OAUTH_PROXY_URL)
-    model = OpenAIChatCompletionsModel(model="gpt-5.5", openai_client=client)
+    client = agent_infra._get_openai_client(agent_infra._OAUTH_PROXY_URL)
+    model = OpenAIChatCompletionsModel(model=_OPENAI_AGENT_MODEL, openai_client=client)
 
     agent = OAIAgent(
         name="codex-diagnostic-analyst",
@@ -216,14 +219,14 @@ async def _run_diagnostic_analyst_openai(
             prompt,
             DIAGNOSTIC_ANALYST_PROMPT,
             model_provider="openai",
-            model_name="gpt-5.5",
+            model_name=_OPENAI_AGENT_MODEL,
         )
         current_trace_id = trace_id
         trace(
             "OPENAI_AGENT",
-            f"codex-analyst attempt={attempt}/{retries} model=gpt-5.5 api=chatcmpl",
+            f"codex-analyst attempt={attempt}/{retries} model={_OPENAI_AGENT_MODEL} api=chatcmpl",
             model_provider="openai",
-            model_name="gpt-5.5",
+            model_name=_OPENAI_AGENT_MODEL,
         )
         try:
             result = OAIRunner.run_streamed(
@@ -237,7 +240,9 @@ async def _run_diagnostic_analyst_openai(
                 pass
 
             output = result.final_output or ""
-            _accumulate_result_usage("codex-analyst", result, provider="openai", model="gpt-5.5")
+            _accumulate_result_usage(
+                "codex-analyst", result, provider="openai", model=_OPENAI_AGENT_MODEL
+            )
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
             trace_agent_response(
@@ -246,21 +251,21 @@ async def _run_diagnostic_analyst_openai(
                 output,
                 parsed,
                 model_provider="openai",
-                model_name="gpt-5.5",
+                model_name=_OPENAI_AGENT_MODEL,
             )
             if parsed is not None and _validate_output("diagnostic-analyst", parsed):
                 trace(
                     "OPENAI_AGENT",
                     "codex-analyst VALIDATED OK",
                     model_provider="openai",
-                    model_name="gpt-5.5",
+                    model_name=_OPENAI_AGENT_MODEL,
                 )
                 return parsed
             trace(
                 "OPENAI_AGENT",
                 "codex-analyst validate FAILED",
                 model_provider="openai",
-                model_name="gpt-5.5",
+                model_name=_OPENAI_AGENT_MODEL,
             )
             error = agent_infra._structured_error(
                 "diagnostic-analyst",
@@ -279,9 +284,11 @@ async def _run_diagnostic_analyst_openai(
                 "OPENAI_AGENT",
                 f"codex-analyst ERROR: {exc.__class__.__name__}",
                 model_provider="openai",
-                model_name="gpt-5.5",
+                model_name=_OPENAI_AGENT_MODEL,
             )
-            _accumulate_result_usage("codex-analyst", None, provider="openai", model="gpt-5.5")
+            _accumulate_result_usage(
+                "codex-analyst", None, provider="openai", model=_OPENAI_AGENT_MODEL
+            )
             error = agent_infra._structured_error(
                 "diagnostic-analyst",
                 "transport",

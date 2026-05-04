@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
-import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any
+
+from openai import AsyncOpenAI as _AsyncOpenAI
 
 _OAUTH_TOKEN_FILE = Path.home() / ".claude_oauth_token"
 
@@ -49,7 +52,10 @@ def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
 
 
 SDK_TIMEOUT_SECONDS = 300  # Max seconds for a single SDK agent call (analyst needs Execute time)
-log = logging.getLogger(__name__)
+
+from autoresearch_logging import get_logger
+
+log = get_logger(__name__)
 
 
 def _parse_json(text: str) -> dict[str, Any] | None:
@@ -92,6 +98,39 @@ def _structured_error(
 
 def _is_error_result(result: Any) -> bool:
     return isinstance(result, dict) and result.get("status") == "error"
+
+
+def _run_coroutine_sync(coro: Any) -> Any:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result_box: dict[str, Any] = {}
+    error_box: dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            result_box["value"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - exercised via regression test
+            error_box["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if error_box:
+        raise error_box["error"]
+    return result_box.get("value")
+
+
+_CLIENT_CACHE: dict[str, _AsyncOpenAI] = {}
+
+
+def _get_openai_client(base_url: str) -> _AsyncOpenAI:
+    """Return a cached AsyncOpenAI client for the given base URL."""
+    if base_url not in _CLIENT_CACHE:
+        _CLIENT_CACHE[base_url] = _AsyncOpenAI(api_key="unused", base_url=base_url)
+    return _CLIENT_CACHE[base_url]
 
 
 def _parse_json_detailed(text: str) -> dict[str, Any]:

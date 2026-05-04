@@ -4,8 +4,15 @@ import json
 import subprocess
 import sys
 
-from agent_token_usage import _accumulate_usage
-from research_paths import _OAUTH_PROXY_URL, _ROOT, _ensure_oauth_proxy, _parse_json
+from agent_token_usage import _accumulate_result_usage
+from research_paths import (
+    _CONDUCTOR_MODEL,
+    _OAUTH_PROXY_URL,
+    _ROOT,
+    _ensure_oauth_proxy,
+    _get_openai_client,
+    _parse_json,
+)
 from trace_sdk import trace, trace_agent_response
 
 
@@ -20,7 +27,6 @@ async def _call_analyst(
     from agents import Runner as OAIRunner
     from agents import function_tool
     from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-    from openai import AsyncOpenAI
 
     _ensure_oauth_proxy()
 
@@ -152,8 +158,8 @@ Be brutally honest."""
     )
     user_prompt = "\n\n".join(user_parts)
 
-    client = AsyncOpenAI(api_key="unused", base_url=_OAUTH_PROXY_URL)
-    model = OpenAIChatCompletionsModel(model="gpt-5.5", openai_client=client)
+    client = _get_openai_client(_OAUTH_PROXY_URL)
+    model = OpenAIChatCompletionsModel(model=_CONDUCTOR_MODEL, openai_client=client)
     agent = OAIAgent(
         name="codex-diagnostic-analyst",
         instructions=analyst_prompt,
@@ -165,7 +171,7 @@ Be brutally honest."""
         "CONDUCTOR",
         f"analyst dispatch focus='{focus_question[:80]}'",
         model_provider="openai",
-        model_name="gpt-5.5",
+        model_name=_CONDUCTOR_MODEL,
     )
     try:
         result = OAIRunner.run_streamed(
@@ -176,18 +182,7 @@ Be brutally honest."""
         )
         async for _ in result.stream_events():
             pass
-        for resp in result.raw_responses:
-            u = resp.usage
-            _accumulate_usage(
-                "analyst",
-                {
-                    "input_tokens": u.input_tokens,
-                    "output_tokens": u.output_tokens,
-                    "total_tokens": u.total_tokens,
-                },
-                provider="openai",
-                model="gpt-5.5",
-            )
+        _accumulate_result_usage("analyst", result, provider="openai", model=_CONDUCTOR_MODEL)
         output = result.final_output or ""
         parsed = _parse_json(output)
         if parsed:
@@ -196,7 +191,7 @@ Be brutally honest."""
                 "CONDUCTOR",
                 f"analyst OK anomalies={n_anomalies}",
                 model_provider="openai",
-                model_name="gpt-5.5",
+                model_name=_CONDUCTOR_MODEL,
             )
             trace_agent_response(
                 "analyst",
@@ -204,14 +199,14 @@ Be brutally honest."""
                 output,
                 parsed,
                 model_provider="openai",
-                model_name="gpt-5.5",
+                model_name=_CONDUCTOR_MODEL,
             )
             return json.dumps(parsed, indent=2)
         trace(
             "CONDUCTOR",
             f"analyst parse failed: {output[:200]}",
             model_provider="openai",
-            model_name="gpt-5.5",
+            model_name=_CONDUCTOR_MODEL,
         )
         return f"ANALYST ERROR: could not parse response: {output[:500]}"
     except Exception as exc:
@@ -219,7 +214,7 @@ Be brutally honest."""
             "CONDUCTOR",
             f"analyst ERROR: {exc}",
             model_provider="openai",
-            model_name="gpt-5.5",
+            model_name=_CONDUCTOR_MODEL,
         )
         return f"ANALYST ERROR: {exc}"
 
@@ -231,7 +226,6 @@ async def _call_web_researcher(query: str, context: str) -> str:
     from agents import Runner as OAIRunner
     from agents import WebSearchTool
     from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-    from openai import AsyncOpenAI
 
     _ensure_oauth_proxy()
 
@@ -261,8 +255,8 @@ Return ONLY the JSON object."""
 
     user_prompt = f"RESEARCH QUESTION: {query}\n\nCONTEXT: {context}"
 
-    client = AsyncOpenAI(api_key="unused", base_url=_OAUTH_PROXY_URL)
-    model = OpenAIChatCompletionsModel(model="gpt-5.5", openai_client=client)
+    client = _get_openai_client(_OAUTH_PROXY_URL)
+    model = OpenAIChatCompletionsModel(model=_CONDUCTOR_MODEL, openai_client=client)
     agent = OAIAgent(
         name="web-researcher",
         instructions=web_prompt,
@@ -274,7 +268,7 @@ Return ONLY the JSON object."""
         "CONDUCTOR",
         f"web_search dispatch query='{query[:80]}'",
         model_provider="openai",
-        model_name="gpt-5.5",
+        model_name=_CONDUCTOR_MODEL,
     )
     try:
         result = OAIRunner.run_streamed(
@@ -287,18 +281,9 @@ Return ONLY the JSON object."""
         )
         async for _ in result.stream_events():
             pass
-        for resp in result.raw_responses:
-            u = resp.usage
-            _accumulate_usage(
-                "web_researcher",
-                {
-                    "input_tokens": u.input_tokens,
-                    "output_tokens": u.output_tokens,
-                    "total_tokens": u.total_tokens,
-                },
-                provider="openai",
-                model="gpt-5.5",
-            )
+        _accumulate_result_usage(
+            "web_researcher", result, provider="openai", model=_CONDUCTOR_MODEL
+        )
         output = result.final_output or ""
         parsed = _parse_json(output)
         if parsed:
@@ -307,7 +292,7 @@ Return ONLY the JSON object."""
                 "CONDUCTOR",
                 f"web_search OK findings={n_findings}",
                 model_provider="openai",
-                model_name="gpt-5.5",
+                model_name=_CONDUCTOR_MODEL,
             )
             trace_agent_response(
                 "web-researcher",
@@ -315,14 +300,14 @@ Return ONLY the JSON object."""
                 output,
                 parsed,
                 model_provider="openai",
-                model_name="gpt-5.5",
+                model_name=_CONDUCTOR_MODEL,
             )
             return json.dumps(parsed, indent=2)
         trace(
             "CONDUCTOR",
             f"web_search parse failed: {output[:200]}",
             model_provider="openai",
-            model_name="gpt-5.5",
+            model_name=_CONDUCTOR_MODEL,
         )
         return f"WEB_SEARCH ERROR: could not parse: {output[:500]}"
     except Exception as exc:
@@ -330,6 +315,6 @@ Return ONLY the JSON object."""
             "CONDUCTOR",
             f"web_search ERROR: {exc}",
             model_provider="openai",
-            model_name="gpt-5.5",
+            model_name=_CONDUCTOR_MODEL,
         )
         return f"WEB_SEARCH ERROR: {exc}"

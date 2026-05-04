@@ -8,13 +8,16 @@ from agents import ModelSettings as OAIModelSettings
 from agents import RunConfig as OAIRunConfig
 from agents import Runner as OAIRunner
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-from openai import AsyncOpenAI
 
 import agent_infra
 import agent_prompts
 from agent_token_usage import _accumulate_result_usage
+from autoresearch_constants import DEFAULT_AGENT_MODEL
+from autoresearch_logging import get_logger
 from research_paths import _OAUTH_PROXY_URL
 from thesis_validator import ThesisValidationError, validate_thesis_dict
+
+log = get_logger(__name__)
 
 
 def _validate_output(agent_name: str, parsed: dict[str, Any]) -> bool:
@@ -64,6 +67,20 @@ def _validate_output(agent_name: str, parsed: dict[str, Any]) -> bool:
     return True
 
 
+async def _drain_streamed(streamed_run: Any) -> None:
+    stream = streamed_run.stream_events()
+    try:
+        async for _ in stream:
+            pass
+    finally:
+        close = getattr(stream, "aclose", None)
+        if close is not None:
+            try:
+                await close()
+            except Exception:
+                pass
+
+
 async def _run_single_agent(
     name: str,
     prompt: str,
@@ -74,12 +91,17 @@ async def _run_single_agent(
     """Run a single agent directly with the OpenAI Agents SDK."""
     from trace_sdk import trace, trace_agent_prompt, trace_agent_response
 
-    client = AsyncOpenAI(api_key="unused", base_url=_OAUTH_PROXY_URL)
-    model_name = getattr(agent_def, "model", "gpt-5.5")
+    client = agent_infra._get_openai_client(_OAUTH_PROXY_URL)
+    model_name = getattr(agent_def, "model", DEFAULT_AGENT_MODEL)
     model_provider = getattr(agent_def, "provider", "openai")
     model = OpenAIChatCompletionsModel(model=model_name, openai_client=client)
-
     model_settings = OAIModelSettings(store=False)
+    agent = OAIAgent(
+        name=name,
+        instructions=agent_def.prompt,
+        tools=list(agent_def.tools or []),
+        model=model,
+    )
 
     for attempt in range(1, retries + 1):
         trace_id = trace_agent_prompt(
@@ -96,40 +118,16 @@ async def _run_single_agent(
             model_name=model_name,
         )
         try:
-            agent = OAIAgent(
-                name=name,
-                instructions=agent_def.prompt,
-                tools=list(agent_def.tools or []),
-                model=model,
+            result = OAIRunner.run_streamed(
+                agent,
+                prompt,
+                max_turns=agent_def.maxTurns or 10,
+                run_config=OAIRunConfig(
+                    model_settings=model_settings,
+                    tracing_disabled=True,
+                ),
             )
-
-            async def _run_once():
-                result = OAIRunner.run_streamed(
-                    agent,
-                    prompt,
-                    max_turns=agent_def.maxTurns or 10,
-                    run_config=OAIRunConfig(
-                        model_settings=model_settings,
-                        tracing_disabled=True,
-                    ),
-                )
-                stream = result.stream_events()
-                try:
-                    while True:
-                        try:
-                            await asyncio.wait_for(anext(stream), timeout)
-                        except StopAsyncIteration:
-                            break
-                finally:
-                    close_stream = getattr(stream, "aclose", None)
-                    if close_stream is not None:
-                        try:
-                            await close_stream()
-                        except Exception:
-                            pass
-                return result
-
-            result = await asyncio.wait_for(_run_once(), timeout)
+            await asyncio.wait_for(_drain_streamed(result), timeout)
         except asyncio.TimeoutError:
             trace(
                 "AGENT_SDK",
@@ -172,7 +170,8 @@ async def _run_single_agent(
         if hasattr(result, "final_output_as"):
             try:
                 result_text = result.final_output_as(str) or ""
-            except Exception:
+            except Exception as exc:
+                log.warning("final_output_as failed for agent %s: %s", name, exc)
                 result_text = ""
         if not result_text:
             final_output = getattr(result, "final_output", None)

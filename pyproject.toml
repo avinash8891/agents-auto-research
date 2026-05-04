@@ -29,6 +29,7 @@ py-modules = [
     "autoresearch_controller",
     "autoresearch_experiment",
     "autoresearch_logging",
+    "autoresearch_orchestration",
     "autoresearch_planning",
     "autoresearch_research",
     "autoresearch_state",
@@ -120,6 +121,7 @@ source = [
     "autoresearch_planning",
     "autoresearch_research",
     "autoresearch_experiment",
+    "autoresearch_orchestration",
     "compiler_pipeline",
     "research_conductor",
 ]
@@ -134,9 +136,7 @@ exclude_lines = [
 ]
 show_missing = true
 skip_covered = false
-# Initial gate set to 70% on the union of autoresearch_* modules. Will
-# ratchet to 80% once integration test fixtures land in PR 5.
-fail_under = 70
+fail_under = 80
 
 
 [project]
