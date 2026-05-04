@@ -654,6 +654,8 @@ def main() -> int:
         "MAIN",
         f"Autoresearch loop starting family={args.family} job={job} session={get_session_id()} log={get_log_file()}",
     )
+    _MAX_CONSECUTIVE_RESEARCH_REQUIRED = 10
+    consecutive_research_required = 0
     while True:
         code = controller.execute_once()
         if code != 0:
@@ -665,11 +667,19 @@ def main() -> int:
         if current == "blocked":
             blockers = state.get("blockers", [])
             if any(b.get("kind") == "research_required" for b in blockers):
+                consecutive_research_required += 1
+                if consecutive_research_required >= _MAX_CONSECUTIVE_RESEARCH_REQUIRED:
+                    trace(
+                        "MAIN",
+                        f"research_required blocker persisted for {consecutive_research_required} consecutive iterations; treating as terminal",
+                    )
+                    return 1
                 continue
             # `execute_once()` already performs the only recoverable blocked
             # transition (`research_required`). Any remaining blocked state is
             # terminal for the process.
             return 1
+        consecutive_research_required = 0
 
 
 if __name__ == "__main__":

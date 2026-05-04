@@ -502,7 +502,7 @@ def _event_span(
 def begin_hypothesis(name: str) -> str:
     hypothesis_id = _STATE.begin_hypothesis(name)
     trace("HYPOTHESIS", f"BEGIN {hypothesis_id} name={name}")
-    _STATE.next_seq()
+    # _record_event reads _STATE.seq passively (no second increment)
     _record_event(
         source_module="trace_sdk",
         category="lifecycle",

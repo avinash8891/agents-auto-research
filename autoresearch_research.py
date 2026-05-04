@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from pydantic import ValidationError
 
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
@@ -918,14 +919,18 @@ def _handle_needs_code(
     thesis_id = result.get("generated_thesis_id", "unknown")
     thesis = result.get("thesis", {})
     log.warning(f"LOOP_HALT thesis={thesis_id} requires code change")
+    thesis_payload = dict(thesis)
+    thesis_payload.setdefault("thesis_id", thesis_id)
+    thesis_payload.setdefault("strategy_family", controller.family.name)
+    thesis_payload["requires_code_change"] = True
     try:
-        thesis_payload = dict(thesis)
-        thesis_payload.setdefault("thesis_id", thesis_id)
-        thesis_payload.setdefault("strategy_family", controller.family.name)
-        thesis_payload["requires_code_change"] = True
-        from compiler_pipeline import compile_research_thesis
+        validated = ResearchThesis.model_validate(thesis_payload)
+    except ValidationError:
+        raise  # schema errors are deterministic — propagate loud
+    from compiler_pipeline import compile_research_thesis
 
-        compile_research_thesis(ResearchThesis.model_validate(thesis_payload), controller.root)
+    try:
+        compile_research_thesis(validated, controller.root)
     except Exception as exc:
         log.warning(
             "LOOP_HALT thesis=%s could not materialize builder artifacts: %s",

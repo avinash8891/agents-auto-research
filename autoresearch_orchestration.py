@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -122,7 +123,7 @@ def build_missing_primitives_for_state(
 
     try:
         builder_result = compiler_pipeline.build_missing_primitives(controller.root, thesis_id)
-    except Exception as exc:
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         builder_result = {
             "status": "error",
             "reason": f"builder exception for {thesis_id}: {exc}",

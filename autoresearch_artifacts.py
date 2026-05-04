@@ -8,8 +8,11 @@ specific lookups (research artifacts, thesis proposals, run-queue artifacts).
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 from artifact_io import read_json_artifacts as read_artifact_json_files
 from autoresearch_state import ExperimentRecord
@@ -52,7 +55,13 @@ def read_research_artifacts(
             continue
         try:
             artifact_job = int(artifact["job"])
-        except (TypeError, ValueError, KeyError):
+        except (TypeError, ValueError, KeyError) as exc:
+            _log.warning(
+                "Skipping artifact with malformed job field (path=%s, job=%r): %s",
+                artifact.get("artifact_path", "<unknown>"),
+                artifact.get("job"),
+                exc,
+            )
             continue
         if artifact_job == job:
             matched.append(artifact)
