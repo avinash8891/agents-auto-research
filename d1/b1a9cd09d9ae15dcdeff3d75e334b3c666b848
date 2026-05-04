@@ -1,0 +1,25 @@
+agent_infra.py
+  b0d338bf872aadf6 133-135
+tests/test_agent_token_usage.py
+  b0d338bf872aadf6 254,258-261,265,268-271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "d1b1a9cd09d9ae15dcdeff3d75e334b3c666b848",
+  "prompts": {
+    "b0d338bf872aadf6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8ae7f6a2-ac67-4f9e-9b8f-85b989f60f63",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 13,
+      "total_deletions": 12,
+      "accepted_lines": 13,
+      "overriden_lines": 0
+    }
+  }
+}
