@@ -1,0 +1,23 @@
+autoresearch_artifacts.py
+  81bc3bdee8fa7859 14-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "0897da5b82f7fb322e2bdc6b46710a46f7313cd3",
+  "prompts": {
+    "81bc3bdee8fa7859": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "59ea692e-a997-4a9d-9158-097859e3e830",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 2,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}
