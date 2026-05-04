@@ -100,7 +100,11 @@ STATE_PATH = ROOT / "autoresearch.next.json"
 CURRENT_MD_PATH = ROOT / "autoresearch.current.md"
 
 
-def _load_max_consecutive_research_required() -> int:
+def max_consecutive_research_required() -> int:
+    """Read AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED at call time.
+
+    Lazy so pytest's monkeypatch.setenv after import still takes effect.
+    """
     raw = os.environ.get("AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED", "10")
     try:
         value = int(raw)
@@ -115,7 +119,6 @@ def _load_max_consecutive_research_required() -> int:
     return value
 
 
-MAX_CONSECUTIVE_RESEARCH_REQUIRED = _load_max_consecutive_research_required()
 IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
 
 
@@ -686,7 +689,7 @@ def main() -> int:
             blockers = state.get("blockers", [])
             if any(b.get("kind") == "research_required" for b in blockers):
                 consecutive_research_required += 1
-                if consecutive_research_required >= MAX_CONSECUTIVE_RESEARCH_REQUIRED:
+                if consecutive_research_required >= max_consecutive_research_required():
                     trace(
                         "MAIN",
                         f"research_required blocker persisted for {consecutive_research_required} consecutive iterations; treating as terminal",

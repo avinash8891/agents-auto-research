@@ -55,7 +55,7 @@ def read_research_artifacts(
             continue
         try:
             artifact_job = int(artifact["job"])
-        except (TypeError, ValueError, KeyError) as exc:
+        except (TypeError, ValueError) as exc:
             _log.warning(
                 "Skipping artifact with malformed job field (path=%s, job=%r): %s",
                 artifact.get("artifact_path", "<unknown>"),

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from pydantic import ValidationError
 
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
@@ -923,24 +924,37 @@ def _handle_needs_code(
     thesis_payload.setdefault("thesis_id", thesis_id)
     thesis_payload.setdefault("strategy_family", controller.family.name)
     thesis_payload["requires_code_change"] = True
-    # Normalize before validation so mechanism_dimension aliases and
-    # raw expected_effects/disqualifiers match ResearchThesis schema.
-    # Mirrors thesis_validator.validate_thesis_dict (one home per concept).
-    validated = ResearchThesis.model_validate(normalize_thesis_payload(thesis_payload))
-    from compiler_pipeline import compile_research_thesis
-
-    try:
-        compile_research_thesis(validated, controller.root)
-    except Exception as exc:
-        log.warning(
-            "LOOP_HALT thesis=%s could not materialize builder artifacts: %s",
-            thesis_id,
-            exc,
-        )
+    # Halt bookkeeping is unconditional: the conductor has already decided this
+    # thesis needs a code change. Validation/compilation below is a best-effort
+    # builder-artifact materialization step; any failure must not skip the halt
+    # state mutation or the operator notification at _close_run.
     state["state"] = "halted"
     state["halted_reason"] = "requires_code_change"
     state["halted_thesis_id"] = thesis_id
     state["halted_thesis"] = thesis
+    # Normalize before validation so mechanism_dimension aliases and raw
+    # expected_effects/disqualifiers match ResearchThesis schema (mirrors
+    # thesis_validator.validate_thesis_dict).
+    try:
+        validated = ResearchThesis.model_validate(normalize_thesis_payload(thesis_payload))
+    except ValidationError as exc:
+        log.warning(
+            "LOOP_HALT thesis=%s schema validation failed; skipping compile: %s",
+            thesis_id,
+            exc,
+        )
+        validated = None
+    if validated is not None:
+        from compiler_pipeline import compile_research_thesis
+
+        try:
+            compile_research_thesis(validated, controller.root)
+        except Exception as exc:
+            log.warning(
+                "LOOP_HALT thesis=%s could not materialize builder artifacts: %s",
+                thesis_id,
+                exc,
+            )
     best = state.get("current_best", {})
     _close_run(
         controller,
