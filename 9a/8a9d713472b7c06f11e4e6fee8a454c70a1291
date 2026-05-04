@@ -1,0 +1,35 @@
+agent_token_usage.py
+  6282a61e8b4a52b8 3,6-7,12-56,63-64,66-72,87-88,90-95,99-112,119-120,128-135,142-143,147-148,184-185
+scripts/token_audit.py
+  6282a61e8b4a52b8 1-189
+agent_runners.py
+  6282a61e8b4a52b8 140,157,169
+trace_sdk.py
+  6282a61e8b4a52b8 535-573
+agent_openai_calls.py
+  6282a61e8b4a52b8 65,109,240,284
+research_subagents.py
+  6282a61e8b4a52b8 188-189,299-300
+research_conductor.py
+  6282a61e8b4a52b8 281-282,307-308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "9a8a9d713472b7c06f11e4e6fee8a454c70a1291",
+  "prompts": {
+    "6282a61e8b4a52b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "94abb7d7-4a32-4cc9-b3cf-2ebd079af057",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 478,
+      "total_deletions": 153,
+      "accepted_lines": 339,
+      "overriden_lines": 0
+    }
+  }
+}
