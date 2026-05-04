@@ -8,8 +8,6 @@ reruns, or research blocking.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +23,8 @@ from autoresearch_logging import get_logger
 from autoresearch_state import ExperimentRecord
 from backtest.runtime_config import load_runtime_config
 from compiler_pipeline import compile_proposal_artifact
+from persistence_utils import write_text_atomic as _write_text_atomic
+from persistence_utils import write_yaml_atomic as _write_yaml_atomic
 from strategies import STRATEGIES
 from strategy_family import StrategyFamily
 from trace_sdk import trace
@@ -42,29 +42,6 @@ DEFAULT_CONFIG_ORDER = [
 
 THESIS_FAMILY: dict[str, str] = {}
 COMBINATION_RULES: dict[tuple[str, str], str] = {}
-
-
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        dir=path.parent,
-        prefix=f"{path.name}.",
-        suffix=".tmp",
-    )
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_path, path)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
-        raise
-
-
-def _write_yaml_atomic(path: Path, payload: Any) -> None:
-    _write_text_atomic(path, yaml.dump(payload, default_flow_style=False))
 
 
 # ── Variant discovery ─────────────────────────────────────────────
@@ -98,7 +75,6 @@ def pending_configs(
     run_queue_dir: Path,
     results: list[ExperimentRecord],
 ) -> list[str]:
-    _ = family  # Reserved for future family-specific queue policies.
     return queue_from_thesis_artifacts(run_queue_dir, root, results)
 
 
@@ -274,10 +250,7 @@ def _merge_combo_configs(
     defaults = STRATEGIES[family.name].get_defaults()
     if "data_universe" in defaults:
         merged.setdefault("data_universe", defaults["data_universe"])
-    if family_a == "universe" and family_b == "exit":
-        merged.setdefault("validation_start", "2020-01-01")
-        merged.setdefault("validation_end", "2023-12-31")
-    if family_b == "universe" and family_a == "exit":
+    if {"universe", "exit"} == {family_a, family_b}:
         merged.setdefault("validation_start", "2020-01-01")
         merged.setdefault("validation_end", "2023-12-31")
     merged["_combination"] = {

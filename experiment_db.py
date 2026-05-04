@@ -3,26 +3,24 @@
 from __future__ import annotations
 
 import json
-import logging
 import sqlite3
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from autoresearch_logging import get_logger
 from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
 from config_hash import _config_hash
 from persistence_utils import (
     json_dumps_strict,
     json_loads_metric_sentinels,
+)
+from persistence_utils import utc_now_iso8601 as _iso8601_utc_now
+from persistence_utils import (
     write_text_atomic,
 )
 
-log = logging.getLogger(__name__)
-
-
-def _iso8601_utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+log = get_logger(__name__)
 
 
 def _coerce_metric_float(value: Any, *, default: float = 0.0) -> float:
@@ -456,36 +454,15 @@ class ExperimentDB:
         with self._connect() as conn:
             conn.execute("DELETE FROM research_thesis_attempts")
             for row in rows:
-                if not isinstance(row, dict) or "thesis_id" not in row:
-                    conn.execute(
-                        """
-                        INSERT INTO research_thesis_attempts (
-                            research_round_id, attempt_number, thesis_id, strategy_family,
-                            config_changes_json, validator_status, mechanism_dimension,
-                            hypothesis, mechanism, rejection_reason, selected_for_execution,
-                            created_at_utc
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            row.get("research_round_id", "") if isinstance(row, dict) else "",
-                            row.get("attempt_number", 0) if isinstance(row, dict) else 0,
-                            "",
-                            row.get("strategy_family", "") if isinstance(row, dict) else "",
-                            json_dumps_strict(row),
-                            row.get("validator_status", "") if isinstance(row, dict) else "",
-                            row.get("mechanism_dimension", "") if isinstance(row, dict) else "",
-                            row.get("hypothesis", "") if isinstance(row, dict) else "",
-                            row.get("mechanism", "") if isinstance(row, dict) else "",
-                            row.get("rejection_reason", "") if isinstance(row, dict) else "",
-                            0,
-                            (
-                                row.get("created_at_utc", _iso8601_utc_now())
-                                if isinstance(row, dict)
-                                else _iso8601_utc_now()
-                            ),
-                        ),
-                    )
-                    continue
+                invalid = not isinstance(row, dict) or "thesis_id" not in row
+                r = row if isinstance(row, dict) else {}
+                thesis_id = "" if invalid else r.get("thesis_id", "")
+                config_changes = (
+                    json_dumps_strict(row)
+                    if invalid
+                    else json_dumps_strict(r.get("config_changes", {}))
+                )
+                selected = 0 if invalid else int(r.get("selected_for_execution", 0))
                 conn.execute(
                     """
                     INSERT INTO research_thesis_attempts (
@@ -496,18 +473,18 @@ class ExperimentDB:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        row.get("research_round_id", ""),
-                        row.get("attempt_number", 0),
-                        row.get("thesis_id", ""),
-                        row.get("strategy_family", ""),
-                        json_dumps_strict(row.get("config_changes", {})),
-                        row.get("validator_status", ""),
-                        row.get("mechanism_dimension", ""),
-                        row.get("hypothesis", ""),
-                        row.get("mechanism", ""),
-                        row.get("rejection_reason", ""),
-                        int(row.get("selected_for_execution", 0)),
-                        row.get("created_at_utc", _iso8601_utc_now()),
+                        r.get("research_round_id", ""),
+                        r.get("attempt_number", 0),
+                        thesis_id,
+                        r.get("strategy_family", ""),
+                        config_changes,
+                        r.get("validator_status", ""),
+                        r.get("mechanism_dimension", ""),
+                        r.get("hypothesis", ""),
+                        r.get("mechanism", ""),
+                        r.get("rejection_reason", ""),
+                        selected,
+                        r.get("created_at_utc", _iso8601_utc_now()),
                     ),
                 )
             conn.commit()
@@ -562,6 +539,10 @@ class ExperimentDB:
                 )
             )
         return results
+
+    def reload(self) -> None:
+        """Invalidate the in-memory cache so the next call re-reads from SQLite."""
+        self._records = None
 
     def _load(self) -> list[ExperimentResult]:
         if self._records is not None:
@@ -664,6 +645,7 @@ class ExperimentDB:
 
     def best_by_metric(self, metric: str) -> ExperimentResult | None:
         records = self._load()
+        direction = self.best_direction()
         best = None
         for r in records:
             val = r.validation_metrics.get(metric)
@@ -677,7 +659,9 @@ class ExperimentDB:
             best_val = best.validation_metrics.get(metric)
             if best_val is None:
                 best_val = best.train_metrics.get(metric)
-            if val > best_val:
+            if direction == "higher" and val > best_val:
+                best = r
+            elif direction != "higher" and val < best_val:
                 best = r
         return best
 

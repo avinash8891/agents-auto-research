@@ -51,6 +51,12 @@ def write_json_atomic(path: Path, payload: Any) -> None:
     write_text_atomic(path, json_dumps_strict(payload) + "\n")
 
 
+def write_yaml_atomic(path: Path, payload: Any) -> None:
+    import yaml
+
+    write_text_atomic(path, yaml.dump(payload, default_flow_style=False))
+
+
 def _json_safe_value(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         if math.isnan(value):
@@ -77,8 +83,3 @@ def _json_relax_value(value: Any) -> Any:
     if isinstance(value, list):
         return [_json_relax_value(item) for item in value]
     return value
-
-
-def write_json_atomic_strict(path: Path, payload: Any) -> None:
-    """Write JSON after converting non-finite floats into string sentinels."""
-    write_text_atomic(path, json_dumps_strict(payload) + "\n")

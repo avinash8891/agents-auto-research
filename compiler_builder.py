@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import shutil
 import string
@@ -20,8 +21,25 @@ BUILDER_CLI_MODEL = "gpt-5.4-mini"
 BUILDER_CLI_REASONING_EFFORT = "medium"
 
 
+def _coerce_subprocess_output(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str, Any]) -> list[str]:
+    rp = proposal.get("requested_primitives")
+    mp = compilation.get("missing_primitives")
+    if rp is not None:
+        return rp
+    if mp is not None:
+        return mp
+    return sorted((proposal.get("config_changes") or {}).keys())
+
+
 def _find_cli() -> str | None:
-    """Find the codex CLI."""
     if shutil.which("codex"):
         return "codex"
     return None
@@ -110,13 +128,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 "validation_passed": False,
             }
         normalized_contract = compilation.get("normalized_contract") or []
-        _rp = proposal.get("requested_primitives")
-        _mp = compilation.get("missing_primitives")
-        missing_primitives = (
-            _rp
-            if _rp is not None
-            else _mp if _mp is not None else sorted((proposal.get("config_changes") or {}).keys())
-        )
+        missing_primitives = _resolve_missing_primitives(proposal, compilation)
         generated_name = f"experiments/{thesis_id}/runtime_config.json"
         config_path = generated_name
         builder_requests_dir = root / family.builder_requests_dirname
@@ -263,12 +275,16 @@ Constraints:
         prompt,
     ]
 
-    _write_builder_attempt_artifacts(
+    _write_artifacts = functools.partial(
+        _write_builder_attempt_artifacts,
         artifact_dir=attempt_dir,
         prompt=prompt,
         command=builder_cmd,
         cwd=root,
         timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+    )
+
+    _write_artifacts(
         result={
             "status": "requested",
             "reason": "builder queued",
@@ -290,14 +306,7 @@ Constraints:
                 "generated_config": None,
                 "validation_passed": False,
             }
-            _write_builder_attempt_artifacts(
-                artifact_dir=attempt_dir,
-                prompt=prompt,
-                command=builder_cmd,
-                cwd=root,
-                timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
-                result=result,
-            )
+            _write_artifacts(result=result)
             trace(
                 "BUILDER",
                 f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
@@ -312,14 +321,7 @@ Constraints:
             "generated_config": config_path,
             "validation_passed": True,
         }
-        _write_builder_attempt_artifacts(
-            artifact_dir=attempt_dir,
-            prompt=prompt,
-            command=builder_cmd,
-            cwd=root,
-            timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
-            result=result,
-        )
+        _write_artifacts(result=result)
         trace(
             "BUILDER",
             f"finish thesis={thesis_id} status=completed model={BUILDER_CLI_MODEL}",
@@ -337,14 +339,7 @@ Constraints:
             "generated_config": None,
             "validation_passed": False,
         }
-        _write_builder_attempt_artifacts(
-            artifact_dir=attempt_dir,
-            prompt=prompt,
-            command=builder_cmd,
-            cwd=root,
-            timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
-            result=result,
-        )
+        _write_artifacts(result=result)
         trace(
             "BUILDER",
             f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
@@ -354,11 +349,9 @@ Constraints:
         )
         return result
 
-    cmd = builder_cmd
-
     try:
         proc = subprocess.run(
-            cmd,
+            builder_cmd,
             capture_output=True,
             text=True,
             cwd=str(root),
@@ -376,16 +369,7 @@ Constraints:
             "exit_code": None,
             "duration_seconds": round(time.monotonic() - started_at, 3),
         }
-        _write_builder_attempt_artifacts(
-            artifact_dir=attempt_dir,
-            prompt=prompt,
-            command=cmd,
-            cwd=root,
-            timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
-            result=result,
-            stdout=stdout,
-            stderr=stderr,
-        )
+        _write_artifacts(result=result, stdout=stdout, stderr=stderr)
         trace(
             "BUILDER",
             f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
@@ -394,7 +378,7 @@ Constraints:
             model_name=BUILDER_CLI_MODEL,
         )
         return result
-    result = (proc.stdout or "") + (proc.stderr or "")
+    proc_output = (proc.stdout or "") + (proc.stderr or "")
 
     generated = config_path if config_abspath.exists() else None
     if generated:
@@ -410,16 +394,7 @@ Constraints:
                 "timed_out": False,
                 "duration_seconds": round(time.monotonic() - started_at, 3),
             }
-            _write_builder_attempt_artifacts(
-                artifact_dir=attempt_dir,
-                prompt=prompt,
-                command=cmd,
-                cwd=root,
-                timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
-                result=out,
-                stdout=proc.stdout or "",
-                stderr=proc.stderr or "",
-            )
+            _write_artifacts(result=out, stdout=proc.stdout or "", stderr=proc.stderr or "")
             trace(
                 "BUILDER",
                 f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
@@ -430,23 +405,14 @@ Constraints:
             return out
     out = {
         "status": "completed" if generated else "error",
-        "reason": result,
+        "reason": proc_output,
         "generated_config": generated,
         "validation_passed": bool(generated),
         "exit_code": proc.returncode,
         "timed_out": False,
         "duration_seconds": round(time.monotonic() - started_at, 3),
     }
-    _write_builder_attempt_artifacts(
-        artifact_dir=attempt_dir,
-        prompt=prompt,
-        command=cmd,
-        cwd=root,
-        timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
-        result=out,
-        stdout=proc.stdout or "",
-        stderr=proc.stderr or "",
-    )
+    _write_artifacts(result=out, stdout=proc.stdout or "", stderr=proc.stderr or "")
     trace(
         "BUILDER",
         f"finish thesis={thesis_id} status={out['status']} model={BUILDER_CLI_MODEL}",
@@ -455,11 +421,3 @@ Constraints:
         model_name=BUILDER_CLI_MODEL,
     )
     return out
-
-
-def _coerce_subprocess_output(value: Any) -> str:
-    if value in (None, ""):
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return str(value)

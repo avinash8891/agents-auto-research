@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from itertools import count
 from pathlib import Path
-from typing import Any, Iterator
+from typing import IO, Any, Iterator
 
 from openinference.instrumentation import using_attributes
 from openinference.instrumentation.openai import OpenAIInstrumentor
@@ -18,16 +18,14 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, Sp
 from traceloop.sdk import Traceloop
 from traceloop.sdk.instruments import Instruments
 
+from persistence_utils import write_text_atomic
+
 # Traceloop SDK is the OpenLLMetry layer used for model/workflow instrumentation.
 
 _LOG_DIR = Path(__file__).resolve().parent / "logs"
 _LOG_DIR.mkdir(exist_ok=True)
 
 _SESSION_ID = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-
-
-def _ts() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] + "Z"
 
 
 def _canonical_ts() -> str:
@@ -125,6 +123,7 @@ class TraceRuntimeState:
     current_hypothesis_name: str | None = None
     event_counter: count = field(default_factory=lambda: count(1))
     exporter: JsonLineTraceExporter | None = None
+    log_handle: IO[str] | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not self.run_id:
@@ -145,7 +144,15 @@ class TraceRuntimeState:
     def next_event_id(self) -> str:
         return f"evt-{next(self.event_counter):08d}"
 
+    def get_log_handle(self) -> IO[str]:
+        if self.log_handle is None:
+            self.log_handle = self.log_file.open("a", encoding="utf-8")
+        return self.log_handle
+
     def reset_for_round(self, round_number: int) -> None:
+        if self.log_handle is not None:
+            self.log_handle.close()
+            self.log_handle = None
         self.seq = 0
         self.hypothesis_counter = 0
         prefix = f"{self.family}-" if self.family else ""
@@ -193,9 +200,30 @@ _OPENAI_INSTRUMENTOR = OpenAIInstrumentor()
 
 
 def _write_text(path: Path, content: str) -> str:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    write_text_atomic(path, content)
     return str(path)
+
+
+def _render_artifact_header(
+    *,
+    run_id: str,
+    hypothesis_id: str | None,
+    hypothesis_name: str | None,
+    timestamp: str,
+    agent_name: str | None = None,
+    trace_id: str | None = None,
+) -> list[str]:
+    lines = [
+        f"=== RUN_ID: {run_id} ===",
+        f"=== HYPOTHESIS_ID: {hypothesis_id or ''} ===",
+        f"=== HYPOTHESIS_NAME: {hypothesis_name or ''} ===",
+    ]
+    if agent_name is not None:
+        lines.append(f"=== AGENT: {agent_name} ===")
+    lines.append(f"=== TIMESTAMP: {timestamp} ===")
+    if trace_id is not None:
+        lines.append(f"=== TRACE_ID: {trace_id} ===")
+    return lines
 
 
 def _render_prompt_artifact(
@@ -209,13 +237,14 @@ def _render_prompt_artifact(
     prompt: str,
     system_prompt: str,
 ) -> str:
-    lines = [
-        f"=== RUN_ID: {run_id} ===",
-        f"=== HYPOTHESIS_ID: {hypothesis_id or ''} ===",
-        f"=== HYPOTHESIS_NAME: {hypothesis_name or ''} ===",
-        f"=== AGENT: {agent_name} ===",
-        f"=== TIMESTAMP: {timestamp} ===",
-        f"=== TRACE_ID: {trace_id} ===",
+    lines = _render_artifact_header(
+        run_id=run_id,
+        hypothesis_id=hypothesis_id,
+        hypothesis_name=hypothesis_name,
+        timestamp=timestamp,
+        agent_name=agent_name,
+        trace_id=trace_id,
+    ) + [
         "",
         "--- SYSTEM PROMPT ---",
         system_prompt,
@@ -238,13 +267,14 @@ def _render_response_artifact(
     raw_text: str,
     parsed: dict[str, Any] | None,
 ) -> str:
-    lines = [
-        f"=== RUN_ID: {run_id} ===",
-        f"=== HYPOTHESIS_ID: {hypothesis_id or ''} ===",
-        f"=== HYPOTHESIS_NAME: {hypothesis_name or ''} ===",
-        f"=== AGENT: {agent_name} ===",
-        f"=== TIMESTAMP: {timestamp} ===",
-        f"=== TRACE_ID: {trace_id} ===",
+    lines = _render_artifact_header(
+        run_id=run_id,
+        hypothesis_id=hypothesis_id,
+        hypothesis_name=hypothesis_name,
+        timestamp=timestamp,
+        agent_name=agent_name,
+        trace_id=trace_id,
+    ) + [
         "",
         "--- RAW RESPONSE ---",
         raw_text,
@@ -267,11 +297,12 @@ def _render_ssh_artifact(
     stdout: str,
     stderr: str,
 ) -> str:
-    lines = [
-        f"=== RUN_ID: {run_id} ===",
-        f"=== HYPOTHESIS_ID: {hypothesis_id or ''} ===",
-        f"=== HYPOTHESIS_NAME: {hypothesis_name or ''} ===",
-        f"=== TIMESTAMP: {timestamp} ===",
+    lines = _render_artifact_header(
+        run_id=run_id,
+        hypothesis_id=hypothesis_id,
+        hypothesis_name=hypothesis_name,
+        timestamp=timestamp,
+    ) + [
         "",
         "--- COMMAND ---",
         command,
@@ -321,13 +352,14 @@ def _decode_json_attribute(value: Any) -> dict[str, Any]:
 
 def _log_line(component: str, message: str, data: dict[str, Any] | None, seq: int) -> None:
     htag = _hyp_tag()
-    timestamp = _ts()
+    timestamp = _canonical_ts()
     line = f"[{timestamp}] [{_STATE.run_id}]{htag} [{seq:05d}] [{component}] {message}"
     if data:
         line += f" | {json.dumps(data, default=str)}"
     line += "\n"
-    with _STATE.log_file.open("a", encoding="utf-8") as handle:
-        handle.write(line)
+    handle = _STATE.get_log_handle()
+    handle.write(line)
+    handle.flush()
     print(f"TRACE {_STATE.run_id}{htag} [{component}] {message}")
 
 
@@ -362,6 +394,10 @@ def _initialize_tracing() -> None:
     if _INITIALIZED:
         return
     _PROVIDER = _build_provider()
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        _bind_instrumentation()
+        _INITIALIZED = True
+        return
     Traceloop.init(
         app_name="agents-auto-research",
         disable_batch=True,
@@ -452,6 +488,7 @@ def _event_span(
 def begin_hypothesis(name: str) -> str:
     hypothesis_id = _STATE.begin_hypothesis(name)
     trace("HYPOTHESIS", f"BEGIN {hypothesis_id} name={name}")
+    _STATE.next_seq()
     _record_event(
         source_module="trace_sdk",
         category="lifecycle",
@@ -549,6 +586,7 @@ def record_usage_event(
     Fail-open: any exception during emission must not block the caller.
     """
     try:
+        _STATE.next_seq()  # seq read passively by _event_span via _STATE.seq
         _record_event(
             source_module="agent_token_usage",
             category="usage",
@@ -581,7 +619,7 @@ def trace_agent_prompt(
     seq = _STATE.next_seq()
     hid = _STATE.current_hypothesis_id or "global"
     trace_id = f"{hid}-{agent_name}-{seq:05d}"
-    timestamp = _ts()
+    timestamp = _canonical_ts()
     prompt_file = _STATE.hypothesis_dir / f"{trace_id}-prompt.txt"
     prompt_path = _write_text(
         prompt_file,
@@ -631,7 +669,7 @@ def trace_agent_response(
     model_name: str = "",
 ) -> None:
     seq = _STATE.next_seq()
-    timestamp = _ts()
+    timestamp = _canonical_ts()
     response_file = _STATE.hypothesis_dir / f"{trace_id}-response.txt"
     response_path = _write_text(
         response_file,
@@ -702,7 +740,7 @@ def trace_agent_tool_call(
 
 def trace_ssh(command: str, exit_code: int, stdout: str = "", stderr: str = "") -> None:
     seq = _STATE.next_seq()
-    timestamp = _ts()
+    timestamp = _canonical_ts()
     stdout_preview = stdout[:500].replace("\n", " | ") if stdout else ""
     stderr_preview = stderr[:300].replace("\n", " | ") if stderr else ""
     ssh_file = _STATE.hypothesis_dir / f"ssh-{seq:05d}.txt"

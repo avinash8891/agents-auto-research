@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from trace_sdk import record_event
+from trace_adapters import _emit_adapter_event
 
 
 def build_reflexio_payload(
@@ -56,12 +56,7 @@ def emit_reflexio_event(
     summary: str,
     payload: dict[str, Any] | None = None,
     artifact_paths: list[str] | None = None,
-):
-    return record_event(
-        source_module="trace_adapters.reflexio",
-        category="reflexio",
-        action=action,
-        summary=summary,
-        payload=payload,
-        artifact_paths=artifact_paths,
+) -> dict[str, Any]:
+    return _emit_adapter_event(
+        "reflexio", action=action, summary=summary, payload=payload, artifact_paths=artifact_paths
     )
