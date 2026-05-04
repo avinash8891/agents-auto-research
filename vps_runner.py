@@ -56,7 +56,6 @@ REMOTE_RUNTIME_ENV_EXACT_KEYS = {
     "AUTORESEARCH_VPS_USER",
 }
 REMOTE_RUNTIME_ENV_PERSISTED_KEYS = {
-    "AUTORESEARCH_GIT_REPO",
     "AUTORESEARCH_GIT_REF",
     "AUTORESEARCH_GIT_SHA",
     "AUTORESEARCH_JOB",
@@ -242,10 +241,6 @@ def _persisted_runtime_env_items() -> list[tuple[str, str]]:
         for key, value in _runtime_env_items()
         if key in REMOTE_RUNTIME_ENV_PERSISTED_KEYS
     ]
-
-
-def _remote_exec_environment() -> dict[str, str]:
-    return dict(_runtime_env_items())
 
 
 def render_runtime_env_file() -> str:
@@ -664,7 +659,7 @@ def main():
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()
     # Controller runs are long-lived; do not enforce a 10-minute SSH timeout.
-    _stdin, stdout, stderr = client.exec_command(cmd, environment=_remote_exec_environment())
+    _stdin, stdout, stderr = client.exec_command(cmd)
     exit_code, out, err = _stream_remote_command(stdout, stderr)
     elapsed = time.time() - t1
 
