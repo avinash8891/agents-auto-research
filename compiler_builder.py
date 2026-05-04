@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import string
 import subprocess
 import time
 from pathlib import Path
@@ -112,10 +113,10 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         builder_requests_dir = root / family.builder_requests_dirname
         attempt_dir = _builder_artifact_dir(root, family_name, thesis_id)
         prompt_extras = [
-            "- Thesis artifact: experiments/{thesis_id}/thesis.json",
-            "- Contract artifact: experiments/{thesis_id}/contract.json",
-            "- Thesis payload: {thesis_payload}",
-            "- Contract payload: {contract_payload}",
+            "- Thesis artifact: experiments/$thesis_id/thesis.json",
+            "- Contract artifact: experiments/$thesis_id/contract.json",
+            "- Thesis payload: $thesis_payload",
+            "- Contract payload: $contract_payload",
         ]
     else:
         compilation_family_name = None
@@ -223,7 +224,7 @@ Context:
 - Missing primitives: {json.dumps(missing_primitives, indent=2)}
 - Normalized contract: {json.dumps(normalized_contract, indent=2)}
 - Hypothesis: {proposal.get("hypothesis", "")}
-{chr(10).join(prompt_extras).format(
+{string.Template(chr(10).join(prompt_extras)).safe_substitute(
     thesis_id=thesis_id,
     thesis_payload=json.dumps(proposal, indent=2),
     contract_payload=json.dumps(compilation, indent=2),
