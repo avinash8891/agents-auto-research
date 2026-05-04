@@ -549,7 +549,6 @@ def record_usage_event(
     Fail-open: any exception during emission must not block the caller.
     """
     try:
-        _STATE.next_seq()
         _record_event(
             source_module="agent_token_usage",
             category="usage",

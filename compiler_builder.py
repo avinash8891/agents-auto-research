@@ -15,7 +15,7 @@ from strategies import STRATEGIES
 from strategy_family import load_family
 from trace_sdk import trace
 
-BUILDER_CLI_TIMEOUT_SECONDS = 300
+BUILDER_CLI_TIMEOUT_SECONDS = 900
 BUILDER_CLI_MODEL = "gpt-5.4-mini"
 BUILDER_CLI_REASONING_EFFORT = "medium"
 
@@ -92,7 +92,14 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     structured = _load_structured_thesis_artifacts(root, thesis_id)
     if structured is not None:
         proposal, compilation, proposal_path, compilation_path = structured
-        family_name = proposal.get("strategy_family") or compilation.get("strategy_family") or "orb"
+        family_name = proposal.get("strategy_family") or compilation.get("strategy_family")
+        if not family_name:
+            return {
+                "status": "error",
+                "reason": f"missing strategy_family in thesis artifacts for {thesis_id}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
         try:
             family = load_family(family_name)
         except (KeyError, ValueError) as exc:
@@ -103,10 +110,12 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 "validation_passed": False,
             }
         normalized_contract = compilation.get("normalized_contract") or []
+        _rp = proposal.get("requested_primitives")
+        _mp = compilation.get("missing_primitives")
         missing_primitives = (
-            proposal.get("requested_primitives")
-            or compilation.get("missing_primitives")
-            or sorted((proposal.get("config_changes") or {}).keys())
+            _rp
+            if _rp is not None
+            else _mp if _mp is not None else sorted((proposal.get("config_changes") or {}).keys())
         )
         generated_name = f"experiments/{thesis_id}/runtime_config.json"
         config_path = generated_name

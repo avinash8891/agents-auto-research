@@ -18,6 +18,7 @@ import yaml
 
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
+    DISCORD_COLOR_DISCARD,
     DISCORD_COLOR_ERROR,
     DISCORD_COLOR_SUCCESS,
     DISCORD_HTTP_TIMEOUT_SECONDS,
@@ -877,6 +878,17 @@ def _handle_needs_code(
     state["halted_thesis"] = thesis
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
+    best = state.get("current_best", {})
+    notify_discord(
+        f"🛑 {controller.family.name.upper()} HALTED — needs code change",
+        f"**Thesis:** `{thesis_id}`\n"
+        f"**Best PF:** {best.get('metric', '?')}\n\n"
+        f"**Hypothesis:** {thesis.get('hypothesis', '(no details captured)')}\n\n"
+        f"**Mechanism:** {thesis.get('mechanism', '')}\n\n"
+        f"**Config changes:** `{json.dumps(thesis.get('config_changes', {}))}`",
+        webhook=controller.family.discord_webhook,
+        color=DISCORD_COLOR_DISCARD,
+    )
     return state
 
 
