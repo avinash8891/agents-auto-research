@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
-from pydantic import ValidationError
 
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
@@ -41,6 +40,7 @@ from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_types import ResearchThesis
 from strategy_family import StrategyFamily
+from thesis_validator import normalize_thesis_payload
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
 from trace_adapters.halo import build_halo_export_package, build_halo_payload
 from trace_adapters.recursive_improve import (
@@ -923,10 +923,10 @@ def _handle_needs_code(
     thesis_payload.setdefault("thesis_id", thesis_id)
     thesis_payload.setdefault("strategy_family", controller.family.name)
     thesis_payload["requires_code_change"] = True
-    try:
-        validated = ResearchThesis.model_validate(thesis_payload)
-    except ValidationError:
-        raise  # schema errors are deterministic — propagate loud
+    # Normalize before validation so mechanism_dimension aliases and
+    # raw expected_effects/disqualifiers match ResearchThesis schema.
+    # Mirrors thesis_validator.validate_thesis_dict (one home per concept).
+    validated = ResearchThesis.model_validate(normalize_thesis_payload(thesis_payload))
     from compiler_pipeline import compile_research_thesis
 
     try:
