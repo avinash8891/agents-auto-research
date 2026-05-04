@@ -19,6 +19,7 @@ from pathlib import Path
 from autoresearch_logging import get_logger
 from eval_harness import latest_eval_result_path, run_eval
 from eval_metrics import compare_eval_results
+from persistence_utils import safe_stat_mtime
 
 log = get_logger(__name__)
 
@@ -84,7 +85,7 @@ def _load_prior_result(output_dir: Path, current_path: Path | None):
 
     from eval_metrics import EvalResult
 
-    most_recent = max(candidates, key=lambda p: p.stat().st_mtime)
+    most_recent = max(candidates, key=safe_stat_mtime)
     return EvalResult.from_dict(json.loads(most_recent.read_text(encoding="utf-8")))
 
 

@@ -182,3 +182,28 @@ def test_main_no_prior_completes(tmp_path, monkeypatch):
 def test_parser_unknown_metric_rejected():
     with pytest.raises(SystemExit):
         eval_cli._build_parser().parse_args(["--label", "x", "--primary-metric", "nope"])
+
+
+def test_load_prior_result_skips_deleted_file(tmp_path):
+    """Verify _load_prior_result doesn't crash when a file disappears between glob and stat."""
+    output = tmp_path / "out"
+    output.mkdir()
+    # Write then immediately delete — simulates TOCTOU: file exists during glob but not during stat
+    p1 = output / "a-2026-01-01.json"
+    p1.write_text(
+        json.dumps(
+            {
+                "label": "a",
+                "timestamp": "2026-01-01T00:00:00+00:00",
+                "repeat": 1,
+                "primary_metric_name": "compiled_rate",
+                "primary_metric": {"mean": 0.5, "stdev": 0.0, "min": 0.5, "max": 0.5},
+                "suites": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    p1.unlink()
+    # With fix: no FileNotFoundError, returns None (no valid candidates)
+    result = eval_cli._load_prior_result(output, current_path=None)
+    assert result is None

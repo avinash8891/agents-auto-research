@@ -23,6 +23,7 @@ from eval_metrics import (
     compare_eval_results,
 )
 from improvement_flags import ratchet_enabled
+from persistence_utils import safe_stat_mtime
 
 log = get_logger(__name__)
 
@@ -70,7 +71,7 @@ def _decision_benchmark(current_path: Path, eval_dir: Path) -> tuple[str, str, d
         return DECISION_INCONCLUSIVE, "eval_results dir missing", None
     candidates = sorted(
         (p for p in eval_dir.glob("*.json") if p != current_path),
-        key=lambda p: p.stat().st_mtime,
+        key=safe_stat_mtime,
     )
     if not candidates:
         return DECISION_INCONCLUSIVE, "no prior eval result", None

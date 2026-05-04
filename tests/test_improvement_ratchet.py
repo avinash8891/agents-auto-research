@@ -303,3 +303,12 @@ def test_apply_decision_none_records_null_audit(tmp_path, monkeypatch):
     assert row["halo_apply_reason"] is None
     assert row["halo_apply_verdict"] is None
     assert row["ratchet_verdict_raw"] == "keep"
+
+
+def test_safe_stat_mtime_returns_zero_on_deleted_file(tmp_path):
+    """safe_stat_mtime must return 0.0 rather than raise on a missing file."""
+    from persistence_utils import safe_stat_mtime
+
+    ghost = tmp_path / "ghost.json"
+    # File never existed — stat() would raise FileNotFoundError without the guard
+    assert safe_stat_mtime(ghost) == 0.0
