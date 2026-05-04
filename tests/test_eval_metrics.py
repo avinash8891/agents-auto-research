@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from eval_metrics import (
@@ -178,3 +180,24 @@ def test_eval_result_to_dict_round_trip_shape():
     assert d["label"] == "x"
     assert d["primary_metric_name"] == "compiled_rate"
     assert "primary_metric" in d
+
+
+def test_summarize_eval_raises_on_all_nan_compiled_rate():
+    """NaN compiled_rate must not silently propagate through fmean/stdev."""
+    suite = SuiteSummary(
+        compiled_rate=float("nan"),
+        quality_score_p50=None,
+        n_tasks=2,
+        n_compiled=0,
+    )
+    with pytest.raises(ValueError, match="non-finite"):
+        summarize_eval(label="x", timestamp="2026-01-01T00:00:00+00:00", suites=[suite])
+
+
+def test_summarize_eval_filters_nan_keeps_finite():
+    """A mix of finite and NaN compiled_rate: NaN filtered, finite values used."""
+    s1 = SuiteSummary(compiled_rate=0.5, quality_score_p50=None, n_tasks=4, n_compiled=2)
+    s2 = SuiteSummary(compiled_rate=float("nan"), quality_score_p50=None, n_tasks=4, n_compiled=0)
+    result = summarize_eval(label="x", timestamp="2026-01-01T00:00:00+00:00", suites=[s1, s2])
+    assert math.isfinite(result.primary_metric_mean)
+    assert result.primary_metric_mean == pytest.approx(0.5)

@@ -15,6 +15,7 @@ stdlib ``statistics`` to avoid pulling numpy in for simple stats.
 
 from __future__ import annotations
 
+import math
 import statistics
 from dataclasses import dataclass, field
 from typing import Iterable
@@ -196,6 +197,12 @@ def summarize_eval(
             raise ValueError("quality_score_p50 has no defined samples across suites")
     else:
         raise ValueError(f"unknown primary_metric_name: {primary_metric_name!r}")
+    finite_primary = [v for v in primary_values if math.isfinite(v)]
+    if not finite_primary:
+        raise ValueError(
+            f"all {len(primary_values)} sample(s) for {primary_metric_name!r} are non-finite"
+        )
+    primary_values = finite_primary
     mean = statistics.fmean(primary_values)
     stdev = statistics.stdev(primary_values) if len(primary_values) > 1 else 0.0
     p50_values = [s.quality_score_p50 for s in suites if s.quality_score_p50 is not None]
