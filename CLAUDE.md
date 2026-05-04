@@ -36,6 +36,8 @@ Operating discipline for Claude Code in this repository. Project-specific contex
 
 ## Hygiene
 
+- `get_logger` must NOT set `propagate = False` — pytest caplog captures via the root logger; blocking propagation makes all `caplog` assertions return empty strings. No duplicate output risk in production (no root handler attached outside tests).
+- `PYTEST_CURRENT_TEST` is NOT set during pytest module import/collection — only during test execution. Module-level code cannot use it as an import guard. Use it only inside functions.
 - No new dependency without justification in commit message. Stdlib → existing deps → new dep, in that order.
 - Hardcoded tunable numbers (thresholds, limits, batch sizes, weights) = config smell. Put them in config, validated on load.
 - Size-down tactics: data over logic (lookup tables beat if-chains), stdlib first, no wrapper-only-renames, no premature abstraction, no scaffolding comments, delete dead code on contact (including commented-out blocks — git preserves what was there).
@@ -45,8 +47,11 @@ Operating discipline for Claude Code in this repository. Project-specific contex
 ```bash
 # Tests
 pytest                                        # run full suite
-pytest --cov=. --cov-report=term-missing      # with line coverage
+pytest --cov --cov-report=term-missing        # coverage for tracked source modules (gate: 80%)
 pytest tests/test_agent_token_usage.py -v     # single file
+
+# Lint / format
+pre-commit run --all-files                    # run ruff, isort, black, cubic-review on all files
 
 # Run research (local)
 python autoresearch_controller.py --family ema   # run EMA strategy family
@@ -84,14 +89,14 @@ Copy `.env.example` → `.env`. Required vars:
 
 ```
 autoresearch_controller.py   ← main entry point; state machine per strategy family
-  └─ autoresearch_orchestration.py   ← round orchestration (planning → research → compile)
-       ├─ autoresearch_planning.py   ← thesis generation
-       ├─ autoresearch_research.py   ← per-thesis research rounds
-       ├─ autoresearch_experiment.py ← experiment logging + metric evaluation
-       └─ compiler_pipeline.py       ← top-level compiler orchestrator
-            ├─ compiler_builder.py       ← builds missing strategy primitives
-            ├─ compiler_operationalize.py ← operationalizes compiled strategy code
-            └─ compiler_thesis_io.py     ← thesis read/write helpers
+  ├─ autoresearch_planning.py        ← thesis generation
+  ├─ autoresearch_research.py        ← per-thesis research rounds
+  ├─ autoresearch_experiment.py      ← experiment logging + metric evaluation
+  ├─ autoresearch_orchestration.py   ← state-transition helpers (resume, baseline rerun, next action)
+  └─ compiler_pipeline.py            ← top-level compiler orchestrator
+       ├─ compiler_builder.py            ← builds missing strategy primitives
+       ├─ compiler_operationalize.py     ← operationalizes compiled strategy code
+       └─ compiler_thesis_io.py          ← thesis read/write helpers
 
 research_conductor.py        ← drives sub-agent calls (web, code, data)
 research_subagents.py        ← individual agent definitions
@@ -115,6 +120,8 @@ autoresearch_state.py        ← state file read/write helpers
 strategies/ema/              ← EMA strategy (registered as "ema")
 strategies/orb/              ← Opening Range Breakout (registered as "orb")
 strategies/base.py           ← @register decorator + STRATEGIES dict
+strategies/validate_utils.py ← shared type-check helpers (_is_int_value, _is_number_value)
+strategies/_demo/            ← skeleton for adding a new strategy family
 
 vps_runner.py                ← deploys git ref to VPS + launches controller
 scripts/token_audit.py       ← post-run token cost analysis (--by model/agent)
@@ -122,6 +129,10 @@ trace_exports/               ← per-round trace artifacts (gitignored raw outpu
 prompts.db                   ← runtime SQLite; accumulated prompt history (gitignored)
 ema_experiments.db           ← runtime SQLite; EMA experiment records (gitignored)
 ```
+
+## Known gaps
+
+- `strategies/validate_utils` is NOT in `pyproject.toml` py-modules — add it before cutting a release build.
 
 ## Violations
 
