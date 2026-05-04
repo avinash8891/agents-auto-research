@@ -184,26 +184,19 @@ def test_parser_unknown_metric_rejected():
         eval_cli._build_parser().parse_args(["--label", "x", "--primary-metric", "nope"])
 
 
-def test_load_prior_result_skips_deleted_file(tmp_path):
+def test_load_prior_result_skips_deleted_file(tmp_path, monkeypatch):
     """Verify _load_prior_result doesn't crash when a file disappears between glob and stat."""
-    output = tmp_path / "out"
-    output.mkdir()
-    # Write then immediately delete — simulates TOCTOU: file exists during glob but not during stat
-    p1 = output / "a-2026-01-01.json"
-    p1.write_text(
-        json.dumps(
-            {
-                "label": "a",
-                "timestamp": "2026-01-01T00:00:00+00:00",
-                "repeat": 1,
-                "primary_metric_name": "compiled_rate",
-                "primary_metric": {"mean": 0.5, "stdev": 0.0, "min": 0.5, "max": 0.5},
-                "suites": [],
-            }
+    ghost = tmp_path / "ghost-2026-01-01.json"
+    # ghost was never written — it's absent from disk.
+    # Monkeypatch glob to return it as a candidate (simulates TOCTOU: file existed at glob time).
+    monkeypatch.setattr(
+        type(tmp_path),
+        "glob",
+        lambda self, pattern: (
+            iter([ghost]) if self == tmp_path and pattern == "*.json" else iter([])
         ),
-        encoding="utf-8",
     )
-    p1.unlink()
-    # With fix: no FileNotFoundError, returns None (no valid candidates)
-    result = eval_cli._load_prior_result(output, current_path=None)
+    # safe_stat_mtime returns 0.0 for the ghost (OSError suppressed), max selects it as sole
+    # candidate, then read_text raises OSError — the guarded try/except returns None.
+    result = eval_cli._load_prior_result(tmp_path, current_path=None)
     assert result is None

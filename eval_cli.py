@@ -86,7 +86,10 @@ def _load_prior_result(output_dir: Path, current_path: Path | None):
     from eval_metrics import EvalResult
 
     most_recent = max(candidates, key=safe_stat_mtime)
-    return EvalResult.from_dict(json.loads(most_recent.read_text(encoding="utf-8")))
+    try:
+        return EvalResult.from_dict(json.loads(most_recent.read_text(encoding="utf-8")))
+    except OSError:
+        return None
 
 
 def main(argv: list[str] | None = None) -> int:
