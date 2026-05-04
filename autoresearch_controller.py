@@ -607,17 +607,30 @@ def main() -> int:
         ideas_md_path=ideas_md_path,
         runs_dir=runs_dir,
     )
-    # Increment job number on each loop start
     prior_state = controller.read_state()
-    job = _state_coerce_job_to_int(prior_state.get("job")) + 1
-    # New job starts from a clean controller state. This prevents stale
-    # next_action/current_thesis/blockers from prior jobs from skipping
-    # baseline-first planning on launch.
+    resume_manual_review = (
+        prior_state.get("state") == "blocked"
+        and isinstance(prior_state.get("next_action"), dict)
+        and prior_state["next_action"].get("type") == "manual_review"
+        and (
+            prior_state.get("halted_thesis_id")
+            or prior_state.get("manual_review_theses")
+            or prior_state.get("halted_reason") == "requires_code_change"
+        )
+    )
+    job = _state_coerce_job_to_int(prior_state.get("job"))
+    if not resume_manual_review:
+        # Fresh jobs start from the next job number so new launches stay
+        # distinguishable from earlier runs in traces and experiment rows.
+        job += 1
+    # Fresh jobs start from a clean controller state. Manual-review restarts
+    # preserve the pending thesis metadata and job-scoped counters so the same
+    # run can continue natively on the latest code.
     state = {
         "state": "running",
         "job": job,
-        "research_round": 0,
-        "job_usage": None,
+        "research_round": prior_state.get("research_round", 0) if resume_manual_review else 0,
+        "job_usage": prior_state.get("job_usage") if resume_manual_review else None,
         "heartbeat": {},
     }
     # Preserve halted thesis metadata needed for requires_code_change resume

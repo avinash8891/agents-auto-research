@@ -1762,7 +1762,7 @@ def test_main_preserves_halted_thesis_resume_metadata(monkeypatch, tmp_path):
     assert "next_action" not in written
 
 
-def test_main_preserves_manual_review_history_when_restarting_from_halted_state(
+def test_main_reuses_job_and_preserves_manual_review_history_when_restarting_from_manual_review(
     monkeypatch, tmp_path
 ):
     family = load_family("ema")
@@ -1787,6 +1787,9 @@ def test_main_preserves_manual_review_history_when_restarting_from_halted_state(
             self.state = {
                 "state": "blocked",
                 "job": 9,
+                "research_round": 2,
+                "job_usage": {"input_tokens": 123, "output_tokens": 456, "total_tokens": 579},
+                "heartbeat": {"last_completed_thesis": "stale"},
                 "halted_reason": "requires_code_change",
                 "halted_thesis_id": "thesis-456",
                 "halted_thesis": {"thesis_id": "thesis-456", "config_changes": {"ema_length": 13}},
@@ -1821,7 +1824,9 @@ def test_main_preserves_manual_review_history_when_restarting_from_halted_state(
 
     assert loop_mod.main() == 1
     written = captured["written_state"]
-    assert written["job"] == 10
+    assert written["job"] == 9
+    assert written["research_round"] == 2
+    assert written["job_usage"] == {"input_tokens": 123, "output_tokens": 456, "total_tokens": 579}
     assert written["halted_reason"] == "requires_code_change"
     assert written["halted_thesis_id"] == "thesis-456"
     assert written["manual_review_theses"][-1]["thesis_id"] == "thesis-456"
