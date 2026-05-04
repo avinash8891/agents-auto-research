@@ -1,0 +1,56 @@
+eval_cli.py
+  1fab08746c46a4ba 58-67,108
+tests/test_eval_harness.py
+  e7c47bc82f9965e3 258-261,266-267
+  a4f2ec1088d3ded8 37-38
+  1fab08746c46a4ba 27-36,39-45,234-257,262-265,268-272
+eval_harness.py
+  1fab08746c46a4ba 15,141-152,157,164-165,170-172,174,186,195-196,199-202,205
+  e7c47bc82f9965e3 166-167,173,175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "89f45aee5a4b33b91424972afd70a15a0365b038",
+  "prompts": {
+    "1fab08746c46a4ba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ccacee96-5f58-4470-a664-46e837b671ea",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 122,
+      "total_deletions": 18,
+      "accepted_lines": 90,
+      "overriden_lines": 0
+    },
+    "a4f2ec1088d3ded8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5aa5b256-3939-45a6-b654-08179c447d92",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 56,
+      "total_deletions": 18,
+      "accepted_lines": 2,
+      "overriden_lines": 12
+    },
+    "e7c47bc82f9965e3": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_20cd02dceffeKthSN1zieAYhfa",
+        "model": "minimax-coding-plan/MiniMax-M2.7-highspeed"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 19,
+      "accepted_lines": 10,
+      "overriden_lines": 0
+    }
+  }
+}
