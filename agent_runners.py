@@ -76,15 +76,24 @@ async def _run_single_agent(
 
     client = AsyncOpenAI(api_key="unused", base_url=_OAUTH_PROXY_URL)
     model_name = getattr(agent_def, "model", "gpt-5.5")
+    model_provider = getattr(agent_def, "provider", "openai")
     model = OpenAIChatCompletionsModel(model=model_name, openai_client=client)
 
     model_settings = OAIModelSettings(store=False)
 
     for attempt in range(1, retries + 1):
-        trace_id = trace_agent_prompt(f"sdk-{name}", prompt, agent_def.prompt)
+        trace_id = trace_agent_prompt(
+            f"sdk-{name}",
+            prompt,
+            agent_def.prompt,
+            model_provider=model_provider,
+            model_name=model_name,
+        )
         trace(
             "AGENT_SDK",
             f"{name} attempt={attempt}/{retries} model={agent_def.model} tools={agent_def.tools}",
+            model_provider=model_provider,
+            model_name=model_name,
         )
         try:
             agent = OAIAgent(
@@ -122,7 +131,12 @@ async def _run_single_agent(
 
             result = await asyncio.wait_for(_run_once(), timeout)
         except asyncio.TimeoutError:
-            trace("AGENT_SDK", f"{name} TIMEOUT after {timeout}s")
+            trace(
+                "AGENT_SDK",
+                f"{name} TIMEOUT after {timeout}s",
+                model_provider=model_provider,
+                model_name=model_name,
+            )
             _accumulate_result_usage(name, None)
             error = agent_infra._structured_error(
                 name,
@@ -134,7 +148,12 @@ async def _run_single_agent(
                 continue
             return error
         except Exception as exc:
-            trace("AGENT_SDK", f"{name} ERROR: {exc.__class__.__name__}")
+            trace(
+                "AGENT_SDK",
+                f"{name} ERROR: {exc.__class__.__name__}",
+                model_provider=model_provider,
+                model_name=model_name,
+            )
             _accumulate_result_usage(name, None)
             error = agent_infra._structured_error(
                 name,
@@ -164,12 +183,29 @@ async def _run_single_agent(
 
         parsed_result = agent_infra._parse_json_detailed(result_text)
         parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
-        trace_agent_response(f"sdk-{name}", trace_id, result_text, parsed)
+        trace_agent_response(
+            f"sdk-{name}",
+            trace_id,
+            result_text,
+            parsed,
+            model_provider=model_provider,
+            model_name=model_name,
+        )
         if parsed is not None:
             if _validate_output(name, parsed):
-                trace("AGENT_SDK", f"{name} VALIDATED OK")
+                trace(
+                    "AGENT_SDK",
+                    f"{name} VALIDATED OK",
+                    model_provider=model_provider,
+                    model_name=model_name,
+                )
                 return parsed
-            trace("AGENT_SDK", f"{name} quality check FAILED")
+            trace(
+                "AGENT_SDK",
+                f"{name} quality check FAILED",
+                model_provider=model_provider,
+                model_name=model_name,
+            )
             error = agent_infra._structured_error(
                 name,
                 "validation",
@@ -177,7 +213,12 @@ async def _run_single_agent(
                 attempt=attempt,
             )
         else:
-            trace("AGENT_SDK", f"{name} parse FAILED")
+            trace(
+                "AGENT_SDK",
+                f"{name} parse FAILED",
+                model_provider=model_provider,
+                model_name=model_name,
+            )
             error = agent_infra._structured_error(
                 name,
                 parsed_result.get("kind", "parse"),

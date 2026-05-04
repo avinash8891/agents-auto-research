@@ -161,7 +161,12 @@ Be brutally honest."""
         model=model,
     )
 
-    trace("CONDUCTOR", f"analyst dispatch focus='{focus_question[:80]}'")
+    trace(
+        "CONDUCTOR",
+        f"analyst dispatch focus='{focus_question[:80]}'",
+        model_provider="openai",
+        model_name="gpt-5.5",
+    )
     try:
         result = OAIRunner.run_streamed(
             agent,
@@ -185,18 +190,35 @@ Be brutally honest."""
         parsed = _parse_json(output)
         if parsed:
             n_anomalies = len(parsed.get("key_anomalies", []))
-            trace("CONDUCTOR", f"analyst OK anomalies={n_anomalies}")
+            trace(
+                "CONDUCTOR",
+                f"analyst OK anomalies={n_anomalies}",
+                model_provider="openai",
+                model_name="gpt-5.5",
+            )
             trace_agent_response(
                 "analyst",
                 f"analyst-{focus_question[:40].replace(' ', '_')}",
                 output,
                 parsed,
+                model_provider="openai",
+                model_name="gpt-5.5",
             )
             return json.dumps(parsed, indent=2)
-        trace("CONDUCTOR", f"analyst parse failed: {output[:200]}")
+        trace(
+            "CONDUCTOR",
+            f"analyst parse failed: {output[:200]}",
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         return f"ANALYST ERROR: could not parse response: {output[:500]}"
     except Exception as exc:
-        trace("CONDUCTOR", f"analyst ERROR: {exc}")
+        trace(
+            "CONDUCTOR",
+            f"analyst ERROR: {exc}",
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         return f"ANALYST ERROR: {exc}"
 
 
@@ -246,7 +268,12 @@ Return ONLY the JSON object."""
         model=model,
     )
 
-    trace("CONDUCTOR", f"web_search dispatch query='{query[:80]}'")
+    trace(
+        "CONDUCTOR",
+        f"web_search dispatch query='{query[:80]}'",
+        model_provider="openai",
+        model_name="gpt-5.5",
+    )
     try:
         result = OAIRunner.run_streamed(
             agent,
@@ -272,16 +299,33 @@ Return ONLY the JSON object."""
         parsed = _parse_json(output)
         if parsed:
             n_findings = len(parsed.get("findings", []))
-            trace("CONDUCTOR", f"web_search OK findings={n_findings}")
+            trace(
+                "CONDUCTOR",
+                f"web_search OK findings={n_findings}",
+                model_provider="openai",
+                model_name="gpt-5.5",
+            )
             trace_agent_response(
                 "web-researcher",
                 f"web-{query[:40].replace(' ', '_')}",
                 output,
                 parsed,
+                model_provider="openai",
+                model_name="gpt-5.5",
             )
             return json.dumps(parsed, indent=2)
-        trace("CONDUCTOR", f"web_search parse failed: {output[:200]}")
+        trace(
+            "CONDUCTOR",
+            f"web_search parse failed: {output[:200]}",
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         return f"WEB_SEARCH ERROR: could not parse: {output[:500]}"
     except Exception as exc:
-        trace("CONDUCTOR", f"web_search ERROR: {exc}")
+        trace(
+            "CONDUCTOR",
+            f"web_search ERROR: {exc}",
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         return f"WEB_SEARCH ERROR: {exc}"

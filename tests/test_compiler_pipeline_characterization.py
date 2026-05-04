@@ -454,6 +454,14 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
 
     result = build_missing_primitives(tmp_path, thesis_id)
 
+    assert captured["cmd"][:6] == [
+        "codex",
+        "exec",
+        "--model",
+        "gpt-5.4-mini",
+        "-c",
+        'model_reasoning_effort="medium"',
+    ]
     assert captured["timeout"] == compiler_builder.BUILDER_CLI_TIMEOUT_SECONDS
     assert result["status"] == "completed"
     attempt_dir = tmp_path / family.builder_requests_dirname / thesis_id

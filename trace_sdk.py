@@ -44,6 +44,8 @@ class TraceEvent:
     session_id: str
     family: str
     job: int
+    model_provider: str
+    model_name: str
     hypothesis_id: str | None
     hypothesis_name: str | None
     seq: int
@@ -86,6 +88,8 @@ class JsonLineTraceExporter(SpanExporter):
                     session_id=_string_attr(span, "autoresearch.session_id"),
                     family=_string_attr(span, "autoresearch.family"),
                     job=int(span.attributes.get("autoresearch.job", 0)),
+                    model_provider=_string_attr(span, "autoresearch.model_provider"),
+                    model_name=_string_attr(span, "autoresearch.model_name"),
                     hypothesis_id=_optional_string(
                         span.attributes.get("autoresearch.hypothesis_id")
                     ),
@@ -400,6 +404,8 @@ def _event_span(
     summary: str,
     payload: dict[str, Any] | None = None,
     artifact_paths: list[str] | None = None,
+    model_provider: str = "",
+    model_name: str = "",
 ) -> Iterator[None]:
     payload = payload or {}
     artifact_paths = list(artifact_paths or [])
@@ -412,6 +418,8 @@ def _event_span(
             "run_id": _STATE.run_id,
             "family": _STATE.family,
             "job": _STATE.job,
+            "model_provider": model_provider,
+            "model_name": model_name,
             "hypothesis_id": _STATE.current_hypothesis_id or "",
             "hypothesis_name": _STATE.current_hypothesis_name or "",
             "category": category,
@@ -427,6 +435,8 @@ def _event_span(
             span.set_attribute("autoresearch.session_id", _STATE.session_id)
             span.set_attribute("autoresearch.family", _STATE.family)
             span.set_attribute("autoresearch.job", _STATE.job)
+            span.set_attribute("autoresearch.model_provider", model_provider)
+            span.set_attribute("autoresearch.model_name", model_name)
             span.set_attribute("autoresearch.hypothesis_id", _STATE.current_hypothesis_id or "")
             span.set_attribute("autoresearch.hypothesis_name", _STATE.current_hypothesis_name or "")
             span.set_attribute("autoresearch.seq", seq)
@@ -484,6 +494,8 @@ def _record_event(
     summary: str,
     payload: dict[str, Any] | None = None,
     artifact_paths: list[str] | None = None,
+    model_provider: str = "",
+    model_name: str = "",
 ) -> None:
     with _event_span(
         span_name=f"{category}.{action}",
@@ -493,11 +505,20 @@ def _record_event(
         summary=summary,
         payload=payload,
         artifact_paths=artifact_paths,
+        model_provider=model_provider,
+        model_name=model_name,
     ):
         pass
 
 
-def trace(component: str, message: str, data: dict | None = None) -> None:
+def trace(
+    component: str,
+    message: str,
+    data: dict | None = None,
+    *,
+    model_provider: str = "",
+    model_name: str = "",
+) -> None:
     seq = _STATE.next_seq()
     _log_line(component, message, data, seq)
     _record_event(
@@ -506,10 +527,19 @@ def trace(component: str, message: str, data: dict | None = None) -> None:
         action=component.lower(),
         summary=message,
         payload={"component": component, "data": data or {}},
+        model_provider=model_provider,
+        model_name=model_name,
     )
 
 
-def trace_agent_prompt(agent_name: str, prompt: str, system_prompt: str = "") -> str:
+def trace_agent_prompt(
+    agent_name: str,
+    prompt: str,
+    system_prompt: str = "",
+    *,
+    model_provider: str = "",
+    model_name: str = "",
+) -> str:
     seq = _STATE.next_seq()
     hid = _STATE.current_hypothesis_id or "global"
     trace_id = f"{hid}-{agent_name}-{seq:05d}"
@@ -547,6 +577,8 @@ def trace_agent_prompt(agent_name: str, prompt: str, system_prompt: str = "") ->
             "preview_len": min(len(prompt), 200),
         },
         artifact_paths=[prompt_path],
+        model_provider=model_provider,
+        model_name=model_name,
     )
     return trace_id
 
@@ -556,6 +588,9 @@ def trace_agent_response(
     trace_id: str,
     raw_text: str,
     parsed: dict | None = None,
+    *,
+    model_provider: str = "",
+    model_name: str = "",
 ) -> None:
     seq = _STATE.next_seq()
     timestamp = _ts()
@@ -594,6 +629,8 @@ def trace_agent_response(
             "parsed_keys": sorted(parsed.keys()) if parsed else [],
         },
         artifact_paths=[response_path],
+        model_provider=model_provider,
+        model_name=model_name,
     )
 
 
@@ -602,6 +639,9 @@ def trace_agent_tool_call(
     trace_id: str,
     tool_name: str,
     tool_input: str = "",
+    *,
+    model_provider: str = "",
+    model_name: str = "",
 ) -> None:
     seq = _STATE.next_seq()
     input_preview = tool_input[:300].replace("\n", " ") if tool_input else ""
@@ -617,6 +657,8 @@ def trace_agent_tool_call(
             "tool_name": tool_name,
             "tool_input_preview": input_preview,
         },
+        model_provider=model_provider,
+        model_name=model_name,
     )
 
 
@@ -702,6 +744,8 @@ def record_event(
     summary: str,
     payload: dict[str, Any] | None = None,
     artifact_paths: list[str] | None = None,
+    model_provider: str = "",
+    model_name: str = "",
 ) -> dict[str, Any]:
     seq = _STATE.next_seq()
     event_payload = payload or {}
@@ -712,6 +756,8 @@ def record_event(
         summary=summary,
         payload=event_payload,
         artifact_paths=artifact_paths,
+        model_provider=model_provider,
+        model_name=model_name,
     )
     return {
         "source_module": source_module,
@@ -720,6 +766,8 @@ def record_event(
         "summary": summary,
         **event_payload,
         "artifact_paths": list(artifact_paths or []),
+        "model_provider": model_provider,
+        "model_name": model_name,
         "run_id": _STATE.run_id,
         "seq": seq,
     }

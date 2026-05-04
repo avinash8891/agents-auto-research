@@ -37,11 +37,17 @@ async def _run_web_research_openai(
 
     for attempt in range(1, retries + 1):
         trace_id = trace_agent_prompt(
-            "openai-web-researcher", prompt, agent_prompts.WEB_RESEARCHER_SYSTEM_PROMPT
+            "openai-web-researcher",
+            prompt,
+            agent_prompts.WEB_RESEARCHER_SYSTEM_PROMPT,
+            model_provider="openai",
+            model_name="gpt-5.5",
         )
         trace(
             "OPENAI_AGENT",
             f"web-researcher attempt={attempt}/{retries} model=gpt-5.5 api=responses",
+            model_provider="openai",
+            model_name="gpt-5.5",
         )
         try:
             result = OAIRunner.run_streamed(
@@ -59,11 +65,28 @@ async def _run_web_research_openai(
             _accumulate_result_usage("web-researcher", result)
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
-            trace_agent_response("openai-web-researcher", trace_id, output, parsed)
+            trace_agent_response(
+                "openai-web-researcher",
+                trace_id,
+                output,
+                parsed,
+                model_provider="openai",
+                model_name="gpt-5.5",
+            )
             if parsed is not None and _validate_output("web-researcher", parsed):
-                trace("OPENAI_AGENT", "web-researcher VALIDATED OK")
+                trace(
+                    "OPENAI_AGENT",
+                    "web-researcher VALIDATED OK",
+                    model_provider="openai",
+                    model_name="gpt-5.5",
+                )
                 return parsed
-            trace("OPENAI_AGENT", "web-researcher validate FAILED")
+            trace(
+                "OPENAI_AGENT",
+                "web-researcher validate FAILED",
+                model_provider="openai",
+                model_name="gpt-5.5",
+            )
             error = agent_infra._structured_error(
                 "web-researcher",
                 "validation" if parsed is not None else parsed_result.get("kind", "parse"),
@@ -77,7 +100,12 @@ async def _run_web_research_openai(
                 excerpt=parsed_result.get("excerpt") or (output[:200] if output else None),
             )
         except Exception as exc:
-            trace("OPENAI_AGENT", f"web-researcher ERROR: {exc.__class__.__name__}")
+            trace(
+                "OPENAI_AGENT",
+                f"web-researcher ERROR: {exc.__class__.__name__}",
+                model_provider="openai",
+                model_name="gpt-5.5",
+            )
             _accumulate_result_usage("web-researcher", None)
             error = agent_infra._structured_error(
                 "web-researcher",
@@ -124,7 +152,14 @@ async def _run_diagnostic_analyst_openai(
     @function_tool
     def read_file(file_path: str) -> str:
         """Read a file from the local filesystem and return its contents."""
-        trace_agent_tool_call("codex-analyst", current_trace_id, "read_file", file_path)
+        trace_agent_tool_call(
+            "codex-analyst",
+            current_trace_id,
+            "read_file",
+            file_path,
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         try:
             with open(file_path) as f:
                 content = f.read()
@@ -137,7 +172,14 @@ async def _run_diagnostic_analyst_openai(
     @function_tool
     def run_python(code: str) -> str:
         """Execute Python code locally and return stdout + stderr."""
-        trace_agent_tool_call("codex-analyst", current_trace_id, "run_python", code)
+        trace_agent_tool_call(
+            "codex-analyst",
+            current_trace_id,
+            "run_python",
+            code,
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         try:
             result = subprocess.run(
                 [_sys.executable, "-c", code],
@@ -169,11 +211,19 @@ async def _run_diagnostic_analyst_openai(
     )
 
     for attempt in range(1, retries + 1):
-        trace_id = trace_agent_prompt("codex-analyst", prompt, DIAGNOSTIC_ANALYST_PROMPT)
+        trace_id = trace_agent_prompt(
+            "codex-analyst",
+            prompt,
+            DIAGNOSTIC_ANALYST_PROMPT,
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         current_trace_id = trace_id
         trace(
             "OPENAI_AGENT",
             f"codex-analyst attempt={attempt}/{retries} model=gpt-5.5 api=chatcmpl",
+            model_provider="openai",
+            model_name="gpt-5.5",
         )
         try:
             result = OAIRunner.run_streamed(
@@ -190,11 +240,28 @@ async def _run_diagnostic_analyst_openai(
             _accumulate_result_usage("codex-analyst", result)
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
-            trace_agent_response("codex-analyst", trace_id, output, parsed)
+            trace_agent_response(
+                "codex-analyst",
+                trace_id,
+                output,
+                parsed,
+                model_provider="openai",
+                model_name="gpt-5.5",
+            )
             if parsed is not None and _validate_output("diagnostic-analyst", parsed):
-                trace("OPENAI_AGENT", "codex-analyst VALIDATED OK")
+                trace(
+                    "OPENAI_AGENT",
+                    "codex-analyst VALIDATED OK",
+                    model_provider="openai",
+                    model_name="gpt-5.5",
+                )
                 return parsed
-            trace("OPENAI_AGENT", "codex-analyst validate FAILED")
+            trace(
+                "OPENAI_AGENT",
+                "codex-analyst validate FAILED",
+                model_provider="openai",
+                model_name="gpt-5.5",
+            )
             error = agent_infra._structured_error(
                 "diagnostic-analyst",
                 "validation" if parsed is not None else parsed_result.get("kind", "parse"),
@@ -208,7 +275,12 @@ async def _run_diagnostic_analyst_openai(
                 excerpt=parsed_result.get("excerpt") or (output[:200] if output else None),
             )
         except Exception as exc:
-            trace("OPENAI_AGENT", f"codex-analyst ERROR: {exc.__class__.__name__}")
+            trace(
+                "OPENAI_AGENT",
+                f"codex-analyst ERROR: {exc.__class__.__name__}",
+                model_provider="openai",
+                model_name="gpt-5.5",
+            )
             _accumulate_result_usage("codex-analyst", None)
             error = agent_infra._structured_error(
                 "diagnostic-analyst",

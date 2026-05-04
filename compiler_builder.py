@@ -12,8 +12,11 @@ from backtest.runtime_config import load_runtime_config
 from persistence_utils import write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import load_family
+from trace_sdk import trace
 
 BUILDER_CLI_TIMEOUT_SECONDS = 300
+BUILDER_CLI_MODEL = "gpt-5.4-mini"
+BUILDER_CLI_REASONING_EFFORT = "medium"
 
 
 def _find_cli() -> str | None:
@@ -72,6 +75,9 @@ def _write_builder_attempt_artifacts(
             "command": command,
             "cwd": str(cwd),
             "timeout_seconds": timeout_seconds,
+            "model_provider": "codex",
+            "model": BUILDER_CLI_MODEL,
+            "model_reasoning_effort": BUILDER_CLI_REASONING_EFFORT,
         },
     )
     write_text_atomic(artifact_dir / "stdout.log", stdout)
@@ -186,8 +192,24 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         "normalized_contract": normalized_contract,
         "status": "requested",
         "timestamp": timestamp_now(),
+        "model_provider": "codex",
+        "model": BUILDER_CLI_MODEL,
+        "model_reasoning_effort": BUILDER_CLI_REASONING_EFFORT,
     }
     write_json_artifact(builder_requests_dir / f"{thesis_id}.json", request_payload)
+    trace(
+        "BUILDER",
+        f"start thesis={thesis_id} model={BUILDER_CLI_MODEL} effort={BUILDER_CLI_REASONING_EFFORT}",
+        {
+            "thesis_id": thesis_id,
+            "family": family_name,
+            "model_provider": "codex",
+            "model": BUILDER_CLI_MODEL,
+            "model_reasoning_effort": BUILDER_CLI_REASONING_EFFORT,
+        },
+        model_provider="codex",
+        model_name=BUILDER_CLI_MODEL,
+    )
 
     config_abspath = root / config_path
     prompt = f"""Goal:
@@ -221,10 +243,20 @@ Constraints:
 - Preserve existing behavior except for the new primitive support.
 - If implementation cannot be completed safely, explain why.
 """
+    builder_cmd = [
+        "codex",
+        "exec",
+        "--model",
+        BUILDER_CLI_MODEL,
+        "-c",
+        f'model_reasoning_effort="{BUILDER_CLI_REASONING_EFFORT}"',
+        prompt,
+    ]
+
     _write_builder_attempt_artifacts(
         artifact_dir=attempt_dir,
         prompt=prompt,
-        command=["codex", "exec", prompt],
+        command=builder_cmd,
         cwd=root,
         timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
         result={
@@ -232,6 +264,9 @@ Constraints:
             "reason": "builder queued",
             "generated_config": None,
             "validation_passed": False,
+            "model_provider": "codex",
+            "model": BUILDER_CLI_MODEL,
+            "model_reasoning_effort": BUILDER_CLI_REASONING_EFFORT,
         },
     )
 
@@ -248,10 +283,17 @@ Constraints:
             _write_builder_attempt_artifacts(
                 artifact_dir=attempt_dir,
                 prompt=prompt,
-                command=["codex", "exec", prompt],
+                command=builder_cmd,
                 cwd=root,
                 timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
                 result=result,
+            )
+            trace(
+                "BUILDER",
+                f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
+                result,
+                model_provider="codex",
+                model_name=BUILDER_CLI_MODEL,
             )
             return result
         result = {
@@ -263,10 +305,17 @@ Constraints:
         _write_builder_attempt_artifacts(
             artifact_dir=attempt_dir,
             prompt=prompt,
-            command=["codex", "exec", prompt],
+            command=builder_cmd,
             cwd=root,
             timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
             result=result,
+        )
+        trace(
+            "BUILDER",
+            f"finish thesis={thesis_id} status=completed model={BUILDER_CLI_MODEL}",
+            result,
+            model_provider="codex",
+            model_name=BUILDER_CLI_MODEL,
         )
         return result
 
@@ -281,14 +330,21 @@ Constraints:
         _write_builder_attempt_artifacts(
             artifact_dir=attempt_dir,
             prompt=prompt,
-            command=["codex", "exec", prompt],
+            command=builder_cmd,
             cwd=root,
             timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
             result=result,
         )
+        trace(
+            "BUILDER",
+            f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
+            result,
+            model_provider="codex",
+            model_name=BUILDER_CLI_MODEL,
+        )
         return result
 
-    cmd = ["codex", "exec", prompt]
+    cmd = builder_cmd
 
     try:
         proc = subprocess.run(
@@ -320,6 +376,13 @@ Constraints:
             stdout=stdout,
             stderr=stderr,
         )
+        trace(
+            "BUILDER",
+            f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
+            result,
+            model_provider="codex",
+            model_name=BUILDER_CLI_MODEL,
+        )
         return result
     result = (proc.stdout or "") + (proc.stderr or "")
 
@@ -347,6 +410,13 @@ Constraints:
                 stdout=proc.stdout or "",
                 stderr=proc.stderr or "",
             )
+            trace(
+                "BUILDER",
+                f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
+                out,
+                model_provider="codex",
+                model_name=BUILDER_CLI_MODEL,
+            )
             return out
     out = {
         "status": "completed" if generated else "error",
@@ -366,6 +436,13 @@ Constraints:
         result=out,
         stdout=proc.stdout or "",
         stderr=proc.stderr or "",
+    )
+    trace(
+        "BUILDER",
+        f"finish thesis={thesis_id} status={out['status']} model={BUILDER_CLI_MODEL}",
+        out,
+        model_provider="codex",
+        model_name=BUILDER_CLI_MODEL,
     )
     return out
 

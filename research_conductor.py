@@ -123,6 +123,8 @@ async def run_research_conductor(
     trace(
         "CONDUCTOR",
         f"START round={research_round} trades={'YES' if trades_file else 'NO'}",
+        model_provider="openai",
+        model_name="gpt-5.5",
     )
     refinement_session = _REFINEMENT_RECORDER.start_session(
         summary=f"research round {research_round}",
@@ -134,7 +136,13 @@ async def run_research_conductor(
             "rejection_feedback": rejection_feedback,
         },
     )
-    trace_id = trace_agent_prompt("research-conductor", user_prompt, system_prompt)
+    trace_id = trace_agent_prompt(
+        "research-conductor",
+        user_prompt,
+        system_prompt,
+        model_provider="openai",
+        model_name="gpt-5.5",
+    )
     result_text = ""
     session_finished = False
     try:
@@ -169,6 +177,8 @@ async def run_research_conductor(
             trace(
                 "CONDUCTOR",
                 f"save_finding type={finding_type} status={status} finding='{finding[:80]}'",
+                model_provider="openai",
+                model_name="gpt-5.5",
             )
             result = save_research_finding(
                 finding=finding,
@@ -294,7 +304,12 @@ async def run_research_conductor(
                     dedupe_key=f"conductor-result-{id(result)}",
                 )
     except asyncio.TimeoutError:
-        trace("CONDUCTOR", "TIMEOUT")
+        trace(
+            "CONDUCTOR",
+            "TIMEOUT",
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         _REFINEMENT_RECORDER.finish_session(
             session_id=refinement_session["session_id"],
             stopping_reason="timeout",
@@ -310,7 +325,12 @@ async def run_research_conductor(
     except Exception as exc:
         error_text = str(exc)
         error_kind = "proxy_unavailable" if "openai-oauth proxy" in error_text else "exception"
-        trace("CONDUCTOR", f"ERROR: {error_kind}")
+        trace(
+            "CONDUCTOR",
+            f"ERROR: {error_kind}",
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         _REFINEMENT_RECORDER.finish_session(
             session_id=refinement_session["session_id"],
             stopping_reason="exception",
@@ -326,7 +346,14 @@ async def run_research_conductor(
         }
 
     parsed = _parse_json(result_text)
-    trace_agent_response("research-conductor", trace_id, result_text, parsed)
+    trace_agent_response(
+        "research-conductor",
+        trace_id,
+        result_text,
+        parsed,
+        model_provider="openai",
+        model_name="gpt-5.5",
+    )
     _REFINEMENT_RECORDER.record_iteration(
         session_id=refinement_session["session_id"],
         iteration=1,
@@ -347,7 +374,12 @@ async def run_research_conductor(
     if parsed:
         theses = parsed.get("suggested_theses", [])
         if parsed.get("should_stop"):
-            trace("CONDUCTOR", "recommends STOP")
+            trace(
+                "CONDUCTOR",
+                "recommends STOP",
+                model_provider="openai",
+                model_name="gpt-5.5",
+            )
             _REFINEMENT_RECORDER.finish_session(
                 session_id=refinement_session["session_id"],
                 stopping_reason="should_stop",
@@ -362,9 +394,19 @@ async def run_research_conductor(
             try:
                 validate_thesis_dict(candidate)
             except Exception as exc:
-                trace("CONDUCTOR", f"validate failed thesis={t.get('thesis_id', 'unknown')}: {exc}")
+                trace(
+                    "CONDUCTOR",
+                    f"validate failed thesis={t.get('thesis_id', 'unknown')}: {exc}",
+                    model_provider="openai",
+                    model_name="gpt-5.5",
+                )
             else:
-                trace("CONDUCTOR", f"OK thesis={t['thesis_id']}")
+                trace(
+                    "CONDUCTOR",
+                    f"OK thesis={t['thesis_id']}",
+                    model_provider="openai",
+                    model_name="gpt-5.5",
+                )
                 _REFINEMENT_RECORDER.finish_session(
                     session_id=refinement_session["session_id"],
                     stopping_reason="valid_thesis",
@@ -372,7 +414,12 @@ async def run_research_conductor(
                 )
                 session_finished = True
                 return parsed
-        trace("CONDUCTOR", f"validate failed (len={len(result_text)})")
+        trace(
+            "CONDUCTOR",
+            f"validate failed (len={len(result_text)})",
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         failure = {
             "status": "conductor_error",
             "error": "validation_failed",
@@ -381,7 +428,12 @@ async def run_research_conductor(
             "should_stop": False,
         }
     else:
-        trace("CONDUCTOR", f"parse failed (len={len(result_text)})")
+        trace(
+            "CONDUCTOR",
+            f"parse failed (len={len(result_text)})",
+            model_provider="openai",
+            model_name="gpt-5.5",
+        )
         failure = {
             "status": "conductor_error",
             "error": "parse_failed",

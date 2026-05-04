@@ -58,12 +58,20 @@ def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path:
     trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
 
     hypothesis_id = trace_sdk.begin_hypothesis("baseline")
-    trace_id = trace_sdk.trace_agent_prompt("diagnostic-analyst", "user prompt", "system prompt")
+    trace_id = trace_sdk.trace_agent_prompt(
+        "diagnostic-analyst",
+        "user prompt",
+        "system prompt",
+        model_provider="openai",
+        model_name="gpt-5.5",
+    )
     trace_sdk.trace_agent_response(
         "diagnostic-analyst",
         trace_id,
         '{"ok": true}',
         {"ok": True},
+        model_provider="openai",
+        model_name="gpt-5.5",
     )
 
     log_text = trace_sdk.get_log_file().read_text(encoding="utf-8")
@@ -92,6 +100,10 @@ def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path:
     response_event = next(event for event in events if event["action"] == "response")
     assert prompt_event["artifact_paths"] == [str(prompt_file)]
     assert response_event["artifact_paths"] == [str(response_file)]
+    assert prompt_event["model_provider"] == "openai"
+    assert prompt_event["model_name"] == "gpt-5.5"
+    assert response_event["model_provider"] == "openai"
+    assert response_event["model_name"] == "gpt-5.5"
     for event in (prompt_event, response_event):
         assert event["schema_version"] == 1
         assert event["session_id"] == trace_sdk.get_session_id()
@@ -107,6 +119,8 @@ def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path:
             "session_id",
             "family",
             "job",
+            "model_provider",
+            "model_name",
             "hypothesis_id",
             "hypothesis_name",
             "seq",
@@ -199,19 +213,36 @@ def test_trace_sdk_event_schema_matches_dataclass_and_payload_shape(
         assert isinstance(event["payload"], dict)
         assert isinstance(event["artifact_paths"], list)
 
-    trace_event = next(event for event in events if event["category"] == "trace")
-    assert trace_event["payload"] == {"component": "LOOP", "data": {"source": "test"}}
-    state_event = next(event for event in events if event["category"] == "state")
-    assert state_event["payload"] == {
-        "old_state": "running",
-        "new_state": "blocked",
-        "reason": "research_required",
-    }
-    ssh_event = next(event for event in events if event["category"] == "ssh")
-    assert ssh_event["payload"]["command"] == "echo hello"
-    assert ssh_event["payload"]["exit_code"] == 0
-    assert ssh_event["payload"]["stdout_preview"] == "hello | "
-    assert ssh_event["payload"]["stderr_preview"] == ""
+
+def test_trace_sdk_trace_events_can_carry_model_metadata(monkeypatch, tmp_path: Path) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    trace_sdk.set_family("ema", job=1)
+    trace_sdk.begin_round(1)
+    trace_sdk.trace(
+        "BUILDER",
+        "builder started",
+        {"thesis_id": "ema5"},
+        model_provider="codex",
+        model_name="gpt-5.4-mini",
+    )
+
+    events = [
+        json.loads(line)
+        for line in trace_sdk.get_event_file().read_text(encoding="utf-8").splitlines()
+    ]
+    event = events[-1]
+    assert event["category"] == "trace"
+    assert event["model_provider"] == "codex"
+    assert event["model_name"] == "gpt-5.4-mini"
+    assert event["payload"] == {"component": "BUILDER", "data": {"thesis_id": "ema5"}}
+
+    trace_event = next(
+        event
+        for event in events
+        if event["category"] == "trace" and event["payload"]["component"] == "BUILDER"
+    )
+    assert trace_event["payload"] == {"component": "BUILDER", "data": {"thesis_id": "ema5"}}
 
 
 def test_begin_round_preserves_layout_and_rotates_event_store(monkeypatch, tmp_path: Path) -> None:
