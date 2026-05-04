@@ -195,7 +195,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             }
         family_name = proposal.get("strategy_family") or proposal["family"]
         normalized_contract = compilation.get("normalized_contract") or []
-        missing_primitives = compilation.get("missing_primitives") or []
+        missing_primitives = _resolve_missing_primitives(proposal, compilation)
         generated_name = (
             f"{family.name}_{thesis_id}.yaml"
             if not thesis_id.startswith(f"{family.name}_")
