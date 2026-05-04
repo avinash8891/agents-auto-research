@@ -129,12 +129,10 @@ def _run_coroutine_sync(coro: Any) -> Any:
     return result_box["value"]
 
 
-_CLIENT_CACHE: dict[str, _AsyncOpenAI] = {}
-
-
 def _get_openai_client(base_url: str) -> _AsyncOpenAI:
-    """Return a cached AsyncOpenAI client for the given base URL."""
-    return _CLIENT_CACHE.setdefault(base_url, _AsyncOpenAI(api_key="unused", base_url=base_url))
+    # New client per call: AsyncOpenAI's httpx transport is loop-bound; caching across
+    # asyncio.run() boundaries (each of which closes its loop) triggers "Event loop is closed".
+    return _AsyncOpenAI(api_key="unused", base_url=base_url)
 
 
 def _parse_json_detailed(text: str) -> dict[str, Any]:

@@ -251,18 +251,21 @@ def test_accumulate_result_usage_different_dedupe_keys_both_counted():
 
 
 # ---------------------------------------------------------------------------
-# _get_openai_client — cache semantics
+# _get_openai_client — per-call semantics (no global cache)
 # ---------------------------------------------------------------------------
 
 
-def test_get_openai_client_returns_same_object_for_same_url():
+def test_get_openai_client_returns_new_object_each_call():
+    # Global caching is intentionally absent: AsyncOpenAI's httpx transport is
+    # event-loop-bound; reusing across asyncio.run() calls (each closes its loop)
+    # causes "Event loop is closed". A new instance per call is the correct pattern.
     url = "http://127.0.0.1:10531/v1"
     client_a = agent_infra._get_openai_client(url)
     client_b = agent_infra._get_openai_client(url)
-    assert client_a is client_b, "same base_url must return the identical cached client"
+    assert client_a is not client_b, "_get_openai_client must return a new instance each call"
 
 
-def test_get_openai_client_returns_distinct_objects_for_different_urls():
-    client_a = agent_infra._get_openai_client("http://127.0.0.1:10531/v1")
-    client_b = agent_infra._get_openai_client("http://127.0.0.1:10532/v1")
-    assert client_a is not client_b, "different base_urls must return distinct clients"
+def test_get_openai_client_uses_given_base_url():
+    url = "http://127.0.0.1:10531/v1"
+    client = agent_infra._get_openai_client(url)
+    assert str(client.base_url).rstrip("/") == url.rstrip("/")
