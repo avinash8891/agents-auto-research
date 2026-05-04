@@ -334,3 +334,15 @@ def test_claude_timeout_overridable_via_env(monkeypatch):
 
     importlib.reload(m)
     assert m.CLAUDE_TIMEOUT_SECONDS == 99
+
+
+def test_claude_timeout_invalid_env_falls_back_to_default(monkeypatch):
+    from autoresearch_constants import ENV_CLAUDE_TIMEOUT_SECONDS
+
+    monkeypatch.setenv(ENV_CLAUDE_TIMEOUT_SECONDS, "not-a-number")
+    import importlib
+
+    import improvement_halo_apply as m
+
+    importlib.reload(m)
+    assert m.CLAUDE_TIMEOUT_SECONDS == 1800

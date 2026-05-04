@@ -132,3 +132,15 @@ def test_halo_timeout_overridable_via_env(monkeypatch):
 
     importlib.reload(m)
     assert m.HALO_TIMEOUT_SECONDS == 42
+
+
+def test_halo_timeout_invalid_env_falls_back_to_default(monkeypatch):
+    from autoresearch_constants import ENV_HALO_TIMEOUT_SECONDS
+
+    monkeypatch.setenv(ENV_HALO_TIMEOUT_SECONDS, "not-a-number")
+    import importlib
+
+    import improvement_halo as m
+
+    importlib.reload(m)
+    assert m.HALO_TIMEOUT_SECONDS == 600

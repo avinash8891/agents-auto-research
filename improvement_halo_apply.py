@@ -30,8 +30,20 @@ from persistence_utils import utc_now_iso8601
 
 log = get_logger(__name__)
 
+
+def _parse_timeout(env_key: str, default: int) -> int:
+    raw = os.environ.get(env_key)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        log.warning("invalid value %r for %s; using default %d", raw, env_key, default)
+        return default
+
+
 CLAUDE_BINARY = "claude"
-CLAUDE_TIMEOUT_SECONDS = int(os.environ.get(ENV_CLAUDE_TIMEOUT_SECONDS, "1800"))
+CLAUDE_TIMEOUT_SECONDS = _parse_timeout(ENV_CLAUDE_TIMEOUT_SECONDS, 1800)
 
 DEFAULT_EDIT_SCOPE = (
     "agent_prompts.py",
