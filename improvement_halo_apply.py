@@ -14,6 +14,7 @@ import socket
 import subprocess
 from pathlib import Path
 
+from autoresearch_constants import ENV_CLAUDE_TIMEOUT_SECONDS
 from autoresearch_logging import get_logger
 from eval_harness import EVAL_RESULTS_DIRNAME, latest_eval_result_path, run_eval
 from eval_metrics import (
@@ -30,7 +31,7 @@ from persistence_utils import utc_now_iso8601
 log = get_logger(__name__)
 
 CLAUDE_BINARY = "claude"
-CLAUDE_TIMEOUT_SECONDS = 1800
+CLAUDE_TIMEOUT_SECONDS = int(os.environ.get(ENV_CLAUDE_TIMEOUT_SECONDS, "1800"))
 
 DEFAULT_EDIT_SCOPE = (
     "agent_prompts.py",

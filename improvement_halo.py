@@ -8,10 +8,12 @@ when the binary is missing or the subprocess fails — never raises.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
+from autoresearch_constants import ENV_HALO_TIMEOUT_SECONDS
 from autoresearch_logging import get_logger
 from improvement_flags import halo_enabled
 from persistence_utils import write_text_atomic
@@ -19,7 +21,7 @@ from persistence_utils import write_text_atomic
 log = get_logger(__name__)
 
 HALO_BINARY = "halo"
-HALO_TIMEOUT_SECONDS = 600
+HALO_TIMEOUT_SECONDS = int(os.environ.get(ENV_HALO_TIMEOUT_SECONDS, "600"))
 
 DIAGNOSTIC_PROMPT = (
     "Analyze the attached trace events for systemic failure modes "

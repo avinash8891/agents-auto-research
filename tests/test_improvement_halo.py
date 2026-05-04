@@ -120,3 +120,15 @@ def test_flag_on_os_error_returns_none(tmp_path, monkeypatch):
     jsonl = _make_jsonl(tmp_path)
     out = tmp_path / "reports"
     assert improvement_halo.run_halo_after_round(1, jsonl, out) is None
+
+
+def test_halo_timeout_overridable_via_env(monkeypatch):
+    from autoresearch_constants import ENV_HALO_TIMEOUT_SECONDS
+
+    monkeypatch.setenv(ENV_HALO_TIMEOUT_SECONDS, "42")
+    import importlib
+
+    import improvement_halo as m
+
+    importlib.reload(m)
+    assert m.HALO_TIMEOUT_SECONDS == 42

@@ -322,3 +322,15 @@ def test_primary_metric_name_mismatch_propagates_as_value_error(tmp_path, monkey
     )
     assert decision["status"] == "aborted"
     assert decision["reason"] == "prior_compare_failed"
+
+
+def test_claude_timeout_overridable_via_env(monkeypatch):
+    from autoresearch_constants import ENV_CLAUDE_TIMEOUT_SECONDS
+
+    monkeypatch.setenv(ENV_CLAUDE_TIMEOUT_SECONDS, "99")
+    import importlib
+
+    import improvement_halo_apply as m
+
+    importlib.reload(m)
+    assert m.CLAUDE_TIMEOUT_SECONDS == 99
