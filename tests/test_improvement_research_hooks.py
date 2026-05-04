@@ -72,7 +72,12 @@ def test_flag_off_does_not_import_improvement_modules(tmp_path):
     _run_improvement_hooks(controller, research_round=1, result={})
     leaked = [m for m in _IMPROVEMENT_MODULES if m in sys.modules]
     # `improvement_flags` is allowed (the gate itself); none of the gated modules.
-    forbidden = {"improvement_halo", "improvement_halo_apply", "improvement_ratchet"}
+    forbidden = {
+        "improvement_halo",
+        "improvement_halo_apply",
+        "improvement_ratchet",
+        "improvement_reflexion",
+    }
     leaked_forbidden = [m for m in leaked if m in forbidden]
     assert not leaked_forbidden, (
         f"flag-off path eagerly imported gated modules: {leaked_forbidden}. "

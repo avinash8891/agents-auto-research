@@ -620,9 +620,13 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     state["research_round"] = research_round
     controller.write_state(state)
 
-    from improvement_reflexion import build_reflexion_feedback
+    from improvement_flags import reflexion_enabled
 
-    rejection_feedback = build_reflexion_feedback(controller, research_round)
+    rejection_feedback = ""
+    if reflexion_enabled():
+        from improvement_reflexion import build_reflexion_feedback
+
+        rejection_feedback = build_reflexion_feedback(controller, research_round)
     parsed: dict[str, Any] | None = None
     for attempt in range(MAX_VALIDATION_RETRIES):
         parsed = _call_conductor(
