@@ -30,7 +30,7 @@ cd "$review_dir"
 
 if perl -e 'alarm shift @ARGV; exec @ARGV' \
   "$timeout_seconds" \
-  env PATH="$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_ref" "$@"
+  env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_ref" "$@"
 then
   :
 else
