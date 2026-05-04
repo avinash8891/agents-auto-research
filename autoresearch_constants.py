@@ -43,3 +43,19 @@ MILLISECONDS_PER_SECOND = 1000
 # ── Conductor + research ─────────────────────────────────────────
 MAX_RESEARCH_ROUNDS = 100  # safeguard: max single-thesis research iterations
 MAX_VALIDATION_RETRIES = 3
+
+# ── Improvement-loop feature flags (env var names) ───────────────
+# All default off. Each flag gates exactly one arrow in the improvement
+# loop. Default-off is byte-identical to pre-improvement-loop behavior.
+ENV_IMPROVEMENT_HALO = "AUTORESEARCH_IMPROVEMENT_HALO"
+ENV_IMPROVEMENT_HALO_APPLY = "AUTORESEARCH_IMPROVEMENT_HALO_APPLY"
+ENV_IMPROVEMENT_REFLEXION = "AUTORESEARCH_IMPROVEMENT_REFLEXION"
+ENV_IMPROVEMENT_RATCHET = "AUTORESEARCH_IMPROVEMENT_RATCHET"
+
+# Tunable subprocess timeouts for improvement-loop tools (env var names).
+# Defaults: 600s (halo CLI) and 1800s (Claude Code subprocess).
+ENV_HALO_TIMEOUT_SECONDS = "AUTORESEARCH_HALO_TIMEOUT_SECONDS"
+ENV_CLAUDE_TIMEOUT_SECONDS = "AUTORESEARCH_CLAUDE_TIMEOUT_SECONDS"
+
+# Default location of the held-out task list relative to the repo root.
+HOLDOUT_TASKS_PATH = "configs/eval/holdout_tasks.yaml"

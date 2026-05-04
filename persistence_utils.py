@@ -82,3 +82,15 @@ def _json_relax_value(value: Any) -> Any:
 def write_json_atomic_strict(path: Path, payload: Any) -> None:
     """Write JSON after converting non-finite floats into string sentinels."""
     write_text_atomic(path, json_dumps_strict(payload) + "\n")
+
+
+def safe_stat_mtime(path: Path) -> float:
+    """Return ``path.stat().st_mtime`` or ``0.0`` on OSError.
+
+    Prevents FileNotFoundError when a file is deleted between a glob call
+    and the subsequent stat inside max()/sorted() lambdas (TOCTOU race).
+    """
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
