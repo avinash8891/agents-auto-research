@@ -1,0 +1,33 @@
+# Held-out eval task list for the Step-0 eval harness.
+#
+# Each task is a (family, dataset_window, overrides) triple. The
+# harness instantiates a fresh AutoresearchController per task in a
+# temp directory, runs one research round, and rolls up the outcome
+# into the primary metric (compiled_rate) plus a secondary
+# (quality_score_p50).
+#
+# Edit this file ONCE — keep it frozen across improvement-loop runs so
+# the metric is comparable. Drift in the held-out set destroys the
+# Ratchet signal.
+#
+# `dataset_window` is currently passed through as opaque metadata
+# (stamped into controller state as `eval_dataset_window`). Strategy
+# code does not yet read it; treat it as a free-text label until the
+# data loader is wired up.
+#
+# `overrides` is a placeholder for per-task strategy knobs (currently
+# unused by the harness — kept for forward compatibility).
+
+tasks:
+  - family: ema
+    dataset_window: "2024-h1"
+    overrides: {}
+  - family: ema
+    dataset_window: "2024-h2"
+    overrides: {}
+  - family: orb
+    dataset_window: "2024-h1"
+    overrides: {}
+  - family: orb
+    dataset_window: "2024-h2"
+    overrides: {}

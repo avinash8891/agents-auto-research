@@ -43,3 +43,14 @@ MILLISECONDS_PER_SECOND = 1000
 # ── Conductor + research ─────────────────────────────────────────
 MAX_RESEARCH_ROUNDS = 100  # safeguard: max single-thesis research iterations
 MAX_VALIDATION_RETRIES = 3
+
+# ── Improvement-loop feature flags (env var names) ───────────────
+# All default off. Each flag gates exactly one arrow in the improvement
+# loop. Default-off is byte-identical to pre-improvement-loop behavior.
+ENV_IMPROVEMENT_HALO = "AUTORESEARCH_IMPROVEMENT_HALO"
+ENV_IMPROVEMENT_HALO_APPLY = "AUTORESEARCH_IMPROVEMENT_HALO_APPLY"
+ENV_IMPROVEMENT_REFLEXION = "AUTORESEARCH_IMPROVEMENT_REFLEXION"
+ENV_IMPROVEMENT_RATCHET = "AUTORESEARCH_IMPROVEMENT_RATCHET"
+
+# Default location of the held-out task list relative to the repo root.
+HOLDOUT_TASKS_PATH = "configs/eval/holdout_tasks.yaml"
