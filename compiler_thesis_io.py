@@ -312,6 +312,7 @@ def write_research_artifact(
     external_research_attempted: bool = True,
     external_research_attempts: int = 1,
     fallback_reason: str | None = None,
+    job: int | None = None,
 ) -> Path:
     """Write completed research artifact to disk."""
     research_dir.mkdir(parents=True, exist_ok=True)
@@ -322,6 +323,7 @@ def write_research_artifact(
         "status": "completed",
         "timestamp": timestamp_now(),
         "research_mode": research_mode,
+        "job": job if job is not None else request.get("job"),
         "external_research_attempted": external_research_attempted,
         "external_research_attempts": external_research_attempts,
         "findings": parsed.get("findings", []),

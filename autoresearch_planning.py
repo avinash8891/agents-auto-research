@@ -422,10 +422,11 @@ def should_terminate(
     run_queue_dir: Path,
     research_dir: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> bool:
     if queue_from_thesis_artifacts(run_queue_dir, root, results):
         return False
-    research = read_research_artifacts(research_dir, root)
+    research = read_research_artifacts(research_dir, root, job=job)
     if not research:
         return False
     latest = research[-1]
@@ -529,6 +530,7 @@ def select_research_next_action(
     ideas_md_path: Path,
     research_dir: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> dict[str, Any]:
     """Pick the next experiment to run, in priority order:
 
@@ -547,7 +549,7 @@ def select_research_next_action(
     ):
         if branch is not None:
             return branch
-    if should_terminate(root, family, run_queue_dir, research_dir, results):
+    if should_terminate(root, family, run_queue_dir, research_dir, results, job=job):
         return _finished_state()
     return _blocked_for_research_state(root, research_dir)
 
@@ -625,6 +627,11 @@ def plan_next_action(
             state.pop("research_stop_reasoning", None)
             return state
 
+    raw_job = state.get("job")
+    try:
+        job = int(raw_job) if raw_job is not None else None
+    except (TypeError, ValueError):
+        job = None
     state.update(
         select_research_next_action(
             root,
@@ -634,6 +641,7 @@ def plan_next_action(
             ideas_md_path,
             research_dir,
             results,
+            job=job,
         )
     )
     if state.get("state") == "running":

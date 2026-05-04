@@ -38,8 +38,25 @@ def read_artifacts_relative_to_root(directory: Path, root: Path) -> list[dict[st
     return artifacts
 
 
-def read_research_artifacts(research_dir: Path, root: Path) -> list[dict[str, Any]]:
-    return read_artifacts_relative_to_root(research_dir, root)
+def read_research_artifacts(
+    research_dir: Path,
+    root: Path,
+    job: int | None = None,
+) -> list[dict[str, Any]]:
+    artifacts = read_artifacts_relative_to_root(research_dir, root)
+    if job is None:
+        return artifacts
+    matched: list[dict[str, Any]] = []
+    for artifact in artifacts:
+        if artifact.get("job") is None:
+            continue
+        try:
+            artifact_job = int(artifact["job"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if artifact_job == job:
+            matched.append(artifact)
+    return matched
 
 
 def read_thesis_artifacts(proposals_dir: Path, root: Path) -> list[dict[str, Any]]:

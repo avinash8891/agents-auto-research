@@ -50,17 +50,21 @@ REMOTE_RUNTIME_ENV_PREFIXES = (
     "TRACELOOP_",
 )
 REMOTE_RUNTIME_ENV_EXACT_KEYS = {
+    "AUTORESEARCH_KNOWN_HOSTS",
+    "AUTORESEARCH_VPS_HOST",
+    "AUTORESEARCH_VPS_KEY",
+    "AUTORESEARCH_VPS_USER",
+}
+REMOTE_RUNTIME_ENV_PERSISTED_KEYS = {
     "AUTORESEARCH_GIT_REPO",
     "AUTORESEARCH_GIT_REF",
-    "AUTORESEARCH_KNOWN_HOSTS",
+    "AUTORESEARCH_GIT_SHA",
     "AUTORESEARCH_JOB",
     "AUTORESEARCH_PYTHON_BIN",
     "AUTORESEARCH_RESOLVED_SHA",
     "AUTORESEARCH_VPS",
-    "AUTORESEARCH_VPS_HOST",
-    "AUTORESEARCH_VPS_KEY",
     "AUTORESEARCH_VPS_DIR",
-    "AUTORESEARCH_VPS_USER",
+    "AUTORESEARCH_DATA_ROOT",
 }
 
 
@@ -232,8 +236,20 @@ def _runtime_env_items() -> list[tuple[str, str]]:
     return sorted(items)
 
 
+def _persisted_runtime_env_items() -> list[tuple[str, str]]:
+    return [
+        (key, value)
+        for key, value in _runtime_env_items()
+        if key in REMOTE_RUNTIME_ENV_PERSISTED_KEYS
+    ]
+
+
+def _remote_exec_environment() -> dict[str, str]:
+    return dict(_runtime_env_items())
+
+
 def render_runtime_env_file() -> str:
-    items = _runtime_env_items()
+    items = _persisted_runtime_env_items()
     if not items:
         return ""
     lines = [
@@ -648,13 +664,13 @@ def main():
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()
     # Controller runs are long-lived; do not enforce a 10-minute SSH timeout.
-    _stdin, stdout, stderr = client.exec_command(cmd)
+    _stdin, stdout, stderr = client.exec_command(cmd, environment=_remote_exec_environment())
     exit_code, out, err = _stream_remote_command(stdout, stderr)
     elapsed = time.time() - t1
 
     client.close()
 
-    trace_ssh(cmd, exit_code, out, err)
+    trace_ssh(cmd, exit_code, redact_secrets(out, vps_config), redact_secrets(err, vps_config))
     trace(
         "VPS_RUNNER",
         f"DONE exit={exit_code} elapsed={elapsed:.1f}s stdout_len={len(out)} stderr_len={len(err)}",

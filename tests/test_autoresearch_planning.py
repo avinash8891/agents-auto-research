@@ -437,6 +437,21 @@ def test_should_terminate_true_only_with_completed_research_and_findings(
     assert should_terminate(tmp_path, ema_family, tmp_path / "queue", research_dir, []) is True
 
 
+def test_should_terminate_scopes_research_artifacts_by_job(tmp_path: Path, ema_family) -> None:
+    research_dir = tmp_path / "research"
+    research_dir.mkdir()
+    (research_dir / "job-1.json").write_text(
+        json.dumps({"status": "completed", "job": 1, "findings": ["x"]})
+    )
+    (research_dir / "job-2.json").write_text(
+        json.dumps({"status": "completed", "job": 2, "findings": ["y"]})
+    )
+    queue_dir = tmp_path / "queue"
+
+    assert should_terminate(tmp_path, ema_family, queue_dir, research_dir, [], job=1) is True
+    assert should_terminate(tmp_path, ema_family, queue_dir, research_dir, [], job=3) is False
+
+
 def test_should_terminate_false_when_research_completed_but_suggested_theses_present(
     tmp_path: Path, ema_family
 ) -> None:
