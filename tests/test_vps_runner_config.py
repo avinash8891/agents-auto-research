@@ -179,6 +179,21 @@ def test_vps_config_auto_generates_fresh_remote_dir_when_not_provided(monkeypatc
     assert config.remote_dir.startswith("/home/researcher/autoresearch-ema-")
 
 
+def test_vps_config_auto_generated_remote_dirs_are_unique(monkeypatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
+    monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
+    monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
+    monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+
+    dirs = {
+        config_from_env(git_ref="feature/ema", strategy_name="ema").remote_dir for _ in range(5)
+    }
+
+    assert (
+        len(dirs) == 5
+    ), "each auto-generated remote_dir must be unique to prevent concurrent run collisions"
+
+
 def test_remote_command_runs_controller_for_family() -> None:
     family = load_family("ema")
     config = VPSConfig(

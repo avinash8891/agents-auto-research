@@ -321,3 +321,36 @@ def test_trace_agent_response_accepts_external_trace_id_and_links_artifact(
     ]
     assert events[-1]["payload"]["trace_id"] == "analyst-custom-id"
     assert events[-1]["artifact_paths"] == [str(response_file)]
+
+
+def test_record_usage_event_writes_usage_category_to_jsonl(monkeypatch, tmp_path: Path) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    trace_sdk.record_usage_event(
+        "web-researcher",
+        model_provider="openai",
+        model_name="gpt-5.5",
+        input_tokens=1200,
+        output_tokens=600,
+        total_tokens=1800,
+        cost_usd=0.0045,
+        dedupe_key="test-run-001",
+    )
+
+    events = [
+        json.loads(line)
+        for line in trace_sdk.get_event_file().read_text(encoding="utf-8").splitlines()
+    ]
+    usage_events = [e for e in events if e["category"] == "usage"]
+    assert len(usage_events) == 1, "record_usage_event must write exactly one usage event"
+    ev = usage_events[0]
+    assert ev["model_provider"] == "openai"
+    assert ev["model_name"] == "gpt-5.5"
+    assert ev["payload"]["agent"] == "web-researcher"
+    assert ev["payload"]["input_tokens"] == 1200
+    assert ev["payload"]["output_tokens"] == 600
+    assert ev["payload"]["total_tokens"] == 1800
+    assert abs(ev["payload"]["cost_usd"] - 0.0045) < 1e-9
+    assert ev["payload"]["dedupe_key"] == "test-run-001"
+    assert ev["schema_version"] == 1
+    assert ev["action"] == "accumulate"

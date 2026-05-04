@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -378,3 +380,36 @@ def test_run_coroutine_sync_uses_thread_when_event_loop_is_running():
 
     result = asyncio.run(_inner())
     assert result == 42
+
+
+def test_run_coroutine_sync_propagates_exception_from_threaded_coroutine():
+    # error_box path: coroutine raises inside the daemon thread; must re-raise in caller
+    async def _inner():
+        async def _failing_coro():
+            raise ValueError("coroutine failed inside thread")
+
+        return _run_coroutine_sync(_failing_coro())
+
+    with pytest.raises(ValueError, match="coroutine failed inside thread"):
+        asyncio.run(_inner())
+
+
+def test_run_coroutine_sync_timeout_raises_when_coroutine_hangs():
+    import agent_infra
+
+    original_timeout = agent_infra.SDK_TIMEOUT_SECONDS
+    try:
+        agent_infra.SDK_TIMEOUT_SECONDS = 0.1  # make timeout almost instant
+
+        async def _inner():
+            async def _hanging_coro():
+                import asyncio as _asyncio
+
+                await _asyncio.sleep(999)
+
+            return _run_coroutine_sync(_hanging_coro())
+
+        with pytest.raises(TimeoutError, match="did not complete within"):
+            asyncio.run(_inner())
+    finally:
+        agent_infra.SDK_TIMEOUT_SECONDS = original_timeout

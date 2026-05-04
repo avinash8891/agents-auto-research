@@ -733,3 +733,37 @@ def test_build_missing_primitives_rejects_unknown_structured_family(
 
     assert result["status"] == "error"
     assert "unknown strategy family" in result["reason"]
+
+
+def test_build_missing_primitives_reports_error_when_proposal_has_no_family_field(
+    tmp_path: Path,
+) -> None:
+    # Covers the legacy path guard added for compiler_builder.py:196 —
+    # proposal with neither strategy_family nor family must return a clean error dict,
+    # not raise KeyError.
+    family = load_family("ema")
+    thesis_id = "ema_no_family_field"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                # intentionally omit both strategy_family and family
+                "hypothesis": "missing family field probe",
+            }
+        )
+        + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"normalized_contract": [], "missing_primitives": ["probe"]}) + "\n"
+    )
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "error"
+    assert "missing strategy_family/family" in result["reason"]
+    assert result["generated_config"] is None
+    assert result["validation_passed"] is False
