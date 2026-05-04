@@ -103,6 +103,6 @@ Run tests:
 
 ```bash
 pytest                                        # full suite
-pytest --cov=. --cov-report=term-missing      # with coverage
+pytest --cov --cov-report=term-missing        # with coverage
 pytest tests/test_research_conductor_paths.py -v  # single file
 ```

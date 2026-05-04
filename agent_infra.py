@@ -112,7 +112,7 @@ def _run_coroutine_sync(coro: Any) -> Any:
     def _runner() -> None:
         try:
             result_box["value"] = asyncio.run(coro)
-        except BaseException as exc:  # pragma: no cover - exercised via regression test
+        except BaseException as exc:
             error_box["error"] = exc
 
     thread = threading.Thread(target=_runner, daemon=True)
@@ -120,7 +120,9 @@ def _run_coroutine_sync(coro: Any) -> Any:
     thread.join()
     if error_box:
         raise error_box["error"]
-    return result_box.get("value")
+    if "value" not in result_box:
+        raise RuntimeError("coroutine thread exited without setting a result")
+    return result_box["value"]
 
 
 _CLIENT_CACHE: dict[str, _AsyncOpenAI] = {}
@@ -128,9 +130,7 @@ _CLIENT_CACHE: dict[str, _AsyncOpenAI] = {}
 
 def _get_openai_client(base_url: str) -> _AsyncOpenAI:
     """Return a cached AsyncOpenAI client for the given base URL."""
-    if base_url not in _CLIENT_CACHE:
-        _CLIENT_CACHE[base_url] = _AsyncOpenAI(api_key="unused", base_url=base_url)
-    return _CLIENT_CACHE[base_url]
+    return _CLIENT_CACHE.setdefault(base_url, _AsyncOpenAI(api_key="unused", base_url=base_url))
 
 
 def _parse_json_detailed(text: str) -> dict[str, Any]:

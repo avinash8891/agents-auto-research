@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import os
 import subprocess
+from pathlib import Path
 
 from autoresearch_logging import get_logger
 
 MEMPALACE_CMD = "mempalace"
-MEMPALACE_PALACE = "/Users/avinashvankadaru/.codex/mempalace/palace"
+MEMPALACE_PALACE = os.getenv(
+    "AUTORESEARCH_MEMPALACE_PALACE",
+    str(Path.home() / ".codex/mempalace/palace"),
+)
 log = get_logger(__name__)
 
 

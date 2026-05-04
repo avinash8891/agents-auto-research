@@ -130,10 +130,6 @@ prompts.db                   ← runtime SQLite; accumulated prompt history (git
 ema_experiments.db           ← runtime SQLite; EMA experiment records (gitignored)
 ```
 
-## Known gaps
-
-- `strategies/validate_utils` is NOT in `pyproject.toml` py-modules — add it before cutting a release build.
-
 ## Violations
 
 Cite by number or letter (`violates rule 4` or `violates C`), self-correct before proceeding, state what changed. If a rule seems wrong for a specific case, flag the conflict and propose a resolution — never silently ignore.
