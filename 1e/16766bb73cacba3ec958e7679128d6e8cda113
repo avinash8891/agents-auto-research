@@ -1,0 +1,29 @@
+tests/test_improvement_halo.py
+  a3307316e952de50 135-146
+improvement_halo_apply.py
+  a3307316e952de50 33-44,46
+tests/test_improvement_halo_apply.py
+  a3307316e952de50 337-348
+improvement_halo.py
+  a3307316e952de50 23-34,36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "1e16766bb73cacba3ec958e7679128d6e8cda113",
+  "prompts": {
+    "a3307316e952de50": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea22e46e-9d5b-4cdb-8e89-93343a4ba634",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 50,
+      "total_deletions": 2,
+      "accepted_lines": 50,
+      "overriden_lines": 0
+    }
+  }
+}
