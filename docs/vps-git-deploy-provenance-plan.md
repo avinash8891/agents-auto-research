@@ -4,11 +4,10 @@
 
 - Stop using SCP for code deployment.
 - VPS runner uses `AUTORESEARCH_GIT_REPO`.
-- VPS runner requires exactly one explicit deploy spec on every invocation:
-  - `--git-ref` for a branch or tag
-  - `--git-sha` for an exact 40-char commit SHA
+- VPS runner requires `--git-ref` on every invocation.
+- `--git-ref` can be a feature branch, `main`, or an exact commit SHA.
 - Job identity is created by controller state on each launch, not by VPS runner env.
-- VPS checkout directory is a runtime input via `--vps-dir`, or auto-generated per run when omitted.
+- `AUTORESEARCH_VPS_DIR` must be a dedicated absolute autoresearch checkout path.
 - The reusable checkout does not preserve `.venv` or `venv`; dependency state must not hide inside the code checkout.
 
 ## 2. Resolve every run to an exact commit SHA

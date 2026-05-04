@@ -624,7 +624,13 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     state["research_round"] = research_round
     controller.write_state(state)
 
+    from improvement_flags import reflexion_enabled
+
     rejection_feedback = ""
+    if reflexion_enabled():
+        from improvement_reflexion import build_reflexion_feedback
+
+        rejection_feedback = build_reflexion_feedback(controller, research_round)
     parsed: dict[str, Any] | None = None
     for attempt in range(MAX_VALIDATION_RETRIES):
         parsed = _call_conductor(
@@ -659,15 +665,23 @@ def execute_research_one(controller: "AutoresearchController") -> dict[str, Any]
 
 
 def _classify_round_outcome(result: dict[str, Any]) -> str:
+    from eval_metrics import (
+        OUTCOME_COMPILED,
+        OUTCOME_CONDUCTOR_ERROR,
+        OUTCOME_NEEDS_CODE,
+        OUTCOME_REJECTED,
+        OUTCOME_STOPPED,
+    )
+
     if result.get("should_stop"):
-        return "stopped"
+        return OUTCOME_STOPPED
     if result.get("generated_config_needs_build"):
-        return "needs_code"
+        return OUTCOME_NEEDS_CODE
     if result.get("generated_config"):
-        return "compiled"
+        return OUTCOME_COMPILED
     if result.get("rejection_reason"):
-        return "rejected"
-    return "conductor_error"
+        return OUTCOME_REJECTED
+    return OUTCOME_CONDUCTOR_ERROR
 
 
 def _record_round_quality_and_bridges(
@@ -761,6 +775,76 @@ def _write_adapter_exports(
         ("reflexio", build_reflexio_export_package),
     ]:
         _write_export_package(export_root, dir_name, build_fn(**kwargs))
+
+
+def _safe_hook(name: str, fn, *args, **kwargs):
+    """Run an instrumentation hook fail-open for *external* flakiness only.
+
+    Per CLAUDE.md error policy: deterministic errors (TypeError, KeyError,
+    AttributeError, ImportError, AssertionError, ValueError from our own
+    code) propagate loud — those are bugs we want to notice. Only OS,
+    subprocess, and timeout errors are tolerated as instrumentation noise.
+    """
+    import subprocess
+
+    try:
+        return fn(*args, **kwargs)
+    except (OSError, subprocess.SubprocessError, TimeoutError) as exc:
+        log.error(
+            f"IMPROVEMENT_HOOKS {name} raised {type(exc).__name__}: {exc}; "
+            f"continuing. Action: investigate {name} logs."
+        )
+        return None
+
+
+def _run_improvement_hooks(
+    controller: "AutoresearchController",
+    research_round: int,
+    result: dict[str, Any],
+) -> None:
+    """Dispatch HALO mining + auto-apply + Ratchet — all flag-gated.
+
+    Each arrow short-circuits when its flag is off, so flag-off behavior
+    is byte-identical to the pre-improvement code path.
+    """
+    from improvement_flags import halo_apply_enabled, halo_enabled, ratchet_enabled
+
+    halo_report = None
+    if halo_enabled():
+        from improvement_halo import run_halo_after_round
+        from trace_sdk import get_event_file
+
+        halo_dir = controller.root / "improvement_reports" / "halo"
+        halo_report = _safe_hook(
+            "HALO_mining", run_halo_after_round, research_round, get_event_file(), halo_dir
+        )
+
+    apply_decision: dict | None = None
+    if halo_report is not None and halo_apply_enabled():
+        from improvement_halo_apply import apply_halo_report
+
+        apply_decision = _safe_hook("HALO_apply", apply_halo_report, halo_report, controller.root)
+        if isinstance(apply_decision, dict):
+            log.info(
+                f"HALO_APPLY round={research_round} status={apply_decision.get('status')} "
+                f"reason={apply_decision.get('reason', '')}"
+            )
+        else:
+            apply_decision = None
+
+    if ratchet_enabled():
+        from eval_harness import EVAL_RESULTS_DIRNAME, latest_eval_result_path
+        from improvement_ratchet import record_round_decision
+
+        _safe_hook(
+            "Ratchet",
+            record_round_decision,
+            controller,
+            research_round,
+            _classify_round_outcome(result),
+            eval_result_path=latest_eval_result_path(controller.root / EVAL_RESULTS_DIRNAME),
+            apply_decision=apply_decision,
+        )
 
 
 def _record_rejection_rule_if_needed(research_round: int, result: dict[str, Any]) -> None:
@@ -976,6 +1060,7 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         _record_round_quality_and_bridges(controller, research_round, result, round_usage)
     except Exception as exc:
         log.warning("_record_round_quality_and_bridges failed (non-fatal): %s", exc)
+    _run_improvement_hooks(controller, research_round, result)
 
     if result.get("should_stop"):
         return _handle_should_stop(controller, state, result)
