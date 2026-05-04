@@ -8,11 +8,12 @@ specific lookups (research artifacts, thesis proposals, run-queue artifacts).
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
-_log = logging.getLogger(__name__)
+from autoresearch_logging import get_logger
+
+_log = get_logger(__name__)
 
 from artifact_io import read_json_artifacts as read_artifact_json_files
 from autoresearch_state import ExperimentRecord
