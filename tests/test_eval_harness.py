@@ -24,7 +24,25 @@ from eval_harness import (
     run_eval,
     run_one_suite,
 )
-from eval_metrics import TaskOutcome
+from eval_metrics import (
+    OUTCOME_COMPILED,
+    OUTCOME_REJECTED,
+    TaskOutcome,
+)
+
+
+def _picklable_parallel_runner(task: HoldoutTask, controller_root: Path) -> TaskOutcome:
+    """Top-level (picklable) runner used by the parallel-path test.
+
+    Closures captured in test bodies are not picklable; module-level
+    functions cross the process boundary cleanly.
+    """
+    return TaskOutcome(
+        family=task.family,
+        dataset_window=task.dataset_window,
+        outcome=OUTCOME_COMPILED if task.family == "ema5" else OUTCOME_REJECTED,
+        overall_score=1.0 if task.family == "ema5" else 0.0,
+    )
 
 
 def _write_holdout_yaml(path: Path, tasks: list[dict]) -> None:
@@ -211,6 +229,45 @@ def test_run_eval_variance_across_repeats(tmp_path):
     )
     assert result.primary_metric_stdev > 0.0
     assert result.primary_metric_min < result.primary_metric_max
+
+
+# ── parallel path (ProcessPoolExecutor) ─────────────────────────
+
+
+def test_run_one_suite_parallel_executes_all_tasks_in_subprocesses():
+    """max_workers>1 runs each task in its own process via ProcessPoolExecutor.
+
+    Asserts task identity, outcome classification, and ordering all
+    survive the pickle round-trip across the process boundary —
+    these are the things a closure-capturing runner couldn't verify.
+    """
+    tasks = [
+        HoldoutTask(family="ema5", dataset_window="2024-01-01..2024-06-30", overrides={}),
+        HoldoutTask(family="orb", dataset_window="2024-07-01..2024-12-31", overrides={}),
+        HoldoutTask(family="ema5", dataset_window="2025-01-01..2025-06-30", overrides={}),
+    ]
+    suite = run_one_suite(
+        tasks,
+        task_runner=_picklable_parallel_runner,
+        max_workers=2,
+    )
+    assert suite.n_tasks == 3
+    assert suite.compiled_rate == pytest.approx(2 / 3)
+
+
+def test_run_eval_rejects_zero_max_workers(tmp_path):
+    """max_workers < 1 raises in run_eval before touching holdout or output."""
+    holdout = tmp_path / "h.yaml"
+    _write_holdout_yaml(holdout, [{"family": "ema5", "dataset_window": "w1"}])
+    with pytest.raises(ValueError, match="max_workers must be"):
+        run_eval(
+            label="invalid",
+            repeat=1,
+            holdout_path=holdout,
+            output_dir=tmp_path / "out",
+            task_runner=_picklable_parallel_runner,
+            max_workers=0,
+        )
 
 
 # ── persist_eval_result + latest_eval_result_path ──────────────

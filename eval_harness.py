@@ -12,6 +12,7 @@ layer with a synthetic ``task_runner``; the live layer drives ``eval_cli``.
 from __future__ import annotations
 
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -137,25 +138,41 @@ def _default_task_runner(task: HoldoutTask, controller_root: Path) -> TaskOutcom
     )
 
 
+def _run_one_task_with_runner(runner: TaskRunner, task: HoldoutTask) -> TaskOutcome:
+    """Picklable bridge for ProcessPoolExecutor.
+
+    Each subprocess re-imports trace_sdk → fresh _STATE, _PROVIDER, and
+    Traceloop init. Process boundary, not threading, is the isolation
+    layer because OTel/Traceloop/OpenAIInstrumentor are process-globals
+    by design.
+    """
+    with tempfile.TemporaryDirectory(prefix="eval-task-") as tmpdir:
+        return runner(task, Path(tmpdir))
+
+
 def run_one_suite(
     tasks: list[HoldoutTask],
     *,
     task_runner: TaskRunner | None = None,
+    max_workers: int = 1,
 ) -> SuiteSummary:
     """Run every task once and roll up to a SuiteSummary.
 
     ``task_runner`` defaults to the module-level ``_default_task_runner``
     resolved at call time — tests can monkeypatch the module attribute
     without re-importing.
+
+    ``max_workers > 1`` runs tasks concurrently via ProcessPoolExecutor.
+    The caller-supplied runner must be picklable (top-level function, not
+    a closure).
     """
     runner = task_runner or _default_task_runner
-    outcomes: list[TaskOutcome] = []
-    for task in tasks:
-        with tempfile.TemporaryDirectory(prefix="eval-task-") as tmpdir:
-            controller_root = Path(tmpdir)
-            outcome = runner(task, controller_root)
-            outcomes.append(outcome)
-    return summarize_suite(outcomes)
+    if max_workers > 1:
+        with ProcessPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(_run_one_task_with_runner, runner, t) for t in tasks]
+            return summarize_suite([f.result() for f in futures])
+
+    return summarize_suite([_run_one_task_with_runner(runner, t) for t in tasks])
 
 
 def run_eval(
@@ -166,6 +183,7 @@ def run_eval(
     output_dir: Path | None = None,
     task_runner: TaskRunner | None = None,
     primary_metric_name: str = "compiled_rate",
+    max_workers: int = 1,
 ) -> EvalResult:
     """Run the full held-out suite ``repeat`` times and persist the result.
 
@@ -174,12 +192,17 @@ def run_eval(
     """
     if repeat < 1:
         raise ValueError(f"repeat must be >= 1, got {repeat}")
+    if max_workers < 1:
+        raise ValueError(f"max_workers must be >= 1, got {max_workers}")
     holdout_path = holdout_path or _resolve_holdout_path()
     tasks = load_holdout_tasks(holdout_path)
-    log.info(f"EVAL_HARNESS START label={label} tasks={len(tasks)} repeat={repeat}")
+    log.info(
+        f"EVAL_HARNESS START label={label} tasks={len(tasks)} repeat={repeat} "
+        f"max_workers={max_workers}"
+    )
     suites: list[SuiteSummary] = []
     for i in range(repeat):
-        suite = run_one_suite(tasks, task_runner=task_runner)
+        suite = run_one_suite(tasks, task_runner=task_runner, max_workers=max_workers)
         log.info(
             f"EVAL_HARNESS suite={i + 1}/{repeat} compiled_rate={suite.compiled_rate} "
             f"quality_p50={suite.quality_score_p50}"

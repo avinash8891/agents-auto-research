@@ -55,6 +55,16 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["compiled_rate", "quality_score_p50"],
         default="compiled_rate",
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=1,
+        help=(
+            "Run held-out tasks in parallel via ProcessPoolExecutor "
+            "(default: 1 = sequential). Each worker runs in its own "
+            "process, so trace_sdk's process-global state stays isolated."
+        ),
+    )
     return parser
 
 
@@ -95,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         holdout_path=args.holdout_path,
         output_dir=output_dir,
         primary_metric_name=args.primary_metric,
+        max_workers=args.max_workers,
     )
     log.info(
         f"EVAL primary={result.primary_metric_name} "
