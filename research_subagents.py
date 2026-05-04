@@ -185,6 +185,8 @@ Be brutally honest."""
                     "output_tokens": u.output_tokens,
                     "total_tokens": u.total_tokens,
                 },
+                provider="openai",
+                model="gpt-5.5",
             )
         output = result.final_output or ""
         parsed = _parse_json(output)
@@ -294,6 +296,8 @@ Return ONLY the JSON object."""
                     "output_tokens": u.output_tokens,
                     "total_tokens": u.total_tokens,
                 },
+                provider="openai",
+                model="gpt-5.5",
             )
         output = result.final_output or ""
         parsed = _parse_json(output)

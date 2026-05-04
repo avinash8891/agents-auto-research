@@ -532,6 +532,45 @@ def trace(
     )
 
 
+def record_usage_event(
+    agent: str,
+    *,
+    model_provider: str = "",
+    model_name: str = "",
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    total_tokens: int = 0,
+    cost_usd: float = 0.0,
+    dedupe_key: str | None = None,
+) -> None:
+    """Emit a per-call token-usage trace event into trace-events.jsonl.
+
+    Reuses run_id / job / hypothesis_id correlation fields from the trace runtime.
+    Fail-open: any exception during emission must not block the caller.
+    """
+    try:
+        _STATE.next_seq()
+        _record_event(
+            source_module="agent_token_usage",
+            category="usage",
+            action="accumulate",
+            summary=f"USAGE {agent} in={input_tokens} out={output_tokens} cost={cost_usd:.6f}",
+            payload={
+                "agent": agent,
+                "input_tokens": int(input_tokens or 0),
+                "output_tokens": int(output_tokens or 0),
+                "total_tokens": int(total_tokens or 0),
+                "cost_usd": float(cost_usd or 0.0),
+                "dedupe_key": dedupe_key,
+            },
+            model_provider=model_provider or "",
+            model_name=model_name or "",
+        )
+    except Exception:
+        # observability never blocks business logic
+        pass
+
+
 def trace_agent_prompt(
     agent_name: str,
     prompt: str,

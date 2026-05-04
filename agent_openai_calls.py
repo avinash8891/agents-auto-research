@@ -62,7 +62,7 @@ async def _run_web_research_openai(
                 pass
 
             output = result.final_output or ""
-            _accumulate_result_usage("web-researcher", result)
+            _accumulate_result_usage("web-researcher", result, provider="openai", model="gpt-5.5")
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
             trace_agent_response(
@@ -106,7 +106,7 @@ async def _run_web_research_openai(
                 model_provider="openai",
                 model_name="gpt-5.5",
             )
-            _accumulate_result_usage("web-researcher", None)
+            _accumulate_result_usage("web-researcher", None, provider="openai", model="gpt-5.5")
             error = agent_infra._structured_error(
                 "web-researcher",
                 "transport",
@@ -237,7 +237,7 @@ async def _run_diagnostic_analyst_openai(
                 pass
 
             output = result.final_output or ""
-            _accumulate_result_usage("codex-analyst", result)
+            _accumulate_result_usage("codex-analyst", result, provider="openai", model="gpt-5.5")
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
             trace_agent_response(
@@ -281,7 +281,7 @@ async def _run_diagnostic_analyst_openai(
                 model_provider="openai",
                 model_name="gpt-5.5",
             )
-            _accumulate_result_usage("codex-analyst", None)
+            _accumulate_result_usage("codex-analyst", None, provider="openai", model="gpt-5.5")
             error = agent_infra._structured_error(
                 "diagnostic-analyst",
                 "transport",

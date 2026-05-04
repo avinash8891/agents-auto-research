@@ -137,7 +137,7 @@ async def _run_single_agent(
                 model_provider=model_provider,
                 model_name=model_name,
             )
-            _accumulate_result_usage(name, None)
+            _accumulate_result_usage(name, None, provider=model_provider, model=model_name)
             error = agent_infra._structured_error(
                 name,
                 "timeout",
@@ -154,7 +154,7 @@ async def _run_single_agent(
                 model_provider=model_provider,
                 model_name=model_name,
             )
-            _accumulate_result_usage(name, None)
+            _accumulate_result_usage(name, None, provider=model_provider, model=model_name)
             error = agent_infra._structured_error(
                 name,
                 "transport",
@@ -166,7 +166,7 @@ async def _run_single_agent(
                 continue
             return error
 
-        _accumulate_result_usage(name, result)
+        _accumulate_result_usage(name, result, provider=model_provider, model=model_name)
 
         result_text = ""
         if hasattr(result, "final_output_as"):

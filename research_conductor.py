@@ -278,6 +278,8 @@ async def run_research_conductor(
                     },
                     cost_usd=getattr(resp, "total_cost_usd", 0.0) or 0.0,
                     dedupe_key=f"conductor-response-{id(resp)}",
+                    provider="openai",
+                    model=getattr(resp, "model", None) or "gpt-5.5",
                 )
         if not raw_responses or not saw_raw_usage:
             top_usage = getattr(result, "usage", None) or getattr(result, "model_usage", None)
@@ -302,6 +304,8 @@ async def run_research_conductor(
                     ),
                     cost_usd=top_cost if top_cost is not None else 0.0,
                     dedupe_key=f"conductor-result-{id(result)}",
+                    provider="openai",
+                    model=getattr(result, "model", None) or "gpt-5.5",
                 )
     except asyncio.TimeoutError:
         trace(
