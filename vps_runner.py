@@ -29,10 +29,13 @@ from urllib.parse import urlsplit, urlunsplit
 
 import paramiko
 
+from autoresearch_logging import get_logger
 from backtest.data_universe import DATA_ROOT_ENV
 from strategies import STRATEGIES
 from strategy_family import StrategyFamily, load_family
 from trace_sdk import trace, trace_ssh
+
+log = get_logger(__name__)
 
 KNOWN_HOSTS_ENV = "AUTORESEARCH_KNOWN_HOSTS"
 RESOLVED_SHA_MARKER = "AUTORESEARCH_RESOLVED_SHA"
@@ -478,12 +481,12 @@ def connect_verified_ssh_client(vps_config: VPSConfig) -> paramiko.SSHClient:
     client = create_verified_ssh_client()
     try:
         client.connect(vps_config.host, username=vps_config.user, key_filename=vps_config.key)
-    except paramiko.SSHException as exc:
+    except (paramiko.SSHException, OSError) as exc:
         client.close()
         raise RuntimeError(
             "VPS SSH connection failed with host-key verification enforced. "
             f"Add {vps_config.host} to ~/.ssh/known_hosts or set {KNOWN_HOSTS_ENV} "
-            "to a known_hosts file containing the VPS host key."
+            f"to a known_hosts file containing the VPS host key. Underlying error: {exc}"
         ) from exc
     return client
 
@@ -508,7 +511,7 @@ def _localize_remote_result_output(output: str, sftp: paramiko.SFTPClient) -> st
 
     try:
         payload = json.loads(local_result_path.read_text())
-    except Exception as exc:
+    except (json.JSONDecodeError, OSError) as exc:
         shutil.rmtree(local_dir, ignore_errors=True)
         raise RuntimeError(
             f"Failed to parse fetched remote RESULT_JSON artifact: {remote_result_path}"
@@ -624,6 +627,7 @@ def main():
     try:
         client = connect_verified_ssh_client(vps_config)
     except (FileNotFoundError, RuntimeError) as exc:
+        log.error("SSH setup failed: %s", exc)
         trace("VPS_RUNNER", f"SSH setup failed: {exc}")
         print(str(exc), file=sys.stderr)
         sys.exit(1)
@@ -653,6 +657,7 @@ def main():
         resolved_sha = parse_resolved_sha(prepare_out)
     except RuntimeError as exc:
         client.close()
+        log.error("Failed to parse resolved SHA: %s", exc)
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     trace("VPS_RUNNER", f"Git prepare complete sha={resolved_sha} elapsed={time.time() - t0:.1f}s")
@@ -661,6 +666,7 @@ def main():
         materialize_remote_runtime_env(client, vps_config)
     except (OSError, RuntimeError) as exc:
         client.close()
+        log.error("Runtime env upload failed: %s", exc)
         trace("VPS_RUNNER", f"Runtime env upload failed: {exc}")
         print(str(exc), file=sys.stderr)
         sys.exit(1)
@@ -669,11 +675,16 @@ def main():
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()
     # Controller runs are long-lived; do not enforce a 10-minute SSH timeout.
-    _stdin, stdout, stderr = client.exec_command(cmd)
-    exit_code, out, err = _stream_remote_command(stdout, stderr)
+    try:
+        _stdin, stdout, stderr = client.exec_command(cmd)
+        exit_code, out, err = _stream_remote_command(stdout, stderr)
+    except Exception as exc:
+        log.error("Remote command stream failed: %s", exc)
+        trace("VPS_RUNNER", f"Remote command stream failed: {exc}")
+        sys.exit(1)
+    finally:
+        client.close()
     elapsed = time.time() - t1
-
-    client.close()
 
     trace_ssh(cmd, exit_code, redact_secrets(out, vps_config), redact_secrets(err, vps_config))
     trace(

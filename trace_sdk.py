@@ -146,7 +146,12 @@ class TraceRuntimeState:
 
     def get_log_handle(self) -> IO[str]:
         if self.log_handle is None:
-            self.log_handle = self.log_file.open("a", encoding="utf-8")
+            if self.log_file is None:
+                raise RuntimeError("TraceRuntimeState.log_file is not set")
+            try:
+                self.log_handle = self.log_file.open("a", encoding="utf-8")
+            except OSError as exc:
+                raise RuntimeError(f"Cannot open trace log {self.log_file}: {exc}") from exc
         return self.log_handle
 
     def reset_for_round(self, round_number: int) -> None:
@@ -197,6 +202,10 @@ _PROVIDER: TracerProvider | None = None
 _INITIALIZED = False
 _OPENAI_INSTRUMENTED = False
 _OPENAI_INSTRUMENTOR = OpenAIInstrumentor()
+
+import logging as _logging
+
+_log = _logging.getLogger(__name__)
 
 
 def _write_text(path: Path, content: str) -> str:
@@ -603,9 +612,9 @@ def record_usage_event(
             model_provider=model_provider or "",
             model_name=model_name or "",
         )
-    except Exception:
+    except Exception as exc:
         # observability never blocks business logic
-        pass
+        _log.debug("record_usage_event failed (suppressed): %s", exc)
 
 
 def trace_agent_prompt(

@@ -10,11 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from artifact_io import timestamp_now, write_json_artifact
+from autoresearch_logging import get_logger
 from backtest.runtime_config import load_runtime_config
 from persistence_utils import write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import load_family
 from trace_sdk import trace
+
+log = get_logger(__name__)
 
 BUILDER_CLI_TIMEOUT_SECONDS = 900
 BUILDER_CLI_MODEL = "gpt-5.4-mini"
@@ -50,9 +53,14 @@ def _read_json_artifact(path: Path) -> dict[str, Any] | None:
         return None
     try:
         payload = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
+    except OSError as exc:
+        log.error("Failed to read artifact %s: %s", path, exc)
+        return None
+    except json.JSONDecodeError as exc:
+        log.error("Malformed JSON in artifact %s: %s", path, exc)
         return None
     if not isinstance(payload, dict):
+        log.error("Artifact %s is not a JSON object (got %s)", path, type(payload).__name__)
         return None
     return payload
 
@@ -193,7 +201,14 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 "generated_config": None,
                 "validation_passed": False,
             }
-        family_name = proposal.get("strategy_family") or proposal["family"]
+        family_name = proposal.get("strategy_family") or proposal.get("family")
+        if not family_name:
+            return {
+                "status": "error",
+                "reason": f"missing strategy_family/family field in proposal for {thesis_id}",
+                "generated_config": None,
+                "validation_passed": False,
+            }
         normalized_contract = compilation.get("normalized_contract") or []
         missing_primitives = _resolve_missing_primitives(proposal, compilation)
         generated_name = (
@@ -300,6 +315,7 @@ Constraints:
         try:
             load_runtime_config(str(config_abspath), family_name)
         except Exception as exc:
+            log.error("Generated config failed validation for thesis=%s: %s", thesis_id, exc)
             result = {
                 "status": "error",
                 "reason": f"generated config failed validation: {exc}",
@@ -385,6 +401,7 @@ Constraints:
         try:
             load_runtime_config(str(config_abspath), family_name)
         except Exception as exc:
+            log.error("Generated config failed validation for thesis=%s: %s", thesis_id, exc)
             out = {
                 "status": "error",
                 "reason": f"generated config failed validation: {exc}",

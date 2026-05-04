@@ -8,7 +8,10 @@ import agent_prompts
 from agent_runners import _validate_output
 from agent_token_usage import _accumulate_result_usage
 from autoresearch_constants import DEFAULT_AGENT_MODEL as _OPENAI_AGENT_MODEL
+from autoresearch_logging import get_logger
 from trace_sdk import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
+
+log = get_logger(__name__)
 
 _PROVIDER = "openai"
 _MODEL = _OPENAI_AGENT_MODEL
@@ -106,14 +109,17 @@ async def _run_web_research_openai(
                 excerpt=parsed_result.get("excerpt") or (output[:200] if output else None),
             )
         except Exception as exc:
-            _trace("OPENAI_AGENT", f"web-researcher ERROR: {exc.__class__.__name__}")
+            _trace("OPENAI_AGENT", f"web-researcher ERROR: {exc.__class__.__name__}: {exc}")
+            log.warning(
+                "web-researcher attempt=%d failed: %s: %s", attempt, exc.__class__.__name__, exc
+            )
             _accumulate_result_usage("web-researcher", None, provider=_PROVIDER, model=_MODEL)
             error = agent_infra._structured_error(
                 "web-researcher",
                 "transport",
                 "Web research execution failed",
                 attempt=attempt,
-                details=exc.__class__.__name__,
+                details=f"{exc.__class__.__name__}: {exc}",
             )
 
         if attempt < retries:
@@ -160,6 +166,7 @@ async def _run_diagnostic_analyst_openai(
                 return content[:50000] + f"\n... (truncated, {len(content)} total chars)"
             return content
         except Exception as e:
+            log.warning("read_file tool failed for path=%s: %s", file_path, e)
             return f"ERROR: {e}"
 
     @function_tool
@@ -184,6 +191,7 @@ async def _run_diagnostic_analyst_openai(
         except subprocess.TimeoutExpired:
             return "ERROR: Code execution timed out (60s limit)"
         except Exception as e:
+            log.warning("run_python tool failed: %s", e)
             return f"ERROR: {e}"
 
     client = agent_infra._get_openai_client(agent_infra._OAUTH_PROXY_URL)
@@ -235,7 +243,10 @@ async def _run_diagnostic_analyst_openai(
                 excerpt=parsed_result.get("excerpt") or (output[:200] if output else None),
             )
         except Exception as exc:
-            _trace("OPENAI_AGENT", f"codex-analyst ERROR: {exc.__class__.__name__}")
+            _trace("OPENAI_AGENT", f"codex-analyst ERROR: {exc.__class__.__name__}: {exc}")
+            log.warning(
+                "codex-analyst attempt=%d failed: %s: %s", attempt, exc.__class__.__name__, exc
+            )
             _accumulate_result_usage("codex-analyst", None, provider=_PROVIDER, model=_MODEL)
             error = agent_infra._structured_error(
                 "diagnostic-analyst",

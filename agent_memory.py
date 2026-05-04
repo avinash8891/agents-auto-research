@@ -53,7 +53,11 @@ def _mempalace_search(query_text: str, wing: str = "autoresearch", n: int = 3) -
     if result is None:
         return "(memory search unavailable)"
     if result.returncode != 0:
-        log.warning("mempalace search failed rc=%s", result.returncode)
+        log.warning(
+            "mempalace search failed rc=%s stderr=%s",
+            result.returncode,
+            (result.stderr or "")[:200],
+        )
         return "(memory search unavailable)"
     output = result.stdout.strip()
     return output if output else "(no prior memory found)"
@@ -77,7 +81,11 @@ def _mempalace_write(wing: str, room: str, content: str) -> bool:
     if result is None:
         return False
     if result.returncode != 0:
-        log.warning("mempalace write failed rc=%s", result.returncode)
+        log.warning(
+            "mempalace write failed rc=%s stderr=%s",
+            result.returncode,
+            (result.stderr or "")[:200],
+        )
         return False
     return True
 
@@ -100,6 +108,10 @@ def _mempalace_diary(agent_name: str, topic: str, entry: str) -> bool:
     if result is None:
         return False
     if result.returncode != 0:
-        log.warning("mempalace diary failed rc=%s", result.returncode)
+        log.warning(
+            "mempalace diary failed rc=%s stderr=%s",
+            result.returncode,
+            (result.stderr or "")[:200],
+        )
         return False
     return True

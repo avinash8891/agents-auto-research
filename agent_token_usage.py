@@ -38,7 +38,8 @@ def _emit_trace_usage(
     """Forward per-call usage to trace_sdk's event stream. Fail-open."""
     try:
         from trace_sdk import record_usage_event
-    except Exception:  # trace_sdk unavailable in some contexts (tests)
+    except Exception as exc:  # trace_sdk unavailable in some contexts (tests)
+        logger.warning("trace_sdk unavailable, usage events will not be emitted: %s", exc)
         return
     try:
         record_usage_event(

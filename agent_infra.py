@@ -107,17 +107,21 @@ def _run_coroutine_sync(coro: Any) -> Any:
         return asyncio.run(coro)
 
     result_box: dict[str, Any] = {}
-    error_box: dict[str, BaseException] = {}
+    error_box: dict[str, Exception] = {}
 
     def _runner() -> None:
         try:
             result_box["value"] = asyncio.run(coro)
-        except BaseException as exc:
+        except Exception as exc:
             error_box["error"] = exc
 
     thread = threading.Thread(target=_runner, daemon=True)
     thread.start()
-    thread.join()
+    thread.join(timeout=SDK_TIMEOUT_SECONDS)
+    if thread.is_alive():
+        raise TimeoutError(
+            f"_run_coroutine_sync: coroutine did not complete within {SDK_TIMEOUT_SECONDS}s"
+        )
     if error_box:
         raise error_box["error"]
     if "value" not in result_box:
