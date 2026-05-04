@@ -11,12 +11,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from artifact_io import read_json_artifacts as read_artifact_json_files
 from autoresearch_logging import get_logger
+from autoresearch_state import ExperimentRecord
 
 _log = get_logger(__name__)
-
-from artifact_io import read_json_artifacts as read_artifact_json_files
-from autoresearch_state import ExperimentRecord
 
 
 def _serialize_artifact_path(path: Path, root: Path) -> str:

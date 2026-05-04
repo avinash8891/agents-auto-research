@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from typing import Any
 
@@ -97,6 +98,24 @@ ROOT = Path(__file__).resolve().parent
 _AUTONOMY_LEDGER = AutonomyLedger()
 STATE_PATH = ROOT / "autoresearch.next.json"
 CURRENT_MD_PATH = ROOT / "autoresearch.current.md"
+
+
+def _load_max_consecutive_research_required() -> int:
+    raw = os.environ.get("AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED", "10")
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED must be an integer, got {raw!r}"
+        ) from exc
+    if value < 1:
+        raise ValueError(
+            f"AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED must be >= 1, got {value}"
+        )
+    return value
+
+
+MAX_CONSECUTIVE_RESEARCH_REQUIRED = _load_max_consecutive_research_required()
 IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
 
 
@@ -654,7 +673,6 @@ def main() -> int:
         "MAIN",
         f"Autoresearch loop starting family={args.family} job={job} session={get_session_id()} log={get_log_file()}",
     )
-    _MAX_CONSECUTIVE_RESEARCH_REQUIRED = 10
     consecutive_research_required = 0
     while True:
         code = controller.execute_once()
@@ -668,7 +686,7 @@ def main() -> int:
             blockers = state.get("blockers", [])
             if any(b.get("kind") == "research_required" for b in blockers):
                 consecutive_research_required += 1
-                if consecutive_research_required >= _MAX_CONSECUTIVE_RESEARCH_REQUIRED:
+                if consecutive_research_required >= MAX_CONSECUTIVE_RESEARCH_REQUIRED:
                     trace(
                         "MAIN",
                         f"research_required blocker persisted for {consecutive_research_required} consecutive iterations; treating as terminal",
