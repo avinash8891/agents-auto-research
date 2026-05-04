@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
+
+_log = logging.getLogger(__name__)
 
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
@@ -44,7 +47,8 @@ def _activate_builder_config(
     if thesis_path.exists():
         try:
             loaded = json.loads(thesis_path.read_text())
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as exc:
+            _log.warning("thesis.json unreadable for %s: %s", thesis_id, exc)
             loaded = {}
         if isinstance(loaded, dict):
             thesis_payload = loaded

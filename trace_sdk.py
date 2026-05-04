@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -61,6 +62,7 @@ class JsonLineTraceExporter(SpanExporter):
     def __init__(self, event_file: Path) -> None:
         self._event_file = event_file
         self._event_file.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
 
     @property
     def event_file(self) -> Path:
@@ -69,7 +71,7 @@ class JsonLineTraceExporter(SpanExporter):
     def export(self, spans: list[ReadableSpan]) -> SpanExportResult:
         if not spans:
             return SpanExportResult.SUCCESS
-        with self._event_file.open("a", encoding="utf-8") as handle:
+        with self._lock, self._event_file.open("a", encoding="utf-8") as handle:
             for span in spans:
                 if not span.attributes.get("autoresearch.event_id"):
                     continue
@@ -407,21 +409,24 @@ def _initialize_tracing() -> None:
         _bind_instrumentation()
         _INITIALIZED = True
         return
-    Traceloop.init(
-        app_name="agents-auto-research",
-        disable_batch=True,
-        exporter=_STATE.exporter,
-        telemetry_enabled=False,
-        api_key=os.getenv("TRACELOOP_API_KEY", "local-dev"),
-        endpoint_is_traceloop=False,
-        instruments={
-            Instruments.OPENAI,
-            Instruments.OPENAI_AGENTS,
-            Instruments.REQUESTS,
-            Instruments.URLLIB3,
-        },
-        resource_attributes={"autoresearch.session_id": _STATE.session_id},
-    )
+    try:
+        Traceloop.init(
+            app_name="agents-auto-research",
+            disable_batch=True,
+            exporter=_STATE.exporter,
+            telemetry_enabled=False,
+            api_key=os.getenv("TRACELOOP_API_KEY", "local-dev"),
+            endpoint_is_traceloop=False,
+            instruments={
+                Instruments.OPENAI,
+                Instruments.OPENAI_AGENTS,
+                Instruments.REQUESTS,
+                Instruments.URLLIB3,
+            },
+            resource_attributes={"autoresearch.session_id": _STATE.session_id},
+        )
+    except Exception as exc:
+        _log.warning("Traceloop.init failed (suppressed): %s", exc)
     _bind_instrumentation()
     _INITIALIZED = True
 

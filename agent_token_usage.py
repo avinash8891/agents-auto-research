@@ -147,13 +147,13 @@ def _accumulate_result_usage(
     total_output = 0
     total_total = 0
     saw_usage = False
-    if model is None:
-        model = getattr(result, "model", None)
+    if not model:
+        model = getattr(result, "model", None) or None
 
     raw_responses = getattr(result, "raw_responses", None) or []
     for resp in raw_responses:
-        if model is None:
-            model = getattr(resp, "model", None)
+        if not model:
+            model = getattr(resp, "model", None) or None
         usage = getattr(resp, "usage", None) or getattr(resp, "model_usage", None)
         if not usage:
             continue
