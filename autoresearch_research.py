@@ -32,11 +32,11 @@ from autoresearch_orchestration import (
 from autoresearch_planning import build_research_failure_state
 from autoresearch_state import (
     ExperimentRecord,
-    iso8601_utc_now,
     read_state,
     write_state,
 )
 from config_hash import _config_hash
+from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_types import ResearchThesis
 from strategy_family import StrategyFamily
@@ -678,12 +678,11 @@ def _record_round_quality_and_bridges(
 ) -> None:
     outcome = _classify_round_outcome(result)
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
+    reasoning = result.get("reasoning", "")
+    rejection_reason = result.get("rejection_reason", "")
     dimension_scores = {
-        "compiled": 1.0 if outcome == "compiled" else 0.0,
-        "needs_code": 1.0 if outcome == "needs_code" else 0.0,
-        "stopped": 1.0 if outcome == "stopped" else 0.0,
-        "rejected": 1.0 if outcome == "rejected" else 0.0,
-        "conductor_error": 1.0 if outcome == "conductor_error" else 0.0,
+        k: 1.0 if k == outcome else 0.0
+        for k in ("compiled", "needs_code", "stopped", "rejected", "conductor_error")
     }
     overall_score = 1.0 if outcome in {"compiled", "stopped"} else 0.0
     artifact_paths = []
@@ -696,59 +695,27 @@ def _record_round_quality_and_bridges(
         overall_score=overall_score,
         artifact_paths=artifact_paths,
     )
-    emit_halo_event(
-        action="research_round",
-        summary=f"HALO round {research_round}",
-        payload=build_halo_payload(
-            research_round=research_round,
-            thesis_id=thesis_id,
-            outcome=outcome,
-            family=controller.family.name,
-            reasoning=result.get("reasoning", ""),
-            rejection_reason=result.get("rejection_reason", ""),
-            usage=round_usage,
-            quality=quality_event,
-        ),
-    )
-    emit_recursive_improve_event(
-        action="research_round",
-        summary=f"recursive improve round {research_round}",
-        payload=build_recursive_improve_payload(
-            research_round=research_round,
-            thesis_id=thesis_id,
-            outcome=outcome,
-            family=controller.family.name,
-            reasoning=result.get("reasoning", ""),
-            rejection_reason=result.get("rejection_reason", ""),
-            usage=round_usage,
-            quality=quality_event,
-        ),
-    )
-    emit_reflexio_event(
-        action="research_round",
-        summary=f"reflexio round {research_round}",
-        payload=build_reflexio_payload(
-            research_round=research_round,
-            thesis_id=thesis_id,
-            outcome=outcome,
-            family=controller.family.name,
-            reasoning=result.get("reasoning", ""),
-            rejection_reason=result.get("rejection_reason", ""),
-            usage=round_usage,
-            quality=quality_event,
-        ),
-    )
-    _write_adapter_exports(
-        controller.root,
-        research_round=research_round,
-        thesis_id=thesis_id,
-        outcome=outcome,
-        family=controller.family.name,
-        reasoning=result.get("reasoning", ""),
-        rejection_reason=result.get("rejection_reason", ""),
-        usage=round_usage,
-        quality=quality_event,
-    )
+    payload_kwargs = {
+        "research_round": research_round,
+        "thesis_id": thesis_id,
+        "outcome": outcome,
+        "family": controller.family.name,
+        "reasoning": reasoning,
+        "rejection_reason": rejection_reason,
+        "usage": round_usage,
+        "quality": quality_event,
+    }
+    for emit_fn, build_fn, label in [
+        (emit_halo_event, build_halo_payload, "HALO"),
+        (emit_recursive_improve_event, build_recursive_improve_payload, "recursive improve"),
+        (emit_reflexio_event, build_reflexio_payload, "reflexio"),
+    ]:
+        emit_fn(
+            action="research_round",
+            summary=f"{label} round {research_round}",
+            payload=build_fn(**payload_kwargs),
+        )
+    _write_adapter_exports(controller.root, **payload_kwargs)
 
 
 def _write_export_package(export_root: Path, directory_name: str, package: dict[str, Any]) -> None:
@@ -775,26 +742,25 @@ def _write_adapter_exports(
     reasoning: str,
     rejection_reason: str,
     usage: dict[str, Any],
-    quality: dict[str, Any],
+    quality: Any,
 ) -> None:
-    export_root = root / "trace_exports" / f"round-{research_round:03d}-{thesis_id}"
-    kwargs = {
-        "research_round": research_round,
-        "thesis_id": thesis_id,
-        "outcome": outcome,
-        "family": family,
-        "reasoning": reasoning,
-        "rejection_reason": rejection_reason,
-        "usage": usage,
-        "quality": quality,
-    }
-    _write_export_package(export_root, "halo", build_halo_export_package(**kwargs))
-    _write_export_package(
-        export_root,
-        "recursive_improve",
-        build_recursive_improve_export_package(**kwargs),
+    kwargs = dict(
+        research_round=research_round,
+        thesis_id=thesis_id,
+        outcome=outcome,
+        family=family,
+        reasoning=reasoning,
+        rejection_reason=rejection_reason,
+        usage=usage,
+        quality=quality,
     )
-    _write_export_package(export_root, "reflexio", build_reflexio_export_package(**kwargs))
+    export_root = root / "trace_exports" / f"round-{research_round:03d}-{thesis_id}"
+    for dir_name, build_fn in [
+        ("halo", build_halo_export_package),
+        ("recursive_improve", build_recursive_improve_export_package),
+        ("reflexio", build_reflexio_export_package),
+    ]:
+        _write_export_package(export_root, dir_name, build_fn(**kwargs))
 
 
 def _record_rejection_rule_if_needed(research_round: int, result: dict[str, Any]) -> None:
@@ -811,22 +777,33 @@ def _record_rejection_rule_if_needed(research_round: int, result: dict[str, Any]
     )
 
 
+def _close_run(
+    controller: "AutoresearchController",
+    state: dict[str, Any],
+    title: str,
+    body: str,
+    color: int,
+) -> None:
+    controller.write_state(state)
+    controller.write_current_md(state, controller.read_results())
+    notify_discord(title, body, webhook=controller.family.discord_webhook, color=color)
+
+
 def _handle_max_rounds_reached(
     controller: "AutoresearchController", state: dict[str, Any]
 ) -> dict[str, Any]:
     state["state"] = "finished"
     state["finished_reason"] = "max_research_rounds_reached"
-    controller.write_state(state)
-    controller.write_current_md(state, controller.read_results())
     log.info(f"LOOP_STOP finished: max research rounds ({MAX_RESEARCH_ROUNDS}) reached")
     best = state.get("current_best", {})
-    notify_discord(
+    _close_run(
+        controller,
+        state,
         f"✅ {controller.family.name.upper()} FINISHED — max rounds",
         f"**Rounds:** {MAX_RESEARCH_ROUNDS}\n"
         f"**Best config:** `{best.get('config', '?')}`\n"
         f"**Best PF:** {best.get('metric', '?')}",
-        webhook=controller.family.discord_webhook,
-        color=DISCORD_COLOR_SUCCESS,
+        DISCORD_COLOR_SUCCESS,
     )
     return state
 
@@ -837,17 +814,16 @@ def _handle_should_stop(
     state["state"] = "finished"
     state["finished_reason"] = "research_recommends_stop"
     state["research_stop_reasoning"] = result.get("reasoning", "")
-    controller.write_state(state)
-    controller.write_current_md(state, controller.read_results())
     log.info("LOOP_STOP finished: research recommends stop")
     best = state.get("current_best", {})
-    notify_discord(
+    _close_run(
+        controller,
+        state,
         f"✅ {controller.family.name.upper()} FINISHED — conductor says stop",
         f"**Best config:** `{best.get('config', '?')}`\n"
         f"**Best PF:** {best.get('metric', '?')}\n\n"
         "Research conductor recommends stopping.",
-        webhook=controller.family.discord_webhook,
-        color=DISCORD_COLOR_SUCCESS,
+        DISCORD_COLOR_SUCCESS,
     )
     return state
 
@@ -876,18 +852,17 @@ def _handle_needs_code(
     state["halted_reason"] = "requires_code_change"
     state["halted_thesis_id"] = thesis_id
     state["halted_thesis"] = thesis
-    controller.write_state(state)
-    controller.write_current_md(state, controller.read_results())
     best = state.get("current_best", {})
-    notify_discord(
+    _close_run(
+        controller,
+        state,
         f"🛑 {controller.family.name.upper()} HALTED — needs code change",
         f"**Thesis:** `{thesis_id}`\n"
         f"**Best PF:** {best.get('metric', '?')}\n\n"
         f"**Hypothesis:** {thesis.get('hypothesis', '(no details captured)')}\n\n"
         f"**Mechanism:** {thesis.get('mechanism', '')}\n\n"
         f"**Config changes:** `{json.dumps(thesis.get('config_changes', {}))}`",
-        webhook=controller.family.discord_webhook,
-        color=DISCORD_COLOR_DISCARD,
+        DISCORD_COLOR_DISCARD,
     )
     return state
 
@@ -954,6 +929,7 @@ def _invoke_conductor_round(
     controller._accumulate_job_usage(round_usage)
     state = controller.read_state()
     state["_last_round_usage"] = round_usage
+    state["family"] = controller.family.name
     controller.write_state(state)
     end_hypothesis(decision="research_complete")
     return result, round_usage
@@ -974,20 +950,19 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
     result, round_usage = _invoke_conductor_round(controller, research_round)
     state = controller.read_state()  # refresh after _invoke_conductor_round mutated state
 
+    thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
     thesis_meta = result.get("thesis") or {
-        "thesis_id": result.get("generated_thesis_id") or result.get("thesis_id") or "none",
+        "thesis_id": thesis_id,
         "strategy_family": controller.family.name,
         "config_changes": result.get("config_changes") or {},
         "hypothesis": result.get("hypothesis") or result.get("reasoning", ""),
         "mechanism": result.get("mechanism") or result.get("reasoning", ""),
         "mechanism_dimension": result.get("mechanism_dimension") or "",
     }
-    state["family"] = controller.family.name
-    controller.write_state(state)
     controller.log_research_round(
         round_number=research_round,
-        thesis_id=result.get("generated_thesis_id") or result.get("thesis_id") or "none",
-        hypothesis_id=result.get("generated_thesis_id") or result.get("thesis_id") or "none",
+        thesis_id=thesis_id,
+        hypothesis_id=thesis_id,
         outcome=_classify_round_outcome(result),
         config_changes=thesis_meta.get("config_changes"),
         hypothesis=thesis_meta.get("hypothesis", ""),
@@ -997,13 +972,15 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         usage=round_usage,
     )
     _record_rejection_rule_if_needed(research_round, result)
-    _record_round_quality_and_bridges(controller, research_round, result, round_usage)
+    try:
+        _record_round_quality_and_bridges(controller, research_round, result, round_usage)
+    except Exception as exc:
+        log.warning("_record_round_quality_and_bridges failed (non-fatal): %s", exc)
 
     if result.get("should_stop"):
         return _handle_should_stop(controller, state, result)
     if result.get("generated_config_needs_build"):
         state = _handle_needs_code(controller, state, result)
-        thesis_id = result.get("generated_thesis_id", "unknown")
         return _orchestration_build_missing_primitives_for_state(
             controller,
             state,

@@ -32,7 +32,7 @@ def _filter_signals_to_days(signals, frame: pd.DataFrame, allowed_days: set):
             signals.alert_bar_idx[:] = -1
         return signals
     dates = frame.index.date
-    mask = np.array([d in allowed_days for d in dates])
+    mask = np.isin(dates, list(allowed_days))
     signals.entries[~mask] = False
     signals.entry_price[~mask] = np.nan
     signals.stop_price[~mask] = np.nan
@@ -46,7 +46,7 @@ def _exclude_signals_on_days(signals, frame: pd.DataFrame, excluded_days: set):
     if not excluded_days:
         return signals
     dates = frame.index.date
-    mask = np.array([d in excluded_days for d in dates])
+    mask = np.isin(dates, list(excluded_days))
     signals.entries[mask] = False
     signals.entry_price[mask] = np.nan
     signals.stop_price[mask] = np.nan

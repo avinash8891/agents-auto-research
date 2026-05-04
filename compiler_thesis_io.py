@@ -72,11 +72,9 @@ def compile_config_thesis(
     contracts_dir.mkdir(parents=True, exist_ok=True)
     config_path = contracts_dir / f"{config_hash}.json"
 
-    # Skip write if identical config already exists (dedup)
     if not config_path.exists():
         write_text_atomic(config_path, json.dumps(runtime_config, indent=2) + "\n")
 
-    # Write queue entry (also keyed by hash)
     run_queue_dir = root / family.run_queue_dirname
     run_queue_dir.mkdir(parents=True, exist_ok=True)
     write_json_artifact(

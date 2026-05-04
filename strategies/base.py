@@ -63,6 +63,8 @@ class BaseStrategy:
     combination_rules: dict[tuple[str, str], str] = {}
     requires_data_universe = True
     research_spec: FamilyResearchSpec
+    # Override to change the research directory suffix (e.g. "research-artifacts").
+    _research_dirname_suffix: str = "research"
 
     @property
     def family_dirnames(self) -> FamilyDirnames:
@@ -71,12 +73,28 @@ class BaseStrategy:
             compilations=f"{self.name}-compilations",
             contracts=f"{self.name}-contracts",
             run_queue=f"{self.name}-run-queue",
-            research=f"{self.name}-research",
+            research=f"{self.name}-{self._research_dirname_suffix}",
             builder_requests=f"{self.name}-builder-requests",
             base_config_filename=f"{self.name}_base.yaml",
             runs=f"{self.name}_autoresearch-runs",
             variant_prefix=f"{self.name}_",
         )
+
+    def validate_runtime_config_scope(
+        self, config: dict[str, Any], source_path: Path | None = None
+    ) -> dict[str, Any]:
+        if config.get("allow_unbounded_research_backtest"):
+            return config
+        missing = [key for key in ("validation_start", "validation_end") if not config.get(key)]
+        if missing:
+            source = f" for {source_path}" if source_path is not None else ""
+            raise ValueError(
+                f"Refusing unbounded {self.name.upper()} backtest"
+                f"{source}: missing {', '.join(missing)}. "
+                "Set validation_start and validation_end, or explicitly set "
+                "allow_unbounded_research_backtest=true."
+            )
+        return config
 
     @property
     def discord_webhook(self) -> str:

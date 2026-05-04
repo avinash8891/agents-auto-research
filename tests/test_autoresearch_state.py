@@ -20,7 +20,6 @@ from autoresearch_state import (
     deduplicate_entries,
     direction,
     is_better,
-    iso8601_utc_now,
     latest_result,
     promote_missing_known_results,
     read_results,
@@ -29,6 +28,7 @@ from autoresearch_state import (
     write_current_md,
     write_state,
 )
+from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 
 # ── State JSON round-trip ────────────────────────────────────────
 

@@ -370,8 +370,9 @@ def test_git_prepare_command_uses_commit_ref_resolution_for_sha() -> None:
 
     command = build_git_prepare_command(config)
 
-    assert f"git fetch --prune origin {shlex.quote(config.deploy_spec)} &&" in command
-    assert "resolved=$(git rev-parse --verify FETCH_HEAD^{commit})" in command
+    # SHA deploys fetch all refs (SHAs cannot be used as refspecs) then resolve locally.
+    assert "git fetch --prune origin &&" in command
+    assert f"resolved=$(git rev-parse --verify {shlex.quote(config.git_sha)}^{{commit}})" in command
 
 
 def test_git_prepare_command_uses_posix_remote_parent_on_windows(monkeypatch) -> None:

@@ -236,6 +236,7 @@ def test_accumulate_usage_tracks_tokens_across_agents():
         "total_tokens": 31,
         "cost_usd": pytest.approx(0.16),
         "calls": 3,
+        "failed_calls": 0,
     }
     assert round_usage["by_agent"]["analyst"]["calls"] == 1
     assert round_usage["by_agent"]["web_researcher"]["total_tokens"] == 9
@@ -250,6 +251,7 @@ def test_accumulate_usage_tracks_tokens_across_agents():
             "total_tokens": 0,
             "cost_usd": 0.0,
             "calls": 0,
+            "failed_calls": 0,
         },
     }
 

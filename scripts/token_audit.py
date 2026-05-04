@@ -25,7 +25,10 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-logger = logging.getLogger("token_audit")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from autoresearch_logging import get_logger
+
+logger = get_logger("token_audit")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LOGS_DIR = REPO_ROOT / "logs"
@@ -134,13 +137,17 @@ def _print_tail(paths: list[Path], n: int) -> None:
     for path in paths:
         if not path.exists():
             continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if rec.get("category") == "usage":
-                rows.append(line)
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("category") == "usage":
+                    rows.append(line)
     for line in rows[-n:]:
         print(line)
 

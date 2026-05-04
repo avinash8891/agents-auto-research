@@ -17,15 +17,6 @@ from persistence_utils import write_text_atomic
 # ── Time helpers (rule J: UTC in persistent state) ───────────────
 
 
-def iso8601_utc_now() -> str:
-    """Current time as an ISO-8601 string with explicit UTC offset.
-
-    Project rule J: stored timestamps must be UTC with timezone. Naive
-    datetimes (and naive epoch-ms ints) are banned from persistent state.
-    """
-    return datetime.now(timezone.utc).isoformat()
-
-
 def coerce_timestamp_to_iso8601_utc(value: Any) -> str | None:
     """Normalize a stored timestamp to ISO-8601 UTC, or None if unparseable.
 
@@ -329,6 +320,7 @@ def write_current_md(
     family_name: str | None = None,
     metric_name: str = "profit_factor",
 ) -> None:
-    current_md_path.write_text(
-        render_current_md(state, results, family_name=family_name, metric_name=metric_name)
+    write_text_atomic(
+        current_md_path,
+        render_current_md(state, results, family_name=family_name, metric_name=metric_name),
     )

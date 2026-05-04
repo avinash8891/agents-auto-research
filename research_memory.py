@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-import logging
 import time
 from pathlib import Path
 
+from autoresearch_logging import get_logger
 from research_paths import _ROOT
 
 _PALACE_DIR = str(_ROOT / "palace")
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor") -> dict:

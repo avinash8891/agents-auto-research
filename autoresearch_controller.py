@@ -641,8 +641,10 @@ def main() -> int:
         for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
             if key in prior_state:
                 state[key] = prior_state[key]
-        if prior_state.get("manual_review_theses"):
-            state["manual_review_theses"] = list(prior_state["manual_review_theses"])
+    # Preserve manual_review_theses unconditionally: resume_manual_review is
+    # also triggered by this list alone, without halted_reason being set.
+    if prior_state.get("manual_review_theses"):
+        state["manual_review_theses"] = list(prior_state["manual_review_theses"])
     controller.write_state(state)
 
     from trace_sdk import get_log_file, get_session_id, set_family

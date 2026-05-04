@@ -259,11 +259,21 @@ def build_git_prepare_command(config: VPSConfig) -> str:
     remote_dir = shlex.quote(config.remote_dir)
     remote_parent = shlex.quote(str(PurePosixPath(config.remote_dir).parent))
     git_repo = shlex.quote(config.git_repo)
-    deploy_spec = shlex.quote(config.deploy_spec)
-    fetch_and_resolve = (
-        f"git fetch --prune origin {deploy_spec} && "
-        "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
-    )
+    # Fetch strategy differs: refs (branch/tag) use a refspec so --prune
+    # removes deleted remote refs; SHAs cannot be used as refspecs, so fetch
+    # all refs and verify the SHA is present locally.
+    if config.git_sha:
+        git_sha_q = shlex.quote(config.git_sha)
+        fetch_and_resolve = (
+            "git fetch --prune origin && "
+            f"resolved=$(git rev-parse --verify {git_sha_q}^{{commit}}) && "
+        )
+    else:
+        deploy_spec = shlex.quote(config.deploy_spec)
+        fetch_and_resolve = (
+            f"git fetch --prune origin {deploy_spec} && "
+            "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
+        )
     return (
         "set -e && "
         f"mkdir -p {remote_parent} && "

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from autoresearch_constants import DEFAULT_AGENT_MODEL
+
 MAX_TURNS_RESEARCH = 15
 MAX_RETRIES = 2
 
@@ -206,6 +208,6 @@ CONFIG SCHEMA (only these keys are valid in config_changes):
       exhausting all patterns in the diagnostic data.
     Return ONLY the JSON object.""",
         tools=[],
-        model="gpt-5.5",
+        model=DEFAULT_AGENT_MODEL,
         maxTurns=MAX_TURNS_RESEARCH,
     )

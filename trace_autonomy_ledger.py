@@ -41,7 +41,7 @@ class AutonomyLedger:
             action="decision",
             summary=summary,
             payload=payload,
-            artifact_paths=list(artifact_paths or []),
+            artifact_paths=artifact_paths,
         )
         return payload
 
@@ -71,6 +71,6 @@ class AutonomyLedger:
             action="audit",
             summary=summary,
             payload=payload,
-            artifact_paths=list(artifact_paths or []),
+            artifact_paths=artifact_paths,
         )
         return payload

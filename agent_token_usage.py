@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from autoresearch_logging import get_logger
+
+logger = get_logger(__name__)
 
 _ROUND_USAGE: dict[str, dict[str, float]] = {}
 _SEEN_DEDUPE_KEYS: set[str] = set()
@@ -54,6 +55,27 @@ def _emit_trace_usage(
         logger.debug("usage trace emission failed: %s", exc)
 
 
+def _ensure_entry(agent_type: str) -> dict[str, Any]:
+    if agent_type not in _ROUND_USAGE:
+        _ROUND_USAGE[agent_type] = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cost_usd": 0.0,
+            "calls": 0,
+            "failed_calls": 0,
+        }
+    return _ROUND_USAGE[agent_type]
+
+
+def _record_failed_call(agent_type: str, dedupe_key: str | None = None) -> None:
+    if dedupe_key:
+        if dedupe_key in _SEEN_DEDUPE_KEYS:
+            return
+        _SEEN_DEDUPE_KEYS.add(dedupe_key)
+    _ensure_entry(agent_type)["failed_calls"] += 1
+
+
 def _accumulate_usage(
     agent_type: str,
     usage: dict[str, Any] | None,
@@ -74,15 +96,7 @@ def _accumulate_usage(
         if dedupe_key in _SEEN_DEDUPE_KEYS:
             return
         _SEEN_DEDUPE_KEYS.add(dedupe_key)
-    if agent_type not in _ROUND_USAGE:
-        _ROUND_USAGE[agent_type] = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "cost_usd": 0.0,
-            "calls": 0,
-        }
-    entry = _ROUND_USAGE[agent_type]
+    entry = _ensure_entry(agent_type)
     entry["calls"] += 1
 
     in_tok = out_tok = tot_tok = 0
@@ -125,14 +139,7 @@ def _accumulate_result_usage(
     Otherwise fall back to total_cost_usd when available and still count the call.
     """
     if result is None:
-        _accumulate_usage(
-            agent_type,
-            None,
-            cost_usd=0.0,
-            dedupe_key=dedupe_key,
-            provider=provider,
-            model=model,
-        )
+        _record_failed_call(agent_type, dedupe_key=dedupe_key)
         return
 
     total_input = 0
@@ -200,8 +207,9 @@ def get_round_usage() -> dict[str, Any]:
         "total_tokens": 0,
         "cost_usd": 0.0,
         "calls": 0,
+        "failed_calls": 0,
     }
     for agent_usage in _ROUND_USAGE.values():
         for k in total:
-            total[k] += agent_usage[k]
+            total[k] += agent_usage.get(k, 0)
     return {"by_agent": dict(_ROUND_USAGE), "total": total}

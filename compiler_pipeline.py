@@ -6,7 +6,6 @@ Facade for thesis compilation helpers extracted from research_subagent.py.
 from __future__ import annotations
 
 from compiler_builder import build_missing_primitives as build_missing_primitives
-from compiler_defaults import _get_orb_defaults as _get_orb_defaults
 from compiler_operationalize import operationalize_thesis as operationalize_thesis
 from compiler_operationalize import (
     thesis_needs_operationalization as thesis_needs_operationalization,
@@ -28,7 +27,6 @@ __all__ = [
     "derive_thesis_artifacts",
     "write_research_artifact",
     "mark_request_completed",
-    "_get_orb_defaults",
     "validate_orb_runtime_config",
     "thesis_needs_operationalization",
     "operationalize_thesis",

@@ -377,7 +377,7 @@ def test_generate_combination_candidates_leaves_no_tmp_or_partial_yaml_on_failed
             raise RuntimeError("combo publish failed")
         return original_replace(src, dst)
 
-    monkeypatch.setattr("autoresearch_planning.os.replace", _crash_on_combo_publish)
+    monkeypatch.setattr("persistence_utils.os.replace", _crash_on_combo_publish)
 
     with pytest.raises(RuntimeError, match="combo publish failed"):
         generate_combination_candidates(tmp_path, orb_family, proposals_dir, results)

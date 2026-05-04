@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-import time
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from strategies import STRATEGIES
 from trace_sdk import trace
@@ -79,7 +79,7 @@ def _mark_builder_manual_review(
             "round": research_round if research_round is not None else state.get("research_round"),
             "thesis": thesis,
             "builder_result": builder_result,
-            "timestamp": int(time.time() * 1000),
+            "timestamp": iso8601_utc_now(),
         }
     )
     state["manual_review_theses"] = manual_review

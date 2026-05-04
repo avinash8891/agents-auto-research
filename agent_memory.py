@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import logging
 import subprocess
+
+from autoresearch_logging import get_logger
 
 MEMPALACE_CMD = "mempalace"
 MEMPALACE_PALACE = "/Users/avinashvankadaru/.codex/mempalace/palace"
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _run_mempalace(

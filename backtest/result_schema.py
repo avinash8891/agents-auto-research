@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from config_hash import _config_hash, _git_sha
+from persistence_utils import utc_now_iso8601
 
 METRIC_KEYS = (
     "median_expectancy",
@@ -28,7 +28,7 @@ def build_result_payload(
         "config": config_path,
         "config_hash": _config_hash(config),
         "git_sha": _git_sha(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": utc_now_iso8601(),
         "metrics": {key: result[key] for key in METRIC_KEYS},
         "diagnostics": result.get("diagnostics", {}),
         "strategy_diagnostics": strategy_diagnostics,
