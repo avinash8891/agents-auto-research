@@ -41,8 +41,9 @@ _VERDICT_RANK = {
 }
 
 # HALO-apply statuses that do not contribute a verdict opinion.
-# - DECISION_SKIP: flag off, no signal
-# - "aborted" with any reason: measurement gap → defer to inconclusive contribution
+# - DECISION_SKIP: flag off or not run this round, no signal.
+# Note: DECISION_ABORTED is NOT in this set. It contributes DECISION_INCONCLUSIVE
+# via _apply_verdict_contribution (measurement gap — defer, but it is still an opinion).
 _APPLY_STATUS_NO_OPINION = frozenset({DECISION_SKIP})
 
 
