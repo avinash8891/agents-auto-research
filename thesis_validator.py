@@ -121,7 +121,7 @@ def _normalize_disqualifier(disqualifier: Any) -> Any:
     return disqualifier
 
 
-def _normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
+def normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(raw)
     dimension = normalized.get("mechanism_dimension")
     if isinstance(dimension, str):
@@ -508,5 +508,5 @@ def validate_thesis_dict(
     Use this when the conductor output is a plain dict.
     Raises ThesisValidationError or pydantic ValidationError.
     """
-    thesis = ResearchThesis.model_validate(_normalize_thesis_payload(raw))
+    thesis = ResearchThesis.model_validate(normalize_thesis_payload(raw))
     return validate_research_thesis(thesis, prior_theses=prior_theses)

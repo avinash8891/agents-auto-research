@@ -502,6 +502,8 @@ def _event_span(
 def begin_hypothesis(name: str) -> str:
     hypothesis_id = _STATE.begin_hypothesis(name)
     trace("HYPOTHESIS", f"BEGIN {hypothesis_id} name={name}")
+    # advance seq so the lifecycle event has a distinct ordinal from the
+    # preceding trace() call; _event_span reads _STATE.seq passively
     _STATE.next_seq()
     _record_event(
         source_module="trace_sdk",

@@ -640,8 +640,7 @@ def main():
         exit_code, out, err = _stream_remote_command(stdout, stderr)
     except Exception as exc:
         log.error("Remote command stream failed: %s", exc)
-        trace("VPS_RUNNER", f"Remote command stream failed: {exc}")
-        sys.exit(1)
+        exit_code, out, err = 1, "", str(exc)
     finally:
         client.close()
     elapsed = time.time() - t1

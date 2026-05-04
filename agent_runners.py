@@ -113,7 +113,7 @@ async def _run_single_agent(
         )
         trace(
             "AGENT_SDK",
-            f"{name} attempt={attempt}/{retries} model={agent_def.model} tools={agent_def.tools}",
+            f"{name} attempt={attempt}/{retries} model={model_name} tools={agent_def.tools}",
             model_provider=model_provider,
             model_name=model_name,
         )

@@ -122,10 +122,13 @@ def build_missing_primitives_for_state(
 
     try:
         builder_result = compiler_pipeline.build_missing_primitives(controller.root, thesis_id)
-    except Exception as exc:
+    except (
+        Exception
+    ) as exc:  # noqa: BLE001 — builder failures must route to manual-review, not crash the loop
+        _log.exception("builder raised for thesis=%s", thesis_id)
         builder_result = {
             "status": "error",
-            "reason": f"builder exception for {thesis_id}: {exc}",
+            "reason": f"builder exception for {thesis_id}: {type(exc).__name__}: {exc}",
             "generated_config": None,
             "validation_passed": False,
         }

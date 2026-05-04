@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from pydantic import ValidationError
 
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
@@ -40,6 +41,7 @@ from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_types import ResearchThesis
 from strategy_family import StrategyFamily
+from thesis_validator import normalize_thesis_payload
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
 from trace_adapters.halo import build_halo_export_package, build_halo_payload
 from trace_adapters.recursive_improve import (
@@ -918,24 +920,41 @@ def _handle_needs_code(
     thesis_id = result.get("generated_thesis_id", "unknown")
     thesis = result.get("thesis", {})
     log.warning(f"LOOP_HALT thesis={thesis_id} requires code change")
-    try:
-        thesis_payload = dict(thesis)
-        thesis_payload.setdefault("thesis_id", thesis_id)
-        thesis_payload.setdefault("strategy_family", controller.family.name)
-        thesis_payload["requires_code_change"] = True
-        from compiler_pipeline import compile_research_thesis
-
-        compile_research_thesis(ResearchThesis.model_validate(thesis_payload), controller.root)
-    except Exception as exc:
-        log.warning(
-            "LOOP_HALT thesis=%s could not materialize builder artifacts: %s",
-            thesis_id,
-            exc,
-        )
+    thesis_payload = dict(thesis)
+    thesis_payload.setdefault("thesis_id", thesis_id)
+    thesis_payload.setdefault("strategy_family", controller.family.name)
+    thesis_payload["requires_code_change"] = True
+    # Halt bookkeeping is unconditional: the conductor has already decided this
+    # thesis needs a code change. Validation/compilation below is a best-effort
+    # builder-artifact materialization step; any failure must not skip the halt
+    # state mutation or the operator notification at _close_run.
     state["state"] = "halted"
     state["halted_reason"] = "requires_code_change"
     state["halted_thesis_id"] = thesis_id
     state["halted_thesis"] = thesis
+    # Normalize before validation so mechanism_dimension aliases and raw
+    # expected_effects/disqualifiers match ResearchThesis schema (mirrors
+    # thesis_validator.validate_thesis_dict).
+    try:
+        validated = ResearchThesis.model_validate(normalize_thesis_payload(thesis_payload))
+    except ValidationError as exc:
+        log.warning(
+            "LOOP_HALT thesis=%s schema validation failed; skipping compile: %s",
+            thesis_id,
+            exc,
+        )
+        validated = None
+    if validated is not None:
+        from compiler_pipeline import compile_research_thesis
+
+        try:
+            compile_research_thesis(validated, controller.root)
+        except Exception as exc:
+            log.warning(
+                "LOOP_HALT thesis=%s could not materialize builder artifacts: %s",
+                thesis_id,
+                exc,
+            )
     best = state.get("current_best", {})
     _close_run(
         controller,

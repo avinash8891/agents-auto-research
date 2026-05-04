@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from artifact_io import read_json_artifacts as read_artifact_json_files
+from autoresearch_logging import get_logger
 from autoresearch_state import ExperimentRecord
+
+_log = get_logger(__name__)
 
 
 def _serialize_artifact_path(path: Path, root: Path) -> str:
@@ -52,7 +55,13 @@ def read_research_artifacts(
             continue
         try:
             artifact_job = int(artifact["job"])
-        except (TypeError, ValueError, KeyError):
+        except (TypeError, ValueError) as exc:
+            _log.warning(
+                "Skipping artifact with malformed job field (path=%s, job=%r): %s",
+                artifact.get("artifact_path", "<unknown>"),
+                artifact.get("job"),
+                exc,
+            )
             continue
         if artifact_job == job:
             matched.append(artifact)
