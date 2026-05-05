@@ -668,7 +668,7 @@ def main():
 
     try:
         materialize_remote_codex_auth(client, vps_config)
-    except (OSError, RuntimeError) as exc:
+    except Exception as exc:  # noqa: BLE001 - auth sync is optional and must fail open
         log.warning("Codex auth upload failed, continuing without it: %s", exc)
         trace("VPS_RUNNER", f"Codex auth upload failed: {exc}")
 
