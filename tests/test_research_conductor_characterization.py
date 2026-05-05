@@ -461,12 +461,28 @@ def test_call_web_researcher_uses_responses_model_for_web_search(monkeypatch):
 
     class Completed:
         def __init__(self):
-            self.final_output = "not-json"
+            self.final_output = ""
             self.raw_responses = []
 
         async def stream_events(self):
             if False:
                 yield None
+
+        def final_output_as(self, typ):
+            return json.dumps(
+                {
+                    "findings": [
+                        {
+                            "topic": "microstructure",
+                            "finding": "final_output_as fallback returned valid JSON",
+                            "source": None,
+                            "source_quality": "practitioner",
+                            "actionable_idea": "keep the Responses API path and parse the string form first",
+                        }
+                    ],
+                    "summary": "fallback text extraction works",
+                }
+            )
 
     def fake_run_sync(agent, *args, **kwargs):
         captured["model_type"] = type(agent.model).__name__
@@ -479,7 +495,9 @@ def test_call_web_researcher_uses_responses_model_for_web_search(monkeypatch):
 
     assert captured["model_type"] == "OpenAIResponsesModel"
     assert captured["tool_type"] == "WebSearchTool"
-    assert result.startswith("WEB_SEARCH ERROR:")
+    parsed = json.loads(result)
+    assert parsed["summary"] == "fallback text extraction works"
+    assert parsed["findings"][0]["finding"] == "final_output_as fallback returned valid JSON"
 
 
 def test_list_past_theses_reads_sqlite_history(monkeypatch, tmp_path):

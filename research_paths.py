@@ -53,3 +53,26 @@ def _parse_json(text: str) -> dict[str, Any] | None:
                     )
                     return None
     return None
+
+
+def _extract_runner_output_text(result: Any) -> str:
+    """Normalize Agents SDK runner output to a text payload.
+
+    Some runner/model combinations populate ``final_output_as(str)`` while
+    leaving ``final_output`` empty or structured. Prefer the explicit string
+    extraction first, then fall back to the raw attribute.
+    """
+    text = ""
+    if hasattr(result, "final_output_as"):
+        try:
+            text = result.final_output_as(str) or ""
+        except Exception as exc:
+            log.warning("final_output_as failed for runner: %s", exc)
+            text = ""
+    if not text:
+        final_output = getattr(result, "final_output", None)
+        if isinstance(final_output, str):
+            text = final_output
+        elif final_output is not None:
+            text = json.dumps(final_output, default=str)
+    return text

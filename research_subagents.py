@@ -12,6 +12,7 @@ from research_paths import (
     _OAUTH_PROXY_URL,
     _ROOT,
     _ensure_oauth_proxy,
+    _extract_runner_output_text,
     _get_openai_client,
     _parse_json,
 )
@@ -185,7 +186,7 @@ Be brutally honest."""
         async for _ in result.stream_events():
             pass
         _accumulate_result_usage("analyst", result, provider="openai", model=_CONDUCTOR_MODEL)
-        output = result.final_output or ""
+        output = _extract_runner_output_text(result)
         parsed = _parse_json(output)
         if parsed:
             n_anomalies = len(parsed.get("key_anomalies", []))
@@ -287,7 +288,7 @@ Return ONLY the JSON object."""
         _accumulate_result_usage(
             "web_researcher", result, provider="openai", model=_CONDUCTOR_MODEL
         )
-        output = getattr(result, "final_output", "") or ""
+        output = _extract_runner_output_text(result)
         parsed = _parse_json(output)
         if parsed:
             n_findings = len(parsed.get("findings", []))
@@ -308,7 +309,7 @@ Return ONLY the JSON object."""
             return json.dumps(parsed, indent=2)
         trace(
             "CONDUCTOR",
-            f"web_search parse failed: {output[:200]}",
+            f"web_search parse failed type={type(output).__name__} len={len(output)} excerpt={output[:200]!r}",
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )

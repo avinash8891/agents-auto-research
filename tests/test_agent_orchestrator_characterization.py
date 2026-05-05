@@ -456,12 +456,28 @@ def test_run_web_research_openai_uses_responses_model_for_web_search(monkeypatch
 
     class Completed:
         def __init__(self):
-            self.final_output = "not-json"
+            self.final_output = ""
             self.raw_responses = []
 
         async def stream_events(self):
             if False:
                 yield None
+
+        def final_output_as(self, typ):
+            return json.dumps(
+                {
+                    "findings": [
+                        {
+                            "topic": "microstructure",
+                            "finding": "final_output_as fallback returned valid JSON",
+                            "source": None,
+                            "source_quality": "practitioner",
+                            "actionable_idea": "keep the Responses API path and parse the string form first",
+                        }
+                    ],
+                    "summary": "fallback text extraction works",
+                }
+            )
 
     def fake_run_streamed(agent, *args, **kwargs):
         captured["model_type"] = type(agent.model).__name__
@@ -474,8 +490,8 @@ def test_run_web_research_openai_uses_responses_model_for_web_search(monkeypatch
 
     assert captured["model_type"] == "OpenAIResponsesModel"
     assert captured["tool_type"] == "WebSearchTool"
-    assert result["status"] == "error"
-    assert result["kind"] == "no_json"
+    assert result["findings"][0]["finding"] == "final_output_as fallback returned valid JSON"
+    assert result["summary"] == "fallback text extraction works"
 
 
 def test_run_research_agent_propagates_error_result_without_memory_writes(monkeypatch):

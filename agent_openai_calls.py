@@ -9,6 +9,7 @@ from agent_runners import _validate_output
 from agent_token_usage import _accumulate_result_usage
 from autoresearch_constants import DEFAULT_AGENT_MODEL as _OPENAI_AGENT_MODEL
 from autoresearch_logging import get_logger
+from research_paths import _extract_runner_output_text
 from trace_sdk import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
 
 log = get_logger(__name__)
@@ -87,7 +88,7 @@ async def _run_web_research_openai(
             async for _event in result.stream_events():
                 pass
 
-            output = result.final_output or ""
+            output = _extract_runner_output_text(result)
             _accumulate_result_usage("web-researcher", result, provider=_PROVIDER, model=_MODEL)
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
