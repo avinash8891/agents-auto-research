@@ -468,12 +468,12 @@ def test_call_web_researcher_uses_responses_model_for_web_search(monkeypatch):
             if False:
                 yield None
 
-    def fake_run_streamed(agent, *args, **kwargs):
+    def fake_run_sync(agent, *args, **kwargs):
         captured["model_type"] = type(agent.model).__name__
         captured["tool_type"] = type(agent.tools[0]).__name__
         return Completed()
 
-    monkeypatch.setattr(agents.Runner, "run_streamed", fake_run_streamed)
+    monkeypatch.setattr(agents.Runner, "run_sync", fake_run_sync)
 
     result = asyncio.run(subagents._call_web_researcher("prompt", "context"))
 

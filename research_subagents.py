@@ -271,7 +271,7 @@ Return ONLY the JSON object."""
         model_name=_CONDUCTOR_MODEL,
     )
     try:
-        result = OAIRunner.run_streamed(
+        result = OAIRunner.run_sync(
             agent,
             user_prompt,
             run_config=OAIRunConfig(
@@ -279,12 +279,10 @@ Return ONLY the JSON object."""
                 tracing_disabled=True,
             ),
         )
-        async for _ in result.stream_events():
-            pass
         _accumulate_result_usage(
             "web_researcher", result, provider="openai", model=_CONDUCTOR_MODEL
         )
-        output = result.final_output or ""
+        output = getattr(result, "final_output", "") or ""
         parsed = _parse_json(output)
         if parsed:
             n_findings = len(parsed.get("findings", []))
