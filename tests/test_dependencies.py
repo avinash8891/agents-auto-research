@@ -1,36 +1,21 @@
 from __future__ import annotations
 
-import re
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 runtime path
+    import tomli as tomllib
 from pathlib import Path
+
+from packaging.requirements import Requirement
+from packaging.version import Version
 
 
 def test_numpy_is_pinned_to_numba_compatible_range() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
-    match = re.search(r"(?ms)^dependencies = \[\n(?P<body>.*?)^\]", pyproject)
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    requirements = [Requirement(dep) for dep in pyproject["project"]["dependencies"]]
+    numpy_reqs = [req for req in requirements if req.name == "numpy"]
 
-    assert match is not None
-    dependencies = [
-        line.strip().rstrip(",").strip('"')
-        for line in match.group("body").splitlines()
-        if line.strip().startswith('"')
-    ]
-    numpy_deps = [
-        dep
-        for dep in dependencies
-        if dep == "numpy" or dep.startswith(("numpy<", "numpy>", "numpy=", "numpy!"))
-    ]
-
-    assert numpy_deps
-    assert "numpy" not in numpy_deps
-    assert any(_has_numba_compatible_numpy_bound(dep) for dep in numpy_deps)
-
-
-def _has_numba_compatible_numpy_bound(dependency: str) -> bool:
-    specs = dependency.removeprefix("numpy").split(",")
-    return any(
-        re.fullmatch(r"\s*<\s*2\.3(?:\.\d+)?\s*", spec)
-        or re.fullmatch(r"\s*<=\s*2\.2(?:\.\d+)?\s*", spec)
-        or re.fullmatch(r"\s*==\s*2\.[0-2](?:\.\d+)?\s*", spec)
-        for spec in specs
-    )
+    assert numpy_reqs
+    assert all(str(req.specifier) for req in numpy_reqs)
+    assert all(not req.specifier.contains(Version("2.3.0"), prereleases=True) for req in numpy_reqs)

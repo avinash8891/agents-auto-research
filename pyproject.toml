@@ -159,9 +159,11 @@ dependencies = [
     "mempalace",
     "numpy<2.3",
     "numba",
+    "packaging>=24",
     "pandas",
     "paramiko",
     "PyYAML",
     "pyarrow",
+    "tomli>=2; python_version < '3.11'",
     "tzdata; platform_system == 'Linux'",
 ]
