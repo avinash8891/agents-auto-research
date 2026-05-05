@@ -982,3 +982,23 @@ def test_run_command_does_not_fail_when_stdout_pipe_is_closed(monkeypatch, tmp_p
 
     assert code == 0
     assert output == "RESULT_JSON /tmp/result.json\n"
+
+
+def test_run_command_does_not_fail_when_stdout_file_is_closed(monkeypatch, tmp_path: Path) -> None:
+    class ClosedStdout:
+        def write(self, _line: str) -> None:
+            raise ValueError("I/O operation on closed file")
+
+        def flush(self) -> None:
+            raise ValueError("I/O operation on closed file")
+
+    def fake_run(*_args, **_kwargs):
+        return subprocess.CompletedProcess(["cmd"], 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr(experiment_mod.sys, "stdout", ClosedStdout())
+    monkeypatch.setattr(experiment_mod.subprocess, "run", fake_run)
+
+    code, output = experiment_mod.run_command(tmp_path, "python -m fake")
+
+    assert code == 0
+    assert output == "ok\n"

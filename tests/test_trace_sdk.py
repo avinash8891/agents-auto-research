@@ -348,3 +348,21 @@ def test_trace_ignores_broken_stdout_pipe(monkeypatch, tmp_path: Path) -> None:
 
     log_text = trace_sdk.get_log_file().read_text(encoding="utf-8")
     assert "[COMMAND] still writes file" in log_text
+
+
+def test_trace_ignores_closed_stdout(monkeypatch, tmp_path: Path) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    class ClosedStdout:
+        def write(self, _line: str) -> None:
+            raise ValueError("I/O operation on closed file")
+
+        def flush(self) -> None:
+            raise ValueError("I/O operation on closed file")
+
+    monkeypatch.setattr(trace_sdk.sys, "stdout", ClosedStdout())
+
+    trace_sdk.trace("COMMAND", "closed stdout still writes file")
+
+    log_text = trace_sdk.get_log_file().read_text(encoding="utf-8")
+    assert "[COMMAND] closed stdout still writes file" in log_text

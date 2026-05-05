@@ -383,6 +383,10 @@ def _safe_console_write(line: str) -> None:
         sys.stdout.flush()
     except BrokenPipeError:
         return
+    except ValueError as exc:
+        if "closed file" in str(exc).lower():
+            return
+        raise
     except OSError as exc:
         if getattr(exc, "errno", None) == 32:
             return
