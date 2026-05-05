@@ -6,11 +6,11 @@ from typing import Any
 import agent_infra
 import agent_prompts
 from agent_runners import _validate_output
-from agent_token_usage import _accumulate_result_usage
+from agent_token_usage import _accumulate_result_usage, _accumulate_usage
 from autoresearch_constants import DEFAULT_AGENT_MODEL as _OPENAI_AGENT_MODEL
 from autoresearch_logging import get_logger
-from research_paths import _extract_runner_output_text
 from trace_sdk import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
+from web_research_cli import WebResearchCliError, run_codex_web_research
 
 log = get_logger(__name__)
 
@@ -46,26 +46,7 @@ async def _run_web_research_openai(
     prompt: str,
     retries: int = agent_prompts.MAX_RETRIES,
 ) -> dict[str, Any] | None:
-    """Run web research using OpenAI Agents SDK via openai-oauth proxy."""
-    from agents import Agent as OAIAgent
-    from agents import ModelSettings as OAIModelSettings
-    from agents import RunConfig as OAIRunConfig
-    from agents import Runner as OAIRunner
-    from agents import WebSearchTool
-    from agents.models.openai_responses import OpenAIResponsesModel
-
-    agent_infra._ensure_oauth_proxy()
-
-    client = agent_infra._get_openai_client(agent_infra._OAUTH_PROXY_URL)
-    model = OpenAIResponsesModel(model=_OPENAI_AGENT_MODEL, openai_client=client)
-
-    agent = OAIAgent(
-        name="web-researcher",
-        instructions=agent_prompts.WEB_RESEARCHER_SYSTEM_PROMPT,
-        tools=[WebSearchTool()],
-        model=model,
-    )
-
+    """Run web research through Codex CLI with OpenAI live web search enabled."""
     for attempt in range(1, retries + 1):
         trace_id = _trace_prompt(
             "openai-web-researcher",
@@ -74,22 +55,16 @@ async def _run_web_research_openai(
         )
         _trace(
             "OPENAI_AGENT",
-            f"web-researcher attempt={attempt}/{retries} model={_MODEL} api=responses",
+            f"web-researcher attempt={attempt}/{retries} model={_MODEL} api=codex_cli_web_search",
         )
         try:
-            result = OAIRunner.run_streamed(
-                agent,
+            output, metadata = run_codex_web_research(
                 prompt,
-                run_config=OAIRunConfig(
-                    model_settings=OAIModelSettings(store=False),
-                    tracing_disabled=True,
-                ),
+                instructions=agent_prompts.WEB_RESEARCHER_SYSTEM_PROMPT,
+                model=_MODEL,
             )
-            async for _event in result.stream_events():
-                pass
-
-            output = _extract_runner_output_text(result)
-            _accumulate_result_usage("web-researcher", result, provider=_PROVIDER, model=_MODEL)
+            _trace("OPENAI_AGENT", "web-researcher codex_cli completed", metadata)
+            _accumulate_usage("web-researcher", None, provider=_PROVIDER, model=_MODEL)
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
             _trace_response("openai-web-researcher", trace_id, output, parsed)
@@ -109,7 +84,7 @@ async def _run_web_research_openai(
                 details=parsed_result.get("message"),
                 excerpt=parsed_result.get("excerpt") or (output[:200] if output else None),
             )
-        except Exception as exc:
+        except WebResearchCliError as exc:
             _trace("OPENAI_AGENT", f"web-researcher ERROR: {exc.__class__.__name__}: {exc}")
             log.warning(
                 "web-researcher attempt=%d failed: %s: %s", attempt, exc.__class__.__name__, exc

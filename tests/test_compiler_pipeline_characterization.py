@@ -471,7 +471,7 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
         "--sandbox",
         "workspace-write",
         "--model",
-        "gpt-5.4",
+        "gpt-5.2",
     ]
     assert captured["input"].startswith("Goal:\nImplement the missing primitive(s)")
     assert "Thesis payload" not in captured["input"]

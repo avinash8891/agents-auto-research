@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from autoresearch_constants import DEFAULT_AGENT_MODEL
+from autoresearch_logging import get_logger
+from research_paths import _ROOT
+
+log = get_logger(__name__)
+
+WEB_RESEARCH_CLI_TIMEOUT_SECONDS = int(os.environ.get("AUTORESEARCH_WEB_RESEARCH_TIMEOUT", "300"))
+
+
+class WebResearchCliError(RuntimeError):
+    """Raised when the Codex CLI web-search boundary fails before JSON parsing."""
+
+
+def _diagnostic_excerpt(*parts: str, limit: int = 1200) -> str:
+    text = "\n".join(part for part in parts if part)
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    return f"{text[:half]}\n... [truncated {len(text) - limit} chars] ...\n{text[-half:]}"
+
+
+def _find_codex_cli() -> str | None:
+    return shutil.which("codex")
+
+
+def run_codex_web_research(
+    prompt: str,
+    *,
+    instructions: str,
+    model: str = DEFAULT_AGENT_MODEL,
+    cwd: Path | None = None,
+    timeout_seconds: int = WEB_RESEARCH_CLI_TIMEOUT_SECONDS,
+) -> tuple[str, dict[str, Any]]:
+    """Run web research through Codex CLI with OpenAI web search enabled.
+
+    The direct Responses API path currently returns completed responses with
+    empty ``output`` on the VPS OAuth proxy. Codex CLI is the verified
+    OpenAI/OAuth-backed path that returns final text for live web search.
+    """
+    cli = _find_codex_cli()
+    if not cli:
+        raise WebResearchCliError("codex CLI not found on PATH")
+
+    full_prompt = (
+        f"{instructions.strip()}\n\n"
+        f"USER REQUEST:\n{prompt.strip()}\n\n"
+        "Return ONLY the JSON object. Do not include markdown fences or commentary."
+    )
+
+    with tempfile.TemporaryDirectory(prefix="autoresearch-web-") as tmp_dir:
+        output_path = Path(tmp_dir) / "last_message.json"
+        command = [
+            cli,
+            "exec",
+            "--ephemeral",
+            "--sandbox",
+            "workspace-write",
+            "--output-last-message",
+            str(output_path),
+            "--model",
+            model,
+            "--config",
+            'web_search="live"',
+        ]
+        workdir = cwd or _ROOT
+        try:
+            completed = subprocess.run(
+                command,
+                input=full_prompt,
+                capture_output=True,
+                text=True,
+                cwd=workdir,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise WebResearchCliError(
+                f"codex web research timed out after {timeout_seconds}s"
+            ) from exc
+
+        stdout = completed.stdout or ""
+        stderr = completed.stderr or ""
+        output = ""
+        if output_path.exists():
+            output = output_path.read_text()
+        if not output.strip():
+            output = stdout
+
+        metadata: dict[str, Any] = {
+            "command": command,
+            "cwd": str(workdir),
+            "exit_code": completed.returncode,
+            "stdout_len": len(stdout),
+            "stderr_len": len(stderr),
+            "output_len": len(output),
+            "output_path_used": output_path.exists(),
+        }
+        log.info(
+            "codex web research finished exit=%s stdout_len=%d stderr_len=%d output_len=%d",
+            completed.returncode,
+            len(stdout),
+            len(stderr),
+            len(output),
+        )
+
+        if completed.returncode != 0:
+            excerpt = _diagnostic_excerpt(stderr, stdout)
+            raise WebResearchCliError(
+                f"codex web research failed exit={completed.returncode}: {excerpt}"
+            )
+        return output, metadata

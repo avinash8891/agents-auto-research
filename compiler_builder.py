@@ -19,7 +19,7 @@ from trace_sdk import trace
 log = get_logger(__name__)
 
 BUILDER_CLI_TIMEOUT_SECONDS = 900
-BUILDER_CLI_MODEL = "gpt-5.4"
+BUILDER_CLI_MODEL = "gpt-5.2"
 BUILDER_CLI_REASONING_EFFORT: str | None = None
 
 

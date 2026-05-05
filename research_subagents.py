@@ -4,9 +4,8 @@ import asyncio
 import json
 import subprocess
 import sys
-from functools import partial
 
-from agent_token_usage import _accumulate_result_usage
+from agent_token_usage import _accumulate_result_usage, _accumulate_usage
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,
@@ -17,6 +16,7 @@ from research_paths import (
     _parse_json,
 )
 from trace_sdk import trace, trace_agent_response
+from web_research_cli import WebResearchCliError, run_codex_web_research
 
 
 async def _call_analyst(
@@ -223,15 +223,6 @@ Be brutally honest."""
 
 
 async def _call_web_researcher(query: str, context: str) -> str:
-    from agents import Agent as OAIAgent
-    from agents import ModelSettings as OAIModelSettings
-    from agents import RunConfig as OAIRunConfig
-    from agents import Runner as OAIRunner
-    from agents import WebSearchTool
-    from agents.models.openai_responses import OpenAIResponsesModel
-
-    _ensure_oauth_proxy()
-
     web_prompt = """You are a research agent specializing in quantitative trading strategies.
 Your ONLY job is to find and report external evidence for the specific question asked.
 
@@ -258,37 +249,29 @@ Return ONLY the JSON object."""
 
     user_prompt = f"RESEARCH QUESTION: {query}\n\nCONTEXT: {context}"
 
-    client = _get_openai_client(_OAUTH_PROXY_URL)
-    model = OpenAIResponsesModel(model=_CONDUCTOR_MODEL, openai_client=client)
-    agent = OAIAgent(
-        name="web-researcher",
-        instructions=web_prompt,
-        tools=[WebSearchTool()],
-        model=model,
-    )
-
     trace(
         "CONDUCTOR",
-        f"web_search dispatch query='{query[:80]}'",
+        f"web_search dispatch query='{query[:80]}' api=codex_cli_web_search",
         model_provider="openai",
         model_name=_CONDUCTOR_MODEL,
     )
     try:
-        result = await asyncio.to_thread(
-            partial(
-                OAIRunner.run_sync,
-                agent,
-                user_prompt,
-                run_config=OAIRunConfig(
-                    model_settings=OAIModelSettings(store=False),
-                    tracing_disabled=True,
-                ),
-            )
+        output, metadata = await asyncio.to_thread(
+            run_codex_web_research,
+            user_prompt,
+            instructions=web_prompt,
+            model=_CONDUCTOR_MODEL,
         )
-        _accumulate_result_usage(
-            "web_researcher", result, provider="openai", model=_CONDUCTOR_MODEL
+        _accumulate_usage("web_researcher", None, provider="openai", model=_CONDUCTOR_MODEL)
+        trace(
+            "CONDUCTOR",
+            (
+                "web_search codex_cli completed "
+                f"exit={metadata.get('exit_code')} output_len={metadata.get('output_len')}"
+            ),
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
         )
-        output = _extract_runner_output_text(result)
         parsed = _parse_json(output)
         if parsed:
             n_findings = len(parsed.get("findings", []))
@@ -314,7 +297,7 @@ Return ONLY the JSON object."""
             model_name=_CONDUCTOR_MODEL,
         )
         return f"WEB_SEARCH ERROR: could not parse: {output[:500]}"
-    except Exception as exc:
+    except WebResearchCliError as exc:
         trace(
             "CONDUCTOR",
             f"web_search ERROR: {exc}",

@@ -510,92 +510,74 @@ def test_run_single_agent_returns_structured_parse_error_without_stdout(monkeypa
 
 
 def test_run_web_research_openai_returns_structured_error_without_stdout(monkeypatch, capsys):
-    import agents
-
     import trace_sdk
+    from web_research_cli import WebResearchCliError
 
-    monkeypatch.setattr(agent_infra, "_ensure_oauth_proxy", lambda: None)
     monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
     monkeypatch.setattr(trace_sdk, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
 
-    class Completed:
-        def __init__(self):
-            self.final_output = "not-json"
-            self.raw_responses = [
-                SimpleNamespace(
-                    usage=SimpleNamespace(input_tokens=4, output_tokens=1, total_tokens=5)
-                )
-            ]
+    def fake_run_codex_web_research(*args, **kwargs):
+        raise WebResearchCliError("codex CLI not found on PATH")
 
-        async def stream_events(self):
-            if False:
-                yield None
-
-    monkeypatch.setattr(agents.Runner, "run_streamed", lambda *a, **k: Completed())
+    monkeypatch.setattr(
+        agent_openai_calls, "run_codex_web_research", fake_run_codex_web_research
+    )
 
     usage.reset_round_usage()
     result = asyncio.run(agent_openai_calls._run_web_research_openai("prompt", retries=1))
     captured = capsys.readouterr()
 
     assert result["status"] == "error"
-    assert result["kind"] == "no_json"
+    assert result["kind"] == "transport"
     assert "WEB_RESEARCH parse/validate failed" not in captured.out
     assert "WEB_RESEARCH error" not in captured.out
     assert captured.err == ""
-    assert usage.get_round_usage()["by_agent"]["web-researcher"]["calls"] == 1
+    assert usage.get_round_usage()["by_agent"]["web-researcher"]["failed_calls"] == 1
 
 
-def test_run_web_research_openai_uses_responses_model_for_web_search(monkeypatch):
-    import agents
-
+def test_run_web_research_openai_uses_codex_cli_web_search(monkeypatch):
     import trace_sdk
 
-    monkeypatch.setattr(agent_infra, "_ensure_oauth_proxy", lambda: None)
     monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
     monkeypatch.setattr(trace_sdk, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
 
     captured: dict[str, object] = {}
 
-    class Completed:
-        def __init__(self):
-            self.final_output = ""
-            self.raw_responses = []
-
-        async def stream_events(self):
-            if False:
-                yield None
-
-        def final_output_as(self, typ):
-            return json.dumps(
+    def fake_run_codex_web_research(prompt, *, instructions, model):
+        captured["prompt"] = prompt
+        captured["instructions"] = instructions
+        captured["model"] = model
+        return (
+            json.dumps(
                 {
                     "findings": [
                         {
                             "topic": "microstructure",
-                            "finding": "final_output_as fallback returned valid JSON",
+                            "finding": "codex CLI web search returned valid JSON",
                             "source": None,
                             "source_quality": "practitioner",
-                            "actionable_idea": "keep the Responses API path and parse the string form first",
+                            "actionable_idea": "use the verified CLI web-search boundary",
                         }
                     ],
-                    "summary": "fallback text extraction works",
+                    "summary": "codex cli text extraction works",
                 }
-            )
+            ),
+            {"exit_code": 0, "output_len": 10},
+        )
 
-    def fake_run_streamed(agent, *args, **kwargs):
-        captured["model_type"] = type(agent.model).__name__
-        captured["tool_type"] = type(agent.tools[0]).__name__
-        return Completed()
-
-    monkeypatch.setattr(agents.Runner, "run_streamed", fake_run_streamed)
+    monkeypatch.setattr(
+        agent_openai_calls, "run_codex_web_research", fake_run_codex_web_research
+    )
 
     result = asyncio.run(agent_openai_calls._run_web_research_openai("prompt", retries=1))
 
-    assert captured["model_type"] == "OpenAIResponsesModel"
-    assert captured["tool_type"] == "WebSearchTool"
-    assert result["findings"][0]["finding"] == "final_output_as fallback returned valid JSON"
-    assert result["summary"] == "fallback text extraction works"
+    assert captured["prompt"] == "prompt"
+    assert "external evidence" in captured["instructions"]
+    assert captured["model"] == agent_openai_calls._MODEL
+    assert result["findings"][0]["finding"] == "codex CLI web search returned valid JSON"
+    assert result["summary"] == "codex cli text extraction works"
 
 
 def test_run_research_agent_propagates_error_result_without_memory_writes(monkeypatch):
