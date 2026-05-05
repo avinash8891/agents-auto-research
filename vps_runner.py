@@ -370,6 +370,40 @@ def materialize_remote_runtime_env(
     return remote_path
 
 
+def materialize_remote_codex_auth(
+    client: paramiko.SSHClient,
+    config: VPSConfig,
+) -> str | None:
+    """Upload the local Codex auth bundle so remote codex exec can authenticate."""
+    local_auth = Path.home() / ".codex" / "auth.json"
+    if not local_auth.exists():
+        return None
+
+    try:
+        payload = json.loads(local_auth.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("Skipping Codex auth sync: unreadable auth.json: %s", exc)
+        return None
+
+    tokens = payload.get("tokens") if isinstance(payload, dict) else None
+    if not isinstance(tokens, dict) or not tokens.get("access_token"):
+        return None
+
+    remote_home = _expand_remote_user_path("~", config.user)
+    remote_codex_dir = f"{remote_home}/.codex"
+    remote_path = f"{remote_codex_dir}/auth.json"
+    sftp = client.open_sftp()
+    try:
+        _sftp_mkdir_p(sftp, remote_codex_dir)
+        sftp.put(str(local_auth), remote_path)
+        sftp.chmod(remote_path, 0o600)
+    finally:
+        sftp.close()
+
+    trace("VPS_RUNNER", "Materialized remote Codex auth bundle")
+    return remote_path
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent
 
@@ -628,6 +662,15 @@ def main():
         client.close()
         log.error("Runtime env upload failed: %s", exc)
         trace("VPS_RUNNER", f"Runtime env upload failed: {exc}")
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        materialize_remote_codex_auth(client, vps_config)
+    except (OSError, RuntimeError) as exc:
+        client.close()
+        log.error("Codex auth upload failed: %s", exc)
+        trace("VPS_RUNNER", f"Codex auth upload failed: {exc}")
         print(str(exc), file=sys.stderr)
         sys.exit(1)
 
