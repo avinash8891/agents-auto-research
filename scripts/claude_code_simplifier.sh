@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 base_ref="${1:-origin/main}"
 if [[ $# -gt 0 ]]; then
@@ -8,19 +8,12 @@ fi
 
 timeout_seconds="${CLAUDE_CODE_SIMPLIFIER_TIMEOUT_SECONDS:-3600}"
 if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
-  echo "invalid CLAUDE_CODE_SIMPLIFIER_TIMEOUT_SECONDS=$timeout_seconds; skipping code simplifier" >&2
-  exit 0
+  echo "CLAUDE_CODE_SIMPLIFIER_TIMEOUT_SECONDS must be a positive integer: $timeout_seconds" >&2
+  exit 2
 fi
 
-if ! repo_root="$(git rev-parse --show-toplevel)"; then
-  echo "could not resolve repo root; skipping code simplifier" >&2
-  exit 0
-fi
-
-if ! review_parent="$(mktemp -d "${TMPDIR:-/tmp}/autoresearch-claude-simplifier.XXXXXX")"; then
-  echo "could not create temp directory; skipping code simplifier" >&2
-  exit 0
-fi
+repo_root="$(git rev-parse --show-toplevel)"
+review_parent="$(mktemp -d "${TMPDIR:-/tmp}/autoresearch-claude-simplifier.XXXXXX")"
 review_dir="${review_parent}/worktree"
 
 cleanup() {
@@ -45,28 +38,10 @@ if ! claude auth status >/dev/null 2>&1; then
   exit 0
 fi
 
-timeout_cmd=""
-if command -v timeout >/dev/null 2>&1; then
-  timeout_cmd="$(command -v timeout)"
-elif command -v gtimeout >/dev/null 2>&1; then
-  timeout_cmd="$(command -v gtimeout)"
-else
-  echo "timeout command unavailable; skipping code simplifier" >&2
-  exit 0
-fi
+prompt="You are the code-simplifier agent. Review and propose simplifications for the current branch compared to ${base_ref}. Do not modify files; output suggestions only."
 
-diff_stat="$(git diff --stat "$base_ref" 2>/dev/null || true)"
-diff_text="$(git diff "$base_ref" 2>/dev/null || true)"
-prompt="You are the code-simplifier agent. Review and propose simplifications for the current branch compared to ${base_ref}. Do not modify files or run commands. Output suggestions only.
-
-DIFF STAT:
-${diff_stat}
-
-DIFF:
-${diff_text}"
-
-if ! printf '%s\n' "$prompt" | "$timeout_cmd" \
+if ! printf '%s\n' "$prompt" | perl -e 'alarm shift @ARGV; exec @ARGV' \
   "$timeout_seconds" \
-  claude -p --bare --output-format text --permission-mode dontAsk --tools "Read,Glob,Grep" --agent code-simplifier; then
+  claude -p --bare --output-format text --permission-mode dontAsk --tools "Bash,Read,Glob,Grep" --agent code-simplifier; then
   echo "claude code simplifier failed; skipping non-blocking review" >&2
 fi
