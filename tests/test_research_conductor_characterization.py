@@ -416,6 +416,49 @@ def test_palace_helpers_return_error_objects_when_unavailable(monkeypatch):
     assert memory._palace_status() == {"error": "palace offline"}
 
 
+def test_resolve_palace_dir_prefers_existing_configured_path(monkeypatch, tmp_path):
+    configured = tmp_path / "configured-palace"
+    configured.mkdir()
+    monkeypatch.setenv("AUTORESEARCH_MEMPALACE_PALACE", str(configured))
+    monkeypatch.setattr(memory, "_PALACE_DIR", str(tmp_path / "repo-palace"))
+
+    assert memory._resolve_palace_dir() == str(configured)
+
+
+def test_call_web_researcher_uses_responses_model_for_web_search(monkeypatch):
+    import agents
+
+    import trace_sdk
+
+    monkeypatch.setattr(subagents, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
+
+    captured: dict[str, object] = {}
+
+    class Completed:
+        def __init__(self):
+            self.final_output = "not-json"
+            self.raw_responses = []
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+    def fake_run_streamed(agent, *args, **kwargs):
+        captured["model_type"] = type(agent.model).__name__
+        captured["tool_type"] = type(agent.tools[0]).__name__
+        return Completed()
+
+    monkeypatch.setattr(agents.Runner, "run_streamed", fake_run_streamed)
+
+    result = asyncio.run(subagents._call_web_researcher("prompt", "context"))
+
+    assert captured["model_type"] == "OpenAIResponsesModel"
+    assert captured["tool_type"] == "WebSearchTool"
+    assert result.startswith("WEB_SEARCH ERROR:")
+
+
 def test_list_past_theses_reads_sqlite_history(monkeypatch, tmp_path):
     from experiment_db import ExperimentDB
 

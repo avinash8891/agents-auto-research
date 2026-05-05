@@ -225,7 +225,7 @@ async def _call_web_researcher(query: str, context: str) -> str:
     from agents import RunConfig as OAIRunConfig
     from agents import Runner as OAIRunner
     from agents import WebSearchTool
-    from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+    from agents.models.openai_responses import OpenAIResponsesModel
 
     _ensure_oauth_proxy()
 
@@ -256,7 +256,7 @@ Return ONLY the JSON object."""
     user_prompt = f"RESEARCH QUESTION: {query}\n\nCONTEXT: {context}"
 
     client = _get_openai_client(_OAUTH_PROXY_URL)
-    model = OpenAIChatCompletionsModel(model=_CONDUCTOR_MODEL, openai_client=client)
+    model = OpenAIResponsesModel(model=_CONDUCTOR_MODEL, openai_client=client)
     agent = OAIAgent(
         name="web-researcher",
         instructions=web_prompt,

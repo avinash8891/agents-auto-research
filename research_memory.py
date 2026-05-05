@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -11,6 +12,29 @@ _PALACE_DIR = str(_ROOT / "palace")
 log = get_logger(__name__)
 
 
+def _resolve_palace_dir() -> str:
+    """Pick an existing palace directory, or create a local fallback.
+
+    The repo-local palace path is convenient for checked-in fixtures, but the VPS
+    run usually keeps persistent palace state under the user's home directory.
+    Prefer any existing configured palace before creating a new local directory.
+    """
+    configured = os.getenv("AUTORESEARCH_MEMPALACE_PALACE")
+    candidates = []
+    if configured:
+        candidates.append(Path(configured).expanduser())
+    candidates.append(Path.home() / ".codex/mempalace/palace")
+    candidates.append(Path(_PALACE_DIR))
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    fallback = Path(_PALACE_DIR)
+    fallback.mkdir(parents=True, exist_ok=True)
+    return str(fallback)
+
+
 def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor") -> dict:
     """Add a drawer to the palace via palace.get_collection + ChromaDB upsert."""
     import hashlib
@@ -19,7 +43,7 @@ def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor")
     try:
         from mempalace.palace import get_collection
 
-        col = get_collection(_PALACE_DIR, create=True)
+        col = get_collection(_resolve_palace_dir(), create=True)
         drawer_id = (
             f"drawer_{wing}_{room}_"
             f"{hashlib.sha256((wing + room + content).encode()).hexdigest()[:24]}"
@@ -59,7 +83,7 @@ def _palace_search(
 
         result = search_memories(
             query=query,
-            palace_path=_PALACE_DIR,
+            palace_path=_resolve_palace_dir(),
             wing=wing,
             room=room,
             n_results=n_results,
@@ -81,7 +105,7 @@ def _palace_status() -> dict:
     try:
         from mempalace.layers import MemoryStack
 
-        stack = MemoryStack(palace_path=_PALACE_DIR)
+        stack = MemoryStack(palace_path=_resolve_palace_dir())
         return stack.status()
     except Exception as exc:
         log.warning(
