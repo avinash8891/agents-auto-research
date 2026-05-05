@@ -47,6 +47,22 @@ def _find_cli() -> str | None:
     return None
 
 
+@functools.lru_cache(maxsize=1)
+def _codex_supports_sandbox_flag(cli: str) -> bool:
+    try:
+        help_result = subprocess.run(
+            [cli, "exec", "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except OSError:
+        return False
+    help_text = f"{help_result.stdout}\n{help_result.stderr}"
+    return "--sandbox" in help_text
+
+
 def _read_json_artifact(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
@@ -250,6 +266,22 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         config_path = f"configs/variants/{generated_name}"
         builder_requests_dir = root / family.builder_requests_dirname
         attempt_dir = _builder_artifact_dir(root, family_name, thesis_id)
+    cli = _find_cli()
+    if not cli:
+        result = {
+            "status": "error",
+            "reason": "No CLI available for builder dispatch",
+            "generated_config": None,
+            "validation_passed": False,
+        }
+        trace(
+            "BUILDER",
+            f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
+            result,
+            model_provider="codex",
+            model_name=BUILDER_CLI_MODEL,
+        )
+        return result
     request_payload = {
         "thesis_id": thesis_id,
         "family": family_name,
@@ -293,13 +325,13 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         prompt_extras=[],
     )
     builder_cmd = [
-        "codex",
+        cli,
         "exec",
-        "--sandbox",
-        "workspace-write",
         "--model",
         BUILDER_CLI_MODEL,
     ]
+    if _codex_supports_sandbox_flag(cli):
+        builder_cmd[2:2] = ["--sandbox", "workspace-write"]
     if BUILDER_CLI_REASONING_EFFORT:
         builder_cmd.extend(["-c", f'model_reasoning_effort="{BUILDER_CLI_REASONING_EFFORT}"'])
     _write_artifacts = functools.partial(
@@ -353,24 +385,6 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         trace(
             "BUILDER",
             f"finish thesis={thesis_id} status=completed model={BUILDER_CLI_MODEL}",
-            result,
-            model_provider="codex",
-            model_name=BUILDER_CLI_MODEL,
-        )
-        return result
-
-    cli = _find_cli()
-    if not cli:
-        result = {
-            "status": "error",
-            "reason": "No CLI available for builder dispatch",
-            "generated_config": None,
-            "validation_passed": False,
-        }
-        _write_artifacts(result=result)
-        trace(
-            "BUILDER",
-            f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
             result,
             model_provider="codex",
             model_name=BUILDER_CLI_MODEL,
