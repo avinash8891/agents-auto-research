@@ -18,6 +18,16 @@ import logging
 import sys
 
 
+class _SafeStdoutHandler(logging.StreamHandler):
+    def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802
+        exc_type, exc, _tb = sys.exc_info()
+        if exc_type is BrokenPipeError:
+            return
+        if isinstance(exc, OSError) and getattr(exc, "errno", None) == 32:
+            return
+        super().handleError(record)
+
+
 def get_logger(name: str) -> logging.Logger:
     """Return a logger that writes `%(message)s\\n` to stdout.
 
@@ -31,7 +41,7 @@ def get_logger(name: str) -> logging.Logger:
         for h in logger.handlers
     )
     if not already_attached:
-        handler = logging.StreamHandler(sys.stdout)
+        handler = _SafeStdoutHandler(sys.stdout)
         handler.setFormatter(logging.Formatter("%(message)s"))
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)

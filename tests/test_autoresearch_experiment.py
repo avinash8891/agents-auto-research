@@ -960,3 +960,25 @@ def test_write_run_artifacts_leaves_no_tmp_artifacts(tmp_path: Path) -> None:
     assert (artifact_dir / "benchmark_output.txt").exists()
     assert (artifact_dir / "analysis.json").exists()
     assert not list(artifact_dir.rglob("*.tmp"))
+
+
+def test_run_command_does_not_fail_when_stdout_pipe_is_closed(monkeypatch, tmp_path: Path) -> None:
+    class BrokenStdout:
+        def write(self, _line: str) -> None:
+            raise BrokenPipeError()
+
+        def flush(self) -> None:
+            raise BrokenPipeError()
+
+    def fake_run(*_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            ["cmd"], 0, stdout="RESULT_JSON /tmp/result.json\n", stderr=""
+        )
+
+    monkeypatch.setattr(experiment_mod.sys, "stdout", BrokenStdout())
+    monkeypatch.setattr(experiment_mod.subprocess, "run", fake_run)
+
+    code, output = experiment_mod.run_command(tmp_path, "python -m fake")
+
+    assert code == 0
+    assert output == "RESULT_JSON /tmp/result.json\n"

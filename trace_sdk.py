@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -373,7 +374,19 @@ def _log_line(component: str, message: str, data: dict[str, Any] | None, seq: in
     handle = _STATE.get_log_handle()
     handle.write(line)
     handle.flush()
-    print(f"TRACE {_STATE.run_id}{htag} [{component}] {message}")
+    _safe_console_write(f"TRACE {_STATE.run_id}{htag} [{component}] {message}\n")
+
+
+def _safe_console_write(line: str) -> None:
+    try:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    except BrokenPipeError:
+        return
+    except OSError as exc:
+        if getattr(exc, "errno", None) == 32:
+            return
+        raise
 
 
 def _build_resource() -> Resource:

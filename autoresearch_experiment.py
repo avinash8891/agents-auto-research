@@ -69,7 +69,7 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
     try:
         trace("COMMAND", f"START: {command}")
         log.info(f"RUN_COMMAND start: {command[:COMMAND_PREVIEW_TRUNCATION]}")
-        sys.stdout.flush()
+        _safe_stdout_flush()
         args = shlex.split(command)
         result = subprocess.run(  # noqa: S602  # nosec B602
             args,
@@ -84,7 +84,7 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
         stderr = result.stderr or ""
         trace_ssh(command, result.returncode, stdout, stderr)
         log.info(f"RUN_COMMAND done: exit={result.returncode}")
-        sys.stdout.flush()
+        _safe_stdout_flush()
         return int(result.returncode), stdout + stderr
     except ValueError as exc:
         trace("COMMAND", f"ERROR: {exc}")
@@ -115,6 +115,17 @@ def run_command(root: Path, command: str) -> tuple[int, str]:
             f"see TRACE COMMAND for the failing line"
         )
         return 1, str(exc)
+
+
+def _safe_stdout_flush() -> None:
+    try:
+        sys.stdout.flush()
+    except BrokenPipeError:
+        return
+    except OSError as exc:
+        if getattr(exc, "errno", None) == 32:
+            return
+        raise
 
 
 # ── Output parsing ────────────────────────────────────────────────

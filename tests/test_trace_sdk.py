@@ -330,3 +330,21 @@ def test_record_usage_event_writes_usage_category_to_jsonl(monkeypatch, tmp_path
     assert ev["payload"]["dedupe_key"] == "test-run-001"
     assert ev["schema_version"] == 1
     assert ev["action"] == "accumulate"
+
+
+def test_trace_ignores_broken_stdout_pipe(monkeypatch, tmp_path: Path) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    class BrokenStdout:
+        def write(self, _line: str) -> None:
+            raise BrokenPipeError()
+
+        def flush(self) -> None:
+            raise BrokenPipeError()
+
+    monkeypatch.setattr(trace_sdk.sys, "stdout", BrokenStdout())
+
+    trace_sdk.trace("COMMAND", "still writes file")
+
+    log_text = trace_sdk.get_log_file().read_text(encoding="utf-8")
+    assert "[COMMAND] still writes file" in log_text
