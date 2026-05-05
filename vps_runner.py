@@ -203,6 +203,10 @@ def _expand_remote_user_path(path: str, user: str) -> str:
     return path
 
 
+def _remote_codex_home(user: str) -> str:
+    return _expand_remote_user_path("~/.codex", user)
+
+
 def _runtime_env_items() -> list[tuple[str, str]]:
     items: list[tuple[str, str]] = []
     for key, value in os.environ.items():
@@ -320,6 +324,7 @@ def build_remote_command(
         f"cd {shlex.quote(config.remote_dir)}",
         f'if [ -f "{REMOTE_RUNTIME_ENV_FILENAME}" ]; then set -a; . ./{REMOTE_RUNTIME_ENV_FILENAME}; set +a; fi',
         f"export AUTORESEARCH_RESOLVED_SHA={shlex.quote(resolved_sha)}",
+        f"export CODEX_HOME={shlex.quote(_remote_codex_home(config.user))}",
     ]
     if config.data_root:
         segments.append(f"export {DATA_ROOT_ENV}={shlex.quote(config.data_root)}")

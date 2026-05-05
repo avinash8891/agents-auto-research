@@ -436,7 +436,17 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
 
     captured: dict[str, object] = {}
 
-    def fake_run(cmd, capture_output, text, cwd, timeout, input):
+    def fake_run(cmd, capture_output, text, cwd=None, timeout=None, input=None, **kwargs):
+        if cmd == ["codex", "exec", "--help"]:
+            return type(
+                "HelpProc",
+                (),
+                {
+                    "stdout": "usage: codex exec [OPTIONS]\n  --sandbox <SANDBOX_MODE>\n",
+                    "stderr": "",
+                    "returncode": 0,
+                },
+            )()
         captured["cmd"] = cmd
         captured["capture_output"] = capture_output
         captured["text"] = text
@@ -451,18 +461,15 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
         return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
 
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
-    monkeypatch.setenv("AUTORESEARCH_BUILDER_BYPASS_SANDBOX", "1")
-    monkeypatch.setattr(
-        "compiler_builder._codex_supports_bypass_flag", lambda *args, **kwargs: True
-    )
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
 
     result = build_missing_primitives(tmp_path, thesis_id)
 
     assert captured["cmd"] == [
         "codex",
-        "--dangerously-bypass-approvals-and-sandbox",
         "exec",
+        "--sandbox",
+        "workspace-write",
         "--model",
         "gpt-5.4",
     ]
@@ -502,10 +509,6 @@ def test_build_missing_primitives_reports_timeout_explicitly(
         raise subprocess.TimeoutExpired(cmd=kwargs.get("cmd") or args[0], timeout=kwargs["timeout"])
 
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
-    monkeypatch.setenv("AUTORESEARCH_BUILDER_BYPASS_SANDBOX", "1")
-    monkeypatch.setattr(
-        "compiler_builder._codex_supports_bypass_flag", lambda *args, **kwargs: False
-    )
     monkeypatch.setattr(
         "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
     )

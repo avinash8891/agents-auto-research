@@ -378,6 +378,23 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert "scp" not in command.lower()
 
 
+def test_build_remote_command_exports_codex_home_for_remote_user() -> None:
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    family = load_family("ema")
+    command = build_remote_command(config, family, "0123456789abcdef0123456789abcdef01234567")
+
+    assert "export CODEX_HOME=/home/researcher/.codex" in command
+    assert "export AUTORESEARCH_RESOLVED_SHA=0123456789abcdef0123456789abcdef01234567" in command
+
+
 def test_git_prepare_command_uses_commit_ref_resolution_for_sha() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     config = VPSConfig(

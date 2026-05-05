@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import functools
 import json
-import os
 import shutil
 import subprocess
 import time
@@ -22,7 +21,6 @@ log = get_logger(__name__)
 BUILDER_CLI_TIMEOUT_SECONDS = 900
 BUILDER_CLI_MODEL = "gpt-5.4"
 BUILDER_CLI_REASONING_EFFORT: str | None = None
-BUILDER_BYPASS_SANDBOX_ENV = "AUTORESEARCH_BUILDER_BYPASS_SANDBOX"
 
 
 def _coerce_subprocess_output(value: Any) -> str:
@@ -62,26 +60,6 @@ def _codex_supports_sandbox_flag(cli: str) -> bool:
         return False
     help_text = f"{help_result.stdout}\n{help_result.stderr}"
     return "--sandbox" in help_text
-
-
-def _codex_supports_bypass_flag(cli: str) -> bool:
-    try:
-        help_result = subprocess.run(
-            [cli, "--help"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    help_text = f"{help_result.stdout}\n{help_result.stderr}"
-    return "--dangerously-bypass-approvals-and-sandbox" in help_text
-
-
-def _builder_should_bypass_sandbox() -> bool:
-    value = os.environ.get(BUILDER_BYPASS_SANDBOX_ENV, "")
-    return value.lower() in {"1", "true", "yes", "on"}
 
 
 def _read_json_artifact(path: Path) -> dict[str, Any] | None:
@@ -332,9 +310,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     cli = _find_cli()
     if cli:
         builder_cmd = [cli, "exec", "--model", BUILDER_CLI_MODEL]
-        if _builder_should_bypass_sandbox() and _codex_supports_bypass_flag(cli):
-            builder_cmd.insert(1, "--dangerously-bypass-approvals-and-sandbox")
-        elif _codex_supports_sandbox_flag(cli):
+        if _codex_supports_sandbox_flag(cli):
             builder_cmd[2:2] = ["--sandbox", "workspace-write"]
     else:
         builder_cmd = []
