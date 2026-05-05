@@ -123,6 +123,16 @@ def _normalize_disqualifier(disqualifier: Any) -> Any:
 
 def normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(raw)
+    family = normalized.get("family")
+    if family and not normalized.get("strategy_family"):
+        try:
+            from strategies import STRATEGIES
+
+            if family in STRATEGIES:
+                normalized["strategy_family"] = family
+        except Exception:
+            # Leave the payload unchanged; validation will reject missing/invalid family.
+            pass
     dimension = normalized.get("mechanism_dimension")
     if isinstance(dimension, str):
         normalized["mechanism_dimension"] = MECHANISM_DIMENSION_ALIASES.get(dimension, dimension)

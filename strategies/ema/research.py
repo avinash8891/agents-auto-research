@@ -59,7 +59,7 @@ IMPORTANT:
         "daily trade frequency",
         "EMA pullback/reversal mechanics",
     ),
-    thesis_json_hint='"family": "entry" or "exit"',
+    thesis_json_hint='"strategy_family": "ema"',
     allowed_config_keys=frozenset(
         {
             "ema_length",

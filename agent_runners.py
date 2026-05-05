@@ -14,7 +14,7 @@ import agent_prompts
 from agent_token_usage import _accumulate_result_usage
 from autoresearch_constants import DEFAULT_AGENT_MODEL
 from autoresearch_logging import get_logger
-from research_paths import _OAUTH_PROXY_URL
+from research_paths import _OAUTH_PROXY_URL, _extract_runner_output_text
 from thesis_validator import ThesisValidationError, validate_thesis_dict
 
 log = get_logger(__name__)
@@ -166,19 +166,7 @@ async def _run_single_agent(
 
         _accumulate_result_usage(name, result, provider=model_provider, model=model_name)
 
-        result_text = ""
-        if hasattr(result, "final_output_as"):
-            try:
-                result_text = result.final_output_as(str) or ""
-            except Exception as exc:
-                log.warning("final_output_as failed for agent %s: %s", name, exc)
-                result_text = ""
-        if not result_text:
-            final_output = getattr(result, "final_output", None)
-            if isinstance(final_output, str):
-                result_text = final_output
-            elif final_output is not None:
-                result_text = str(final_output)
+        result_text = _extract_runner_output_text(result)
 
         parsed_result = agent_infra._parse_json_detailed(result_text)
         parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None

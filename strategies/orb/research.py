@@ -87,6 +87,6 @@ ORB_RESEARCH_SPEC = FamilyResearchSpec(
         "regime gating",
         "intraday breakout exits",
     ),
-    thesis_json_hint='"family": "universe" or "entry" or "exit" or "regime"',
+    thesis_json_hint='"strategy_family": "orb"',
     allowed_config_keys=frozenset(supported_config_keys()) - {"_research_source"},
 )

@@ -97,6 +97,7 @@ async def run_research_agent(
 
     research_def = agent_prompts._research_agent(
         strategy_label=spec.strategy_label,
+        family_name=family_name,
         config_rules=spec.config_rules,
         config_schema=spec.config_schema,
         thesis_json_hint=spec.thesis_json_hint,

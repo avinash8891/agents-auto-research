@@ -119,6 +119,7 @@ Return ONLY the JSON object."""
 
 def _research_agent(
     strategy_label: str,
+    family_name: str,
     config_rules: list[str],
     config_schema: str,
     thesis_json_hint: str,
@@ -141,9 +142,11 @@ WORKFLOW:
    and external evidence. Prioritize high-confidence anomalies with large sample sizes.
 3. Formulate ONE concrete thesis with specific config_changes.
 
-CRITICAL RULES:
-- Your thesis MUST include "config_changes" with specific key-value pairs from the schema below.
-- config_changes is applied as a DELTA ON TOP OF THE FAMILY DEFAULTS, NOT the current best.
+        CRITICAL RULES:
+        - The top-level thesis payload MUST include "strategy_family" equal to "{family_name}".
+        - Do not use a generic "family" field. Emit "strategy_family" instead.
+        - Your thesis MUST include "config_changes" with specific key-value pairs from the schema below.
+        - config_changes is applied as a DELTA ON TOP OF THE FAMILY DEFAULTS, NOT the current best.
   If you want to change two runtime values, you MUST include BOTH keys.
   Any key you omit stays at the default value, NOT at the current best value.
 - TWO configs with the same final runtime values are DUPLICATES even if thesis_id differs.

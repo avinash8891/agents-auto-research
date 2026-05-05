@@ -365,6 +365,110 @@ def test_run_single_agent_uses_openai_agents_sdk(monkeypatch):
     assert result == cli_payload
 
 
+def test_run_single_agent_falls_back_to_raw_responses_for_research_agent(monkeypatch):
+    import trace_sdk
+
+    monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(trace_sdk, "trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
+
+    class Completed:
+        def __init__(self):
+            self.final_output = ""
+            self.raw_responses = [
+                SimpleNamespace(
+                    output=[
+                        {
+                            "type": "message",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": json.dumps(
+                                        {
+                                            "reasoning": "Valid thesis",
+                                            "suggested_theses": [
+                                                {
+                                                    "thesis_id": "raw_response_fallback",
+                                                    "hypothesis": "narrow the entry window",
+                                                    "mechanism": "Restrict entries to a narrower opening window.",
+                                                    "mechanism_dimension": "entry_timing",
+                                                    "dimension_novelty": "Tests a distinct open window instead of tuning an existing one.",
+                                                    "config_changes": {
+                                                        "entry_cutoff_time": "09:31"
+                                                    },
+                                                    "expected_effects": [
+                                                        {
+                                                            "metric": "profit_factor",
+                                                            "direction": "increase",
+                                                            "rationale": "Should improve PF by reducing noise.",
+                                                        }
+                                                    ],
+                                                    "disqualifiers": [
+                                                        {
+                                                            "name": "trade_count_collapse",
+                                                            "condition": "trade_count decreases materially versus baseline",
+                                                            "severity": "hard_fail",
+                                                        }
+                                                    ],
+                                                }
+                                            ],
+                                        }
+                                    ),
+                                }
+                            ],
+                        }
+                    ]
+                )
+            ]
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+    monkeypatch.setattr(agent_runners.OAIRunner, "run_streamed", lambda *a, **k: Completed())
+
+    result = asyncio.run(
+        agent_runners._run_single_agent(
+            "research-agent",
+            "user prompt",
+            SimpleNamespace(prompt="system prompt", model="gpt-5.5", maxTurns=15, tools=[]),
+            retries=1,
+        )
+    )
+
+    assert result["suggested_theses"][0]["thesis_id"] == "raw_response_fallback"
+
+
+def test_normalize_thesis_payload_maps_family_alias_to_strategy_family():
+    from thesis_validator import normalize_thesis_payload
+
+    normalized = normalize_thesis_payload(
+        {
+            "thesis_id": "x",
+            "family": "ema",
+            "hypothesis": "y",
+            "mechanism": "z",
+        }
+    )
+
+    assert normalized["strategy_family"] == "ema"
+
+
+def test_normalize_thesis_payload_does_not_promote_unknown_family_alias():
+    from thesis_validator import normalize_thesis_payload
+
+    normalized = normalize_thesis_payload(
+        {
+            "thesis_id": "x",
+            "family": "entry",
+            "hypothesis": "y",
+            "mechanism": "z",
+        }
+    )
+
+    assert "strategy_family" not in normalized
+
+
 def test_run_single_agent_returns_structured_parse_error_without_stdout(monkeypatch, capsys):
     import trace_sdk
 
