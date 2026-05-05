@@ -395,6 +395,7 @@ def materialize_remote_codex_auth(
     sftp = client.open_sftp()
     try:
         _sftp_mkdir_p(sftp, remote_codex_dir)
+        sftp.chmod(remote_codex_dir, 0o700)
         sftp.put(str(local_auth), remote_path)
         sftp.chmod(remote_path, 0o600)
     finally:
@@ -668,11 +669,8 @@ def main():
     try:
         materialize_remote_codex_auth(client, vps_config)
     except (OSError, RuntimeError) as exc:
-        client.close()
-        log.error("Codex auth upload failed: %s", exc)
+        log.warning("Codex auth upload failed, continuing without it: %s", exc)
         trace("VPS_RUNNER", f"Codex auth upload failed: {exc}")
-        print(str(exc), file=sys.stderr)
-        sys.exit(1)
 
     cmd = build_remote_command(vps_config, family, resolved_sha)
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")

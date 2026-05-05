@@ -339,7 +339,10 @@ def test_materialize_remote_codex_auth_uploads_local_auth_bundle(monkeypatch, tm
     assert client.sftp.put_calls == [
         (str(local_codex / "auth.json"), "/home/researcher/.codex/auth.json")
     ]
-    assert client.sftp.chmod_calls == [("/home/researcher/.codex/auth.json", 0o600)]
+    assert client.sftp.chmod_calls == [
+        ("/home/researcher/.codex", 0o700),
+        ("/home/researcher/.codex/auth.json", 0o600),
+    ]
 
 
 def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() -> None:
