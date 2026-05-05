@@ -99,6 +99,8 @@ def _extract_runner_output_text(result: Any) -> str:
         raw_responses = getattr(result, "raw_responses", None) or []
         if raw_responses:
             try:
+                from agents.items import ItemHelpers
+
                 parts: list[str] = []
                 for response in raw_responses:
                     response_text = getattr(response, "output_text", None)
