@@ -49,3 +49,12 @@ def test_run_codex_web_research_uses_live_web_search_and_output_file(monkeypatch
     assert output == '{"findings":[{"topic":"x","finding":"y"}],"summary":"ok"}'
     assert metadata["exit_code"] == 0
     assert metadata["output_path_used"] is True
+
+
+def test_resolve_timeout_seconds_handles_invalid_env(monkeypatch):
+    monkeypatch.setenv(web_research_cli.WEB_RESEARCH_CLI_TIMEOUT_ENV, "not-an-int")
+
+    assert (
+        web_research_cli._resolve_timeout_seconds(None)
+        == web_research_cli.DEFAULT_WEB_RESEARCH_CLI_TIMEOUT_SECONDS
+    )

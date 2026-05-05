@@ -13,7 +13,8 @@ from research_paths import _ROOT
 
 log = get_logger(__name__)
 
-WEB_RESEARCH_CLI_TIMEOUT_SECONDS = int(os.environ.get("AUTORESEARCH_WEB_RESEARCH_TIMEOUT", "300"))
+WEB_RESEARCH_CLI_TIMEOUT_ENV = "AUTORESEARCH_WEB_RESEARCH_TIMEOUT"
+DEFAULT_WEB_RESEARCH_CLI_TIMEOUT_SECONDS = 300
 
 
 class WebResearchCliError(RuntimeError):
@@ -32,13 +33,40 @@ def _find_codex_cli() -> str | None:
     return shutil.which("codex")
 
 
+def _resolve_timeout_seconds(timeout_seconds: int | None) -> int:
+    if timeout_seconds is not None:
+        return timeout_seconds
+    raw_timeout = os.environ.get(WEB_RESEARCH_CLI_TIMEOUT_ENV)
+    if raw_timeout is None:
+        return DEFAULT_WEB_RESEARCH_CLI_TIMEOUT_SECONDS
+    try:
+        parsed_timeout = int(raw_timeout)
+    except ValueError:
+        log.warning(
+            "invalid %s=%r; using default timeout %ds",
+            WEB_RESEARCH_CLI_TIMEOUT_ENV,
+            raw_timeout,
+            DEFAULT_WEB_RESEARCH_CLI_TIMEOUT_SECONDS,
+        )
+        return DEFAULT_WEB_RESEARCH_CLI_TIMEOUT_SECONDS
+    if parsed_timeout <= 0:
+        log.warning(
+            "non-positive %s=%r; using default timeout %ds",
+            WEB_RESEARCH_CLI_TIMEOUT_ENV,
+            raw_timeout,
+            DEFAULT_WEB_RESEARCH_CLI_TIMEOUT_SECONDS,
+        )
+        return DEFAULT_WEB_RESEARCH_CLI_TIMEOUT_SECONDS
+    return parsed_timeout
+
+
 def run_codex_web_research(
     prompt: str,
     *,
     instructions: str,
     model: str = DEFAULT_AGENT_MODEL,
     cwd: Path | None = None,
-    timeout_seconds: int = WEB_RESEARCH_CLI_TIMEOUT_SECONDS,
+    timeout_seconds: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Run web research through Codex CLI with OpenAI web search enabled.
 
@@ -49,6 +77,7 @@ def run_codex_web_research(
     cli = _find_codex_cli()
     if not cli:
         raise WebResearchCliError("codex CLI not found on PATH")
+    resolved_timeout = _resolve_timeout_seconds(timeout_seconds)
 
     full_prompt = (
         f"{instructions.strip()}\n\n"
@@ -79,12 +108,12 @@ def run_codex_web_research(
                 capture_output=True,
                 text=True,
                 cwd=workdir,
-                timeout=timeout_seconds,
+                timeout=resolved_timeout,
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
             raise WebResearchCliError(
-                f"codex web research timed out after {timeout_seconds}s"
+                f"codex web research timed out after {resolved_timeout}s"
             ) from exc
 
         stdout = completed.stdout or ""
