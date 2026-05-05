@@ -13,19 +13,15 @@ if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 repo_root="$(git rev-parse --show-toplevel)"
-review_parent="$(mktemp -d "${TMPDIR:-/tmp}/autoresearch-claude-pr-review.XXXXXX")"
-review_dir="${review_parent}/worktree"
+review_dir="$(mktemp -d "${TMPDIR:-/tmp}/autoresearch-claude-pr-review.XXXXXX")"
 
 cleanup() {
   git -C "$repo_root" worktree remove --force "$review_dir" >/dev/null 2>&1 || true
-  rm -rf "$review_parent"
+  rm -rf "$review_dir"
 }
 trap cleanup EXIT
 
-if ! git -C "$repo_root" worktree add --detach "$review_dir" HEAD >/dev/null; then
-  echo "could not create Claude PR review worktree; skipping" >&2
-  exit 0
-fi
+git -C "$repo_root" worktree add --detach "$review_dir" HEAD >/dev/null
 cd "$review_dir"
 
 if ! command -v claude >/dev/null 2>&1; then
@@ -33,15 +29,13 @@ if ! command -v claude >/dev/null 2>&1; then
   exit 0
 fi
 
-if ! claude auth status >/dev/null 2>&1; then
-  echo "claude auth unavailable; skipping pr-review-toolkit" >&2
+if claude auth status 2>/dev/null | grep -q '"loggedIn": false'; then
+  echo "claude not logged in; skipping pr-review-toolkit" >&2
   exit 0
 fi
 
-prompt="/pr-review-toolkit:review-pr all against ${base_ref}"
+prompt="/pr-review-toolkit:review-pr all"
 
-if ! printf '%s\n' "$prompt" | perl -e 'alarm shift @ARGV; exec @ARGV' \
+perl -e 'alarm shift @ARGV; exec @ARGV' \
   "$timeout_seconds" \
-  claude -p --bare --output-format text --permission-mode dontAsk --tools "Bash,Read,Glob,Grep,Task"; then
-  echo "claude pr-review-toolkit failed; skipping non-blocking review" >&2
-fi
+  claude -p --bare --output-format text --permission-mode dontAsk --tools "Bash,Read,Glob,Grep,Task" "$prompt"
