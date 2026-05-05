@@ -256,6 +256,28 @@ def test_extract_runner_output_text_falls_back_to_new_items(monkeypatch):
     assert infra._extract_runner_output_text(_FakeResult()) == "text from new items"
 
 
+def test_extract_runner_output_text_falls_back_to_raw_responses(monkeypatch):
+    class _FakeRawResponse:
+        def __init__(self):
+            self.output = [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "text from raw responses"}],
+                }
+            ]
+
+    class _FakeResult:
+        def __init__(self):
+            self.final_output = ""
+            self.new_items = []
+            self.raw_responses = [_FakeRawResponse()]
+
+        def final_output_as(self, typ):
+            return ""
+
+    assert infra._extract_runner_output_text(_FakeResult()) == "text from raw responses"
+
+
 # ── Generic exception handler ─────────────────────────────────────────────────
 
 

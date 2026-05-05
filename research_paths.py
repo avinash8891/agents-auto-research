@@ -95,4 +95,33 @@ def _extract_runner_output_text(result: Any) -> str:
                     exc.__class__.__name__,
                     len(new_items),
                 )
+    if not text:
+        raw_responses = getattr(result, "raw_responses", None) or []
+        if raw_responses:
+            try:
+                from agents.items import ItemHelpers
+
+                parts: list[str] = []
+                for response in raw_responses:
+                    for item in getattr(response, "output", None) or []:
+                        if isinstance(item, dict):
+                            part = ""
+                            if item.get("type") == "message":
+                                for content_item in item.get("content") or []:
+                                    if (
+                                        isinstance(content_item, dict)
+                                        and content_item.get("type") == "output_text"
+                                    ):
+                                        part += content_item.get("text") or ""
+                        else:
+                            part = ItemHelpers.extract_text(item)
+                        if part:
+                            parts.append(part)
+                text = "".join(parts)
+            except Exception as exc:
+                log.warning(
+                    "raw response output extraction failed for runner: %s raw_responses=%d",
+                    exc.__class__.__name__,
+                    len(raw_responses),
+                )
     return text
