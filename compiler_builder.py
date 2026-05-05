@@ -3,7 +3,6 @@ from __future__ import annotations
 import functools
 import json
 import shutil
-import string
 import subprocess
 import time
 from pathlib import Path
@@ -112,6 +111,44 @@ def _write_builder_attempt_artifacts(
     write_json_artifact(artifact_dir / "result.json", result)
 
 
+def _build_builder_prompt(
+    *,
+    thesis_id: str,
+    root: Path,
+    proposal_path: Path,
+    compilation_path: Path,
+    config_path: str,
+    family_name: str,
+    missing_primitives: list[str],
+    prompt_extras: list[str],
+) -> str:
+    extra_block = "\n".join(prompt_extras)
+    if extra_block:
+        extra_block = f"\n{extra_block}"
+    return f"""Goal:
+Implement the missing primitive(s) for thesis `{thesis_id}` and write the resulting config artifact.
+
+Context:
+- Repo root: {root}
+- Thesis artifact: {proposal_path}
+- Contract artifact: {compilation_path}
+- Expected config path: {config_path}
+- Strategy family: {family_name}
+- Missing primitives: {json.dumps(missing_primitives, indent=2)}{extra_block}
+
+Instructions:
+1. Read the thesis and contract artifacts from disk first.
+2. If the change is already expressible with the existing family schema, write the config artifact at the expected path and stop.
+3. Otherwise make the smallest code change needed to support the missing primitive(s), then add or update the narrowest tests that cover the new behavior.
+4. Keep the edit scope tight. Do not refactor unrelated code.
+5. Return a concise final report with:
+   - whether implementation succeeded
+   - files changed
+   - tests run
+   - generated config path
+"""
+
+
 def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     """Dispatch CLI builder to implement missing primitives for a thesis."""
     started_at = time.monotonic()
@@ -141,12 +178,6 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         config_path = generated_name
         builder_requests_dir = root / family.builder_requests_dirname
         attempt_dir = _builder_artifact_dir(root, family_name, thesis_id)
-        prompt_extras = [
-            "- Thesis artifact: experiments/$thesis_id/thesis.json",
-            "- Contract artifact: experiments/$thesis_id/contract.json",
-            "- Thesis payload: $thesis_payload",
-            "- Contract payload: $contract_payload",
-        ]
     else:
         compilation_family_name = None
         for candidate_family in sorted(STRATEGIES):
@@ -219,7 +250,6 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         config_path = f"configs/variants/{generated_name}"
         builder_requests_dir = root / family.builder_requests_dirname
         attempt_dir = _builder_artifact_dir(root, family_name, thesis_id)
-        prompt_extras = []
     request_payload = {
         "thesis_id": thesis_id,
         "family": family_name,
@@ -252,37 +282,16 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     )
 
     config_abspath = root / config_path
-    prompt = f"""Goal:
-Automatically implement the missing primitive(s) for thesis `{thesis_id}` and create the resulting config artifact.
-
-Context:
-- Repo root: {root}
-- Proposal artifact: {proposal_path}
-- Compilation artifact: {compilation_path}
-- Expected config path: {config_path}
-- Missing primitives: {json.dumps(missing_primitives, indent=2)}
-- Normalized contract: {json.dumps(normalized_contract, indent=2)}
-- Hypothesis: {proposal.get("hypothesis", "")}
-{string.Template(chr(10).join(prompt_extras)).safe_substitute(
-    thesis_id=thesis_id,
-    thesis_payload=json.dumps(proposal, indent=2),
-    contract_payload=json.dumps(compilation, indent=2),
-) if prompt_extras else ""}
-
-Requirements:
-- Write the necessary code changes in this repo.
-- Add or update tests for the new primitive behavior.
-- Create the config file at `{config_path}` if it becomes expressible.
-- Return a concise final report with:
-  1. whether implementation succeeded
-  2. files changed
-  3. tests run
-  4. generated config path
-
-Constraints:
-- Preserve existing behavior except for the new primitive support.
-- If implementation cannot be completed safely, explain why.
-"""
+    prompt = _build_builder_prompt(
+        thesis_id=thesis_id,
+        root=root,
+        proposal_path=proposal_path,
+        compilation_path=compilation_path,
+        config_path=config_path,
+        family_name=family_name,
+        missing_primitives=missing_primitives,
+        prompt_extras=[],
+    )
     builder_cmd = [
         "codex",
         "exec",
@@ -291,8 +300,6 @@ Constraints:
     ]
     if BUILDER_CLI_REASONING_EFFORT:
         builder_cmd.extend(["-c", f'model_reasoning_effort="{BUILDER_CLI_REASONING_EFFORT}"'])
-    builder_cmd.append(prompt)
-
     _write_artifacts = functools.partial(
         _write_builder_attempt_artifacts,
         artifact_dir=attempt_dir,
@@ -374,6 +381,7 @@ Constraints:
             capture_output=True,
             text=True,
             cwd=str(root),
+            input=prompt,
             timeout=BUILDER_CLI_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:

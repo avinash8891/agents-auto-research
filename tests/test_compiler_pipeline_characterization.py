@@ -436,12 +436,13 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
 
     captured: dict[str, object] = {}
 
-    def fake_run(cmd, capture_output, text, cwd, timeout):
+    def fake_run(cmd, capture_output, text, cwd, timeout, input):
         captured["cmd"] = cmd
         captured["capture_output"] = capture_output
         captured["text"] = text
         captured["cwd"] = cwd
         captured["timeout"] = timeout
+        captured["input"] = input
         target = tmp_path / "configs" / "variants" / f"{thesis_id}.yaml"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
@@ -454,13 +455,15 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
 
     result = build_missing_primitives(tmp_path, thesis_id)
 
-    assert captured["cmd"][:4] == [
+    assert captured["cmd"] == [
         "codex",
         "exec",
         "--model",
         "gpt-5.3",
     ]
-    assert captured["cmd"][4].startswith("Goal:\nAutomatically implement the missing primitive(s)")
+    assert captured["input"].startswith("Goal:\nImplement the missing primitive(s)")
+    assert "Thesis payload" not in captured["input"]
+    assert "Contract payload" not in captured["input"]
     assert captured["timeout"] == compiler_builder.BUILDER_CLI_TIMEOUT_SECONDS
     assert result["status"] == "completed"
     attempt_dir = tmp_path / family.builder_requests_dirname / thesis_id
@@ -542,7 +545,7 @@ import pathlib
 import re
 import sys
 
-prompt = sys.argv[-1]
+prompt = sys.stdin.read() or sys.argv[-1]
 root = pathlib.Path(re.search(r"- Repo root: (.+)", prompt).group(1))
 config = re.search(r"- Expected config path: (.+)", prompt).group(1)
 target = root / config
@@ -597,7 +600,7 @@ import pathlib
 import re
 import sys
 
-prompt = sys.argv[-1]
+prompt = sys.stdin.read() or sys.argv[-1]
 root = pathlib.Path(re.search(r"- Repo root: (.+)", prompt).group(1))
 config = re.search(r"- Expected config path: (.+)", prompt).group(1)
 target = root / config
@@ -673,7 +676,7 @@ import pathlib
 import re
 import sys
 
-prompt = sys.argv[-1]
+prompt = sys.stdin.read() or sys.argv[-1]
 root = pathlib.Path(re.search(r"- Repo root: (.+)", prompt).group(1))
 config = re.search(r"- Expected config path: (.+)", prompt).group(1)
 target = root / config
