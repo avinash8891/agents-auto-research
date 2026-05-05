@@ -6,7 +6,7 @@ from pathlib import Path
 
 def test_numpy_is_pinned_to_numba_compatible_range() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    pyproject = (repo_root / "pyproject.toml").read_text()
+    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
     match = re.search(r"(?ms)^dependencies = \[\n(?P<body>.*?)^\]", pyproject)
 
     assert match is not None
