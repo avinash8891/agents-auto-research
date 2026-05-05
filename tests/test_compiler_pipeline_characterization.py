@@ -458,7 +458,7 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
         "codex",
         "exec",
         "--model",
-        "gpt-5.4-mini",
+        "gpt-5.3",
         "-c",
         'model_reasoning_effort="medium"',
     ]
