@@ -331,23 +331,6 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
     )
 
-    if not cli:
-        result = {
-            "status": "error",
-            "reason": "No CLI available for builder dispatch",
-            "generated_config": None,
-            "validation_passed": False,
-        }
-        _write_artifacts(result=result)
-        trace(
-            "BUILDER",
-            f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
-            result,
-            model_provider="codex",
-            model_name=BUILDER_CLI_MODEL,
-        )
-        return result
-
     _write_artifacts(
         result={
             "status": "requested",
@@ -390,6 +373,23 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         trace(
             "BUILDER",
             f"finish thesis={thesis_id} status=completed model={BUILDER_CLI_MODEL}",
+            result,
+            model_provider="codex",
+            model_name=BUILDER_CLI_MODEL,
+        )
+        return result
+
+    if not cli:
+        result = {
+            "status": "error",
+            "reason": "No CLI available for builder dispatch",
+            "generated_config": None,
+            "validation_passed": False,
+        }
+        _write_artifacts(result=result)
+        trace(
+            "BUILDER",
+            f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
             result,
             model_provider="codex",
             model_name=BUILDER_CLI_MODEL,
