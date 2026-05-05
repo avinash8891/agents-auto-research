@@ -331,10 +331,18 @@ def build_remote_command(
         segments.append(f"export {DATA_ROOT_ENV}={shlex.quote(config.data_root)}")
     segments.extend(
         [
+            "deps_fingerprint=$(python3 -c 'import hashlib, pathlib; "
+            'p = pathlib.Path("pyproject.toml"); '
+            'print(hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else "missing")'
+            "')",
+            'if [ -f ".venv/.autoresearch-deps.sha256" ] && '
+            '[ "$(cat .venv/.autoresearch-deps.sha256)" != "$deps_fingerprint" ]; '
+            "then rm -rf .venv; fi",
             'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi',
             "python_bin=.venv/bin/python",
             'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
-            '"$python_bin" -m pip install --upgrade -e .',
+            '"$python_bin" -m pip install -e .',
+            'printf "%s\\n" "$deps_fingerprint" > .venv/.autoresearch-deps.sha256',
             (f'"$python_bin" autoresearch_controller.py ' f"--family {shlex.quote(family.name)}"),
         ]
     )
