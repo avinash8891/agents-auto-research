@@ -451,6 +451,7 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
         return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
 
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setenv("AUTORESEARCH_BUILDER_BYPASS_SANDBOX", "1")
     monkeypatch.setattr(
         "compiler_builder._codex_supports_bypass_flag", lambda *args, **kwargs: True
     )
@@ -501,6 +502,7 @@ def test_build_missing_primitives_reports_timeout_explicitly(
         raise subprocess.TimeoutExpired(cmd=kwargs.get("cmd") or args[0], timeout=kwargs["timeout"])
 
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setenv("AUTORESEARCH_BUILDER_BYPASS_SANDBOX", "1")
     monkeypatch.setattr(
         "compiler_builder._codex_supports_bypass_flag", lambda *args, **kwargs: False
     )
