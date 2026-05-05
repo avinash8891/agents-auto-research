@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -262,8 +261,11 @@ def _patch_openai_omit_sentinel_filter() -> None:
         "opentelemetry.instrumentation.openai.v1.realtime_wrappers",
         "opentelemetry.instrumentation.openai.v1.responses_wrappers",
     ):
-        module = sys.modules.get(module_name)
-        if module is not None and hasattr(module, "_set_span_attribute"):
+        try:
+            module = __import__(module_name, fromlist=["_set_span_attribute"])
+        except Exception:
+            continue
+        if hasattr(module, "_set_span_attribute"):
             setattr(module, "_set_span_attribute", _safe_set_span_attribute)
 
 
