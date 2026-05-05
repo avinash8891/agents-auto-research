@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -15,6 +16,7 @@ log = get_logger(__name__)
 
 WEB_RESEARCH_CLI_TIMEOUT_ENV = "AUTORESEARCH_WEB_RESEARCH_TIMEOUT"
 DEFAULT_WEB_RESEARCH_CLI_TIMEOUT_SECONDS = 300
+WEB_RESEARCH_REASONING_EFFORT = "low"
 
 
 class WebResearchCliError(RuntimeError):
@@ -91,25 +93,37 @@ def run_codex_web_research(
             model,
             "--config",
             'web_search="live"',
+            "--config",
+            f'model_reasoning_effort="{WEB_RESEARCH_REASONING_EFFORT}"',
         ]
         workdir = cwd or _ROOT
+        stdout = ""
+        stderr = ""
         try:
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 command,
-                input=full_prompt,
-                capture_output=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 cwd=workdir,
-                timeout=resolved_timeout,
-                check=False,
+                start_new_session=True,
             )
+            stdout, stderr = process.communicate(input=full_prompt, timeout=resolved_timeout)
         except subprocess.TimeoutExpired as exc:
+            _terminate_process_group(process)
+            try:
+                stdout, stderr = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                stdout, stderr = process.communicate()
             raise WebResearchCliError(
-                f"codex web research timed out after {resolved_timeout}s"
+                f"codex web research timed out after {resolved_timeout}s "
+                f"stdout_len={len(stdout or '')} stderr_len={len(stderr or '')}"
             ) from exc
 
-        stdout = completed.stdout or ""
-        stderr = completed.stderr or ""
+        stdout = stdout or ""
+        stderr = stderr or ""
         output = ""
         if output_path.exists():
             output = output_path.read_text()
@@ -119,7 +133,7 @@ def run_codex_web_research(
         metadata: dict[str, Any] = {
             "command": command,
             "cwd": str(workdir),
-            "exit_code": completed.returncode,
+            "exit_code": process.returncode,
             "stdout_len": len(stdout),
             "stderr_len": len(stderr),
             "output_len": len(output),
@@ -127,15 +141,25 @@ def run_codex_web_research(
         }
         log.info(
             "codex web research finished exit=%s stdout_len=%d stderr_len=%d output_len=%d",
-            completed.returncode,
+            process.returncode,
             len(stdout),
             len(stderr),
             len(output),
         )
 
-        if completed.returncode != 0:
+        if process.returncode != 0:
             raise WebResearchCliError(
                 "codex web research failed "
-                f"exit={completed.returncode} stdout_len={len(stdout)} stderr_len={len(stderr)}"
+                f"exit={process.returncode} stdout_len={len(stdout)} stderr_len={len(stderr)}"
             )
         return output, metadata
+
+
+def _terminate_process_group(process: subprocess.Popen[str]) -> None:
+    """Terminate Codex CLI and any child process spawned by the Node wrapper."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except Exception:
+        process.terminate()

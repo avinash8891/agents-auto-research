@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import subprocess
 
+import pytest
+
 import web_research_cli
 
 
@@ -10,20 +12,39 @@ def test_run_codex_web_research_uses_live_web_search_and_output_file(monkeypatch
 
     monkeypatch.setattr(web_research_cli, "_find_codex_cli", lambda: "codex")
 
-    def fake_run(cmd, *, input, capture_output, text, cwd, timeout, check):
-        captured["cmd"] = cmd
-        captured["input"] = input
-        captured["capture_output"] = capture_output
-        captured["text"] = text
-        captured["cwd"] = cwd
-        captured["timeout"] = timeout
-        captured["check"] = check
-        output_path = cmd[cmd.index("--output-last-message") + 1]
-        with open(output_path, "w") as f:
-            f.write('{"findings":[{"topic":"x","finding":"y"}],"summary":"ok"}')
-        return subprocess.CompletedProcess(cmd, 0, stdout="ignored stdout", stderr="")
+    class FakeProcess:
+        returncode = 0
+        pid = 12345
 
-    monkeypatch.setattr(web_research_cli.subprocess, "run", fake_run)
+        def __init__(self, cmd, *, stdin, stdout, stderr, text, cwd, start_new_session):
+            captured["cmd"] = cmd
+            captured["stdin"] = stdin
+            captured["stdout"] = stdout
+            captured["stderr"] = stderr
+            captured["text"] = text
+            captured["cwd"] = cwd
+            captured["start_new_session"] = start_new_session
+
+        def communicate(self, *, input, timeout):
+            captured["input"] = input
+            captured["timeout"] = timeout
+            output_path = captured["cmd"][captured["cmd"].index("--output-last-message") + 1]
+            with open(output_path, "w") as f:
+                f.write('{"findings":[{"topic":"x","finding":"y"}],"summary":"ok"}')
+            return "ignored stdout", ""
+
+    def fake_popen(cmd, *, stdin, stdout, stderr, text, cwd, start_new_session):
+        return FakeProcess(
+            cmd,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            text=text,
+            cwd=cwd,
+            start_new_session=start_new_session,
+        )
+
+    monkeypatch.setattr(web_research_cli.subprocess, "Popen", fake_popen)
 
     output, metadata = web_research_cli.run_codex_web_research(
         "question",
@@ -40,15 +61,69 @@ def test_run_codex_web_research_uses_live_web_search_and_output_file(monkeypatch
         "--sandbox",
         "workspace-write",
     ]
-    assert captured["cmd"][-4:] == ["--model", "gpt-5.2", "--config", 'web_search="live"']
+    assert captured["cmd"][-4:] == [
+        "--config",
+        'web_search="live"',
+        "--config",
+        'model_reasoning_effort="low"',
+    ]
+    assert "--model" in captured["cmd"]
+    assert captured["cmd"][captured["cmd"].index("--model") + 1] == "gpt-5.2"
     assert "--output-last-message" in captured["cmd"]
     assert "system instructions" in captured["input"]
     assert "USER REQUEST:\nquestion" in captured["input"]
     assert captured["cwd"] == tmp_path
     assert captured["timeout"] == 12
+    assert captured["stdin"] == subprocess.PIPE
+    assert captured["stdout"] == subprocess.PIPE
+    assert captured["stderr"] == subprocess.PIPE
+    assert captured["start_new_session"] is True
     assert output == '{"findings":[{"topic":"x","finding":"y"}],"summary":"ok"}'
     assert metadata["exit_code"] == 0
     assert metadata["output_path_used"] is True
+
+
+def test_run_codex_web_research_terminates_process_group_on_timeout(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(web_research_cli, "_find_codex_cli", lambda: "codex")
+
+    class FakeProcess:
+        returncode = None
+        pid = 12345
+
+        def __init__(self, *args, **kwargs):
+            self.calls = 0
+
+        def communicate(self, *, input=None, timeout=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise subprocess.TimeoutExpired(cmd="codex", timeout=timeout)
+            return "", "stderr"
+
+        def kill(self):
+            captured["killed"] = True
+
+        def terminate(self):
+            captured["terminated"] = True
+
+    monkeypatch.setattr(web_research_cli.subprocess, "Popen", lambda *a, **k: FakeProcess())
+    monkeypatch.setattr(
+        web_research_cli.os,
+        "killpg",
+        lambda pid, sig: captured.update({"pid": pid, "sig": sig}),
+    )
+
+    with pytest.raises(web_research_cli.WebResearchCliError, match="timed out after 1s"):
+        web_research_cli.run_codex_web_research(
+            "question",
+            instructions="system instructions",
+            cwd=tmp_path,
+            timeout_seconds=1,
+        )
+
+    assert captured["pid"] == 12345
+    assert captured["sig"] == web_research_cli.signal.SIGTERM
 
 
 def test_resolve_timeout_seconds_handles_invalid_env(monkeypatch):
