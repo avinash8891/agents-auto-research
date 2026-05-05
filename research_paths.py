@@ -99,10 +99,12 @@ def _extract_runner_output_text(result: Any) -> str:
         raw_responses = getattr(result, "raw_responses", None) or []
         if raw_responses:
             try:
-                from agents.items import ItemHelpers
-
                 parts: list[str] = []
                 for response in raw_responses:
+                    response_text = getattr(response, "output_text", None)
+                    if isinstance(response_text, str) and response_text:
+                        parts.append(response_text)
+                        continue
                     for item in getattr(response, "output", None) or []:
                         if isinstance(item, dict):
                             part = ""
@@ -124,4 +126,15 @@ def _extract_runner_output_text(result: Any) -> str:
                     exc.__class__.__name__,
                     len(raw_responses),
                 )
+    if not text:
+        final_output = getattr(result, "final_output", None)
+        new_items = getattr(result, "new_items", None) or []
+        raw_responses = getattr(result, "raw_responses", None) or []
+        log.warning(
+            "runner output extraction returned empty text final_output_type=%s new_items=%d raw_responses=%d raw_response_types=%s",
+            type(final_output).__name__,
+            len(new_items),
+            len(raw_responses),
+            [type(response).__name__ for response in raw_responses[:3]],
+        )
     return text
