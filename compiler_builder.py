@@ -21,7 +21,7 @@ log = get_logger(__name__)
 
 BUILDER_CLI_TIMEOUT_SECONDS = 900
 BUILDER_CLI_MODEL = "gpt-5.3"
-BUILDER_CLI_REASONING_EFFORT = "medium"
+BUILDER_CLI_REASONING_EFFORT: str | None = None
 
 
 def _coerce_subprocess_output(value: Any) -> str:
@@ -236,7 +236,10 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     write_json_artifact(builder_requests_dir / f"{thesis_id}.json", request_payload)
     trace(
         "BUILDER",
-        f"start thesis={thesis_id} model={BUILDER_CLI_MODEL} effort={BUILDER_CLI_REASONING_EFFORT}",
+        (
+            f"start thesis={thesis_id} model={BUILDER_CLI_MODEL}"
+            + (f" effort={BUILDER_CLI_REASONING_EFFORT}" if BUILDER_CLI_REASONING_EFFORT else "")
+        ),
         {
             "thesis_id": thesis_id,
             "family": family_name,
@@ -285,10 +288,10 @@ Constraints:
         "exec",
         "--model",
         BUILDER_CLI_MODEL,
-        "-c",
-        f'model_reasoning_effort="{BUILDER_CLI_REASONING_EFFORT}"',
-        prompt,
     ]
+    if BUILDER_CLI_REASONING_EFFORT:
+        builder_cmd.extend(["-c", f'model_reasoning_effort="{BUILDER_CLI_REASONING_EFFORT}"'])
+    builder_cmd.append(prompt)
 
     _write_artifacts = functools.partial(
         _write_builder_attempt_artifacts,
