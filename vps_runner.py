@@ -334,7 +334,7 @@ def build_remote_command(
             'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi',
             "python_bin=.venv/bin/python",
             'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
-            '"$python_bin" -m pip install -e .',
+            '"$python_bin" -m pip install --upgrade -e .',
             (f'"$python_bin" autoresearch_controller.py ' f"--family {shlex.quote(family.name)}"),
         ]
     )

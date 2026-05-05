@@ -156,14 +156,14 @@ def test_remote_command_runs_controller_for_family() -> None:
     assert 'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi' in command
     assert "python_bin=.venv/bin/python" in command
     assert f"export AUTORESEARCH_RESOLVED_SHA={resolved_sha}" in command
-    assert '"$python_bin" -m pip install -e .' in command
+    assert '"$python_bin" -m pip install --upgrade -e .' in command
     assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
     ) in command
     assert command.index("python_bin=.venv/bin/python") < command.index(
-        '"$python_bin" -m pip install -e .'
+        '"$python_bin" -m pip install --upgrade -e .'
     )
-    assert command.index('"$python_bin" -m pip install -e .') < command.index(
+    assert command.index('"$python_bin" -m pip install --upgrade -e .') < command.index(
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
     )
     assert "/root/orb-research" not in command
