@@ -452,7 +452,7 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
 
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
     monkeypatch.setattr(
-        "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: True
+        "compiler_builder._codex_supports_bypass_flag", lambda *args, **kwargs: True
     )
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
 
@@ -460,9 +460,8 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
 
     assert captured["cmd"] == [
         "codex",
+        "--dangerously-bypass-approvals-and-sandbox",
         "exec",
-        "--sandbox",
-        "workspace-write",
         "--model",
         "gpt-5.4",
     ]
@@ -502,6 +501,9 @@ def test_build_missing_primitives_reports_timeout_explicitly(
         raise subprocess.TimeoutExpired(cmd=kwargs.get("cmd") or args[0], timeout=kwargs["timeout"])
 
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr(
+        "compiler_builder._codex_supports_bypass_flag", lambda *args, **kwargs: False
+    )
     monkeypatch.setattr(
         "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
     )

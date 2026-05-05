@@ -62,6 +62,21 @@ def _codex_supports_sandbox_flag(cli: str) -> bool:
     return "--sandbox" in help_text
 
 
+def _codex_supports_bypass_flag(cli: str) -> bool:
+    try:
+        help_result = subprocess.run(
+            [cli, "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    help_text = f"{help_result.stdout}\n{help_result.stderr}"
+    return "--dangerously-bypass-approvals-and-sandbox" in help_text
+
+
 def _read_json_artifact(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
@@ -309,13 +324,10 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     )
     cli = _find_cli()
     if cli:
-        builder_cmd = [
-            cli,
-            "exec",
-            "--model",
-            BUILDER_CLI_MODEL,
-        ]
-        if _codex_supports_sandbox_flag(cli):
+        builder_cmd = [cli, "exec", "--model", BUILDER_CLI_MODEL]
+        if _codex_supports_bypass_flag(cli):
+            builder_cmd.insert(1, "--dangerously-bypass-approvals-and-sandbox")
+        elif _codex_supports_sandbox_flag(cli):
             builder_cmd[2:2] = ["--sandbox", "workspace-write"]
     else:
         builder_cmd = []
