@@ -166,7 +166,7 @@ def _validate_remote_dir(remote_dir: str) -> None:
 
 
 def _validate_git_ref(git_ref: str) -> None:
-    if re.fullmatch(r"[0-9a-fA-F]{40}", git_ref):
+    if re.fullmatch(r"[0-9a-fA-F]{7,40}", git_ref):
         return
     if git_ref.startswith(("+", "-")) or ":" in git_ref:
         raise ValueError(
@@ -247,7 +247,7 @@ def build_git_prepare_command(config: VPSConfig) -> str:
     # Fetch strategy differs: full 40-char SHAs cannot be used as refspecs,
     # so fetch all refs and verify the SHA is present locally.
     # Branch/tag refs use a refspec so --prune removes deleted remote refs.
-    if re.fullmatch(r"[0-9a-fA-F]{40}", config.git_ref):
+    if re.fullmatch(r"[0-9a-fA-F]{7,40}", config.git_ref):
         git_sha_q = shlex.quote(config.git_ref)
         fetch_and_resolve = (
             "git fetch --prune origin && "

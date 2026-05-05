@@ -72,7 +72,7 @@ Each strategy family (e.g. `ema`, `orb`) is registered under `strategies/` via t
 
 ### VPS runner
 
-`vps_runner.py` deploys a git ref (branch, tag, or 40-char SHA) to a remote host via SSH, then launches `autoresearch_controller.py` in a tmux session. Use `--git-sha` for reproducible deploys pinned to an exact commit.
+`vps_runner.py` deploys a git ref (branch, tag, or git SHA) to a remote host via SSH, then launches `autoresearch_controller.py` in a tmux session. Use `--git-sha` for reproducible deploys pinned to an exact commit.
 
 ## Environment variables
 

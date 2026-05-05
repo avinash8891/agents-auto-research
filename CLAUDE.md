@@ -61,7 +61,7 @@ python autoresearch_controller.py --family orb   # run ORB strategy family
 
 # Deploy & run on VPS
 python vps_runner.py --strategy ema --git-ref main       # deploy branch/tag
-python vps_runner.py --strategy ema --git-sha <40-char>  # deploy exact commit
+python vps_runner.py --strategy ema --git-sha <git-sha>   # deploy exact commit
 
 # Experiment tracking CLI
 python autoresearch_cli.py init   --session-path <path>
