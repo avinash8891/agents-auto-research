@@ -47,7 +47,6 @@ def _find_cli() -> str | None:
     return None
 
 
-@functools.lru_cache(maxsize=1)
 def _codex_supports_sandbox_flag(cli: str) -> bool:
     try:
         help_result = subprocess.run(
