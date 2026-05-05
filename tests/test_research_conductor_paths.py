@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import research_conductor as rc
+import research_paths as infra
 from agent_infra import _run_coroutine_sync
 
 # ── Minimal thesis dict that passes the struct check ─────────────────────────
@@ -236,6 +237,23 @@ def test_final_output_as_exception_falls_back_to_final_output(monkeypatch):
     )
 
     assert result == _VALID_PAYLOAD
+
+
+def test_extract_runner_output_text_falls_back_to_new_items(monkeypatch):
+    class _FakeResult:
+        def __init__(self):
+            self.final_output = ""
+            self.new_items = ["message item"]
+
+        def final_output_as(self, typ):
+            return ""
+
+    monkeypatch.setattr(
+        "agents.items.ItemHelpers.text_message_outputs",
+        lambda items: "text from new items" if items == ["message item"] else "",
+    )
+
+    assert infra._extract_runner_output_text(_FakeResult()) == "text from new items"
 
 
 # ── Generic exception handler ─────────────────────────────────────────────────

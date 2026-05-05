@@ -75,4 +75,13 @@ def _extract_runner_output_text(result: Any) -> str:
             text = final_output
         elif final_output is not None:
             text = json.dumps(final_output, default=str)
+    if not text:
+        new_items = getattr(result, "new_items", None) or []
+        if new_items:
+            try:
+                from agents.items import ItemHelpers
+
+                text = ItemHelpers.text_message_outputs(list(new_items))
+            except Exception as exc:
+                log.warning("message output extraction failed for runner: %s", exc)
     return text
