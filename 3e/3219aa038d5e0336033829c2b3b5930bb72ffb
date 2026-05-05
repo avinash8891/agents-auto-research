@@ -1,0 +1,23 @@
+tests/test_agent_orchestrator_characterization.py
+  df23f17b640abbde 523,568
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "3e3219aa038d5e0336033829c2b3b5930bb72ffb",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 6,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
