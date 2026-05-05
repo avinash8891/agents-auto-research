@@ -376,8 +376,8 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert 'git checkout --detach "$resolved"' in command
     assert "git clean -ffdx" in command
     assert "-e '*_autoresearch-runs'" in command
-    assert "-e 'venv'" not in command
-    assert "-e '.venv'" not in command
+    assert "-e '.venv'" in command
+    assert "-e '.venv/**'" in command
     assert "-e 'data'" in command
     assert "-e 'experiments'" in command
     assert "-e 'proposals'" in command

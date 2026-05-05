@@ -270,6 +270,7 @@ def build_git_prepare_command(config: VPSConfig) -> str:
         f"{fetch_and_resolve}"
         'git checkout --detach "$resolved" && '
         "git clean -ffdx "
+        "-e '.venv' -e '.venv/**' "
         "-e '*_autoresearch-runs' -e '*_autoresearch-runs/**' "
         "-e 'data' -e 'data/**' "
         "-e 'experiments' -e 'experiments/**' "
