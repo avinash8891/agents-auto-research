@@ -157,7 +157,7 @@ dependencies = [
     "httpx",
     "mcp",
     "mempalace",
-    "numpy",
+    "numpy<2.3",
     "numba",
     "pandas",
     "paramiko",
