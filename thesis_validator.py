@@ -36,6 +36,11 @@ BUILTIN_METRICS = {
 # Minimum Jaccard overlap to trigger rejection
 CONFIG_OVERLAP_THRESHOLD = 0.5
 
+# Metadata/sentinel keys that are carried in config_changes for orchestration,
+# but are not actual strategy parameters. Including these in novelty checks
+# makes every engine-change thesis look like a duplicate of the previous one.
+CONFIG_OVERLAP_IGNORED_KEYS = frozenset({"requires_engine_change"})
+
 
 class ThesisValidationError(ValueError):
     """Raised when a thesis fails validation."""
@@ -211,12 +216,12 @@ def config_key_overlap(
 
     Returns (is_duplicate, reason).
     """
-    proposed_keys = set(proposed.keys())
+    proposed_keys = set(proposed.keys()) - CONFIG_OVERLAP_IGNORED_KEYS
     if not proposed_keys:
         return False, ""
 
     for prior in prior_theses:
-        prior_keys = set(prior["config_changes"].keys())
+        prior_keys = set(prior["config_changes"].keys()) - CONFIG_OVERLAP_IGNORED_KEYS
         if not prior_keys:
             continue
         overlap = proposed_keys & prior_keys
