@@ -245,7 +245,10 @@ def _patch_openai_omit_sentinel_filter() -> None:
             return
         span.set_attribute(name, value)
 
-    import opentelemetry.instrumentation.openai.shared as shared_module
+    try:
+        import opentelemetry.instrumentation.openai.shared as shared_module
+    except Exception:
+        return
 
     setattr(shared_module, "_set_span_attribute", _safe_set_span_attribute)
 
