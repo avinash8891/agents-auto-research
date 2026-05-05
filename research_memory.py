@@ -20,19 +20,20 @@ def _resolve_palace_dir() -> str:
     Prefer any existing configured palace before creating a new local directory.
     """
     configured = os.getenv("AUTORESEARCH_MEMPALACE_PALACE")
-    candidates = []
     if configured:
-        candidates.append(Path(configured).expanduser())
-    candidates.append(Path.home() / ".codex/mempalace/palace")
-    candidates.append(Path(_PALACE_DIR))
+        candidate = Path(configured).expanduser()
+        if candidate.exists() and not candidate.is_dir():
+            raise RuntimeError(f"Configured palace path is not a directory: {candidate}")
+        candidate.mkdir(parents=True, exist_ok=True)
+        return str(candidate)
 
-    for candidate in candidates:
-        if candidate.exists():
-            return str(candidate)
-
-    fallback = Path(_PALACE_DIR)
-    fallback.mkdir(parents=True, exist_ok=True)
-    return str(fallback)
+    home_candidate = Path.home() / ".codex/mempalace/palace"
+    if home_candidate.exists() and not home_candidate.is_dir():
+        raise RuntimeError(f"Home palace path is not a directory: {home_candidate}")
+    if home_candidate.exists():
+        return str(home_candidate)
+    home_candidate.mkdir(parents=True, exist_ok=True)
+    return str(home_candidate)
 
 
 def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor") -> dict:

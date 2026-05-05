@@ -425,6 +425,17 @@ def test_resolve_palace_dir_prefers_existing_configured_path(monkeypatch, tmp_pa
     assert memory._resolve_palace_dir() == str(configured)
 
 
+def test_resolve_palace_dir_creates_missing_configured_path(monkeypatch, tmp_path):
+    configured = tmp_path / "missing-palace"
+    monkeypatch.setenv("AUTORESEARCH_MEMPALACE_PALACE", str(configured))
+    monkeypatch.setattr(memory, "_PALACE_DIR", str(tmp_path / "repo-palace"))
+
+    resolved = memory._resolve_palace_dir()
+
+    assert resolved == str(configured)
+    assert configured.is_dir()
+
+
 def test_call_web_researcher_uses_responses_model_for_web_search(monkeypatch):
     import agents
 
