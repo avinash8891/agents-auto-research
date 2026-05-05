@@ -501,8 +501,6 @@ def test_call_web_researcher_uses_responses_model_for_web_search(monkeypatch):
 
 
 def test_extract_runner_output_text_uses_raw_response_output_text(monkeypatch):
-    from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
-
     import research_paths
 
     class _Result:
@@ -510,28 +508,14 @@ def test_extract_runner_output_text_uses_raw_response_output_text(monkeypatch):
             self.final_output = ""
             self.new_items = []
             self.raw_responses = [
-                Response.model_construct(
-                    id="resp_1",
-                    created_at=0.0,
-                    model="gpt-5.4",
-                    object="response",
-                    parallel_tool_calls=False,
-                    output=[
-                        ResponseOutputMessage.model_construct(
-                            id="msg_1",
-                            content=[
-                                ResponseOutputText.model_construct(
-                                    annotations=[],
-                                    text='{"findings":[{"topic":"x","finding":"y","source":null,"source_quality":"practitioner","actionable_idea":"z"}],"summary":"ok"}',
-                                    type="output_text",
-                                )
-                            ],
-                            role="assistant",
-                            status="completed",
-                            type="message",
-                        )
-                    ],
-                )
+                type(
+                    "RawResponse",
+                    (),
+                    {
+                        "output_text": '{"findings":[{"topic":"x","finding":"y","source":null,"source_quality":"practitioner","actionable_idea":"z"}],"summary":"ok"}',
+                        "output": [],
+                    },
+                )()
             ]
 
     assert (

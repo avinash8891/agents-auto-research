@@ -132,11 +132,12 @@ def _extract_runner_output_text(result: Any) -> str:
         final_output = getattr(result, "final_output", None)
         new_items = getattr(result, "new_items", None) or []
         raw_responses = getattr(result, "raw_responses", None) or []
+        raw_response_types = [type(response).__name__ for response in list(raw_responses)[:3]]
         log.warning(
             "runner output extraction returned empty text final_output_type=%s new_items=%d raw_responses=%d raw_response_types=%s",
             type(final_output).__name__,
             len(new_items),
             len(raw_responses),
-            [type(response).__name__ for response in raw_responses[:3]],
+            raw_response_types,
         )
     return text
