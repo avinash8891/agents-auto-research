@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import sys
+from functools import partial
 
 from agent_token_usage import _accumulate_result_usage
 from research_paths import (
@@ -271,13 +273,16 @@ Return ONLY the JSON object."""
         model_name=_CONDUCTOR_MODEL,
     )
     try:
-        result = OAIRunner.run_sync(
-            agent,
-            user_prompt,
-            run_config=OAIRunConfig(
-                model_settings=OAIModelSettings(store=False),
-                tracing_disabled=True,
-            ),
+        result = await asyncio.to_thread(
+            partial(
+                OAIRunner.run_sync,
+                agent,
+                user_prompt,
+                run_config=OAIRunConfig(
+                    model_settings=OAIModelSettings(store=False),
+                    tracing_disabled=True,
+                ),
+            )
         )
         _accumulate_result_usage(
             "web_researcher", result, provider="openai", model=_CONDUCTOR_MODEL
