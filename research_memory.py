@@ -27,13 +27,20 @@ def _resolve_palace_dir() -> str:
         candidate.mkdir(parents=True, exist_ok=True)
         return str(candidate)
 
+    repo_candidate = Path(_PALACE_DIR)
+    if repo_candidate.exists() and not repo_candidate.is_dir():
+        raise RuntimeError(f"Repo palace path is not a directory: {repo_candidate}")
+    if repo_candidate.exists():
+        return str(repo_candidate)
+
     home_candidate = Path.home() / ".codex/mempalace/palace"
     if home_candidate.exists() and not home_candidate.is_dir():
         raise RuntimeError(f"Home palace path is not a directory: {home_candidate}")
     if home_candidate.exists():
         return str(home_candidate)
-    home_candidate.mkdir(parents=True, exist_ok=True)
-    return str(home_candidate)
+
+    repo_candidate.mkdir(parents=True, exist_ok=True)
+    return str(repo_candidate)
 
 
 def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor") -> dict:
