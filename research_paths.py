@@ -67,7 +67,14 @@ def _extract_runner_output_text(result: Any) -> str:
         try:
             text = result.final_output_as(str) or ""
         except Exception as exc:
-            log.warning("final_output_as failed for runner: %s", exc.__class__.__name__)
+            final_output = getattr(result, "final_output", None)
+            new_items = getattr(result, "new_items", None) or []
+            log.warning(
+                "final_output_as failed for runner: %s final_output_type=%s new_items=%d",
+                exc.__class__.__name__,
+                type(final_output).__name__,
+                len(new_items),
+            )
             text = ""
     if not text:
         final_output = getattr(result, "final_output", None)
@@ -84,7 +91,8 @@ def _extract_runner_output_text(result: Any) -> str:
                 text = ItemHelpers.text_message_outputs(list(new_items))
             except Exception as exc:
                 log.warning(
-                    "message output extraction failed for runner: %s",
+                    "message output extraction failed for runner: %s new_items=%d",
                     exc.__class__.__name__,
+                    len(new_items),
                 )
     return text
