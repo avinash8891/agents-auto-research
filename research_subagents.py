@@ -298,6 +298,7 @@ Return ONLY the JSON object."""
         )
         return f"WEB_SEARCH ERROR: could not parse: {output[:500]}"
     except WebResearchCliError as exc:
+        _accumulate_result_usage("web_researcher", None, provider="openai", model=_CONDUCTOR_MODEL)
         trace(
             "CONDUCTOR",
             f"web_search ERROR: {exc}",

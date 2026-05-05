@@ -21,14 +21,6 @@ class WebResearchCliError(RuntimeError):
     """Raised when the Codex CLI web-search boundary fails before JSON parsing."""
 
 
-def _diagnostic_excerpt(*parts: str, limit: int = 1200) -> str:
-    text = "\n".join(part for part in parts if part)
-    if len(text) <= limit:
-        return text
-    half = limit // 2
-    return f"{text[:half]}\n... [truncated {len(text) - limit} chars] ...\n{text[-half:]}"
-
-
 def _find_codex_cli() -> str | None:
     return shutil.which("codex")
 
@@ -142,8 +134,8 @@ def run_codex_web_research(
         )
 
         if completed.returncode != 0:
-            excerpt = _diagnostic_excerpt(stderr, stdout)
             raise WebResearchCliError(
-                f"codex web research failed exit={completed.returncode}: {excerpt}"
+                "codex web research failed "
+                f"exit={completed.returncode} stdout_len={len(stdout)} stderr_len={len(stderr)}"
             )
         return output, metadata
