@@ -603,16 +603,23 @@ def _stream_remote_command(
     return exit_code, "".join(out_chunks), "".join(err_chunks)
 
 
-def main():
-    _load_local_env_file()
-
+def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run autoresearch controller on the VPS")
     parser.add_argument("--strategy", required=True, choices=sorted(STRATEGIES))
     parser.add_argument(
         "--git-ref",
+        "--git-sha",
+        dest="git_ref",
         required=True,
-        help="Git branch, tag, or full commit SHA to deploy on VPS",
+        help="Git branch, tag, or commit SHA to deploy on VPS",
     )
+    return parser
+
+
+def main():
+    _load_local_env_file()
+
+    parser = _build_arg_parser()
     args = parser.parse_args()
 
     strategy_name = args.strategy

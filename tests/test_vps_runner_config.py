@@ -10,6 +10,7 @@ import pytest
 from strategy_family import load_family
 from vps_runner import (
     VPSConfig,
+    _build_arg_parser,
     _localize_remote_result_output,
     _sftp_mkdir_p,
     build_git_prepare_command,
@@ -109,6 +110,18 @@ def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
         config_from_env(git_ref="0123456789abcdef0123456789abcdef01234567").git_ref
         == "0123456789abcdef0123456789abcdef01234567"
     )
+
+
+def test_vps_runner_parser_accepts_git_sha_alias() -> None:
+    parser = _build_arg_parser()
+
+    ref_args = parser.parse_args(["--strategy", "ema", "--git-ref", "main"])
+    sha_args = parser.parse_args(
+        ["--strategy", "ema", "--git-sha", "0123456789abcdef0123456789abcdef01234567"]
+    )
+
+    assert ref_args.git_ref == "main"
+    assert sha_args.git_ref == "0123456789abcdef0123456789abcdef01234567"
 
 
 def test_vps_config_rejects_unsafe_remote_dirs(monkeypatch) -> None:
