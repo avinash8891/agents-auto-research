@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -215,6 +216,54 @@ def _write_text(path: Path, content: str) -> str:
     return str(path)
 
 
+def _patch_openai_omit_sentinel_filter() -> None:
+    """Drop OpenAI sentinel values before OpenTelemetry records request attrs.
+
+    The OpenTelemetry OpenAI instrumentation accepts unset `NOT_GIVEN` values
+    but currently logs warnings for `Omit`, which OpenAI SDK uses for the same
+    "do not send this field" meaning. Patch the shared helper and any already
+    imported wrapper modules so Omit behaves like an omitted field instead of a
+    noisy invalid attribute value.
+    """
+    try:
+        import openai
+    except Exception:
+        return
+
+    omit_type = getattr(openai, "Omit", None)
+    if not isinstance(omit_type, type):
+        return
+
+    not_given = getattr(openai, "NOT_GIVEN", object())
+
+    def _safe_set_span_attribute(span, name, value):
+        if value is None or value == "":
+            return
+        if value == not_given:
+            return
+        if isinstance(value, omit_type):
+            return
+        span.set_attribute(name, value)
+
+    import opentelemetry.instrumentation.openai.shared as shared_module
+
+    setattr(shared_module, "_set_span_attribute", _safe_set_span_attribute)
+
+    for module_name in (
+        "opentelemetry.instrumentation.openai.shared.chat_wrappers",
+        "opentelemetry.instrumentation.openai.shared.completion_wrappers",
+        "opentelemetry.instrumentation.openai.shared.embeddings_wrappers",
+        "opentelemetry.instrumentation.openai.shared.image_gen_wrappers",
+        "opentelemetry.instrumentation.openai.v1.assistant_wrappers",
+        "opentelemetry.instrumentation.openai.v1.event_handler_wrapper",
+        "opentelemetry.instrumentation.openai.v1.realtime_wrappers",
+        "opentelemetry.instrumentation.openai.v1.responses_wrappers",
+    ):
+        module = sys.modules.get(module_name)
+        if module is not None and hasattr(module, "_set_span_attribute"):
+            setattr(module, "_set_span_attribute", _safe_set_span_attribute)
+
+
 def _render_artifact_header(
     *,
     run_id: str,
@@ -405,6 +454,7 @@ def _initialize_tracing() -> None:
     if _INITIALIZED:
         return
     _PROVIDER = _build_provider()
+    _patch_openai_omit_sentinel_filter()
     if os.getenv("PYTEST_CURRENT_TEST"):
         _bind_instrumentation()
         _INITIALIZED = True

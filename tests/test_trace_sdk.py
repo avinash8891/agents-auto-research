@@ -54,6 +54,60 @@ def test_trace_sdk_initialization_does_not_uninstrument_first_import(
     assert uninstrument.call_count == 0
 
 
+def test_trace_sdk_filters_openai_omit_sentinels_from_request_attributes(
+    monkeypatch, tmp_path: Path, caplog
+) -> None:
+    _load_trace_sdk(monkeypatch, tmp_path)
+
+    import openai
+    import opentelemetry.instrumentation.openai.shared.chat_wrappers as chat_wrappers
+    import opentelemetry.instrumentation.openai.v1.responses_wrappers as responses_wrappers
+    from opentelemetry.instrumentation.openai.shared import _set_request_attributes
+
+    class DummySpan:
+        def __init__(self) -> None:
+            self.attributes: dict[str, object] = {}
+
+        def is_recording(self) -> bool:
+            return True
+
+        def set_attribute(self, key: str, value: object) -> None:
+            self.attributes[key] = value
+
+    caplog.set_level("WARNING", logger="opentelemetry.attributes")
+
+    span = DummySpan()
+
+    _set_request_attributes(
+        span,
+        {
+            "model": "gpt-5.4",
+            "max_tokens": openai.omit,
+            "temperature": openai.omit,
+            "top_p": openai.omit,
+            "frequency_penalty": openai.omit,
+            "presence_penalty": openai.omit,
+        },
+    )
+    assert span.attributes["gen_ai.request.model"] == "gpt-5.4"
+    assert "gen_ai.request.max_tokens" not in span.attributes
+    assert "gen_ai.request.temperature" not in span.attributes
+    assert "gen_ai.request.top_p" not in span.attributes
+    assert "gen_ai.request.frequency_penalty" not in span.attributes
+    assert "gen_ai.request.presence_penalty" not in span.attributes
+
+    chat_span = DummySpan()
+    chat_wrappers._set_span_attribute(chat_span, "test.attr", openai.omit)
+    chat_wrappers._set_span_attribute(chat_span, "test.keep", "ok")
+    assert chat_span.attributes == {"test.keep": "ok"}
+
+    response_span = DummySpan()
+    responses_wrappers._set_span_attribute(response_span, "test.attr", openai.omit)
+    responses_wrappers._set_span_attribute(response_span, "test.keep", "ok")
+    assert response_span.attributes == {"test.keep": "ok"}
+    assert "Invalid type Omit" not in caplog.text
+
+
 def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path: Path) -> None:
     trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
 
