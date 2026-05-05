@@ -6,9 +6,6 @@ import sys
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
-
-from openinference.instrumentation.openai import OpenAIInstrumentor
 
 
 def _load_trace_sdk(monkeypatch, tmp_path: Path):
@@ -30,82 +27,13 @@ def _load_trace_sdk(monkeypatch, tmp_path: Path):
     return importlib.reload(module)
 
 
-def test_trace_sdk_initialization_does_not_uninstrument_first_import(
+def test_trace_sdk_uses_openai_agents_not_openai_sdk_instrumentation(
     monkeypatch, tmp_path: Path
 ) -> None:
-    sys.modules.pop("trace_sdk", None)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
-    with (
-        warnings.catch_warnings(),
-        patch.object(OpenAIInstrumentor, "uninstrument") as uninstrument,
-    ):
-        warnings.filterwarnings(
-            "ignore",
-            message="Support for class-based `config` is deprecated, use ConfigDict instead\\.",
-            category=Warning,
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message="'asyncio\\.iscoroutinefunction' is deprecated and slated for removal in Python 3\\.16; use inspect\\.iscoroutinefunction\\(\\) instead",
-            category=DeprecationWarning,
-        )
-        importlib.import_module("trace_sdk")
-    assert uninstrument.call_count == 0
-
-
-def test_trace_sdk_filters_openai_omit_sentinels_from_request_attributes(
-    monkeypatch, tmp_path: Path, caplog
-) -> None:
-    _load_trace_sdk(monkeypatch, tmp_path)
-
-    import openai
-    import opentelemetry.instrumentation.openai.shared.chat_wrappers as chat_wrappers
-    import opentelemetry.instrumentation.openai.v1.responses_wrappers as responses_wrappers
-    from opentelemetry.instrumentation.openai.shared import _set_request_attributes
-
-    class DummySpan:
-        def __init__(self) -> None:
-            self.attributes: dict[str, object] = {}
-
-        def is_recording(self) -> bool:
-            return True
-
-        def set_attribute(self, key: str, value: object) -> None:
-            self.attributes[key] = value
-
-    caplog.set_level("WARNING", logger="opentelemetry.attributes")
-
-    span = DummySpan()
-
-    _set_request_attributes(
-        span,
-        {
-            "model": "gpt-5.4",
-            "max_tokens": openai.omit,
-            "temperature": openai.omit,
-            "top_p": openai.omit,
-            "frequency_penalty": openai.omit,
-            "presence_penalty": openai.omit,
-        },
-    )
-    assert span.attributes["gen_ai.request.model"] == "gpt-5.4"
-    assert "gen_ai.request.max_tokens" not in span.attributes
-    assert "gen_ai.request.temperature" not in span.attributes
-    assert "gen_ai.request.top_p" not in span.attributes
-    assert "gen_ai.request.frequency_penalty" not in span.attributes
-    assert "gen_ai.request.presence_penalty" not in span.attributes
-
-    chat_span = DummySpan()
-    chat_wrappers._set_span_attribute(chat_span, "test.attr", openai.omit)
-    chat_wrappers._set_span_attribute(chat_span, "test.keep", "ok")
-    assert chat_span.attributes == {"test.keep": "ok"}
-
-    response_span = DummySpan()
-    responses_wrappers._set_span_attribute(response_span, "test.attr", openai.omit)
-    responses_wrappers._set_span_attribute(response_span, "test.keep", "ok")
-    assert response_span.attributes == {"test.keep": "ok"}
-    assert "Invalid type Omit" not in caplog.text
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+    instrument_names = {instrument.name for instrument in trace_sdk._TRACELOOP_INSTRUMENTS}
+    assert "OPENAI" not in instrument_names
+    assert "OPENAI_AGENTS" in instrument_names
 
 
 def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path: Path) -> None:
@@ -340,22 +268,16 @@ def test_begin_round_keeps_exporting_events_after_multiple_round_resets(
     assert second_events[-1]["run_id"] == trace_sdk.get_run_id()
 
 
-def test_begin_round_rebinds_openai_instrumentation_to_new_provider(
+def test_begin_round_refreshes_provider_without_openai_instrumentation(
     monkeypatch, tmp_path: Path
 ) -> None:
     trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
     original_provider = trace_sdk._PROVIDER
-
-    with (
-        patch.object(trace_sdk.OpenAIInstrumentor, "uninstrument") as uninstrument,
-        patch.object(trace_sdk.OpenAIInstrumentor, "instrument") as instrument,
-    ):
-        trace_sdk.begin_round(5)
+    original_instruments = trace_sdk._TRACELOOP_INSTRUMENTS
+    trace_sdk.begin_round(5)
 
     assert trace_sdk._PROVIDER is not original_provider
-    uninstrument.assert_called_once_with()
-    instrument.assert_called_once()
-    assert instrument.call_args.kwargs["tracer_provider"] is trace_sdk._PROVIDER
+    assert trace_sdk._TRACELOOP_INSTRUMENTS is original_instruments
 
 
 def test_trace_agent_response_accepts_external_trace_id_and_links_artifact(

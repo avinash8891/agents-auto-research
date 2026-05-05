@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import IO, Any, Iterator
 
 from openinference.instrumentation import using_attributes
-from openinference.instrumentation.openai import OpenAIInstrumentor
 from opentelemetry import trace as otel_trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
@@ -202,8 +201,11 @@ class TraceRuntimeState:
 _STATE = TraceRuntimeState(log_dir=_LOG_DIR, session_id=_SESSION_ID)
 _PROVIDER: TracerProvider | None = None
 _INITIALIZED = False
-_OPENAI_INSTRUMENTED = False
-_OPENAI_INSTRUMENTOR = OpenAIInstrumentor()
+_TRACELOOP_INSTRUMENTS = {
+    Instruments.OPENAI_AGENTS,
+    Instruments.REQUESTS,
+    Instruments.URLLIB3,
+}
 
 import logging as _logging
 
@@ -213,60 +215,6 @@ _log = _logging.getLogger(__name__)
 def _write_text(path: Path, content: str) -> str:
     write_text_atomic(path, content)
     return str(path)
-
-
-def _patch_openai_omit_sentinel_filter() -> None:
-    """Drop OpenAI sentinel values before OpenTelemetry records request attrs.
-
-    The OpenTelemetry OpenAI instrumentation accepts unset `NOT_GIVEN` values
-    but currently logs warnings for `Omit`, which OpenAI SDK uses for the same
-    "do not send this field" meaning. Patch the shared helper and any already
-    imported wrapper modules so Omit behaves like an omitted field instead of a
-    noisy invalid attribute value.
-    """
-    try:
-        import openai
-    except Exception:
-        return
-
-    omit_type = getattr(openai, "Omit", None)
-    if not isinstance(omit_type, type):
-        return
-
-    not_given = getattr(openai, "NOT_GIVEN", object())
-
-    def _safe_set_span_attribute(span, name, value):
-        if value is None or value == "":
-            return
-        if value == not_given:
-            return
-        if isinstance(value, omit_type):
-            return
-        span.set_attribute(name, value)
-
-    try:
-        import opentelemetry.instrumentation.openai.shared as shared_module
-    except Exception:
-        return
-
-    setattr(shared_module, "_set_span_attribute", _safe_set_span_attribute)
-
-    for module_name in (
-        "opentelemetry.instrumentation.openai.shared.chat_wrappers",
-        "opentelemetry.instrumentation.openai.shared.completion_wrappers",
-        "opentelemetry.instrumentation.openai.shared.embeddings_wrappers",
-        "opentelemetry.instrumentation.openai.shared.image_gen_wrappers",
-        "opentelemetry.instrumentation.openai.v1.assistant_wrappers",
-        "opentelemetry.instrumentation.openai.v1.event_handler_wrapper",
-        "opentelemetry.instrumentation.openai.v1.realtime_wrappers",
-        "opentelemetry.instrumentation.openai.v1.responses_wrappers",
-    ):
-        try:
-            module = __import__(module_name, fromlist=["_set_span_attribute"])
-        except Exception:
-            continue
-        if hasattr(module, "_set_span_attribute"):
-            setattr(module, "_set_span_attribute", _safe_set_span_attribute)
 
 
 def _render_artifact_header(
@@ -444,24 +392,12 @@ def _build_provider() -> TracerProvider:
     return provider
 
 
-def _bind_instrumentation() -> None:
-    global _OPENAI_INSTRUMENTED
-    if _PROVIDER is None:
-        return
-    if _OPENAI_INSTRUMENTED:
-        _OPENAI_INSTRUMENTOR.uninstrument()
-    _OPENAI_INSTRUMENTOR.instrument(tracer_provider=_PROVIDER)
-    _OPENAI_INSTRUMENTED = True
-
-
 def _initialize_tracing() -> None:
     global _PROVIDER, _INITIALIZED
     if _INITIALIZED:
         return
     _PROVIDER = _build_provider()
-    _patch_openai_omit_sentinel_filter()
     if os.getenv("PYTEST_CURRENT_TEST"):
-        _bind_instrumentation()
         _INITIALIZED = True
         return
     try:
@@ -472,17 +408,11 @@ def _initialize_tracing() -> None:
             telemetry_enabled=False,
             api_key=os.getenv("TRACELOOP_API_KEY", "local-dev"),
             endpoint_is_traceloop=False,
-            instruments={
-                Instruments.OPENAI,
-                Instruments.OPENAI_AGENTS,
-                Instruments.REQUESTS,
-                Instruments.URLLIB3,
-            },
+            instruments=_TRACELOOP_INSTRUMENTS,
             resource_attributes={"autoresearch.session_id": _STATE.session_id},
         )
     except Exception as exc:
         _log.warning("Traceloop.init failed (suppressed): %s", exc)
-    _bind_instrumentation()
     _INITIALIZED = True
 
 
@@ -492,7 +422,6 @@ _initialize_tracing()
 def _reset_provider_for_current_state() -> None:
     global _PROVIDER
     _PROVIDER = _build_provider()
-    _bind_instrumentation()
 
 
 def _tracer():
