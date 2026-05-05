@@ -520,9 +520,7 @@ def test_run_web_research_openai_returns_structured_error_without_stdout(monkeyp
     def fake_run_codex_web_research(*args, **kwargs):
         raise WebResearchCliError("codex CLI not found on PATH")
 
-    monkeypatch.setattr(
-        agent_openai_calls, "run_codex_web_research", fake_run_codex_web_research
-    )
+    monkeypatch.setattr(agent_openai_calls, "run_codex_web_research", fake_run_codex_web_research)
 
     usage.reset_round_usage()
     result = asyncio.run(agent_openai_calls._run_web_research_openai("prompt", retries=1))
@@ -567,9 +565,7 @@ def test_run_web_research_openai_uses_codex_cli_web_search(monkeypatch):
             {"exit_code": 0, "output_len": 10},
         )
 
-    monkeypatch.setattr(
-        agent_openai_calls, "run_codex_web_research", fake_run_codex_web_research
-    )
+    monkeypatch.setattr(agent_openai_calls, "run_codex_web_research", fake_run_codex_web_research)
 
     result = asyncio.run(agent_openai_calls._run_web_research_openai("prompt", retries=1))
 
