@@ -295,6 +295,8 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     builder_cmd = [
         "codex",
         "exec",
+        "--sandbox",
+        "workspace-write",
         "--model",
         BUILDER_CLI_MODEL,
     ]

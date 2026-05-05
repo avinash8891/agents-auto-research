@@ -458,6 +458,8 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
     assert captured["cmd"] == [
         "codex",
         "exec",
+        "--sandbox",
+        "workspace-write",
         "--model",
         "gpt-5.4",
     ]
