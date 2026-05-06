@@ -12,6 +12,7 @@ from typing import Any
 
 from artifact_io import timestamp_now, write_json_artifact
 from autoresearch_logging import get_logger
+from compiler_implementation_verify import verify_builder_implementation_contract
 from persistence_utils import write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import load_family
@@ -246,6 +247,7 @@ Implement the missing primitive(s) for thesis `{thesis_id}` and write the result
 def _validated_generated_config_result(
     *,
     root: Path,
+    thesis: dict[str, Any],
     config_abspath: Path,
     config_path: str,
     family_name: str,
@@ -276,11 +278,32 @@ def _validated_generated_config_result(
             "timed_out": timed_out,
             "duration_seconds": round(duration_seconds, 3),
         }
+    verification = verify_builder_implementation_contract(
+        root=root,
+        thesis=thesis,
+        generated_config_path=config_path,
+        family_name=family_name,
+    )
+    if not verification.passed:
+        verification_reason = "implementation_contract_failed: " + "; ".join(verification.failures)
+        log.error("Generated config failed implementation verification: %s", verification_reason)
+        return {
+            "status": "error",
+            "reason": verification_reason,
+            "generated_config": None,
+            "validation_passed": True,
+            "implementation_verification_passed": False,
+            "implementation_verification_failures": verification.failures,
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "duration_seconds": round(duration_seconds, 3),
+        }
     return {
         "status": "completed",
         "reason": reason,
         "generated_config": config_path,
         "validation_passed": True,
+        "implementation_verification_passed": True,
         "exit_code": exit_code,
         "timed_out": timed_out,
         "duration_seconds": round(duration_seconds, 3),
@@ -463,6 +486,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     if config_abspath.exists():
         result = _validated_generated_config_result(
             root=root,
+            thesis=proposal,
             config_abspath=config_abspath,
             config_path=config_path,
             family_name=family_name,
@@ -501,6 +525,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         duration_seconds = time.monotonic() - started_at
         result = _validated_generated_config_result(
             root=root,
+            thesis=proposal,
             config_abspath=config_abspath,
             config_path=config_path,
             family_name=family_name,
@@ -531,6 +556,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     if generated:
         out = _validated_generated_config_result(
             root=root,
+            thesis=proposal,
             config_abspath=config_abspath,
             config_path=config_path,
             family_name=family_name,

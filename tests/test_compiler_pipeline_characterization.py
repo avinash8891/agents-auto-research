@@ -9,6 +9,7 @@ import pytest
 import compiler_builder
 import compiler_operationalize as co
 import persistence_utils
+from compiler_implementation_verify import verify_builder_implementation_contract
 from compiler_operationalize import finalize_thesis_config_changes
 from compiler_pipeline import (
     build_missing_primitives,
@@ -686,6 +687,88 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
     ).read_text() == "still reviewing unrelated dirty worktree"
 
 
+def test_builder_implementation_verifier_rejects_unconsumed_vwap_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data-root"
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "validate.py").write_text(
+        "SUPPORTED = ['vwap_side_gate_enabled', 'vwap_side_consecutive_closes_required']\n"
+    )
+    experiment_dir = tmp_path / "experiments" / "vwap_thesis"
+    experiment_dir.mkdir(parents=True)
+    config_path = experiment_dir / "runtime_config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "data_universe": "nasdaq8",
+                "vwap_side_gate_enabled": True,
+                "vwap_side_consecutive_closes_required": 2,
+            }
+        )
+        + "\n"
+    )
+    thesis = {
+        "config_changes": {
+            "vwap_side_gate_enabled": True,
+            "vwap_side_consecutive_closes_required": 2,
+        },
+        "required_diagnostics": ["trade_count_blocked_by_vwap_gate"],
+        "mechanism": "Require price acceptance below VWAP.",
+    }
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis=thesis,
+        generated_config_path="experiments/vwap_thesis/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert result.passed is False
+    assert "config_key_not_consumed_by_runtime:vwap_side_gate_enabled" in result.failures
+    assert (
+        "config_key_not_consumed_by_runtime:vwap_side_consecutive_closes_required"
+        in result.failures
+    )
+    assert "required_diagnostic_not_emitted:trade_count_blocked_by_vwap_gate" in result.failures
+    assert any(failure.startswith("vwap_data_dependency_missing:") for failure in result.failures)
+
+
+def test_builder_implementation_verifier_requires_thesis_diagnostic_names(
+    tmp_path: Path,
+) -> None:
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "exits.py").write_text(
+        "config.get('per_symbol_entry_cooldown_minutes')\n"
+        "event_logger.log_order_rejected(reason='entry_cooldown')\n"
+    )
+    experiment_dir = tmp_path / "experiments" / "cooldown_thesis"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(
+        json.dumps({"per_symbol_entry_cooldown_minutes": 15}) + "\n"
+    )
+    thesis = {
+        "config_changes": {"per_symbol_entry_cooldown_minutes": 15},
+        "required_diagnostics": ["executed_trade_count_blocked_by_cooldown"],
+    }
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis=thesis,
+        generated_config_path="experiments/cooldown_thesis/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert result.passed is False
+    assert (
+        "required_diagnostic_not_emitted:executed_trade_count_blocked_by_cooldown"
+        in result.failures
+    )
+
+
 def test_build_missing_primitives_validates_generated_config_in_fresh_python(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -725,6 +808,9 @@ def test_build_missing_primitives_validates_generated_config_in_fresh_python(
         if cmd == ["codex", "exec", "--help"]:
             return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
         if cmd[:2] == ["codex", "exec"]:
+            strategy_dir = tmp_path / "strategies" / "ema"
+            strategy_dir.mkdir(parents=True, exist_ok=True)
+            (strategy_dir / "strategy.py").write_text("config.get('new_builder_key')\n")
             (experiment_dir / "runtime_config.json").write_text(
                 json.dumps(
                     {
