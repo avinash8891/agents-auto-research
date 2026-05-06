@@ -190,8 +190,8 @@ def accumulate_agents_sdk_result_usage(
     elif not saw_usage:
         usage_source = "missing_sdk_usage_with_estimate" if estimated else ""
 
-    cost_usd_present = hasattr(result, "total_cost_usd")
     cost_usd = getattr(result, "total_cost_usd", None)
+    cost_usd_present = cost_usd is not None
     if cost_usd is None and raw_responses:
         raw_costs = [getattr(resp, "total_cost_usd", None) for resp in raw_responses]
         cost_usd_present = any(raw_cost is not None for raw_cost in raw_costs)

@@ -163,6 +163,26 @@ def test_sdk_zero_cost_only_result_is_labeled_not_unmetered():
     assert emitted[0]["total_tokens"] == 0
 
 
+def test_sdk_none_cost_without_usage_is_unmetered():
+    emitted = []
+    result = SimpleNamespace(usage=None, raw_responses=[], total_cost_usd=None)
+
+    with patch.object(
+        agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
+    ):
+        accumulate_agents_sdk_result_usage(
+            "analyst",
+            result,
+            provider="openai",
+            model="gpt-5.2",
+        )
+
+    agent = get_round_usage()["by_agent"]["analyst"]
+    assert agent["calls"] == 0
+    assert agent["unmetered_calls"] == 1
+    assert emitted == []
+
+
 # ---------------------------------------------------------------------------
 # GREEN: successful calls must still work as before
 # ---------------------------------------------------------------------------
