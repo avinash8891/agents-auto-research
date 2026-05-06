@@ -576,9 +576,20 @@ def _sha256_file(path_value: Any) -> str:
     if not path.exists() or not path.is_file():
         return ""
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
     except OSError:
         return ""
+
+
+def _coerce_int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _find_duplicate_artifact_output(
@@ -595,18 +606,18 @@ def _find_duplicate_artifact_output(
     diagnostics_hash = _sha256_file(details.get("diagnostics_file"))
     if not trades_hash or not diagnostics_hash:
         return None
-    try:
-        current_job = int(state.get("job", 0) or 0)
-    except (TypeError, ValueError):
-        current_job = 0
+    current_job = _coerce_int_or_none(state.get("job", 0) or 0)
+    current_trade_count = _coerce_int_or_none(details.get("trade_count", 0) or 0)
+    if current_trade_count is None:
+        return None
     for previous in reversed(experiment_db.all()):
         if previous.family and previous.family != controller.family.name:
             continue
-        if current_job and previous.job and previous.job != current_job:
+        if current_job is not None and previous.job != current_job:
             continue
         if previous.runtime_config == runtime_config:
             continue
-        if previous.trade_count != int(details.get("trade_count", 0) or 0):
+        if previous.trade_count != current_trade_count:
             continue
         if previous.strategy_diagnostics != details.get("strategy_diagnostics", {}):
             continue

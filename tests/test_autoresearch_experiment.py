@@ -538,10 +538,10 @@ def test_sha256_file_returns_empty_for_artifact_read_race(
     artifact = tmp_path / "trades.csv"
     artifact.write_text("content\n")
 
-    def raise_oserror(self: Path) -> bytes:
+    def raise_oserror(self: Path, *args, **kwargs):
         raise OSError("artifact disappeared")
 
-    monkeypatch.setattr(Path, "read_bytes", raise_oserror)
+    monkeypatch.setattr(Path, "open", raise_oserror)
 
     assert _sha256_file(str(artifact)) == ""
 
@@ -611,6 +611,90 @@ def test_duplicate_artifact_detection_filters_metadata_before_hashing(
 
     assert duplicate is None
     assert hashed == [str(current_trades), str(current_diagnostics)]
+
+
+def test_duplicate_artifact_detection_ignores_malformed_trade_count(tmp_path: Path) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+
+    trades = tmp_path / "trades.csv"
+    diagnostics = tmp_path / "diagnostics.json"
+    trades.write_text("same trades\n")
+    diagnostics.write_text("{}\n")
+    controller = _Controller()
+    controller.experiment_db = ExperimentDB(tmp_path / "ema_experiments.db")
+
+    duplicate = _find_duplicate_artifact_output(
+        controller,
+        runtime_config={"ema_length": 8},
+        details={
+            "trade_count": "3122 trades",
+            "trades_file": str(trades),
+            "diagnostics_file": str(diagnostics),
+            "strategy_diagnostics": {},
+        },
+        state={"job": 20},
+    )
+
+    assert duplicate is None
+
+
+def test_duplicate_artifact_detection_does_not_compare_job_zero_against_current_job(
+    tmp_path: Path,
+) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+
+    trades = tmp_path / "trades.csv"
+    diagnostics = tmp_path / "diagnostics.json"
+    trades.write_text("same trades\n")
+    diagnostics.write_text("{}\n")
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    db.add(
+        ExperimentResult(
+            experiment_id="job-zero",
+            thesis_id="job-zero",
+            config_path="experiments/job-zero/runtime_config.json",
+            runtime_config={"ema_length": 5},
+            code_commit="abc1234",
+            data_hash="data",
+            train_metrics={},
+            validation_metrics={},
+            trade_count=3122,
+            trades_file=str(trades),
+            strategy_events_file="",
+            diagnostics_file=str(diagnostics),
+            strategy_diagnostics={},
+            accepted=False,
+            rejection_reason="old result",
+            verdict_status="inconclusive",
+            verdict_summary="old result",
+            family="ema",
+            job=0,
+        )
+    )
+    controller = _Controller()
+    controller.experiment_db = db
+
+    duplicate = _find_duplicate_artifact_output(
+        controller,
+        runtime_config={"ema_length": 8},
+        details={
+            "trade_count": 3122,
+            "trades_file": str(trades),
+            "diagnostics_file": str(diagnostics),
+            "strategy_diagnostics": {},
+        },
+        state={"job": 20},
+    )
+
+    assert duplicate is None
 
 
 def test_build_db_record_prefers_executed_result_git_sha(tmp_path: Path) -> None:
