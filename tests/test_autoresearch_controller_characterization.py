@@ -1621,6 +1621,7 @@ def test_resolve_conductor_inputs_filters_latest_and_artifacts_by_current_job(
 
     def fake_backfill(controller_arg, latest, trades_file, strategy_events_file, diagnostics_file):
         seen["latest"] = latest
+        seen["input_files"] = (trades_file, strategy_events_file, diagnostics_file)
         thesis_id = latest.asi["thesis_id"]
         return (
             f"/tmp/{thesis_id}/trades.csv",
@@ -1629,6 +1630,9 @@ def test_resolve_conductor_inputs_filters_latest_and_artifacts_by_current_job(
         )
 
     monkeypatch.setattr(research_mod, "_backfill_artifact_files_from_latest_dir", fake_backfill)
+    controller.ctx.latest_trades_file = "/tmp/wrong-job/trades.csv"
+    controller.ctx.latest_strategy_events_file = "/tmp/wrong-job/strategy_events.parquet"
+    controller.ctx.latest_diagnostics_file = "/tmp/wrong-job/diagnostics.json"
 
     trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
         controller,
@@ -1637,6 +1641,7 @@ def test_resolve_conductor_inputs_filters_latest_and_artifacts_by_current_job(
     )
 
     assert seen["latest"] is job20
+    assert seen["input_files"] == ("", "", "")
     assert trades_file == "/tmp/job20_thesis/trades.csv"
     assert strategy_events_file == "/tmp/job20_thesis/strategy_events.parquet"
     assert diagnostics_file == "/tmp/job20_thesis/diagnostics.json"

@@ -356,14 +356,19 @@ def _resolve_conductor_inputs(
     """Gather the four inputs the conductor needs from the most recent
     experiment: trades file, strategy events file, diagnostics file, and
     a small `latest_outcome` dict the prompt templates use."""
-    trades_file = controller.ctx.latest_trades_file
-    strategy_events_file = controller.ctx.latest_strategy_events_file
-    diagnostics_file = controller.ctx.latest_diagnostics_file
+    if current_job is None:
+        trades_file = controller.ctx.latest_trades_file
+        strategy_events_file = controller.ctx.latest_strategy_events_file
+        diagnostics_file = controller.ctx.latest_diagnostics_file
+    else:
+        trades_file = ""
+        strategy_events_file = ""
+        diagnostics_file = ""
     scoped_results = results
     if current_job is not None:
         scoped_results = [result for result in results if result.job == current_job]
     latest = controller.latest_result(scoped_results)
-    if not trades_file and latest:
+    if latest and (not trades_file or not strategy_events_file or not diagnostics_file):
         trades_file, strategy_events_file, diagnostics_file = (
             _backfill_artifact_files_from_latest_dir(
                 controller, latest, trades_file, strategy_events_file, diagnostics_file

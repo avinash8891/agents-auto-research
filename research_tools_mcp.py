@@ -16,7 +16,7 @@ def _build_research_tools_mcp(
     call_analyst,
     call_web_researcher,
     save_research_finding,
-    palace_search,
+    search_research_findings,
     palace_status,
     root: Path,
     current_job: int | None = None,
@@ -121,12 +121,10 @@ def _build_research_tools_mcp(
             query: What to search for (e.g. "gap filter", "Tuesday PF").
             finding_type: Optional filter by type (observation, validated_finding, etc.).
         """
-        room = finding_type if finding_type else None
-        results = palace_search(
+        results = search_research_findings(
             query=query,
-            wing="research_findings",
-            room=room,
             n_results=10,
+            finding_type=finding_type,
         )
         if not results:
             return "No findings found."

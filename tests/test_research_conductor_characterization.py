@@ -456,7 +456,7 @@ def test_save_research_finding_rejects_bad_type(monkeypatch):
         call_analyst=subagents._call_analyst,
         call_web_researcher=subagents._call_web_researcher,
         save_research_finding=memory.save_research_finding,
-        palace_search=memory._palace_search,
+        search_research_findings=memory.search_research_findings,
         palace_status=memory._palace_status,
         root=infra._ROOT,
         list_past_theses_for_root=memory.list_past_theses,
@@ -617,6 +617,60 @@ def test_search_research_findings_uses_local_fallback_when_palace_errors(monkeyp
             "source": "local_jsonl",
         }
     ]
+
+
+def test_mcp_search_findings_uses_fallback_aware_search(monkeypatch, tmp_path):
+    monkeypatch.setattr(tools_mcp, "track", lambda *a, **k: None)
+    calls: dict[str, object] = {}
+
+    def fake_search_research_findings(*, query, finding_type="", n_results=10):
+        calls["args"] = {
+            "query": query,
+            "finding_type": finding_type,
+            "n_results": n_results,
+        }
+        return [
+            {
+                "text": "TYPE:observation | STATUS:validated\nLocal fallback finding",
+                "room": "observation",
+                "distance": "local",
+            }
+        ]
+
+    mcp = tools_mcp._build_research_tools_mcp(
+        trades_file="/tmp/trades.csv",
+        call_analyst=subagents._call_analyst,
+        call_web_researcher=subagents._call_web_researcher,
+        save_research_finding=memory.save_research_finding,
+        search_research_findings=fake_search_research_findings,
+        palace_status=memory._palace_status,
+        root=tmp_path,
+        list_past_theses_for_root=memory.list_past_theses,
+    )
+    tool = next(tool for tool in mcp._tool_manager.list_tools() if tool.name == "search_findings")
+
+    output = asyncio.run(tool.fn(query="fallback", finding_type="observation"))
+
+    assert calls["args"] == {
+        "query": "fallback",
+        "finding_type": "observation",
+        "n_results": 10,
+    }
+    assert "Local fallback finding" in output
+
+
+def test_experiment_results_summary_tolerates_non_numeric_metric_values():
+    from agent_formatters import format_experiment_results_summary
+
+    output = format_experiment_results_summary(
+        [
+            {"thesis_id": "bad_metric", "metric": "N/A", "status": "discard"},
+            {"thesis_id": "good_metric", "metric": 1.7, "status": "keep"},
+        ]
+    )
+
+    assert "best: good_metric | metric=1.7 | status=keep" in output
+    assert "latest: good_metric | metric=1.7 | status=keep" in output
 
 
 def test_palace_helpers_return_error_objects_when_unavailable(monkeypatch):
@@ -1030,7 +1084,7 @@ def test_list_past_theses_reads_sqlite_history(monkeypatch, tmp_path):
         call_analyst=subagents._call_analyst,
         call_web_researcher=subagents._call_web_researcher,
         save_research_finding=memory.save_research_finding,
-        palace_search=memory._palace_search,
+        search_research_findings=memory.search_research_findings,
         palace_status=memory._palace_status,
         root=tmp_path,
         list_past_theses_for_root=memory.list_past_theses,
@@ -1076,7 +1130,7 @@ def test_mcp_research_history_tools_use_bound_current_job(monkeypatch, tmp_path)
         call_analyst=subagents._call_analyst,
         call_web_researcher=subagents._call_web_researcher,
         save_research_finding=memory.save_research_finding,
-        palace_search=memory._palace_search,
+        search_research_findings=memory.search_research_findings,
         palace_status=memory._palace_status,
         root=tmp_path,
         current_job=20,
@@ -1111,7 +1165,7 @@ def test_mcp_research_history_tools_do_not_expose_job_id_override(monkeypatch, t
         call_analyst=subagents._call_analyst,
         call_web_researcher=subagents._call_web_researcher,
         save_research_finding=memory.save_research_finding,
-        palace_search=memory._palace_search,
+        search_research_findings=memory.search_research_findings,
         palace_status=memory._palace_status,
         root=tmp_path,
         current_job=20,

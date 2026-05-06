@@ -127,7 +127,14 @@ def format_experiment_results_summary(results: list[dict[str, Any]]) -> str:
         return "No experiments run yet."
     metric_name = "metric"
     latest = results[-1]
-    best = max(results, key=lambda r: float(r.get("metric") or 0))
+
+    def _metric_score(result: dict[str, Any]) -> float:
+        try:
+            return float(result.get("metric") or 0)
+        except (TypeError, ValueError):
+            return float("-inf")
+
+    best = max(results, key=_metric_score)
 
     def _line(label: str, result: dict[str, Any]) -> str:
         thesis_id = result.get("thesis_id") or result.get("config") or "unknown"
