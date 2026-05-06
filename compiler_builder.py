@@ -182,9 +182,14 @@ def _validated_generated_config_result(
         load_runtime_config(str(config_abspath), family_name)
     except Exception as exc:
         log.error("Generated config failed validation for path=%s: %s", config_path, exc)
+        validation_reason = f"generated config failed validation: {exc}"
+        if timed_out:
+            validation_reason = (
+                f"builder timed out after writing an invalid config; {validation_reason}"
+            )
         return {
             "status": "error",
-            "reason": f"generated config failed validation: {exc}",
+            "reason": validation_reason,
             "generated_config": None,
             "validation_passed": False,
             "exit_code": exit_code,

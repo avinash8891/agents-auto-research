@@ -612,6 +612,66 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
     assert persisted["timed_out"] is True
 
 
+def test_build_missing_primitives_reports_timeout_when_generated_config_is_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    thesis_id = "invalid_config_timeout"
+    experiment_dir = tmp_path / "experiments" / thesis_id
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    (experiment_dir / "thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "hypothesis": "generate an invalid config",
+                "mechanism": "missing required runtime fields",
+                "config_changes": {"requires_engine_change": True},
+                "requested_primitives": [],
+            }
+        )
+        + "\n"
+    )
+    (experiment_dir / "contract.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": thesis_id,
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "baseline_config_path": "configs/ema_base.yaml",
+                "runtime_config": {},
+                "hypothesis": "generate an invalid config",
+                "mechanism": "missing required runtime fields",
+                "status": "needs_code",
+            }
+        )
+        + "\n"
+    )
+
+    def fake_run(cmd, *args, **kwargs):
+        (experiment_dir / "runtime_config.json").write_text(json.dumps({"family": "ema"}) + "\n")
+        raise subprocess.TimeoutExpired(
+            cmd=cmd,
+            timeout=kwargs["timeout"],
+            output="generated invalid config then stalled",
+        )
+
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr(
+        "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
+    )
+    monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "error"
+    assert result["validation_passed"] is False
+    assert result["timed_out"] is True
+    assert "timed out after writing an invalid config" in result["reason"]
+    assert "generated config failed validation" in result["reason"]
+
+
 @pytest.mark.parametrize("family_name,thesis_id", [("ema", "ema_missing"), ("orb", "orb_missing")])
 def test_build_missing_primitives_dispatches_family_request_to_cli_boundary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, family_name: str, thesis_id: str
