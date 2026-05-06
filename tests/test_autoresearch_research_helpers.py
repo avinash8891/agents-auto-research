@@ -370,6 +370,31 @@ def test_queue_variants_persists_full_runtime_config_in_sidecar_metadata(
     assert thesis["config_changes_kind"] == "full_runtime"
 
 
+def test_queue_variants_skips_invalid_runtime_configs(
+    tmp_path: Path, thesis_stub, primary_contract_stub
+) -> None:
+    queue_dir = tmp_path / "queue"
+
+    thesis_stub.strategy_family = "ema"
+    queue_variants(
+        tmp_path,
+        queue_dir,
+        [
+            {
+                "_variant_label": "invalid",
+                "_variant_factor": 2.0,
+                "max_trades_per_day": -1,
+            }
+        ],
+        thesis_stub,
+        primary_contract_stub,
+        {"max_trades_per_day": 3},
+    )
+
+    assert not queue_dir.exists()
+    assert not (tmp_path / "experiments").exists()
+
+
 def test_queue_variants_leaves_no_tmp_artifacts(
     tmp_path: Path, thesis_stub, primary_contract_stub
 ) -> None:

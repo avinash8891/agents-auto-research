@@ -40,6 +40,7 @@ from config_hash import _config_hash
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_types import ResearchThesis
+from strategies import STRATEGIES
 from strategy_family import StrategyFamily
 from thesis_validator import normalize_thesis_payload
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
@@ -270,12 +271,29 @@ def queue_variants(
 ) -> None:
     """Write variant runtime configs so the loop picks them up as queued experiments."""
     for variant in variants:
+        variant = dict(variant)
         label = variant.pop("_variant_label", "variant")
         factor = variant.pop("_variant_factor", 1.0)
         if factor == 1.0:
             continue  # skip the proposed value — it's already the primary
 
         runtime = {**baseline_config, **variant}
+        family_name = getattr(thesis, "strategy_family", None) or getattr(
+            primary_contract, "strategy_family", None
+        )
+        strategy = STRATEGIES.get(family_name) if family_name else None
+        if strategy is not None:
+            try:
+                runtime = strategy.validate_runtime_config_scope(runtime)
+                violations = strategy.validate_runtime_config(runtime)
+            except ValueError as exc:
+                violations = [str(exc)]
+            if violations:
+                trace(
+                    "LOOP",
+                    f"skipped invalid variant {thesis.thesis_id}_{label}: {'; '.join(violations)}",
+                )
+                continue
         config_hash = _config_hash(runtime)
         variant_id = f"{thesis.thesis_id}_{label}"
         exp_dir = root / "experiments" / config_hash

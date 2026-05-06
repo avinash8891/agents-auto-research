@@ -43,7 +43,9 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
         if not _is_int_value(mtpd):
             violations.append(f"max_trades_per_day={mtpd!r}: must be an integer")
         elif mtpd < 1:
-            violations.append(f"max_trades_per_day={mtpd}: must be >= 1 (0 disables trading)")
+            violations.append(
+                f"max_trades_per_day={mtpd}: must be >= 1 (use null for no daily cap)"
+            )
         elif mtpd > 20:
             violations.append(
                 f"max_trades_per_day={mtpd}: must be <= 20 (transcript says 3-5; >20 effectively disables the cap)"
@@ -83,4 +85,12 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
             violations.append(f"range_shift_lookback={rsl!r}: must be an integer")
         elif not (5 <= rsl <= 100):
             violations.append(f"range_shift_lookback={rsl}: must be between 5 and 100")
+    max_hold = config.get("max_hold_bars")
+    if max_hold is not None:
+        if not _is_int_value(max_hold):
+            violations.append(f"max_hold_bars={max_hold!r}: must be an integer")
+        elif max_hold < 1:
+            violations.append(f"max_hold_bars={max_hold}: must be >= 1")
+        elif max_hold > 390:
+            violations.append(f"max_hold_bars={max_hold}: must be <= 390")
     return violations

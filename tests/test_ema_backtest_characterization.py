@@ -336,6 +336,17 @@ def test_validate_ema_runtime_config_rejects_negative_ema_length() -> None:
     assert any("ema_length=-5" in violation for violation in violations)
 
 
+def test_validate_ema_runtime_config_rejects_non_positive_max_hold_bars() -> None:
+    violations = validate_ema_runtime_config({"max_hold_bars": -72})
+    assert any("max_hold_bars=-72" in violation for violation in violations)
+
+
+def test_validate_ema_runtime_config_explains_zero_trade_cap_as_invalid_not_zero_trades() -> None:
+    violations = validate_ema_runtime_config({"max_trades_per_day": 0})
+    assert any("max_trades_per_day=0" in violation for violation in violations)
+    assert not any("disables trading" in violation for violation in violations)
+
+
 def test_load_runtime_config_accepts_runtime_config_wrapper(tmp_path: Path) -> None:
     wrapped = tmp_path / "wrapped.json"
     wrapped.write_text(json.dumps({"runtime_config": _tiny_config()}) + "\n")

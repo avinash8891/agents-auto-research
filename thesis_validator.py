@@ -374,6 +374,10 @@ def check_hypothesis_alignment(
 
 ALIGNMENT_THRESHOLD = 0.4  # reject if less than 40% of keys align
 _MIN_NOVELTY_EXPLANATION_CHARS = 30
+_NUMERIC_VARIANT_BOUNDS: dict[str, tuple[float | None, float | None]] = {
+    "max_trades_per_day": (1, 20),
+    "max_hold_bars": (1, 390),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +418,11 @@ def generate_variants(
             if delta == 0:
                 continue
             new_val = baseline_val + delta * factor
+            lower, upper = _NUMERIC_VARIANT_BOUNDS.get(key, (None, None))
+            if lower is not None:
+                new_val = max(new_val, lower)
+            if upper is not None:
+                new_val = min(new_val, upper)
             # Preserve int type if both baseline and proposed are int
             if isinstance(baseline_val, int) and isinstance(proposed_val, int):
                 new_val = int(round(new_val))
