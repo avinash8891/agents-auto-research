@@ -28,7 +28,7 @@ from research_paths import (
     _parse_json,
 )
 from research_prompts import _build_conductor_system_prompt
-from research_subagents import _call_analyst, _call_web_researcher
+from research_subagents import _call_analyst, _call_web_researcher, _compact_tool_output
 from strategy_family import load_family
 from thesis_validator import validate_thesis_dict
 from trace_refinement import RefinementRecorder
@@ -362,12 +362,16 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-            output = list_past_theses_for_root(_ROOT)
+            output, truncated = _compact_tool_output(
+                list_past_theses_for_root(_ROOT),
+                max_chars=14_000,
+            )
             trace_agent_tool_result(
                 "research-conductor",
                 trace_id,
                 "list_past_theses",
                 output,
+                truncated=truncated,
                 duration_ms=int((monotonic() - started) * 1000),
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,

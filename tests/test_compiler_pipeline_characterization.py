@@ -473,7 +473,9 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
         "--model",
         "gpt-5.2",
     ]
-    assert captured["input"].startswith("Goal:\nImplement the missing primitive(s)")
+    assert captured["input"].startswith("Instructions:\n")
+    assert captured["input"].find("Instructions:\n") < captured["input"].find("Context:\n")
+    assert captured["input"].find("Context:\n") < captured["input"].find("Goal:\n")
     assert "Thesis payload" not in captured["input"]
     assert "Contract payload" not in captured["input"]
     assert captured["timeout"] == compiler_builder.BUILDER_CLI_TIMEOUT_SECONDS

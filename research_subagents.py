@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import os
 import subprocess
 import sys
 from time import monotonic
@@ -17,8 +19,48 @@ from research_paths import (
     _get_openai_client,
     _parse_json,
 )
-from trace_sdk import trace, trace_agent_response, trace_agent_tool_call, trace_agent_tool_result
+from trace_sdk import (
+    trace,
+    trace_agent_prompt,
+    trace_agent_response,
+    trace_agent_tool_call,
+    trace_agent_tool_result,
+)
 from web_research_cli import WebResearchCliError, run_codex_web_research
+
+ANALYST_READ_FILE_MAX_CHARS = 12_000
+ANALYST_RUN_PYTHON_MAX_CHARS = 12_000
+
+
+def _compact_tool_output(text: str, *, max_chars: int) -> tuple[str, bool]:
+    if len(text) <= max_chars:
+        return text, False
+    digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16]
+    suffix = (
+        f"\n... (truncated tool output, {len(text)} total chars, "
+        f"sha256={digest}; use targeted run_python/read_file if more detail is needed)"
+    )
+    keep = max(0, max_chars - len(suffix))
+    return text[:keep] + suffix, True
+
+
+def _analyst_data_root_guidance() -> str:
+    data_root = os.environ.get("AUTORESEARCH_DATA_ROOT")
+    if data_root:
+        return (
+            f"Market data root: AUTORESEARCH_DATA_ROOT={data_root}\n"
+            f"Universe data lives under: {data_root}/universes/{{DATA_UNIVERSE}}/\n"
+            "Typical wide-format files: open.parquet, high.parquet, low.parquet, "
+            "close.parquet, volume.parquet.\n"
+            f"Do NOT probe {str(_ROOT / 'data')} unless AUTORESEARCH_DATA_ROOT is unset."
+        )
+    fallback = str(_ROOT / "data")
+    return (
+        "AUTORESEARCH_DATA_ROOT is unset in this process.\n"
+        f"Fallback repo-local data path, if present: {fallback}\n"
+        "Before reading market data, check config/result artifacts for data_universe and "
+        "validate that the chosen path exists."
+    )
 
 
 async def _call_analyst(
@@ -37,17 +79,19 @@ async def _call_analyst(
     current_trace_id = f"analyst-{focus_question[:40].replace(' ', '_')}"
 
     @function_tool
-    def read_file(file_path: str) -> str:
+    def read_file(file_path: str, max_chars: int = ANALYST_READ_FILE_MAX_CHARS) -> str:
         """Read a file from the local filesystem.
 
         Args:
             file_path: Absolute path to the file to read.
+            max_chars: Maximum characters to return. Defaults to a compact audit-safe limit.
         """
         started = monotonic()
         output = ""
         status = "ok"
         error_type = ""
         truncated = False
+        max_chars = max(1_000, min(int(max_chars or ANALYST_READ_FILE_MAX_CHARS), 20_000))
         trace_agent_tool_call(
             "analyst",
             current_trace_id,
@@ -59,11 +103,7 @@ async def _call_analyst(
         try:
             with open(file_path) as f:
                 content = f.read()
-            if len(content) > 50000:
-                truncated = True
-                output = content[:50000] + f"\n... (truncated, {len(content)} total chars)"
-            else:
-                output = content
+            output, truncated = _compact_tool_output(content, max_chars=max_chars)
         except Exception as e:
             status = "error"
             error_type = e.__class__.__name__
@@ -113,10 +153,10 @@ async def _call_analyst(
             if result.stderr:
                 output += f"\nSTDERR: {result.stderr}"
             if result.returncode != 0:
+                status = "error"
+                error_type = "NonZeroExit"
                 output += f"\nEXIT CODE: {result.returncode}"
-            if len(output) > 30000:
-                truncated = True
-                output = output[:30000] + "\n... (truncated)"
+            output, truncated = _compact_tool_output(output, max_chars=ANALYST_RUN_PYTHON_MAX_CHARS)
         except subprocess.TimeoutExpired:
             status = "error"
             error_type = "TimeoutExpired"
@@ -144,10 +184,9 @@ async def _call_analyst(
 2. A FOCUS QUESTION from the research conductor
 3. A strategy_events.parquet with every signal the strategy considered (accepted AND rejected)
 4. A diagnostics.json with event counts and rejection breakdown
-5. Access to RAW OHLCV DATA at: {str(_ROOT / 'data')}/
-   Structure: data/raw/{{SYMBOL}}/{{YEAR}}.parquet (5-minute OHLCV bars, one file per year)
-   Also: data/open.parquet, data/high.parquet, data/low.parquet, data/close.parquet (wide format, all symbols)
-   You can load any symbol's price history to compute market context (ATR, volume, gaps, etc.).
+5. Access to RAW OHLCV DATA through the configured data root:
+{_analyst_data_root_guidance()}
+   You can load price history to compute market context (ATR, volume, gaps, etc.).
 
 You MUST use ALL provided files. Trades alone show what happened;
 strategy_events show what DIDN'T happen and WHY. Diagnostics give
@@ -171,9 +210,12 @@ WORKFLOW:
 2. Use run_python to execute pandas analysis code on trades and/or events.
 3. When the focus question requires market context (volatility, volume,
    trend, gaps, range characteristics), load the relevant symbol data from
-   the raw OHLCV directory and compute what you need.
+   AUTORESEARCH_DATA_ROOT/universes/{{DATA_UNIVERSE}}/ and compute what you need.
 4. Focus effort on the FOCUS QUESTION. Go deep, not wide.
 5. When you find a pattern, quantify it with exact numbers and sample sizes.
+6. Each run_python call is stateless. Put imports, path definitions, file reads,
+   and calculations in the same run_python call. Do not rely on variables from
+   earlier tool calls.
 
 CRITICAL RULES:
 - PF = sum(pnl_pct where pnl_pct > 0) / abs(sum(pnl_pct where pnl_pct <= 0))
@@ -182,6 +224,8 @@ CRITICAL RULES:
 - Do NOT invent data
 - Do NOT repeat analyses the focus question doesn't ask for
 - If the focus question asks about market structure, USE the raw OHLCV data
+- Do NOT read large source/data files into the chat unless strictly necessary.
+  Prefer targeted run_python summaries and print compact tables only.
 
 OUTPUT FORMAT:
 Return ONLY a JSON object:
@@ -223,6 +267,13 @@ Be brutally honest."""
         " Start with diagnostics.json if available for an overview."
     )
     user_prompt = "\n\n".join(user_parts)
+    current_trace_id = trace_agent_prompt(
+        "analyst",
+        user_prompt,
+        analyst_prompt,
+        model_provider="openai",
+        model_name=_CONDUCTOR_MODEL,
+    )
 
     client = _get_openai_client(_OAUTH_PROXY_URL)
     model = OpenAIChatCompletionsModel(model=_CONDUCTOR_MODEL, openai_client=client)
@@ -318,6 +369,13 @@ Return a JSON object:
 Return ONLY the JSON object."""
 
     user_prompt = f"RESEARCH QUESTION: {query}\n\nCONTEXT: {context}"
+    trace_id = trace_agent_prompt(
+        "web-researcher",
+        user_prompt,
+        web_prompt,
+        model_provider="openai",
+        model_name=_CONDUCTOR_MODEL,
+    )
 
     trace(
         "CONDUCTOR",
@@ -356,7 +414,7 @@ Return ONLY the JSON object."""
             )
             trace_agent_response(
                 "web-researcher",
-                f"web-{query[:40].replace(' ', '_')}",
+                trace_id,
                 output,
                 parsed,
                 model_provider="openai",

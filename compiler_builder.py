@@ -180,18 +180,7 @@ def _build_builder_prompt(
     extra_block = "\n".join(prompt_extras)
     if extra_block:
         extra_block = f"\n{extra_block}"
-    return f"""Goal:
-Implement the missing primitive(s) for thesis `{thesis_id}` and write the resulting config artifact.
-
-Context:
-- Repo root: {root}
-- Thesis artifact: {proposal_path}
-- Contract artifact: {compilation_path}
-- Expected config path: {config_path}
-- Strategy family: {family_name}
-- Missing primitives: {json.dumps(missing_primitives, indent=2)}{extra_block}
-
-Instructions:
+    return f"""Instructions:
 1. Read the thesis and contract artifacts from disk first.
 2. If the change is already expressible with the existing family schema, write the config artifact at the expected path and stop.
 3. Otherwise make the smallest code change needed to support the missing primitive(s), then add or update the narrowest tests that cover the new behavior.
@@ -203,6 +192,17 @@ Instructions:
    - files changed
    - tests run
    - generated config path
+
+Context:
+- Repo root: {root}
+- Thesis artifact: {proposal_path}
+- Contract artifact: {compilation_path}
+- Expected config path: {config_path}
+- Strategy family: {family_name}
+- Missing primitives: {json.dumps(missing_primitives, indent=2)}{extra_block}
+
+Goal:
+Implement the missing primitive(s) for thesis `{thesis_id}` and write the resulting config artifact.
 """
 
 

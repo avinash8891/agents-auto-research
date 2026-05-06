@@ -465,6 +465,15 @@ def test_call_web_researcher_uses_codex_cli_web_search(monkeypatch):
 
     monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
     monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
+    trace_prompts: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        subagents,
+        "trace_agent_prompt",
+        lambda agent, prompt, system_prompt, **kwargs: trace_prompts.append(
+            (agent, prompt, system_prompt)
+        )
+        or "web-trace-id",
+    )
 
     captured: dict[str, object] = {}
 
@@ -498,9 +507,92 @@ def test_call_web_researcher_uses_codex_cli_web_search(monkeypatch):
     assert "CONTEXT: context" in captured["prompt"]
     assert "Run targeted web searches" in captured["instructions"]
     assert captured["model"] == subagents._CONDUCTOR_MODEL
+    assert trace_prompts
+    assert trace_prompts[0][0] == "web-researcher"
+    assert trace_prompts[0][1] == captured["prompt"]
+    assert trace_prompts[0][2] == captured["instructions"]
     parsed = json.loads(result)
     assert parsed["summary"] == "codex cli text extraction works"
     assert parsed["findings"][0]["finding"] == "codex CLI web search returned valid JSON"
+
+
+def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/root/autoresearch-data")
+    captured: dict[str, str] = {}
+
+    def fake_trace_agent_prompt(agent_name, prompt, system_prompt="", **kwargs):
+        captured["agent_name"] = agent_name
+        captured["prompt"] = prompt
+        captured["system_prompt"] = system_prompt
+        return "analyst-trace-id"
+
+    monkeypatch.setattr(subagents, "trace_agent_prompt", fake_trace_agent_prompt)
+    monkeypatch.setattr(subagents, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(subagents, "_get_openai_client", lambda *_: object())
+
+    class FakeResult:
+        usage = SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2)
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+        def final_output_as(self, _type):
+            return json.dumps(
+                {
+                    "focus_answer": "ok",
+                    "key_anomalies": [],
+                    "rejection_insights": [],
+                    "overall_diagnosis": "ok",
+                    "discovery_questions": [],
+                }
+            )
+
+    class FakeRunner:
+        @staticmethod
+        def run_streamed(*args, **kwargs):
+            return FakeResult()
+
+    monkeypatch.setitem(sys.modules, "agents", ModuleType("agents"))
+    agents_mod = sys.modules["agents"]
+    agents_mod.Agent = lambda **kwargs: SimpleNamespace(**kwargs)
+    agents_mod.RunConfig = lambda **kwargs: SimpleNamespace(**kwargs)
+    agents_mod.Runner = FakeRunner
+    agents_mod.function_tool = lambda fn: fn
+    models_mod = ModuleType("agents.models.openai_chatcompletions")
+    models_mod.OpenAIChatCompletionsModel = lambda **kwargs: SimpleNamespace(**kwargs)
+    monkeypatch.setitem(sys.modules, "agents.models", ModuleType("agents.models"))
+    monkeypatch.setitem(sys.modules, "agents.models.openai_chatcompletions", models_mod)
+
+    result = asyncio.run(
+        subagents._call_analyst(
+            str(tmp_path / "trades.csv"),
+            "check opening regime",
+            strategy_events_file=str(tmp_path / "events.parquet"),
+            diagnostics_file=str(tmp_path / "diagnostics.json"),
+        )
+    )
+
+    assert json.loads(result)["overall_diagnosis"] == "ok"
+    assert captured["agent_name"] == "analyst"
+    assert "AUTORESEARCH_DATA_ROOT=/root/autoresearch-data" in captured["system_prompt"]
+    assert "/root/autoresearch-data/universes/" in captured["system_prompt"]
+    assert "Do NOT probe" in captured["system_prompt"]
+    assert "data unless AUTORESEARCH_DATA_ROOT is unset" in captured["system_prompt"]
+    assert "Each run_python call is stateless" in captured["system_prompt"]
+
+
+def test_compact_tool_output_truncates_large_text_with_hash():
+    text = "x" * 30_000
+
+    compact, truncated = subagents._compact_tool_output(text, max_chars=12_000)
+
+    assert truncated is True
+    assert len(compact) < 13_000
+    assert "truncated" in compact
+    assert "sha256=" in compact
 
 
 def test_extract_runner_output_text_uses_raw_response_output_text(monkeypatch):
