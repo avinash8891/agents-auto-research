@@ -142,6 +142,16 @@ def _is_interrupted_research_failure_state(state: dict[str, Any]) -> bool:
     )
 
 
+def _is_blocked_research_required_resume_state(state: dict[str, Any]) -> bool:
+    if state.get("state") != "blocked":
+        return False
+    blockers = state.get("blockers")
+    return isinstance(blockers, list) and any(
+        isinstance(blocker, dict) and blocker.get("kind") == "research_required"
+        for blocker in blockers
+    )
+
+
 def _resume_interrupted_research_state(prior_state: dict[str, Any], job: int) -> dict[str, Any]:
     failed_round = prior_state.get("research_round", 0)
     try:
@@ -196,12 +206,16 @@ def _initial_state_for_controller_launch(
     resume_research_failure = resume_current_job and _is_interrupted_research_failure_state(
         prior_state
     )
+    resume_blocked_research = resume_current_job and _is_blocked_research_required_resume_state(
+        prior_state
+    )
     job = _state_coerce_job_to_int(prior_state.get("job"))
     if resume_current_job:
-        if not (resume_manual_review or resume_research_failure):
+        if not (resume_manual_review or resume_research_failure or resume_blocked_research):
             raise ValueError(
-                "--resume-current-job requires a recoverable manual-review or interrupted "
-                f"research-failure state; found state={prior_state.get('state')}"
+                "--resume-current-job requires a recoverable manual-review, blocked "
+                "research-required, or interrupted research-failure state; "
+                f"found state={prior_state.get('state')}"
             )
         if job < 1:
             job = 1
@@ -212,6 +226,10 @@ def _initial_state_for_controller_launch(
 
     if resume_research_failure:
         return _resume_interrupted_research_state(prior_state, job), job
+    if resume_blocked_research:
+        state = dict(prior_state)
+        state["job"] = job
+        return state, job
 
     # Fresh jobs start from a clean controller state. Manual-review restarts
     # preserve the pending thesis metadata and job-scoped counters so the same
