@@ -101,7 +101,7 @@ def test_failed_calls_do_not_contribute_to_total_calls():
 
 def test_sdk_result_with_no_usage_and_no_estimate_is_unmetered_not_zero_trace():
     emitted = []
-    result = SimpleNamespace(usage=None, raw_responses=[], total_cost_usd=0.0)
+    result = SimpleNamespace(usage=None, raw_responses=[])
 
     with patch.object(
         agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
@@ -138,6 +138,27 @@ def test_sdk_cost_only_result_is_labeled_not_unmetered():
     assert agent["calls"] == 1
     assert agent["unmetered_calls"] == 0
     assert agent["cost_usd"] == pytest.approx(0.42)
+    assert emitted[0]["usage_source"] == "sdk_cost_only_missing_tokens"
+    assert emitted[0]["total_tokens"] == 0
+
+
+def test_sdk_zero_cost_only_result_is_labeled_not_unmetered():
+    emitted = []
+    result = SimpleNamespace(usage=None, raw_responses=[], total_cost_usd=0.0)
+
+    with patch.object(
+        agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
+    ):
+        accumulate_agents_sdk_result_usage(
+            "analyst",
+            result,
+            provider="openai",
+            model="gpt-5.2",
+        )
+
+    agent = get_round_usage()["by_agent"]["analyst"]
+    assert agent["calls"] == 1
+    assert agent["unmetered_calls"] == 0
     assert emitted[0]["usage_source"] == "sdk_cost_only_missing_tokens"
     assert emitted[0]["total_tokens"] == 0
 
@@ -351,6 +372,27 @@ def test_agents_sdk_usage_preserves_explicit_zero_without_alias_fallback():
     assert agent["output_tokens"] == 0
     assert agent["total_tokens"] == 0
     assert agent["estimated_total_tokens"] > 0
+
+
+def test_agents_sdk_usage_parses_dict_usage_objects():
+    result = SimpleNamespace(
+        usage={
+            "input_tokens": 100,
+            "output_tokens": 25,
+            "total_tokens": 125,
+            "cached_input_tokens": 40,
+        },
+        raw_responses=[],
+        total_cost_usd=0.0,
+    )
+
+    accumulate_agents_sdk_result_usage("analyst", result, provider="openai", model="gpt-5.2")
+
+    agent = get_round_usage()["by_agent"]["analyst"]
+    assert agent["input_tokens"] == 100
+    assert agent["output_tokens"] == 25
+    assert agent["total_tokens"] == 125
+    assert agent["cached_input_tokens"] == 40
 
 
 def test_successful_call_increments_calls_not_failed_calls():

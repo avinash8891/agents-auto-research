@@ -67,6 +67,12 @@ def _estimate_usage(
 
 
 def _get_usage_attr(usage: Any, *names: str) -> int:
+    if isinstance(usage, dict):
+        value = _first_present(usage, *names)
+        if isinstance(value, dict):
+            value = _first_present(value, "cached_tokens", "cache_read_tokens")
+        if value is not None:
+            return _to_int(value)
     for name in names:
         value = getattr(usage, name, None)
         if isinstance(value, dict):
@@ -91,6 +97,8 @@ def _first_present(mapping: dict[str, Any], *keys: str) -> Any:
 
 
 def _first_present_attr(obj: Any, *names: str) -> Any:
+    if isinstance(obj, dict):
+        return _first_present(obj, *names)
     for name in names:
         value = getattr(obj, name, None)
         if value is not None:
@@ -182,10 +190,13 @@ def accumulate_agents_sdk_result_usage(
     elif not saw_usage:
         usage_source = "missing_sdk_usage_with_estimate" if estimated else ""
 
+    cost_usd_present = hasattr(result, "total_cost_usd")
     cost_usd = getattr(result, "total_cost_usd", None)
     if cost_usd is None and raw_responses:
-        cost_usd = sum((getattr(resp, "total_cost_usd", 0.0) or 0.0) for resp in raw_responses)
-    has_cost_only_usage = bool(cost_usd) and not saw_usage and not estimated
+        raw_costs = [getattr(resp, "total_cost_usd", None) for resp in raw_responses]
+        cost_usd_present = any(raw_cost is not None for raw_cost in raw_costs)
+        cost_usd = sum((raw_cost or 0.0) for raw_cost in raw_costs)
+    has_cost_only_usage = cost_usd_present and not saw_usage and not estimated
 
     normalized_usage: dict[str, Any] | None = None
     if saw_usage or estimated or has_cost_only_usage:
