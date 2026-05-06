@@ -1831,3 +1831,136 @@ def test_main_reuses_job_and_preserves_manual_review_history_when_restarting_fro
     assert written["halted_thesis_id"] == "thesis-456"
     assert written["manual_review_theses"][-1]["thesis_id"] == "thesis-456"
     assert "next_action" not in written
+
+
+def test_main_resume_current_job_retries_interrupted_research_failure_without_incrementing_job(
+    monkeypatch, tmp_path
+):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    captured: dict[str, dict] = {}
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.state = {
+                "state": "interrupted",
+                "job": 20,
+                "research_round": 9,
+                "job_usage": {"rounds": 8, "total_tokens": 1234},
+                "heartbeat": {
+                    "last_completed_thesis": "experiments/prev/runtime_config.json",
+                    "last_result": "discard",
+                },
+                "current_best": {
+                    "config": "experiments/best/runtime_config.json",
+                    "metric": 4.9409,
+                },
+                "current_thesis": {
+                    "config": "experiments/stale/runtime_config.json",
+                    "status": "ready_to_run",
+                },
+                "next_action": {
+                    "type": "terminated",
+                    "reason": "round 9 failed: research conductor failed: exception",
+                    "artifact_dir": "ema-research",
+                },
+                "blockers": [
+                    {
+                        "kind": "research_failed",
+                        "detail": "round 9 failed: research conductor failed: exception",
+                    }
+                ],
+            }
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            self.state = dict(state)
+            captured["written_state"] = dict(state)
+
+        def execute_once(self):
+            self.state = {"state": "finished", "blockers": [], "finished_reason": "done"}
+            return 0
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr("trace_sdk.get_log_file", lambda: "test.log")
+    monkeypatch.setattr("trace_sdk.get_session_id", lambda: "session-1")
+    monkeypatch.setattr("trace_sdk.set_family", lambda *args, **kwargs: None)
+    monkeypatch.setattr(loop_mod, "trace", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autoresearch_controller.py", "--family", "ema", "--resume-current-job"],
+    )
+
+    assert loop_mod.main() == 0
+    written = captured["written_state"]
+    assert written["state"] == "blocked"
+    assert written["job"] == 20
+    assert written["research_round"] == 8
+    assert written["job_usage"] == {"rounds": 8, "total_tokens": 1234}
+    assert written["heartbeat"]["last_completed_thesis"] == "experiments/prev/runtime_config.json"
+    assert written["current_best"]["metric"] == 4.9409
+    assert written["blockers"] == [
+        {
+            "kind": "research_required",
+            "detail": (
+                "Retrying interrupted research failure: "
+                "round 9 failed: research conductor failed: exception"
+            ),
+        }
+    ]
+    assert written["next_action"]["type"] == "research"
+    assert written["next_action"]["reason"] == "resume_current_job_retry_interrupted_research"
+    assert "current_thesis" not in written
+
+
+def test_main_resume_current_job_rejects_non_recoverable_state(monkeypatch, tmp_path):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.state = {"state": "finished", "job": 20, "research_round": 9}
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            raise AssertionError(f"should not rewrite unrecoverable state: {state}")
+
+        def execute_once(self):
+            raise AssertionError("should not execute unrecoverable resume")
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autoresearch_controller.py", "--family", "ema", "--resume-current-job"],
+    )
+
+    assert loop_mod.main() == 1

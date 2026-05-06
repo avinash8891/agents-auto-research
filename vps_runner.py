@@ -319,6 +319,8 @@ def build_remote_command(
     config: VPSConfig,
     family: StrategyFamily,
     resolved_sha: str,
+    *,
+    resume_current_job: bool = False,
 ) -> str:
     segments = [
         "set -e",
@@ -343,7 +345,10 @@ def build_remote_command(
             'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
             '"$python_bin" -m pip install -e .',
             'printf "%s\\n" "$deps_fingerprint" > .venv/.autoresearch-deps.sha256',
-            (f'"$python_bin" autoresearch_controller.py ' f"--family {shlex.quote(family.name)}"),
+            (
+                f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
+                + (" --resume-current-job" if resume_current_job else "")
+            ),
         ]
     )
     return " && ".join(segments)
@@ -622,6 +627,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         required=True,
         help="Git branch, tag, or commit SHA to deploy on VPS",
     )
+    parser.add_argument(
+        "--resume-current-job",
+        action="store_true",
+        help="Resume a recoverable current job on the VPS instead of creating a new job",
+    )
     return parser
 
 
@@ -693,7 +703,9 @@ def main():
         log.warning("Codex auth upload failed, continuing without it: %s", exc)
         trace("VPS_RUNNER", f"Codex auth upload failed: {exc}")
 
-    cmd = build_remote_command(vps_config, family, resolved_sha)
+    cmd = build_remote_command(
+        vps_config, family, resolved_sha, resume_current_job=args.resume_current_job
+    )
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()
     # Controller runs are long-lived; do not enforce a 10-minute SSH timeout.

@@ -119,6 +119,122 @@ def max_consecutive_research_required() -> int:
     return value
 
 
+def _is_manual_review_resume_state(state: dict[str, Any]) -> bool:
+    return (
+        state.get("state") == "blocked"
+        and isinstance(state.get("next_action"), dict)
+        and state["next_action"].get("type") == "manual_review"
+        and (
+            state.get("halted_thesis_id")
+            or state.get("manual_review_theses")
+            or state.get("halted_reason") == "requires_code_change"
+        )
+    )
+
+
+def _is_interrupted_research_failure_state(state: dict[str, Any]) -> bool:
+    if state.get("state") != "interrupted":
+        return False
+    blockers = state.get("blockers")
+    return isinstance(blockers, list) and any(
+        isinstance(blocker, dict) and blocker.get("kind") == "research_failed"
+        for blocker in blockers
+    )
+
+
+def _resume_interrupted_research_state(prior_state: dict[str, Any], job: int) -> dict[str, Any]:
+    failed_round = prior_state.get("research_round", 0)
+    try:
+        retry_from_round = max(int(failed_round) - 1, 0)
+    except (TypeError, ValueError):
+        retry_from_round = 0
+
+    prior_detail = ""
+    for blocker in prior_state.get("blockers", []):
+        if isinstance(blocker, dict) and blocker.get("kind") == "research_failed":
+            prior_detail = str(blocker.get("detail") or "")
+            break
+
+    state = dict(prior_state)
+    state.update(
+        {
+            "state": "blocked",
+            "job": job,
+            "research_round": retry_from_round,
+            "blockers": [
+                {
+                    "kind": "research_required",
+                    "detail": (
+                        "Retrying interrupted research failure"
+                        + (f": {prior_detail}" if prior_detail else ".")
+                    ),
+                }
+            ],
+            "next_action": {
+                "type": "research",
+                "reason": "resume_current_job_retry_interrupted_research",
+            },
+        }
+    )
+    state.pop("current_thesis", None)
+    state.pop("pending_configs", None)
+    state.pop("thesis_statuses", None)
+    state.pop("finished_reason", None)
+    state.pop("research_stop_reasoning", None)
+    return state
+
+
+def _initial_state_for_controller_launch(
+    prior_state: dict[str, Any],
+    *,
+    resume_current_job: bool,
+) -> tuple[dict[str, Any], int]:
+    resume_manual_review = _is_manual_review_resume_state(prior_state)
+    resume_research_failure = resume_current_job and _is_interrupted_research_failure_state(
+        prior_state
+    )
+    job = _state_coerce_job_to_int(prior_state.get("job"))
+    if resume_current_job:
+        if not (resume_manual_review or resume_research_failure):
+            raise ValueError(
+                "--resume-current-job requires a recoverable manual-review or interrupted "
+                f"research-failure state; found state={prior_state.get('state')}"
+            )
+        if job < 1:
+            job = 1
+    elif not resume_manual_review:
+        # Fresh jobs start from the next job number so new launches stay
+        # distinguishable from earlier runs in traces and experiment rows.
+        job += 1
+
+    if resume_research_failure:
+        return _resume_interrupted_research_state(prior_state, job), job
+
+    # Fresh jobs start from a clean controller state. Manual-review restarts
+    # preserve the pending thesis metadata and job-scoped counters so the same
+    # run can continue natively on the latest code.
+    state = {
+        "state": "running",
+        "job": job,
+        "research_round": prior_state.get("research_round", 0) if resume_manual_review else 0,
+        "job_usage": prior_state.get("job_usage") if resume_manual_review else None,
+        "heartbeat": {},
+    }
+    # Preserve halted thesis metadata needed for requires_code_change resume
+    # flow across code deploys while still clearing ordinary next-action state.
+    if prior_state.get("halted_reason") == "requires_code_change" and prior_state.get(
+        "halted_thesis_id"
+    ):
+        for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
+            if key in prior_state:
+                state[key] = prior_state[key]
+    # Preserve manual_review_theses unconditionally: resume_manual_review is
+    # also triggered by this list alone, without halted_reason being set.
+    if prior_state.get("manual_review_theses"):
+        state["manual_review_theses"] = list(prior_state["manual_review_theses"])
+    return state, job
+
+
 IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
 
 
@@ -618,6 +734,14 @@ class AutoresearchController:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run autoresearch controller")
     parser.add_argument("--family", required=True, help="Strategy family to run")
+    parser.add_argument(
+        "--resume-current-job",
+        action="store_true",
+        help=(
+            "Resume a recoverable blocked/interrupted state without incrementing the job id. "
+            "Interrupted research failures are retried in the same research round."
+        ),
+    )
     args = parser.parse_args()
 
     family = load_family(args.family)
@@ -630,43 +754,14 @@ def main() -> int:
         runs_dir=runs_dir,
     )
     prior_state = controller.read_state()
-    resume_manual_review = (
-        prior_state.get("state") == "blocked"
-        and isinstance(prior_state.get("next_action"), dict)
-        and prior_state["next_action"].get("type") == "manual_review"
-        and (
-            prior_state.get("halted_thesis_id")
-            or prior_state.get("manual_review_theses")
-            or prior_state.get("halted_reason") == "requires_code_change"
+    try:
+        state, job = _initial_state_for_controller_launch(
+            prior_state,
+            resume_current_job=args.resume_current_job,
         )
-    )
-    job = _state_coerce_job_to_int(prior_state.get("job"))
-    if not resume_manual_review:
-        # Fresh jobs start from the next job number so new launches stay
-        # distinguishable from earlier runs in traces and experiment rows.
-        job += 1
-    # Fresh jobs start from a clean controller state. Manual-review restarts
-    # preserve the pending thesis metadata and job-scoped counters so the same
-    # run can continue natively on the latest code.
-    state = {
-        "state": "running",
-        "job": job,
-        "research_round": prior_state.get("research_round", 0) if resume_manual_review else 0,
-        "job_usage": prior_state.get("job_usage") if resume_manual_review else None,
-        "heartbeat": {},
-    }
-    # Preserve halted thesis metadata needed for requires_code_change resume
-    # flow across code deploys while still clearing ordinary next-action state.
-    if prior_state.get("halted_reason") == "requires_code_change" and prior_state.get(
-        "halted_thesis_id"
-    ):
-        for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
-            if key in prior_state:
-                state[key] = prior_state[key]
-    # Preserve manual_review_theses unconditionally: resume_manual_review is
-    # also triggered by this list alone, without halted_reason being set.
-    if prior_state.get("manual_review_theses"):
-        state["manual_review_theses"] = list(prior_state["manual_review_theses"])
+    except ValueError as exc:
+        log.error("%s", exc)
+        return 1
     controller.write_state(state)
 
     from trace_sdk import get_log_file, get_session_id, set_family

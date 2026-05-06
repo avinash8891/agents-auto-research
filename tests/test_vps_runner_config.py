@@ -192,6 +192,25 @@ def test_remote_command_exports_optional_data_root() -> None:
     assert "export AUTORESEARCH_DATA_ROOT=/data/autoresearch &&" in command
 
 
+def test_remote_command_can_resume_current_job() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_command(config, family, "0" * 40, resume_current_job=True)
+
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--resume-current-job"
+    ) in command
+
+
 def test_remote_command_sources_runtime_env_file() -> None:
     family = load_family("ema")
     config = VPSConfig(
