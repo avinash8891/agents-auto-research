@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -54,6 +55,37 @@ def _resolve_timeout_seconds(timeout_seconds: int | None) -> int:
     return parsed_timeout
 
 
+def _extract_codex_token_usage(stdout: str) -> dict[str, int] | None:
+    usage: dict[str, int] | None = None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") != "event_msg":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") != "token_count":
+            continue
+        info = payload.get("info")
+        if not isinstance(info, dict):
+            continue
+        raw_usage = info.get("last_token_usage") or info.get("total_token_usage")
+        if not isinstance(raw_usage, dict):
+            continue
+        usage = {
+            "input_tokens": int(raw_usage.get("input_tokens") or 0),
+            "cached_input_tokens": int(raw_usage.get("cached_input_tokens") or 0),
+            "output_tokens": int(raw_usage.get("output_tokens") or 0),
+            "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
+            "total_tokens": int(raw_usage.get("total_tokens") or 0),
+        }
+    return usage
+
+
 def run_codex_web_research(
     prompt: str,
     *,
@@ -89,6 +121,7 @@ def run_codex_web_research(
             "workspace-write",
             "--output-last-message",
             str(output_path),
+            "--json",
             "--model",
             model,
             "--config",
@@ -139,6 +172,10 @@ def run_codex_web_research(
             "output_len": len(output),
             "output_path_used": output_path.exists(),
         }
+        usage = _extract_codex_token_usage(stdout)
+        if usage is not None:
+            metadata["usage"] = usage
+            metadata["usage_source"] = "codex_json_last_token_usage"
         log.info(
             "codex web research finished exit=%s stdout_len=%d stderr_len=%d output_len=%d",
             process.returncode,

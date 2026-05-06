@@ -64,7 +64,10 @@ async def _run_web_research_openai(
                 model=_MODEL,
             )
             _trace("OPENAI_AGENT", "web-researcher codex_cli completed", metadata)
-            _accumulate_usage("web-researcher", None, provider=_PROVIDER, model=_MODEL)
+            usage = metadata.get("usage")
+            if isinstance(usage, dict):
+                usage = {**usage, "usage_source": metadata.get("usage_source", "")}
+                _accumulate_usage("web-researcher", usage, provider=_PROVIDER, model=_MODEL)
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
             _trace_response("openai-web-researcher", trace_id, output, parsed)

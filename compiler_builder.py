@@ -14,7 +14,7 @@ from backtest.runtime_config import load_runtime_config
 from persistence_utils import write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import load_family
-from trace_sdk import trace
+from trace_sdk import record_event, trace
 
 log = get_logger(__name__)
 
@@ -114,11 +114,16 @@ def _write_builder_attempt_artifacts(
     result: dict[str, Any],
     stdout: str = "",
     stderr: str = "",
-) -> None:
+) -> list[str]:
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    write_text_atomic(artifact_dir / "prompt.txt", prompt)
+    prompt_path = artifact_dir / "prompt.txt"
+    command_path = artifact_dir / "command.json"
+    stdout_path = artifact_dir / "stdout.log"
+    stderr_path = artifact_dir / "stderr.log"
+    result_path = artifact_dir / "result.json"
+    write_text_atomic(prompt_path, prompt)
     write_json_artifact(
-        artifact_dir / "command.json",
+        command_path,
         {
             "command": command,
             "cwd": str(cwd),
@@ -128,9 +133,37 @@ def _write_builder_attempt_artifacts(
             "model_reasoning_effort": BUILDER_CLI_REASONING_EFFORT,
         },
     )
-    write_text_atomic(artifact_dir / "stdout.log", stdout)
-    write_text_atomic(artifact_dir / "stderr.log", stderr)
-    write_json_artifact(artifact_dir / "result.json", result)
+    write_text_atomic(stdout_path, stdout)
+    write_text_atomic(stderr_path, stderr)
+    write_json_artifact(result_path, result)
+    return [
+        str(path) for path in (prompt_path, command_path, stdout_path, stderr_path, result_path)
+    ]
+
+
+def _trace_builder_finish(
+    *,
+    thesis_id: str,
+    result: dict[str, Any],
+    artifact_paths: list[str],
+) -> None:
+    trace(
+        "BUILDER",
+        f"finish thesis={thesis_id} status={result['status']} model={BUILDER_CLI_MODEL}",
+        result,
+        model_provider="codex",
+        model_name=BUILDER_CLI_MODEL,
+    )
+    record_event(
+        source_module="compiler_builder",
+        category="builder",
+        action="finish",
+        summary=f"builder finish thesis={thesis_id} status={result['status']}",
+        payload={"thesis_id": thesis_id, "result": result},
+        artifact_paths=artifact_paths,
+        model_provider="codex",
+        model_name=BUILDER_CLI_MODEL,
+    )
 
 
 def _build_builder_prompt(
@@ -398,14 +431,8 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             duration_seconds=time.monotonic() - started_at,
         )
         assert result is not None
-        _write_artifacts(result=result)
-        trace(
-            "BUILDER",
-            f"finish thesis={thesis_id} status={result['status']} model={BUILDER_CLI_MODEL}",
-            result,
-            model_provider="codex",
-            model_name=BUILDER_CLI_MODEL,
-        )
+        artifact_paths = _write_artifacts(result=result)
+        _trace_builder_finish(thesis_id=thesis_id, result=result, artifact_paths=artifact_paths)
         return result
 
     if not cli:
@@ -415,14 +442,8 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             "generated_config": None,
             "validation_passed": False,
         }
-        _write_artifacts(result=result)
-        trace(
-            "BUILDER",
-            f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
-            result,
-            model_provider="codex",
-            model_name=BUILDER_CLI_MODEL,
-        )
+        artifact_paths = _write_artifacts(result=result)
+        _trace_builder_finish(thesis_id=thesis_id, result=result, artifact_paths=artifact_paths)
         return result
 
     try:
@@ -459,14 +480,8 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 "exit_code": None,
                 "duration_seconds": round(duration_seconds, 3),
             }
-        _write_artifacts(result=result, stdout=stdout, stderr=stderr)
-        trace(
-            "BUILDER",
-            f"finish thesis={thesis_id} status={result['status']} model={BUILDER_CLI_MODEL}",
-            result,
-            model_provider="codex",
-            model_name=BUILDER_CLI_MODEL,
-        )
+        artifact_paths = _write_artifacts(result=result, stdout=stdout, stderr=stderr)
+        _trace_builder_finish(thesis_id=thesis_id, result=result, artifact_paths=artifact_paths)
         return result
     proc_output = (proc.stdout or "") + (proc.stderr or "")
 
@@ -483,14 +498,10 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         )
         assert out is not None
         if out["status"] == "error":
-            _write_artifacts(result=out, stdout=proc.stdout or "", stderr=proc.stderr or "")
-            trace(
-                "BUILDER",
-                f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
-                out,
-                model_provider="codex",
-                model_name=BUILDER_CLI_MODEL,
+            artifact_paths = _write_artifacts(
+                result=out, stdout=proc.stdout or "", stderr=proc.stderr or ""
             )
+            _trace_builder_finish(thesis_id=thesis_id, result=out, artifact_paths=artifact_paths)
             return out
     else:
         out = {
@@ -502,12 +513,8 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             "timed_out": False,
             "duration_seconds": round(time.monotonic() - started_at, 3),
         }
-    _write_artifacts(result=out, stdout=proc.stdout or "", stderr=proc.stderr or "")
-    trace(
-        "BUILDER",
-        f"finish thesis={thesis_id} status={out['status']} model={BUILDER_CLI_MODEL}",
-        out,
-        model_provider="codex",
-        model_name=BUILDER_CLI_MODEL,
+    artifact_paths = _write_artifacts(
+        result=out, stdout=proc.stdout or "", stderr=proc.stderr or ""
     )
+    _trace_builder_finish(thesis_id=thesis_id, result=out, artifact_paths=artifact_paths)
     return out

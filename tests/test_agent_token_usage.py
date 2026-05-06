@@ -115,6 +115,33 @@ def test_successful_call_emits_trace_event_with_real_tokens():
     assert emitted[0]["total_tokens"] == 2300
 
 
+def test_cli_usage_emits_cached_reasoning_and_usage_source_metadata():
+    emitted = []
+
+    with patch.object(
+        agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
+    ):
+        agent_token_usage._accumulate_usage(
+            "web-researcher",
+            {
+                "input_tokens": 101,
+                "cached_input_tokens": 20,
+                "output_tokens": 11,
+                "reasoning_output_tokens": 3,
+                "total_tokens": 112,
+                "usage_source": "codex_json_last_token_usage",
+            },
+            provider="openai",
+            model="gpt-5.2",
+        )
+
+    assert len(emitted) == 1
+    assert emitted[0]["input_tokens"] == 101
+    assert emitted[0]["cached_input_tokens"] == 20
+    assert emitted[0]["reasoning_output_tokens"] == 3
+    assert emitted[0]["usage_source"] == "codex_json_last_token_usage"
+
+
 def test_successful_call_increments_calls_not_failed_calls():
     """Successful calls must increment calls, not failed_calls."""
     result = _make_result(input_tokens=1200, output_tokens=600, total_tokens=1800)

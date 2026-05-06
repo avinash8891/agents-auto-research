@@ -98,14 +98,24 @@ def _group_key(rec: dict, by: str) -> str:
 
 def _print_grouped(records, by: str) -> None:
     buckets: dict[str, dict[str, float]] = defaultdict(
-        lambda: {"calls": 0, "input": 0, "output": 0, "total": 0, "cost": 0.0}
+        lambda: {
+            "calls": 0,
+            "input": 0,
+            "cached": 0,
+            "output": 0,
+            "reasoning": 0,
+            "total": 0,
+            "cost": 0.0,
+        }
     )
     for rec in records:
         payload = rec.get("payload") or {}
         b = buckets[_group_key(rec, by)]
         b["calls"] += 1
         b["input"] += payload.get("input_tokens") or 0
+        b["cached"] += payload.get("cached_input_tokens") or 0
         b["output"] += payload.get("output_tokens") or 0
+        b["reasoning"] += payload.get("reasoning_output_tokens") or 0
         b["total"] += payload.get("total_tokens") or 0
         b["cost"] += payload.get("cost_usd") or 0.0
 
@@ -114,21 +124,34 @@ def _print_grouped(records, by: str) -> None:
         return
 
     rows = sorted(buckets.items(), key=lambda kv: kv[1]["total"], reverse=True)
-    header = f"{by:<40} {'calls':>8} {'input':>12} {'output':>12} {'total':>12} {'cost_usd':>10}"
+    header = (
+        f"{by:<40} {'calls':>8} {'input':>12} {'cached':>12} {'output':>12} "
+        f"{'reasoning':>12} {'total':>12} {'cost_usd':>10}"
+    )
     print(header)
     print("-" * len(header))
-    grand = {"calls": 0, "input": 0, "output": 0, "total": 0, "cost": 0.0}
+    grand = {
+        "calls": 0,
+        "input": 0,
+        "cached": 0,
+        "output": 0,
+        "reasoning": 0,
+        "total": 0,
+        "cost": 0.0,
+    }
     for key, b in rows:
         print(
             f"{key[:40]:<40} {int(b['calls']):>8} {int(b['input']):>12} "
-            f"{int(b['output']):>12} {int(b['total']):>12} {b['cost']:>10.4f}"
+            f"{int(b['cached']):>12} {int(b['output']):>12} "
+            f"{int(b['reasoning']):>12} {int(b['total']):>12} {b['cost']:>10.4f}"
         )
         for k in grand:
             grand[k] += b[k]
     print("-" * len(header))
     print(
         f"{'TOTAL':<40} {int(grand['calls']):>8} {int(grand['input']):>12} "
-        f"{int(grand['output']):>12} {int(grand['total']):>12} {grand['cost']:>10.4f}"
+        f"{int(grand['cached']):>12} {int(grand['output']):>12} "
+        f"{int(grand['reasoning']):>12} {int(grand['total']):>12} {grand['cost']:>10.4f}"
     )
 
 

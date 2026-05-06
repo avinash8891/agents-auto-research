@@ -34,6 +34,9 @@ def _emit_trace_usage(
     total_tokens: int,
     cost_usd: float,
     dedupe_key: str | None,
+    cached_input_tokens: int = 0,
+    reasoning_output_tokens: int = 0,
+    usage_source: str = "",
 ) -> None:
     """Forward per-call usage to trace_sdk's event stream. Fail-open."""
     try:
@@ -51,6 +54,9 @@ def _emit_trace_usage(
             total_tokens=total_tokens,
             cost_usd=cost_usd,
             dedupe_key=dedupe_key,
+            cached_input_tokens=cached_input_tokens,
+            reasoning_output_tokens=reasoning_output_tokens,
+            usage_source=usage_source,
         )
     except Exception as exc:
         logger.debug("usage trace emission failed: %s", exc)
@@ -101,10 +107,15 @@ def _accumulate_usage(
     entry["calls"] += 1
 
     in_tok = out_tok = tot_tok = 0
+    cached_input_tokens = reasoning_output_tokens = 0
+    usage_source = ""
     if usage:
         in_tok = usage.get("input_tokens") or usage.get("input") or 0
         out_tok = usage.get("output_tokens") or usage.get("output") or 0
         tot_tok = usage.get("total_tokens") or usage.get("total") or 0
+        cached_input_tokens = usage.get("cached_input_tokens") or 0
+        reasoning_output_tokens = usage.get("reasoning_output_tokens") or 0
+        usage_source = usage.get("usage_source") or ""
         entry["input_tokens"] += in_tok
         entry["output_tokens"] += out_tok
         entry["total_tokens"] += tot_tok
@@ -123,6 +134,9 @@ def _accumulate_usage(
         total_tokens=int(tot_tok or 0),
         cost_usd=float(cost_usd or 0.0),
         dedupe_key=dedupe_key,
+        cached_input_tokens=int(cached_input_tokens or 0),
+        reasoning_output_tokens=int(reasoning_output_tokens or 0),
+        usage_source=str(usage_source or ""),
     )
 
 

@@ -487,6 +487,58 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
     assert json.loads((attempt_dir / "result.json").read_text())["exit_code"] == 0
 
 
+def test_build_missing_primitives_trace_links_builder_attempt_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    family = load_family("ema")
+    thesis_id = "ema_trace_artifacts"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"thesis_id": thesis_id, "strategy_family": "ema"}) + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"normalized_contract": [], "missing_primitives": ["probe"]}) + "\n"
+    )
+
+    def fake_run(cmd, capture_output, text, cwd=None, timeout=None, input=None, **kwargs):
+        target = tmp_path / "configs" / "variants" / f"{thesis_id}.yaml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "data_universe: nasdaq8\nvalidation_start: 2020-01-01\nvalidation_end: 2020-12-31\n"
+        )
+        return type(
+            "Proc", (), {"stdout": "builder stdout", "stderr": "builder stderr", "returncode": 0}
+        )()
+
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr(
+        "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
+    )
+    monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+    monkeypatch.setattr("compiler_builder.trace", lambda *args, **kwargs: None)
+    monkeypatch.setattr("compiler_builder.record_event", lambda **kwargs: events.append(kwargs))
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "completed"
+    finish_events = [
+        event for event in events if event["category"] == "builder" and event["action"] == "finish"
+    ]
+    assert len(finish_events) == 1
+    artifact_names = {Path(path).name for path in finish_events[0]["artifact_paths"]}
+    assert {
+        "prompt.txt",
+        "command.json",
+        "stdout.log",
+        "stderr.log",
+        "result.json",
+    } <= artifact_names
+
+
 def test_build_missing_primitives_reports_timeout_explicitly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

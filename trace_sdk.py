@@ -596,6 +596,9 @@ def record_usage_event(
     total_tokens: int = 0,
     cost_usd: float = 0.0,
     dedupe_key: str | None = None,
+    cached_input_tokens: int = 0,
+    reasoning_output_tokens: int = 0,
+    usage_source: str = "",
 ) -> None:
     """Emit a per-call token-usage trace event into trace-events.jsonl.
 
@@ -612,10 +615,13 @@ def record_usage_event(
             payload={
                 "agent": agent,
                 "input_tokens": int(input_tokens or 0),
+                "cached_input_tokens": int(cached_input_tokens or 0),
                 "output_tokens": int(output_tokens or 0),
+                "reasoning_output_tokens": int(reasoning_output_tokens or 0),
                 "total_tokens": int(total_tokens or 0),
                 "cost_usd": float(cost_usd or 0.0),
                 "dedupe_key": dedupe_key,
+                "usage_source": usage_source,
             },
             model_provider=model_provider or "",
             model_name=model_name or "",

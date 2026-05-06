@@ -262,7 +262,10 @@ Return ONLY the JSON object."""
             instructions=web_prompt,
             model=_CONDUCTOR_MODEL,
         )
-        _accumulate_usage("web_researcher", None, provider="openai", model=_CONDUCTOR_MODEL)
+        usage = metadata.get("usage")
+        if isinstance(usage, dict):
+            usage = {**usage, "usage_source": metadata.get("usage_source", "")}
+            _accumulate_usage("web_researcher", usage, provider="openai", model=_CONDUCTOR_MODEL)
         trace(
             "CONDUCTOR",
             (
