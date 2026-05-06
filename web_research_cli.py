@@ -55,8 +55,8 @@ def _resolve_timeout_seconds(timeout_seconds: int | None) -> int:
     return parsed_timeout
 
 
-def _extract_codex_token_usage(stdout: str) -> dict[str, int] | None:
-    usage: dict[str, int] | None = None
+def _extract_codex_token_usage(stdout: str) -> tuple[dict[str, int], str] | None:
+    usage_result: tuple[dict[str, int], str] | None = None
     for line in stdout.splitlines():
         line = line.strip()
         if not line:
@@ -69,14 +69,20 @@ def _extract_codex_token_usage(stdout: str) -> dict[str, int] | None:
             raw_usage = event["usage"]
             input_tokens = int(raw_usage.get("input_tokens") or 0)
             output_tokens = int(raw_usage.get("output_tokens") or 0)
-            usage = {
-                "input_tokens": input_tokens,
-                "cached_input_tokens": int(raw_usage.get("cached_input_tokens") or 0),
-                "output_tokens": output_tokens,
-                "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
-                "total_tokens": int(raw_usage.get("total_tokens") or input_tokens + output_tokens),
-                "usage_source": "codex_json_turn_completed",
-            }
+            if "total_tokens" in raw_usage and raw_usage["total_tokens"] is not None:
+                total_tokens = int(raw_usage["total_tokens"])
+            else:
+                total_tokens = input_tokens + output_tokens
+            usage_result = (
+                {
+                    "input_tokens": input_tokens,
+                    "cached_input_tokens": int(raw_usage.get("cached_input_tokens") or 0),
+                    "output_tokens": output_tokens,
+                    "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
+                    "total_tokens": total_tokens,
+                },
+                "codex_json_turn_completed",
+            )
             continue
         if event.get("type") != "event_msg":
             continue
@@ -89,15 +95,17 @@ def _extract_codex_token_usage(stdout: str) -> dict[str, int] | None:
         raw_usage = info.get("last_token_usage") or info.get("total_token_usage")
         if not isinstance(raw_usage, dict):
             continue
-        usage = {
-            "input_tokens": int(raw_usage.get("input_tokens") or 0),
-            "cached_input_tokens": int(raw_usage.get("cached_input_tokens") or 0),
-            "output_tokens": int(raw_usage.get("output_tokens") or 0),
-            "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
-            "total_tokens": int(raw_usage.get("total_tokens") or 0),
-            "usage_source": "codex_json_last_token_usage",
-        }
-    return usage
+        usage_result = (
+            {
+                "input_tokens": int(raw_usage.get("input_tokens") or 0),
+                "cached_input_tokens": int(raw_usage.get("cached_input_tokens") or 0),
+                "output_tokens": int(raw_usage.get("output_tokens") or 0),
+                "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
+                "total_tokens": int(raw_usage.get("total_tokens") or 0),
+            },
+            "codex_json_last_token_usage",
+        )
+    return usage_result
 
 
 def run_codex_web_research(
@@ -186,9 +194,9 @@ def run_codex_web_research(
             "output_len": len(output),
             "output_path_used": output_path.exists(),
         }
-        usage = _extract_codex_token_usage(stdout)
-        if usage is not None:
-            usage_source = str(usage.pop("usage_source", "codex_json"))
+        usage_result = _extract_codex_token_usage(stdout)
+        if usage_result is not None:
+            usage, usage_source = usage_result
             metadata["usage"] = usage
             metadata["usage_source"] = usage_source
         log.info(
