@@ -1,0 +1,22 @@
+tests/test_autoresearch_experiment.py
+  s_df23f17b640abb::t_970ce6fd83af6b 541,544
+  s_df23f17b640abb::t_275abbde2b959b 616-699
+autoresearch_experiment.py
+  s_df23f17b640abb::t_9fbb2aeb0467c2 579-583,588-594,609-612,616,620
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "3b7778551276152fc95579ceea65634f0a9dd275",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
