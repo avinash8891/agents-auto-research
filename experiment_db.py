@@ -158,13 +158,27 @@ class ExperimentDB:
                     mechanism_dimension TEXT NOT NULL,
                     hypothesis TEXT NOT NULL,
                     mechanism TEXT NOT NULL,
+                    thesis_details_json TEXT NOT NULL DEFAULT '{}',
                     rejection_reason TEXT NOT NULL,
                     selected_for_execution INTEGER NOT NULL,
                     created_at_utc TEXT NOT NULL,
                     PRIMARY KEY (research_round_id, attempt_number)
                 )
                 """)
+            self._ensure_column(
+                conn,
+                "research_thesis_attempts",
+                "thesis_details_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
             conn.commit()
+
+    def _ensure_column(
+        self, conn: sqlite3.Connection, table: str, column: str, definition: str
+    ) -> None:
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def session_meta(self) -> dict[str, Any]:
         with self._connect() as conn:
@@ -387,21 +401,53 @@ class ExperimentDB:
             result.append(payload)
         return result
 
-    def list_research_thesis_attempts(self) -> list[dict[str, Any]]:
+    def list_research_thesis_attempts(
+        self, *, job_id: int | None = None, thesis_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        where: list[str] = []
+        params: list[Any] = []
+        if job_id is not None:
+            where.append("r.job_id = ?")
+            params.append(job_id)
+        if thesis_id:
+            where.append("a.thesis_id = ?")
+            params.append(thesis_id)
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         with self._connect() as conn:
-            rows = conn.execute("""
-                SELECT research_round_id, attempt_number, thesis_id, strategy_family,
-                       config_changes_json, validator_status, mechanism_dimension,
-                       hypothesis, mechanism, rejection_reason, selected_for_execution,
-                       created_at_utc
-                FROM research_thesis_attempts ORDER BY research_round_id, attempt_number
-                """).fetchall()
+            rows = conn.execute(
+                f"""
+                SELECT a.research_round_id, a.attempt_number, a.thesis_id,
+                       a.strategy_family, a.config_changes_json, a.validator_status,
+                       a.mechanism_dimension, a.hypothesis, a.mechanism,
+                       a.thesis_details_json, a.rejection_reason, a.selected_for_execution,
+                       a.created_at_utc, r.job_id, r.round_number,
+                       r.outcome AS round_outcome, r.run_id, r.hypothesis_id,
+                       r.usage_json AS round_usage_json
+                FROM research_thesis_attempts a
+                LEFT JOIN research_rounds r
+                  ON r.research_round_id = a.research_round_id
+                {where_sql}
+                ORDER BY COALESCE(r.job_id, 0) DESC,
+                         COALESCE(r.round_number, 0) DESC,
+                         a.created_at_utc DESC,
+                         a.attempt_number DESC
+                """,
+                params,
+            ).fetchall()
         result: list[dict[str, Any]] = []
         for row in rows:
             try:
                 config_changes = json.loads(row["config_changes_json"])
             except Exception:
                 config_changes = None
+            try:
+                round_usage = json.loads(row["round_usage_json"] or "{}")
+            except Exception:
+                round_usage = {}
+            try:
+                thesis_details = json.loads(row["thesis_details_json"] or "{}")
+            except Exception:
+                thesis_details = {}
             record = {
                 "research_round_id": row["research_round_id"],
                 "attempt_number": row["attempt_number"],
@@ -412,9 +458,16 @@ class ExperimentDB:
                 "mechanism_dimension": row["mechanism_dimension"],
                 "hypothesis": row["hypothesis"],
                 "mechanism": row["mechanism"],
+                "thesis_details": thesis_details if isinstance(thesis_details, dict) else {},
                 "rejection_reason": row["rejection_reason"],
                 "selected_for_execution": row["selected_for_execution"],
                 "created_at_utc": row["created_at_utc"],
+                "job_id": row["job_id"],
+                "round_number": row["round_number"],
+                "round_outcome": row["round_outcome"],
+                "run_id": row["run_id"],
+                "hypothesis_id": row["hypothesis_id"],
+                "round_usage": round_usage,
             }
             if not record["thesis_id"] or not isinstance(config_changes, dict):
                 result.append({"_invalid": True, **record})
@@ -429,9 +482,9 @@ class ExperimentDB:
                 INSERT OR REPLACE INTO research_thesis_attempts (
                     research_round_id, attempt_number, thesis_id, strategy_family,
                     config_changes_json, validator_status, mechanism_dimension,
-                    hypothesis, mechanism, rejection_reason, selected_for_execution,
+                    hypothesis, mechanism, thesis_details_json, rejection_reason, selected_for_execution,
                     created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row["research_round_id"],
@@ -443,6 +496,7 @@ class ExperimentDB:
                     row.get("mechanism_dimension", ""),
                     row.get("hypothesis", ""),
                     row.get("mechanism", ""),
+                    json_dumps_strict(row.get("thesis_details", {})),
                     row.get("rejection_reason", ""),
                     int(row.get("selected_for_execution", 0)),
                     row.get("created_at_utc", _iso8601_utc_now()),
@@ -468,9 +522,9 @@ class ExperimentDB:
                     INSERT INTO research_thesis_attempts (
                         research_round_id, attempt_number, thesis_id, strategy_family,
                         config_changes_json, validator_status, mechanism_dimension,
-                        hypothesis, mechanism, rejection_reason, selected_for_execution,
+                        hypothesis, mechanism, thesis_details_json, rejection_reason, selected_for_execution,
                         created_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         r.get("research_round_id", ""),
@@ -482,6 +536,7 @@ class ExperimentDB:
                         r.get("mechanism_dimension", ""),
                         r.get("hypothesis", ""),
                         r.get("mechanism", ""),
+                        json_dumps_strict(r.get("thesis_details", {})),
                         r.get("rejection_reason", ""),
                         selected,
                         r.get("created_at_utc", _iso8601_utc_now()),

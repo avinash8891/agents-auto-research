@@ -154,6 +154,7 @@ def log_research_round(
     hypothesis: str = "",
     mechanism: str = "",
     mechanism_dimension: str = "",
+    thesis_details: dict[str, Any] | None = None,
     rejection_reason: str = "",
     usage: dict[str, Any] | None = None,
 ) -> None:
@@ -187,6 +188,7 @@ def log_research_round(
             "mechanism_dimension": mechanism_dimension,
             "hypothesis": hypothesis,
             "mechanism": mechanism,
+            "thesis_details": thesis_details or {},
             "rejection_reason": rejection_reason,
             "selected_for_execution": 1 if outcome == "compiled" else 0,
             "created_at_utc": iso8601_utc_now(),
@@ -206,6 +208,7 @@ def results_to_dicts(results: list[ExperimentRecord]) -> list[dict[str, Any]]:
             "metric": r.metric,
             "status": r.status,
             "description": r.description,
+            "job": r.job,
         }
         ta = r.asi.get("trade_analysis", {})
         if ta:
@@ -347,6 +350,8 @@ def _backfill_artifact_files_from_latest_dir(
 def _resolve_conductor_inputs(
     controller: "AutoresearchController",
     results: list[ExperimentRecord],
+    *,
+    current_job: int | None = None,
 ) -> tuple[str, str, str, dict[str, Any]]:
     """Gather the four inputs the conductor needs from the most recent
     experiment: trades file, strategy events file, diagnostics file, and
@@ -354,7 +359,10 @@ def _resolve_conductor_inputs(
     trades_file = controller.ctx.latest_trades_file
     strategy_events_file = controller.ctx.latest_strategy_events_file
     diagnostics_file = controller.ctx.latest_diagnostics_file
-    latest = controller.latest_result(results)
+    scoped_results = results
+    if current_job is not None:
+        scoped_results = [result for result in results if result.job == current_job]
+    latest = controller.latest_result(scoped_results)
     if not trades_file and latest:
         trades_file, strategy_events_file, diagnostics_file = (
             _backfill_artifact_files_from_latest_dir(
@@ -363,7 +371,7 @@ def _resolve_conductor_inputs(
         )
     latest_outcome: dict[str, Any] = {}
     if latest:
-        latest_outcome["thesis_id"] = Path(latest.config).stem
+        latest_outcome["thesis_id"] = latest.asi.get("thesis_id") or Path(latest.config).parent.name
         latest_outcome["metric"] = latest.metric
         latest_outcome["decision"] = latest.status
         ta = latest.asi.get("trade_analysis", {})
@@ -392,12 +400,19 @@ def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] 
         }
     if parsed.get("status") == "conductor_error":
         error = parsed.get("error") or parsed.get("reasoning") or "unknown conductor error"
-        return {
+        validation_reason = str(parsed.get("validation_reason") or "")
+        rejection_reason = f"research conductor failed: {error}"
+        if validation_reason:
+            rejection_reason = f"{rejection_reason}: {validation_reason}"
+        result = {
             "status": "conductor_error",
             "generated_config": None,
             "should_stop": False,
-            "rejection_reason": f"research conductor failed: {error}",
+            "rejection_reason": rejection_reason,
         }
+        if validation_reason:
+            result["validation_reason"] = validation_reason
+        return result
     if not parsed.get("suggested_theses"):
         reasoning = parsed.get("reasoning") or "research conductor returned no suggested_theses"
         return {
@@ -429,6 +444,19 @@ def _log_validation_rejection(
         hypothesis=raw_thesis.get("hypothesis", ""),
         mechanism=raw_thesis.get("mechanism", ""),
         mechanism_dimension=raw_thesis.get("mechanism_dimension", ""),
+        thesis_details={
+            key: raw_thesis.get(key)
+            for key in (
+                "dimension_novelty",
+                "evidence",
+                "expected_effects",
+                "disqualifiers",
+                "why_not_overfit",
+                "requires_code_change",
+                "required_diagnostics",
+            )
+            if key in raw_thesis
+        },
         rejection_reason=reason,
     )
     _RULE_PROPOSALS.create_proposal(
@@ -599,6 +627,7 @@ def _call_conductor(
     latest_outcome: dict[str, Any],
     family_name: str,
     rejection_feedback: str,
+    current_job: int | None,
 ) -> dict[str, Any] | None:
     """One conductor HTTP/SDK call with the per-attempt log preamble."""
     from research_conductor import run_research_conductor_sync
@@ -606,7 +635,16 @@ def _call_conductor(
     label = f"round={research_round}" + (
         f" attempt={attempt+1} (retry with feedback)" if attempt else ""
     )
+    boundary = (
+        f"INPUT_BOUNDARY job={current_job} round={research_round} attempt={attempt + 1} "
+        f"family={family_name} trades={'YES' if trades_file else 'NO'} "
+        f"events={'YES' if strategy_events_file else 'NO'} "
+        f"diagnostics={'YES' if diagnostics_file else 'NO'} "
+        f"rejection_feedback={'YES' if rejection_feedback else 'NO'}"
+    )
+    log.info(f"CONDUCTOR {boundary}")
     log.info(f"CONDUCTOR starting {label} trades={'YES' if trades_file else 'NO'}")
+    trace("CONDUCTOR", boundary)
     trace("CONDUCTOR", f"START {label}")
     return run_research_conductor_sync(
         trades_file=trades_file,
@@ -617,6 +655,7 @@ def _call_conductor(
         strategy_events_file=strategy_events_file,
         diagnostics_file=diagnostics_file,
         rejection_feedback=rejection_feedback,
+        current_job=current_job,
     )
 
 
@@ -627,17 +666,27 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     If validation rejects the thesis, calls the conductor AGAIN with
     the rejection reason so it can propose something different.
     """
-    from agent_orchestrator import format_result_history
+    from agent_formatters import format_experiment_results_summary
     from thesis_validator import load_prior_theses
 
     state = controller.read_state()
+    raw_job = state.get("job")
+    try:
+        current_job = int(raw_job) if raw_job is not None else None
+    except (TypeError, ValueError):
+        current_job = None
     research_round = state.get("research_round", 0) + 1
     results = controller.read_results()
-    experiment_results = format_result_history(results_to_dicts(results))
+    result_dicts = results_to_dicts(results)
+    if current_job is not None:
+        result_dicts = [result for result in result_dicts if result.get("job") == current_job]
+    experiment_results = format_experiment_results_summary(result_dicts)
     prior_theses = load_prior_theses(controller.root)
     trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
     trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
-        controller, results
+        controller,
+        results,
+        current_job=current_job,
     )
     state["research_round"] = research_round
     controller.write_state(state)
@@ -661,6 +710,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             latest_outcome=latest_outcome,
             family_name=controller.family.name,
             rejection_feedback=rejection_feedback,
+            current_job=current_job,
         )
         terminal = _check_parsed_for_terminal(parsed)
         if terminal is not None:
@@ -1087,6 +1137,19 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         hypothesis=thesis_meta.get("hypothesis", ""),
         mechanism=thesis_meta.get("mechanism", ""),
         mechanism_dimension=thesis_meta.get("mechanism_dimension", ""),
+        thesis_details={
+            key: thesis_meta.get(key)
+            for key in (
+                "dimension_novelty",
+                "evidence",
+                "expected_effects",
+                "disqualifiers",
+                "why_not_overfit",
+                "requires_code_change",
+                "required_diagnostics",
+            )
+            if key in thesis_meta
+        },
         rejection_reason=result.get("rejection_reason") or result.get("reasoning", ""),
         usage=round_usage,
     )

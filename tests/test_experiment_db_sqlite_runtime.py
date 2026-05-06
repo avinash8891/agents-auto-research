@@ -515,6 +515,74 @@ def test_sqlite_research_thesis_attempt_required_fields_are_non_empty(tmp_path: 
     assert row[11] == "2026-04-30T00:00:00+00:00"
 
 
+def test_sqlite_research_thesis_attempt_persists_full_thesis_details(tmp_path: Path) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    details = {
+        "dimension_novelty": "new mechanism",
+        "evidence": ["web", "analyst"],
+        "expected_effects": [{"metric": "profit_factor", "direction": "increase"}],
+        "disqualifiers": [{"name": "trade_count_collapse", "condition": "trades < 100"}],
+        "why_not_overfit": "structural",
+        "requires_code_change": True,
+        "required_diagnostics": ["margin_per_order"],
+    }
+
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-2-round-5",
+            "attempt_number": 1,
+            "thesis_id": "ema_contract",
+            "strategy_family": "ema",
+            "config_changes": {"requires_engine_change": True},
+            "validator_status": "halted",
+            "mechanism_dimension": "market_microstructure",
+            "hypothesis": "opening imbalance",
+            "mechanism": "opening auction effect",
+            "selected_for_execution": 0,
+            "thesis_details": details,
+        }
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT thesis_details_json FROM research_thesis_attempts WHERE thesis_id = ?",
+            ("ema_contract",),
+        ).fetchone()
+
+    assert json.loads(row[0]) == details
+
+
+def test_sqlite_research_thesis_attempt_migrates_legacy_table(tmp_path: Path) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE research_thesis_attempts (
+                research_round_id TEXT NOT NULL,
+                attempt_number INTEGER NOT NULL,
+                thesis_id TEXT NOT NULL,
+                strategy_family TEXT NOT NULL,
+                config_changes_json TEXT NOT NULL,
+                validator_status TEXT NOT NULL,
+                mechanism_dimension TEXT NOT NULL,
+                hypothesis TEXT NOT NULL,
+                mechanism TEXT NOT NULL,
+                rejection_reason TEXT NOT NULL,
+                selected_for_execution INTEGER NOT NULL,
+                created_at_utc TEXT NOT NULL,
+                PRIMARY KEY (research_round_id, attempt_number)
+            )
+            """)
+        conn.commit()
+
+    ExperimentDB(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(research_thesis_attempts)")}
+
+    assert "thesis_details_json" in columns
+
+
 def test_sqlite_experiment_required_fields_are_meaningfully_populated_in_real_ema5_flow(
     tmp_path: Path,
 ) -> None:

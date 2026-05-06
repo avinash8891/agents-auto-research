@@ -1561,6 +1561,135 @@ def test_resolve_conductor_inputs_handles_fresh_run_context(controller) -> None:
     assert latest_outcome == {}
 
 
+def test_resolve_conductor_inputs_uses_real_thesis_id_not_runtime_config_stem(
+    controller,
+) -> None:
+    from autoresearch_research import _resolve_conductor_inputs
+    from autoresearch_state import ExperimentRecord
+
+    latest = ExperimentRecord(
+        config="experiments/real-thesis-id/runtime_config.json",
+        metric=2.34,
+        status="discard",
+        description="strict-native loop: real-thesis-id",
+        timestamp="2026-05-06T00:00:00+00:00",
+        asi={
+            "thesis_id": "real_thesis_id",
+            "trade_analysis": {
+                "trade_count": 123,
+                "profit_factor": 2.34,
+            },
+        },
+        job=1,
+    )
+
+    _, _, _, latest_outcome = _resolve_conductor_inputs(controller, [latest])
+
+    assert latest_outcome["thesis_id"] == "real_thesis_id"
+    assert latest_outcome["metric"] == 2.34
+    assert latest_outcome["decision"] == "discard"
+    assert latest_outcome["trade_count"] == 123
+    assert latest_outcome["profit_factor"] == 2.34
+
+
+def test_resolve_conductor_inputs_filters_latest_and_artifacts_by_current_job(
+    controller,
+    monkeypatch,
+) -> None:
+    from autoresearch_research import _resolve_conductor_inputs
+    from autoresearch_state import ExperimentRecord
+
+    job20 = ExperimentRecord(
+        config="experiments/job20-thesis/runtime_config.json",
+        metric=2.0,
+        status="keep",
+        description="strict-native loop: job20-thesis",
+        timestamp="2026-05-06T00:00:00+00:00",
+        asi={"thesis_id": "job20_thesis", "trade_analysis": {"trade_count": 20}},
+        job=20,
+    )
+    newer_other_job = ExperimentRecord(
+        config="experiments/job21-thesis/runtime_config.json",
+        metric=9.9,
+        status="discard",
+        description="strict-native loop: job21-thesis",
+        timestamp="2026-05-06T01:00:00+00:00",
+        asi={"thesis_id": "wrong_job21_thesis", "trade_analysis": {"trade_count": 21}},
+        job=21,
+    )
+    seen: dict[str, ExperimentRecord] = {}
+
+    def fake_backfill(controller_arg, latest, trades_file, strategy_events_file, diagnostics_file):
+        seen["latest"] = latest
+        thesis_id = latest.asi["thesis_id"]
+        return (
+            f"/tmp/{thesis_id}/trades.csv",
+            f"/tmp/{thesis_id}/strategy_events.parquet",
+            f"/tmp/{thesis_id}/diagnostics.json",
+        )
+
+    monkeypatch.setattr(research_mod, "_backfill_artifact_files_from_latest_dir", fake_backfill)
+
+    trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
+        controller,
+        [job20, newer_other_job],
+        current_job=20,
+    )
+
+    assert seen["latest"] is job20
+    assert trades_file == "/tmp/job20_thesis/trades.csv"
+    assert strategy_events_file == "/tmp/job20_thesis/strategy_events.parquet"
+    assert diagnostics_file == "/tmp/job20_thesis/diagnostics.json"
+    assert latest_outcome["thesis_id"] == "job20_thesis"
+    assert latest_outcome["metric"] == 2.0
+    assert latest_outcome["decision"] == "keep"
+    assert latest_outcome["trade_count"] == 20
+
+
+def test_call_conductor_traces_input_boundary(monkeypatch) -> None:
+    import research_conductor
+    from autoresearch_research import _call_conductor
+
+    traces: list[tuple[str, str]] = []
+    captured: dict[str, Any] = {}
+
+    def fake_run_research_conductor_sync(**kwargs):
+        captured.update(kwargs)
+        return {"suggested_theses": [], "should_stop": False}
+
+    monkeypatch.setattr(
+        research_mod, "trace", lambda category, message: traces.append((category, message))
+    )
+    monkeypatch.setattr(
+        research_conductor,
+        "run_research_conductor_sync",
+        fake_run_research_conductor_sync,
+    )
+
+    result = _call_conductor(
+        7,
+        1,
+        trades_file="/tmp/trades.csv",
+        strategy_events_file="/tmp/events.parquet",
+        diagnostics_file="/tmp/diagnostics.json",
+        experiment_results="summary",
+        latest_outcome={"thesis_id": "latest"},
+        family_name="ema",
+        rejection_feedback="validator rejected prior thesis",
+        current_job=20,
+    )
+
+    assert result == {"suggested_theses": [], "should_stop": False}
+    assert captured["current_job"] == 20
+    assert (
+        "CONDUCTOR",
+        (
+            "INPUT_BOUNDARY job=20 round=7 attempt=2 family=ema "
+            "trades=YES events=YES diagnostics=YES rejection_feedback=YES"
+        ),
+    ) in traces
+
+
 def test_main_exits_on_persisted_blocked_state(monkeypatch, tmp_path):
     family = load_family("ema")
 

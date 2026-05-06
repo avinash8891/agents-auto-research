@@ -125,9 +125,132 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
 
     assert result == parsed_payload
     assert "5 EMA PULLBACK/REVERSAL STRATEGY" in captured["agent"].instructions
+    assert {tool.name for tool in captured["agent"].tools} >= {
+        "list_past_theses",
+        "get_past_thesis",
+        "list_experiment_results",
+        "get_experiment_result",
+    }
     assert captured["input"].startswith("Research round: 3")
     assert captured["kwargs"]["max_turns"] == 50
     assert captured["kwargs"]["run_config"].tracing_disabled is True
+
+
+def test_conductor_prompt_handles_no_trades_without_calling_it_cold_start(monkeypatch):
+    parsed_payload = {"suggested_theses": [], "should_stop": True}
+    monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
+
+    captured: dict[str, object] = {}
+
+    class _FakeResult:
+        final_output = json.dumps(parsed_payload)
+        raw_responses: list[object] = []
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+    def fake_run_streamed(starting_agent, input, **kwargs):
+        captured["input"] = input
+        return _FakeResult()
+
+    monkeypatch.setattr(rc.OAIRunner, "run_streamed", fake_run_streamed)
+
+    result = rc.run_research_conductor_sync(
+        trades_file="",
+        experiment_results="total_experiments=12 keep=3 discard=9",
+        latest_outcome={"thesis_id": "latest_real_thesis", "metric": 1.8, "decision": "discard"},
+        research_round=9,
+        family_name="ema",
+    )
+
+    assert result == parsed_payload
+    prompt = str(captured["input"])
+    assert "LATEST EXPERIMENT OUTCOME:" in prompt
+    assert "latest_real_thesis" in prompt
+    assert "No experiments have been run yet" not in prompt
+    assert "propose your first thesis" not in prompt
+    assert "No trades file is available for the latest/current experiment" in prompt
+    assert "Do not call analyze_trades this round" in prompt
+
+
+def test_conductor_prompt_keeps_true_cold_start_distinct(monkeypatch):
+    parsed_payload = {"suggested_theses": [], "should_stop": True}
+    monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
+
+    captured: dict[str, object] = {}
+
+    class _FakeResult:
+        final_output = json.dumps(parsed_payload)
+        raw_responses: list[object] = []
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+    def fake_run_streamed(starting_agent, input, **kwargs):
+        captured["input"] = input
+        return _FakeResult()
+
+    monkeypatch.setattr(rc.OAIRunner, "run_streamed", fake_run_streamed)
+
+    result = rc.run_research_conductor_sync(
+        trades_file="",
+        experiment_results="No experiments run yet.",
+        latest_outcome={},
+        research_round=1,
+        family_name="ema",
+    )
+
+    assert result == parsed_payload
+    prompt = str(captured["input"])
+    assert "LATEST EXPERIMENT OUTCOME:" in prompt
+    assert "(no results yet)" in prompt
+    assert "No current-job experiments have completed yet" in prompt
+    assert "propose the first thesis" in prompt
+
+
+def test_conductor_system_prompt_prioritizes_practical_pf_without_ambiguous_tool_order():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+
+    assert "Write your reasoning in your response before making tool calls" not in prompt
+    assert "Final reasoning should cite the evidence gathered from tools" in prompt
+    assert "Improve profit_factor" in prompt
+    assert "median_expectancy" in prompt
+    assert "margin_per_order" in prompt
+    assert "trade_count" in prompt
+    assert 'list_experiment_results(order="latest")' in prompt
+    assert 'list_experiment_results(order="best")' in prompt
+    assert "get_experiment_result for the latest result" in prompt
+    assert "get_experiment_result for the best profit_factor result" in prompt
+
+
+def test_conductor_system_prompt_is_not_duplicate_and_labels_soft_requirements():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+
+    assert "WHAT YOU ARE:" not in prompt
+    assert "YOU ARE NOT:" not in prompt
+    assert "THE RESEARCH PROCESS:" not in prompt
+    assert (
+        "If you call\n   analyze_trades before web_search, your thesis will be REJECTED"
+        not in prompt
+    )
+    assert "This is workflow guidance; the final thesis validator checks thesis structure" in prompt
+    assert "THESIS REQUIREMENTS:" in prompt
+
+
+def test_conductor_system_prompt_exposes_required_diagnostics_for_non_builtin_metrics():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+
+    assert '"required_diagnostics": []' in prompt
+    assert "For non-built-in metrics such as margin_per_order" in prompt
+    assert "list them in required_diagnostics" in prompt
 
 
 def test_run_research_conductor_sync_records_top_level_usage_when_raw_usage_missing(
@@ -394,6 +517,108 @@ def test_save_research_finding_falls_back_to_local_log(monkeypatch, tmp_path):
     assert payload["status"] == "validated"
 
 
+def test_save_research_finding_strips_duplicated_metadata_prefix(monkeypatch, tmp_path):
+    monkeypatch.setattr(memory, "_ROOT", tmp_path)
+    captured: dict[str, str] = {}
+
+    def fake_add(wing, room, content, added_by="conductor"):
+        captured["wing"] = wing
+        captured["room"] = room
+        captured["content"] = content
+        return {"success": True, "drawer_id": "drawer-1"}
+
+    monkeypatch.setattr(memory, "_palace_add", fake_add)
+
+    result = memory.save_research_finding(
+        finding=(
+            "TYPE:validated_finding | STATUS:validated | EVIDENCE:round_21 analyst | "
+            "SCOPE:job_20 | EXPIRES_IF:baseline changes\n"
+            "Opening-range CLV separates mid-balance days from extreme days."
+        ),
+        finding_type="validated_finding",
+        status="validated",
+        evidence="round_21 analyst",
+        scope="job_20",
+        expires_if="baseline changes",
+    )
+
+    assert result == (
+        "SAVED: validated_finding/validated — "
+        "Opening-range CLV separates mid-balance days from extreme days."
+    )
+    assert captured["wing"] == "research_findings"
+    assert captured["room"] == "validated_finding"
+    assert captured["content"].count("TYPE:") == 1
+    assert captured["content"].endswith(
+        "Opening-range CLV separates mid-balance days from extreme days."
+    )
+
+
+def test_search_research_findings_reads_local_fallback_when_palace_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(memory, "_ROOT", tmp_path)
+    monkeypatch.setattr(memory, "_palace_search", lambda *a, **k: [])
+    log_path = tmp_path / "research_findings.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "finding": "Opening-range CLV separates mid-balance days from extreme days.",
+                "type": "validated_finding",
+                "status": "validated",
+                "evidence": "round_21 analyst",
+                "scope": "job_20",
+                "expires_if": "baseline changes",
+                "timestamp": 1,
+            }
+        )
+        + "\n"
+    )
+
+    results = memory.search_research_findings(
+        query="CLV mid balance",
+        finding_type="validated_finding",
+        n_results=5,
+    )
+
+    assert len(results) == 1
+    assert results[0]["room"] == "validated_finding"
+    assert results[0]["source"] == "local_jsonl"
+    assert "Opening-range CLV" in results[0]["text"]
+
+
+def test_search_research_findings_uses_local_fallback_when_palace_errors(monkeypatch, tmp_path):
+    monkeypatch.setattr(memory, "_ROOT", tmp_path)
+    monkeypatch.setattr(memory, "_palace_search", lambda *a, **k: [{"error": "palace offline"}])
+    (tmp_path / "research_findings.jsonl").write_text(
+        json.dumps(
+            {
+                "finding": "Late opening-window entries underperform.",
+                "type": "observation",
+                "status": "validated",
+                "evidence": "round_19 analyst",
+                "scope": "job_20",
+                "expires_if": "baseline changes",
+                "timestamp": 1,
+            }
+        )
+        + "\n"
+    )
+
+    results = memory.search_research_findings(query="opening entries", n_results=5)
+
+    assert results == [
+        {
+            "text": (
+                "TYPE:observation | STATUS:validated | EVIDENCE:round_19 analyst | "
+                "SCOPE:job_20 | EXPIRES_IF:baseline changes\n"
+                "Late opening-window entries underperform."
+            ),
+            "room": "observation",
+            "distance": "local",
+            "source": "local_jsonl",
+        }
+    ]
+
+
 def test_palace_helpers_return_error_objects_when_unavailable(monkeypatch):
     fake_mempalace = ModuleType("mempalace")
     fake_mempalace.__path__ = []  # type: ignore[attr-defined]
@@ -461,10 +686,20 @@ def test_resolve_palace_dir_prefers_existing_repo_palace(monkeypatch, tmp_path):
 
 
 def test_call_web_researcher_uses_codex_cli_web_search(monkeypatch):
-    import trace_sdk
-
-    monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
-    monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
+    traces: list[tuple[str, str, dict | None]] = []
+    monkeypatch.setattr(
+        subagents,
+        "trace",
+        lambda component, message, data=None, **kwargs: traces.append((component, message, data)),
+    )
+    responses: list[tuple[str, str, str, dict | None]] = []
+    monkeypatch.setattr(
+        subagents,
+        "trace_agent_response",
+        lambda agent, trace_id, raw, parsed=None, **kwargs: responses.append(
+            (agent, trace_id, raw, parsed)
+        ),
+    )
     trace_prompts: list[tuple[str, str, str]] = []
     monkeypatch.setattr(
         subagents,
@@ -496,7 +731,11 @@ def test_call_web_researcher_uses_codex_cli_web_search(monkeypatch):
                     "summary": "codex cli text extraction works",
                 }
             ),
-            {"exit_code": 0, "output_len": 10},
+            {
+                "exit_code": 0,
+                "output_len": 10,
+                "usage_source": "codex_json_turn_completed",
+            },
         )
 
     monkeypatch.setattr(subagents, "run_codex_web_research", fake_run_codex_web_research)
@@ -511,6 +750,21 @@ def test_call_web_researcher_uses_codex_cli_web_search(monkeypatch):
     assert trace_prompts[0][0] == "web-researcher"
     assert trace_prompts[0][1] == captured["prompt"]
     assert trace_prompts[0][2] == captured["instructions"]
+    assert responses
+    assert responses[0][0] == "web-researcher"
+    assert responses[0][1] == "web-trace-id"
+    structured_completion = next(
+        data for _component, message, data in traces if message == "web_search codex_cli completed"
+    )
+    assert structured_completion == {
+        "exit_code": 0,
+        "output_len": 10,
+        "usage_source": "codex_json_turn_completed",
+    }
+    structured_success = next(
+        data for _component, message, data in traces if message == "web_search OK"
+    )
+    assert structured_success == {"findings": 1}
     parsed = json.loads(result)
     assert parsed["summary"] == "codex cli text extraction works"
     assert parsed["findings"][0]["finding"] == "codex CLI web search returned valid JSON"
@@ -582,6 +836,94 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     assert "Do NOT probe" in captured["system_prompt"]
     assert "data unless AUTORESEARCH_DATA_ROOT is unset" in captured["system_prompt"]
     assert "Each run_python call is stateless" in captured["system_prompt"]
+
+
+def test_analyst_prompt_includes_market_data_manifest_from_runtime_config(monkeypatch, tmp_path):
+    data_root = tmp_path / "autoresearch-data"
+    universe_dir = data_root / "universes" / "nasdaq8"
+    universe_dir.mkdir(parents=True)
+    for name in ("open.parquet", "high.parquet", "low.parquet", "close.parquet", "volume.parquet"):
+        (universe_dir / name).write_text("placeholder")
+    (universe_dir / "manifest.json").write_text('{"symbols":["AAPL","MSFT"]}')
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+
+    config_hash = "abc123def456"
+    experiment_dir = tmp_path / "experiments" / config_hash
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(
+        json.dumps({"runtime_config": {"data_universe": "nasdaq8"}})
+    )
+    artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-20" / "commitsha" / config_hash
+    artifact_dir.mkdir(parents=True)
+    trades_file = artifact_dir / "trades.csv"
+    events_file = artifact_dir / "strategy_events.parquet"
+    diagnostics_file = artifact_dir / "diagnostics.json"
+
+    captured: dict[str, str] = {}
+
+    def fake_trace_agent_prompt(agent_name, prompt, system_prompt="", **kwargs):
+        captured["agent_name"] = agent_name
+        captured["prompt"] = prompt
+        captured["system_prompt"] = system_prompt
+        return "analyst-trace-id"
+
+    monkeypatch.setattr(subagents, "trace_agent_prompt", fake_trace_agent_prompt)
+    monkeypatch.setattr(subagents, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(subagents, "_get_openai_client", lambda *_: object())
+
+    class FakeResult:
+        usage = SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2)
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+        def final_output_as(self, _type):
+            return json.dumps(
+                {
+                    "focus_answer": "ok",
+                    "key_anomalies": [],
+                    "rejection_insights": [],
+                    "overall_diagnosis": "ok",
+                    "discovery_questions": [],
+                }
+            )
+
+    class FakeRunner:
+        @staticmethod
+        def run_streamed(*args, **kwargs):
+            return FakeResult()
+
+    monkeypatch.setitem(sys.modules, "agents", ModuleType("agents"))
+    agents_mod = sys.modules["agents"]
+    agents_mod.Agent = lambda **kwargs: SimpleNamespace(**kwargs)
+    agents_mod.RunConfig = lambda **kwargs: SimpleNamespace(**kwargs)
+    agents_mod.Runner = FakeRunner
+    agents_mod.function_tool = lambda fn: fn
+    models_mod = ModuleType("agents.models.openai_chatcompletions")
+    models_mod.OpenAIChatCompletionsModel = lambda **kwargs: SimpleNamespace(**kwargs)
+    monkeypatch.setitem(sys.modules, "agents.models", ModuleType("agents.models"))
+    monkeypatch.setitem(sys.modules, "agents.models.openai_chatcompletions", models_mod)
+
+    result = asyncio.run(
+        subagents._call_analyst(
+            str(trades_file),
+            "check opening regime",
+            strategy_events_file=str(events_file),
+            diagnostics_file=str(diagnostics_file),
+        )
+    )
+
+    assert json.loads(result)["overall_diagnosis"] == "ok"
+    system_prompt = captured["system_prompt"]
+    assert "MARKET DATA MANIFEST:" in system_prompt
+    assert f"runtime_config: {experiment_dir / 'runtime_config.json'}" in system_prompt
+    assert "data_universe: nasdaq8" in system_prompt
+    assert f"universe_path: {universe_dir}" in system_prompt
+    assert f"open: {universe_dir / 'open.parquet'}" in system_prompt
+    assert f"volume: {universe_dir / 'volume.parquet'}" in system_prompt
+    assert "Do NOT run recursive filesystem discovery" in system_prompt
+    assert "/root/**" in system_prompt
 
 
 def test_compact_tool_output_truncates_large_text_with_hash():
@@ -698,4 +1040,463 @@ def test_list_past_theses_reads_sqlite_history(monkeypatch, tmp_path):
     payload = asyncio.run(tool.fn())
     parsed = json.loads(payload)
 
-    assert {entry["thesis_id"] for entry in parsed} == {"ema_one", "orb_two"}
+    assert {entry["thesis_id"] for entry in parsed["entries"]} == {"ema_one", "orb_two"}
+    assert parsed["total"] == 2
+    assert parsed["limit"] == 25
+    assert parsed["has_more"] is False
+
+
+def test_mcp_research_history_tools_use_bound_current_job(monkeypatch, tmp_path):
+    monkeypatch.setattr(tools_mcp, "track", lambda *a, **k: None)
+    calls: dict[str, tuple[object, ...] | dict[str, object]] = {}
+
+    def fake_list_past(root, *, job_id=None, offset=0, limit=25):
+        calls["list_past"] = {"job_id": job_id, "offset": offset, "limit": limit}
+        return json.dumps({"job_id": job_id, "entries": []})
+
+    def fake_get_past(root, thesis_id, *, job_id=None):
+        calls["get_past"] = (thesis_id, job_id)
+        return json.dumps({"thesis_id": thesis_id, "job_id": job_id})
+
+    def fake_list_results(root, *, job_id=None, order="latest", offset=0, limit=10):
+        calls["list_results"] = {
+            "job_id": job_id,
+            "order": order,
+            "offset": offset,
+            "limit": limit,
+        }
+        return json.dumps({"job_id": job_id, "entries": []})
+
+    def fake_get_result(root, thesis_id, *, job_id=None):
+        calls["get_result"] = (thesis_id, job_id)
+        return json.dumps({"thesis_id": thesis_id, "job_id": job_id})
+
+    mcp = tools_mcp._build_research_tools_mcp(
+        trades_file="/tmp/trades.csv",
+        call_analyst=subagents._call_analyst,
+        call_web_researcher=subagents._call_web_researcher,
+        save_research_finding=memory.save_research_finding,
+        palace_search=memory._palace_search,
+        palace_status=memory._palace_status,
+        root=tmp_path,
+        current_job=20,
+        list_past_theses_for_root=fake_list_past,
+        get_past_thesis_for_root=fake_get_past,
+        list_experiment_results_for_root=fake_list_results,
+        get_experiment_result_for_root=fake_get_result,
+    )
+    tools = {tool.name: tool for tool in mcp._tool_manager.list_tools()}
+
+    list_past_payload = json.loads(asyncio.run(tools["list_past_theses"].fn(limit=3)))
+    get_past_payload = json.loads(asyncio.run(tools["get_past_thesis"].fn("prior_thesis")))
+    list_results_payload = json.loads(
+        asyncio.run(tools["list_experiment_results"].fn(order="best", limit=2))
+    )
+    get_result_payload = json.loads(asyncio.run(tools["get_experiment_result"].fn("result_thesis")))
+
+    assert list_past_payload["job_id"] == 20
+    assert get_past_payload["job_id"] == 20
+    assert list_results_payload["job_id"] == 20
+    assert get_result_payload["job_id"] == 20
+    assert calls["list_past"] == {"job_id": 20, "offset": 0, "limit": 3}
+    assert calls["get_past"] == ("prior_thesis", 20)
+    assert calls["list_results"] == {"job_id": 20, "order": "best", "offset": 0, "limit": 2}
+    assert calls["get_result"] == ("result_thesis", 20)
+
+
+def test_mcp_research_history_tools_do_not_expose_job_id_override(monkeypatch, tmp_path):
+    monkeypatch.setattr(tools_mcp, "track", lambda *a, **k: None)
+    mcp = tools_mcp._build_research_tools_mcp(
+        trades_file="/tmp/trades.csv",
+        call_analyst=subagents._call_analyst,
+        call_web_researcher=subagents._call_web_researcher,
+        save_research_finding=memory.save_research_finding,
+        palace_search=memory._palace_search,
+        palace_status=memory._palace_status,
+        root=tmp_path,
+        current_job=20,
+        list_past_theses_for_root=memory.list_past_theses,
+    )
+    tools = {tool.name: tool for tool in mcp._tool_manager.list_tools()}
+
+    for name in (
+        "list_past_theses",
+        "get_past_thesis",
+        "list_experiment_results",
+        "get_experiment_result",
+    ):
+        assert "job_id" not in tools[name].fn.__annotations__
+
+
+def test_list_past_theses_filters_by_job_and_returns_bounded_index(tmp_path):
+    from experiment_db import ExperimentDB
+
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-20-round-1",
+            "attempt_number": 1,
+            "thesis_id": "same_job_thesis",
+            "strategy_family": "ema",
+            "config_changes": {"entry_window": "09:35"},
+            "validator_status": "accepted",
+            "mechanism_dimension": "entry_timing",
+            "hypothesis": "same job hypothesis " + ("x" * 300),
+            "rejection_reason": "",
+            "selected_for_execution": 1,
+        }
+    )
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-19-round-1",
+            "attempt_number": 1,
+            "thesis_id": "other_job_thesis",
+            "strategy_family": "ema",
+            "config_changes": {"exit_rule": "close"},
+            "validator_status": "rejected",
+            "mechanism_dimension": "exit_mechanism",
+            "hypothesis": "other job hypothesis",
+            "rejection_reason": "different job",
+            "selected_for_execution": 0,
+        }
+    )
+    with db._connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO research_rounds (
+                research_round_id, job_id, round_number, run_id, hypothesis_id,
+                selected_thesis_id, outcome, created_at_utc, usage_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "job-20-round-1",
+                20,
+                1,
+                "run-20",
+                "same_job_thesis",
+                "same_job_thesis",
+                "accepted",
+                "2026-05-06T00:00:00+00:00",
+                "{}",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO research_rounds (
+                research_round_id, job_id, round_number, run_id, hypothesis_id,
+                selected_thesis_id, outcome, created_at_utc, usage_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "job-19-round-1",
+                19,
+                1,
+                "run-19",
+                "other_job_thesis",
+                "other_job_thesis",
+                "rejected",
+                "2026-05-06T00:00:00+00:00",
+                "{}",
+            ),
+        )
+        conn.commit()
+
+    parsed = json.loads(memory.list_past_theses(tmp_path, job_id=20, limit=1))
+
+    assert parsed["total"] == 1
+    assert parsed["job_id"] == 20
+    assert parsed["has_more"] is False
+    assert parsed["entries"] == [
+        {
+            "thesis_id": "same_job_thesis",
+            "round": "job-20-round-1",
+            "round_number": 1,
+            "job_id": 20,
+            "strategy_family": "ema",
+            "outcome": "accepted",
+            "mechanism_dimension": "entry_timing",
+            "dimension_novelty": "",
+            "requires_code_change": False,
+            "expected_effect_metrics": [],
+            "evidence_count": 0,
+            "selected_for_execution": True,
+            "config_change_keys": ["entry_window"],
+            "short_hypothesis": "same job hypothesis " + ("x" * 160) + "...",
+            "short_rejection_reason": "",
+            "learning_signal": "accepted thesis in entry_timing; inspect full details before building on it",
+        }
+    ]
+
+
+def test_list_past_theses_orders_by_numeric_round_desc(tmp_path):
+    from experiment_db import ExperimentDB
+
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    for round_number in (2, 10):
+        db.add_research_thesis_attempt(
+            {
+                "research_round_id": f"job-20-round-{round_number}",
+                "attempt_number": 1,
+                "thesis_id": f"thesis_round_{round_number}",
+                "strategy_family": "ema",
+                "config_changes": {"round": round_number},
+                "validator_status": "compiled",
+                "mechanism_dimension": "entry_timing",
+                "hypothesis": f"hypothesis {round_number}",
+                "mechanism": f"mechanism {round_number}",
+                "selected_for_execution": 1,
+            }
+        )
+        with db._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO research_rounds (
+                    research_round_id, job_id, round_number, run_id, hypothesis_id,
+                    selected_thesis_id, outcome, created_at_utc, usage_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"job-20-round-{round_number}",
+                    20,
+                    round_number,
+                    f"run-{round_number}",
+                    f"thesis_round_{round_number}",
+                    f"thesis_round_{round_number}",
+                    "compiled",
+                    "2026-05-06T00:00:00+00:00",
+                    "{}",
+                ),
+            )
+            conn.commit()
+
+    parsed = json.loads(memory.list_past_theses(tmp_path, job_id=20, limit=2))
+
+    assert [entry["thesis_id"] for entry in parsed["entries"]] == [
+        "thesis_round_10",
+        "thesis_round_2",
+    ]
+    assert [entry["round_number"] for entry in parsed["entries"]] == [10, 2]
+
+
+def test_get_past_thesis_returns_full_details_for_selected_job(tmp_path):
+    from experiment_db import ExperimentDB
+
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    full_hypothesis = "full hypothesis " + ("kept " * 80)
+    full_rejection = "full rejection " + ("reason " * 80)
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-20-round-2",
+            "attempt_number": 2,
+            "thesis_id": "fetch_me",
+            "strategy_family": "ema",
+            "config_changes": {"atr_filter": {"min": 1.5}},
+            "validator_status": "rejected",
+            "mechanism_dimension": "risk_filtering",
+            "hypothesis": full_hypothesis,
+            "mechanism": "full mechanism detail",
+            "rejection_reason": full_rejection,
+            "selected_for_execution": 0,
+        }
+    )
+    with db._connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO research_rounds (
+                research_round_id, job_id, round_number, run_id, hypothesis_id,
+                selected_thesis_id, outcome, created_at_utc, usage_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "job-20-round-2",
+                20,
+                2,
+                "run-20",
+                "fetch_me",
+                "fetch_me",
+                "rejected",
+                "2026-05-06T00:00:00+00:00",
+                '{"total":{"total_tokens":123}}',
+            ),
+        )
+        conn.commit()
+
+    parsed = json.loads(memory.get_past_thesis(tmp_path, "fetch_me", job_id=20))
+
+    assert parsed["thesis_id"] == "fetch_me"
+    assert parsed["job_id"] == 20
+    assert parsed["attempts"][0]["hypothesis"] == full_hypothesis
+    assert parsed["attempts"][0]["rejection_reason"] == full_rejection
+    assert parsed["attempts"][0]["round_usage"] == {"total": {"total_tokens": 123}}
+    assert parsed["attempts"][0]["dimension_novelty"] == ""
+    assert parsed["attempts"][0]["evidence"] == []
+    assert parsed["attempts"][0]["expected_effects"] == []
+    assert parsed["attempts"][0]["disqualifiers"] == []
+    assert parsed["attempts"][0]["why_not_overfit"] == ""
+    assert parsed["attempts"][0]["requires_code_change"] is False
+    assert parsed["attempts"][0]["required_diagnostics"] == []
+
+
+def test_get_past_thesis_returns_persisted_full_thesis_contract(tmp_path):
+    from experiment_db import ExperimentDB
+
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    thesis_details = {
+        "dimension_novelty": "Tests opening-liquidity decay, not a time parameter tweak.",
+        "evidence": ["web: opening auction imbalance", "analyst: 215 trades before 10:00"],
+        "expected_effects": [
+            {"metric": "profit_factor", "direction": "increase", "threshold": 0.05}
+        ],
+        "disqualifiers": [{"name": "trade_count_collapse", "condition": "trade_count < 150"}],
+        "why_not_overfit": "Mechanism is tied to opening auction microstructure.",
+        "requires_code_change": True,
+        "required_diagnostics": ["margin_per_order"],
+    }
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-20-round-3",
+            "attempt_number": 1,
+            "thesis_id": "full_contract",
+            "strategy_family": "ema",
+            "config_changes": {"requires_engine_change": True},
+            "validator_status": "halted",
+            "mechanism_dimension": "market_microstructure",
+            "hypothesis": "opening imbalance should explain edge",
+            "mechanism": "opening auction liquidity decay",
+            "selected_for_execution": 0,
+            "thesis_details": thesis_details,
+        }
+    )
+    with db._connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO research_rounds (
+                research_round_id, job_id, round_number, run_id, hypothesis_id,
+                selected_thesis_id, outcome, created_at_utc, usage_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "job-20-round-3",
+                20,
+                3,
+                "run-20",
+                "full_contract",
+                "full_contract",
+                "halted",
+                "2026-05-06T00:00:00+00:00",
+                "{}",
+            ),
+        )
+        conn.commit()
+
+    listed = json.loads(memory.list_past_theses(tmp_path, job_id=20))
+    detailed = json.loads(memory.get_past_thesis(tmp_path, "full_contract", job_id=20))
+
+    assert listed["entries"][0]["dimension_novelty"] == thesis_details["dimension_novelty"]
+    assert listed["entries"][0]["requires_code_change"] is True
+    assert listed["entries"][0]["expected_effect_metrics"] == ["profit_factor"]
+    assert listed["entries"][0]["evidence_count"] == 2
+    assert detailed["attempts"][0] | thesis_details == detailed["attempts"][0]
+
+
+def test_list_experiment_results_reaches_latest_and_best_beyond_prompt_cap(tmp_path):
+    from experiment_db import ExperimentDB, ExperimentResult
+
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    for idx in range(15):
+        thesis_id = f"thesis_{idx:02d}"
+        metric = 1.0 + idx / 100
+        if idx == 4:
+            thesis_id = "best_old_thesis"
+            metric = 9.9
+        if idx == 14:
+            thesis_id = "latest_new_thesis"
+            metric = 1.2
+        db.add(
+            ExperimentResult(
+                experiment_id=f"exp-{idx}",
+                thesis_id=thesis_id,
+                config_path=f"experiments/{thesis_id}/runtime_config.json",
+                runtime_config={"param": idx},
+                code_commit="abc",
+                data_hash="data",
+                train_metrics={},
+                validation_metrics={
+                    "profit_factor": metric,
+                    "trade_count": 100 + idx,
+                    "max_drawdown": 0.1,
+                },
+                trade_count=100 + idx,
+                trades_file=f"/tmp/{thesis_id}/trades.csv",
+                strategy_events_file=f"/tmp/{thesis_id}/strategy_events.parquet",
+                diagnostics_file=f"/tmp/{thesis_id}/diagnostics.json",
+                strategy_diagnostics={"event_counts": {"raw_setup": idx}},
+                accepted=idx in {0, 4},
+                rejection_reason="" if idx in {0, 4} else "did not beat best",
+                verdict_status="accepted" if idx in {0, 4} else "rejected",
+                verdict_summary="ok" if idx in {0, 4} else "below best",
+                timestamp=f"2026-05-06T00:{idx:02d}:00+00:00",
+                family="ema",
+                hypothesis=f"hypothesis {idx}",
+                mechanism=f"mechanism {idx}",
+                job=20,
+                usage={"total": {"total_tokens": idx}},
+            )
+        )
+
+    latest = json.loads(
+        memory.list_experiment_results(tmp_path, job_id=20, order="latest", limit=3)
+    )
+    best = json.loads(memory.list_experiment_results(tmp_path, job_id=20, order="best", limit=3))
+
+    assert latest["total"] == 15
+    assert [entry["thesis_id"] for entry in latest["entries"]][:2] == [
+        "latest_new_thesis",
+        "thesis_13",
+    ]
+    assert best["entries"][0]["thesis_id"] == "best_old_thesis"
+    assert best["entries"][0]["metric"] == 9.9
+
+
+def test_get_experiment_result_returns_full_detail_for_job_scoped_thesis(tmp_path):
+    from experiment_db import ExperimentDB, ExperimentResult
+
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    db.add(
+        ExperimentResult(
+            experiment_id="exp-full",
+            thesis_id="full_result",
+            config_path="experiments/full_result/runtime_config.json",
+            runtime_config={"entry_cutoff_time": "10:00"},
+            code_commit="abc",
+            data_hash="data",
+            train_metrics={},
+            validation_metrics={"profit_factor": 2.5, "trade_count": 321},
+            trade_count=321,
+            trades_file="/tmp/trades.csv",
+            strategy_events_file="/tmp/strategy_events.parquet",
+            diagnostics_file="/tmp/diagnostics.json",
+            strategy_diagnostics={"rejection_breakdown": {"entry_cutoff": 12}},
+            accepted=True,
+            rejection_reason="",
+            verdict_status="accepted",
+            verdict_summary="beat threshold",
+            timestamp="2026-05-06T00:00:00+00:00",
+            family="ema",
+            hypothesis="full hypothesis",
+            mechanism="full mechanism",
+            job=20,
+            usage={"total": {"total_tokens": 456}},
+        )
+    )
+
+    parsed = json.loads(memory.get_experiment_result(tmp_path, "full_result", job_id=20))
+
+    assert parsed["status"] == "ok"
+    assert parsed["thesis_id"] == "full_result"
+    assert parsed["result"]["runtime_config"] == {"entry_cutoff_time": "10:00"}
+    assert parsed["result"]["metrics"]["profit_factor"] == 2.5
+    assert parsed["result"]["strategy_diagnostics"] == {"rejection_breakdown": {"entry_cutoff": 12}}
+    assert parsed["result"]["usage"] == {"total": {"total_tokens": 456}}

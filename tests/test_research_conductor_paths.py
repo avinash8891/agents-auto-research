@@ -109,7 +109,7 @@ def test_strategy_description_for_known_family_returns_real_description():
 
 
 def test_no_trades_cold_start_prompt_contains_expected_guidance(monkeypatch):
-    # Lines 87-93: trades_file="" takes the else branch with cold-start wording
+    # trades_file="" with no latest_outcome is the true cold-start branch.
     _stub_common(monkeypatch)
     monkeypatch.setattr(rc, "validate_thesis_dict", lambda t: None)
 
@@ -129,9 +129,10 @@ def test_no_trades_cold_start_prompt_contains_expected_guidance(monkeypatch):
         family_name="ema",
     )
 
-    assert "No experiments have been run yet" in captured["input"]
+    assert "LATEST EXPERIMENT OUTCOME:" in captured["input"]
+    assert "No current-job experiments have completed yet" in captured["input"]
     assert "Check memory for data facts" in captured["input"]
-    assert "propose your first thesis" in captured["input"]
+    assert "propose the first thesis" in captured["input"]
 
 
 # ── strategy_events_file + diagnostics_file evidence lines ───────────────────
@@ -377,6 +378,42 @@ def test_validation_failed_returns_conductor_error_when_validate_raises(monkeypa
 
     assert result["status"] == "conductor_error"
     assert result["error"] == "validation_failed"
+    assert result["suggested_theses"] == []
+    assert result["should_stop"] is False
+
+
+def test_multiple_final_theses_return_conductor_error(monkeypatch):
+    _stub_common(monkeypatch)
+    monkeypatch.setattr(rc, "validate_thesis_dict", lambda t: None)
+    payload = {
+        "reasoning": "grounded",
+        "suggested_theses": [
+            _THESIS,
+            {
+                **_THESIS,
+                "thesis_id": "second_thesis",
+                "dimension_novelty": "A second final thesis should not be accepted.",
+            },
+        ],
+        "should_stop": False,
+    }
+
+    def fake_run_streamed(*args, **kwargs):
+        return _FakeResult(json.dumps(payload))
+
+    monkeypatch.setattr(rc.OAIRunner, "run_streamed", fake_run_streamed)
+
+    result = rc.run_research_conductor_sync(
+        trades_file="/tmp/trades.csv",
+        experiment_results="results",
+        latest_outcome={},
+        research_round=1,
+        family_name="ema",
+    )
+
+    assert result["status"] == "conductor_error"
+    assert result["error"] == "validation_failed"
+    assert result["validation_reason"] == "expected exactly one thesis, got 2"
     assert result["suggested_theses"] == []
     assert result["should_stop"] is False
 

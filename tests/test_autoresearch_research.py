@@ -14,7 +14,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from autoresearch_research import accumulate_job_usage, notify_discord, results_to_dicts
+from autoresearch_research import (
+    _check_parsed_for_terminal,
+    accumulate_job_usage,
+    log_research_round,
+    notify_discord,
+    results_to_dicts,
+)
 from autoresearch_state import ExperimentRecord, write_state
 from experiment_db import ExperimentDB
 
@@ -126,6 +132,28 @@ def test_accumulate_job_usage_handles_missing_total_block(tmp_path: Path) -> Non
 # ── log_research_round SQLite persistence ───────────────────────
 
 
+def test_check_parsed_for_terminal_preserves_conductor_validation_reason() -> None:
+    result = _check_parsed_for_terminal(
+        {
+            "status": "conductor_error",
+            "error": "validation_failed",
+            "validation_reason": "expected exactly one thesis, got 2",
+            "suggested_theses": [],
+            "should_stop": False,
+        }
+    )
+
+    assert result == {
+        "status": "conductor_error",
+        "generated_config": None,
+        "should_stop": False,
+        "rejection_reason": (
+            "research conductor failed: validation_failed: expected exactly one thesis, got 2"
+        ),
+        "validation_reason": "expected exactly one thesis, got 2",
+    }
+
+
 def test_log_research_round_persists_required_fields_to_sqlite(tmp_path: Path) -> None:
     db = ExperimentDB(tmp_path / "experiments.db")
     state_path = tmp_path / "state.json"
@@ -169,6 +197,41 @@ def test_log_research_round_persists_explicit_hypothesis_id_without_trace_contex
     assert rows[0]["hypothesis_id"] == "hyp-123"
 
 
+def test_log_research_round_persists_full_thesis_details_to_attempt(tmp_path: Path) -> None:
+    db_path = tmp_path / "experiments.db"
+    ExperimentDB(db_path)
+    state_path = tmp_path / "state.json"
+    write_state(state_path, {"state": "running", "job": 5, "family": "ema"})
+    details = {
+        "dimension_novelty": "new opening-liquidity mechanism",
+        "evidence": ["web", "analyst"],
+        "expected_effects": [{"metric": "profit_factor", "direction": "increase"}],
+        "disqualifiers": [{"name": "trade_count_collapse", "condition": "trades < 100"}],
+        "why_not_overfit": "market microstructure mechanism",
+        "requires_code_change": True,
+        "required_diagnostics": ["margin_per_order"],
+    }
+
+    log_research_round(
+        db_path,
+        state_path,
+        round_number=4,
+        thesis_id="opening_liquidity",
+        outcome="compiled",
+        config_changes={"requires_engine_change": True},
+        hypothesis="opening liquidity imbalance",
+        mechanism="auction imbalance decay",
+        mechanism_dimension="market_microstructure",
+        thesis_details=details,
+    )
+
+    attempts = ExperimentDB(db_path).list_research_thesis_attempts(
+        job_id=5, thesis_id="opening_liquidity"
+    )
+
+    assert attempts[0]["thesis_details"] == details
+
+
 # ── results_to_dicts ────────────────────────────────────────────
 
 
@@ -188,6 +251,7 @@ def test_results_to_dicts_copies_core_fields() -> None:
             "metric": 1.42,
             "status": "keep",
             "description": "strict-native loop: ema_base",
+            "job": 0,
         }
     ]
 

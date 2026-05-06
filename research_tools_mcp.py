@@ -19,7 +19,11 @@ def _build_research_tools_mcp(
     palace_search,
     palace_status,
     root: Path,
+    current_job: int | None = None,
     list_past_theses_for_root,
+    get_past_thesis_for_root=None,
+    list_experiment_results_for_root=None,
+    get_experiment_result_for_root=None,
 ):
     """Create an in-process MCP server with research tools."""
     from mcp.server.fastmcp import FastMCP
@@ -145,14 +149,46 @@ def _build_research_tools_mcp(
         return json.dumps(info, indent=2, default=str)
 
     @mcp.tool()
-    async def list_past_theses() -> str:
-        """List ALL previously proposed theses with their outcomes.
+    async def list_past_theses(offset: int = 0, limit: int = 25) -> str:
+        """List a bounded index of previously proposed theses with outcomes.
 
-        Returns every thesis ever proposed — compiled (ran as experiment),
-        rejected by validator, halted (needs code), or failed.
-        Check this BEFORE proposing a new thesis to avoid duplicates.
+        Check this BEFORE proposing a new thesis. Use get_past_thesis for full
+        details on relevant prior thesis IDs.
         """
-        return list_past_theses_for_root(root)
+        return list_past_theses_for_root(root, job_id=current_job, offset=offset, limit=limit)
+
+    @mcp.tool()
+    async def get_past_thesis(thesis_id: str) -> str:
+        """Fetch full stored details for one prior thesis ID."""
+        if get_past_thesis_for_root is None:
+            from research_memory import get_past_thesis as _get_past_thesis_for_root
+
+            return _get_past_thesis_for_root(root, thesis_id, job_id=current_job)
+        return get_past_thesis_for_root(root, thesis_id, job_id=current_job)
+
+    @mcp.tool()
+    async def list_experiment_results(
+        order: str = "latest", offset: int = 0, limit: int = 10
+    ) -> str:
+        """List a bounded index of experiment/backtest outcomes."""
+        if list_experiment_results_for_root is None:
+            from research_memory import list_experiment_results as _list_results_for_root
+
+            return _list_results_for_root(
+                root, job_id=current_job, order=order, offset=offset, limit=limit
+            )
+        return list_experiment_results_for_root(
+            root, job_id=current_job, order=order, offset=offset, limit=limit
+        )
+
+    @mcp.tool()
+    async def get_experiment_result(thesis_id: str) -> str:
+        """Fetch full stored details for one experiment/thesis result."""
+        if get_experiment_result_for_root is None:
+            from research_memory import get_experiment_result as _get_result_for_root
+
+            return _get_result_for_root(root, thesis_id, job_id=current_job)
+        return get_experiment_result_for_root(root, thesis_id, job_id=current_job)
 
     track(
         mcp,

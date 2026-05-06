@@ -121,6 +121,37 @@ def format_result_history(results: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def format_experiment_results_summary(results: list[dict[str, Any]]) -> str:
+    """Small prompt seed; conductor tools provide full experiment history."""
+    if not results:
+        return "No experiments run yet."
+    metric_name = "metric"
+    latest = results[-1]
+    best = max(results, key=lambda r: float(r.get("metric") or 0))
+
+    def _line(label: str, result: dict[str, Any]) -> str:
+        thesis_id = result.get("thesis_id") or result.get("config") or "unknown"
+        return (
+            f"{label}: {thesis_id} | {metric_name}={result.get('metric', '?')} "
+            f"| status={result.get('status', '?')}"
+        )
+
+    kept = sum(1 for result in results if result.get("status") == "keep")
+    discarded = sum(1 for result in results if result.get("status") == "discard")
+    return "\n".join(
+        [
+            f"total_experiments={len(results)} keep={kept} discard={discarded}",
+            _line("best", best),
+            _line("latest", latest),
+            (
+                "Use list_experiment_results(order='latest') and "
+                "list_experiment_results(order='best') for details."
+            ),
+            "Call get_experiment_result(thesis_id) before relying on a specific experiment.",
+        ]
+    )
+
+
 def format_insight_brief(analysis: dict[str, Any]) -> str:
     """Compress analyst findings into compact brief for research agent."""
     if not analysis:

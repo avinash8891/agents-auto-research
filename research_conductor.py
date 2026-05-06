@@ -16,9 +16,12 @@ from agent_infra import _run_coroutine_sync
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import get_round_usage, reset_round_usage
 from autoresearch_logging import get_logger
-from research_memory import _palace_search, _palace_status
+from research_memory import _palace_status
+from research_memory import get_experiment_result as get_experiment_result_for_root
+from research_memory import get_past_thesis as get_past_thesis_for_root
+from research_memory import list_experiment_results as list_experiment_results_for_root
 from research_memory import list_past_theses as list_past_theses_for_root
-from research_memory import save_research_finding
+from research_memory import save_research_finding, search_research_findings
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,
@@ -69,13 +72,18 @@ async def run_research_conductor(
     strategy_events_file: str = "",
     diagnostics_file: str = "",
     rejection_feedback: str = "",
+    current_job: int | None = None,
 ) -> dict[str, Any] | None:
     strategy_desc = _strategy_description_for(family_name)
 
     system_prompt = _build_conductor_system_prompt(strategy_desc)
 
-    # Build user prompt with experiment results table
     outcome_lines = json.dumps(latest_outcome, indent=2) if latest_outcome else "(no results yet)"
+    base_prompt = (
+        f"Research round: {research_round}\n\n"
+        f"LATEST EXPERIMENT OUTCOME:\n{outcome_lines}\n\n"
+        f"EXPERIMENT RESULTS SUMMARY:\n{experiment_results}\n\n"
+    )
 
     if trades_file:
         evidence_lines = f"Trades file for analysis: {trades_file}"
@@ -91,20 +99,25 @@ async def run_research_conductor(
                 "\n  (Quick summary of event counts and rejection breakdown. Read this FIRST.)"
             )
         user_prompt = (
-            f"Research round: {research_round}\n\n"
-            f"LATEST EXPERIMENT OUTCOME:\n{outcome_lines}\n\n"
-            f"FULL EXPERIMENT RESULTS TABLE:\n{experiment_results}\n\n"
-            f"{evidence_lines}\n\n"
+            base_prompt + f"{evidence_lines}\n\n"
             f"Analyze the trades, check your data-fact memory, and propose your next thesis."
         )
     else:
-        user_prompt = (
-            f"Research round: {research_round}\n\n"
-            f"No experiments have been run yet. No trades file available.\n\n"
-            f"FULL EXPERIMENT RESULTS TABLE:\n{experiment_results}\n\n"
-            f"Check memory for data facts, do web research on the strategy, "
-            f"and propose your first thesis."
-        )
+        if latest_outcome:
+            no_trades_instruction = (
+                "No trades file is available for the latest/current experiment. "
+                "This is not a cold start: use the latest outcome and experiment-result "
+                "tools to understand what happened. Do not call analyze_trades this round; "
+                "use web research, past theses, experiment-result tools, memory, and source-code "
+                "reasoning to propose the next thesis only if the evidence is sufficient."
+            )
+        else:
+            no_trades_instruction = (
+                "No current-job experiments have completed yet. No trades file is available. "
+                "Check memory for data facts, do web research on the strategy, and propose "
+                "the first thesis."
+            )
+        user_prompt = base_prompt + no_trades_instruction
 
     if rejection_feedback:
         user_prompt += (
@@ -271,11 +284,9 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-            room = finding_type if finding_type else None
-            results = _palace_search(
+            results = search_research_findings(
                 query=query,
-                wing="research_findings",
-                room=room,
+                finding_type=finding_type,
                 n_results=10,
             )
             if not results:
@@ -352,22 +363,147 @@ async def run_research_conductor(
             return output
 
         @function_tool
-        async def list_past_theses() -> str:
+        async def list_past_theses(offset: int = 0, limit: int = 25) -> str:
             started = monotonic()
+            tool_input = json.dumps(
+                {"root": str(_ROOT), "job_id": current_job, "offset": offset, "limit": limit},
+                default=str,
+            )
             trace_agent_tool_call(
                 "research-conductor",
                 trace_id,
                 "list_past_theses",
-                str(_ROOT),
+                tool_input,
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-            output = list_past_theses_for_root(_ROOT)
+            output = list_past_theses_for_root(
+                _ROOT, job_id=current_job, offset=offset, limit=limit
+            )
             trace_agent_tool_result(
                 "research-conductor",
                 trace_id,
                 "list_past_theses",
                 output,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
+
+        @function_tool
+        async def get_past_thesis(thesis_id: str) -> str:
+            started = monotonic()
+            tool_input = json.dumps(
+                {"root": str(_ROOT), "job_id": current_job, "thesis_id": thesis_id},
+                default=str,
+            )
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "get_past_thesis",
+                tool_input,
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            output = get_past_thesis_for_root(_ROOT, thesis_id, job_id=current_job)
+            parsed_status = "ok"
+            error_type = ""
+            try:
+                parsed_output = json.loads(output)
+                if parsed_output.get("status") in {"error", "not_found"}:
+                    parsed_status = "error"
+                    error_type = str(
+                        parsed_output.get("error") or parsed_output.get("status") or ""
+                    )
+            except Exception:
+                parsed_status = "error"
+                error_type = "InvalidToolOutput"
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "get_past_thesis",
+                output,
+                status=parsed_status,
+                error_type=error_type,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
+
+        @function_tool
+        async def list_experiment_results(
+            order: str = "latest", offset: int = 0, limit: int = 10
+        ) -> str:
+            started = monotonic()
+            tool_input = json.dumps(
+                {
+                    "root": str(_ROOT),
+                    "job_id": current_job,
+                    "order": order,
+                    "offset": offset,
+                    "limit": limit,
+                },
+                default=str,
+            )
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "list_experiment_results",
+                tool_input,
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            output = list_experiment_results_for_root(
+                _ROOT, job_id=current_job, order=order, offset=offset, limit=limit
+            )
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "list_experiment_results",
+                output,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
+
+        @function_tool
+        async def get_experiment_result(thesis_id: str) -> str:
+            started = monotonic()
+            tool_input = json.dumps(
+                {"root": str(_ROOT), "job_id": current_job, "thesis_id": thesis_id},
+                default=str,
+            )
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "get_experiment_result",
+                tool_input,
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            output = get_experiment_result_for_root(_ROOT, thesis_id, job_id=current_job)
+            parsed_status = "ok"
+            error_type = ""
+            try:
+                parsed_output = json.loads(output)
+                if parsed_output.get("status") in {"error", "not_found"}:
+                    parsed_status = "error"
+                    error_type = str(
+                        parsed_output.get("error") or parsed_output.get("status") or ""
+                    )
+            except Exception:
+                parsed_status = "error"
+                error_type = "InvalidToolOutput"
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "get_experiment_result",
+                output,
+                status=parsed_status,
+                error_type=error_type,
                 duration_ms=int((monotonic() - started) * 1000),
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
@@ -384,6 +520,9 @@ async def run_research_conductor(
                 search_findings,
                 memory_status,
                 list_past_theses,
+                get_past_thesis,
+                list_experiment_results,
+                get_experiment_result,
             ],
             model=model,
         )
@@ -504,13 +643,27 @@ async def run_research_conductor(
             )
             session_finished = True
             return parsed
+        validation_reason = ""
+        if not isinstance(theses, list):
+            validation_reason = "suggested_theses must be a list"
+        elif len(theses) != 1:
+            validation_reason = f"expected exactly one thesis, got {len(theses)}"
+            trace(
+                "CONDUCTOR",
+                f"validate failed: {validation_reason}",
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
         if theses and isinstance(theses[0], dict):
             t = theses[0]
             candidate = dict(t)
             candidate["strategy_family"] = family_name
             try:
+                if validation_reason:
+                    raise ValueError(validation_reason)
                 validate_thesis_dict(candidate)
             except Exception as exc:
+                validation_reason = str(exc)
                 trace(
                     "CONDUCTOR",
                     f"validate failed thesis={t.get('thesis_id', 'unknown')}: {exc}",
@@ -540,6 +693,7 @@ async def run_research_conductor(
         failure = {
             "status": "conductor_error",
             "error": "validation_failed",
+            "validation_reason": validation_reason,
             "reasoning": parsed.get("reasoning", ""),
             "suggested_theses": [],
             "should_stop": False,
@@ -578,6 +732,7 @@ def run_research_conductor_sync(
     strategy_events_file: str = "",
     diagnostics_file: str = "",
     rejection_feedback: str = "",
+    current_job: int | None = None,
 ) -> dict[str, Any] | None:
     return _run_coroutine_sync(
         run_research_conductor(
@@ -589,5 +744,6 @@ def run_research_conductor_sync(
             strategy_events_file=strategy_events_file,
             diagnostics_file=diagnostics_file,
             rejection_feedback=rejection_feedback,
+            current_job=current_job,
         )
     )

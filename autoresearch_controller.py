@@ -583,6 +583,7 @@ class AutoresearchController:
         hypothesis: str = "",
         mechanism: str = "",
         mechanism_dimension: str = "",
+        thesis_details: dict[str, Any] | None = None,
         rejection_reason: str = "",
         usage: dict[str, Any] | None = None,
     ) -> None:
@@ -597,6 +598,7 @@ class AutoresearchController:
             hypothesis=hypothesis,
             mechanism=mechanism,
             mechanism_dimension=mechanism_dimension,
+            thesis_details=thesis_details,
             rejection_reason=rejection_reason,
             usage=usage,
         )

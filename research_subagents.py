@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 from time import monotonic
 
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
@@ -69,6 +70,69 @@ def _analyst_data_root_guidance() -> str:
         "Before reading market data, check config/result artifacts for data_universe and "
         "validate that the chosen path exists."
     )
+
+
+def _load_runtime_config_for_artifact(artifact_file: str) -> tuple[Path | None, dict]:
+    artifact_path = Path(artifact_file).expanduser()
+    config_hash = artifact_path.parent.name
+    if not config_hash:
+        return None, {}
+    for ancestor in artifact_path.parents:
+        candidate = ancestor / "experiments" / config_hash / "runtime_config.json"
+        if not candidate.exists():
+            continue
+        try:
+            raw = json.loads(candidate.read_text(encoding="utf-8"))
+        except Exception:
+            return candidate, {}
+        runtime = raw.get("runtime_config") if isinstance(raw, dict) else None
+        if isinstance(runtime, dict):
+            return candidate, runtime
+        return candidate, raw if isinstance(raw, dict) else {}
+    return None, {}
+
+
+def _market_data_manifest(trades_file: str) -> str:
+    config_path, runtime_config = _load_runtime_config_for_artifact(trades_file)
+    data_universe = runtime_config.get("data_universe")
+    provenance = runtime_config.get("data_provenance")
+    data_root = os.environ.get("AUTORESEARCH_DATA_ROOT")
+
+    lines = ["MARKET DATA MANIFEST:"]
+    if config_path is not None:
+        lines.append(f"- runtime_config: {config_path}")
+    else:
+        lines.append("- runtime_config: not found from artifact path")
+    lines.append(f"- data_universe: {data_universe or 'unknown'}")
+
+    universe_path = ""
+    manifest_path = ""
+    if isinstance(provenance, dict):
+        universe_path = str(provenance.get("universe_path") or "")
+        manifest_path = str(provenance.get("manifest_path") or "")
+    if not universe_path and data_root and data_universe:
+        universe_path = str(Path(data_root) / "universes" / str(data_universe))
+    if not manifest_path and universe_path:
+        manifest_path = str(Path(universe_path) / "manifest.json")
+    if universe_path:
+        lines.append(f"- universe_path: {universe_path}")
+    if manifest_path:
+        lines.append(f"- manifest_path: {manifest_path}")
+
+    if universe_path:
+        for label in ("open", "high", "low", "close", "volume"):
+            path = Path(universe_path) / f"{label}.parquet"
+            status = "exists" if path.exists() else "expected"
+            lines.append(f"- {label}: {path} ({status})")
+        lines.append(
+            "- Do NOT run recursive filesystem discovery such as glob('/root/**') "
+            "or searches for open.parquet; use the paths above."
+        )
+    else:
+        lines.append(
+            "- No exact universe path resolved. Check runtime_config/data_universe before any broad search."
+        )
+    return "\n".join(lines)
 
 
 async def _call_analyst(
@@ -194,6 +258,7 @@ async def _call_analyst(
 4. A diagnostics.json with event counts and rejection breakdown
 5. Access to RAW OHLCV DATA through the configured data root:
 {_analyst_data_root_guidance()}
+{_market_data_manifest(trades_file)}
    You can load price history to compute market context (ATR, volume, gaps, etc.).
 
 You MUST use ALL provided files. Trades alone show what happened;
@@ -404,10 +469,12 @@ Return ONLY the JSON object."""
             _accumulate_usage("web_researcher", usage, provider="openai", model=_CONDUCTOR_MODEL)
         trace(
             "CONDUCTOR",
-            (
-                "web_search codex_cli completed "
-                f"exit={metadata.get('exit_code')} output_len={metadata.get('output_len')}"
-            ),
+            "web_search codex_cli completed",
+            {
+                "exit_code": metadata.get("exit_code"),
+                "output_len": metadata.get("output_len"),
+                "usage_source": metadata.get("usage_source", ""),
+            },
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
@@ -416,7 +483,8 @@ Return ONLY the JSON object."""
             n_findings = len(parsed.get("findings", []))
             trace(
                 "CONDUCTOR",
-                f"web_search OK findings={n_findings}",
+                "web_search OK",
+                {"findings": n_findings},
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
@@ -431,7 +499,12 @@ Return ONLY the JSON object."""
             return json.dumps(parsed, indent=2)
         trace(
             "CONDUCTOR",
-            f"web_search parse failed type={type(output).__name__} len={len(output)} excerpt={output[:200]!r}",
+            "web_search parse failed",
+            {
+                "output_type": type(output).__name__,
+                "output_len": len(output),
+                "output_excerpt": output[:200],
+            },
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
@@ -442,7 +515,8 @@ Return ONLY the JSON object."""
         )
         trace(
             "CONDUCTOR",
-            f"web_search ERROR: {exc}",
+            "web_search ERROR",
+            {"error_type": exc.__class__.__name__, "error": str(exc)},
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
