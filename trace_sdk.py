@@ -598,6 +598,9 @@ def record_usage_event(
     dedupe_key: str | None = None,
     cached_input_tokens: int = 0,
     reasoning_output_tokens: int = 0,
+    estimated_input_tokens: int = 0,
+    estimated_output_tokens: int = 0,
+    estimated_total_tokens: int = 0,
     usage_source: str = "",
 ) -> None:
     """Emit a per-call token-usage trace event into trace-events.jsonl.
@@ -619,6 +622,9 @@ def record_usage_event(
                 "output_tokens": int(output_tokens or 0),
                 "reasoning_output_tokens": int(reasoning_output_tokens or 0),
                 "total_tokens": int(total_tokens or 0),
+                "estimated_input_tokens": int(estimated_input_tokens or 0),
+                "estimated_output_tokens": int(estimated_output_tokens or 0),
+                "estimated_total_tokens": int(estimated_total_tokens or 0),
                 "cost_usd": float(cost_usd or 0.0),
                 "dedupe_key": dedupe_key,
                 "usage_source": usage_source,

@@ -113,6 +113,10 @@ def accumulate_job_usage(state_path: Path, round_usage: dict[str, Any]) -> None:
         "input_tokens": 0,
         "output_tokens": 0,
         "total_tokens": 0,
+        "cached_input_tokens": 0,
+        "estimated_input_tokens": 0,
+        "estimated_output_tokens": 0,
+        "estimated_total_tokens": 0,
         "cost_usd": 0.0,
         "rounds": 0,
     }
@@ -120,6 +124,18 @@ def accumulate_job_usage(state_path: Path, round_usage: dict[str, Any]) -> None:
     job_usage["input_tokens"] += total.get("input_tokens", 0)
     job_usage["output_tokens"] += total.get("output_tokens", 0)
     job_usage["total_tokens"] += total.get("total_tokens", 0)
+    job_usage["cached_input_tokens"] = job_usage.get("cached_input_tokens", 0) + total.get(
+        "cached_input_tokens", 0
+    )
+    job_usage["estimated_input_tokens"] = job_usage.get("estimated_input_tokens", 0) + total.get(
+        "estimated_input_tokens", 0
+    )
+    job_usage["estimated_output_tokens"] = job_usage.get("estimated_output_tokens", 0) + total.get(
+        "estimated_output_tokens", 0
+    )
+    job_usage["estimated_total_tokens"] = job_usage.get("estimated_total_tokens", 0) + total.get(
+        "estimated_total_tokens", 0
+    )
     job_usage["cost_usd"] += total.get("cost_usd", 0.0)
     job_usage["rounds"] += 1
     state["job_usage"] = job_usage

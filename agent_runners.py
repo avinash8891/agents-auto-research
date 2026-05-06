@@ -11,7 +11,7 @@ from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 
 import agent_infra
 import agent_prompts
-from agent_token_usage import _accumulate_result_usage
+from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from autoresearch_constants import DEFAULT_AGENT_MODEL
 from autoresearch_logging import get_logger
 from research_paths import _OAUTH_PROXY_URL, _extract_runner_output_text
@@ -135,7 +135,9 @@ async def _run_single_agent(
                 model_provider=model_provider,
                 model_name=model_name,
             )
-            _accumulate_result_usage(name, None, provider=model_provider, model=model_name)
+            accumulate_agents_sdk_result_usage(
+                name, None, provider=model_provider, model=model_name
+            )
             error = agent_infra._structured_error(
                 name,
                 "timeout",
@@ -152,7 +154,9 @@ async def _run_single_agent(
                 model_provider=model_provider,
                 model_name=model_name,
             )
-            _accumulate_result_usage(name, None, provider=model_provider, model=model_name)
+            accumulate_agents_sdk_result_usage(
+                name, None, provider=model_provider, model=model_name
+            )
             error = agent_infra._structured_error(
                 name,
                 "transport",
@@ -164,9 +168,15 @@ async def _run_single_agent(
                 continue
             return error
 
-        _accumulate_result_usage(name, result, provider=model_provider, model=model_name)
-
         result_text = _extract_runner_output_text(result)
+        accumulate_agents_sdk_result_usage(
+            name,
+            result,
+            provider=model_provider,
+            model=model_name,
+            input_text=f"{agent_def.prompt}\n\n{prompt}",
+            output_text=result_text,
+        )
 
         parsed_result = agent_infra._parse_json_detailed(result_text)
         parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None

@@ -52,6 +52,10 @@ def test_accumulate_job_usage_initializes_state_when_absent(tmp_path: Path) -> N
                 "input_tokens": 100,
                 "output_tokens": 50,
                 "total_tokens": 150,
+                "cached_input_tokens": 25,
+                "estimated_input_tokens": 10,
+                "estimated_output_tokens": 5,
+                "estimated_total_tokens": 15,
                 "cost_usd": 0.01,
             }
         },
@@ -61,6 +65,10 @@ def test_accumulate_job_usage_initializes_state_when_absent(tmp_path: Path) -> N
     assert usage["input_tokens"] == 100
     assert usage["output_tokens"] == 50
     assert usage["total_tokens"] == 150
+    assert usage["cached_input_tokens"] == 25
+    assert usage["estimated_input_tokens"] == 10
+    assert usage["estimated_output_tokens"] == 5
+    assert usage["estimated_total_tokens"] == 15
     assert usage["cost_usd"] == 0.01
     assert usage["rounds"] == 1
 
@@ -75,6 +83,8 @@ def test_accumulate_job_usage_sums_across_rounds(tmp_path: Path) -> None:
                 "input_tokens": 100,
                 "output_tokens": 50,
                 "total_tokens": 150,
+                "cached_input_tokens": 25,
+                "estimated_total_tokens": 15,
                 "cost_usd": 0.01,
             }
         },
@@ -86,6 +96,8 @@ def test_accumulate_job_usage_sums_across_rounds(tmp_path: Path) -> None:
                 "input_tokens": 200,
                 "output_tokens": 75,
                 "total_tokens": 275,
+                "cached_input_tokens": 40,
+                "estimated_total_tokens": 30,
                 "cost_usd": 0.02,
             }
         },
@@ -94,6 +106,8 @@ def test_accumulate_job_usage_sums_across_rounds(tmp_path: Path) -> None:
     assert usage["input_tokens"] == 300
     assert usage["output_tokens"] == 125
     assert usage["total_tokens"] == 425
+    assert usage["cached_input_tokens"] == 65
+    assert usage["estimated_total_tokens"] == 45
     assert usage["cost_usd"] == 0.03
     assert usage["rounds"] == 2
 
@@ -105,6 +119,8 @@ def test_accumulate_job_usage_handles_missing_total_block(tmp_path: Path) -> Non
     usage = json.loads(state_path.read_text())["job_usage"]
     assert usage["rounds"] == 1
     assert usage["total_tokens"] == 0
+    assert usage["cached_input_tokens"] == 0
+    assert usage["estimated_total_tokens"] == 0
 
 
 # ── log_research_round SQLite persistence ───────────────────────

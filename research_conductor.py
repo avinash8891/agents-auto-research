@@ -12,7 +12,8 @@ from agents import function_tool
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 
 from agent_infra import _run_coroutine_sync
-from agent_token_usage import _accumulate_result_usage, get_round_usage, reset_round_usage
+from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
+from agent_token_usage import get_round_usage, reset_round_usage
 from autoresearch_logging import get_logger
 from research_memory import _palace_search, _palace_status
 from research_memory import list_past_theses as list_past_theses_for_root
@@ -246,7 +247,14 @@ async def run_research_conductor(
             elif final_output is not None:
                 result_text = json.dumps(final_output, default=str)
 
-        _accumulate_result_usage("conductor", result, provider="openai", model=_CONDUCTOR_MODEL)
+        accumulate_agents_sdk_result_usage(
+            "conductor",
+            result,
+            provider="openai",
+            model=_CONDUCTOR_MODEL,
+            input_text=f"{system_prompt}\n\n{user_prompt}",
+            output_text=result_text,
+        )
     except asyncio.TimeoutError:
         trace(
             "CONDUCTOR",

@@ -5,7 +5,8 @@ import json
 import subprocess
 import sys
 
-from agent_token_usage import _accumulate_result_usage, _accumulate_usage
+from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
+from agent_token_usage import _accumulate_usage
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,
@@ -185,8 +186,15 @@ Be brutally honest."""
         )
         async for _ in result.stream_events():
             pass
-        _accumulate_result_usage("analyst", result, provider="openai", model=_CONDUCTOR_MODEL)
         output = _extract_runner_output_text(result)
+        accumulate_agents_sdk_result_usage(
+            "analyst",
+            result,
+            provider="openai",
+            model=_CONDUCTOR_MODEL,
+            input_text=f"{analyst_prompt}\n\n{user_prompt}",
+            output_text=output,
+        )
         parsed = _parse_json(output)
         if parsed:
             n_anomalies = len(parsed.get("key_anomalies", []))
@@ -301,7 +309,9 @@ Return ONLY the JSON object."""
         )
         return f"WEB_SEARCH ERROR: could not parse: {output[:500]}"
     except WebResearchCliError as exc:
-        _accumulate_result_usage("web_researcher", None, provider="openai", model=_CONDUCTOR_MODEL)
+        accumulate_agents_sdk_result_usage(
+            "web_researcher", None, provider="openai", model=_CONDUCTOR_MODEL
+        )
         trace(
             "CONDUCTOR",
             f"web_search ERROR: {exc}",

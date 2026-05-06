@@ -6,7 +6,8 @@ from typing import Any
 import agent_infra
 import agent_prompts
 from agent_runners import _validate_output
-from agent_token_usage import _accumulate_result_usage, _accumulate_usage
+from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
+from agent_token_usage import _accumulate_usage
 from autoresearch_constants import DEFAULT_AGENT_MODEL as _OPENAI_AGENT_MODEL
 from autoresearch_logging import get_logger
 from trace_sdk import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
@@ -92,7 +93,9 @@ async def _run_web_research_openai(
             log.warning(
                 "web-researcher attempt=%d failed: %s: %s", attempt, exc.__class__.__name__, exc
             )
-            _accumulate_result_usage("web-researcher", None, provider=_PROVIDER, model=_MODEL)
+            accumulate_agents_sdk_result_usage(
+                "web-researcher", None, provider=_PROVIDER, model=_MODEL
+            )
             error = agent_infra._structured_error(
                 "web-researcher",
                 "transport",
@@ -201,7 +204,14 @@ async def _run_diagnostic_analyst_openai(
                 pass
 
             output = result.final_output or ""
-            _accumulate_result_usage("codex-analyst", result, provider=_PROVIDER, model=_MODEL)
+            accumulate_agents_sdk_result_usage(
+                "codex-analyst",
+                result,
+                provider=_PROVIDER,
+                model=_MODEL,
+                input_text=f"{DIAGNOSTIC_ANALYST_PROMPT}\n\n{prompt}",
+                output_text=output,
+            )
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
             _trace_response("codex-analyst", trace_id, output, parsed)
@@ -226,7 +236,9 @@ async def _run_diagnostic_analyst_openai(
             log.warning(
                 "codex-analyst attempt=%d failed: %s: %s", attempt, exc.__class__.__name__, exc
             )
-            _accumulate_result_usage("codex-analyst", None, provider=_PROVIDER, model=_MODEL)
+            accumulate_agents_sdk_result_usage(
+                "codex-analyst", None, provider=_PROVIDER, model=_MODEL
+            )
             error = agent_infra._structured_error(
                 "diagnostic-analyst",
                 "transport",

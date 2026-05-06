@@ -36,6 +36,9 @@ def _emit_trace_usage(
     dedupe_key: str | None,
     cached_input_tokens: int = 0,
     reasoning_output_tokens: int = 0,
+    estimated_input_tokens: int = 0,
+    estimated_output_tokens: int = 0,
+    estimated_total_tokens: int = 0,
     usage_source: str = "",
 ) -> None:
     """Forward per-call usage to trace_sdk's event stream. Fail-open."""
@@ -56,6 +59,9 @@ def _emit_trace_usage(
             dedupe_key=dedupe_key,
             cached_input_tokens=cached_input_tokens,
             reasoning_output_tokens=reasoning_output_tokens,
+            estimated_input_tokens=estimated_input_tokens,
+            estimated_output_tokens=estimated_output_tokens,
+            estimated_total_tokens=estimated_total_tokens,
             usage_source=usage_source,
         )
     except Exception as exc:
@@ -68,9 +74,13 @@ def _ensure_entry(agent_type: str) -> dict[str, Any]:
             "input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
+            "cached_input_tokens": 0,
             "cost_usd": 0.0,
             "calls": 0,
             "failed_calls": 0,
+            "estimated_input_tokens": 0,
+            "estimated_output_tokens": 0,
+            "estimated_total_tokens": 0,
         }
     return _ROUND_USAGE[agent_type]
 
@@ -108,6 +118,7 @@ def _accumulate_usage(
 
     in_tok = out_tok = tot_tok = 0
     cached_input_tokens = reasoning_output_tokens = 0
+    estimated_input_tokens = estimated_output_tokens = estimated_total_tokens = 0
     usage_source = ""
     if usage:
         in_tok = usage.get("input_tokens") or usage.get("input") or 0
@@ -115,10 +126,17 @@ def _accumulate_usage(
         tot_tok = usage.get("total_tokens") or usage.get("total") or 0
         cached_input_tokens = usage.get("cached_input_tokens") or 0
         reasoning_output_tokens = usage.get("reasoning_output_tokens") or 0
+        estimated_input_tokens = usage.get("estimated_input_tokens") or 0
+        estimated_output_tokens = usage.get("estimated_output_tokens") or 0
+        estimated_total_tokens = usage.get("estimated_total_tokens") or 0
         usage_source = usage.get("usage_source") or ""
         entry["input_tokens"] += in_tok
         entry["output_tokens"] += out_tok
         entry["total_tokens"] += tot_tok
+        entry["cached_input_tokens"] += cached_input_tokens
+        entry["estimated_input_tokens"] += estimated_input_tokens
+        entry["estimated_output_tokens"] += estimated_output_tokens
+        entry["estimated_total_tokens"] += estimated_total_tokens
     if cost_usd:
         entry["cost_usd"] += cost_usd
 
@@ -136,75 +154,10 @@ def _accumulate_usage(
         dedupe_key=dedupe_key,
         cached_input_tokens=int(cached_input_tokens or 0),
         reasoning_output_tokens=int(reasoning_output_tokens or 0),
+        estimated_input_tokens=int(estimated_input_tokens or 0),
+        estimated_output_tokens=int(estimated_output_tokens or 0),
+        estimated_total_tokens=int(estimated_total_tokens or 0),
         usage_source=str(usage_source or ""),
-    )
-
-
-def _accumulate_result_usage(
-    agent_type: str,
-    result: Any,
-    *,
-    dedupe_key: str | None = None,
-    provider: str | None = None,
-    model: str | None = None,
-) -> None:
-    """Accumulate usage from an SDK result object.
-
-    If the SDK result exposes raw response usage, aggregate those fields.
-    Otherwise fall back to total_cost_usd when available and still count the call.
-    """
-    if result is None:
-        _record_failed_call(agent_type, dedupe_key=dedupe_key)
-        return
-
-    total_input = 0
-    total_output = 0
-    total_total = 0
-    saw_usage = False
-    if not model:
-        model = getattr(result, "model", None) or None
-
-    raw_responses = getattr(result, "raw_responses", None) or []
-    for resp in raw_responses:
-        if not model:
-            model = getattr(resp, "model", None) or None
-        usage = getattr(resp, "usage", None) or getattr(resp, "model_usage", None)
-        if not usage:
-            continue
-        saw_usage = True
-        total_input += getattr(usage, "input_tokens", 0) or getattr(usage, "input", 0) or 0
-        total_output += getattr(usage, "output_tokens", 0) or getattr(usage, "output", 0) or 0
-        total_total += getattr(usage, "total_tokens", 0) or getattr(usage, "total", 0) or 0
-
-    if not saw_usage:
-        usage = getattr(result, "usage", None) or getattr(result, "model_usage", None)
-        if usage:
-            saw_usage = True
-            total_input += getattr(usage, "input_tokens", 0) or getattr(usage, "input", 0) or 0
-            total_output += getattr(usage, "output_tokens", 0) or getattr(usage, "output", 0) or 0
-            total_total += getattr(usage, "total_tokens", 0) or getattr(usage, "total", 0) or 0
-
-    cost_usd = getattr(result, "total_cost_usd", None)
-    if cost_usd is None and raw_responses:
-        cost_usd = sum((getattr(resp, "total_cost_usd", 0.0) or 0.0) for resp in raw_responses)
-    if cost_usd is None and not saw_usage:
-        cost_usd = 0.0
-
-    _accumulate_usage(
-        agent_type,
-        (
-            {
-                "input_tokens": total_input,
-                "output_tokens": total_output,
-                "total_tokens": total_total,
-            }
-            if saw_usage
-            else None
-        ),
-        cost_usd=cost_usd,
-        dedupe_key=dedupe_key,
-        provider=provider,
-        model=model,
     )
 
 
@@ -220,9 +173,13 @@ def get_round_usage() -> dict[str, Any]:
         "input_tokens": 0,
         "output_tokens": 0,
         "total_tokens": 0,
+        "cached_input_tokens": 0,
         "cost_usd": 0.0,
         "calls": 0,
         "failed_calls": 0,
+        "estimated_input_tokens": 0,
+        "estimated_output_tokens": 0,
+        "estimated_total_tokens": 0,
     }
     for agent_usage in _ROUND_USAGE.values():
         for k in total:

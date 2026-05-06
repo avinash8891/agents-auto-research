@@ -1,8 +1,4 @@
-"""Tests for agent_token_usage — failure calls must be distinguishable from zero-token successes.
-
-Reproduces the bug where _accumulate_result_usage(result=None) emits a zero-token
-trace event, making token_audit.py unable to distinguish timeouts from legitimate calls.
-"""
+"""Tests for token usage accounting and OpenAI Agents SDK usage extraction."""
 
 from __future__ import annotations
 
@@ -19,9 +15,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import agent_infra
+import agent_sdk_token_usage
 import agent_token_usage
+from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import (
-    _accumulate_result_usage,
     _infer_provider,
     _record_failed_call,
     get_round_usage,
@@ -45,6 +42,10 @@ def _make_result(input_tokens: int, output_tokens: int, total_tokens: int, cost_
     return SimpleNamespace(usage=usage, raw_responses=[], total_cost_usd=cost_usd)
 
 
+def test_agent_token_usage_does_not_export_sdk_result_adapter():
+    assert not hasattr(agent_token_usage, "_accumulate_result_usage")
+
+
 # ---------------------------------------------------------------------------
 # RED: reproduce the bug
 # ---------------------------------------------------------------------------
@@ -61,7 +62,9 @@ def test_failed_call_does_not_emit_trace_event():
     with patch.object(
         agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
     ):
-        _accumulate_result_usage("web-researcher", None, provider="openai", model="gpt-4o")
+        accumulate_agents_sdk_result_usage(
+            "web-researcher", None, provider="openai", model="gpt-4o"
+        )
 
     assert emitted == [], (
         "A failed call (result=None) must not emit a trace event — "
@@ -75,7 +78,7 @@ def test_failed_call_is_counted_in_failed_calls_not_calls():
     Before fix: calls counter is incremented for failures, masking actual
     successful call counts in per-agent and per-model aggregations.
     """
-    _accumulate_result_usage("web-researcher", None, provider="openai", model="gpt-4o")
+    accumulate_agents_sdk_result_usage("web-researcher", None, provider="openai", model="gpt-4o")
 
     usage = get_round_usage()
     agent = usage["by_agent"]["web-researcher"]
@@ -86,8 +89,8 @@ def test_failed_call_is_counted_in_failed_calls_not_calls():
 
 def test_failed_calls_do_not_contribute_to_total_calls():
     """Total call count in get_round_usage must exclude failed calls."""
-    _accumulate_result_usage("web-researcher", None, provider="openai", model="gpt-4o")
-    _accumulate_result_usage("codex-analyst", None, provider="openai", model="gpt-4o")
+    accumulate_agents_sdk_result_usage("web-researcher", None, provider="openai", model="gpt-4o")
+    accumulate_agents_sdk_result_usage("codex-analyst", None, provider="openai", model="gpt-4o")
 
     total = get_round_usage()["total"]
     assert total["calls"] == 0, "total calls must exclude failures"
@@ -107,12 +110,103 @@ def test_successful_call_emits_trace_event_with_real_tokens():
     with patch.object(
         agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
     ):
-        _accumulate_result_usage("web-researcher", result, provider="openai", model="gpt-4o")
+        accumulate_agents_sdk_result_usage(
+            "web-researcher", result, provider="openai", model="gpt-4o"
+        )
 
     assert len(emitted) == 1
     assert emitted[0]["input_tokens"] == 1500
     assert emitted[0]["output_tokens"] == 800
     assert emitted[0]["total_tokens"] == 2300
+
+
+def test_successful_call_records_actual_and_parallel_estimate(monkeypatch):
+    emitted = []
+    result = _make_result(input_tokens=1500, output_tokens=800, total_tokens=2300)
+    monkeypatch.setattr(
+        agent_sdk_token_usage,
+        "_count_tokens",
+        lambda text, model=None: 11 if "prompt" in text else 4,
+    )
+
+    with patch.object(
+        agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
+    ):
+        accumulate_agents_sdk_result_usage(
+            "conductor",
+            result,
+            provider="openai",
+            model="gpt-5.2",
+            input_text="prompt text",
+            output_text="json",
+        )
+
+    agent = get_round_usage()["by_agent"]["conductor"]
+    assert agent["input_tokens"] == 1500
+    assert agent["output_tokens"] == 800
+    assert agent["total_tokens"] == 2300
+    assert agent["estimated_input_tokens"] == 11
+    assert agent["estimated_output_tokens"] == 4
+    assert agent["estimated_total_tokens"] == 15
+    assert emitted[0]["usage_source"] == "sdk_reported"
+
+
+def test_successful_zero_usage_call_records_labeled_estimate(monkeypatch):
+    """OAuth Chat can return valid output with all-zero usage; do not store silent zeros."""
+    emitted = []
+    usage = SimpleNamespace(input_tokens=0, output_tokens=0, total_tokens=0)
+    result = SimpleNamespace(usage=usage, raw_responses=[], total_cost_usd=0.0)
+    monkeypatch.setattr(
+        agent_sdk_token_usage,
+        "_count_tokens",
+        lambda text, model=None: 7 if "system" in text else 3,
+    )
+
+    with patch.object(
+        agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
+    ):
+        accumulate_agents_sdk_result_usage(
+            "conductor",
+            result,
+            provider="openai",
+            model="gpt-5.2",
+            input_text="system prompt",
+            output_text="json",
+        )
+
+    agent = get_round_usage()["by_agent"]["conductor"]
+    assert agent["input_tokens"] == 0
+    assert agent["output_tokens"] == 0
+    assert agent["total_tokens"] == 0
+    assert agent["estimated_input_tokens"] == 7
+    assert agent["estimated_output_tokens"] == 3
+    assert agent["estimated_total_tokens"] == 10
+    assert emitted[0]["total_tokens"] == 0
+    assert emitted[0]["estimated_total_tokens"] == 10
+    assert emitted[0]["usage_source"] == "sdk_reported_zero_with_estimate"
+
+
+def test_missing_usage_call_records_labeled_estimate(monkeypatch):
+    emitted = []
+    result = SimpleNamespace(usage=None, raw_responses=[], total_cost_usd=0.0)
+    monkeypatch.setattr(agent_sdk_token_usage, "_count_tokens", lambda text, model=None: len(text))
+
+    with patch.object(
+        agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
+    ):
+        accumulate_agents_sdk_result_usage(
+            "analyst",
+            result,
+            provider="openai",
+            model="gpt-5.2",
+            input_text="abc",
+            output_text="de",
+        )
+
+    agent = get_round_usage()["by_agent"]["analyst"]
+    assert agent["total_tokens"] == 0
+    assert agent["estimated_total_tokens"] == 5
+    assert emitted[0]["usage_source"] == "missing_sdk_usage_with_estimate"
 
 
 def test_cli_usage_emits_cached_reasoning_and_usage_source_metadata():
@@ -142,10 +236,30 @@ def test_cli_usage_emits_cached_reasoning_and_usage_source_metadata():
     assert emitted[0]["usage_source"] == "codex_json_last_token_usage"
 
 
+def test_cached_input_tokens_are_actual_only_and_aggregated():
+    result = SimpleNamespace(
+        usage=SimpleNamespace(
+            input_tokens=100,
+            output_tokens=25,
+            total_tokens=125,
+            cached_input_tokens=40,
+        ),
+        raw_responses=[],
+        total_cost_usd=0.0,
+    )
+
+    accumulate_agents_sdk_result_usage("analyst", result, provider="openai", model="gpt-5.2")
+
+    agent = get_round_usage()["by_agent"]["analyst"]
+    assert agent["input_tokens"] == 100
+    assert agent["cached_input_tokens"] == 40
+    assert agent["estimated_total_tokens"] == 0
+
+
 def test_successful_call_increments_calls_not_failed_calls():
     """Successful calls must increment calls, not failed_calls."""
     result = _make_result(input_tokens=1200, output_tokens=600, total_tokens=1800)
-    _accumulate_result_usage("web-researcher", result, provider="openai", model="gpt-4o")
+    accumulate_agents_sdk_result_usage("web-researcher", result, provider="openai", model="gpt-4o")
 
     agent = get_round_usage()["by_agent"]["web-researcher"]
     assert agent["calls"] == 1
@@ -156,9 +270,9 @@ def test_mixed_successful_and_failed_calls_tracked_independently():
     """Successful and failed calls for the same agent must be tracked in separate counters."""
     result = _make_result(input_tokens=2000, output_tokens=1000, total_tokens=3000)
 
-    _accumulate_result_usage("web-researcher", result, provider="openai", model="gpt-4o")
-    _accumulate_result_usage("web-researcher", None, provider="openai", model="gpt-4o")
-    _accumulate_result_usage("web-researcher", result, provider="openai", model="gpt-4o")
+    accumulate_agents_sdk_result_usage("web-researcher", result, provider="openai", model="gpt-4o")
+    accumulate_agents_sdk_result_usage("web-researcher", None, provider="openai", model="gpt-4o")
+    accumulate_agents_sdk_result_usage("web-researcher", result, provider="openai", model="gpt-4o")
 
     agent = get_round_usage()["by_agent"]["web-researcher"]
     assert agent["calls"] == 2, "two successful calls"
@@ -224,9 +338,9 @@ def _make_result_with_raw_responses(chunks: list[tuple[int, int, int]]):
     return SimpleNamespace(usage=None, raw_responses=raw_responses, total_cost_usd=0.0)
 
 
-def test_accumulate_result_usage_sums_tokens_across_raw_responses():
+def test_agents_sdk_usage_sums_tokens_across_raw_responses():
     result = _make_result_with_raw_responses([(500, 200, 700), (300, 100, 400)])
-    _accumulate_result_usage("web-researcher", result, provider="openai", model="gpt-5.5")
+    accumulate_agents_sdk_result_usage("web-researcher", result, provider="openai", model="gpt-5.5")
 
     agent = get_round_usage()["by_agent"]["web-researcher"]
     assert agent["input_tokens"] == 800
@@ -235,9 +349,9 @@ def test_accumulate_result_usage_sums_tokens_across_raw_responses():
     assert agent["calls"] == 1
 
 
-def test_accumulate_result_usage_single_raw_response_matches_direct_usage():
+def test_agents_sdk_usage_single_raw_response_matches_direct_usage():
     result = _make_result_with_raw_responses([(1200, 600, 1800)])
-    _accumulate_result_usage("codex-analyst", result, provider="openai", model="gpt-5.5")
+    accumulate_agents_sdk_result_usage("codex-analyst", result, provider="openai", model="gpt-5.5")
 
     agent = get_round_usage()["by_agent"]["codex-analyst"]
     assert agent["input_tokens"] == 1200
@@ -250,12 +364,12 @@ def test_accumulate_result_usage_single_raw_response_matches_direct_usage():
 # ---------------------------------------------------------------------------
 
 
-def test_accumulate_result_usage_deduplication_prevents_double_count():
+def test_agents_sdk_usage_deduplication_prevents_double_count():
     result = _make_result(input_tokens=1000, output_tokens=500, total_tokens=1500)
-    _accumulate_result_usage(
+    accumulate_agents_sdk_result_usage(
         "web-researcher", result, provider="openai", model="gpt-5.5", dedupe_key="run-001-call-1"
     )
-    _accumulate_result_usage(
+    accumulate_agents_sdk_result_usage(
         "web-researcher", result, provider="openai", model="gpt-5.5", dedupe_key="run-001-call-1"
     )
 
@@ -264,12 +378,12 @@ def test_accumulate_result_usage_deduplication_prevents_double_count():
     assert agent["input_tokens"] == 1000, "tokens must not be doubled"
 
 
-def test_accumulate_result_usage_different_dedupe_keys_both_counted():
+def test_agents_sdk_usage_different_dedupe_keys_both_counted():
     result = _make_result(input_tokens=1000, output_tokens=500, total_tokens=1500)
-    _accumulate_result_usage(
+    accumulate_agents_sdk_result_usage(
         "web-researcher", result, provider="openai", model="gpt-5.5", dedupe_key="run-001-call-1"
     )
-    _accumulate_result_usage(
+    accumulate_agents_sdk_result_usage(
         "web-researcher", result, provider="openai", model="gpt-5.5", dedupe_key="run-001-call-2"
     )
 

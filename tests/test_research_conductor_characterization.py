@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import agent_sdk_token_usage as sdk_usage
 import agent_token_usage as usage
 import research_conductor as rc
 import research_memory as memory
@@ -234,9 +235,13 @@ def test_accumulate_usage_tracks_tokens_across_agents():
         "input_tokens": 22,
         "output_tokens": 9,
         "total_tokens": 31,
+        "cached_input_tokens": 0,
         "cost_usd": pytest.approx(0.16),
         "calls": 3,
         "failed_calls": 0,
+        "estimated_input_tokens": 0,
+        "estimated_output_tokens": 0,
+        "estimated_total_tokens": 0,
     }
     assert round_usage["by_agent"]["analyst"]["calls"] == 1
     assert round_usage["by_agent"]["web_researcher"]["total_tokens"] == 9
@@ -249,9 +254,13 @@ def test_accumulate_usage_tracks_tokens_across_agents():
             "input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
+            "cached_input_tokens": 0,
             "cost_usd": 0.0,
             "calls": 0,
             "failed_calls": 0,
+            "estimated_input_tokens": 0,
+            "estimated_output_tokens": 0,
+            "estimated_total_tokens": 0,
         },
     }
 
@@ -278,7 +287,7 @@ def test_accumulate_usage_dedupes_repeated_message_key():
     assert round_usage["by_agent"]["conductor"]["cost_usd"] == 0.25
 
 
-def test_accumulate_result_usage_uses_reported_total_cost_when_raw_usage_missing():
+def test_agents_sdk_usage_uses_reported_total_cost_when_raw_usage_missing():
     usage.reset_round_usage()
 
     result = SimpleNamespace(
@@ -286,7 +295,7 @@ def test_accumulate_result_usage_uses_reported_total_cost_when_raw_usage_missing
         total_cost_usd=0.42,
     )
 
-    usage._accumulate_result_usage("analyst", result)
+    sdk_usage.accumulate_agents_sdk_result_usage("analyst", result)
 
     round_usage = usage.get_round_usage()
     assert round_usage["by_agent"]["analyst"]["calls"] == 1

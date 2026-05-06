@@ -21,6 +21,7 @@ py-modules = [
     "agent_orchestrator_helpers",
     "agent_prompts",
     "agent_runners",
+    "agent_sdk_token_usage",
     "agent_token_usage",
     "artifact_io",
     "autoresearch_artifacts",
