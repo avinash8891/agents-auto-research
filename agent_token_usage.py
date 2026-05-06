@@ -24,6 +24,13 @@ def _infer_provider(model: str | None) -> str | None:
     return None
 
 
+def _first_present(mapping: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+    return 0
+
+
 def _emit_trace_usage(
     agent_type: str,
     *,
@@ -130,15 +137,15 @@ def _accumulate_usage(
     estimated_input_tokens = estimated_output_tokens = estimated_total_tokens = 0
     usage_source = ""
     if usage:
-        in_tok = usage.get("input_tokens") or usage.get("input") or 0
-        out_tok = usage.get("output_tokens") or usage.get("output") or 0
-        tot_tok = usage.get("total_tokens") or usage.get("total") or 0
-        cached_input_tokens = usage.get("cached_input_tokens") or 0
-        reasoning_output_tokens = usage.get("reasoning_output_tokens") or 0
-        estimated_input_tokens = usage.get("estimated_input_tokens") or 0
-        estimated_output_tokens = usage.get("estimated_output_tokens") or 0
-        estimated_total_tokens = usage.get("estimated_total_tokens") or 0
-        usage_source = usage.get("usage_source") or ""
+        in_tok = _first_present(usage, "input_tokens", "input")
+        out_tok = _first_present(usage, "output_tokens", "output")
+        tot_tok = _first_present(usage, "total_tokens", "total")
+        cached_input_tokens = _first_present(usage, "cached_input_tokens")
+        reasoning_output_tokens = _first_present(usage, "reasoning_output_tokens")
+        estimated_input_tokens = _first_present(usage, "estimated_input_tokens")
+        estimated_output_tokens = _first_present(usage, "estimated_output_tokens")
+        estimated_total_tokens = _first_present(usage, "estimated_total_tokens")
+        usage_source = _first_present(usage, "usage_source") or ""
         entry["input_tokens"] += in_tok
         entry["output_tokens"] += out_tok
         entry["total_tokens"] += tot_tok

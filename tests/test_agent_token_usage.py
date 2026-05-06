@@ -281,6 +281,28 @@ def test_cli_usage_emits_cached_reasoning_and_usage_source_metadata():
     assert emitted[0]["usage_source"] == "codex_json_last_token_usage"
 
 
+def test_accumulate_usage_preserves_explicit_zero_without_alias_fallback():
+    agent_token_usage._accumulate_usage(
+        "web-researcher",
+        {
+            "input_tokens": 0,
+            "input": 999,
+            "output_tokens": 0,
+            "output": 888,
+            "total_tokens": 0,
+            "total": 777,
+            "usage_source": "explicit_zero",
+        },
+        provider="openai",
+        model="gpt-5.2",
+    )
+
+    agent = get_round_usage()["by_agent"]["web-researcher"]
+    assert agent["input_tokens"] == 0
+    assert agent["output_tokens"] == 0
+    assert agent["total_tokens"] == 0
+
+
 def test_cached_input_tokens_are_actual_only_and_aggregated():
     result = SimpleNamespace(
         usage=SimpleNamespace(
@@ -299,6 +321,36 @@ def test_cached_input_tokens_are_actual_only_and_aggregated():
     assert agent["input_tokens"] == 100
     assert agent["cached_input_tokens"] == 40
     assert agent["estimated_total_tokens"] == 0
+
+
+def test_agents_sdk_usage_preserves_explicit_zero_without_alias_fallback():
+    result = SimpleNamespace(
+        usage=SimpleNamespace(
+            input_tokens=0,
+            input=999,
+            output_tokens=0,
+            output=888,
+            total_tokens=0,
+            total=777,
+        ),
+        raw_responses=[],
+        total_cost_usd=0.0,
+    )
+
+    accumulate_agents_sdk_result_usage(
+        "analyst",
+        result,
+        provider="openai",
+        model="gpt-5.2",
+        input_text="prompt",
+        output_text="output",
+    )
+
+    agent = get_round_usage()["by_agent"]["analyst"]
+    assert agent["input_tokens"] == 0
+    assert agent["output_tokens"] == 0
+    assert agent["total_tokens"] == 0
+    assert agent["estimated_total_tokens"] > 0
 
 
 def test_successful_call_increments_calls_not_failed_calls():

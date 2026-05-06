@@ -56,31 +56,45 @@ def _get_usage_attr(usage: Any, *names: str) -> int:
     for name in names:
         value = getattr(usage, name, None)
         if isinstance(value, dict):
-            value = value.get("cached_tokens") or value.get("cache_read_tokens")
-        if value:
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                return 0
+            value = _first_present(value, "cached_tokens", "cache_read_tokens")
+        if value is not None:
+            return _to_int(value)
     details = getattr(usage, "input_tokens_details", None) or getattr(
         usage, "inputTokenDetails", None
     )
     if isinstance(details, dict):
-        value = details.get("cached_tokens") or details.get("cacheReadTokens")
+        value = _first_present(details, "cached_tokens", "cacheReadTokens")
     else:
-        value = getattr(details, "cached_tokens", None) or getattr(details, "cacheReadTokens", None)
+        value = _first_present_attr(details, "cached_tokens", "cacheReadTokens")
+    return _to_int(value)
+
+
+def _first_present(mapping: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+    return 0
+
+
+def _first_present_attr(obj: Any, *names: str) -> Any:
+    for name in names:
+        value = getattr(obj, name, None)
+        if value is not None:
+            return value
+    return 0
+
+
+def _to_int(value: Any) -> int:
     try:
-        return int(value or 0)
+        return int(value)
     except (TypeError, ValueError):
         return 0
 
 
 def _add_usage_totals(totals: dict[str, int], usage: Any) -> None:
-    totals["input_tokens"] += getattr(usage, "input_tokens", 0) or getattr(usage, "input", 0) or 0
-    totals["output_tokens"] += (
-        getattr(usage, "output_tokens", 0) or getattr(usage, "output", 0) or 0
-    )
-    totals["total_tokens"] += getattr(usage, "total_tokens", 0) or getattr(usage, "total", 0) or 0
+    totals["input_tokens"] += _to_int(_first_present_attr(usage, "input_tokens", "input"))
+    totals["output_tokens"] += _to_int(_first_present_attr(usage, "output_tokens", "output"))
+    totals["total_tokens"] += _to_int(_first_present_attr(usage, "total_tokens", "total"))
     totals["cached_input_tokens"] += _get_usage_attr(
         usage, "cached_input_tokens", "cachedInputTokens"
     )
