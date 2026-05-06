@@ -75,7 +75,52 @@ def pending_configs(
     run_queue_dir: Path,
     results: list[ExperimentRecord],
 ) -> list[str]:
-    return queue_from_thesis_artifacts(run_queue_dir, root, results)
+    return _valid_queue_configs(root, family, run_queue_dir, results)
+
+
+def _read_runtime_config_payload(path: Path) -> Any:
+    if path.suffix in (".yaml", ".yml"):
+        return yaml.safe_load(path.read_text())
+    return json.loads(path.read_text())
+
+
+def _is_valid_queued_runtime_config(root: Path, family: StrategyFamily, config: str) -> bool:
+    """Validate queue artifacts enough to avoid replaying stale bad variants.
+
+    Full backtest scoping is still enforced by backtest.runtime_config at run
+    time. This check only rejects queue artifacts that are syntactically valid
+    JSON/YAML but violate the family runtime guardrails, such as old generated
+    EMA variants with max_trades_per_day=-1 or max_hold_bars=-72.
+    """
+    try:
+        payload = _read_runtime_config_payload(root / config)
+    except (OSError, ValueError, TypeError) as exc:
+        trace("QUEUE", f"skip unreadable queued config={config}: {type(exc).__name__}: {exc}")
+        return False
+    runtime = payload.get("runtime_config", payload) if isinstance(payload, dict) else payload
+    if not isinstance(runtime, dict):
+        return True
+    strategy = STRATEGIES.get(family.name)
+    if strategy is None:
+        return True
+    violations = strategy.validate_runtime_config(runtime)
+    if violations:
+        trace("QUEUE", f"skip invalid queued config={config}: {'; '.join(violations)}")
+        return False
+    return True
+
+
+def _valid_queue_configs(
+    root: Path,
+    family: StrategyFamily,
+    run_queue_dir: Path,
+    results: list[ExperimentRecord],
+) -> list[str]:
+    return [
+        config
+        for config in queue_from_thesis_artifacts(run_queue_dir, root, results)
+        if _is_valid_queued_runtime_config(root, family, config)
+    ]
 
 
 def thesis_statuses(
@@ -397,7 +442,7 @@ def should_terminate(
     results: list[ExperimentRecord],
     job: int | None = None,
 ) -> bool:
-    if queue_from_thesis_artifacts(run_queue_dir, root, results):
+    if _valid_queue_configs(root, family, run_queue_dir, results):
         return False
     research = read_research_artifacts(research_dir, root, job=job)
     if not research:
@@ -461,7 +506,7 @@ def _thesis_queue_branch(
     run_queue_dir: Path,
     results: list[ExperimentRecord],
 ) -> dict[str, Any] | None:
-    queue = queue_from_thesis_artifacts(run_queue_dir, root, results)
+    queue = _valid_queue_configs(root, family, run_queue_dir, results)
     if not queue:
         return None
     return _running_state(queue[0], family, source="thesis_artifact")

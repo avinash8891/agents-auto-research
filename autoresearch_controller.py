@@ -119,6 +119,20 @@ def max_consecutive_research_required() -> int:
     return value
 
 
+_RECOVERABLE_BLOCKED_RESUME_KINDS = {"command_failed", "metric_parse_failed"}
+
+
+def _blocker_kinds(state: dict[str, Any]) -> set[str]:
+    blockers = state.get("blockers")
+    if not isinstance(blockers, list):
+        return set()
+    return {
+        str(blocker.get("kind"))
+        for blocker in blockers
+        if isinstance(blocker, dict) and blocker.get("kind")
+    }
+
+
 def _is_manual_review_resume_state(state: dict[str, Any]) -> bool:
     return (
         state.get("state") == "blocked"
@@ -132,14 +146,16 @@ def _is_manual_review_resume_state(state: dict[str, Any]) -> bool:
     )
 
 
-def _is_interrupted_research_failure_state(state: dict[str, Any]) -> bool:
-    if state.get("state") != "interrupted":
-        return False
-    blockers = state.get("blockers")
-    return isinstance(blockers, list) and any(
-        isinstance(blocker, dict) and blocker.get("kind") == "research_failed"
-        for blocker in blockers
+def _is_halted_code_change_resume_state(state: dict[str, Any]) -> bool:
+    return (
+        state.get("state") == "halted"
+        and state.get("halted_reason") == "requires_code_change"
+        and bool(state.get("halted_thesis_id"))
     )
+
+
+def _is_interrupted_research_failure_state(state: dict[str, Any]) -> bool:
+    return state.get("state") == "interrupted" and "research_failed" in _blocker_kinds(state)
 
 
 def _is_blocked_research_required_resume_state(state: dict[str, Any]) -> bool:
@@ -148,10 +164,18 @@ def _is_blocked_research_required_resume_state(state: dict[str, Any]) -> bool:
     next_action = state.get("next_action")
     if not isinstance(next_action, dict) or next_action.get("type") != "research":
         return False
-    blockers = state.get("blockers")
-    return isinstance(blockers, list) and any(
-        isinstance(blocker, dict) and blocker.get("kind") == "research_required"
-        for blocker in blockers
+    return "research_required" in _blocker_kinds(state)
+
+
+def _is_blocked_failed_experiment_resume_state(state: dict[str, Any]) -> bool:
+    if state.get("state") != "blocked":
+        return False
+    next_action = state.get("next_action")
+    if not isinstance(next_action, dict) or next_action.get("type") != "blocked":
+        return False
+    reason = next_action.get("reason")
+    return bool(_RECOVERABLE_BLOCKED_RESUME_KINDS & _blocker_kinds(state)) or (
+        reason in _RECOVERABLE_BLOCKED_RESUME_KINDS
     )
 
 
@@ -200,24 +224,68 @@ def _resume_interrupted_research_state(prior_state: dict[str, Any], job: int) ->
     return state
 
 
-def _initial_state_for_controller_launch(
+def _running_resume_state(
+    prior_state: dict[str, Any],
+    job: int,
+    *,
+    preserve_resume_metadata: bool,
+    resume_previous_blocker: bool = False,
+) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "state": "running",
+        "job": job,
+        "research_round": prior_state.get("research_round", 0),
+        "job_usage": prior_state.get("job_usage"),
+        "heartbeat": dict(prior_state.get("heartbeat") or {}),
+    }
+    for key in ("current_best", "baseline_drift"):
+        if key in prior_state:
+            state[key] = prior_state[key]
+
+    if preserve_resume_metadata:
+        if prior_state.get("halted_reason") == "requires_code_change" and prior_state.get(
+            "halted_thesis_id"
+        ):
+            for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
+                if key in prior_state:
+                    state[key] = prior_state[key]
+        if prior_state.get("manual_review_theses"):
+            state["manual_review_theses"] = list(prior_state["manual_review_theses"])
+
+    if resume_previous_blocker:
+        blocker_kinds = sorted(_blocker_kinds(prior_state))
+        state["resume_previous_blocker"] = {
+            "kind": blocker_kinds[0] if blocker_kinds else prior_state.get("state", "unknown"),
+            "next_action": prior_state.get("next_action"),
+            "current_thesis": prior_state.get("current_thesis"),
+        }
+    return state
+
+
+def normalize_controller_launch_state(
     prior_state: dict[str, Any],
     *,
     resume_current_job: bool,
 ) -> tuple[dict[str, Any], int]:
-    resume_manual_review = _is_manual_review_resume_state(prior_state)
-    resume_research_failure = resume_current_job and _is_interrupted_research_failure_state(
-        prior_state
-    )
-    resume_blocked_research = resume_current_job and _is_blocked_research_required_resume_state(
-        prior_state
-    )
     job = _state_coerce_job_to_int(prior_state.get("job"))
+    resume_manual_review = _is_manual_review_resume_state(prior_state)
+    resume_halted_code_change = _is_halted_code_change_resume_state(prior_state)
+    resume_research_failure = _is_interrupted_research_failure_state(prior_state)
+    resume_blocked_research = _is_blocked_research_required_resume_state(prior_state)
+    resume_failed_experiment = _is_blocked_failed_experiment_resume_state(prior_state)
+
     if resume_current_job:
-        if not (resume_manual_review or resume_research_failure or resume_blocked_research):
+        if not (
+            resume_manual_review
+            or resume_halted_code_change
+            or resume_research_failure
+            or resume_blocked_research
+            or resume_failed_experiment
+        ):
             raise ValueError(
-                "--resume-current-job requires a recoverable manual-review, blocked "
-                "research-required, or interrupted research-failure state; "
+                "--resume-current-job requires a recoverable halted code-change, "
+                "manual-review, blocked research-required, blocked command/metric failure, "
+                "or interrupted research-failure state; "
                 f"found state={prior_state.get('state')}"
             )
         if job < 1:
@@ -227,35 +295,46 @@ def _initial_state_for_controller_launch(
         # distinguishable from earlier runs in traces and experiment rows.
         job += 1
 
-    if resume_research_failure:
+    if resume_current_job and resume_research_failure:
         return _resume_interrupted_research_state(prior_state, job), job
-    if resume_blocked_research:
+    if resume_current_job and resume_blocked_research:
         state = dict(prior_state)
         state["job"] = job
         return state, job
+    if resume_current_job and resume_failed_experiment:
+        return (
+            _running_resume_state(
+                prior_state,
+                job,
+                preserve_resume_metadata=True,
+                resume_previous_blocker=True,
+            ),
+            job,
+        )
+    if resume_current_job and (resume_halted_code_change or resume_manual_review):
+        return (
+            _running_resume_state(prior_state, job, preserve_resume_metadata=True),
+            job,
+        )
 
     # Fresh jobs start from a clean controller state. Manual-review restarts
     # preserve the pending thesis metadata and job-scoped counters so the same
     # run can continue natively on the latest code.
+    if resume_manual_review:
+        return _running_resume_state(prior_state, job, preserve_resume_metadata=True), job
     state = {
         "state": "running",
         "job": job,
-        "research_round": prior_state.get("research_round", 0) if resume_manual_review else 0,
-        "job_usage": prior_state.get("job_usage") if resume_manual_review else None,
+        "research_round": 0,
+        "job_usage": None,
         "heartbeat": {},
     }
-    # Preserve halted thesis metadata needed for requires_code_change resume
-    # flow across code deploys while still clearing ordinary next-action state.
     if prior_state.get("halted_reason") == "requires_code_change" and prior_state.get(
         "halted_thesis_id"
     ):
         for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
             if key in prior_state:
                 state[key] = prior_state[key]
-    # Preserve manual_review_theses unconditionally: resume_manual_review is
-    # also triggered by this list alone, without halted_reason being set.
-    if prior_state.get("manual_review_theses"):
-        state["manual_review_theses"] = list(prior_state["manual_review_theses"])
     return state, job
 
 
@@ -781,7 +860,7 @@ def main() -> int:
     )
     prior_state = controller.read_state()
     try:
-        state, job = _initial_state_for_controller_launch(
+        state, job = normalize_controller_launch_state(
             prior_state,
             resume_current_job=args.resume_current_job,
         )
