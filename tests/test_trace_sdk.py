@@ -114,6 +114,45 @@ def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path:
         }.issubset(event.keys())
 
 
+def test_trace_sdk_records_tool_call_and_result_sizes(monkeypatch, tmp_path: Path) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    trace_sdk.begin_hypothesis("tool-audit")
+    trace_sdk.trace_agent_tool_call(
+        "analyst",
+        "trace-001",
+        "run_python",
+        "print('hello')",
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_tool_result(
+        "analyst",
+        "trace-001",
+        "run_python",
+        "hello\n",
+        truncated=False,
+        duration_ms=12,
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+
+    events = [
+        json.loads(line)
+        for line in trace_sdk.get_event_file().read_text(encoding="utf-8").splitlines()
+    ]
+    call_event = next(event for event in events if event["action"] == "tool_call")
+    result_event = next(event for event in events if event["action"] == "tool_result")
+
+    assert call_event["payload"]["tool_input_length"] == len("print('hello')")
+    assert call_event["payload"]["tool_input_hash"]
+    assert result_event["payload"]["tool_output_length"] == len("hello\n")
+    assert result_event["payload"]["tool_output_hash"]
+    assert result_event["payload"]["duration_ms"] == 12
+    assert result_event["payload"]["truncated"] is False
+    assert result_event["model_name"] == "gpt-5.2"
+
+
 def test_trace_sdk_exporter_skips_spans_without_autoresearch_event_id(
     monkeypatch, tmp_path: Path
 ) -> None:

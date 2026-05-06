@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -761,6 +762,58 @@ def trace_agent_tool_call(
             "trace_id": trace_id,
             "tool_name": tool_name,
             "tool_input_preview": input_preview,
+            "tool_input_length": len(tool_input or ""),
+            "tool_input_hash": _short_hash(tool_input or ""),
+        },
+        model_provider=model_provider,
+        model_name=model_name,
+    )
+
+
+def _short_hash(value: str) -> str:
+    if not value:
+        return ""
+    return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
+def trace_agent_tool_result(
+    agent_name: str,
+    trace_id: str,
+    tool_name: str,
+    tool_output: str = "",
+    *,
+    status: str = "ok",
+    error_type: str = "",
+    truncated: bool = False,
+    duration_ms: int | None = None,
+    model_provider: str = "",
+    model_name: str = "",
+) -> None:
+    seq = _STATE.next_seq()
+    output_preview = tool_output[:300].replace("\n", " ") if tool_output else ""
+    duration_text = f" duration_ms={duration_ms}" if duration_ms is not None else ""
+    _log_line(
+        f"AGENT.TOOL<-{agent_name}",
+        f"{tool_name} status={status} len={len(tool_output or '')}{duration_text}",
+        None,
+        seq,
+    )
+    _record_event(
+        source_module="trace_sdk",
+        category="agent",
+        action="tool_result",
+        summary=f"{agent_name} {tool_name} result {status}",
+        payload={
+            "agent_name": agent_name,
+            "trace_id": trace_id,
+            "tool_name": tool_name,
+            "status": status,
+            "error_type": error_type,
+            "tool_output_preview": output_preview,
+            "tool_output_length": len(tool_output or ""),
+            "tool_output_hash": _short_hash(tool_output or ""),
+            "truncated": bool(truncated),
+            "duration_ms": duration_ms,
         },
         model_provider=model_provider,
         model_name=model_name,

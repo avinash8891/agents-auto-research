@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from time import monotonic
 from typing import Any
 
 from agents import Agent as OAIAgent
@@ -31,7 +32,13 @@ from research_subagents import _call_analyst, _call_web_researcher
 from strategy_family import load_family
 from thesis_validator import validate_thesis_dict
 from trace_refinement import RefinementRecorder
-from trace_sdk import trace, trace_agent_prompt, trace_agent_response
+from trace_sdk import (
+    trace,
+    trace_agent_prompt,
+    trace_agent_response,
+    trace_agent_tool_call,
+    trace_agent_tool_result,
+)
 
 log = get_logger(__name__)
 
@@ -139,18 +146,62 @@ async def run_research_conductor(
 
         @function_tool
         async def analyze_trades(focus_question: str) -> str:
-            if not trades_file:
-                return "ERROR: No trades file available for this round."
-            return await _call_analyst(
-                trades_file,
+            started = monotonic()
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "analyze_trades",
                 focus_question,
-                strategy_events_file=strategy_events_file,
-                diagnostics_file=diagnostics_file,
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
             )
+            if not trades_file:
+                output = "ERROR: No trades file available for this round."
+            else:
+                output = await _call_analyst(
+                    trades_file,
+                    focus_question,
+                    strategy_events_file=strategy_events_file,
+                    diagnostics_file=diagnostics_file,
+                )
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "analyze_trades",
+                output,
+                status="error" if output.startswith("ERROR:") else "ok",
+                error_type="NoTradesFile" if output.startswith("ERROR:") else "",
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
 
         @function_tool
         async def web_search(query: str, context: str = "") -> str:
-            return await _call_web_researcher(query, context)
+            started = monotonic()
+            tool_input = json.dumps({"query": query, "context": context}, default=str)
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "web_search",
+                tool_input,
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            output = await _call_web_researcher(query, context)
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "web_search",
+                output,
+                status="error" if output.startswith("WEB_SEARCH ERROR:") else "ok",
+                error_type="WebResearchError" if output.startswith("WEB_SEARCH ERROR:") else "",
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
 
         @function_tool
         async def save_finding(
@@ -161,6 +212,26 @@ async def run_research_conductor(
             scope: str,
             expires_if: str,
         ) -> str:
+            started = monotonic()
+            tool_input = json.dumps(
+                {
+                    "finding": finding,
+                    "finding_type": finding_type,
+                    "status": status,
+                    "evidence": evidence,
+                    "scope": scope,
+                    "expires_if": expires_if,
+                },
+                default=str,
+            )
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "save_finding",
+                tool_input,
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
             trace(
                 "CONDUCTOR",
                 f"save_finding type={finding_type} status={status} finding='{finding[:80]}'",
@@ -175,10 +246,31 @@ async def run_research_conductor(
                 scope=scope,
                 expires_if=expires_if,
             )
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "save_finding",
+                result,
+                status="error" if result.startswith("ERROR:") else "ok",
+                error_type="SaveFindingError" if result.startswith("ERROR:") else "",
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
             return result
 
         @function_tool
         async def search_findings(query: str, finding_type: str = "") -> str:
+            started = monotonic()
+            tool_input = json.dumps({"query": query, "finding_type": finding_type}, default=str)
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "search_findings",
+                tool_input,
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
             room = finding_type if finding_type else None
             results = _palace_search(
                 query=query,
@@ -187,27 +279,100 @@ async def run_research_conductor(
                 n_results=10,
             )
             if not results:
-                return "No findings found."
+                output = "No findings found."
+                trace_agent_tool_result(
+                    "research-conductor",
+                    trace_id,
+                    "search_findings",
+                    output,
+                    duration_ms=int((monotonic() - started) * 1000),
+                    model_provider="openai",
+                    model_name=_CONDUCTOR_MODEL,
+                )
+                return output
             if len(results) == 1 and "error" in results[0]:
-                return f"SEARCH ERROR: {results[0]['error']}"
+                output = f"SEARCH ERROR: {results[0]['error']}"
+                trace_agent_tool_result(
+                    "research-conductor",
+                    trace_id,
+                    "search_findings",
+                    output,
+                    status="error",
+                    error_type="PalaceSearchError",
+                    duration_ms=int((monotonic() - started) * 1000),
+                    model_provider="openai",
+                    model_name=_CONDUCTOR_MODEL,
+                )
+                return output
             lines = []
             for r in results:
                 text = r.get("text", "")[:300]
                 room_name = r.get("room", "")
                 dist = r.get("distance", "?")
                 lines.append(f"[{room_name}] (dist={dist}) {text}")
-            return "\n---\n".join(lines)
+            output = "\n---\n".join(lines)
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "search_findings",
+                output,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
 
         @function_tool
         async def memory_status() -> str:
+            started = monotonic()
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "memory_status",
+                "",
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
             info = _palace_status()
             if "error" in info:
-                return f"STATUS ERROR: {info['error']}"
-            return json.dumps(info, indent=2, default=str)
+                output = f"STATUS ERROR: {info['error']}"
+            else:
+                output = json.dumps(info, indent=2, default=str)
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "memory_status",
+                output,
+                status="error" if output.startswith("STATUS ERROR:") else "ok",
+                error_type="MemoryStatusError" if output.startswith("STATUS ERROR:") else "",
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
 
         @function_tool
         async def list_past_theses() -> str:
-            return list_past_theses_for_root(_ROOT)
+            started = monotonic()
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "list_past_theses",
+                str(_ROOT),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            output = list_past_theses_for_root(_ROOT)
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "list_past_theses",
+                output,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
 
         agent = OAIAgent(
             name="research-conductor",

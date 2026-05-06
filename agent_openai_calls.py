@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from time import monotonic
 from typing import Any
 
 import agent_infra
@@ -10,7 +11,13 @@ from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import _accumulate_usage
 from autoresearch_constants import DEFAULT_AGENT_MODEL as _OPENAI_AGENT_MODEL
 from autoresearch_logging import get_logger
-from trace_sdk import trace, trace_agent_prompt, trace_agent_response, trace_agent_tool_call
+from trace_sdk import (
+    trace,
+    trace_agent_prompt,
+    trace_agent_response,
+    trace_agent_tool_call,
+    trace_agent_tool_result,
+)
 from web_research_cli import WebResearchCliError, run_codex_web_research
 
 log = get_logger(__name__)
@@ -40,6 +47,31 @@ def _trace_response(
 def _trace_tool(agent_name: str, trace_id: str, tool_name: str, tool_input: str = "") -> None:
     trace_agent_tool_call(
         agent_name, trace_id, tool_name, tool_input, model_provider=_PROVIDER, model_name=_MODEL
+    )
+
+
+def _trace_tool_result(
+    agent_name: str,
+    trace_id: str,
+    tool_name: str,
+    tool_output: str,
+    *,
+    status: str = "ok",
+    error_type: str = "",
+    truncated: bool = False,
+    duration_ms: int | None = None,
+) -> None:
+    trace_agent_tool_result(
+        agent_name,
+        trace_id,
+        tool_name,
+        tool_output,
+        status=status,
+        error_type=error_type,
+        truncated=truncated,
+        duration_ms=duration_ms,
+        model_provider=_PROVIDER,
+        model_name=_MODEL,
     )
 
 
@@ -140,20 +172,45 @@ async def _run_diagnostic_analyst_openai(
     @function_tool
     def read_file(file_path: str) -> str:
         """Read a file from the local filesystem and return its contents."""
+        started = monotonic()
+        output = ""
+        status = "ok"
+        error_type = ""
+        truncated = False
         _trace_tool("codex-analyst", current_trace_id, "read_file", file_path)
         try:
             with open(file_path) as f:
                 content = f.read()
             if len(content) > 50000:
-                return content[:50000] + f"\n... (truncated, {len(content)} total chars)"
-            return content
+                truncated = True
+                output = content[:50000] + f"\n... (truncated, {len(content)} total chars)"
+            else:
+                output = content
         except Exception as e:
             log.warning("read_file tool failed for path=%s: %s", file_path, e)
-            return f"ERROR: {e}"
+            status = "error"
+            error_type = e.__class__.__name__
+            output = f"ERROR: {e}"
+        _trace_tool_result(
+            "codex-analyst",
+            current_trace_id,
+            "read_file",
+            output,
+            status=status,
+            error_type=error_type,
+            truncated=truncated,
+            duration_ms=int((monotonic() - started) * 1000),
+        )
+        return output
 
     @function_tool
     def run_python(code: str) -> str:
         """Execute Python code locally and return stdout + stderr."""
+        started = monotonic()
+        output = ""
+        status = "ok"
+        error_type = ""
+        truncated = False
         _trace_tool("codex-analyst", current_trace_id, "run_python", code)
         try:
             result = subprocess.run(
@@ -168,13 +225,28 @@ async def _run_diagnostic_analyst_openai(
             if result.returncode != 0:
                 output += f"\nEXIT CODE: {result.returncode}"
             if len(output) > 30000:
+                truncated = True
                 output = output[:30000] + "\n... (truncated)"
-            return output
         except subprocess.TimeoutExpired:
-            return "ERROR: Code execution timed out (60s limit)"
+            status = "error"
+            error_type = "TimeoutExpired"
+            output = "ERROR: Code execution timed out (60s limit)"
         except Exception as e:
             log.warning("run_python tool failed: %s", e)
-            return f"ERROR: {e}"
+            status = "error"
+            error_type = e.__class__.__name__
+            output = f"ERROR: {e}"
+        _trace_tool_result(
+            "codex-analyst",
+            current_trace_id,
+            "run_python",
+            output,
+            status=status,
+            error_type=error_type,
+            truncated=truncated,
+            duration_ms=int((monotonic() - started) * 1000),
+        )
+        return output
 
     client = agent_infra._get_openai_client(agent_infra._OAUTH_PROXY_URL)
     model = OpenAIChatCompletionsModel(model=_OPENAI_AGENT_MODEL, openai_client=client)

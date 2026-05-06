@@ -4,6 +4,7 @@ import asyncio
 import json
 import subprocess
 import sys
+from time import monotonic
 
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import _accumulate_usage
@@ -16,7 +17,7 @@ from research_paths import (
     _get_openai_client,
     _parse_json,
 )
-from trace_sdk import trace, trace_agent_response
+from trace_sdk import trace, trace_agent_response, trace_agent_tool_call, trace_agent_tool_result
 from web_research_cli import WebResearchCliError, run_codex_web_research
 
 
@@ -33,6 +34,7 @@ async def _call_analyst(
     from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 
     _ensure_oauth_proxy()
+    current_trace_id = f"analyst-{focus_question[:40].replace(' ', '_')}"
 
     @function_tool
     def read_file(file_path: str) -> str:
@@ -41,14 +43,44 @@ async def _call_analyst(
         Args:
             file_path: Absolute path to the file to read.
         """
+        started = monotonic()
+        output = ""
+        status = "ok"
+        error_type = ""
+        truncated = False
+        trace_agent_tool_call(
+            "analyst",
+            current_trace_id,
+            "read_file",
+            file_path,
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
         try:
             with open(file_path) as f:
                 content = f.read()
             if len(content) > 50000:
-                return content[:50000] + f"\n... (truncated, {len(content)} total chars)"
-            return content
+                truncated = True
+                output = content[:50000] + f"\n... (truncated, {len(content)} total chars)"
+            else:
+                output = content
         except Exception as e:
-            return f"ERROR: {e}"
+            status = "error"
+            error_type = e.__class__.__name__
+            output = f"ERROR: {e}"
+        trace_agent_tool_result(
+            "analyst",
+            current_trace_id,
+            "read_file",
+            output,
+            status=status,
+            error_type=error_type,
+            truncated=truncated,
+            duration_ms=int((monotonic() - started) * 1000),
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
+        return output
 
     @function_tool
     def run_python(code: str) -> str:
@@ -57,6 +89,19 @@ async def _call_analyst(
         Args:
             code: Python code to execute. Use print() for output.
         """
+        started = monotonic()
+        output = ""
+        status = "ok"
+        error_type = ""
+        truncated = False
+        trace_agent_tool_call(
+            "analyst",
+            current_trace_id,
+            "run_python",
+            code,
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
         try:
             result = subprocess.run(
                 [sys.executable, "-c", code],
@@ -70,12 +115,29 @@ async def _call_analyst(
             if result.returncode != 0:
                 output += f"\nEXIT CODE: {result.returncode}"
             if len(output) > 30000:
+                truncated = True
                 output = output[:30000] + "\n... (truncated)"
-            return output
         except subprocess.TimeoutExpired:
-            return "ERROR: Code execution timed out (60s limit)"
+            status = "error"
+            error_type = "TimeoutExpired"
+            output = "ERROR: Code execution timed out (60s limit)"
         except Exception as e:
-            return f"ERROR: {e}"
+            status = "error"
+            error_type = e.__class__.__name__
+            output = f"ERROR: {e}"
+        trace_agent_tool_result(
+            "analyst",
+            current_trace_id,
+            "run_python",
+            output,
+            status=status,
+            error_type=error_type,
+            truncated=truncated,
+            duration_ms=int((monotonic() - started) * 1000),
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
+        return output
 
     analyst_prompt = f"""You are a quantitative trading analyst. You receive:
 1. A path to a CSV file containing raw trades from a backtest
@@ -206,7 +268,7 @@ Be brutally honest."""
             )
             trace_agent_response(
                 "analyst",
-                f"analyst-{focus_question[:40].replace(' ', '_')}",
+                current_trace_id,
                 output,
                 parsed,
                 model_provider="openai",
