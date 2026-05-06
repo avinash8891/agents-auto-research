@@ -2101,6 +2101,62 @@ def test_main_resume_current_job_normalizes_command_failed_block_without_new_job
     assert "blockers" not in captured["executed_state"]
 
 
+def test_main_resume_current_job_tolerates_malformed_heartbeat(monkeypatch, tmp_path):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    captured: dict[str, dict] = {}
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.state = {
+                "state": "halted",
+                "job": 20,
+                "research_round": 21,
+                "heartbeat": "corrupt",
+                "halted_reason": "requires_code_change",
+                "halted_thesis_id": "needs-builder",
+                "halted_thesis": {"thesis_id": "needs-builder"},
+            }
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            self.state = dict(state)
+            captured["written_state"] = dict(state)
+
+        def execute_once(self):
+            captured["executed_state"] = dict(self.state)
+            self.state = {"state": "finished", "blockers": [], "finished_reason": "done"}
+            return 0
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr("trace_sdk.get_log_file", lambda: "test.log")
+    monkeypatch.setattr("trace_sdk.get_session_id", lambda: "session-1")
+    monkeypatch.setattr("trace_sdk.set_family", lambda *args, **kwargs: None)
+    monkeypatch.setattr(loop_mod, "trace", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autoresearch_controller.py", "--family", "ema", "--resume-current-job"],
+    )
+
+    assert loop_mod.main() == 0
+    assert captured["executed_state"]["heartbeat"] == {}
+
+
 def test_main_reuses_job_and_preserves_manual_review_history_when_restarting_from_manual_review(
     monkeypatch, tmp_path
 ):

@@ -133,6 +133,11 @@ def _blocker_kinds(state: dict[str, Any]) -> set[str]:
     }
 
 
+def _dict_state_field(state: dict[str, Any], key: str) -> dict[str, Any]:
+    value = state.get(key)
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _is_manual_review_resume_state(state: dict[str, Any]) -> bool:
     return (
         state.get("state") == "blocked"
@@ -236,7 +241,7 @@ def _running_resume_state(
         "job": job,
         "research_round": prior_state.get("research_round", 0),
         "job_usage": prior_state.get("job_usage"),
-        "heartbeat": dict(prior_state.get("heartbeat") or {}),
+        "heartbeat": _dict_state_field(prior_state, "heartbeat"),
     }
     for key in ("current_best", "baseline_drift"):
         if key in prior_state:
