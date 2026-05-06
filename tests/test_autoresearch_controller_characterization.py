@@ -1964,3 +1964,25 @@ def test_main_resume_current_job_rejects_non_recoverable_state(monkeypatch, tmp_
     )
 
     assert loop_mod.main() == 1
+
+
+def test_resume_interrupted_research_state_tolerates_malformed_blockers() -> None:
+    state = loop_mod._resume_interrupted_research_state(
+        {
+            "state": "interrupted",
+            "job": 20,
+            "research_round": 9,
+            "blockers": None,
+        },
+        job=20,
+    )
+
+    assert state["state"] == "blocked"
+    assert state["job"] == 20
+    assert state["research_round"] == 8
+    assert state["blockers"] == [
+        {
+            "kind": "research_required",
+            "detail": "Retrying interrupted research failure.",
+        }
+    ]

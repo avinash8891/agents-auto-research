@@ -150,7 +150,10 @@ def _resume_interrupted_research_state(prior_state: dict[str, Any], job: int) ->
         retry_from_round = 0
 
     prior_detail = ""
-    for blocker in prior_state.get("blockers", []):
+    blockers = prior_state.get("blockers")
+    if not isinstance(blockers, list):
+        blockers = []
+    for blocker in blockers:
         if isinstance(blocker, dict) and blocker.get("kind") == "research_failed":
             prior_detail = str(blocker.get("detail") or "")
             break
