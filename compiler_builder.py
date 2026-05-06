@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
 from artifact_io import timestamp_now, write_json_artifact
 from autoresearch_logging import get_logger
-from backtest.runtime_config import load_runtime_config
 from persistence_utils import write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import load_family
@@ -166,6 +167,39 @@ def _trace_builder_finish(
     )
 
 
+def _validate_generated_config_in_fresh_python(
+    *, root: Path, config_abspath: Path, family_name: str
+) -> None:
+    """Validate generated configs after builder edits using newly loaded code."""
+    pythonpath_entries = [str(root), str(Path(__file__).resolve().parent)]
+    existing_pythonpath = os.environ.get("PYTHONPATH")
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys\n"
+                "from backtest.runtime_config import load_runtime_config\n"
+                "load_runtime_config(sys.argv[1], sys.argv[2])\n"
+            ),
+            str(config_abspath),
+            family_name,
+        ],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(pythonpath_entries)},
+    )
+    if proc.returncode != 0:
+        output = "\n".join(part for part in (proc.stdout, proc.stderr) if part).strip()
+        if not output:
+            output = f"validator exited with code {proc.returncode}"
+        raise RuntimeError(output)
+
+
 def _build_builder_prompt(
     *,
     thesis_id: str,
@@ -211,6 +245,7 @@ Implement the missing primitive(s) for thesis `{thesis_id}` and write the result
 
 def _validated_generated_config_result(
     *,
+    root: Path,
     config_abspath: Path,
     config_path: str,
     family_name: str,
@@ -222,7 +257,9 @@ def _validated_generated_config_result(
     if not config_abspath.exists():
         return None
     try:
-        load_runtime_config(str(config_abspath), family_name)
+        _validate_generated_config_in_fresh_python(
+            root=root, config_abspath=config_abspath, family_name=family_name
+        )
     except Exception as exc:
         log.error("Generated config failed validation for path=%s: %s", config_path, exc)
         validation_reason = f"generated config failed validation: {exc}"
@@ -425,6 +462,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
 
     if config_abspath.exists():
         result = _validated_generated_config_result(
+            root=root,
             config_abspath=config_abspath,
             config_path=config_path,
             family_name=family_name,
@@ -462,6 +500,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         stdout, stderr = _timeout_output(exc)
         duration_seconds = time.monotonic() - started_at
         result = _validated_generated_config_result(
+            root=root,
             config_abspath=config_abspath,
             config_path=config_path,
             family_name=family_name,
@@ -491,6 +530,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     generated = config_path if config_abspath.exists() else None
     if generated:
         out = _validated_generated_config_result(
+            root=root,
             config_abspath=config_abspath,
             config_path=config_path,
             family_name=family_name,

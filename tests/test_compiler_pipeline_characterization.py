@@ -460,6 +460,8 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
                     "returncode": 0,
                 },
             )()
+        if "-c" in cmd:
+            return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
         captured["cmd"] = cmd
         captured["capture_output"] = capture_output
         captured["text"] = text
@@ -628,6 +630,8 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
     )
 
     def fake_run(cmd, *args, **kwargs):
+        if "-c" in cmd:
+            return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
         target = experiment_dir / "runtime_config.json"
         target.write_text(
             json.dumps(
@@ -680,6 +684,81 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
     assert (
         tmp_path / "ema-builder-requests" / thesis_id / "stderr.log"
     ).read_text() == "still reviewing unrelated dirty worktree"
+
+
+def test_build_missing_primitives_validates_generated_config_in_fresh_python(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    thesis_id = "builder_adds_runtime_key"
+    experiment_dir = tmp_path / "experiments" / thesis_id
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    (experiment_dir / "thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "hypothesis": "add a new implemented runtime key",
+                "mechanism": "builder changes code and validation before writing config",
+                "config_changes": {"new_builder_key": 1},
+                "requested_primitives": ["new_builder_key"],
+            }
+        )
+        + "\n"
+    )
+    (experiment_dir / "contract.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": thesis_id,
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "baseline_config_path": "configs/ema_base.yaml",
+                "runtime_config": {},
+                "status": "needs_code",
+            }
+        )
+        + "\n"
+    )
+
+    validation_calls: list[list[str]] = []
+
+    def fake_run(cmd, *args, **kwargs):
+        if cmd == ["codex", "exec", "--help"]:
+            return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
+        if cmd[:2] == ["codex", "exec"]:
+            (experiment_dir / "runtime_config.json").write_text(
+                json.dumps(
+                    {
+                        "family": "ema",
+                        "data_universe": "nasdaq8",
+                        "validation_start": "2020-01-01",
+                        "validation_end": "2020-12-31",
+                        "timeframe_long": 15,
+                        "timeframe_short": 5,
+                        "ema_length": 5,
+                        "rr_ratio": 3.0,
+                        "direction_bias": "short_only",
+                        "entry_cutoff_time": "10:00",
+                        "max_trades_per_day": 3,
+                        "new_builder_key": 1,
+                    }
+                )
+                + "\n"
+            )
+            return type("Proc", (), {"stdout": "generated", "stderr": "", "returncode": 0})()
+        if "-c" in cmd:
+            validation_calls.append(cmd)
+            return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
+        raise AssertionError(f"unexpected subprocess command: {cmd!r}")
+
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "completed"
+    assert result["generated_config"] == f"experiments/{thesis_id}/runtime_config.json"
+    assert result["validation_passed"] is True
+    assert validation_calls
 
 
 def test_builder_prompt_requires_code_consumption_proof_for_missing_primitives(
