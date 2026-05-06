@@ -648,19 +648,20 @@ async def run_research_conductor(
             validation_reason = "suggested_theses must be a list"
         elif len(theses) != 1:
             validation_reason = f"expected exactly one thesis, got {len(theses)}"
+        elif not isinstance(theses[0], dict):
+            validation_reason = "suggested_theses[0] must be an object"
+        if validation_reason:
             trace(
                 "CONDUCTOR",
                 f"validate failed: {validation_reason}",
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-        if theses and isinstance(theses[0], dict):
+        elif theses:
             t = theses[0]
             candidate = dict(t)
             candidate["strategy_family"] = family_name
             try:
-                if validation_reason:
-                    raise ValueError(validation_reason)
                 validate_thesis_dict(candidate)
             except Exception as exc:
                 validation_reason = str(exc)

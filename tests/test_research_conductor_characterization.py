@@ -177,6 +177,52 @@ def test_conductor_prompt_handles_no_trades_without_calling_it_cold_start(monkey
     assert "Do not call analyze_trades this round" in prompt
 
 
+@pytest.mark.parametrize(
+    ("suggested_theses", "validation_reason"),
+    [
+        ({"thesis_id": "not_a_list"}, "suggested_theses must be a list"),
+        (["not_an_object"], "suggested_theses[0] must be an object"),
+    ],
+)
+def test_run_research_conductor_sync_returns_error_for_malformed_suggested_theses(
+    monkeypatch,
+    suggested_theses,
+    validation_reason,
+):
+    parsed_payload = {
+        "reasoning": "malformed",
+        "suggested_theses": suggested_theses,
+        "should_stop": False,
+    }
+    monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
+
+    class _FakeResult:
+        final_output = json.dumps(parsed_payload)
+        raw_responses: list[object] = []
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+    monkeypatch.setattr(rc.OAIRunner, "run_streamed", lambda *a, **k: _FakeResult())
+
+    result = rc.run_research_conductor_sync(
+        trades_file="/tmp/trades.csv",
+        experiment_results="results",
+        latest_outcome={"profit_factor": 1.2},
+        research_round=3,
+        family_name="ema",
+    )
+
+    assert result["status"] == "conductor_error"
+    assert result["error"] == "validation_failed"
+    assert result["validation_reason"] == validation_reason
+    assert result["suggested_theses"] == []
+
+
 def test_conductor_prompt_keeps_true_cold_start_distinct(monkeypatch):
     parsed_payload = {"suggested_theses": [], "should_stop": True}
     monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
