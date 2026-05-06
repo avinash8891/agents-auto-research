@@ -415,6 +415,24 @@ def test_agents_sdk_usage_parses_dict_usage_objects():
     assert agent["cached_input_tokens"] == 40
 
 
+def test_agents_sdk_usage_parses_dict_cached_token_details():
+    result = SimpleNamespace(
+        usage={
+            "input_tokens": 100,
+            "output_tokens": 25,
+            "total_tokens": 125,
+            "input_tokens_details": {"cached_tokens": 35},
+        },
+        raw_responses=[],
+        total_cost_usd=0.0,
+    )
+
+    accumulate_agents_sdk_result_usage("analyst", result, provider="openai", model="gpt-5.2")
+
+    agent = get_round_usage()["by_agent"]["analyst"]
+    assert agent["cached_input_tokens"] == 35
+
+
 def test_successful_call_increments_calls_not_failed_calls():
     """Successful calls must increment calls, not failed_calls."""
     result = _make_result(input_tokens=1200, output_tokens=600, total_tokens=1800)

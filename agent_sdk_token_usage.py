@@ -68,20 +68,24 @@ def _estimate_usage(
 
 def _get_usage_attr(usage: Any, *names: str) -> int:
     if isinstance(usage, dict):
-        value = _first_present(usage, *names)
-        if isinstance(value, dict):
-            value = _first_present(value, "cached_tokens", "cache_read_tokens")
-        if value is not None:
-            return _to_int(value)
+        for name in names:
+            if name in usage and usage[name] is not None:
+                value = usage[name]
+                if isinstance(value, dict):
+                    value = _first_present(value, "cached_tokens", "cache_read_tokens")
+                return _to_int(value)
     for name in names:
         value = getattr(usage, name, None)
         if isinstance(value, dict):
             value = _first_present(value, "cached_tokens", "cache_read_tokens")
         if value is not None:
             return _to_int(value)
-    details = getattr(usage, "input_tokens_details", None) or getattr(
-        usage, "inputTokenDetails", None
-    )
+    if isinstance(usage, dict):
+        details = usage.get("input_tokens_details") or usage.get("inputTokenDetails")
+    else:
+        details = getattr(usage, "input_tokens_details", None) or getattr(
+            usage, "inputTokenDetails", None
+        )
     if isinstance(details, dict):
         value = _first_present(details, "cached_tokens", "cacheReadTokens")
     else:
