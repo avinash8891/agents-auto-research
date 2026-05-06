@@ -109,6 +109,61 @@ def test_pending_configs_skips_invalid_stale_generated_queue_configs(
     assert pending_configs(tmp_path, ema_family, run_queue_dir, []) == [valid_config]
 
 
+def test_pending_configs_skips_malformed_yaml_queue_configs(tmp_path: Path, ema_family) -> None:
+    run_queue_dir = tmp_path / "queue"
+    run_queue_dir.mkdir(parents=True)
+    invalid_config = "experiments/invalid/runtime_config.yaml"
+    valid_config = "experiments/valid/runtime_config.json"
+    (tmp_path / invalid_config).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / valid_config).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / invalid_config).write_text("runtime_config: [\n")
+    (tmp_path / valid_config).write_text(json.dumps({"runtime_config": {"max_trades_per_day": 2}}))
+    (run_queue_dir / "invalid.json").write_text(
+        json.dumps({"config": invalid_config, "status": "pending", "thesis_id": "invalid"})
+    )
+    (run_queue_dir / "valid.json").write_text(
+        json.dumps({"config": valid_config, "status": "pending", "thesis_id": "valid"})
+    )
+
+    assert pending_configs(tmp_path, ema_family, run_queue_dir, []) == [valid_config]
+
+
+def test_pending_configs_skips_queue_config_paths_outside_root(tmp_path: Path, ema_family) -> None:
+    run_queue_dir = tmp_path / "queue"
+    run_queue_dir.mkdir(parents=True)
+    valid_config = "experiments/valid/runtime_config.json"
+    (tmp_path / valid_config).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / valid_config).write_text(json.dumps({"runtime_config": {"max_trades_per_day": 2}}))
+    (tmp_path.parent / "outside.json").write_text(json.dumps({"runtime_config": {"ema_length": 5}}))
+    (run_queue_dir / "escape.json").write_text(
+        json.dumps({"config": "../outside.json", "status": "pending", "thesis_id": "escape"})
+    )
+    (run_queue_dir / "valid.json").write_text(
+        json.dumps({"config": valid_config, "status": "pending", "thesis_id": "valid"})
+    )
+
+    assert pending_configs(tmp_path, ema_family, run_queue_dir, []) == [valid_config]
+
+
+def test_pending_configs_skips_non_dict_runtime_payloads(tmp_path: Path, ema_family) -> None:
+    run_queue_dir = tmp_path / "queue"
+    run_queue_dir.mkdir(parents=True)
+    invalid_config = "experiments/invalid/runtime_config.json"
+    valid_config = "experiments/valid/runtime_config.json"
+    (tmp_path / invalid_config).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / valid_config).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / invalid_config).write_text(json.dumps({"runtime_config": ["not", "a", "dict"]}))
+    (tmp_path / valid_config).write_text(json.dumps({"runtime_config": {"max_trades_per_day": 2}}))
+    (run_queue_dir / "invalid.json").write_text(
+        json.dumps({"config": invalid_config, "status": "pending", "thesis_id": "invalid"})
+    )
+    (run_queue_dir / "valid.json").write_text(
+        json.dumps({"config": valid_config, "status": "pending", "thesis_id": "valid"})
+    )
+
+    assert pending_configs(tmp_path, ema_family, run_queue_dir, []) == [valid_config]
+
+
 # ── thesis_statuses overlay precedence ──────────────────────────
 
 

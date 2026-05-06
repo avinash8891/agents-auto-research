@@ -84,6 +84,18 @@ def _read_runtime_config_payload(path: Path) -> Any:
     return json.loads(path.read_text())
 
 
+def _queued_config_path(root: Path, config: str) -> Path | None:
+    raw = Path(config)
+    if raw.is_absolute():
+        return None
+    candidate = (root / raw).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        return None
+    return candidate
+
+
 def _is_valid_queued_runtime_config(root: Path, family: StrategyFamily, config: str) -> bool:
     """Validate queue artifacts enough to avoid replaying stale bad variants.
 
@@ -92,14 +104,19 @@ def _is_valid_queued_runtime_config(root: Path, family: StrategyFamily, config: 
     JSON/YAML but violate the family runtime guardrails, such as old generated
     EMA variants with max_trades_per_day=-1 or max_hold_bars=-72.
     """
+    config_path = _queued_config_path(root, config)
+    if config_path is None:
+        trace("QUEUE", f"skip queued config outside root={config}")
+        return False
     try:
-        payload = _read_runtime_config_payload(root / config)
-    except (OSError, ValueError, TypeError) as exc:
+        payload = _read_runtime_config_payload(config_path)
+    except (OSError, ValueError, TypeError, yaml.YAMLError) as exc:
         trace("QUEUE", f"skip unreadable queued config={config}: {type(exc).__name__}: {exc}")
         return False
     runtime = payload.get("runtime_config", payload) if isinstance(payload, dict) else payload
     if not isinstance(runtime, dict):
-        return True
+        trace("QUEUE", f"skip queued config with non-object runtime payload={config}")
+        return False
     strategy = STRATEGIES.get(family.name)
     if strategy is None:
         return True
