@@ -71,6 +71,58 @@ def test_config_key_overlap_still_rejects_real_overlapping_keys_with_sentinel() 
     assert "requires_engine_change" not in reason
 
 
+def test_config_key_overlap_compares_nested_engine_change_keys() -> None:
+    is_duplicate, reason = config_key_overlap(
+        {
+            "requires_engine_change": True,
+            "new_config_keys_needed": {
+                "entry_confirmation_mode": "close_beyond_break",
+                "entry_acceptance_buffer_pct": 0.0001,
+            },
+        },
+        [
+            {
+                "thesis_id": "momentum_gated_trailing_activation",
+                "config_changes": {
+                    "requires_engine_change": True,
+                    "new_config_keys_needed": {
+                        "momentum_activation_enabled": True,
+                        "trail_activation_r": 1.5,
+                    },
+                },
+            }
+        ],
+    )
+
+    assert is_duplicate is False
+    assert reason == ""
+
+
+def test_config_key_overlap_rejects_same_nested_engine_change_key() -> None:
+    is_duplicate, reason = config_key_overlap(
+        {
+            "requires_engine_change": True,
+            "new_config_keys_needed": {
+                "entry_confirmation_mode": "close_beyond_break",
+            },
+        },
+        [
+            {
+                "thesis_id": "prior_entry_confirmation",
+                "config_changes": {
+                    "requires_engine_change": True,
+                    "new_config_keys_needed": {
+                        "entry_confirmation_mode": "touch_then_close",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert is_duplicate is True
+    assert "new_config_keys_needed.entry_confirmation_mode" in reason
+
+
 def test_validate_engine_change_thesis_not_rejected_for_sentinel_overlap() -> None:
     thesis = _base_engine_change_thesis("close_confirmed_break_entry_gate", "signal_quality")
     prior = [

@@ -207,6 +207,30 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
     return prior
 
 
+def _flatten_config_change_keys(config_changes: dict[str, Any]) -> set[str]:
+    """Return comparable config key paths, including nested engine-change requests."""
+    flattened: set[str] = set()
+
+    def visit(prefix: str, value: Any) -> None:
+        if isinstance(value, dict):
+            if not value:
+                flattened.add(prefix)
+                return
+            for child_key, child_value in value.items():
+                if not isinstance(child_key, str):
+                    child_key = str(child_key)
+                child_path = f"{prefix}.{child_key}" if prefix else child_key
+                visit(child_path, child_value)
+            return
+        flattened.add(prefix)
+
+    for key, value in config_changes.items():
+        if key in CONFIG_OVERLAP_IGNORED_KEYS:
+            continue
+        visit(str(key), value)
+    return flattened
+
+
 def config_key_overlap(
     proposed: dict[str, Any],
     prior_theses: list[dict[str, Any]],
@@ -216,12 +240,12 @@ def config_key_overlap(
 
     Returns (is_duplicate, reason).
     """
-    proposed_keys = set(proposed.keys()) - CONFIG_OVERLAP_IGNORED_KEYS
+    proposed_keys = _flatten_config_change_keys(proposed)
     if not proposed_keys:
         return False, ""
 
     for prior in prior_theses:
-        prior_keys = set(prior["config_changes"].keys()) - CONFIG_OVERLAP_IGNORED_KEYS
+        prior_keys = _flatten_config_change_keys(prior["config_changes"])
         if not prior_keys:
             continue
         overlap = proposed_keys & prior_keys
