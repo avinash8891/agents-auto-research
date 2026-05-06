@@ -523,6 +523,95 @@ def test_build_missing_primitives_reports_timeout_explicitly(
     assert json.loads((attempt_dir / "result.json").read_text())["timed_out"] is True
 
 
+def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    thesis_id = "momentum_gated_trailing_activation"
+    experiment_dir = tmp_path / "experiments" / thesis_id
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    (experiment_dir / "thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "hypothesis": "gate trailing by opening momentum",
+                "mechanism": "only allow trailing in persistent opening regimes",
+                "config_changes": {"requires_engine_change": True},
+                "requested_primitives": [],
+            }
+        )
+        + "\n"
+    )
+    (experiment_dir / "contract.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": thesis_id,
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "baseline_config_path": "configs/ema_base.yaml",
+                "runtime_config": {},
+                "hypothesis": "gate trailing by opening momentum",
+                "mechanism": "only allow trailing in persistent opening regimes",
+                "status": "needs_code",
+            }
+        )
+        + "\n"
+    )
+
+    def fake_run(cmd, *args, **kwargs):
+        target = experiment_dir / "runtime_config.json"
+        target.write_text(
+            json.dumps(
+                {
+                    "family": "ema",
+                    "data_universe": "nasdaq8",
+                    "validation_start": "2020-01-01",
+                    "validation_end": "2020-12-31",
+                    "timeframe_long": 15,
+                    "timeframe_short": 5,
+                    "ema_length": 5,
+                    "rr_ratio": 3.0,
+                    "direction_bias": "short_only",
+                    "entry_cutoff_time": "10:00",
+                    "max_trades_per_day": 3,
+                    "trail_after_r": 3.0,
+                    "trail_regime_gate_enabled": True,
+                    "trail_regime_lookback_minutes": 15,
+                    "trail_regime_min_abs_return": 0.002,
+                    "allow_unbounded_research_backtest": True,
+                }
+            )
+            + "\n"
+        )
+        raise subprocess.TimeoutExpired(
+            cmd=cmd,
+            timeout=kwargs["timeout"],
+            output="generated config but kept inspecting diff",
+            stderr="still reviewing unrelated dirty worktree",
+        )
+
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr(
+        "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
+    )
+    monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "completed"
+    assert result["generated_config"] == f"experiments/{thesis_id}/runtime_config.json"
+    assert result["validation_passed"] is True
+    assert result["timed_out"] is True
+    assert "timed out after writing a valid config" in result["reason"]
+    persisted = json.loads(
+        (tmp_path / "ema-builder-requests" / thesis_id / "result.json").read_text()
+    )
+    assert persisted["status"] == "completed"
+    assert persisted["timed_out"] is True
+
+
 @pytest.mark.parametrize("family_name,thesis_id", [("ema", "ema_missing"), ("orb", "orb_missing")])
 def test_build_missing_primitives_dispatches_family_request_to_cli_boundary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, family_name: str, thesis_id: str

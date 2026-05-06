@@ -156,12 +156,50 @@ Instructions:
 2. If the change is already expressible with the existing family schema, write the config artifact at the expected path and stop.
 3. Otherwise make the smallest code change needed to support the missing primitive(s), then add or update the narrowest tests that cover the new behavior.
 4. Keep the edit scope tight. Do not refactor unrelated code.
-5. Return a concise final report with:
+5. Do not clean up, revert, or inspect unrelated dirty worktree changes.
+6. As soon as the expected config exists and any narrow validation you choose has run, stop and return the final report. Do not continue with broad diff review.
+7. Return a concise final report with:
    - whether implementation succeeded
    - files changed
    - tests run
    - generated config path
 """
+
+
+def _validated_generated_config_result(
+    *,
+    config_abspath: Path,
+    config_path: str,
+    family_name: str,
+    reason: str,
+    exit_code: int | None,
+    timed_out: bool,
+    duration_seconds: float,
+) -> dict[str, Any] | None:
+    if not config_abspath.exists():
+        return None
+    try:
+        load_runtime_config(str(config_abspath), family_name)
+    except Exception as exc:
+        log.error("Generated config failed validation for path=%s: %s", config_path, exc)
+        return {
+            "status": "error",
+            "reason": f"generated config failed validation: {exc}",
+            "generated_config": None,
+            "validation_passed": False,
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "duration_seconds": round(duration_seconds, 3),
+        }
+    return {
+        "status": "completed",
+        "reason": reason,
+        "generated_config": config_path,
+        "validation_passed": True,
+        "exit_code": exit_code,
+        "timed_out": timed_out,
+        "duration_seconds": round(duration_seconds, 3),
+    }
 
 
 def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
@@ -338,35 +376,20 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     )
 
     if config_abspath.exists():
-        try:
-            load_runtime_config(str(config_abspath), family_name)
-        except Exception as exc:
-            log.error("Generated config failed validation for thesis=%s: %s", thesis_id, exc)
-            result = {
-                "status": "error",
-                "reason": f"generated config failed validation: {exc}",
-                "generated_config": None,
-                "validation_passed": False,
-            }
-            _write_artifacts(result=result)
-            trace(
-                "BUILDER",
-                f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
-                result,
-                model_provider="codex",
-                model_name=BUILDER_CLI_MODEL,
-            )
-            return result
-        result = {
-            "status": "completed",
-            "reason": "config already exists",
-            "generated_config": config_path,
-            "validation_passed": True,
-        }
+        result = _validated_generated_config_result(
+            config_abspath=config_abspath,
+            config_path=config_path,
+            family_name=family_name,
+            reason="config already exists",
+            exit_code=None,
+            timed_out=False,
+            duration_seconds=time.monotonic() - started_at,
+        )
+        assert result is not None
         _write_artifacts(result=result)
         trace(
             "BUILDER",
-            f"finish thesis={thesis_id} status=completed model={BUILDER_CLI_MODEL}",
+            f"finish thesis={thesis_id} status={result['status']} model={BUILDER_CLI_MODEL}",
             result,
             model_provider="codex",
             model_name=BUILDER_CLI_MODEL,
@@ -402,19 +425,33 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     except subprocess.TimeoutExpired as exc:
         stdout = _coerce_subprocess_output(getattr(exc, "stdout", ""))
         stderr = _coerce_subprocess_output(getattr(exc, "stderr", ""))
-        result = {
-            "status": "error",
-            "reason": f"builder timed out after {BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}",
-            "generated_config": None,
-            "validation_passed": False,
-            "timed_out": True,
-            "exit_code": None,
-            "duration_seconds": round(time.monotonic() - started_at, 3),
-        }
+        duration_seconds = time.monotonic() - started_at
+        result = _validated_generated_config_result(
+            config_abspath=config_abspath,
+            config_path=config_path,
+            family_name=family_name,
+            reason=(
+                f"builder timed out after writing a valid config: "
+                f"{BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}"
+            ),
+            exit_code=None,
+            timed_out=True,
+            duration_seconds=duration_seconds,
+        )
+        if result is None:
+            result = {
+                "status": "error",
+                "reason": f"builder timed out after {BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}",
+                "generated_config": None,
+                "validation_passed": False,
+                "timed_out": True,
+                "exit_code": None,
+                "duration_seconds": round(duration_seconds, 3),
+            }
         _write_artifacts(result=result, stdout=stdout, stderr=stderr)
         trace(
             "BUILDER",
-            f"finish thesis={thesis_id} status=error model={BUILDER_CLI_MODEL}",
+            f"finish thesis={thesis_id} status={result['status']} model={BUILDER_CLI_MODEL}",
             result,
             model_provider="codex",
             model_name=BUILDER_CLI_MODEL,
@@ -424,19 +461,17 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
 
     generated = config_path if config_abspath.exists() else None
     if generated:
-        try:
-            load_runtime_config(str(config_abspath), family_name)
-        except Exception as exc:
-            log.error("Generated config failed validation for thesis=%s: %s", thesis_id, exc)
-            out = {
-                "status": "error",
-                "reason": f"generated config failed validation: {exc}",
-                "generated_config": None,
-                "validation_passed": False,
-                "exit_code": proc.returncode,
-                "timed_out": False,
-                "duration_seconds": round(time.monotonic() - started_at, 3),
-            }
+        out = _validated_generated_config_result(
+            config_abspath=config_abspath,
+            config_path=config_path,
+            family_name=family_name,
+            reason=proc_output,
+            exit_code=proc.returncode,
+            timed_out=False,
+            duration_seconds=time.monotonic() - started_at,
+        )
+        assert out is not None
+        if out["status"] == "error":
             _write_artifacts(result=out, stdout=proc.stdout or "", stderr=proc.stderr or "")
             trace(
                 "BUILDER",
@@ -446,15 +481,16 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 model_name=BUILDER_CLI_MODEL,
             )
             return out
-    out = {
-        "status": "completed" if generated else "error",
-        "reason": proc_output,
-        "generated_config": generated,
-        "validation_passed": bool(generated),
-        "exit_code": proc.returncode,
-        "timed_out": False,
-        "duration_seconds": round(time.monotonic() - started_at, 3),
-    }
+    else:
+        out = {
+            "status": "error",
+            "reason": proc_output,
+            "generated_config": None,
+            "validation_passed": False,
+            "exit_code": proc.returncode,
+            "timed_out": False,
+            "duration_seconds": round(time.monotonic() - started_at, 3),
+        }
     _write_artifacts(result=out, stdout=proc.stdout or "", stderr=proc.stderr or "")
     trace(
         "BUILDER",
