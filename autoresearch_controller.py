@@ -145,6 +145,9 @@ def _is_interrupted_research_failure_state(state: dict[str, Any]) -> bool:
 def _is_blocked_research_required_resume_state(state: dict[str, Any]) -> bool:
     if state.get("state") != "blocked":
         return False
+    next_action = state.get("next_action")
+    if not isinstance(next_action, dict) or next_action.get("type") != "research":
+        return False
     blockers = state.get("blockers")
     return isinstance(blockers, list) and any(
         isinstance(blocker, dict) and blocker.get("kind") == "research_required"

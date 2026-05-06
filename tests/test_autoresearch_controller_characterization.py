@@ -2032,6 +2032,50 @@ def test_main_resume_current_job_rejects_non_recoverable_state(monkeypatch, tmp_
     assert loop_mod.main() == 1
 
 
+def test_main_resume_current_job_rejects_inconsistent_blocked_research_state(monkeypatch, tmp_path):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.state = {
+                "state": "blocked",
+                "job": 20,
+                "research_round": 12,
+                "blockers": [{"kind": "research_required"}],
+                "next_action": {"type": "manual_review"},
+            }
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            raise AssertionError(f"should not rewrite inconsistent blocked state: {state}")
+
+        def execute_once(self):
+            raise AssertionError("should not execute inconsistent blocked resume")
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autoresearch_controller.py", "--family", "ema", "--resume-current-job"],
+    )
+
+    assert loop_mod.main() == 1
+
+
 def test_resume_interrupted_research_state_tolerates_malformed_blockers() -> None:
     state = loop_mod._resume_interrupted_research_state(
         {
