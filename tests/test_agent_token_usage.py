@@ -326,3 +326,27 @@ def test_ensure_oauth_token_ignores_empty_openai_named_token_file(
         assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "legacy-token"
     finally:
         os.environ.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+
+
+def test_ensure_oauth_token_falls_back_when_openai_token_file_is_unreadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _UnreadableTokenFile:
+        def exists(self) -> bool:
+            return True
+
+        def read_text(self) -> str:
+            raise OSError("permission denied")
+
+    legacy_token = tmp_path / ".claude_oauth_token"
+    legacy_token.write_text("legacy-token\n")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(agent_infra, "_OPENAI_OAUTH_TOKEN_FILE", _UnreadableTokenFile())
+    monkeypatch.setattr(agent_infra, "_LEGACY_OAUTH_TOKEN_FILE", legacy_token)
+
+    try:
+        agent_infra._ensure_oauth_token()
+
+        assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "legacy-token"
+    finally:
+        os.environ.pop("CLAUDE_CODE_OAUTH_TOKEN", None)

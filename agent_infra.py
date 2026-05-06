@@ -71,7 +71,10 @@ def _ensure_oauth_token() -> None:
     for token_file in (_OPENAI_OAUTH_TOKEN_FILE, _LEGACY_OAUTH_TOKEN_FILE):
         if not token_file.exists():
             continue
-        token = token_file.read_text().strip()
+        try:
+            token = token_file.read_text().strip()
+        except OSError:
+            continue
         if token:
             os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
             return
