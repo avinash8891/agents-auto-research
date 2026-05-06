@@ -582,6 +582,16 @@ class ExperimentDB:
             metric = record.validation_metrics.get(primary_metric_name)
             if metric is None:
                 metric = record.train_metrics.get(primary_metric_name, 0.0)
+            artifact_files = [
+                path
+                for path in (
+                    record.trades_file,
+                    record.strategy_events_file,
+                    record.diagnostics_file,
+                )
+                if path
+            ]
+            artifact_dir = str(Path(artifact_files[0]).parent) if artifact_files else ""
             results.append(
                 ExperimentRecord(
                     config=record.config_path,
@@ -589,7 +599,16 @@ class ExperimentDB:
                     status="keep" if record.accepted else "discard",
                     description=f"strict-native loop: {Path(record.config_path).stem}",
                     timestamp=record.timestamp or "1970-01-01T00:00:00+00:00",
-                    asi={"config": record.config_path, "thesis_id": record.thesis_id},
+                    asi={
+                        "config": record.config_path,
+                        "thesis_id": record.thesis_id,
+                        "artifact_dir": artifact_dir,
+                        "trade_analysis": dict(record.validation_metrics),
+                        "trades_file": record.trades_file,
+                        "strategy_events_file": record.strategy_events_file,
+                        "diagnostics_file": record.diagnostics_file,
+                        "strategy_diagnostics": record.strategy_diagnostics,
+                    },
                     job=record.job,
                 )
             )

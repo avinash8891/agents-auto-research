@@ -365,6 +365,23 @@ def _backfill_artifact_files_from_latest_dir(
     return trades_file, strategy_events_file, diagnostics_file
 
 
+def _artifact_files_from_latest_record(
+    latest: ExperimentRecord,
+    trades_file: str,
+    strategy_events_file: str,
+    diagnostics_file: str,
+) -> tuple[str, str, str]:
+    """Use canonical persisted file paths before falling back to directory scans."""
+    asi = latest.asi or {}
+    if not trades_file:
+        trades_file = str(asi.get("trades_file") or "")
+    if not strategy_events_file:
+        strategy_events_file = str(asi.get("strategy_events_file") or "")
+    if not diagnostics_file:
+        diagnostics_file = str(asi.get("diagnostics_file") or "")
+    return trades_file, strategy_events_file, diagnostics_file
+
+
 def _resolve_conductor_inputs(
     controller: "AutoresearchController",
     results: list[ExperimentRecord],
@@ -386,6 +403,10 @@ def _resolve_conductor_inputs(
     if current_job is not None:
         scoped_results = [result for result in results if result.job == current_job]
     latest = controller.latest_result(scoped_results)
+    if latest and (not trades_file or not strategy_events_file or not diagnostics_file):
+        trades_file, strategy_events_file, diagnostics_file = _artifact_files_from_latest_record(
+            latest, trades_file, strategy_events_file, diagnostics_file
+        )
     if latest and (not trades_file or not strategy_events_file or not diagnostics_file):
         trades_file, strategy_events_file, diagnostics_file = (
             _backfill_artifact_files_from_latest_dir(

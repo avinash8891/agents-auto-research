@@ -1651,6 +1651,48 @@ def test_resolve_conductor_inputs_filters_latest_and_artifacts_by_current_job(
     assert latest_outcome["trade_count"] == 20
 
 
+def test_resolve_conductor_inputs_uses_persisted_artifact_files_before_backfill(
+    controller,
+    monkeypatch,
+) -> None:
+    from autoresearch_research import _resolve_conductor_inputs
+    from autoresearch_state import ExperimentRecord
+
+    latest = ExperimentRecord(
+        config="experiments/job20-thesis/runtime_config.json",
+        metric=2.0,
+        status="discard",
+        description="strict-native loop: job20-thesis",
+        timestamp="2026-05-06T00:00:00+00:00",
+        asi={
+            "thesis_id": "job20_thesis",
+            "trade_analysis": {"trade_count": 20, "profit_factor": 2.0},
+            "trades_file": "/runs/job-20/abc/trades.csv",
+            "strategy_events_file": "/runs/job-20/abc/strategy_events.parquet",
+            "diagnostics_file": "/runs/job-20/abc/diagnostics.json",
+        },
+        job=20,
+    )
+
+    def fail_backfill(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("persisted artifact paths should avoid artifact_dir scan")
+
+    monkeypatch.setattr(research_mod, "_backfill_artifact_files_from_latest_dir", fail_backfill)
+
+    trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
+        controller,
+        [latest],
+        current_job=20,
+    )
+
+    assert trades_file == "/runs/job-20/abc/trades.csv"
+    assert strategy_events_file == "/runs/job-20/abc/strategy_events.parquet"
+    assert diagnostics_file == "/runs/job-20/abc/diagnostics.json"
+    assert latest_outcome["thesis_id"] == "job20_thesis"
+    assert latest_outcome["trade_count"] == 20
+    assert latest_outcome["profit_factor"] == 2.0
+
+
 def test_call_conductor_traces_input_boundary(monkeypatch) -> None:
     import research_conductor
     from autoresearch_research import _call_conductor
