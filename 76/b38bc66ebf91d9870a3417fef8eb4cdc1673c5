@@ -1,0 +1,25 @@
+tests/test_agent_token_usage.py
+  df23f17b640abbde 418-435
+agent_sdk_token_usage.py
+  df23f17b640abbde 71-76,83-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "76b38bc66ebf91d9870a3417fef8eb4cdc1673c5",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 30,
+      "total_deletions": 8,
+      "accepted_lines": 30,
+      "overriden_lines": 0
+    }
+  }
+}
