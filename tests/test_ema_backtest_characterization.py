@@ -311,7 +311,29 @@ def test_map_ema_config_changes_to_contract_preserves_supported_defaults_surface
     )
 
     rendered_keys = {primitive["type"] for primitive in contract}
-    assert "config_changes_passthrough" in rendered_keys
+    assert "config_changes_passthrough" not in rendered_keys
+    assert {"type": "max_hold_bars", "value": 7} in contract
+    assert {"type": "trail_after_r", "value": 1.5} in contract
+    assert {"type": "symbols", "value": ["SPY"]} in contract
+    assert {"type": "validation_start", "value": "2024-01-01"} in contract
+    assert {"type": "validation_end", "value": "2024-12-31"} in contract
+
+
+def test_map_ema_config_changes_to_contract_classifies_unknown_keys_as_missing() -> None:
+    contract = map_ema_config_changes_to_contract(
+        {
+            "vwap_side_gate_enabled": True,
+            "vwap_side_consecutive_closes_required": 2,
+        }
+    )
+
+    assert {
+        "type": "missing_primitive",
+        "key": "vwap_side_consecutive_closes_required",
+        "value": 2,
+    } in contract
+    assert {"type": "missing_primitive", "key": "vwap_side_gate_enabled", "value": True} in contract
+    assert "config_changes_passthrough" not in {primitive["type"] for primitive in contract}
 
 
 def test_compile_ema_contract_returns_ready_to_run_for_valid_contract() -> None:
@@ -570,6 +592,38 @@ def test_load_runtime_config_rejects_invalid_runtime_config(
 
     with pytest.raises(ValueError, match=f"Config validation failed.*{re.escape(expected)}"):
         load_runtime_config(str(path), family)
+
+
+def test_load_runtime_config_rejects_unknown_ema_runtime_keys(tmp_path: Path) -> None:
+    config = {
+        **_tiny_config(),
+        "vwap_side_gate_enabled": True,
+        "vwap_side_consecutive_closes_required": 2,
+    }
+    path = tmp_path / "ema.json"
+    path.write_text(json.dumps({"runtime_config": config}) + "\n")
+
+    with pytest.raises(
+        ValueError,
+        match="Config validation failed.*Unsupported EMA runtime config keys: "
+        "vwap_side_consecutive_closes_required, vwap_side_gate_enabled",
+    ):
+        load_runtime_config(str(path), "ema")
+
+
+def test_load_runtime_config_rejects_unimplemented_ema_feature_gates(tmp_path: Path) -> None:
+    config = {
+        **_tiny_config(),
+        "opening_info_intensity_gate_enabled": True,
+    }
+    path = tmp_path / "ema.json"
+    path.write_text(json.dumps({"runtime_config": config}) + "\n")
+
+    with pytest.raises(
+        ValueError,
+        match="Config validation failed.*opening_info_intensity_gate_enabled=true is not implemented",
+    ):
+        load_runtime_config(str(path), "ema")
 
 
 @pytest.mark.parametrize(

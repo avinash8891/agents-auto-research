@@ -187,7 +187,10 @@ def _build_builder_prompt(
 4. Keep the edit scope tight. Do not refactor unrelated code.
 5. Do not clean up, revert, or inspect unrelated dirty worktree changes.
 6. As soon as the expected config exists and any narrow validation you choose has run, stop and return the final report. Do not continue with broad diff review.
-7. Return a concise final report with:
+7. Do not treat runtime config validation as proof that a primitive is implemented.
+8. If a config key is not consumed by strategy runtime code, implement that code path or report failure instead of writing a no-op key.
+9. For missing primitives, add or update tests that prove the key changes strategy behavior or emitted diagnostics.
+10. Return a concise final report with:
    - whether implementation succeeded
    - files changed
    - tests run

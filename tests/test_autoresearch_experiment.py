@@ -31,7 +31,7 @@ from autoresearch_experiment import (
     sanitize_duplicate_entries,
 )
 from config_hash import _config_hash
-from experiment_db import ExperimentDB
+from experiment_db import ExperimentDB, ExperimentResult
 
 # ── parse_result_json ────────────────────────────────────────────
 
@@ -458,6 +458,76 @@ def test_build_db_record_populates_expected_runtime_fields(tmp_path: Path) -> No
     assert record.diagnostics_file == str(tmp_path / "diagnostics.json")
     assert record.strategy_diagnostics == {"exits_at_target": 1}
     assert record.parent_experiment_id == "parent-exp"
+
+
+def test_build_db_record_marks_duplicate_artifact_output_as_invalid_noop(tmp_path: Path) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def current_commit(self) -> str:
+            return "abc1234"
+
+    trades = tmp_path / "trades.csv"
+    diagnostics = tmp_path / "diagnostics.json"
+    trades.write_text("same trades\n")
+    diagnostics.write_text('{"same": true}\n')
+
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    db.add(
+        ExperimentResult(
+            experiment_id="previous",
+            thesis_id="previous",
+            config_path="experiments/previous/runtime_config.json",
+            runtime_config={"ema_length": 5},
+            code_commit="abc1234",
+            data_hash="data",
+            train_metrics={"profit_factor": 1.8813},
+            validation_metrics={"profit_factor": 1.8813},
+            trade_count=3122,
+            trades_file=str(trades),
+            strategy_events_file="",
+            diagnostics_file=str(diagnostics),
+            strategy_diagnostics={"event_counts": {"executed_trade": 8295}},
+            accepted=False,
+            rejection_reason="old result",
+            verdict_status="inconclusive",
+            verdict_summary="old result",
+            family="ema",
+            job=20,
+        )
+    )
+
+    controller = _Controller()
+    controller.experiment_db = db
+    controller.ctx.current_contract = None
+    controller.ctx.parent_experiment_id = ""
+    controller.ctx.latest_config_contents = {"ema_length": 5, "entry_cutoff_time": "10:00"}
+
+    record = _build_db_record(
+        controller,
+        config="experiments/new/runtime_config.json",
+        decision="discard",
+        details={
+            "trade_count": 3122,
+            "profit_factor": 1.8813,
+            "trades_file": str(trades),
+            "diagnostics_file": str(diagnostics),
+            "strategy_diagnostics": {"event_counts": {"executed_trade": 8295}},
+        },
+        analysis={"trade_analysis": {"verdict": {"status": "inconclusive", "summary": "old"}}},
+        fallback_experiment_id="new",
+        state={"job": 20},
+    )
+
+    assert record.accepted is False
+    assert record.verdict_status == "invalid_noop_config"
+    assert "identical trades/diagnostics as previous" in record.verdict_summary
+    assert "previous" in record.rejection_reason
 
 
 def test_build_db_record_prefers_executed_result_git_sha(tmp_path: Path) -> None:

@@ -2,11 +2,35 @@ from __future__ import annotations
 
 from typing import Any
 
+from strategies.ema.defaults import _get_ema_defaults
 from strategies.validate_utils import _is_int_value, _is_number_value
+
+_RUNTIME_METADATA_KEYS = {
+    "allow_unbounded_research_backtest",
+    "data_provenance",
+    "family",
+    "slippage_pct",
+}
+
+
+def supported_ema_runtime_keys() -> frozenset[str]:
+    return frozenset(set(_get_ema_defaults()) | _RUNTIME_METADATA_KEYS)
+
+
+def _validate_supported_keys(config: dict[str, Any]) -> list[str]:
+    unknown = sorted(set(config) - supported_ema_runtime_keys())
+    if not unknown:
+        return []
+    return [f"Unsupported EMA runtime config keys: {', '.join(unknown)}"]
 
 
 def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
     violations: list[str] = []
+    violations.extend(_validate_supported_keys(config))
+    if config.get("opening_info_intensity_gate_enabled"):
+        violations.append(
+            "opening_info_intensity_gate_enabled=true is not implemented by the EMA strategy"
+        )
     ema = config.get("ema_length")
     if ema is not None:
         if not _is_int_value(ema) or ema < 2:

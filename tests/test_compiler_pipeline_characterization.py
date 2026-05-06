@@ -55,6 +55,19 @@ def test_compile_config_thesis_does_not_publish_scope_invalid_runtime_config(
     assert result["config_path"] is None
 
 
+def test_compile_config_thesis_classifies_unknown_ema_key_as_code_change(tmp_path: Path) -> None:
+    result = compile_config_thesis(
+        "ema",
+        "ema-vwap",
+        {"vwap_side_gate_enabled": True},
+        tmp_path,
+    )
+
+    assert result["status"] == "requires_code_change"
+    assert result["invalid_keys"] == ["vwap_side_gate_enabled"]
+    assert result["config_path"] is None
+
+
 def test_validate_ema_runtime_config_rejects_negative_ema_length() -> None:
     violations = validate_ema_runtime_config({"ema_length": -5})
     assert "ema_length=-5: must be >= 2 (EMA of 1 is just price)" in violations
@@ -631,9 +644,6 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
                     "entry_cutoff_time": "10:00",
                     "max_trades_per_day": 3,
                     "trail_after_r": 3.0,
-                    "trail_regime_gate_enabled": True,
-                    "trail_regime_lookback_minutes": 15,
-                    "trail_regime_min_abs_return": 0.002,
                     "allow_unbounded_research_backtest": True,
                 }
             )
@@ -670,6 +680,27 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
     assert (
         tmp_path / "ema-builder-requests" / thesis_id / "stderr.log"
     ).read_text() == "still reviewing unrelated dirty worktree"
+
+
+def test_builder_prompt_requires_code_consumption_proof_for_missing_primitives(
+    tmp_path: Path,
+) -> None:
+    prompt = compiler_builder._build_builder_prompt(
+        thesis_id="vwap_gate",
+        root=tmp_path,
+        proposal_path=tmp_path / "experiments" / "vwap_gate" / "thesis.json",
+        compilation_path=tmp_path / "experiments" / "vwap_gate" / "contract.json",
+        config_path="experiments/vwap_gate/runtime_config.json",
+        family_name="ema",
+        missing_primitives=["vwap_side_gate_enabled"],
+        prompt_extras=[],
+    )
+
+    assert (
+        "Do not treat runtime config validation as proof that a primitive is implemented" in prompt
+    )
+    assert "If a config key is not consumed by strategy runtime code" in prompt
+    assert "add or update tests that prove the key changes strategy behavior" in prompt
 
 
 def test_build_missing_primitives_reports_timeout_when_generated_config_is_invalid(
@@ -774,7 +805,10 @@ root = pathlib.Path(re.search(r"- Repo root: (.+)", prompt).group(1))
 config = re.search(r"- Expected config path: (.+)", prompt).group(1)
 target = root / config
 target.parent.mkdir(parents=True, exist_ok=True)
-target.write_text("data_universe: nasdaq8\\nbuilder_probe: true\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
+if "ema" in config:
+    target.write_text("data_universe: nasdaq8\\nema_length: 5\\ntimeframe_short: 5\\ntimeframe_long: 15\\nrr_ratio: 3.0\\ndirection_bias: short_only\\nentry_cutoff_time: '10:00'\\nmax_trades_per_day: 3\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
+else:
+    target.write_text("data_universe: nasdaq8\\nbuilder_probe: true\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
 print(f"generated {config}")
 """)
     codex.chmod(0o755)
@@ -785,7 +819,10 @@ print(f"generated {config}")
     assert result["status"] == "completed"
     assert result["generated_config"] == f"configs/variants/{thesis_id}.yaml"
     written = (tmp_path / result["generated_config"]).read_text()
-    assert "builder_probe: true" in written
+    if family_name == "ema":
+        assert "ema_length: 5" in written
+    else:
+        assert "builder_probe: true" in written
     request = json.loads(
         (tmp_path / family.builder_requests_dirname / f"{thesis_id}.json").read_text()
     )

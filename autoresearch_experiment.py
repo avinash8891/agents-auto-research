@@ -8,6 +8,7 @@ ExperimentDB.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shlex
@@ -525,6 +526,19 @@ def _build_db_record(
             if decision == "keep"
             else "rejected by primary metric comparison"
         )
+    duplicate = _find_duplicate_artifact_output(
+        controller,
+        runtime_config=runtime_config,
+        details=details,
+        state=state,
+    )
+    if duplicate is not None:
+        decision = "discard"
+        verdict_status = "invalid_noop_config"
+        verdict_summary = (
+            "invalid_noop_config: identical trades/diagnostics as previous "
+            f"experiment {duplicate.experiment_id} despite different runtime_config"
+        )
     code_commit = _executed_code_commit(controller, details)
     record = ExperimentResult(
         experiment_id=contract.experiment_id if contract else fallback_experiment_id,
@@ -553,6 +567,48 @@ def _build_db_record(
         usage=state.get("_last_round_usage", {}),
     )
     return record
+
+
+def _sha256_file(path_value: Any) -> str:
+    if not isinstance(path_value, str) or not path_value:
+        return ""
+    path = Path(path_value)
+    if not path.exists() or not path.is_file():
+        return ""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _find_duplicate_artifact_output(
+    controller: "AutoresearchController",
+    *,
+    runtime_config: dict[str, Any],
+    details: dict[str, Any],
+    state: dict[str, Any],
+) -> ExperimentResult | None:
+    experiment_db = getattr(controller, "experiment_db", None)
+    if experiment_db is None or not hasattr(experiment_db, "all"):
+        return None
+    trades_hash = _sha256_file(details.get("trades_file"))
+    diagnostics_hash = _sha256_file(details.get("diagnostics_file"))
+    if not trades_hash or not diagnostics_hash:
+        return None
+    try:
+        current_job = int(state.get("job", 0) or 0)
+    except (TypeError, ValueError):
+        current_job = 0
+    for previous in reversed(experiment_db.all()):
+        if previous.family and previous.family != controller.family.name:
+            continue
+        if current_job and previous.job and previous.job != current_job:
+            continue
+        if previous.runtime_config == runtime_config:
+            continue
+        if _sha256_file(previous.trades_file) != trades_hash:
+            continue
+        if _sha256_file(previous.diagnostics_file) != diagnostics_hash:
+            continue
+        return previous
+    return None
 
 
 def _executed_code_commit(controller: "AutoresearchController", details: dict[str, Any]) -> str:
