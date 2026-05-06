@@ -32,6 +32,14 @@ ANALYST_READ_FILE_MAX_CHARS = 12_000
 ANALYST_RUN_PYTHON_MAX_CHARS = 12_000
 
 
+def _resolve_tool_max_chars(value: object, *, default: int) -> int:
+    try:
+        parsed = int(value or default)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1_000, min(parsed, 20_000))
+
+
 def _compact_tool_output(text: str, *, max_chars: int) -> tuple[str, bool]:
     if len(text) <= max_chars:
         return text, False
@@ -91,7 +99,7 @@ async def _call_analyst(
         status = "ok"
         error_type = ""
         truncated = False
-        max_chars = max(1_000, min(int(max_chars or ANALYST_READ_FILE_MAX_CHARS), 20_000))
+        max_chars = _resolve_tool_max_chars(max_chars, default=ANALYST_READ_FILE_MAX_CHARS)
         trace_agent_tool_call(
             "analyst",
             current_trace_id,

@@ -595,6 +595,13 @@ def test_compact_tool_output_truncates_large_text_with_hash():
     assert "sha256=" in compact
 
 
+def test_resolve_tool_max_chars_falls_back_for_bad_llm_tool_arg():
+    assert subagents._resolve_tool_max_chars("not-a-number", default=12_000) == 12_000
+    assert subagents._resolve_tool_max_chars(None, default=12_000) == 12_000
+    assert subagents._resolve_tool_max_chars(999_999, default=12_000) == 20_000
+    assert subagents._resolve_tool_max_chars(10, default=12_000) == 1_000
+
+
 def test_extract_runner_output_text_uses_raw_response_output_text(monkeypatch):
     import research_paths
 
