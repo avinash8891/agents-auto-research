@@ -575,7 +575,10 @@ def _sha256_file(path_value: Any) -> str:
     path = Path(path_value)
     if not path.exists() or not path.is_file():
         return ""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return ""
 
 
 def _find_duplicate_artifact_output(
@@ -602,6 +605,10 @@ def _find_duplicate_artifact_output(
         if current_job and previous.job and previous.job != current_job:
             continue
         if previous.runtime_config == runtime_config:
+            continue
+        if previous.trade_count != int(details.get("trade_count", 0) or 0):
+            continue
+        if previous.strategy_diagnostics != details.get("strategy_diagnostics", {}):
             continue
         if _sha256_file(previous.trades_file) != trades_hash:
             continue

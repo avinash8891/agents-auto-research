@@ -21,6 +21,8 @@ from autoresearch_experiment import (
     _build_db_record,
     _compute_run_output_dir,
     _evaluate_against_thesis,
+    _find_duplicate_artifact_output,
+    _sha256_file,
     artifact_dir_for,
     evaluate_metric,
     parse_benchmark_details,
@@ -528,6 +530,87 @@ def test_build_db_record_marks_duplicate_artifact_output_as_invalid_noop(tmp_pat
     assert record.verdict_status == "invalid_noop_config"
     assert "identical trades/diagnostics as previous" in record.verdict_summary
     assert "previous" in record.rejection_reason
+
+
+def test_sha256_file_returns_empty_for_artifact_read_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact = tmp_path / "trades.csv"
+    artifact.write_text("content\n")
+
+    def raise_oserror(self: Path) -> bytes:
+        raise OSError("artifact disappeared")
+
+    monkeypatch.setattr(Path, "read_bytes", raise_oserror)
+
+    assert _sha256_file(str(artifact)) == ""
+
+
+def test_duplicate_artifact_detection_filters_metadata_before_hashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+
+    previous_trades = tmp_path / "previous_trades.csv"
+    previous_diagnostics = tmp_path / "previous_diagnostics.json"
+    current_trades = tmp_path / "current_trades.csv"
+    current_diagnostics = tmp_path / "current_diagnostics.json"
+    for path in (previous_trades, previous_diagnostics, current_trades, current_diagnostics):
+        path.write_text(path.name)
+
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    db.add(
+        ExperimentResult(
+            experiment_id="different-shape",
+            thesis_id="different-shape",
+            config_path="experiments/different/runtime_config.json",
+            runtime_config={"ema_length": 5},
+            code_commit="abc1234",
+            data_hash="data",
+            train_metrics={},
+            validation_metrics={},
+            trade_count=99,
+            trades_file=str(previous_trades),
+            strategy_events_file="",
+            diagnostics_file=str(previous_diagnostics),
+            strategy_diagnostics={"event_counts": {"executed_trade": 1}},
+            accepted=False,
+            rejection_reason="old result",
+            verdict_status="inconclusive",
+            verdict_summary="old result",
+            family="ema",
+            job=20,
+        )
+    )
+    controller = _Controller()
+    controller.experiment_db = db
+
+    hashed: list[str] = []
+
+    def fake_hash(path_value: object) -> str:
+        hashed.append(str(path_value))
+        return "current"
+
+    monkeypatch.setattr(experiment_mod, "_sha256_file", fake_hash)
+
+    duplicate = _find_duplicate_artifact_output(
+        controller,
+        runtime_config={"ema_length": 8},
+        details={
+            "trade_count": 3122,
+            "trades_file": str(current_trades),
+            "diagnostics_file": str(current_diagnostics),
+            "strategy_diagnostics": {"event_counts": {"executed_trade": 8295}},
+        },
+        state={"job": 20},
+    )
+
+    assert duplicate is None
+    assert hashed == [str(current_trades), str(current_diagnostics)]
 
 
 def test_build_db_record_prefers_executed_result_git_sha(tmp_path: Path) -> None:
