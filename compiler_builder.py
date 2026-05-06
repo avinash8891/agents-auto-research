@@ -31,6 +31,13 @@ def _coerce_subprocess_output(value: Any) -> str:
     return str(value)
 
 
+def _timeout_output(exc: subprocess.TimeoutExpired) -> tuple[str, str]:
+    stdout = getattr(exc, "stdout", None)
+    if stdout is None:
+        stdout = getattr(exc, "output", "")
+    return _coerce_subprocess_output(stdout), _coerce_subprocess_output(getattr(exc, "stderr", ""))
+
+
 def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str, Any]) -> list[str]:
     rp = proposal.get("requested_primitives")
     mp = compilation.get("missing_primitives")
@@ -428,8 +435,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             timeout=BUILDER_CLI_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
-        stdout = _coerce_subprocess_output(getattr(exc, "stdout", ""))
-        stderr = _coerce_subprocess_output(getattr(exc, "stderr", ""))
+        stdout, stderr = _timeout_output(exc)
         duration_seconds = time.monotonic() - started_at
         result = _validated_generated_config_result(
             config_abspath=config_abspath,

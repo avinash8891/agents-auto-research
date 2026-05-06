@@ -610,6 +610,12 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
     )
     assert persisted["status"] == "completed"
     assert persisted["timed_out"] is True
+    assert (
+        tmp_path / "ema-builder-requests" / thesis_id / "stdout.log"
+    ).read_text() == "generated config but kept inspecting diff"
+    assert (
+        tmp_path / "ema-builder-requests" / thesis_id / "stderr.log"
+    ).read_text() == "still reviewing unrelated dirty worktree"
 
 
 def test_build_missing_primitives_reports_timeout_when_generated_config_is_invalid(
