@@ -68,11 +68,13 @@ def _parse_json(text: str) -> dict[str, Any] | None:
 def _ensure_oauth_token() -> None:
     if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
         return
-    token_file = (
-        _OPENAI_OAUTH_TOKEN_FILE if _OPENAI_OAUTH_TOKEN_FILE.exists() else _LEGACY_OAUTH_TOKEN_FILE
-    )
-    if token_file.exists():
-        os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token_file.read_text().strip()
+    for token_file in (_OPENAI_OAUTH_TOKEN_FILE, _LEGACY_OAUTH_TOKEN_FILE):
+        if not token_file.exists():
+            continue
+        token = token_file.read_text().strip()
+        if token:
+            os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
+            return
 
 
 def _structured_error(
