@@ -133,6 +133,42 @@ def test_experiment_db_read_results_preserves_analysis_inputs_for_conductor(tmp_
     assert result.asi["strategy_diagnostics"] == {"rejection_breakdown": {"entry_cutoff": 3}}
 
 
+def test_experiment_db_read_results_does_not_set_root_artifact_dir_for_bare_files(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    db.add(
+        ExperimentResult(
+            experiment_id="e1",
+            thesis_id="t1",
+            config_path="experiments/t1/runtime_config.json",
+            runtime_config={},
+            code_commit="abc123",
+            data_hash="data1",
+            train_metrics={},
+            validation_metrics={"profit_factor": 2.5},
+            trade_count=1,
+            trades_file="trades.csv",
+            strategy_events_file="",
+            diagnostics_file="",
+            strategy_diagnostics={},
+            accepted=False,
+            rejection_reason="discarded",
+            verdict_status="inconclusive",
+            verdict_summary="not enough",
+            timestamp="2026-05-06T00:00:00+00:00",
+            family="ema",
+            job=20,
+        )
+    )
+
+    result = db.read_results()[0]
+
+    assert result.asi["artifact_dir"] == ""
+
+
 def test_experiment_db_export_entries_uses_configured_primary_metric(tmp_path) -> None:
     db_path = tmp_path / "ema_experiments.db"
     db = ExperimentDB(db_path)

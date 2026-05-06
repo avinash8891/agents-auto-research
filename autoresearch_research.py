@@ -338,7 +338,19 @@ def _backfill_artifact_files_from_latest_dir(
 ) -> tuple[str, str, str]:
     """If ctx didn't carry the latest run's artifact files, look for them
     inside the latest result's artifact_dir on disk."""
-    artifact_dir = controller.root / latest.asi.get("artifact_dir", "")
+    artifact_dir_raw = str((latest.asi or {}).get("artifact_dir") or "")
+    if not artifact_dir_raw:
+        return trades_file, strategy_events_file, diagnostics_file
+    root = controller.root.resolve()
+    artifact_dir = Path(artifact_dir_raw)
+    if not artifact_dir.is_absolute():
+        artifact_dir = root / artifact_dir
+    try:
+        artifact_dir = artifact_dir.resolve()
+    except OSError:
+        return trades_file, strategy_events_file, diagnostics_file
+    if not artifact_dir.is_relative_to(root):
+        return trades_file, strategy_events_file, diagnostics_file
     if not artifact_dir.exists():
         return trades_file, strategy_events_file, diagnostics_file
     if not trades_file:
@@ -365,7 +377,24 @@ def _backfill_artifact_files_from_latest_dir(
     return trades_file, strategy_events_file, diagnostics_file
 
 
+def _existing_artifact_file(controller: "AutoresearchController", raw_path: Any) -> str:
+    if not isinstance(raw_path, str) or not raw_path:
+        return ""
+    root = controller.root.resolve()
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        candidate = candidate.resolve()
+    except OSError:
+        return ""
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return ""
+    return str(candidate)
+
+
 def _artifact_files_from_latest_record(
+    controller: "AutoresearchController",
     latest: ExperimentRecord,
     trades_file: str,
     strategy_events_file: str,
@@ -374,11 +403,11 @@ def _artifact_files_from_latest_record(
     """Use canonical persisted file paths before falling back to directory scans."""
     asi = latest.asi or {}
     if not trades_file:
-        trades_file = str(asi.get("trades_file") or "")
+        trades_file = _existing_artifact_file(controller, asi.get("trades_file"))
     if not strategy_events_file:
-        strategy_events_file = str(asi.get("strategy_events_file") or "")
+        strategy_events_file = _existing_artifact_file(controller, asi.get("strategy_events_file"))
     if not diagnostics_file:
-        diagnostics_file = str(asi.get("diagnostics_file") or "")
+        diagnostics_file = _existing_artifact_file(controller, asi.get("diagnostics_file"))
     return trades_file, strategy_events_file, diagnostics_file
 
 
@@ -405,7 +434,7 @@ def _resolve_conductor_inputs(
     latest = controller.latest_result(scoped_results)
     if latest and (not trades_file or not strategy_events_file or not diagnostics_file):
         trades_file, strategy_events_file, diagnostics_file = _artifact_files_from_latest_record(
-            latest, trades_file, strategy_events_file, diagnostics_file
+            controller, latest, trades_file, strategy_events_file, diagnostics_file
         )
     if latest and (not trades_file or not strategy_events_file or not diagnostics_file):
         trades_file, strategy_events_file, diagnostics_file = (

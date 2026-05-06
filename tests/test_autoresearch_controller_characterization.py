@@ -1658,6 +1658,15 @@ def test_resolve_conductor_inputs_uses_persisted_artifact_files_before_backfill(
     from autoresearch_research import _resolve_conductor_inputs
     from autoresearch_state import ExperimentRecord
 
+    artifact_dir = controller.root / "runs" / "job-20" / "abc"
+    artifact_dir.mkdir(parents=True)
+    trades = artifact_dir / "trades.csv"
+    events = artifact_dir / "strategy_events.parquet"
+    diagnostics = artifact_dir / "diagnostics.json"
+    trades.write_text("entry_date,pnl_pct\n")
+    events.write_text("")
+    diagnostics.write_text("{}")
+
     latest = ExperimentRecord(
         config="experiments/job20-thesis/runtime_config.json",
         metric=2.0,
@@ -1667,9 +1676,9 @@ def test_resolve_conductor_inputs_uses_persisted_artifact_files_before_backfill(
         asi={
             "thesis_id": "job20_thesis",
             "trade_analysis": {"trade_count": 20, "profit_factor": 2.0},
-            "trades_file": "/runs/job-20/abc/trades.csv",
-            "strategy_events_file": "/runs/job-20/abc/strategy_events.parquet",
-            "diagnostics_file": "/runs/job-20/abc/diagnostics.json",
+            "trades_file": "runs/job-20/abc/trades.csv",
+            "strategy_events_file": "runs/job-20/abc/strategy_events.parquet",
+            "diagnostics_file": "runs/job-20/abc/diagnostics.json",
         },
         job=20,
     )
@@ -1685,9 +1694,9 @@ def test_resolve_conductor_inputs_uses_persisted_artifact_files_before_backfill(
         current_job=20,
     )
 
-    assert trades_file == "/runs/job-20/abc/trades.csv"
-    assert strategy_events_file == "/runs/job-20/abc/strategy_events.parquet"
-    assert diagnostics_file == "/runs/job-20/abc/diagnostics.json"
+    assert trades_file == str(trades.resolve())
+    assert strategy_events_file == str(events.resolve())
+    assert diagnostics_file == str(diagnostics.resolve())
     assert latest_outcome["thesis_id"] == "job20_thesis"
     assert latest_outcome["trade_count"] == 20
     assert latest_outcome["profit_factor"] == 2.0

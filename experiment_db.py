@@ -44,6 +44,16 @@ def _record_job_as_int(record: ExperimentResult) -> int | None:
         return None
 
 
+def _artifact_dir_from_files(paths: tuple[str, str, str]) -> str:
+    for path in paths:
+        if not path:
+            continue
+        parent = Path(path).parent
+        if str(parent) != ".":
+            return str(parent)
+    return ""
+
+
 @dataclass
 class ExperimentResult:
     """One complete experiment record."""
@@ -582,16 +592,13 @@ class ExperimentDB:
             metric = record.validation_metrics.get(primary_metric_name)
             if metric is None:
                 metric = record.train_metrics.get(primary_metric_name, 0.0)
-            artifact_files = [
-                path
-                for path in (
+            artifact_dir = _artifact_dir_from_files(
+                (
                     record.trades_file,
                     record.strategy_events_file,
                     record.diagnostics_file,
                 )
-                if path
-            ]
-            artifact_dir = str(Path(artifact_files[0]).parent) if artifact_files else ""
+            )
             results.append(
                 ExperimentRecord(
                     config=record.config_path,

@@ -220,6 +220,16 @@ def test_backfill_returns_originals_when_artifact_dir_missing(tmp_path: Path) ->
     assert _backfill_artifact_files_from_latest_dir(controller, latest, "", "", "") == ("", "", "")
 
 
+def test_backfill_ignores_absolute_artifact_dir_outside_controller_root(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    (outside / "trades.csv").write_text("entry_date,pnl_pct\n")
+    latest = ExperimentRecord("x", 1.0, "keep", "", 100, {"artifact_dir": str(outside)})
+    controller = SimpleNamespace(root=tmp_path)
+
+    assert _backfill_artifact_files_from_latest_dir(controller, latest, "", "", "") == ("", "", "")
+
+
 def test_backfill_prefers_matching_artifacts_when_multiple_exist(tmp_path: Path) -> None:
     artifact_dir = tmp_path / "runs" / "abc"
     artifact_dir.mkdir(parents=True)
