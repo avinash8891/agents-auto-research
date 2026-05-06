@@ -65,6 +65,19 @@ def _extract_codex_token_usage(stdout: str) -> dict[str, int] | None:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
+            raw_usage = event["usage"]
+            input_tokens = int(raw_usage.get("input_tokens") or 0)
+            output_tokens = int(raw_usage.get("output_tokens") or 0)
+            usage = {
+                "input_tokens": input_tokens,
+                "cached_input_tokens": int(raw_usage.get("cached_input_tokens") or 0),
+                "output_tokens": output_tokens,
+                "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
+                "total_tokens": int(raw_usage.get("total_tokens") or input_tokens + output_tokens),
+                "usage_source": "codex_json_turn_completed",
+            }
+            continue
         if event.get("type") != "event_msg":
             continue
         payload = event.get("payload")
@@ -82,6 +95,7 @@ def _extract_codex_token_usage(stdout: str) -> dict[str, int] | None:
             "output_tokens": int(raw_usage.get("output_tokens") or 0),
             "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
             "total_tokens": int(raw_usage.get("total_tokens") or 0),
+            "usage_source": "codex_json_last_token_usage",
         }
     return usage
 
@@ -174,8 +188,9 @@ def run_codex_web_research(
         }
         usage = _extract_codex_token_usage(stdout)
         if usage is not None:
+            usage_source = str(usage.pop("usage_source", "codex_json"))
             metadata["usage"] = usage
-            metadata["usage_source"] = "codex_json_last_token_usage"
+            metadata["usage_source"] = usage_source
         log.info(
             "codex web research finished exit=%s stdout_len=%d stderr_len=%d output_len=%d",
             process.returncode,

@@ -128,6 +128,50 @@ def test_run_codex_web_research_extracts_usage_from_json_stdout(monkeypatch, tmp
     assert metadata["usage_source"] == "codex_json_last_token_usage"
 
 
+def test_run_codex_web_research_extracts_usage_from_turn_completed_json_stdout(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(web_research_cli, "_find_codex_cli", lambda: "codex")
+
+    class FakeProcess:
+        returncode = 0
+        pid = 12345
+
+        def __init__(self, cmd, **kwargs):
+            self.cmd = cmd
+
+        def communicate(self, *, input, timeout):
+            output_path = self.cmd[self.cmd.index("--output-last-message") + 1]
+            with open(output_path, "w") as f:
+                f.write('{"findings":[],"summary":"ok"}')
+            return (
+                '{"type":"thread.started","thread_id":"thread-1"}\n'
+                '{"type":"turn.completed","usage":{"input_tokens":29690,'
+                '"cached_input_tokens":7424,"output_tokens":5,'
+                '"reasoning_output_tokens":0}}\n',
+                "",
+            )
+
+    monkeypatch.setattr(web_research_cli.subprocess, "Popen", lambda *a, **k: FakeProcess(*a, **k))
+
+    _output, metadata = web_research_cli.run_codex_web_research(
+        "question",
+        instructions="system instructions",
+        model="gpt-5.2",
+        cwd=tmp_path,
+        timeout_seconds=12,
+    )
+
+    assert metadata["usage"] == {
+        "input_tokens": 29690,
+        "cached_input_tokens": 7424,
+        "output_tokens": 5,
+        "reasoning_output_tokens": 0,
+        "total_tokens": 29695,
+    }
+    assert metadata["usage_source"] == "codex_json_turn_completed"
+
+
 def test_run_codex_web_research_terminates_process_group_on_timeout(monkeypatch, tmp_path):
     captured: dict[str, object] = {}
 
