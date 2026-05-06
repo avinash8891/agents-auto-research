@@ -239,6 +239,7 @@ def test_accumulate_usage_tracks_tokens_across_agents():
         "cost_usd": pytest.approx(0.16),
         "calls": 3,
         "failed_calls": 0,
+        "unmetered_calls": 0,
         "estimated_input_tokens": 0,
         "estimated_output_tokens": 0,
         "estimated_total_tokens": 0,
@@ -258,6 +259,7 @@ def test_accumulate_usage_tracks_tokens_across_agents():
             "cost_usd": 0.0,
             "calls": 0,
             "failed_calls": 0,
+            "unmetered_calls": 0,
             "estimated_input_tokens": 0,
             "estimated_output_tokens": 0,
             "estimated_total_tokens": 0,
@@ -300,6 +302,7 @@ def test_agents_sdk_usage_uses_reported_total_cost_when_raw_usage_missing():
     round_usage = usage.get_round_usage()
     assert round_usage["by_agent"]["analyst"]["calls"] == 1
     assert round_usage["by_agent"]["analyst"]["cost_usd"] == pytest.approx(0.42)
+    assert round_usage["by_agent"]["analyst"]["unmetered_calls"] == 0
 
 
 def test_orb_research_spec_resolves_from_strategy_registry() -> None:

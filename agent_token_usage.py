@@ -78,6 +78,7 @@ def _ensure_entry(agent_type: str) -> dict[str, Any]:
             "cost_usd": 0.0,
             "calls": 0,
             "failed_calls": 0,
+            "unmetered_calls": 0,
             "estimated_input_tokens": 0,
             "estimated_output_tokens": 0,
             "estimated_total_tokens": 0,
@@ -91,6 +92,14 @@ def _record_failed_call(agent_type: str, dedupe_key: str | None = None) -> None:
             return
         _SEEN_DEDUPE_KEYS.add(dedupe_key)
     _ensure_entry(agent_type)["failed_calls"] += 1
+
+
+def _record_unmetered_call(agent_type: str, dedupe_key: str | None = None) -> None:
+    if dedupe_key:
+        if dedupe_key in _SEEN_DEDUPE_KEYS:
+            return
+        _SEEN_DEDUPE_KEYS.add(dedupe_key)
+    _ensure_entry(agent_type)["unmetered_calls"] += 1
 
 
 def _accumulate_usage(
@@ -177,6 +186,7 @@ def get_round_usage() -> dict[str, Any]:
         "cost_usd": 0.0,
         "calls": 0,
         "failed_calls": 0,
+        "unmetered_calls": 0,
         "estimated_input_tokens": 0,
         "estimated_output_tokens": 0,
         "estimated_total_tokens": 0,

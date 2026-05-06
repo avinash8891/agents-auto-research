@@ -21,6 +21,7 @@ from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import (
     _infer_provider,
     _record_failed_call,
+    _record_unmetered_call,
     get_round_usage,
     reset_round_usage,
 )
@@ -95,6 +96,50 @@ def test_failed_calls_do_not_contribute_to_total_calls():
     total = get_round_usage()["total"]
     assert total["calls"] == 0, "total calls must exclude failures"
     assert total.get("failed_calls", 0) == 2, "total failed_calls must count all failures"
+    assert total.get("unmetered_calls", 0) == 0
+
+
+def test_sdk_result_with_no_usage_and_no_estimate_is_unmetered_not_zero_trace():
+    emitted = []
+    result = SimpleNamespace(usage=None, raw_responses=[], total_cost_usd=0.0)
+
+    with patch.object(
+        agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
+    ):
+        accumulate_agents_sdk_result_usage(
+            "analyst",
+            result,
+            provider="openai",
+            model="gpt-5.2",
+        )
+
+    agent = get_round_usage()["by_agent"]["analyst"]
+    assert agent["calls"] == 0
+    assert agent["failed_calls"] == 0
+    assert agent["unmetered_calls"] == 1
+    assert emitted == []
+
+
+def test_sdk_cost_only_result_is_labeled_not_unmetered():
+    emitted = []
+    result = SimpleNamespace(usage=None, raw_responses=[], total_cost_usd=0.42)
+
+    with patch.object(
+        agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
+    ):
+        accumulate_agents_sdk_result_usage(
+            "analyst",
+            result,
+            provider="openai",
+            model="gpt-5.2",
+        )
+
+    agent = get_round_usage()["by_agent"]["analyst"]
+    assert agent["calls"] == 1
+    assert agent["unmetered_calls"] == 0
+    assert agent["cost_usd"] == pytest.approx(0.42)
+    assert emitted[0]["usage_source"] == "sdk_cost_only_missing_tokens"
+    assert emitted[0]["total_tokens"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +337,19 @@ def test_record_failed_call_skips_trace():
     assert emitted == []
     agent = get_round_usage()["by_agent"]["codex-analyst"]
     assert agent.get("failed_calls", 0) == 1
+    assert agent["calls"] == 0
+
+
+def test_record_unmetered_call_skips_trace():
+    emitted = []
+    with patch.object(
+        agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
+    ):
+        _record_unmetered_call("codex-analyst")
+
+    assert emitted == []
+    agent = get_round_usage()["by_agent"]["codex-analyst"]
+    assert agent.get("unmetered_calls", 0) == 1
     assert agent["calls"] == 0
 
 

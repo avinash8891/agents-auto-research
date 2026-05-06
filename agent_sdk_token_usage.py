@@ -3,7 +3,7 @@ from __future__ import annotations
 from math import ceil
 from typing import Any
 
-from agent_token_usage import _accumulate_usage, _record_failed_call
+from agent_token_usage import _accumulate_usage, _record_failed_call, _record_unmetered_call
 from autoresearch_logging import get_logger
 
 logger = get_logger(__name__)
@@ -151,18 +151,21 @@ def accumulate_agents_sdk_result_usage(
     cost_usd = getattr(result, "total_cost_usd", None)
     if cost_usd is None and raw_responses:
         cost_usd = sum((getattr(resp, "total_cost_usd", 0.0) or 0.0) for resp in raw_responses)
-    if cost_usd is None and not saw_usage:
-        cost_usd = 0.0
+    has_cost_only_usage = bool(cost_usd) and not saw_usage and not estimated
 
     normalized_usage: dict[str, Any] | None = None
-    if saw_usage or estimated:
+    if saw_usage or estimated or has_cost_only_usage:
         normalized_usage = {
             **totals,
             "estimated_input_tokens": (estimated or {}).get("input_tokens", 0),
             "estimated_output_tokens": (estimated or {}).get("output_tokens", 0),
             "estimated_total_tokens": (estimated or {}).get("total_tokens", 0),
-            "usage_source": usage_source,
+            "usage_source": usage_source or "sdk_cost_only_missing_tokens",
         }
+    else:
+        logger.warning("SDK result for %s had no provider usage and no estimate text", agent_type)
+        _record_unmetered_call(agent_type, dedupe_key=dedupe_key)
+        return
 
     _accumulate_usage(
         agent_type,
