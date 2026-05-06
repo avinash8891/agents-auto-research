@@ -376,7 +376,8 @@ ALIGNMENT_THRESHOLD = 0.4  # reject if less than 40% of keys align
 _MIN_NOVELTY_EXPLANATION_CHARS = 30
 _NUMERIC_VARIANT_BOUNDS: dict[str, tuple[float | None, float | None]] = {
     "max_trades_per_day": (1, 20),
-    "max_hold_bars": (1, 390),
+    # Upper bounds are strategy-specific and are enforced when variants are queued.
+    "max_hold_bars": (1, None),
 }
 
 
