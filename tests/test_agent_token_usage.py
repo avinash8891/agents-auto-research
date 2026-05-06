@@ -171,7 +171,7 @@ def test_successful_call_records_actual_and_parallel_estimate(monkeypatch):
     monkeypatch.setattr(
         agent_sdk_token_usage,
         "_count_tokens",
-        lambda text, model=None: 11 if "prompt" in text else 4,
+        lambda text, model=None: pytest.fail("actual-usage path must not use tokenizer"),
     )
 
     with patch.object(
@@ -190,9 +190,9 @@ def test_successful_call_records_actual_and_parallel_estimate(monkeypatch):
     assert agent["input_tokens"] == 1500
     assert agent["output_tokens"] == 800
     assert agent["total_tokens"] == 2300
-    assert agent["estimated_input_tokens"] == 11
-    assert agent["estimated_output_tokens"] == 4
-    assert agent["estimated_total_tokens"] == 15
+    assert agent["estimated_input_tokens"] == 3
+    assert agent["estimated_output_tokens"] == 1
+    assert agent["estimated_total_tokens"] == 4
     assert emitted[0]["usage_source"] == "sdk_reported"
 
 

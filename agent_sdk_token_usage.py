@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from math import ceil
-from typing import Any
+from typing import Any, Literal
 
 from agent_token_usage import _accumulate_usage, _record_failed_call, _record_unmetered_call
 from autoresearch_logging import get_logger
@@ -34,14 +34,28 @@ def _count_tokens(text: str, model: str | None = None) -> int:
         return max(1, ceil(len(text) / 4))
 
 
+def _estimate_tokens_fast(text: str) -> int:
+    """Cheap parallel estimate used when provider actual usage is already present."""
+    if not text:
+        return 0
+    return max(1, ceil(len(text) / 4))
+
+
 def _estimate_usage(
     *,
     input_text: Any = None,
     output_text: Any = None,
     model: str | None = None,
+    mode: Literal["fast", "precise"] = "precise",
 ) -> dict[str, int] | None:
-    input_tokens = _count_tokens(_coerce_text(input_text), model=model)
-    output_tokens = _count_tokens(_coerce_text(output_text), model=model)
+    input_str = _coerce_text(input_text)
+    output_str = _coerce_text(output_text)
+    if mode == "fast":
+        input_tokens = _estimate_tokens_fast(input_str)
+        output_tokens = _estimate_tokens_fast(output_str)
+    else:
+        input_tokens = _count_tokens(input_str, model=model)
+        output_tokens = _count_tokens(output_str, model=model)
     total_tokens = input_tokens + output_tokens
     if total_tokens <= 0:
         return None
@@ -146,11 +160,17 @@ def accumulate_agents_sdk_result_usage(
             saw_usage = True
             _add_usage_totals(totals, usage)
 
-    estimated = _estimate_usage(input_text=input_text, output_text=output_text, model=model)
-    usage_source = "sdk_reported"
-    if saw_usage and not any(
+    has_actual_tokens = saw_usage and any(
         totals[key] for key in ("input_tokens", "output_tokens", "total_tokens")
-    ):
+    )
+    estimated = _estimate_usage(
+        input_text=input_text,
+        output_text=output_text,
+        model=model,
+        mode="fast" if has_actual_tokens else "precise",
+    )
+    usage_source = "sdk_reported"
+    if saw_usage and not has_actual_tokens:
         if estimated:
             usage_source = "sdk_reported_zero_with_estimate"
             logger.warning(

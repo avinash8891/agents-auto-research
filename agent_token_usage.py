@@ -6,7 +6,9 @@ from autoresearch_logging import get_logger
 
 logger = get_logger(__name__)
 
-_ROUND_USAGE: dict[str, dict[str, float]] = {}
+UsageTotals = dict[str, int | float]
+
+_ROUND_USAGE: dict[str, UsageTotals] = {}
 _SEEN_DEDUPE_KEYS: set[str] = set()
 
 
@@ -75,7 +77,7 @@ def _emit_trace_usage(
         logger.debug("usage trace emission failed: %s", exc)
 
 
-def _ensure_entry(agent_type: str) -> dict[str, Any]:
+def _ensure_entry(agent_type: str) -> UsageTotals:
     if agent_type not in _ROUND_USAGE:
         _ROUND_USAGE[agent_type] = {
             "input_tokens": 0,
