@@ -9,7 +9,8 @@ from typing import Any
 
 from openai import AsyncOpenAI as _AsyncOpenAI
 
-_OAUTH_TOKEN_FILE = Path.home() / ".claude_oauth_token"
+_OPENAI_OAUTH_TOKEN_FILE = Path.home() / ".openai_oauth_token"
+_LEGACY_OAUTH_TOKEN_FILE = Path.home() / ".claude_oauth_token"
 
 
 CLI_TIMEOUT_SECONDS = 180  # Max seconds for a CLI agent call
@@ -65,8 +66,13 @@ def _parse_json(text: str) -> dict[str, Any] | None:
 
 
 def _ensure_oauth_token() -> None:
-    if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") and _OAUTH_TOKEN_FILE.exists():
-        os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = _OAUTH_TOKEN_FILE.read_text().strip()
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return
+    token_file = (
+        _OPENAI_OAUTH_TOKEN_FILE if _OPENAI_OAUTH_TOKEN_FILE.exists() else _LEGACY_OAUTH_TOKEN_FILE
+    )
+    if token_file.exists():
+        os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token_file.read_text().strip()
 
 
 def _structured_error(

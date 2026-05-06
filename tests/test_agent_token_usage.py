@@ -6,6 +6,7 @@ trace event, making token_audit.py unable to distinguish timeouts from legitimat
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -269,3 +270,34 @@ def test_get_openai_client_uses_given_base_url():
     url = "http://127.0.0.1:10531/v1"
     client = agent_infra._get_openai_client(url)
     assert str(client.base_url).rstrip("/") == url.rstrip("/")
+
+
+def test_ensure_oauth_token_prefers_openai_named_token_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    openai_token = tmp_path / ".openai_oauth_token"
+    legacy_token = tmp_path / ".claude_oauth_token"
+    openai_token.write_text("openai-token\n")
+    legacy_token.write_text("legacy-token\n")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(agent_infra, "_OPENAI_OAUTH_TOKEN_FILE", openai_token)
+    monkeypatch.setattr(agent_infra, "_LEGACY_OAUTH_TOKEN_FILE", legacy_token)
+
+    agent_infra._ensure_oauth_token()
+
+    assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "openai-token"
+
+
+def test_ensure_oauth_token_falls_back_to_legacy_token_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    openai_token = tmp_path / ".openai_oauth_token"
+    legacy_token = tmp_path / ".claude_oauth_token"
+    legacy_token.write_text("legacy-token\n")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(agent_infra, "_OPENAI_OAUTH_TOKEN_FILE", openai_token)
+    monkeypatch.setattr(agent_infra, "_LEGACY_OAUTH_TOKEN_FILE", legacy_token)
+
+    agent_infra._ensure_oauth_token()
+
+    assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "legacy-token"
