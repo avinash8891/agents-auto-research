@@ -461,24 +461,28 @@ def _resolve_conductor_inputs(
         if isinstance(verdict, dict):
             verdict_status = verdict.get("status")
             verdict_summary = verdict.get("summary")
-            if verdict_status:
+            if verdict_status is not None:
+                verdict_status = str(verdict_status)
                 latest_outcome["verdict_status"] = verdict_status
-            if verdict_summary:
+            if verdict_summary is not None:
+                verdict_summary = str(verdict_summary)
                 latest_outcome["verdict_summary"] = verdict_summary
             if verdict_status and verdict_summary:
                 latest_outcome["research_feedback"] = _research_feedback_from_verdict(
-                    str(verdict_status),
-                    str(verdict_summary),
+                    verdict_status,
+                    verdict_summary,
                 )
     return trades_file, strategy_events_file, diagnostics_file, latest_outcome
 
 
 def _research_feedback_from_verdict(verdict_status: str, verdict_summary: str) -> str:
     prefix = f"{verdict_status}:"
+    verdict_summary = verdict_summary.rstrip()
+    terminal = "" if verdict_summary.endswith((".", "!", "?")) else "."
     if verdict_summary.startswith(prefix):
-        feedback = f"Previous candidate was {verdict_summary}."
+        feedback = f"Previous candidate was {verdict_summary}{terminal}"
     else:
-        feedback = f"Previous candidate was {verdict_status}: {verdict_summary}."
+        feedback = f"Previous candidate was {verdict_status}: {verdict_summary}{terminal}"
     if verdict_status == "invalid_noop_config":
         feedback += (
             " If this was a threshold/gating thesis, revise the threshold so it changes "

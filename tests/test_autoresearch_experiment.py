@@ -539,6 +539,15 @@ def test_build_db_record_marks_duplicate_artifact_output_as_invalid_noop(tmp_pat
     assert "previous" in record.rejection_reason
 
 
+def test_zero_rejection_diagnostic_hints_ignore_boolean_flags() -> None:
+    assert experiment_mod._zero_rejection_diagnostic_hints(
+        {
+            "trade_rejections_due_to_real_filter": 0,
+            "trade_rejections_due_to_boolean_flag": False,
+        }
+    ) == ["trade_rejections_due_to_real_filter=0"]
+
+
 def test_sha256_file_returns_empty_for_artifact_read_race(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -631,6 +631,8 @@ def _zero_rejection_diagnostic_hints(strategy_diagnostics: dict[str, Any]) -> li
     for key, value in sorted(strategy_diagnostics.items()):
         if not isinstance(key, str) or not key.startswith("trade_rejections_due"):
             continue
+        if isinstance(value, bool):
+            continue
         try:
             numeric_value = float(value)
         except (TypeError, ValueError):

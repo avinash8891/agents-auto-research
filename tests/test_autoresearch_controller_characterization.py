@@ -1637,6 +1637,37 @@ def test_resolve_conductor_inputs_passes_invalid_noop_feedback_to_conductor(
     )
 
 
+def test_resolve_conductor_inputs_stringifies_verdict_feedback_and_avoids_double_period(
+    controller,
+) -> None:
+    from autoresearch_research import _resolve_conductor_inputs
+    from autoresearch_state import ExperimentRecord
+
+    latest = ExperimentRecord(
+        config="experiments/noop-filter/runtime_config.json",
+        metric=1.0,
+        status="discard",
+        description="strict-native loop: noop-filter",
+        timestamp="2026-05-06T00:00:00+00:00",
+        asi={
+            "thesis_id": "noop_filter",
+            "trade_analysis": {
+                "verdict": {
+                    "status": 404,
+                    "summary": "already punctuated.",
+                },
+            },
+        },
+        job=20,
+    )
+
+    _, _, _, latest_outcome = _resolve_conductor_inputs(controller, [latest], current_job=20)
+
+    assert latest_outcome["verdict_status"] == "404"
+    assert latest_outcome["verdict_summary"] == "already punctuated."
+    assert latest_outcome["research_feedback"] == "Previous candidate was 404: already punctuated."
+
+
 def test_resolve_conductor_inputs_filters_latest_and_artifacts_by_current_job(
     controller,
     monkeypatch,
