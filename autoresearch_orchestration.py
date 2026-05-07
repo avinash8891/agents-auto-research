@@ -112,6 +112,37 @@ def _mark_builder_manual_review(
     return state
 
 
+def _mark_builder_running(
+    controller: "AutoresearchController",
+    state: dict[str, Any],
+    thesis_id: str,
+    *,
+    research_round: int | None = None,
+) -> dict[str, Any]:
+    state["state"] = "building"
+    if research_round is not None:
+        state["research_round"] = research_round
+    state["current_thesis"] = {"thesis_id": thesis_id, "status": "builder_running"}
+    state["blockers"] = [
+        {
+            "kind": "builder_running",
+            "detail": f"Builder is running for {thesis_id}.",
+        }
+    ]
+    state["next_action"] = {
+        "type": "builder_running",
+        "reason": f"Builder is running for {thesis_id}.",
+        "builder_thesis_id": thesis_id,
+        "requires_subagent": False,
+    }
+    heartbeat = state.setdefault("heartbeat", {})
+    heartbeat["builder_status"] = "running"
+    heartbeat["builder_thesis"] = thesis_id
+    heartbeat["builder_started_at"] = iso8601_utc_now()
+    controller.write_state(state)
+    return state
+
+
 def build_missing_primitives_for_state(
     controller: "AutoresearchController",
     state: dict[str, Any],
@@ -122,6 +153,12 @@ def build_missing_primitives_for_state(
 ) -> dict[str, Any]:
     trace("BUILDER", f"start thesis={thesis_id}")
     trace("LOOP", f"building halted thesis={thesis_id}")
+    state = _mark_builder_running(
+        controller,
+        state,
+        thesis_id,
+        research_round=research_round,
+    )
     import compiler_pipeline
 
     try:

@@ -190,6 +190,56 @@ def test_apply_forced_baseline_rerun_updates_state_and_writes(tmp_path):
     assert written_states[0]["next_action"] == baseline_action
 
 
+# ── build_missing_primitives_for_state ────────────────────────────────────────
+
+
+def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_path, monkeypatch):
+    thesis_id = "needs_builder"
+    (tmp_path / "experiments" / thesis_id).mkdir(parents=True)
+    (tmp_path / "experiments" / thesis_id / "runtime_config.json").write_text("{}\n")
+    state = {
+        "state": "blocked",
+        "halted_reason": "requires_code_change",
+        "halted_thesis_id": thesis_id,
+        "halted_thesis": {"thesis_id": thesis_id},
+        "next_action": {"type": "research"},
+        "heartbeat": {"last_metric": 1.8813},
+    }
+    written_states: list = []
+    ctrl = _make_controller(state=state, root=tmp_path, written_states=written_states)
+
+    def fake_build(root: Path, received_thesis_id: str) -> dict[str, Any]:
+        assert received_thesis_id == thesis_id
+        assert written_states
+        active = written_states[-1]
+        assert active["state"] == "building"
+        assert active["next_action"]["type"] == "builder_running"
+        assert active["next_action"]["builder_thesis_id"] == thesis_id
+        assert active["heartbeat"]["builder_status"] == "running"
+        assert active["heartbeat"]["builder_thesis"] == thesis_id
+        assert active["heartbeat"]["last_metric"] == 1.8813
+        return {
+            "status": "completed",
+            "generated_config": f"experiments/{thesis_id}/runtime_config.json",
+            "validation_passed": True,
+        }
+
+    monkeypatch.setattr("compiler_pipeline.build_missing_primitives", fake_build)
+
+    result = orch.build_missing_primitives_for_state(
+        ctrl,
+        state,
+        thesis_id,
+        {"thesis_id": thesis_id},
+        research_round=36,
+    )
+
+    assert result["state"] == "running"
+    assert result["next_action"]["type"] == "run_experiment"
+    assert written_states[0]["state"] == "building"
+    assert written_states[-1]["state"] == "running"
+
+
 # ── resolve_next_action ───────────────────────────────────────────────────────
 
 

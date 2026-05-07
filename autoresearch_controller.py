@@ -159,6 +159,17 @@ def _is_halted_code_change_resume_state(state: dict[str, Any]) -> bool:
     )
 
 
+def _is_builder_running_resume_state(state: dict[str, Any]) -> bool:
+    next_action = state.get("next_action")
+    return (
+        state.get("state") == "building"
+        and state.get("halted_reason") == "requires_code_change"
+        and bool(state.get("halted_thesis_id"))
+        and isinstance(next_action, dict)
+        and next_action.get("type") == "builder_running"
+    )
+
+
 def _is_interrupted_research_failure_state(state: dict[str, Any]) -> bool:
     return state.get("state") == "interrupted" and "research_failed" in _blocker_kinds(state)
 
@@ -275,6 +286,7 @@ def normalize_controller_launch_state(
     job = _state_coerce_job_to_int(prior_state.get("job"))
     resume_manual_review = _is_manual_review_resume_state(prior_state)
     resume_halted_code_change = _is_halted_code_change_resume_state(prior_state)
+    resume_builder_running = _is_builder_running_resume_state(prior_state)
     resume_research_failure = _is_interrupted_research_failure_state(prior_state)
     resume_blocked_research = _is_blocked_research_required_resume_state(prior_state)
     resume_failed_experiment = _is_blocked_failed_experiment_resume_state(prior_state)
@@ -283,14 +295,15 @@ def normalize_controller_launch_state(
         if not (
             resume_manual_review
             or resume_halted_code_change
+            or resume_builder_running
             or resume_research_failure
             or resume_blocked_research
             or resume_failed_experiment
         ):
             raise ValueError(
                 "--resume-current-job requires a recoverable halted code-change, "
-                "manual-review, blocked research-required, blocked command/metric failure, "
-                "or interrupted research-failure state; "
+                "builder-running, manual-review, blocked research-required, "
+                "blocked command/metric failure, or interrupted research-failure state; "
                 f"found state={prior_state.get('state')}"
             )
         if job < 1:
@@ -316,7 +329,9 @@ def normalize_controller_launch_state(
             ),
             job,
         )
-    if resume_current_job and (resume_halted_code_change or resume_manual_review):
+    if resume_current_job and (
+        resume_halted_code_change or resume_builder_running or resume_manual_review
+    ):
         return (
             _running_resume_state(prior_state, job, preserve_resume_metadata=True),
             job,

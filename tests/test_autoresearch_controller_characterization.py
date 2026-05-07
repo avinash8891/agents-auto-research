@@ -2358,6 +2358,37 @@ def test_main_reuses_job_and_preserves_manual_review_history_when_restarting_fro
     assert "next_action" not in written
 
 
+def test_resume_current_job_recovers_interrupted_builder_running_state() -> None:
+    prior_state = {
+        "state": "building",
+        "job": 20,
+        "research_round": 36,
+        "job_usage": {"total_tokens": 123},
+        "heartbeat": {"builder_status": "running", "builder_thesis": "thesis-456"},
+        "halted_reason": "requires_code_change",
+        "halted_thesis_id": "thesis-456",
+        "halted_thesis": {"thesis_id": "thesis-456", "config_changes": {"new_key": True}},
+        "next_action": {
+            "type": "builder_running",
+            "builder_thesis_id": "thesis-456",
+        },
+    }
+
+    state, job = loop_mod.normalize_controller_launch_state(
+        prior_state,
+        resume_current_job=True,
+    )
+
+    assert job == 20
+    assert state["state"] == "running"
+    assert state["job"] == 20
+    assert state["research_round"] == 36
+    assert state["halted_reason"] == "requires_code_change"
+    assert state["halted_thesis_id"] == "thesis-456"
+    assert state["halted_thesis"]["thesis_id"] == "thesis-456"
+    assert state["heartbeat"]["builder_status"] == "running"
+
+
 def test_main_resume_current_job_retries_interrupted_research_failure_without_incrementing_job(
     monkeypatch, tmp_path
 ):
