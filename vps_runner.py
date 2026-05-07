@@ -273,6 +273,7 @@ def build_git_prepare_command(config: VPSConfig) -> str:
         f"git remote set-url origin {git_repo} && "
         f"{fetch_and_resolve}"
         'git checkout --detach "$resolved" && '
+        'git reset --hard "$resolved" && '
         "git clean -ffdx "
         "-e '.venv' -e '.venv/**' "
         "-e '*_autoresearch-runs' -e '*_autoresearch-runs/**' "

@@ -399,7 +399,12 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert f"git fetch --prune origin {shlex.quote(config.git_ref)}" in command
     assert "resolved=$(git rev-parse --verify FETCH_HEAD^{commit})" in command
     assert 'git checkout --detach "$resolved"' in command
+    assert 'git reset --hard "$resolved"' in command
     assert "git clean -ffdx" in command
+    assert command.index('git checkout --detach "$resolved"') < command.index(
+        'git reset --hard "$resolved"'
+    )
+    assert command.index('git reset --hard "$resolved"') < command.index("git clean -ffdx")
     assert "-e '*_autoresearch-runs'" in command
     assert "-e '.venv'" in command
     assert "-e '.venv/**'" in command
