@@ -14,6 +14,7 @@ from typing import IO, Any, Iterator
 
 from openinference.instrumentation import using_attributes
 from opentelemetry import trace as otel_trace
+from opentelemetry.context.context import Context
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
@@ -153,6 +154,9 @@ class TraceRuntimeState:
     event_counter: count = field(default_factory=lambda: count(1))
     exporter: JsonLineTraceExporter | None = None
     log_handle: IO[str] | None = field(default=None, compare=False)
+    round_context: Context | None = field(default=None, compare=False)
+    current_hypothesis_context: Context | None = field(default=None, compare=False)
+    agent_contexts: dict[str, Context] = field(default_factory=dict, compare=False)
 
     def __post_init__(self) -> None:
         if not self.run_id:
@@ -198,6 +202,9 @@ class TraceRuntimeState:
         self.agent_log_dir.mkdir(parents=True, exist_ok=True)
         self.current_hypothesis_id = None
         self.current_hypothesis_name = None
+        self.round_context = None
+        self.current_hypothesis_context = None
+        self.agent_contexts = {}
         self.event_counter = count(1)
         self.exporter = JsonLineTraceExporter(self.canonical_event_file)
 
@@ -205,6 +212,8 @@ class TraceRuntimeState:
         self.hypothesis_counter += 1
         self.current_hypothesis_id = f"H{self.hypothesis_counter:03d}"
         self.current_hypothesis_name = name
+        self.current_hypothesis_context = None
+        self.agent_contexts = {}
         self.hypothesis_dir.mkdir(parents=True, exist_ok=True)
         return self.current_hypothesis_id
 
@@ -526,6 +535,35 @@ def _tracer():
     return otel_trace.get_tracer("agents-auto-research.trace_sdk", tracer_provider=_PROVIDER)
 
 
+def _parent_context_for_event(
+    *, category: str, action: str, payload: dict[str, Any]
+) -> Context | None:
+    trace_id = str(payload.get("trace_id") or "")
+    if action in {"tool_call", "tool_result", "response"} and trace_id:
+        agent_context = _STATE.agent_contexts.get(trace_id)
+        if agent_context is not None:
+            return agent_context
+    if _STATE.current_hypothesis_context is not None:
+        return _STATE.current_hypothesis_context
+    return _STATE.round_context
+
+
+def _remember_event_context(
+    *,
+    category: str,
+    action: str,
+    payload: dict[str, Any],
+    span_context: Context,
+) -> None:
+    if _STATE.round_context is None:
+        _STATE.round_context = span_context
+    if _STATE.current_hypothesis_id and _STATE.current_hypothesis_context is None:
+        _STATE.current_hypothesis_context = span_context
+    trace_id = str(payload.get("trace_id") or "")
+    if action == "prompt" and trace_id:
+        _STATE.agent_contexts[trace_id] = span_context
+
+
 @contextmanager
 def _event_span(
     *,
@@ -544,6 +582,7 @@ def _event_span(
     event_id = _STATE.next_event_id()
     seq = _STATE.seq
     timestamp = _canonical_ts()
+    parent_context = _parent_context_for_event(category=category, action=action, payload=payload)
     with using_attributes(
         session_id=_STATE.session_id,
         metadata={
@@ -558,7 +597,7 @@ def _event_span(
             "action": action,
         },
     ):
-        with _tracer().start_as_current_span(span_name) as span:
+        with _tracer().start_as_current_span(span_name, context=parent_context) as span:
             span.set_attribute("autoresearch.event_id", event_id)
             span.set_attribute("autoresearch.schema_version", 1)
             span.set_attribute("autoresearch.timestamp", timestamp)
@@ -578,6 +617,12 @@ def _event_span(
             span.set_attribute("autoresearch.payload_json", json.dumps(payload, default=str))
             if artifact_paths:
                 span.set_attribute("autoresearch.artifact_paths", artifact_paths)
+            _remember_event_context(
+                category=category,
+                action=action,
+                payload=payload,
+                span_context=otel_trace.set_span_in_context(span),
+            )
             yield
 
 

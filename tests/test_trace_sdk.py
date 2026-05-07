@@ -263,6 +263,74 @@ def test_trace_sdk_event_schema_matches_dataclass_and_payload_shape(
         assert isinstance(event["artifact_paths"], list)
 
 
+def test_trace_sdk_links_round_hypothesis_and_agent_spans(monkeypatch, tmp_path: Path) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    trace_sdk.set_family("ema", job=20)
+    trace_sdk.begin_round(45)
+    trace_sdk.trace("LOOP", "round started")
+    trace_sdk.begin_hypothesis("parent-contract")
+    trace_id = trace_sdk.trace_agent_prompt(
+        "analyst",
+        "Inspect trades.",
+        "You are an analyst.",
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_tool_call(
+        "analyst",
+        trace_id,
+        "read_file",
+        "diagnostics.json",
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_tool_result(
+        "analyst",
+        trace_id,
+        "read_file",
+        '{"trade_count": 1}',
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_response(
+        "analyst",
+        trace_id,
+        '{"ok": true}',
+        {"ok": True},
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+
+    events = [
+        json.loads(line)
+        for line in trace_sdk.get_event_file().read_text(encoding="utf-8").splitlines()
+    ]
+    span_ids = {event["span_id"] for event in events}
+    nonempty_parent_ids = [event["parent_span_id"] for event in events if event["parent_span_id"]]
+
+    assert nonempty_parent_ids, "real traces must not be a flat list of root spans"
+    assert all(parent_id in span_ids for parent_id in nonempty_parent_ids)
+
+    round_event = events[0]
+    hypothesis_event = next(
+        event
+        for event in events
+        if event["category"] == "trace" and event["action"] == "hypothesis"
+    )
+    prompt_event = next(event for event in events if event["action"] == "prompt")
+    tool_call_event = next(event for event in events if event["action"] == "tool_call")
+    tool_result_event = next(event for event in events if event["action"] == "tool_result")
+    response_event = next(event for event in events if event["action"] == "response")
+
+    assert round_event["parent_span_id"] == ""
+    assert hypothesis_event["parent_span_id"] == round_event["span_id"]
+    assert prompt_event["parent_span_id"] == hypothesis_event["span_id"]
+    assert tool_call_event["parent_span_id"] == prompt_event["span_id"]
+    assert tool_result_event["parent_span_id"] == prompt_event["span_id"]
+    assert response_event["parent_span_id"] == prompt_event["span_id"]
+
+
 def test_trace_sdk_trace_events_can_carry_model_metadata(monkeypatch, tmp_path: Path) -> None:
     trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
 
