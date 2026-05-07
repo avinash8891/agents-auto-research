@@ -279,13 +279,54 @@ def test_build_missing_primitives_routes_import_failure_to_manual_review(tmp_pat
     assert written_states[0]["state"] == "building"
     assert result["state"] == "blocked"
     assert result["next_action"]["type"] == "manual_review"
-    assert result["heartbeat"]["builder_status"] == "error"
+    assert result["heartbeat"]["builder_status"] == "manual_review"
     assert "builder_finished_at" in result["heartbeat"]
-    assert result["heartbeat"]["blocked_builder_status"] == "error"
+    assert result["heartbeat"]["blocked_builder_status"] == "manual_review"
+    assert result["heartbeat"]["blocked_builder_result_status"] == "error"
     assert (
         "ImportError: compiler import boom"
         in result["manual_review_theses"][-1]["builder_result"]["reason"]
     )
+
+
+def test_build_missing_primitives_does_not_mark_invalid_completed_builder_as_completed(
+    tmp_path, monkeypatch
+):
+    thesis_id = "needs_builder"
+    state = {
+        "state": "blocked",
+        "halted_reason": "requires_code_change",
+        "halted_thesis_id": thesis_id,
+        "halted_thesis": {"thesis_id": thesis_id},
+        "next_action": {"type": "research"},
+        "heartbeat": {},
+    }
+    written_states: list = []
+    ctrl = _make_controller(state=state, root=tmp_path, written_states=written_states)
+
+    def fake_build(root: Path, received_thesis_id: str) -> dict[str, Any]:
+        assert received_thesis_id == thesis_id
+        return {
+            "status": "completed",
+            "generated_config": f"experiments/{thesis_id}/missing_config.json",
+            "validation_passed": False,
+        }
+
+    monkeypatch.setattr("compiler_pipeline.build_missing_primitives", fake_build)
+
+    result = orch.build_missing_primitives_for_state(
+        ctrl,
+        state,
+        thesis_id,
+        {"thesis_id": thesis_id},
+        research_round=36,
+    )
+
+    assert result["state"] == "blocked"
+    assert result["next_action"]["type"] == "manual_review"
+    assert result["heartbeat"]["builder_status"] == "manual_review"
+    assert result["heartbeat"]["blocked_builder_status"] == "manual_review"
+    assert result["heartbeat"]["blocked_builder_result_status"] == "completed"
 
 
 # ── resolve_next_action ───────────────────────────────────────────────────────

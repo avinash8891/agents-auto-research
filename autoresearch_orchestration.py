@@ -115,9 +115,11 @@ def _mark_builder_manual_review(
         "artifact_dir": f"{controller.family.name}-manual-review",
     }
     heartbeat = state.setdefault("heartbeat", {})
-    _mark_builder_heartbeat_finished(state, thesis_id, str(builder_result.get("status") or "error"))
+    raw_builder_status = str(builder_result.get("status") or "error")
+    _mark_builder_heartbeat_finished(state, thesis_id, "manual_review")
     heartbeat["blocked_thesis"] = thesis_id
-    heartbeat["blocked_builder_status"] = str(builder_result.get("status") or "error")
+    heartbeat["blocked_builder_status"] = "manual_review"
+    heartbeat["blocked_builder_result_status"] = raw_builder_status
     heartbeat["blocked_reason"] = state["next_action"]["reason"]
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
