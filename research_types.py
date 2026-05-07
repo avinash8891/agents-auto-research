@@ -75,6 +75,11 @@ class ResearchThesis(BaseModel):
 
     evidence: list[str] = Field(default_factory=list)
 
+    # Optional explicit starting point for thesis deltas. When omitted, the
+    # family baseline config is the base.
+    base_experiment_id: str = ""
+    base_config_path: str = ""
+
     config_changes: dict[str, Any] = Field(default_factory=dict)
 
     expected_effects: list[ExpectedEffect] = Field(default_factory=list)
@@ -99,6 +104,8 @@ class ExperimentContract(BaseModel):
     strategy_family: str
 
     baseline_config_path: str
+    base_experiment_id: str = ""
+    base_config_hash: str = ""
     runtime_config: dict[str, Any]
 
     hypothesis: str

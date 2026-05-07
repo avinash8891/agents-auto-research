@@ -38,6 +38,7 @@ def verify_builder_implementation_contract(
     *,
     root: Path,
     thesis: dict[str, Any],
+    contract: dict[str, Any] | None = None,
     generated_config_path: str,
     family_name: str,
 ) -> ImplementationVerification:
@@ -47,6 +48,7 @@ def verify_builder_implementation_contract(
     failures: list[str] = []
 
     failures.extend(_verify_config_changes(thesis, config))
+    failures.extend(_verify_no_undeclared_config_drift(root, contract, thesis, config, family_name))
     failures.extend(_verify_config_key_consumption(root, family_name, thesis))
     failures.extend(_verify_required_diagnostics(root, family_name, thesis))
     failures.extend(_verify_data_dependencies(root, thesis, config))
@@ -83,6 +85,50 @@ def _verify_config_changes(thesis: dict[str, Any], config: dict[str, Any]) -> li
                 f"{key}: expected={json.dumps(expected, sort_keys=True)} "
                 f"actual={json.dumps(actual, sort_keys=True)}"
             )
+    return failures
+
+
+def _verify_no_undeclared_config_drift(
+    root: Path,
+    contract: dict[str, Any] | None,
+    thesis: dict[str, Any],
+    config: dict[str, Any],
+    family_name: str,
+) -> list[str]:
+    if not isinstance(contract, dict):
+        return []
+    base_config_path = contract.get("baseline_config_path")
+    if not isinstance(base_config_path, str) or not base_config_path:
+        return []
+    base_path = root / base_config_path
+    if not base_path.exists():
+        expected_baseline = f"configs/{family_name}_base.yaml"
+        if base_config_path == expected_baseline:
+            base_config = STRATEGIES[family_name].get_defaults()
+        else:
+            return [f"base_config_missing:{base_config_path}"]
+    else:
+        try:
+            base_config = _read_runtime_config(base_path)
+        except Exception as exc:
+            return [f"base_config_unreadable:{base_config_path}:{exc}"]
+    config_changes = thesis.get("config_changes") or {}
+    if not isinstance(config_changes, dict):
+        return []
+    allowed_drift = set(_runtime_config_changes(config_changes))
+    failures: list[str] = []
+    for key, base_value in sorted(base_config.items()):
+        if key in allowed_drift:
+            continue
+        generated_value = config.get(key)
+        if not _json_equal(generated_value, base_value):
+            failures.append(
+                "unexpected_config_drift:"
+                f"{key} base={json.dumps(base_value, sort_keys=True)} "
+                f"generated={json.dumps(generated_value, sort_keys=True)}"
+            )
+    for key in sorted(set(config) - set(base_config) - allowed_drift):
+        failures.append(f"unexpected_config_key:{key}")
     return failures
 
 

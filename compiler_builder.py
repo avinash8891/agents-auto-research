@@ -238,21 +238,23 @@ def _build_builder_prompt(
     family_name: str,
     missing_primitives: list[str],
     prompt_extras: list[str],
+    base_config_path: str = "",
 ) -> str:
     extra_block = "\n".join(prompt_extras)
     if extra_block:
         extra_block = f"\n{extra_block}"
     return f"""Instructions:
 1. Read the thesis and contract artifacts from disk first.
-2. If the change is already expressible with the existing family schema, write the config artifact at the expected path and stop.
-3. Otherwise make the smallest code change needed to support the missing primitive(s), then add or update the narrowest tests that cover the new behavior.
-4. Keep the edit scope tight. Do not refactor unrelated code.
-5. Do not clean up, revert, or inspect unrelated dirty worktree changes.
-6. As soon as the expected config exists and any narrow validation you choose has run, stop and return the final report. Do not continue with broad diff review.
-7. Do not treat runtime config validation as proof that a primitive is implemented.
-8. If a config key is not consumed by strategy runtime code, implement that code path or report failure instead of writing a no-op key.
-9. For missing primitives, add or update tests that prove the key changes strategy behavior or emitted diagnostics.
-10. Return a concise final report with:
+2. Start from the base config artifact. Preserve every base config key unless the thesis config_changes explicitly changes it.
+3. If the change is already expressible with the existing family schema, write the config artifact at the expected path and stop.
+4. Otherwise make the smallest code change needed to support the missing primitive(s), then add or update the narrowest tests that cover the new behavior.
+5. Keep the edit scope tight. Do not refactor unrelated code.
+6. Do not clean up, revert, or inspect unrelated dirty worktree changes.
+7. As soon as the expected config exists and any narrow validation you choose has run, stop and return the final report. Do not continue with broad diff review.
+8. Do not treat runtime config validation as proof that a primitive is implemented.
+9. If a config key is not consumed by strategy runtime code, implement that code path or report failure instead of writing a no-op key.
+10. For missing primitives, add or update tests that prove the key changes strategy behavior or emitted diagnostics.
+11. Return a concise final report with:
    - whether implementation succeeded
    - files changed
    - tests run
@@ -263,6 +265,7 @@ Context:
 - Thesis artifact: {proposal_path}
 - Contract artifact: {compilation_path}
 - Expected config path: {config_path}
+- Base config path: {base_config_path}
 - Strategy family: {family_name}
 - Missing primitives: {json.dumps(missing_primitives, indent=2)}{extra_block}
 
@@ -306,6 +309,7 @@ def _builder_retry_prompt(
     compilation_path: Path,
     config_path: str,
     family_name: str,
+    base_config_path: str,
     missing_primitives: list[str],
     previous_result: dict[str, Any] | None,
 ) -> str:
@@ -317,6 +321,7 @@ def _builder_retry_prompt(
         compilation_path=compilation_path,
         config_path=config_path,
         family_name=family_name,
+        base_config_path=base_config_path,
         missing_primitives=missing_primitives,
         prompt_extras=prompt_extras,
     )
@@ -326,6 +331,7 @@ def _validated_generated_config_result(
     *,
     root: Path,
     thesis: dict[str, Any],
+    contract: dict[str, Any],
     config_abspath: Path,
     config_path: str,
     family_name: str,
@@ -359,6 +365,7 @@ def _validated_generated_config_result(
     verification = verify_builder_implementation_contract(
         root=root,
         thesis=thesis,
+        contract=contract,
         generated_config_path=config_path,
         family_name=family_name,
     )
@@ -500,6 +507,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         "family": family_name,
         "proposal_path": proposal_path.relative_to(root).as_posix(),
         "compilation_path": compilation_path.relative_to(root).as_posix(),
+        "base_config_path": compilation.get("baseline_config_path"),
         "missing_primitives": missing_primitives,
         "normalized_contract": normalized_contract,
         "status": "requested",
@@ -527,6 +535,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     )
 
     config_abspath = root / config_path
+    base_config_path = str(compilation.get("baseline_config_path") or "")
     prompt = _build_builder_prompt(
         thesis_id=thesis_id,
         root=root,
@@ -534,6 +543,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         compilation_path=compilation_path,
         config_path=config_path,
         family_name=family_name,
+        base_config_path=base_config_path,
         missing_primitives=missing_primitives,
         prompt_extras=[],
     )
@@ -572,6 +582,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         existing_result = _validated_generated_config_result(
             root=root,
             thesis=proposal,
+            contract=compilation,
             config_abspath=config_abspath,
             config_path=config_path,
             family_name=family_name,
@@ -615,6 +626,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 compilation_path=compilation_path,
                 config_path=config_path,
                 family_name=family_name,
+                base_config_path=base_config_path,
                 missing_primitives=missing_primitives,
                 previous_result=out,
             )
@@ -634,6 +646,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             out = _validated_generated_config_result(
                 root=root,
                 thesis=proposal,
+                contract=compilation,
                 config_abspath=config_abspath,
                 config_path=config_path,
                 family_name=family_name,
@@ -664,6 +677,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 out = _validated_generated_config_result(
                     root=root,
                     thesis=proposal,
+                    contract=compilation,
                     config_abspath=config_abspath,
                     config_path=config_path,
                     family_name=family_name,

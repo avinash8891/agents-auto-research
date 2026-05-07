@@ -262,6 +262,8 @@ OUTPUT FORMAT (final response after all tool calls):
       "mechanism": "structural change and WHY it should produce the expected effects",
       "evidence": ["data points from analyst or web research that support this"],
       "why_not_overfit": "why this generalizes beyond the sample",
+      "base_experiment_id": "experiment_id to build on; empty string means family baseline",
+      "base_config_path": "runtime config path to build on; empty string means family baseline",
       "config_changes": {{"key": "value"}},
       "required_diagnostics": [],
       "expected_effects": [
@@ -316,7 +318,11 @@ THESIS REQUIREMENTS:
   severity: "hard_fail" (auto-reject) or "soft_fail" (flag for review)
 
 RULES:
-- config_changes is a DELTA. Keys you omit stay at baseline values.
+- Choose the base config explicitly. If the thesis builds on or preserves a prior
+  winner, set base_experiment_id and base_config_path from get_experiment_result.
+  If it is independent, leave both empty to use the family baseline.
+- config_changes is a DELTA against that base config. Keys you omit must stay at
+  base config values.
 - Do NOT repeat a thesis_id from the experiment results table.
 - Every thesis must have config_changes (to test the mechanism) or requires_code_change=true.
 - If requires_code_change=true, describe what the engine needs in "mechanism".

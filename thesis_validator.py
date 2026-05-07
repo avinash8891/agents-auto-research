@@ -52,6 +52,16 @@ _EMERGENT_REQUIRED_FIELDS = (
     "mechanism_family_definition",
     "expected_reuse_across_future_theses",
 )
+_ALLOWED_BASE_CONFIG_PREFIXES = ("configs/", "experiments/")
+_PRIOR_BASE_LANGUAGE = (
+    "best",
+    "preserve",
+    "compound",
+    "build on",
+    "builds on",
+    "current winner",
+    "kept winner",
+)
 
 
 class ThesisValidationError(ValueError):
@@ -76,6 +86,36 @@ def _normalize_mechanism_dimension_name(dimension: Any) -> str:
         return ""
     dimension_slug = _dimension_slug(dimension)
     return MECHANISM_DIMENSION_ALIASES.get(dimension_slug, dimension_slug)
+
+
+def _validate_base_config_path(path: str) -> None:
+    if not path:
+        return
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("/") or ".." in normalized.split("/"):
+        raise ThesisValidationError(
+            f"base_config_path '{path}' must be a relative repo path without '..'"
+        )
+    if not normalized.endswith((".json", ".yaml", ".yml")):
+        raise ThesisValidationError(
+            f"base_config_path '{path}' must point to a JSON or YAML config artifact"
+        )
+    if not normalized.startswith(_ALLOWED_BASE_CONFIG_PREFIXES):
+        raise ThesisValidationError(
+            f"base_config_path '{path}' must be under configs/ or experiments/"
+        )
+
+
+def _requires_explicit_base_config(thesis: ResearchThesis) -> bool:
+    text = " ".join(
+        [
+            thesis.hypothesis,
+            thesis.mechanism,
+            thesis.dimension_novelty,
+            " ".join(thesis.evidence),
+        ]
+    ).lower()
+    return any(phrase in text for phrase in _PRIOR_BASE_LANGUAGE)
 
 
 def _prior_thesis_details(prior: dict[str, Any]) -> dict[str, Any]:
@@ -565,6 +605,12 @@ def validate_research_thesis(
     if not thesis.config_changes and not thesis.requires_code_change:
         raise ThesisValidationError(
             "Thesis has neither config_changes nor requires_code_change=true"
+        )
+    _validate_base_config_path(thesis.base_config_path)
+    if _requires_explicit_base_config(thesis) and not thesis.base_config_path:
+        raise ThesisValidationError(
+            "base_config_path is required when a thesis builds on, preserves, "
+            "or compounds a prior/best configuration"
         )
     for key in sorted(CONFIG_CHANGES_METADATA_KEYS & set(thesis.config_changes)):
         raise ThesisValidationError(

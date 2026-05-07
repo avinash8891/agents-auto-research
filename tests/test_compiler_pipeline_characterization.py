@@ -28,6 +28,12 @@ from strategies.ema.validate import validate_ema_runtime_config
 from strategy_family import load_family
 
 
+def _ema_runtime_config(**overrides):
+    config = dict(STRATEGIES["ema"].get_defaults())
+    config.update(overrides)
+    return config
+
+
 def test_compile_config_thesis_uses_registered_strategy_defaults(tmp_path: Path) -> None:
     result = compile_config_thesis("ema", "ema-test", {"ema_length": 9}, tmp_path)
     assert result["status"] == "ready_to_run"
@@ -95,6 +101,46 @@ def test_compile_research_thesis_writes_three_files_for_ready_to_run(tmp_path: P
     assert (experiment_dir / "thesis.json").exists()
     assert (experiment_dir / "contract.json").exists()
     assert (experiment_dir / "runtime_config.json").exists()
+
+
+def test_compile_research_thesis_applies_changes_to_declared_base_config(
+    tmp_path: Path,
+) -> None:
+    base_dir = tmp_path / "experiments" / "best_trailing"
+    base_dir.mkdir(parents=True)
+    base_path = base_dir / "runtime_config.json"
+    base_path.write_text(
+        json.dumps(
+            {
+                **STRATEGIES["ema"].get_defaults(),
+                "trail_after_r": 1.0,
+            }
+        )
+        + "\n"
+    )
+    thesis = ResearchThesis(
+        thesis_id="delay-on-best",
+        strategy_family="ema",
+        hypothesis="Delay open entries on the best trailing configuration.",
+        mechanism="Preserve trailing exits while adding the open delay gate.",
+        base_experiment_id="best_trailing",
+        base_config_path="experiments/best_trailing/runtime_config.json",
+        config_changes={
+            "max_trades_per_day": 2,
+        },
+    )
+
+    contract = compile_research_thesis(thesis, tmp_path)
+
+    experiment_dir = tmp_path / "experiments" / contract.experiment_id
+    runtime_config = json.loads((experiment_dir / "runtime_config.json").read_text())
+    contract_payload = json.loads((experiment_dir / "contract.json").read_text())
+    assert (
+        contract_payload["baseline_config_path"] == "experiments/best_trailing/runtime_config.json"
+    )
+    assert contract_payload["base_experiment_id"] == "best_trailing"
+    assert runtime_config["trail_after_r"] == 1.0
+    assert runtime_config["max_trades_per_day"] == 2
 
 
 def test_compile_research_thesis_leaves_no_tmp_artifacts(tmp_path: Path) -> None:
@@ -634,26 +680,7 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
         if "-c" in cmd:
             return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
         target = experiment_dir / "runtime_config.json"
-        target.write_text(
-            json.dumps(
-                {
-                    "family": "ema",
-                    "data_universe": "nasdaq8",
-                    "validation_start": "2020-01-01",
-                    "validation_end": "2020-12-31",
-                    "timeframe_long": 15,
-                    "timeframe_short": 5,
-                    "ema_length": 5,
-                    "rr_ratio": 3.0,
-                    "direction_bias": "short_only",
-                    "entry_cutoff_time": "10:00",
-                    "max_trades_per_day": 3,
-                    "trail_after_r": 3.0,
-                    "allow_unbounded_research_backtest": True,
-                }
-            )
-            + "\n"
-        )
+        target.write_text(json.dumps(_ema_runtime_config()) + "\n")
         raise subprocess.TimeoutExpired(
             cmd=cmd,
             timeout=kwargs["timeout"],
@@ -795,6 +822,55 @@ def test_builder_implementation_verifier_rejects_new_config_keys_needed_runtime_
 
     assert result.passed is False
     assert "metadata_config_change_not_allowed:new_config_keys_needed" in result.failures
+
+
+def test_builder_implementation_verifier_rejects_undeclared_drift_from_base_config(
+    tmp_path: Path,
+) -> None:
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "strategy.py").write_text("config.get('max_trades_per_day')\n")
+    base_dir = tmp_path / "experiments" / "best_trailing"
+    base_dir.mkdir(parents=True)
+    (base_dir / "runtime_config.json").write_text(
+        json.dumps(
+            {
+                **STRATEGIES["ema"].get_defaults(),
+                "trail_after_r": 1.0,
+                "max_trades_per_day": 3,
+            }
+        )
+        + "\n"
+    )
+    experiment_dir = tmp_path / "experiments" / "delay_on_best"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(
+        json.dumps(
+            {
+                **STRATEGIES["ema"].get_defaults(),
+                "trail_after_r": None,
+                "max_trades_per_day": 2,
+            }
+        )
+        + "\n"
+    )
+    thesis = {
+        "config_changes": {
+            "max_trades_per_day": 2,
+        }
+    }
+    contract = {"baseline_config_path": "experiments/best_trailing/runtime_config.json"}
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis=thesis,
+        contract=contract,
+        generated_config_path="experiments/delay_on_best/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert result.passed is False
+    assert "unexpected_config_drift:trail_after_r base=1.0 generated=null" in result.failures
 
 
 def test_builder_normalizes_legacy_new_config_keys_needed_before_missing_primitives() -> None:
@@ -993,23 +1069,7 @@ def test_build_missing_primitives_validates_generated_config_in_fresh_python(
             strategy_dir.mkdir(parents=True, exist_ok=True)
             (strategy_dir / "strategy.py").write_text("config.get('new_builder_key')\n")
             (experiment_dir / "runtime_config.json").write_text(
-                json.dumps(
-                    {
-                        "family": "ema",
-                        "data_universe": "nasdaq8",
-                        "validation_start": "2020-01-01",
-                        "validation_end": "2020-12-31",
-                        "timeframe_long": 15,
-                        "timeframe_short": 5,
-                        "ema_length": 5,
-                        "rr_ratio": 3.0,
-                        "direction_bias": "short_only",
-                        "entry_cutoff_time": "10:00",
-                        "max_trades_per_day": 3,
-                        "new_builder_key": 1,
-                    }
-                )
-                + "\n"
+                json.dumps(_ema_runtime_config(new_builder_key=1)) + "\n"
             )
             return type("Proc", (), {"stdout": "generated", "stderr": "", "returncode": 0})()
         if "-c" in cmd:
@@ -1079,23 +1139,7 @@ def test_build_missing_primitives_retries_once_with_verifier_feedback(
                 strategy_text += "logger.info('new_builder_metric')\n"
             (strategy_dir / "strategy.py").write_text(strategy_text)
             (experiment_dir / "runtime_config.json").write_text(
-                json.dumps(
-                    {
-                        "family": "ema",
-                        "data_universe": "nasdaq8",
-                        "validation_start": "2020-01-01",
-                        "validation_end": "2020-12-31",
-                        "timeframe_long": 15,
-                        "timeframe_short": 5,
-                        "ema_length": 5,
-                        "rr_ratio": 3.0,
-                        "direction_bias": "short_only",
-                        "entry_cutoff_time": "10:00",
-                        "max_trades_per_day": 3,
-                        "new_builder_key": 1,
-                    }
-                )
-                + "\n"
+                json.dumps(_ema_runtime_config(new_builder_key=1)) + "\n"
             )
             return type(
                 "Proc",
@@ -1240,7 +1284,7 @@ def test_build_missing_primitives_rebuilds_existing_invalid_generated_config(
             strategy_dir = tmp_path / "strategies" / "ema"
             strategy_dir.mkdir(parents=True, exist_ok=True)
             (strategy_dir / "strategy.py").write_text("config.get('new_builder_key')\n")
-            config_path.write_text(json.dumps({"family": "ema", "new_builder_key": 1}) + "\n")
+            config_path.write_text(json.dumps(_ema_runtime_config(new_builder_key=1)) + "\n")
             return type("Proc", (), {"stdout": "rebuilt", "stderr": "", "returncode": 0})()
         raise AssertionError(f"unexpected subprocess command: {cmd!r}")
 
@@ -1383,7 +1427,7 @@ if "ema" in config:
     target.write_text("data_universe: nasdaq8\\nema_length: 5\\ntimeframe_short: 5\\ntimeframe_long: 15\\nrr_ratio: 3.0\\ndirection_bias: short_only\\nentry_cutoff_time: '10:00'\\nmax_trades_per_day: 3\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
 else:
     target.write_text("data_universe: nasdaq8\\nbuilder_probe: true\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
-print(f"generated {config}")
+print(f"generated {{config}}")
 """)
     codex.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
@@ -1441,7 +1485,7 @@ config = re.search(r"- Expected config path: (.+)", prompt).group(1)
 target = root / config
 target.parent.mkdir(parents=True, exist_ok=True)
 target.write_text("ema_length: -1\\n")
-print(f"generated {config}")
+print(f"generated {{config}}")
 """)
     codex.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
@@ -1506,7 +1550,8 @@ def test_build_missing_primitives_uses_structured_halted_artifacts(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     codex = bin_dir / "codex"
-    codex.write_text("""#!/usr/bin/env python3
+    generated_config = json.dumps(_ema_runtime_config(ema_length=7))
+    codex.write_text(f"""#!/usr/bin/env python3
 import pathlib
 import re
 import sys
@@ -1516,8 +1561,8 @@ root = pathlib.Path(re.search(r"- Repo root: (.+)", prompt).group(1))
 config = re.search(r"- Expected config path: (.+)", prompt).group(1)
 target = root / config
 target.parent.mkdir(parents=True, exist_ok=True)
-target.write_text('''{"data_universe": "nasdaq8", "allow_unbounded_research_backtest": true, "validation_start": "2020-01-01", "validation_end": "2020-12-31", "timeframe_long": 15, "timeframe_short": 5, "ema_length": 7, "rr_ratio": 2.5}''')
-print(f"generated {config}")
+target.write_text('''{generated_config}''')
+print(f"generated {{config}}")
 """)
     codex.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")

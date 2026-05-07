@@ -171,6 +171,29 @@ def test_validate_thesis_rejects_new_config_keys_needed_inside_config_changes() 
         validate_thesis_dict(thesis, prior_theses=[])
 
 
+def test_validate_thesis_rejects_prior_best_language_without_base_config_path() -> None:
+    thesis = _base_engine_change_thesis("preserve_best_without_base", "market_microstructure")
+    thesis["mechanism"] = (
+        "Preserve the current best trailing-stop edge while adding a new execution filter."
+    )
+
+    with pytest.raises(ThesisValidationError, match="base_config_path is required"):
+        validate_thesis_dict(thesis, prior_theses=[])
+
+
+def test_validate_thesis_accepts_prior_best_language_with_base_config_path() -> None:
+    thesis = _base_engine_change_thesis("preserve_best_with_base", "market_microstructure")
+    thesis["mechanism"] = (
+        "Preserve the current best trailing-stop edge while adding a new execution filter."
+    )
+    thesis["base_experiment_id"] = "05287d64f61f"
+    thesis["base_config_path"] = "experiments/05287d64f61f/runtime_config.json"
+
+    validated = validate_thesis_dict(thesis, prior_theses=[])
+
+    assert validated.base_config_path == "experiments/05287d64f61f/runtime_config.json"
+
+
 def test_validate_real_config_overlap_still_rejected_with_sentinel() -> None:
     thesis = _base_engine_change_thesis("duplicate_entry_cutoff", "entry_timing")
     thesis["config_changes"] = {

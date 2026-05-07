@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import yaml
+
 from config_hash import _config_hash
 from persistence_utils import write_text_atomic
 from research_types import ExperimentContract
@@ -12,6 +14,36 @@ from strategy_family import load_family
 
 if TYPE_CHECKING:
     from research_types import ResearchThesis
+
+
+def _baseline_config_path_for_family(family_name: str) -> str:
+    return f"configs/{load_family(family_name).base_config_filename}"
+
+
+def _resolved_base_config_path(thesis: "ResearchThesis") -> str:
+    return thesis.base_config_path or _baseline_config_path_for_family(thesis.strategy_family)
+
+
+def _load_base_runtime_config(root: Path, thesis: "ResearchThesis") -> dict:
+    base_path = _resolved_base_config_path(thesis)
+    path = root / base_path
+    if thesis.base_config_path and not path.exists():
+        raise ValueError(
+            f"Base config path does not exist for thesis '{thesis.thesis_id}': {base_path}"
+        )
+    if not path.exists():
+        return STRATEGIES[thesis.strategy_family].get_defaults()
+    payload = yaml.safe_load(path.read_text()) or {}
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"Base config must be a mapping for thesis '{thesis.thesis_id}': {base_path}"
+        )
+    runtime_config = payload.get("runtime_config", payload)
+    if not isinstance(runtime_config, dict):
+        raise ValueError(
+            f"Base runtime config must be a mapping for thesis '{thesis.thesis_id}': {base_path}"
+        )
+    return dict(runtime_config)
 
 
 def _needs_code_contract(
@@ -29,7 +61,9 @@ def _needs_code_contract(
         experiment_id=experiment_id,
         thesis_id=thesis.thesis_id,
         strategy_family=family_name,
-        baseline_config_path=f"configs/{load_family(family_name).base_config_filename}",
+        baseline_config_path=_resolved_base_config_path(thesis),
+        base_experiment_id=thesis.base_experiment_id,
+        base_config_hash=_config_hash(_load_base_runtime_config(root, thesis)),
         runtime_config={},
         hypothesis=thesis.hypothesis,
         mechanism=thesis.mechanism,
@@ -60,7 +94,9 @@ def _compile_runtime_config_contract(
         experiment_id=experiment_id,
         thesis_id=thesis.thesis_id,
         strategy_family=family_name,
-        baseline_config_path=f"configs/{load_family(family_name).base_config_filename}",
+        baseline_config_path=_resolved_base_config_path(thesis),
+        base_experiment_id=thesis.base_experiment_id,
+        base_config_hash=_config_hash(_load_base_runtime_config(root, thesis)),
         runtime_config=runtime_config,
         hypothesis=thesis.hypothesis,
         mechanism=thesis.mechanism,
@@ -73,15 +109,18 @@ def _compile_runtime_config_contract(
     return contract
 
 
-def _runtime_config_for_registered_strategy(family_name: str, config_changes: dict) -> dict | None:
+def _runtime_config_for_registered_strategy(
+    family_name: str, config_changes: dict, base_config: dict
+) -> dict | None:
     strategy = STRATEGIES.get(family_name)
     if strategy is None:
         return None
     defaults = strategy.get_defaults()
-    invalid_keys = sorted(set(config_changes) - set(defaults))
+    allowed_keys = set(defaults) | set(base_config)
+    invalid_keys = sorted(set(config_changes) - allowed_keys)
     if invalid_keys:
         return {}
-    return {**defaults, **config_changes}
+    return {**base_config, **config_changes}
 
 
 def compile_research_thesis(
@@ -102,7 +141,10 @@ def compile_research_thesis(
     if thesis.requires_code_change:
         return _needs_code_contract(thesis, root)
 
-    runtime_config = _runtime_config_for_registered_strategy(family_name, thesis.config_changes)
+    base_config = _load_base_runtime_config(root, thesis)
+    runtime_config = _runtime_config_for_registered_strategy(
+        family_name, thesis.config_changes, base_config
+    )
     if runtime_config is not None:
         if not runtime_config:
             return _needs_code_contract(thesis, root)
