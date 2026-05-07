@@ -4,19 +4,20 @@ set -euo pipefail
 HALO_ENGINE_VERSION="${HALO_ENGINE_VERSION:-0.1.5}"
 TOOL_ROOT="${AUTORESEARCH_HALO_TOOL_ROOT:-/opt/autoresearch-tools/halo}"
 VENV_DIR="${TOOL_ROOT}/venv"
-LOCK_DIR="${TOOL_ROOT}/.install.lock"
+LOCK_FILE="${TOOL_ROOT}/.install.lock"
 
 mkdir -p "${TOOL_ROOT}"
 
-if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
-  echo "HALO tool provisioning is already running: ${LOCK_DIR}" >&2
-  exit 75
+if ! command -v flock >/dev/null 2>&1; then
+  echo "flock is required for safe HALO tool provisioning; install util-linux or run on the VPS." >&2
+  exit 69
 fi
 
-cleanup() {
-  rmdir "${LOCK_DIR}" 2>/dev/null || true
-}
-trap cleanup EXIT
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+  echo "HALO tool provisioning is already running: ${LOCK_FILE}" >&2
+  exit 75
+fi
 
 python3 -m venv "${VENV_DIR}"
 "${VENV_DIR}/bin/python" -m pip install --upgrade pip

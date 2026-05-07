@@ -67,11 +67,11 @@ def _resolve_halo_binary() -> str | None:
         configured_path = Path(configured).expanduser()
         if _is_executable_file(configured_path):
             return str(configured_path)
-        log.error(
+        log.warning(
             f"HALO binary configured by {HALO_BINARY_ENV} is not executable: {configured_path}. "
+            "Falling back to PATH/default discovery. "
             "Action: run scripts/provision_halo_tool.sh or set AUTORESEARCH_HALO_BINARY to a valid halo CLI."
         )
-        return None
 
     existing = shutil.which(HALO_BINARY)
     if existing:

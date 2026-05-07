@@ -153,6 +153,15 @@ def test_env_halo_binary_rejects_non_executable(tmp_path, monkeypatch):
     assert improvement_halo._resolve_halo_binary() is None
 
 
+def test_env_halo_binary_falls_back_when_non_executable(tmp_path, monkeypatch):
+    halo_bin = tmp_path / "halo"
+    halo_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setenv(improvement_halo.HALO_BINARY_ENV, str(halo_bin))
+    monkeypatch.setattr(improvement_halo.shutil, "which", lambda _b: "/usr/bin/halo")
+
+    assert improvement_halo._resolve_halo_binary() == "/usr/bin/halo"
+
+
 def test_flag_on_oauth_proxy_unavailable_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_HALO, "1")
     monkeypatch.setattr(improvement_halo.shutil, "which", lambda _b: "/usr/bin/halo")
