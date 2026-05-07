@@ -45,6 +45,7 @@ CONFIG_OVERLAP_THRESHOLD = 0.5
 # but are not actual strategy parameters. Including these in novelty checks
 # makes every engine-change thesis look like a duplicate of the previous one.
 CONFIG_OVERLAP_IGNORED_KEYS = frozenset({"requires_engine_change"})
+CONFIG_CHANGES_METADATA_KEYS = frozenset({"requires_code_change"})
 _MIN_EMERGENT_FIELD_CHARS = 40
 _EMERGENT_REQUIRED_FIELDS = (
     "why_existing_dimensions_do_not_fit",
@@ -564,6 +565,11 @@ def validate_research_thesis(
     if not thesis.config_changes and not thesis.requires_code_change:
         raise ThesisValidationError(
             "Thesis has neither config_changes nor requires_code_change=true"
+        )
+    for key in sorted(CONFIG_CHANGES_METADATA_KEYS & set(thesis.config_changes)):
+        raise ThesisValidationError(
+            f"config_changes contains thesis metadata key '{key}'. "
+            f"Set top-level {key}=true instead of putting it in runtime config changes."
         )
 
     if not thesis.expected_effects:

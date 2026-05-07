@@ -25,6 +25,7 @@ ANALYSIS_ONLY_DIAGNOSTIC_PREFIXES = (
     "implementation:",
 )
 BUILDER_SENTINEL_CONFIG_KEYS = frozenset({"requires_engine_change"})
+THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change"})
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,9 @@ def _verify_config_changes(thesis: dict[str, Any], config: dict[str, Any]) -> li
     if not isinstance(config_changes, dict):
         return ["thesis config_changes must be a JSON object"]
     for key, expected in _runtime_config_changes(config_changes).items():
+        if key in THESIS_METADATA_CONFIG_KEYS:
+            failures.append(f"metadata_config_change_not_allowed:{key}")
+            continue
         if key not in config:
             failures.append(f"config_change_missing:{key}")
             continue

@@ -103,6 +103,10 @@ def _mark_builder_manual_review(
         "requires_subagent": False,
         "artifact_dir": f"{controller.family.name}-manual-review",
     }
+    heartbeat = state.setdefault("heartbeat", {})
+    heartbeat["blocked_thesis"] = thesis_id
+    heartbeat["blocked_builder_status"] = str(builder_result.get("status") or "error")
+    heartbeat["blocked_reason"] = state["next_action"]["reason"]
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
     return state

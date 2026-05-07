@@ -24,6 +24,7 @@ BUILDER_CLI_TIMEOUT_SECONDS = 900
 BUILDER_IMPLEMENTATION_RETRY_LIMIT = 1
 BUILDER_CLI_MODEL = "gpt-5.2"
 BUILDER_CLI_REASONING_EFFORT: str | None = None
+THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change"})
 
 
 def _coerce_subprocess_output(value: Any) -> str:
@@ -48,7 +49,28 @@ def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str,
         return rp
     if mp is not None:
         return mp
-    return sorted((proposal.get("config_changes") or {}).keys())
+    config_changes = proposal.get("config_changes") or {}
+    if not isinstance(config_changes, dict):
+        return []
+    return sorted(key for key in config_changes if key not in THESIS_METADATA_CONFIG_KEYS)
+
+
+def _normalize_proposal_config_changes(proposal: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Keep thesis metadata out of runtime config_changes before builder reads it."""
+    config_changes = proposal.get("config_changes")
+    if not isinstance(config_changes, dict):
+        return proposal, False
+    leaked = THESIS_METADATA_CONFIG_KEYS & set(config_changes)
+    if not leaked:
+        return proposal, False
+    normalized = dict(proposal)
+    normalized_changes = dict(config_changes)
+    for key in leaked:
+        value = normalized_changes.pop(key)
+        if key == "requires_code_change" and value:
+            normalized[key] = True
+    normalized["config_changes"] = normalized_changes
+    return normalized, True
 
 
 def _find_cli() -> str | None:
@@ -247,14 +269,52 @@ Implement the missing primitive(s) for thesis `{thesis_id}` and write the result
 
 def _implementation_retry_prompt_extras(previous_result: dict[str, Any]) -> list[str]:
     failures = previous_result.get("implementation_verification_failures") or []
-    if not failures:
-        return []
-    return [
-        "Previous builder attempt failed deterministic implementation verification.",
-        "Fix these exact verifier failures before reporting success:",
-        json.dumps(failures, indent=2),
-        "Do not rewrite unrelated code. Patch only the missing implementation/diagnostic gaps.",
-    ]
+    if failures:
+        return [
+            "Previous builder attempt failed deterministic implementation verification.",
+            "Fix these exact verifier failures before reporting success:",
+            json.dumps(failures, indent=2),
+            "Do not rewrite unrelated code. Patch only the missing implementation/diagnostic gaps.",
+        ]
+    if previous_result.get("status") == "error" and not previous_result.get("validation_passed"):
+        return [
+            "Previous generated config failed runtime validation before backtest.",
+            "Fix the generated runtime config and overwrite it before reporting success.",
+            str(previous_result.get("reason") or "unknown validation failure"),
+            (
+                "Do not copy thesis metadata keys such as requires_code_change into "
+                "runtime_config.json; they belong only in thesis.json."
+            ),
+        ]
+    return []
+
+
+def _should_retry_builder_result(result: dict[str, Any]) -> bool:
+    return bool(result.get("implementation_verification_failures"))
+
+
+def _builder_retry_prompt(
+    *,
+    thesis_id: str,
+    root: Path,
+    proposal_path: Path,
+    compilation_path: Path,
+    config_path: str,
+    family_name: str,
+    missing_primitives: list[str],
+    previous_result: dict[str, Any] | None,
+) -> str:
+    prompt_extras = _implementation_retry_prompt_extras(previous_result) if previous_result else []
+    return _build_builder_prompt(
+        thesis_id=thesis_id,
+        root=root,
+        proposal_path=proposal_path,
+        compilation_path=compilation_path,
+        config_path=config_path,
+        family_name=family_name,
+        missing_primitives=missing_primitives,
+        prompt_extras=prompt_extras,
+    )
 
 
 def _validated_generated_config_result(
@@ -329,6 +389,9 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     structured = _load_structured_thesis_artifacts(root, thesis_id)
     if structured is not None:
         proposal, compilation, proposal_path, compilation_path = structured
+        proposal, proposal_normalized = _normalize_proposal_config_changes(proposal)
+        if proposal_normalized:
+            write_json_artifact(proposal_path, proposal)
         family_name = proposal.get("strategy_family") or compilation.get("strategy_family")
         if not family_name:
             return {
@@ -397,6 +460,9 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 "generated_config": None,
                 "validation_passed": False,
             }
+        proposal, proposal_normalized = _normalize_proposal_config_changes(proposal)
+        if proposal_normalized:
+            write_json_artifact(proposal_path, proposal)
         try:
             compilation = json.loads(compilation_path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
@@ -496,8 +562,9 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         },
     )
 
+    out: dict[str, Any] | None = None
     if config_abspath.exists():
-        result = _validated_generated_config_result(
+        existing_result = _validated_generated_config_result(
             root=root,
             thesis=proposal,
             config_abspath=config_abspath,
@@ -508,15 +575,21 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             timed_out=False,
             duration_seconds=time.monotonic() - started_at,
         )
-        assert result is not None
-        artifact_paths = _write_artifacts(result=result)
-        _trace_builder_finish(thesis_id=thesis_id, result=result, artifact_paths=artifact_paths)
-        return result
+        assert existing_result is not None
+        if existing_result["status"] != "error":
+            artifact_paths = _write_artifacts(result=existing_result)
+            _trace_builder_finish(
+                thesis_id=thesis_id, result=existing_result, artifact_paths=artifact_paths
+            )
+            return existing_result
+        out = existing_result
 
     if not cli:
         result = {
             "status": "error",
-            "reason": "No CLI available for builder dispatch",
+            "reason": (
+                out["reason"] if out is not None else "No CLI available for builder dispatch"
+            ),
             "generated_config": None,
             "validation_passed": False,
         }
@@ -526,12 +599,11 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
 
     stdout_log = ""
     stderr_log = ""
-    out: dict[str, Any] | None = None
     last_prompt = prompt
     for attempt_index in range(BUILDER_IMPLEMENTATION_RETRY_LIMIT + 1):
         attempt_prompt = prompt
-        if attempt_index > 0 and out:
-            attempt_prompt = _build_builder_prompt(
+        if out:
+            attempt_prompt = _builder_retry_prompt(
                 thesis_id=thesis_id,
                 root=root,
                 proposal_path=proposal_path,
@@ -539,7 +611,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 config_path=config_path,
                 family_name=family_name,
                 missing_primitives=missing_primitives,
-                prompt_extras=_implementation_retry_prompt_extras(out),
+                previous_result=out,
             )
         last_prompt = attempt_prompt
         try:
@@ -607,7 +679,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                     "duration_seconds": round(time.monotonic() - started_at, 3),
                 }
         out["builder_attempts"] = attempt_index + 1
-        if out["status"] != "error" or not out.get("implementation_verification_failures"):
+        if out["status"] != "error" or not _should_retry_builder_result(out):
             break
     assert out is not None
     artifact_paths = _write_builder_attempt_artifacts(

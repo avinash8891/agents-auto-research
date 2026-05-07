@@ -143,6 +143,20 @@ def test_validate_engine_change_thesis_not_rejected_for_sentinel_overlap() -> No
     assert validated.thesis_id == "close_confirmed_break_entry_gate"
 
 
+def test_validate_thesis_rejects_metadata_keys_inside_config_changes() -> None:
+    thesis = _base_engine_change_thesis("metadata_leaked_to_config_changes", "signal_quality")
+    thesis["config_changes"] = {
+        "requires_code_change": True,
+        "new_config_keys_needed": {"entry_confirmation_mode": "close_beyond_break"},
+    }
+
+    with pytest.raises(
+        ThesisValidationError,
+        match="config_changes contains thesis metadata key 'requires_code_change'",
+    ):
+        validate_thesis_dict(thesis, prior_theses=[])
+
+
 def test_validate_real_config_overlap_still_rejected_with_sentinel() -> None:
     thesis = _base_engine_change_thesis("duplicate_entry_cutoff", "entry_timing")
     thesis["config_changes"] = {

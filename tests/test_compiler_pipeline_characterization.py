@@ -736,6 +736,30 @@ def test_builder_implementation_verifier_rejects_unconsumed_vwap_config(
     assert any(failure.startswith("vwap_data_dependency_missing:") for failure in result.failures)
 
 
+def test_builder_implementation_verifier_rejects_metadata_config_change_consumption(
+    tmp_path: Path,
+) -> None:
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "strategy.py").write_text("config.get('requires_code_change')\n")
+    experiment_dir = tmp_path / "experiments" / "metadata_leak"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(
+        json.dumps({"requires_code_change": True}) + "\n"
+    )
+    thesis = {"config_changes": {"requires_code_change": True}}
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis=thesis,
+        generated_config_path="experiments/metadata_leak/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert result.passed is False
+    assert "metadata_config_change_not_allowed:requires_code_change" in result.failures
+
+
 def test_builder_implementation_verifier_requires_thesis_diagnostic_names(
     tmp_path: Path,
 ) -> None:
@@ -1095,6 +1119,79 @@ def test_build_missing_primitives_does_not_retry_fresh_validation_failures(
     assert result["builder_attempts"] == 1
     assert result["validation_passed"] is False
     assert codex_call_count == 1
+
+
+def test_build_missing_primitives_rebuilds_existing_invalid_generated_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    thesis_id = "builder_rebuilds_stale_invalid_config"
+    experiment_dir = tmp_path / "experiments" / thesis_id
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    (experiment_dir / "thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "hypothesis": "stale invalid config should not block builder resume",
+                "mechanism": "builder must overwrite bad metadata leakage",
+                "config_changes": {"new_builder_key": 1},
+                "requested_primitives": ["new_builder_key"],
+            }
+        )
+        + "\n"
+    )
+    (experiment_dir / "contract.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": thesis_id,
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "baseline_config_path": "configs/ema_base.yaml",
+                "runtime_config": {},
+                "status": "needs_code",
+            }
+        )
+        + "\n"
+    )
+    config_path = experiment_dir / "runtime_config.json"
+    config_path.write_text(json.dumps({"family": "ema", "requires_code_change": True}) + "\n")
+    codex_call_count = 0
+
+    def fake_run(cmd, *args, **kwargs):
+        nonlocal codex_call_count
+        if cmd == ["codex", "exec", "--help"]:
+            return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
+        if "-c" in cmd:
+            if "requires_code_change" in config_path.read_text():
+                return type(
+                    "Proc",
+                    (),
+                    {
+                        "stdout": "",
+                        "stderr": "Unsupported EMA runtime config keys: requires_code_change",
+                        "returncode": 1,
+                    },
+                )()
+            return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
+        if cmd[:2] == ["codex", "exec"]:
+            codex_call_count += 1
+            strategy_dir = tmp_path / "strategies" / "ema"
+            strategy_dir.mkdir(parents=True, exist_ok=True)
+            (strategy_dir / "strategy.py").write_text("config.get('new_builder_key')\n")
+            config_path.write_text(json.dumps({"family": "ema", "new_builder_key": 1}) + "\n")
+            return type("Proc", (), {"stdout": "rebuilt", "stderr": "", "returncode": 0})()
+        raise AssertionError(f"unexpected subprocess command: {cmd!r}")
+
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "completed"
+    assert result["generated_config"] == f"experiments/{thesis_id}/runtime_config.json"
+    assert result["validation_passed"] is True
+    assert codex_call_count == 1
+    assert "requires_code_change" not in config_path.read_text()
 
 
 def test_builder_prompt_requires_code_consumption_proof_for_missing_primitives(

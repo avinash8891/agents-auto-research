@@ -1044,6 +1044,9 @@ def test_resolve_next_action_marks_manual_review_when_builder_fails(controller, 
     manual_review = resolved.get("manual_review_theses", [])
     assert manual_review
     assert manual_review[-1]["thesis_id"] == halted_thesis_id
+    assert resolved["heartbeat"]["blocked_thesis"] == halted_thesis_id
+    assert resolved["heartbeat"]["blocked_builder_status"] == "error"
+    assert "Builder failed" in resolved["heartbeat"]["blocked_reason"]
 
 
 def test_resolve_next_action_marks_manual_review_when_builder_raises(controller, monkeypatch):
