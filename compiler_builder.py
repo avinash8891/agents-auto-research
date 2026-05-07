@@ -21,6 +21,7 @@ from trace_sdk import record_event, trace
 log = get_logger(__name__)
 
 BUILDER_CLI_TIMEOUT_SECONDS = 900
+BUILDER_IMPLEMENTATION_RETRY_LIMIT = 1
 BUILDER_CLI_MODEL = "gpt-5.2"
 BUILDER_CLI_REASONING_EFFORT: str | None = None
 
@@ -242,6 +243,18 @@ Context:
 Goal:
 Implement the missing primitive(s) for thesis `{thesis_id}` and write the resulting config artifact.
 """
+
+
+def _implementation_retry_prompt_extras(previous_result: dict[str, Any]) -> list[str]:
+    failures = previous_result.get("implementation_verification_failures") or []
+    if not failures:
+        return []
+    return [
+        "Previous builder attempt failed deterministic implementation verification.",
+        "Fix these exact verifier failures before reporting success:",
+        json.dumps(failures, indent=2),
+        "Do not rewrite unrelated code. Patch only the missing implementation/diagnostic gaps.",
+    ]
 
 
 def _validated_generated_config_result(
@@ -511,79 +524,101 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         _trace_builder_finish(thesis_id=thesis_id, result=result, artifact_paths=artifact_paths)
         return result
 
-    try:
-        proc = subprocess.run(
-            builder_cmd,
-            capture_output=True,
-            text=True,
-            cwd=str(root),
-            input=prompt,
-            timeout=BUILDER_CLI_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout, stderr = _timeout_output(exc)
-        duration_seconds = time.monotonic() - started_at
-        result = _validated_generated_config_result(
-            root=root,
-            thesis=proposal,
-            config_abspath=config_abspath,
-            config_path=config_path,
-            family_name=family_name,
-            reason=(
-                f"builder timed out after writing a valid config: "
-                f"{BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}"
-            ),
-            exit_code=None,
-            timed_out=True,
-            duration_seconds=duration_seconds,
-        )
-        if result is None:
-            result = {
-                "status": "error",
-                "reason": f"builder timed out after {BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}",
-                "generated_config": None,
-                "validation_passed": False,
-                "timed_out": True,
-                "exit_code": None,
-                "duration_seconds": round(duration_seconds, 3),
-            }
-        artifact_paths = _write_artifacts(result=result, stdout=stdout, stderr=stderr)
-        _trace_builder_finish(thesis_id=thesis_id, result=result, artifact_paths=artifact_paths)
-        return result
-    proc_output = (proc.stdout or "") + (proc.stderr or "")
-
-    generated = config_path if config_abspath.exists() else None
-    if generated:
-        out = _validated_generated_config_result(
-            root=root,
-            thesis=proposal,
-            config_abspath=config_abspath,
-            config_path=config_path,
-            family_name=family_name,
-            reason=proc_output,
-            exit_code=proc.returncode,
-            timed_out=False,
-            duration_seconds=time.monotonic() - started_at,
-        )
-        assert out is not None
-        if out["status"] == "error":
-            artifact_paths = _write_artifacts(
-                result=out, stdout=proc.stdout or "", stderr=proc.stderr or ""
+    stdout_log = ""
+    stderr_log = ""
+    out: dict[str, Any] | None = None
+    last_prompt = prompt
+    for attempt_index in range(BUILDER_IMPLEMENTATION_RETRY_LIMIT + 1):
+        attempt_prompt = prompt
+        if attempt_index > 0 and out:
+            attempt_prompt = _build_builder_prompt(
+                thesis_id=thesis_id,
+                root=root,
+                proposal_path=proposal_path,
+                compilation_path=compilation_path,
+                config_path=config_path,
+                family_name=family_name,
+                missing_primitives=missing_primitives,
+                prompt_extras=_implementation_retry_prompt_extras(out),
             )
-            _trace_builder_finish(thesis_id=thesis_id, result=out, artifact_paths=artifact_paths)
-            return out
-    else:
-        out = {
-            "status": "error",
-            "reason": proc_output,
-            "generated_config": None,
-            "validation_passed": False,
-            "exit_code": proc.returncode,
-            "timed_out": False,
-            "duration_seconds": round(time.monotonic() - started_at, 3),
-        }
-    artifact_paths = _write_artifacts(
-        result=out, stdout=proc.stdout or "", stderr=proc.stderr or ""
+        last_prompt = attempt_prompt
+        try:
+            proc = subprocess.run(
+                builder_cmd,
+                capture_output=True,
+                text=True,
+                cwd=str(root),
+                input=attempt_prompt,
+                timeout=BUILDER_CLI_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout_log, stderr_log = _timeout_output(exc)
+            duration_seconds = time.monotonic() - started_at
+            out = _validated_generated_config_result(
+                root=root,
+                thesis=proposal,
+                config_abspath=config_abspath,
+                config_path=config_path,
+                family_name=family_name,
+                reason=(
+                    f"builder timed out after writing a valid config: "
+                    f"{BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}"
+                ),
+                exit_code=None,
+                timed_out=True,
+                duration_seconds=duration_seconds,
+            )
+            if out is None:
+                out = {
+                    "status": "error",
+                    "reason": f"builder timed out after {BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}",
+                    "generated_config": None,
+                    "validation_passed": False,
+                    "timed_out": True,
+                    "exit_code": None,
+                    "duration_seconds": round(duration_seconds, 3),
+                }
+        else:
+            stdout_log = proc.stdout or ""
+            stderr_log = proc.stderr or ""
+            proc_output = stdout_log + stderr_log
+            generated = config_path if config_abspath.exists() else None
+            if generated:
+                out = _validated_generated_config_result(
+                    root=root,
+                    thesis=proposal,
+                    config_abspath=config_abspath,
+                    config_path=config_path,
+                    family_name=family_name,
+                    reason=proc_output,
+                    exit_code=proc.returncode,
+                    timed_out=False,
+                    duration_seconds=time.monotonic() - started_at,
+                )
+                assert out is not None
+            else:
+                out = {
+                    "status": "error",
+                    "reason": proc_output,
+                    "generated_config": None,
+                    "validation_passed": False,
+                    "exit_code": proc.returncode,
+                    "timed_out": False,
+                    "duration_seconds": round(time.monotonic() - started_at, 3),
+                }
+        out["builder_attempts"] = attempt_index + 1
+        if out["status"] != "error" or not out.get("implementation_verification_failures"):
+            break
+    assert out is not None
+    artifact_paths = _write_builder_attempt_artifacts(
+        artifact_dir=attempt_dir,
+        prompt=last_prompt,
+        command=builder_cmd,
+        cwd=root,
+        timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+        result=out,
+        stdout=stdout_log,
+        stderr=stderr_log,
     )
     _trace_builder_finish(thesis_id=thesis_id, result=out, artifact_paths=artifact_paths)
     return out
