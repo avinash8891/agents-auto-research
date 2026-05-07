@@ -63,12 +63,12 @@ def _analyst_data_root_guidance() -> str:
             "close.parquet, volume.parquet.\n"
             f"Do NOT probe {str(_ROOT / 'data')} unless AUTORESEARCH_DATA_ROOT is unset."
         )
-    fallback = str(_ROOT / "data")
     return (
         "AUTORESEARCH_DATA_ROOT is unset in this process.\n"
-        f"Fallback repo-local data path, if present: {fallback}\n"
-        "Before reading market data, check config/result artifacts for data_universe and "
-        "validate that the chosen path exists."
+        "Raw market data is unavailable unless the market data manifest below exposes "
+        "an exact existing universe_path.\n"
+        "Do NOT probe repo-local data directories or guess paths such as "
+        f"{str(_ROOT / 'data')}."
     )
 
 
@@ -129,8 +129,14 @@ def _market_data_manifest(trades_file: str) -> str:
             "or searches for open.parquet; use the paths above."
         )
     else:
+        lines.append("- No exact universe path resolved.")
         lines.append(
-            "- No exact universe path resolved. Check runtime_config/data_universe before any broad search."
+            "- Raw market data is unavailable for this analyst call; use trades.csv, "
+            "strategy_events.parquet, diagnostics.json, and source code only."
+        )
+        lines.append(
+            "- Do NOT probe repo-local data directories, recursive filesystem paths, "
+            "or guessed locations for OHLCV files."
         )
     return "\n".join(lines)
 
@@ -256,10 +262,10 @@ async def _call_analyst(
 2. A FOCUS QUESTION from the research conductor
 3. A strategy_events.parquet with every signal the strategy considered (accepted AND rejected)
 4. A diagnostics.json with event counts and rejection breakdown
-5. Access to RAW OHLCV DATA through the configured data root:
+5. Optional raw OHLCV data, only when the manifest below exposes exact paths:
 {_analyst_data_root_guidance()}
 {_market_data_manifest(trades_file)}
-   You can load price history to compute market context (ATR, volume, gaps, etc.).
+   If no exact universe_path is resolved, do not use raw OHLCV or search for it.
 
 You MUST use ALL provided files. Trades alone show what happened;
 strategy_events show what DIDN'T happen and WHY. Diagnostics give
@@ -282,8 +288,9 @@ WORKFLOW:
 1. ALWAYS start by reading diagnostics.json for the rejection breakdown.
 2. Use run_python to execute pandas analysis code on trades and/or events.
 3. When the focus question requires market context (volatility, volume,
-   trend, gaps, range characteristics), load the relevant symbol data from
-   AUTORESEARCH_DATA_ROOT/universes/{{DATA_UNIVERSE}}/ and compute what you need.
+   trend, gaps, range characteristics), use raw OHLCV only if the manifest
+   provides exact paths. If not, state that raw OHLCV is unavailable and
+   answer from trades/events/diagnostics/source code.
 4. Focus effort on the FOCUS QUESTION. Go deep, not wide.
 5. When you find a pattern, quantify it with exact numbers and sample sizes.
 6. Each run_python call is stateless. Put imports, path definitions, file reads,
@@ -296,7 +303,7 @@ CRITICAL RULES:
 - Cite exact numbers
 - Do NOT invent data
 - Do NOT repeat analyses the focus question doesn't ask for
-- If the focus question asks about market structure, USE the raw OHLCV data
+- Use raw OHLCV only from exact manifest paths. Never guess or probe data directories.
 - Do NOT read large source/data files into the chat unless strictly necessary.
   Prefer targeted run_python summaries and print compact tables only.
 

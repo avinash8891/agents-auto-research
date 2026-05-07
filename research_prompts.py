@@ -158,12 +158,14 @@ WORKFLOW:
    analyze_trades; use experiment-result tools, source-code reasoning, memory,
    and web_search instead. When a trades file is available, the analyst has
    access to trades.csv, strategy_events.parquet,
-   diagnostics.json, the strategy source code, AND raw OHLCV data in
-   the data/ directory. Ask the analyst to:
+   diagnostics.json, and the strategy source code. The analyst may also have
+   raw OHLCV, but only when its prompt exposes exact market data paths.
+   Ask the analyst to:
    - Test a SPECIFIC structural hypothesis you formed from steps 2-3
    - Read strategy source code to understand how the engine works
-   - Compute market context from raw OHLCV data (ATR, volume profiles,
-     gap sizes, range characteristics — whatever your hypothesis needs)
+   - Ask for raw OHLCV only when the analyst prompt exposes an exact market data path.
+     Otherwise require a trades/events/diagnostics proxy and explicitly note the
+     raw-data limitation.
    Do NOT ask the analyst to "break down PF by X" unless you have a
    reason to believe X matters mechanistically.
 

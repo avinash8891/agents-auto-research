@@ -299,6 +299,15 @@ def test_conductor_system_prompt_exposes_required_diagnostics_for_non_builtin_me
     assert "list them in required_diagnostics" in prompt
 
 
+def test_conductor_system_prompt_does_not_claim_raw_data_directory_is_always_available():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+
+    assert "raw OHLCV data in\n   the data/ directory" not in prompt
+    assert (
+        "Ask for raw OHLCV only when the analyst prompt exposes an exact market data path" in prompt
+    )
+
+
 def test_run_research_conductor_sync_records_top_level_usage_when_raw_usage_missing(
     monkeypatch,
 ):
@@ -938,6 +947,71 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     assert "Each run_python call is stateless" in captured["system_prompt"]
 
 
+def test_analyst_prompt_does_not_probe_repo_data_when_market_data_unresolved(monkeypatch, tmp_path):
+    monkeypatch.delenv("AUTORESEARCH_DATA_ROOT", raising=False)
+    captured: dict[str, str] = {}
+
+    def fake_trace_agent_prompt(agent_name, prompt, system_prompt="", **kwargs):
+        captured["agent_name"] = agent_name
+        captured["prompt"] = prompt
+        captured["system_prompt"] = system_prompt
+        return "analyst-trace-id"
+
+    monkeypatch.setattr(subagents, "trace_agent_prompt", fake_trace_agent_prompt)
+    monkeypatch.setattr(subagents, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(subagents, "_get_openai_client", lambda *_: object())
+
+    class FakeResult:
+        usage = SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2)
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+        def final_output_as(self, _type):
+            return json.dumps(
+                {
+                    "focus_answer": "ok",
+                    "key_anomalies": [],
+                    "rejection_insights": [],
+                    "overall_diagnosis": "ok",
+                    "discovery_questions": [],
+                }
+            )
+
+    class FakeRunner:
+        @staticmethod
+        def run_streamed(*args, **kwargs):
+            return FakeResult()
+
+    monkeypatch.setitem(sys.modules, "agents", ModuleType("agents"))
+    agents_mod = sys.modules["agents"]
+    agents_mod.Agent = lambda **kwargs: SimpleNamespace(**kwargs)
+    agents_mod.RunConfig = lambda **kwargs: SimpleNamespace(**kwargs)
+    agents_mod.Runner = FakeRunner
+    agents_mod.function_tool = lambda fn: fn
+    models_mod = ModuleType("agents.models.openai_chatcompletions")
+    models_mod.OpenAIChatCompletionsModel = lambda **kwargs: SimpleNamespace(**kwargs)
+    monkeypatch.setitem(sys.modules, "agents.models", ModuleType("agents.models"))
+    monkeypatch.setitem(sys.modules, "agents.models.openai_chatcompletions", models_mod)
+
+    result = asyncio.run(
+        subagents._call_analyst(
+            str(tmp_path / "runs" / "job-1" / "commit" / "unknown_hash" / "trades.csv"),
+            "test a market_microstructure hypothesis",
+            strategy_events_file=str(tmp_path / "events.parquet"),
+            diagnostics_file=str(tmp_path / "diagnostics.json"),
+        )
+    )
+
+    assert json.loads(result)["overall_diagnosis"] == "ok"
+    system_prompt = captured["system_prompt"]
+    assert "Raw market data is unavailable for this analyst call" in system_prompt
+    assert "Do NOT probe repo-local data directories" in system_prompt
+    assert "Fallback repo-local data path" not in system_prompt
+    assert "USE the raw OHLCV data" not in system_prompt
+
+
 def test_analyst_prompt_includes_market_data_manifest_from_runtime_config(monkeypatch, tmp_path):
     data_root = tmp_path / "autoresearch-data"
     universe_dir = data_root / "universes" / "nasdaq8"
@@ -1316,6 +1390,7 @@ def test_list_past_theses_filters_by_job_and_returns_bounded_index(tmp_path):
             "outcome": "accepted",
             "mechanism_dimension": "entry_timing",
             "dimension_novelty": "",
+            "new_dimension_name": "",
             "requires_code_change": False,
             "expected_effect_metrics": [],
             "evidence_count": 0,
