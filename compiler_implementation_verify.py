@@ -122,23 +122,31 @@ def _default_runtime_keys(family_name: str) -> set[str]:
 
 
 def _runtime_code_text(strategy_dir: Path) -> str:
+    text, _failures = _runtime_code_text_with_failures(strategy_dir)
+    return text
+
+
+def _runtime_code_text_with_failures(strategy_dir: Path) -> tuple[str, list[str]]:
     chunks: list[str] = []
+    failures: list[str] = []
     if not strategy_dir.exists():
-        return ""
+        return "", failures
     for path in sorted(strategy_dir.glob("*.py")):
         if path.name in SCHEMA_ONLY_FILES:
             continue
-        text = _read_source_text(path)
+        text, failure = _read_source_text(path)
+        if failure:
+            failures.append(failure)
         if text is not None:
             chunks.append(text)
-    return "\n".join(chunks)
+    return "\n".join(chunks), failures
 
 
-def _read_source_text(path: Path) -> str | None:
+def _read_source_text(path: Path) -> tuple[str | None, str | None]:
     try:
-        return path.read_text()
-    except (OSError, UnicodeDecodeError):
-        return None
+        return path.read_text(), None
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"source_read_failed:{path.name}:{type(exc).__name__}"
 
 
 def _verify_required_diagnostics(root: Path, family_name: str, thesis: dict[str, Any]) -> list[str]:
@@ -146,7 +154,8 @@ def _verify_required_diagnostics(root: Path, family_name: str, thesis: dict[str,
     required = thesis.get("required_diagnostics") or []
     if not isinstance(required, list):
         return ["required_diagnostics must be a list"]
-    runtime_text = _diagnostic_emission_text(root, family_name)
+    runtime_text, source_failures = _diagnostic_emission_text(root, family_name)
+    failures.extend(source_failures)
     for item in required:
         if not isinstance(item, str):
             continue
@@ -158,20 +167,23 @@ def _verify_required_diagnostics(root: Path, family_name: str, thesis: dict[str,
     return failures
 
 
-def _diagnostic_emission_text(root: Path, family_name: str) -> str:
+def _diagnostic_emission_text(root: Path, family_name: str) -> tuple[str, list[str]]:
     """Code surfaces allowed to emit required diagnostics.
 
     Some diagnostics are emitted by the family runtime/event logger, while
     aggregate PF buckets are emitted by the post-backtest metrics layer.
     """
-    chunks = [_runtime_code_text(root / "strategies" / family_name)]
+    strategy_text, failures = _runtime_code_text_with_failures(root / "strategies" / family_name)
+    chunks = [strategy_text]
     for rel in ("metrics.py", "strategy_event_logger.py", "backtest/runner.py"):
         path = root / rel
         if path.exists():
-            text = _read_source_text(path)
+            text, failure = _read_source_text(path)
+            if failure:
+                failures.append(failure)
             if text is not None:
                 chunks.append(text)
-    return "\n".join(chunks)
+    return "\n".join(chunks), failures
 
 
 def _diagnostic_key_from_requirement(requirement: str) -> str | None:

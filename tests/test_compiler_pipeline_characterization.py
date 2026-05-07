@@ -832,7 +832,7 @@ def test_builder_implementation_verifier_accepts_custom_pf_diagnostic_from_metri
     assert result.failures == []
 
 
-def test_builder_implementation_verifier_skips_non_utf8_diagnostic_sources(
+def test_builder_implementation_verifier_reports_non_utf8_diagnostic_sources(
     tmp_path: Path,
 ) -> None:
     strategy_dir = tmp_path / "strategies" / "ema"
@@ -857,6 +857,7 @@ def test_builder_implementation_verifier_skips_non_utf8_diagnostic_sources(
     )
 
     assert result.passed is False
+    assert "source_read_failed:metrics.py:UnicodeDecodeError" in result.failures
     assert (
         "required_diagnostic_not_emitted:pf_by_time_since_last_same_symbol_entry_bucket"
         in result.failures
