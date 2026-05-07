@@ -10,6 +10,7 @@ import yaml
 
 from backtest.data_universe import data_universe_path
 from strategies import STRATEGIES
+from strategy_family import load_family
 
 SCHEMA_ONLY_FILES = {
     "__init__.py",
@@ -82,8 +83,8 @@ def _verify_config_changes(thesis: dict[str, Any], config: dict[str, Any]) -> li
         if not _json_equal(actual, expected):
             failures.append(
                 "config_change_mismatch:"
-                f"{key}: expected={json.dumps(expected, sort_keys=True)} "
-                f"actual={json.dumps(actual, sort_keys=True)}"
+                f"{key}: expected={_json_repr(expected)} "
+                f"actual={_json_repr(actual)}"
             )
     return failures
 
@@ -102,7 +103,10 @@ def _verify_no_undeclared_config_drift(
         return []
     base_path = root / base_config_path
     if not base_path.exists():
-        expected_baseline = f"configs/{family_name}_base.yaml"
+        try:
+            expected_baseline = load_family(family_name).baseline_config_path
+        except ValueError:
+            return [f"base_config_missing:{base_config_path}"]
         if base_config_path == expected_baseline:
             base_config = STRATEGIES[family_name].get_defaults()
         else:
@@ -124,8 +128,8 @@ def _verify_no_undeclared_config_drift(
         if not _json_equal(generated_value, base_value):
             failures.append(
                 "unexpected_config_drift:"
-                f"{key} base={json.dumps(base_value, sort_keys=True)} "
-                f"generated={json.dumps(generated_value, sort_keys=True)}"
+                f"{key} base={_json_repr(base_value)} "
+                f"generated={_json_repr(generated_value)}"
             )
     for key in sorted(set(config) - set(base_config) - allowed_drift):
         failures.append(f"unexpected_config_key:{key}")
@@ -133,9 +137,11 @@ def _verify_no_undeclared_config_drift(
 
 
 def _json_equal(left: Any, right: Any) -> bool:
-    return json.dumps(left, sort_keys=True, separators=(",", ":")) == json.dumps(
-        right, sort_keys=True, separators=(",", ":")
-    )
+    return _json_repr(left) == _json_repr(right)
+
+
+def _json_repr(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def _verify_config_key_consumption(

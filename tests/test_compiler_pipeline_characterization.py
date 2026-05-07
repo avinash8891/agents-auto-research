@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -517,9 +518,7 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
         captured["input"] = input
         target = tmp_path / "configs" / "variants" / f"{thesis_id}.yaml"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            "data_universe: nasdaq8\nvalidation_start: 2020-01-01\nvalidation_end: 2020-12-31\n"
-        )
+        target.write_text(json.dumps(_ema_runtime_config()) + "\n")
         return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
 
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
@@ -538,6 +537,7 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
     assert captured["input"].startswith("Instructions:\n")
     assert captured["input"].find("Instructions:\n") < captured["input"].find("Context:\n")
     assert captured["input"].find("Context:\n") < captured["input"].find("Goal:\n")
+    assert "Base config path: configs/ema_base.yaml" in captured["input"]
     assert "Thesis payload" not in captured["input"]
     assert "Contract payload" not in captured["input"]
     assert captured["timeout"] == compiler_builder.BUILDER_CLI_TIMEOUT_SECONDS
@@ -549,6 +549,10 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
     assert (attempt_dir / "stderr.log").exists()
     assert (attempt_dir / "result.json").exists()
     assert json.loads((attempt_dir / "result.json").read_text())["exit_code"] == 0
+    request = json.loads(
+        (tmp_path / family.builder_requests_dirname / f"{thesis_id}.json").read_text()
+    )
+    assert request["base_config_path"] == "configs/ema_base.yaml"
 
 
 def test_build_missing_primitives_trace_links_builder_attempt_artifacts(
@@ -570,9 +574,7 @@ def test_build_missing_primitives_trace_links_builder_attempt_artifacts(
     def fake_run(cmd, capture_output, text, cwd=None, timeout=None, input=None, **kwargs):
         target = tmp_path / "configs" / "variants" / f"{thesis_id}.yaml"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            "data_universe: nasdaq8\nvalidation_start: 2020-01-01\nvalidation_end: 2020-12-31\n"
-        )
+        target.write_text(json.dumps(_ema_runtime_config()) + "\n")
         return type(
             "Proc", (), {"stdout": "builder stdout", "stderr": "builder stderr", "returncode": 0}
         )()
@@ -871,6 +873,36 @@ def test_builder_implementation_verifier_rejects_undeclared_drift_from_base_conf
 
     assert result.passed is False
     assert "unexpected_config_drift:trail_after_r base=1.0 generated=null" in result.failures
+
+
+def test_builder_implementation_verifier_uses_registered_baseline_filename_for_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    family_name = "custom_family"
+    experiment_dir = tmp_path / "experiments" / "custom"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(json.dumps({"alpha": 1, "beta": 2}) + "\n")
+
+    monkeypatch.setattr(
+        "compiler_implementation_verify.load_family",
+        lambda name: SimpleNamespace(baseline_config_path="configs/custom_seed.yaml"),
+    )
+    monkeypatch.setitem(
+        STRATEGIES,
+        family_name,
+        SimpleNamespace(get_defaults=lambda: {"alpha": 1, "beta": 2}),
+    )
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis={"config_changes": {}},
+        contract={"baseline_config_path": "configs/custom_seed.yaml"},
+        generated_config_path="experiments/custom/runtime_config.json",
+        family_name=family_name,
+    )
+
+    assert result.failures == []
+    assert result.passed is True
 
 
 def test_builder_normalizes_legacy_new_config_keys_needed_before_missing_primitives() -> None:
@@ -1413,7 +1445,9 @@ def test_build_missing_primitives_dispatches_family_request_to_cli_boundary(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     codex = bin_dir / "codex"
-    codex.write_text("""#!/usr/bin/env python3
+    ema_config = json.dumps(STRATEGIES["ema"].get_defaults())
+    orb_config = json.dumps(STRATEGIES["orb"].get_defaults())
+    codex.write_text(f"""#!/usr/bin/env python3
 import pathlib
 import re
 import sys
@@ -1424,9 +1458,9 @@ config = re.search(r"- Expected config path: (.+)", prompt).group(1)
 target = root / config
 target.parent.mkdir(parents=True, exist_ok=True)
 if "ema" in config:
-    target.write_text("data_universe: nasdaq8\\nema_length: 5\\ntimeframe_short: 5\\ntimeframe_long: 15\\nrr_ratio: 3.0\\ndirection_bias: short_only\\nentry_cutoff_time: '10:00'\\nmax_trades_per_day: 3\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
+    target.write_text({ema_config!r} + "\\n")
 else:
-    target.write_text("data_universe: nasdaq8\\nbuilder_probe: true\\nallow_unbounded_research_backtest: true\\nvalidation_start: 2020-01-01\\nvalidation_end: 2020-12-31\\n")
+    target.write_text({orb_config!r} + "\\n")
 print(f"generated {{config}}")
 """)
     codex.chmod(0o755)
@@ -1438,9 +1472,9 @@ print(f"generated {{config}}")
     assert result["generated_config"] == f"configs/variants/{thesis_id}.yaml"
     written = (tmp_path / result["generated_config"]).read_text()
     if family_name == "ema":
-        assert "ema_length: 5" in written
+        assert '"ema_length": 5' in written
     else:
-        assert "builder_probe: true" in written
+        assert '"or_minutes": 30' in written
     request = json.loads(
         (tmp_path / family.builder_requests_dirname / f"{thesis_id}.json").read_text()
     )

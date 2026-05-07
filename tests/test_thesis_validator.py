@@ -194,6 +194,19 @@ def test_validate_thesis_accepts_prior_best_language_with_base_config_path() -> 
     assert validated.base_config_path == "experiments/05287d64f61f/runtime_config.json"
 
 
+def test_validate_thesis_does_not_require_base_config_for_unrelated_best_or_preserve_language() -> (
+    None
+):
+    thesis = _base_engine_change_thesis("best_practices_not_inheritance", "market_microstructure")
+    thesis["mechanism"] = (
+        "Use market microstructure best practices to preserve capital during noisy open prints."
+    )
+
+    validated = validate_thesis_dict(thesis, prior_theses=[])
+
+    assert validated.base_config_path == ""
+
+
 def test_validate_real_config_overlap_still_rejected_with_sentinel() -> None:
     thesis = _base_engine_change_thesis("duplicate_entry_cutoff", "entry_timing")
     thesis["config_changes"] = {

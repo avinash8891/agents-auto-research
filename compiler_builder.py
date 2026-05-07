@@ -28,6 +28,13 @@ LEGACY_NESTED_CONFIG_KEY_REQUEST = "new_config_keys_needed"
 THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change", LEGACY_NESTED_CONFIG_KEY_REQUEST})
 
 
+def _resolved_builder_base_config_path(compilation: dict[str, Any], family_name: str) -> str:
+    base_config_path = compilation.get("baseline_config_path")
+    if isinstance(base_config_path, str) and base_config_path.strip():
+        return base_config_path
+    return load_family(family_name).baseline_config_path
+
+
 def _coerce_subprocess_output(value: Any) -> str:
     if value in (None, ""):
         return ""
@@ -421,6 +428,9 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 "generated_config": None,
                 "validation_passed": False,
             }
+        base_config_path = _resolved_builder_base_config_path(compilation, family_name)
+        if not compilation.get("baseline_config_path"):
+            compilation = {**compilation, "baseline_config_path": base_config_path}
         normalized_contract = compilation.get("normalized_contract") or []
         missing_primitives = _resolve_missing_primitives(proposal, compilation)
         generated_name = f"experiments/{thesis_id}/runtime_config.json"
@@ -492,6 +502,9 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
                 "generated_config": None,
                 "validation_passed": False,
             }
+        base_config_path = _resolved_builder_base_config_path(compilation, family_name)
+        if not compilation.get("baseline_config_path"):
+            compilation = {**compilation, "baseline_config_path": base_config_path}
         normalized_contract = compilation.get("normalized_contract") or []
         missing_primitives = _resolve_missing_primitives(proposal, compilation)
         generated_name = (
@@ -507,7 +520,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         "family": family_name,
         "proposal_path": proposal_path.relative_to(root).as_posix(),
         "compilation_path": compilation_path.relative_to(root).as_posix(),
-        "base_config_path": compilation.get("baseline_config_path"),
+        "base_config_path": base_config_path,
         "missing_primitives": missing_primitives,
         "normalized_contract": normalized_contract,
         "status": "requested",
@@ -535,7 +548,6 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     )
 
     config_abspath = root / config_path
-    base_config_path = str(compilation.get("baseline_config_path") or "")
     prompt = _build_builder_prompt(
         thesis_id=thesis_id,
         root=root,

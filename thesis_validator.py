@@ -53,14 +53,15 @@ _EMERGENT_REQUIRED_FIELDS = (
     "expected_reuse_across_future_theses",
 )
 _ALLOWED_BASE_CONFIG_PREFIXES = ("configs/", "experiments/")
-_PRIOR_BASE_LANGUAGE = (
-    "best",
-    "preserve",
-    "compound",
-    "build on",
-    "builds on",
-    "current winner",
-    "kept winner",
+_PRIOR_BASE_LANGUAGE_PATTERNS = (
+    r"\bcurrent\s+best\b",
+    r"\bbest\s+(?:config|configuration|experiment|result|winner|runtime|trailing|pf)\b",
+    r"\bprior\s+(?:config|configuration|experiment|result|winner|runtime|thesis)\b",
+    r"\bkept\s+(?:config|configuration|experiment|result|winner|runtime|thesis)\b",
+    r"\bwinning\s+(?:config|configuration|experiment|result|runtime|thesis)\b",
+    r"\bpreserve\s+(?:the\s+)?(?:current\s+best|best|prior|kept|winning)\b",
+    r"\b(?:build|builds|building)\s+on\s+(?:the\s+)?(?:current\s+best|best|prior|kept|winning)\b",
+    r"\bcompound\s+(?:the\s+)?(?:current\s+best|best|prior|kept|winning)\b",
 )
 
 
@@ -115,7 +116,7 @@ def _requires_explicit_base_config(thesis: ResearchThesis) -> bool:
             " ".join(thesis.evidence),
         ]
     ).lower()
-    return any(phrase in text for phrase in _PRIOR_BASE_LANGUAGE)
+    return any(re.search(pattern, text) for pattern in _PRIOR_BASE_LANGUAGE_PATTERNS)
 
 
 def _prior_thesis_details(prior: dict[str, Any]) -> dict[str, Any]:
