@@ -135,7 +135,14 @@ COLLECT_SSE_NEW = """var collectCompletedResponseFromSse = async (stream) => {
       const response = parsed.response;
       if (isRecord2(response)) {
         latestResponse = response;
-        continue;
+        if (typeof response.id === "string") {
+          responseId = response.id;
+        }
+        if (Array.isArray(response.output)) {
+          for (const item of response.output) {
+            if (isRecord2(item)) output.push(cloneValue(item));
+          }
+        }
       }
       if (parsed.type === "response.created" && isRecord2(parsed.response) && typeof parsed.response.id === "string") {
         responseId = parsed.response.id;
@@ -184,7 +191,7 @@ EXPAND_INPUT_OLD = """  expandInput(input) {
 
 EXPAND_INPUT_NEW = """  expandInput(input) {
     return input.flatMap((item) => {
-      if (isRecord3(item) && typeof item.id === "string" && item.id.startsWith("rs_")) {
+      if (isRecord3(item) && item.type === "reasoning" && typeof item.id === "string" && item.id.startsWith("rs_")) {
         return [];
       }
       if (isRecord3(item) && item.type === "item_reference" && typeof item.id === "string") {
@@ -192,7 +199,10 @@ EXPAND_INPUT_NEW = """  expandInput(input) {
         if (cachedItem != null) {
           return [cloneValue(cachedItem)];
         }
-        return [];
+        if (item.id.startsWith("rs_")) {
+          return [];
+        }
+        return [cloneValue(item)];
       }
       return [cloneValue(item)];
     });

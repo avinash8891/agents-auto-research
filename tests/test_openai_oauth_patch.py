@@ -46,8 +46,9 @@ def test_patch_openai_oauth_usage_shape_rewrites_all_targets() -> None:
     assert "CodexResponsesState expand those references" in patched
     assert "responsesState: settings.responsesState" in patched
     assert 'parsed.type === "response.output_item.done"' in patched
-    assert 'item.id.startsWith("rs_")' in patched
-    assert "return [];" in patched
+    assert 'item.type === "reasoning"' in patched
+    assert 'if (item.id.startsWith("rs_"))' in patched
+    assert "return [cloneValue(item)];" in patched
 
 
 def test_patch_openai_oauth_usage_shape_is_idempotent() -> None:
