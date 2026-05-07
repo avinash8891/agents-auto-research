@@ -116,10 +116,18 @@ def test_benchmark_command_uses_generic_strategy_runner() -> None:
     output_dir = "/tmp/run dir"
     command = load_family("ema").benchmark_command(config_path, output_dir=output_dir)
     assert command == (
-        "python3 -m backtest.runner --strategy ema --config "
+        f"{shlex.quote(sys.executable)} -m backtest.runner --strategy ema --config "
         f"{shlex.quote(config_path)} --output-dir {shlex.quote(output_dir)}"
     )
     assert "backtest_5ema.py" not in command
+
+
+def test_benchmark_command_allows_explicit_python_override(monkeypatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_PYTHON_BIN", ".venv/bin/python")
+
+    command = load_family("ema").benchmark_command("configs/ema_base.yaml")
+
+    assert command.startswith(".venv/bin/python -m backtest.runner ")
 
 
 def test_benchmark_command_accepts_pathlike_output_dir(tmp_path: Path) -> None:

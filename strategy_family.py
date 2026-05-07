@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import sys
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -52,7 +53,7 @@ class StrategyFamily:
 
     def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
         config_path_str = str(config_path)
-        python_bin = os.environ.get("AUTORESEARCH_PYTHON_BIN", "python3")
+        python_bin = os.environ.get("AUTORESEARCH_PYTHON_BIN", sys.executable)
         cmd = (
             f"{shlex.quote(python_bin)} -m backtest.runner --strategy {shlex.quote(self.name)} "
             f"--config {shlex.quote(config_path_str)}"
