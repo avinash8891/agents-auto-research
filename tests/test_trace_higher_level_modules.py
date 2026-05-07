@@ -415,3 +415,71 @@ def test_trace_export_adapters_skip_malformed_canonical_jsonl(tmp_path: Path) ->
 
     assert recursive_trace["messages"][0]["content"] == "ok"
     assert trajectory[0]["content"] == "ok"
+
+
+def test_recursive_improve_and_reflexio_redact_tool_previews(tmp_path: Path) -> None:
+    from trace_adapters.recursive_improve import build_recursive_improve_trace
+    from trace_adapters.reflexio import build_reflexio_trajectory
+
+    trace = tmp_path / "trace-events.jsonl"
+    trace.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_id": "evt-1",
+                        "timestamp": "2026-05-07T00:00:00.000Z",
+                        "run_id": "run-1",
+                        "family": "ema",
+                        "job": 20,
+                        "category": "agent",
+                        "action": "tool_call",
+                        "summary": "tool called",
+                        "payload": {
+                            "agent_name": "analyst",
+                            "tool_name": "run_python",
+                            "tool_input_preview": "OPENAI_API_KEY=sk-secret123456789",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_id": "evt-2",
+                        "timestamp": "2026-05-07T00:00:01.000Z",
+                        "run_id": "run-1",
+                        "family": "ema",
+                        "job": 20,
+                        "category": "agent",
+                        "action": "tool_result",
+                        "summary": "tool returned",
+                        "payload": {
+                            "agent_name": "analyst",
+                            "tool_name": "run_python",
+                            "tool_output_preview": "token=abc123",
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    recursive_trace = build_recursive_improve_trace(
+        trace,
+        {
+            "iteration_context": {
+                "round": 1,
+                "family": "ema",
+                "candidate_id": "th-1",
+                "status": "rejected",
+            },
+            "feedback": {"rejection_reason": "bad"},
+        },
+    )
+    trajectory = build_reflexio_trajectory(trace)
+
+    assert recursive_trace["messages"][0]["content"] == "OPENAI_API_KEY=<redacted>"
+    assert recursive_trace["messages"][1]["content"] == "token=<redacted>"
+    assert trajectory[0]["content"] == "OPENAI_API_KEY=<redacted>"
+    assert trajectory[1]["content"] == "token=<redacted>"

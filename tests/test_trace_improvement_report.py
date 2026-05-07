@@ -221,3 +221,28 @@ def test_analysis_normalizes_roles_and_deduplicates_bridge_outcomes() -> None:
     assert analysis["outcomes"]["compiled"] == 1
     assert "conductor" in analysis["roles"]
     assert "web_researcher" in analysis["roles"]
+
+
+def test_repeated_tool_input_uses_canonical_tool_input_preview() -> None:
+    analysis = analyze_trace_events(
+        [
+            _event(
+                action="tool_call",
+                payload={
+                    "agent": "analyst",
+                    "tool": "read_file",
+                    "tool_input_preview": "diagnostics.json",
+                },
+            ),
+            _event(
+                action="tool_call",
+                payload={
+                    "agent": "analyst",
+                    "tool": "read_file",
+                    "tool_input_preview": "strategy.py",
+                },
+            ),
+        ]
+    )
+
+    assert analysis["roles"]["analyst"].repeated_tool_inputs == []

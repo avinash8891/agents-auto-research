@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from trace_adapters import _emit_adapter_event
-from trace_adapters.artifacts import content_from_artifacts
+from trace_adapters.artifacts import content_from_artifacts, redact_text
 
 
 def build_recursive_improve_payload(
@@ -167,7 +167,7 @@ def _messages_from_events(
                 _message(
                     event,
                     "tool",
-                    str(payload.get("tool_input_preview") or ""),
+                    redact_text(str(payload.get("tool_input_preview") or "")),
                     payload,
                     kind="tool_call",
                 )
@@ -177,7 +177,7 @@ def _messages_from_events(
                 _message(
                     event,
                     "tool",
-                    str(payload.get("tool_output_preview") or ""),
+                    redact_text(str(payload.get("tool_output_preview") or "")),
                     payload,
                     kind="tool_result",
                 )

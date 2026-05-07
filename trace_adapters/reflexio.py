@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from trace_adapters import _emit_adapter_event
-from trace_adapters.artifacts import content_from_artifacts
+from trace_adapters.artifacts import content_from_artifacts, redact_text
 
 
 def build_reflexio_payload(
@@ -142,9 +142,9 @@ def _trajectory_content(
     if action == "response":
         return content_from_artifacts(event, "RAW RESPONSE", trace_path=trace_path)
     if action == "tool_call":
-        return str(payload.get("tool_input_preview") or "")
+        return redact_text(str(payload.get("tool_input_preview") or ""))
     if action == "tool_result":
-        return str(payload.get("tool_output_preview") or "")
+        return redact_text(str(payload.get("tool_output_preview") or ""))
     if event.get("category") == "usage":
         return json.dumps(
             {

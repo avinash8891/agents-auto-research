@@ -175,7 +175,12 @@ def analyze_trace_events(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
         if action == "tool_call":
             stats.tool_calls += 1
             tool = _tool_name(event)
-            input_value = payload.get("input") or payload.get("arguments") or payload.get("query")
+            input_value = (
+                payload.get("input")
+                or payload.get("arguments")
+                or payload.get("query")
+                or payload.get("tool_input_preview")
+            )
             input_key = json.dumps(input_value, sort_keys=True, default=str)[:500]
             trace_key = str(event.get("_trace_path") or event.get("run_id") or "")
             tool_inputs[(trace_key, role, tool, input_key)] += 1
