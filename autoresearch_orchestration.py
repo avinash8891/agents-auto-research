@@ -120,6 +120,7 @@ def _mark_builder_running(
     research_round: int | None = None,
 ) -> dict[str, Any]:
     state["state"] = "building"
+    controller.clear_terminal_metadata(state)
     if research_round is not None:
         state["research_round"] = research_round
     state["current_thesis"] = {"thesis_id": thesis_id, "status": "builder_running"}
@@ -159,9 +160,10 @@ def build_missing_primitives_for_state(
         thesis_id,
         research_round=research_round,
     )
-    import compiler_pipeline
 
     try:
+        import compiler_pipeline
+
         builder_result = compiler_pipeline.build_missing_primitives(controller.root, thesis_id)
     except (
         Exception

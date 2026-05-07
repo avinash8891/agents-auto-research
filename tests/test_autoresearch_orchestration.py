@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 import sys
 from pathlib import Path
@@ -43,6 +44,8 @@ def _make_controller(
         write_state=_write_state,
         written_states=written_states,
         clear_terminal_metadata=lambda s: s.pop("terminal_metadata", None),
+        read_results=lambda: [],
+        write_current_md=lambda state, results: None,
         root=root,
         family=family,
         ctx=ctx,
@@ -199,6 +202,7 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
     (tmp_path / "experiments" / thesis_id / "runtime_config.json").write_text("{}\n")
     state = {
         "state": "blocked",
+        "terminal_metadata": {"finished_reason": "old_done"},
         "halted_reason": "requires_code_change",
         "halted_thesis_id": thesis_id,
         "halted_thesis": {"thesis_id": thesis_id},
@@ -218,6 +222,7 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
         assert active["heartbeat"]["builder_status"] == "running"
         assert active["heartbeat"]["builder_thesis"] == thesis_id
         assert active["heartbeat"]["last_metric"] == 1.8813
+        assert "terminal_metadata" not in active
         return {
             "status": "completed",
             "generated_config": f"experiments/{thesis_id}/runtime_config.json",
@@ -238,6 +243,45 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
     assert result["next_action"]["type"] == "run_experiment"
     assert written_states[0]["state"] == "building"
     assert written_states[-1]["state"] == "running"
+
+
+def test_build_missing_primitives_routes_import_failure_to_manual_review(tmp_path, monkeypatch):
+    thesis_id = "needs_builder"
+    state = {
+        "state": "blocked",
+        "halted_reason": "requires_code_change",
+        "halted_thesis_id": thesis_id,
+        "halted_thesis": {"thesis_id": thesis_id},
+        "next_action": {"type": "research"},
+        "heartbeat": {},
+    }
+    written_states: list = []
+    ctrl = _make_controller(state=state, root=tmp_path, written_states=written_states)
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "compiler_pipeline":
+            raise ImportError("compiler import boom")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    result = orch.build_missing_primitives_for_state(
+        ctrl,
+        state,
+        thesis_id,
+        {"thesis_id": thesis_id},
+        research_round=36,
+    )
+
+    assert written_states[0]["state"] == "building"
+    assert result["state"] == "blocked"
+    assert result["next_action"]["type"] == "manual_review"
+    assert result["heartbeat"]["blocked_builder_status"] == "error"
+    assert (
+        "ImportError: compiler import boom"
+        in result["manual_review_theses"][-1]["builder_result"]["reason"]
+    )
 
 
 # ── resolve_next_action ───────────────────────────────────────────────────────
