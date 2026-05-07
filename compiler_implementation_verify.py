@@ -140,7 +140,7 @@ def _verify_required_diagnostics(root: Path, family_name: str, thesis: dict[str,
     required = thesis.get("required_diagnostics") or []
     if not isinstance(required, list):
         return ["required_diagnostics must be a list"]
-    runtime_text = _runtime_code_text(root / "strategies" / family_name)
+    runtime_text = _diagnostic_emission_text(root, family_name)
     for item in required:
         if not isinstance(item, str):
             continue
@@ -152,6 +152,23 @@ def _verify_required_diagnostics(root: Path, family_name: str, thesis: dict[str,
     return failures
 
 
+def _diagnostic_emission_text(root: Path, family_name: str) -> str:
+    """Code surfaces allowed to emit required diagnostics.
+
+    Some diagnostics are emitted by the family runtime/event logger, while
+    aggregate PF buckets are emitted by the post-backtest metrics layer.
+    """
+    chunks = [_runtime_code_text(root / "strategies" / family_name)]
+    for rel in ("metrics.py", "strategy_event_logger.py", "backtest/runner.py"):
+        path = root / rel
+        if path.exists():
+            try:
+                chunks.append(path.read_text())
+            except OSError:
+                continue
+    return "\n".join(chunks)
+
+
 def _diagnostic_key_from_requirement(requirement: str) -> str | None:
     lowered = requirement.strip().lower()
     if not lowered:
@@ -161,9 +178,6 @@ def _diagnostic_key_from_requirement(requirement: str) -> str | None:
     before_paren = lowered.split("(", 1)[0].strip()
     key = re.sub(r"[^a-z0-9]+", "_", before_paren).strip("_")
     if not key:
-        return None
-    # Generic aggregate labels are evaluated after backtest, not emitted by runtime code.
-    if key.startswith("pf_") or key.startswith("profit_factor"):
         return None
     return key
 

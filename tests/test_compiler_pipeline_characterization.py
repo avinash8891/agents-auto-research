@@ -769,6 +769,39 @@ def test_builder_implementation_verifier_requires_thesis_diagnostic_names(
     )
 
 
+def test_builder_implementation_verifier_requires_custom_pf_diagnostic_names(
+    tmp_path: Path,
+) -> None:
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "exits.py").write_text(
+        "config.get('per_symbol_entry_cooldown_minutes')\n"
+        "event_logger.log_order_rejected(reason='entry_cooldown')\n"
+    )
+    experiment_dir = tmp_path / "experiments" / "cooldown_pf_bucket_thesis"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(
+        json.dumps({"per_symbol_entry_cooldown_minutes": 15}) + "\n"
+    )
+    thesis = {
+        "config_changes": {"per_symbol_entry_cooldown_minutes": 15},
+        "required_diagnostics": ["pf_by_time_since_last_same_symbol_entry_bucket"],
+    }
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis=thesis,
+        generated_config_path="experiments/cooldown_pf_bucket_thesis/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert result.passed is False
+    assert (
+        "required_diagnostic_not_emitted:pf_by_time_since_last_same_symbol_entry_bucket"
+        in result.failures
+    )
+
+
 def test_build_missing_primitives_validates_generated_config_in_fresh_python(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
