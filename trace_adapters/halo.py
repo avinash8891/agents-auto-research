@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from trace_adapters import _emit_adapter_event
-from trace_adapters.artifacts import content_from_artifacts
+from trace_adapters.artifacts import content_from_artifacts, redact_text
 
 HALO_PROJECT_ID = "agents-auto-research"
 HALO_SERVICE_NAME = "agents-auto-research"
@@ -246,14 +246,14 @@ def _event_specific_attributes(
         tool_name = str(payload.get("tool_name") or payload.get("tool") or "unknown_tool")
         attributes["tool.name"] = tool_name
         if action == "tool_call":
-            attributes["input.value"] = str(payload.get("tool_input_preview") or "")
+            attributes["input.value"] = redact_text(str(payload.get("tool_input_preview") or ""))
             attributes["input.mime_type"] = "text/plain"
         if action == "tool_result":
-            attributes["output.value"] = str(payload.get("tool_output_preview") or "")
+            attributes["output.value"] = redact_text(str(payload.get("tool_output_preview") or ""))
             attributes["output.mime_type"] = "text/plain"
             attributes["tool.output_length"] = int(payload.get("tool_output_length") or 0)
             if payload.get("error_type"):
-                attributes["error.type"] = str(payload["error_type"])
+                attributes["error.type"] = redact_text(str(payload["error_type"]))
 
     if observation_kind == "LLM":
         if action == "prompt":
@@ -344,7 +344,9 @@ def _status(event: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     if status in {"error", "failed", "failure"}:
         return {
             "code": "STATUS_CODE_ERROR",
-            "message": str(payload.get("error_type") or payload.get("tool_output_preview") or ""),
+            "message": redact_text(
+                str(payload.get("error_type") or payload.get("tool_output_preview") or "")
+            ),
         }
     return {"code": "STATUS_CODE_OK"}
 

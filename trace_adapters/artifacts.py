@@ -30,7 +30,7 @@ def content_from_artifacts(
             continue
         extracted = _section(text, section)
         if extracted:
-            return _redact(extracted[:MAX_EXPORTED_CONTENT_CHARS])
+            return redact_text(extracted[:MAX_EXPORTED_CONTENT_CHARS])
     return ""
 
 
@@ -61,7 +61,9 @@ def _section(text: str, section: str) -> str:
     return text[start:next_marker].strip()
 
 
-def _redact(text: str) -> str:
+def redact_text(text: str, *, max_chars: int | None = None) -> str:
+    if max_chars is not None:
+        text = text[:max_chars]
     redacted = text
     for pattern in _SECRET_PATTERNS:
         redacted = pattern.sub(_redact_match, redacted)

@@ -167,6 +167,27 @@ def test_usage_analysis_preserves_fractional_costs() -> None:
     assert usage["cost_usd"] == 0.42
 
 
+def test_failed_tool_examples_are_redacted() -> None:
+    analysis = analyze_trace_events(
+        [
+            _event(
+                action="tool_result",
+                payload={
+                    "agent": "analyst",
+                    "tool": "run_python",
+                    "status": "error",
+                    "error": "OPENAI_API_KEY=sk-secret123456789",
+                    "tool_output_preview": "token=abc123",
+                },
+            )
+        ]
+    )
+
+    example = analysis["roles"]["analyst"].failed_tool_examples[0]
+    assert example["error_type"] == "OPENAI_API_KEY=<redacted>"
+    assert example["preview"] == "token=<redacted>"
+
+
 def test_analysis_normalizes_roles_and_deduplicates_bridge_outcomes() -> None:
     events = [
         _event(

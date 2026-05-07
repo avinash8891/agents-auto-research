@@ -269,6 +269,50 @@ def test_halo_artifact_reader_rejects_paths_outside_trace_directory(tmp_path: Pa
     assert input_messages == [{"role": "user", "content": ""}]
 
 
+def test_halo_tool_previews_are_redacted_before_export(tmp_path: Path) -> None:
+    canonical = tmp_path / "trace-events.jsonl"
+    canonical.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    _canonical_event(
+                        action="tool_call",
+                        payload={
+                            "agent_name": "analyst",
+                            "trace_id": "trace-1",
+                            "tool_name": "run_python",
+                            "tool_input_preview": "OPENAI_API_KEY=sk-secret123456789",
+                        },
+                    )
+                ),
+                json.dumps(
+                    _canonical_event(
+                        action="tool_result",
+                        payload={
+                            "agent_name": "analyst",
+                            "trace_id": "trace-1",
+                            "tool_name": "run_python",
+                            "status": "error",
+                            "error_type": "token=abc123",
+                            "tool_output_preview": "secret=abc123",
+                        },
+                    )
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "trace.halo.jsonl"
+
+    export_halo_trace_jsonl(canonical, output)
+    spans = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+
+    assert spans[0]["attributes"]["input.value"] == "OPENAI_API_KEY=<redacted>"
+    assert spans[1]["attributes"]["output.value"] == "secret=<redacted>"
+    assert spans[1]["attributes"]["error.type"] == "token=<redacted>"
+
+
 def test_verify_halo_trace_jsonl_rejects_missing_required_shape(tmp_path: Path) -> None:
     bad = tmp_path / "bad.jsonl"
     bad.write_text(json.dumps({"event_id": "evt-1"}) + "\n", encoding="utf-8")

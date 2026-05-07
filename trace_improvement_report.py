@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+from trace_adapters.artifacts import redact_text
+
 LARGE_TOOL_OUTPUT_CHARS = 12_000
 
 
@@ -129,7 +131,7 @@ def analyze_trace_events(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
     role_stats: dict[str, RoleStats] = defaultdict(RoleStats)
     outcomes: Counter[str] = Counter()
     state_transitions: Counter[str] = Counter()
-    tool_inputs: Counter[tuple[str, str, str]] = Counter()
+    tool_inputs: Counter[tuple[str, str, str, str]] = Counter()
     seen_outcomes: set[tuple[str, Any, Any, Any]] = set()
     findings: list[dict[str, Any]] = []
 
@@ -200,8 +202,11 @@ def analyze_trace_events(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
                     stats.failed_tool_examples.append(
                         {
                             "tool": tool,
-                            "error_type": error_type,
-                            "preview": str(payload.get("tool_output_preview") or error or "")[:220],
+                            "error_type": redact_text(error_type, max_chars=220),
+                            "preview": redact_text(
+                                str(payload.get("tool_output_preview") or error or ""),
+                                max_chars=220,
+                            ),
                             "trace_path": event.get("_trace_path"),
                             "event_id": event.get("event_id"),
                         }
