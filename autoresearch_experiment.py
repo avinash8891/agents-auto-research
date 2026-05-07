@@ -628,9 +628,12 @@ def _find_duplicate_artifact_output(
 
 def _zero_rejection_diagnostic_hints(strategy_diagnostics: dict[str, Any]) -> list[str]:
     hints: list[str] = []
-    for key, value in sorted(strategy_diagnostics.items()):
-        if not isinstance(key, str) or not key.startswith("trade_rejections_due"):
-            continue
+    rejection_items = [
+        (key, value)
+        for key, value in strategy_diagnostics.items()
+        if isinstance(key, str) and key.startswith("trade_rejections_due")
+    ]
+    for key, value in sorted(rejection_items, key=lambda item: item[0]):
         if isinstance(value, bool):
             continue
         try:

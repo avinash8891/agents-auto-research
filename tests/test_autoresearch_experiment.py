@@ -548,6 +548,16 @@ def test_zero_rejection_diagnostic_hints_ignore_boolean_flags() -> None:
     ) == ["trade_rejections_due_to_real_filter=0"]
 
 
+def test_zero_rejection_diagnostic_hints_ignore_non_string_keys() -> None:
+    assert experiment_mod._zero_rejection_diagnostic_hints(
+        {
+            ("tuple", "key"): 0,
+            7: 0,
+            "trade_rejections_due_to_real_filter": 0,
+        }
+    ) == ["trade_rejections_due_to_real_filter=0"]
+
+
 def test_sha256_file_returns_empty_for_artifact_read_race(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
