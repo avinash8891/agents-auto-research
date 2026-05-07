@@ -1,0 +1,80 @@
+tests/test_dependencies.py
+  s_df23f17b640abb::t_6c04f18ecee985 22-29
+autoresearch_research.py
+  s_df23f17b640abb::t_71c6aab5a43f96 954-957
+  s_df23f17b640abb::t_04a37c2ffa950e 58
+pyproject.toml
+  s_df23f17b640abb::t_342978ed92c576 67,151
+trace_adapters/recursive_improve.py
+  s_df23f17b640abb::t_2d0446ac313b6f 137-139,173-175
+  s_df23f17b640abb::t_c1b9723185f848 3,5,40,42-56,60-92,94,112-136,140-172,176-204
+improvement_reflexion.py
+  s_df23f17b640abb::t_afb7729af7ca3d 28,41-49
+trace_sdk.py
+  s_df23f17b640abb::t_60e66baa572e09 103-106,109-111
+  s_df23f17b640abb::t_4fbcba13693f62 42-52,98-102,107-108,112,394,399-402,407-445
+  s_df23f17b640abb::t_38a4ce3e87da11 395-398,403-406
+  s_df23f17b640abb::t_cc19da5b75be79 763-764,816
+trace_adapters/reflexio.py
+  s_df23f17b640abb::t_2d0446ac313b6f 50-52
+  s_df23f17b640abb::t_5ade436fa7aeaf 3,5,21,36-42,48-49,53-55,57-66,70,74-103,114-149
+tests/test_halo_trace_adapter.py
+  s_df23f17b640abb::t_37b8c54ae80c1d 1-2,4,7-17,37-40,56-74,78-134,151-154,162-175
+  s_df23f17b640abb::t_d13cafaf4a7581 135-148,150
+  s_df23f17b640abb::t_d0770196237288 149
+  s_df23f17b640abb::t_6f049692cd043d 75-77,268,275-281,288-289
+  s_df23f17b640abb::t_1fe4c51387ca76 3,5-6,18-36,176-232,237-238,248-267,290-299
+  s_df23f17b640abb::t_2d0446ac313b6f 269-274,282-287
+  s_df23f17b640abb::t_f26359f61d1474 41-55,155-161,233-236,239-247
+vps_runner.py
+  s_df23f17b640abb::t_342978ed92c576 61-64
+tests/test_trace_higher_level_modules.py
+  s_df23f17b640abb::t_fafa597fd9cc6f 274-365
+improvement_halo.py
+  s_df23f17b640abb::t_342978ed92c576 16,49-57,82-87,107
+  s_df23f17b640abb::t_8b68428d946bb4 37,90-101,104
+tests/test_improvement_reflexion.py
+  s_df23f17b640abb::t_935bfe415d3a38 185-210
+tests/test_trace_sdk.py
+  s_df23f17b640abb::t_c217f1e47ffd8b 85-87
+  s_df23f17b640abb::t_040a9942e20ec6 96-107,114-124
+trace_improvement_report.py
+  s_df23f17b640abb::t_971eed4e431f5c 19-20,184-192,197-208,245,340-344,347-359,361-362
+  s_df23f17b640abb::t_322d8a4eb29be9 54,58,60,62,64,66-72,74,133,153-165,178-179,222
+  s_df23f17b640abb::t_2cf0b4c6966f83 1-18,21-53,55-57,59,61,63,65,73,75-132,134-152,166-177,180-183,193-196,209-221,223-244,246-317,327-339,345-346,360,363-383,390-403
+  s_df23f17b640abb::t_2d0446ac313b6f 318-326,384-389
+trace_adapters/halo.py
+  s_df23f17b640abb::t_8b68428d946bb4 3-4,6,11-13,28-34,90-101,105-150,156-162,181-183,186-189,193,195-196,199-250,258,268-285,294-313,317-322,326-337,372-376
+  s_df23f17b640abb::t_84a66a2efebd23 357,360,363
+  s_df23f17b640abb::t_2d0446ac313b6f 102-104,259-261,265-267,314-316
+  s_df23f17b640abb::t_981b41bbbe9b7d 15-27,151-155
+  s_df23f17b640abb::t_dbcbbc65a47c69 163-180,184-185,190-192,194,197-198,323-325,338-356,358-359,361-362,364-371
+  s_df23f17b640abb::t_10cd177c585bc6 251-257,262-264,286-293
+tests/test_vps_runner_config.py
+  s_df23f17b640abb::t_6c04f18ecee985 237,245
+tests/test_improvement_halo.py
+  s_df23f17b640abb::t_2d0446ac313b6f 95-98
+  s_df23f17b640abb::t_37b8c54ae80c1d 27-35,89,91,94,102
+  s_df23f17b640abb::t_6c04f18ecee985 66-71,99,103-117
+tests/test_trace_improvement_report.py
+  s_df23f17b640abb::t_971eed4e431f5c 80,130-148
+  s_df23f17b640abb::t_322d8a4eb29be9 149-162,164-166,172-183
+  s_df23f17b640abb::t_2cf0b4c6966f83 1-79,81-129
+  s_df23f17b640abb::t_2d0446ac313b6f 163,167-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "c3cc6a559a7a6017bc8e41a0429fb2c7b9bc0aca",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
