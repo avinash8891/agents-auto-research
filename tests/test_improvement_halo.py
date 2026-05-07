@@ -19,6 +19,7 @@ from autoresearch_constants import ENV_IMPROVEMENT_HALO
 @pytest.fixture(autouse=True)
 def _reset_env(monkeypatch):
     monkeypatch.delenv(ENV_IMPROVEMENT_HALO, raising=False)
+    monkeypatch.delenv(improvement_halo.HALO_BINARY_ENV, raising=False)
     yield
 
 
@@ -44,7 +45,7 @@ def test_flag_off_returns_none(tmp_path):
 
 def test_flag_on_missing_binary_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_HALO, "1")
-    monkeypatch.setattr(improvement_halo, "_ensure_halo_binary", lambda: None)
+    monkeypatch.setattr(improvement_halo, "_resolve_halo_binary", lambda: None)
     jsonl = _make_jsonl(tmp_path)
     out = tmp_path / "reports"
     assert improvement_halo.run_halo_after_round(1, jsonl, out) is None
@@ -103,28 +104,53 @@ def test_flag_on_success_writes_report(tmp_path, monkeypatch):
     assert ensure_calls == [True]
 
 
-def test_missing_halo_binary_installs_isolated_tool_venv(tmp_path, monkeypatch):
+def test_env_halo_binary_takes_precedence(tmp_path, monkeypatch):
+    halo_bin = tmp_path / "halo"
+    halo_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    halo_bin.chmod(0o755)
+    monkeypatch.setenv(improvement_halo.HALO_BINARY_ENV, str(halo_bin))
+    monkeypatch.setattr(improvement_halo.shutil, "which", lambda _b: "/usr/bin/halo")
+
+    assert improvement_halo._resolve_halo_binary() == str(halo_bin)
+
+
+def test_missing_halo_binary_does_not_install_at_runtime(tmp_path, monkeypatch):
     monkeypatch.setattr(improvement_halo.shutil, "which", lambda _b: None)
-    monkeypatch.setenv(improvement_halo.HALO_TOOL_VENV_ENV, str(tmp_path / "halo-venv"))
     calls: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
         calls.append(cmd)
-        if cmd[:3] == [improvement_halo.sys.executable, "-m", "venv"]:
-            python_bin = tmp_path / "halo-venv" / "bin" / "python"
-            python_bin.parent.mkdir(parents=True)
-            python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
-        elif cmd[1:4] == ["-m", "pip", "install"]:
-            halo_bin = tmp_path / "halo-venv" / "bin" / "halo"
-            halo_bin.write_text("#!/bin/sh\n", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(improvement_halo.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        improvement_halo,
+        "DEFAULT_HALO_BINARY",
+        tmp_path / "missing" / "bin" / "halo",
+    )
 
-    assert improvement_halo._ensure_halo_binary() == str(tmp_path / "halo-venv" / "bin" / "halo")
-    assert calls[0][:3] == [improvement_halo.sys.executable, "-m", "venv"]
-    assert calls[1][1:4] == ["-m", "pip", "install"]
-    assert calls[1][-1] == "halo-engine==0.1.5"
+    assert improvement_halo._resolve_halo_binary() is None
+    assert calls == []
+
+
+def test_default_preprovisioned_halo_binary_is_used(tmp_path, monkeypatch):
+    halo_bin = tmp_path / "tool" / "venv" / "bin" / "halo"
+    halo_bin.parent.mkdir(parents=True)
+    halo_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    halo_bin.chmod(0o755)
+    monkeypatch.setattr(improvement_halo.shutil, "which", lambda _b: None)
+    monkeypatch.setattr(improvement_halo, "DEFAULT_HALO_BINARY", halo_bin)
+
+    assert improvement_halo._resolve_halo_binary() == str(halo_bin)
+
+
+def test_env_halo_binary_rejects_non_executable(tmp_path, monkeypatch):
+    halo_bin = tmp_path / "halo"
+    halo_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setenv(improvement_halo.HALO_BINARY_ENV, str(halo_bin))
+    monkeypatch.setattr(improvement_halo.shutil, "which", lambda _b: None)
+
+    assert improvement_halo._resolve_halo_binary() is None
 
 
 def test_flag_on_oauth_proxy_unavailable_returns_none(tmp_path, monkeypatch):
