@@ -483,3 +483,75 @@ def test_recursive_improve_and_reflexio_redact_tool_previews(tmp_path: Path) -> 
     assert recursive_trace["messages"][1]["content"] == "token=<redacted>"
     assert trajectory[0]["content"] == "OPENAI_API_KEY=<redacted>"
     assert trajectory[1]["content"] == "token=<redacted>"
+
+
+def test_reflexio_redacts_summary_fields(tmp_path: Path) -> None:
+    from trace_adapters.reflexio import build_reflexio_trajectory
+
+    trace = tmp_path / "trace-events.jsonl"
+    trace.write_text(
+        json.dumps(
+            {
+                "event_id": "evt-1",
+                "timestamp": "2026-05-07T00:00:00.000Z",
+                "category": "state",
+                "action": "transition",
+                "summary": "token=abc123",
+                "payload": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trajectory = build_reflexio_trajectory(trace)
+
+    assert trajectory[0]["summary"] == "token=<redacted>"
+    assert trajectory[0]["content"] == "token=<redacted>"
+
+
+def test_recursive_improve_duration_handles_mixed_timezone_timestamps(tmp_path: Path) -> None:
+    from trace_adapters.recursive_improve import build_recursive_improve_trace
+
+    trace = tmp_path / "trace-events.jsonl"
+    trace.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_id": "evt-1",
+                        "timestamp": "2026-05-07T00:00:00.000",
+                        "category": "agent",
+                        "action": "tool_call",
+                        "payload": {"tool_input_preview": "a"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_id": "evt-2",
+                        "timestamp": "2026-05-07T00:00:01.000Z",
+                        "category": "agent",
+                        "action": "tool_result",
+                        "payload": {"tool_output_preview": "b"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    recursive_trace = build_recursive_improve_trace(
+        trace,
+        {
+            "iteration_context": {
+                "round": 1,
+                "family": "ema",
+                "candidate_id": "th-1",
+                "status": "rejected",
+            },
+            "feedback": {"rejection_reason": "bad"},
+        },
+    )
+
+    assert recursive_trace["duration_s"] == 1.0

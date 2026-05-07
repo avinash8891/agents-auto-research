@@ -297,7 +297,7 @@ def _event_specific_attributes(
             attributes["llm.token_count.completion"] = int(payload.get("output_tokens") or 0)
 
     if observation_kind in {"CHAIN", "AGENT", "SPAN"}:
-        attributes["input.value"] = str(event.get("summary") or "")
+        attributes["input.value"] = redact_text(str(event.get("summary") or ""))
 
     return attributes
 

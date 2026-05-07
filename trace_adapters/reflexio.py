@@ -93,7 +93,7 @@ def build_reflexio_trajectory(canonical_trace_path: str | Path) -> list[dict[str
                     "timestamp": str(event.get("timestamp") or ""),
                     "category": category,
                     "action": action,
-                    "summary": str(event.get("summary") or ""),
+                    "summary": redact_text(str(event.get("summary") or "")),
                     "agent": str(payload.get("agent_name") or payload.get("agent") or ""),
                     "tool_name": str(payload.get("tool_name") or payload.get("tool") or ""),
                     "model": str(event.get("model_name") or ""),
@@ -155,4 +155,4 @@ def _trajectory_content(
             },
             sort_keys=True,
         )
-    return str(event.get("summary") or "")
+    return redact_text(str(event.get("summary") or ""))

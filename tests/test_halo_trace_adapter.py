@@ -315,6 +315,28 @@ def test_halo_tool_previews_are_redacted_before_export(tmp_path: Path) -> None:
     assert spans[1]["status"]["message"] == "token=<redacted>"
 
 
+def test_halo_non_llm_summary_is_redacted(tmp_path: Path) -> None:
+    canonical = tmp_path / "trace-events.jsonl"
+    canonical.write_text(
+        json.dumps(
+            _canonical_event(
+                category="state",
+                action="transition",
+                summary="OPENAI_API_KEY=sk-secret123456789",
+                payload={"old_state": "running", "new_state": "blocked"},
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "trace.halo.jsonl"
+
+    export_halo_trace_jsonl(canonical, output)
+    span = json.loads(output.read_text(encoding="utf-8").splitlines()[0])
+
+    assert span["attributes"]["input.value"] == "OPENAI_API_KEY=<redacted>"
+
+
 def test_verify_halo_trace_jsonl_rejects_missing_required_shape(tmp_path: Path) -> None:
     bad = tmp_path / "bad.jsonl"
     bad.write_text(json.dumps({"event_id": "evt-1"}) + "\n", encoding="utf-8")
