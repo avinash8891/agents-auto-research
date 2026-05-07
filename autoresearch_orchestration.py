@@ -67,6 +67,17 @@ def _activate_builder_config(
     return state
 
 
+def _mark_builder_heartbeat_finished(
+    state: dict[str, Any],
+    thesis_id: str,
+    status: str,
+) -> None:
+    heartbeat = state.setdefault("heartbeat", {})
+    heartbeat["builder_status"] = status
+    heartbeat["builder_thesis"] = thesis_id
+    heartbeat["builder_finished_at"] = iso8601_utc_now()
+
+
 def _mark_builder_manual_review(
     controller: "AutoresearchController",
     state: dict[str, Any],
@@ -104,6 +115,7 @@ def _mark_builder_manual_review(
         "artifact_dir": f"{controller.family.name}-manual-review",
     }
     heartbeat = state.setdefault("heartbeat", {})
+    _mark_builder_heartbeat_finished(state, thesis_id, str(builder_result.get("status") or "error"))
     heartbeat["blocked_thesis"] = thesis_id
     heartbeat["blocked_builder_status"] = str(builder_result.get("status") or "error")
     heartbeat["blocked_reason"] = state["next_action"]["reason"]
@@ -183,6 +195,7 @@ def build_missing_primitives_for_state(
     if builder_result.get("status") == "completed" and builder_result.get("validation_passed"):
         generated_config = builder_result.get("generated_config")
         if generated_config and (controller.root / generated_config).exists():
+            _mark_builder_heartbeat_finished(state, thesis_id, "completed")
             state = _activate_builder_config(
                 controller,
                 state,

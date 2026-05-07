@@ -241,6 +241,8 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
 
     assert result["state"] == "running"
     assert result["next_action"]["type"] == "run_experiment"
+    assert result["heartbeat"]["builder_status"] == "completed"
+    assert "builder_finished_at" in result["heartbeat"]
     assert written_states[0]["state"] == "building"
     assert written_states[-1]["state"] == "running"
 
@@ -277,6 +279,8 @@ def test_build_missing_primitives_routes_import_failure_to_manual_review(tmp_pat
     assert written_states[0]["state"] == "building"
     assert result["state"] == "blocked"
     assert result["next_action"]["type"] == "manual_review"
+    assert result["heartbeat"]["builder_status"] == "error"
+    assert "builder_finished_at" in result["heartbeat"]
     assert result["heartbeat"]["blocked_builder_status"] == "error"
     assert (
         "ImportError: compiler import boom"
