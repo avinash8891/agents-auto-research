@@ -457,7 +457,34 @@ def _resolve_conductor_inputs(
         ):
             if ta.get(key) is not None:
                 latest_outcome[key] = ta[key]
+        verdict = ta.get("verdict")
+        if isinstance(verdict, dict):
+            verdict_status = verdict.get("status")
+            verdict_summary = verdict.get("summary")
+            if verdict_status:
+                latest_outcome["verdict_status"] = verdict_status
+            if verdict_summary:
+                latest_outcome["verdict_summary"] = verdict_summary
+            if verdict_status and verdict_summary:
+                latest_outcome["research_feedback"] = _research_feedback_from_verdict(
+                    str(verdict_status),
+                    str(verdict_summary),
+                )
     return trades_file, strategy_events_file, diagnostics_file, latest_outcome
+
+
+def _research_feedback_from_verdict(verdict_status: str, verdict_summary: str) -> str:
+    prefix = f"{verdict_status}:"
+    if verdict_summary.startswith(prefix):
+        feedback = f"Previous candidate was {verdict_summary}."
+    else:
+        feedback = f"Previous candidate was {verdict_status}: {verdict_summary}."
+    if verdict_status == "invalid_noop_config":
+        feedback += (
+            " If this was a threshold/gating thesis, revise the threshold so it changes "
+            "behavior or abandon the mechanism."
+        )
+    return feedback
 
 
 def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] | None:

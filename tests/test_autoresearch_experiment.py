@@ -494,7 +494,10 @@ def test_build_db_record_marks_duplicate_artifact_output_as_invalid_noop(tmp_pat
             trades_file=str(trades),
             strategy_events_file="",
             diagnostics_file=str(diagnostics),
-            strategy_diagnostics={"event_counts": {"executed_trade": 8295}},
+            strategy_diagnostics={
+                "event_counts": {"executed_trade": 8295},
+                "trade_rejections_due_to_alert_range_filter": 0,
+            },
             accepted=False,
             rejection_reason="old result",
             verdict_status="inconclusive",
@@ -519,7 +522,10 @@ def test_build_db_record_marks_duplicate_artifact_output_as_invalid_noop(tmp_pat
             "profit_factor": 1.8813,
             "trades_file": str(trades),
             "diagnostics_file": str(diagnostics),
-            "strategy_diagnostics": {"event_counts": {"executed_trade": 8295}},
+            "strategy_diagnostics": {
+                "event_counts": {"executed_trade": 8295},
+                "trade_rejections_due_to_alert_range_filter": 0,
+            },
         },
         analysis={"trade_analysis": {"verdict": {"status": "inconclusive", "summary": "old"}}},
         fallback_experiment_id="new",
@@ -529,6 +535,7 @@ def test_build_db_record_marks_duplicate_artifact_output_as_invalid_noop(tmp_pat
     assert record.accepted is False
     assert record.verdict_status == "invalid_noop_config"
     assert "identical trades/diagnostics as previous" in record.verdict_summary
+    assert "trade_rejections_due_to_alert_range_filter=0" in record.verdict_summary
     assert "previous" in record.rejection_reason
 
 

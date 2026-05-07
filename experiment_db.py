@@ -610,7 +610,13 @@ class ExperimentDB:
                         "config": record.config_path,
                         "thesis_id": record.thesis_id,
                         "artifact_dir": artifact_dir,
-                        "trade_analysis": dict(record.validation_metrics),
+                        "trade_analysis": {
+                            **dict(record.validation_metrics),
+                            "verdict": {
+                                "status": record.verdict_status,
+                                "summary": record.verdict_summary,
+                            },
+                        },
                         "trades_file": record.trades_file,
                         "strategy_events_file": record.strategy_events_file,
                         "diagnostics_file": record.diagnostics_file,

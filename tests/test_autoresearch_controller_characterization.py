@@ -1592,6 +1592,51 @@ def test_resolve_conductor_inputs_uses_real_thesis_id_not_runtime_config_stem(
     assert latest_outcome["profit_factor"] == 2.34
 
 
+def test_resolve_conductor_inputs_passes_invalid_noop_feedback_to_conductor(
+    controller,
+) -> None:
+    from autoresearch_research import _resolve_conductor_inputs
+    from autoresearch_state import ExperimentRecord
+
+    latest = ExperimentRecord(
+        config="experiments/noop-filter/runtime_config.json",
+        metric=1.8813,
+        status="discard",
+        description="strict-native loop: noop-filter",
+        timestamp="2026-05-06T00:00:00+00:00",
+        asi={
+            "thesis_id": "noop_filter",
+            "trade_analysis": {
+                "trade_count": 3122,
+                "profit_factor": 1.8813,
+                "verdict": {
+                    "status": "invalid_noop_config",
+                    "summary": (
+                        "invalid_noop_config: identical trades/diagnostics as previous "
+                        "experiment baseline; trade_rejections_due_to_alert_range_filter=0"
+                    ),
+                },
+            },
+        },
+        job=20,
+    )
+
+    _, _, _, latest_outcome = _resolve_conductor_inputs(
+        controller,
+        [latest],
+        current_job=20,
+    )
+
+    assert latest_outcome["verdict_status"] == "invalid_noop_config"
+    assert "trade_rejections_due_to_alert_range_filter=0" in latest_outcome["verdict_summary"]
+    assert latest_outcome["research_feedback"] == (
+        "Previous candidate was invalid_noop_config: identical trades/diagnostics as previous "
+        "experiment baseline; trade_rejections_due_to_alert_range_filter=0. "
+        "If this was a threshold/gating thesis, revise the threshold so it changes behavior "
+        "or abandon the mechanism."
+    )
+
+
 def test_resolve_conductor_inputs_filters_latest_and_artifacts_by_current_job(
     controller,
     monkeypatch,

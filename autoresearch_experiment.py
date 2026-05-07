@@ -535,10 +535,7 @@ def _build_db_record(
     if duplicate is not None:
         decision = "discard"
         verdict_status = "invalid_noop_config"
-        verdict_summary = (
-            "invalid_noop_config: identical trades/diagnostics as previous "
-            f"experiment {duplicate.experiment_id} despite different runtime_config"
-        )
+        verdict_summary = _invalid_noop_summary(duplicate, details)
     code_commit = _executed_code_commit(controller, details)
     record = ExperimentResult(
         experiment_id=contract.experiment_id if contract else fallback_experiment_id,
@@ -627,6 +624,34 @@ def _find_duplicate_artifact_output(
             continue
         return previous
     return None
+
+
+def _zero_rejection_diagnostic_hints(strategy_diagnostics: dict[str, Any]) -> list[str]:
+    hints: list[str] = []
+    for key, value in sorted(strategy_diagnostics.items()):
+        if not isinstance(key, str) or not key.startswith("trade_rejections_due"):
+            continue
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric_value == 0:
+            hints.append(f"{key}=0")
+    return hints
+
+
+def _invalid_noop_summary(duplicate: ExperimentResult, details: dict[str, Any]) -> str:
+    parts = [
+        "invalid_noop_config: identical trades/diagnostics as previous "
+        f"experiment {duplicate.experiment_id} despite different runtime_config"
+    ]
+    strategy_diagnostics = details.get("strategy_diagnostics", {})
+    if isinstance(strategy_diagnostics, dict):
+        parts.extend(_zero_rejection_diagnostic_hints(strategy_diagnostics))
+    trade_count = details.get("trade_count")
+    if trade_count is not None:
+        parts.append(f"trade_count={trade_count}")
+    return "; ".join(parts)
 
 
 def _executed_code_commit(controller: "AutoresearchController", details: dict[str, Any]) -> str:
