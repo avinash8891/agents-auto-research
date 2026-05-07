@@ -760,6 +760,68 @@ def test_builder_implementation_verifier_rejects_metadata_config_change_consumpt
     assert "metadata_config_change_not_allowed:requires_code_change" in result.failures
 
 
+def test_builder_implementation_verifier_rejects_new_config_keys_needed_runtime_metadata(
+    tmp_path: Path,
+) -> None:
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "strategy.py").write_text("config.get('new_config_keys_needed')\n")
+    experiment_dir = tmp_path / "experiments" / "metadata_leak"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(
+        json.dumps(
+            {
+                "new_config_keys_needed": {
+                    "open_execution_delay_minutes": 3,
+                }
+            }
+        )
+        + "\n"
+    )
+    thesis = {
+        "config_changes": {
+            "new_config_keys_needed": {
+                "open_execution_delay_minutes": 3,
+            }
+        }
+    }
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis=thesis,
+        generated_config_path="experiments/metadata_leak/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert result.passed is False
+    assert "metadata_config_change_not_allowed:new_config_keys_needed" in result.failures
+
+
+def test_builder_normalizes_legacy_new_config_keys_needed_before_missing_primitives() -> None:
+    proposal = {
+        "requires_code_change": True,
+        "config_changes": {
+            "new_config_keys_needed": {
+                "open_execution_delay_enabled": True,
+                "open_execution_delay_minutes": 3,
+            }
+        },
+    }
+
+    normalized, changed = compiler_builder._normalize_proposal_config_changes(proposal)
+
+    assert changed is True
+    assert normalized["requires_code_change"] is True
+    assert normalized["config_changes"] == {
+        "open_execution_delay_enabled": True,
+        "open_execution_delay_minutes": 3,
+    }
+    assert compiler_builder._resolve_missing_primitives(normalized, {}) == [
+        "open_execution_delay_enabled",
+        "open_execution_delay_minutes",
+    ]
+
+
 def test_builder_implementation_verifier_requires_thesis_diagnostic_names(
     tmp_path: Path,
 ) -> None:

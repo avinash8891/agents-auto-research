@@ -25,7 +25,7 @@ ANALYSIS_ONLY_DIAGNOSTIC_PREFIXES = (
     "implementation:",
 )
 BUILDER_SENTINEL_CONFIG_KEYS = frozenset({"requires_engine_change"})
-THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change"})
+THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change", "new_config_keys_needed"})
 
 
 @dataclass(frozen=True)

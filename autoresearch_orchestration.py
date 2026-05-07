@@ -151,6 +151,13 @@ def _mark_builder_running(
         "requires_subagent": False,
     }
     heartbeat = state.setdefault("heartbeat", {})
+    for stale_key in (
+        "blocked_builder_status",
+        "blocked_builder_result_status",
+        "blocked_reason",
+        "blocked_thesis",
+    ):
+        heartbeat.pop(stale_key, None)
     heartbeat["builder_status"] = "running"
     heartbeat["builder_thesis"] = thesis_id
     heartbeat["builder_started_at"] = iso8601_utc_now()

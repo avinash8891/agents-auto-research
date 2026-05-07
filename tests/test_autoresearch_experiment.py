@@ -8,6 +8,7 @@ tests/fixtures/result_v1.json.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -33,7 +34,7 @@ from autoresearch_experiment import (
     sanitize_duplicate_entries,
 )
 from config_hash import _config_hash
-from experiment_db import ExperimentDB, ExperimentResult
+from experiment_db import BaselineCheckpoint, BaselineTracker, ExperimentDB, ExperimentResult
 
 # ── parse_result_json ────────────────────────────────────────────
 
@@ -981,6 +982,87 @@ def test_run_experiment_uses_runtime_config_fallback_for_baseline_checkpoint(
 
     assert rc == 0
     assert captured["runtime_cfg"] == {"ema_length": 5}
+
+
+def test_baseline_checkpoint_metrics_excludes_non_metric_artifacts() -> None:
+    details = {
+        "profit_factor": 1.8813,
+        "trade_count": 3122,
+        "train_metrics": {
+            "median_expectancy": -0.0041,
+            "profit_factor": 1.8813,
+            "valid": True,
+        },
+        "diagnostics": {"pf_by_year": {"2023": {"pf": 1.8}}},
+        "trades_file": "/tmp/trades.csv",
+        "strategy_events_file": "/tmp/strategy_events.parquet",
+        "diagnostics_file": "/tmp/diagnostics.json",
+        "strategy_diagnostics": {"trade_count": 3122},
+        "git_sha": "abc123",
+        "config_hash": "deadbeef",
+    }
+
+    metrics = experiment_mod._baseline_checkpoint_metrics(details)
+
+    assert metrics == {
+        "profit_factor": 1.8813,
+        "trade_count": 3122.0,
+        "median_expectancy": -0.0041,
+    }
+
+
+def test_record_baseline_checkpoint_ignores_non_numeric_artifacts_for_drift(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.ERROR)
+    tracker = BaselineTracker(tmp_path / "baseline.json")
+    tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="99914b932bd3",
+            config_hash="2994ac2be47c",
+            metrics={
+                "profit_factor": 1.8813,
+                "trade_count": 3122.0,
+                "median_expectancy": -0.0041,
+            },
+        )
+    )
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({"next_action": {}}))
+    controller = SimpleNamespace(
+        root=tmp_path,
+        state_path=state_path,
+        baseline_tracker=tracker,
+        current_commit=lambda: "abc1234",
+        read_state=lambda: json.loads(state_path.read_text()),
+        write_state=lambda state: state_path.write_text(json.dumps(state)),
+    )
+
+    experiment_mod._record_baseline_checkpoint(
+        controller,
+        {
+            "profit_factor": 1.8813,
+            "trade_count": 3122,
+            "train_metrics": {"median_expectancy": -0.0041},
+            "diagnostics": {"pf_by_year": {"2023": {"pf": 1.8}}},
+            "trades_file": "/tmp/trades.csv",
+            "strategy_events_file": "/tmp/events.parquet",
+            "diagnostics_file": "/tmp/diagnostics.json",
+            "strategy_diagnostics": {"trade_count": 3122},
+            "git_sha": "abc1234",
+            "config_hash": "2994ac2be47c",
+        },
+        {},
+    )
+
+    assert "BASELINE_DRIFT_METRIC_INVALID" not in caplog.text
+    assert tracker.latest() is not None
+    assert tracker.latest().metrics == {
+        "profit_factor": 1.8813,
+        "trade_count": 3122.0,
+        "median_expectancy": -0.0041,
+    }
 
 
 def test_build_asi_and_entry_use_contract_identity_over_runtime_config_stem(tmp_path: Path) -> None:

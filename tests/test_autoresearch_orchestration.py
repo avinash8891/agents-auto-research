@@ -207,7 +207,13 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
         "halted_thesis_id": thesis_id,
         "halted_thesis": {"thesis_id": thesis_id},
         "next_action": {"type": "research"},
-        "heartbeat": {"last_metric": 1.8813},
+        "heartbeat": {
+            "last_metric": 1.8813,
+            "blocked_builder_status": "error",
+            "blocked_reason": "old builder failure",
+            "blocked_thesis": thesis_id,
+            "blocked_builder_result_status": "error",
+        },
     }
     written_states: list = []
     ctrl = _make_controller(state=state, root=tmp_path, written_states=written_states)
@@ -222,6 +228,10 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
         assert active["heartbeat"]["builder_status"] == "running"
         assert active["heartbeat"]["builder_thesis"] == thesis_id
         assert active["heartbeat"]["last_metric"] == 1.8813
+        assert "blocked_builder_status" not in active["heartbeat"]
+        assert "blocked_reason" not in active["heartbeat"]
+        assert "blocked_thesis" not in active["heartbeat"]
+        assert "blocked_builder_result_status" not in active["heartbeat"]
         assert "terminal_metadata" not in active
         return {
             "status": "completed",

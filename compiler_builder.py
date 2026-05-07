@@ -24,7 +24,8 @@ BUILDER_CLI_TIMEOUT_SECONDS = 900
 BUILDER_IMPLEMENTATION_RETRY_LIMIT = 1
 BUILDER_CLI_MODEL = "gpt-5.2"
 BUILDER_CLI_REASONING_EFFORT: str | None = None
-THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change"})
+LEGACY_NESTED_CONFIG_KEY_REQUEST = "new_config_keys_needed"
+THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change", LEGACY_NESTED_CONFIG_KEY_REQUEST})
 
 
 def _coerce_subprocess_output(value: Any) -> str:
@@ -69,6 +70,9 @@ def _normalize_proposal_config_changes(proposal: dict[str, Any]) -> tuple[dict[s
         value = normalized_changes.pop(key)
         if key == "requires_code_change" and value:
             normalized[key] = True
+        elif key == LEGACY_NESTED_CONFIG_KEY_REQUEST and isinstance(value, dict):
+            normalized_changes.update(value)
+            normalized["requires_code_change"] = True
     normalized["config_changes"] = normalized_changes
     return normalized, True
 
@@ -282,8 +286,9 @@ def _implementation_retry_prompt_extras(previous_result: dict[str, Any]) -> list
             "Fix the generated runtime config and overwrite it before reporting success.",
             str(previous_result.get("reason") or "unknown validation failure"),
             (
-                "Do not copy thesis metadata keys such as requires_code_change into "
-                "runtime_config.json; they belong only in thesis.json."
+                "Do not copy thesis metadata keys such as requires_code_change or "
+                "new_config_keys_needed into runtime_config.json; they belong only "
+                "in thesis.json."
             ),
         ]
     return []

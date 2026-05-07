@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import shlex
 import shutil
@@ -1011,7 +1012,7 @@ def _record_baseline_checkpoint(
         code_commit=code_commit,
         data_hash=build_data_hash(runtime_cfg),
         config_hash=build_config_hash(runtime_cfg),
-        metrics=details,
+        metrics=_baseline_checkpoint_metrics(details),
         timestamp=iso8601_utc_now(),
         round_number=len(controller.baseline_tracker.all_checkpoints()),
     )
@@ -1034,6 +1035,31 @@ def _record_baseline_checkpoint(
         na.pop("baseline_rerun_for_commit", None)
         persisted["next_action"] = na
         write_state(controller.state_path, persisted)
+
+
+def _baseline_checkpoint_metrics(details: dict[str, Any]) -> dict[str, float]:
+    """Return only scalar numeric metrics that are valid for drift comparison."""
+    metrics: dict[str, float] = {}
+
+    def add_metric(name: str, value: Any) -> None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return
+        numeric = float(value)
+        if math.isnan(numeric):
+            return
+        metrics.setdefault(name, numeric)
+
+    for key, value in details.items():
+        if key == "train_metrics":
+            continue
+        add_metric(key, value)
+
+    train_metrics = details.get("train_metrics")
+    if isinstance(train_metrics, dict):
+        for key, value in train_metrics.items():
+            add_metric(key, value)
+
+    return metrics
 
 
 def _send_completion_notification(

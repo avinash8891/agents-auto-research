@@ -45,7 +45,7 @@ CONFIG_OVERLAP_THRESHOLD = 0.5
 # but are not actual strategy parameters. Including these in novelty checks
 # makes every engine-change thesis look like a duplicate of the previous one.
 CONFIG_OVERLAP_IGNORED_KEYS = frozenset({"requires_engine_change"})
-CONFIG_CHANGES_METADATA_KEYS = frozenset({"requires_code_change"})
+CONFIG_CHANGES_METADATA_KEYS = frozenset({"requires_code_change", "new_config_keys_needed"})
 _MIN_EMERGENT_FIELD_CHARS = 40
 _EMERGENT_REQUIRED_FIELDS = (
     "why_existing_dimensions_do_not_fit",
