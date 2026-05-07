@@ -114,7 +114,7 @@ def export_halo_trace_jsonl(canonical_trace_path: Path, output_path: Path) -> Pa
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
         for event in events:
-            span = canonical_event_to_halo_span(event)
+            span = canonical_event_to_halo_span(event, trace_path=canonical_trace_path)
             handle.write(json.dumps(span, sort_keys=True, default=str) + "\n")
     return output_path
 
@@ -158,7 +158,9 @@ def verify_halo_trace_jsonl(path: Path) -> None:
         raise ValueError(f"HALO trace JSONL has no spans: {path}")
 
 
-def canonical_event_to_halo_span(event: dict[str, Any]) -> dict[str, Any]:
+def canonical_event_to_halo_span(
+    event: dict[str, Any], *, trace_path: Path | None = None
+) -> dict[str, Any]:
     payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
     observation_kind = _observation_kind(event)
     span_id = _real_or_stable_id(
@@ -181,7 +183,9 @@ def canonical_event_to_halo_span(event: dict[str, Any]) -> dict[str, Any]:
     end_time = str(event.get("span_end_time") or start_time)
 
     attributes = _base_attributes(event, observation_kind)
-    attributes.update(_event_specific_attributes(event, payload, observation_kind))
+    attributes.update(
+        _event_specific_attributes(event, payload, observation_kind, trace_path=trace_path)
+    )
     resource_attributes = _resource_attributes(event)
     scope = _scope(event)
 
@@ -221,7 +225,11 @@ def _base_attributes(event: dict[str, Any], observation_kind: str) -> dict[str, 
 
 
 def _event_specific_attributes(
-    event: dict[str, Any], payload: dict[str, Any], observation_kind: str
+    event: dict[str, Any],
+    payload: dict[str, Any],
+    observation_kind: str,
+    *,
+    trace_path: Path | None = None,
 ) -> dict[str, Any]:
     action = str(event.get("action") or "")
     attributes: dict[str, Any] = {}
@@ -250,11 +258,14 @@ def _event_specific_attributes(
     if observation_kind == "LLM":
         if action == "prompt":
             messages = []
-            system_prompt = content_from_artifacts(event, "SYSTEM PROMPT")
+            system_prompt = content_from_artifacts(event, "SYSTEM PROMPT", trace_path=trace_path)
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append(
-                {"role": "user", "content": content_from_artifacts(event, "USER PROMPT")}
+                {
+                    "role": "user",
+                    "content": content_from_artifacts(event, "USER PROMPT", trace_path=trace_path),
+                }
             )
             attributes["llm.input_messages"] = json.dumps(messages)
             _add_flat_messages(attributes, "llm.input_messages", messages)
@@ -262,7 +273,7 @@ def _event_specific_attributes(
             messages = [
                 {
                     "role": "assistant",
-                    "content": content_from_artifacts(event, "RAW RESPONSE"),
+                    "content": content_from_artifacts(event, "RAW RESPONSE", trace_path=trace_path),
                 }
             ]
             attributes["llm.output_messages"] = json.dumps(messages)

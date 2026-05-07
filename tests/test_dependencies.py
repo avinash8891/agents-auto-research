@@ -26,4 +26,6 @@ def test_halo_engine_dependency_is_declared() -> None:
     pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
     requirements = [Requirement(dep) for dep in pyproject["project"]["dependencies"]]
 
-    assert any(req.name == "halo-engine" for req in requirements)
+    halo_reqs = [req for req in requirements if req.name == "halo-engine"]
+    assert halo_reqs
+    assert all(str(req.specifier) for req in halo_reqs)

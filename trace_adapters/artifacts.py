@@ -14,11 +14,15 @@ _SECRET_PATTERNS = [
 ]
 
 
-def content_from_artifacts(event: dict[str, Any], section: str) -> str:
+def content_from_artifacts(
+    event: dict[str, Any], section: str, *, trace_path: Path | None = None
+) -> str:
     """Read bounded prompt/response content from trace artifacts at export time."""
     for raw_path in event.get("artifact_paths") or []:
         try:
-            path = Path(str(raw_path))
+            path = _safe_artifact_path(raw_path, trace_path=trace_path)
+            if path is None:
+                continue
             if not path.exists() or not path.is_file():
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -28,6 +32,21 @@ def content_from_artifacts(event: dict[str, Any], section: str) -> str:
         if extracted:
             return _redact(extracted[:MAX_EXPORTED_CONTENT_CHARS])
     return ""
+
+
+def _safe_artifact_path(raw_path: Any, *, trace_path: Path | None) -> Path | None:
+    path = Path(str(raw_path))
+    if trace_path is None:
+        return path if not path.is_absolute() else None
+
+    base = trace_path.resolve().parent
+    candidate = path if path.is_absolute() else base / path
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(base)
+    except (OSError, ValueError):
+        return None
+    return resolved
 
 
 def _section(text: str, section: str) -> str:

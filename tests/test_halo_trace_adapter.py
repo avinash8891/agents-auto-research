@@ -240,6 +240,35 @@ def test_halo_llm_messages_are_read_from_artifacts_not_canonical_payload(
     assert output_messages == [{"role": "assistant", "content": '{"ok": true}'}]
 
 
+def test_halo_artifact_reader_rejects_paths_outside_trace_directory(tmp_path: Path) -> None:
+    outside = tmp_path / "outside-secret.txt"
+    outside.write_text(
+        "\n".join(["--- USER PROMPT ---", "secret outside trace dir", ""]),
+        encoding="utf-8",
+    )
+    trace_dir = tmp_path / "logs"
+    trace_dir.mkdir()
+    canonical = trace_dir / "trace-events.jsonl"
+    canonical.write_text(
+        json.dumps(
+            _canonical_event(
+                action="prompt",
+                payload={"agent_name": "analyst", "trace_id": "trace-1", "prompt_length": 10},
+                artifact_paths=[str(outside)],
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "trace.halo.jsonl"
+
+    export_halo_trace_jsonl(canonical, output)
+    span = json.loads(output.read_text(encoding="utf-8").splitlines()[0])
+    input_messages = json.loads(span["attributes"]["llm.input_messages"])
+
+    assert input_messages == [{"role": "user", "content": ""}]
+
+
 def test_verify_halo_trace_jsonl_rejects_missing_required_shape(tmp_path: Path) -> None:
     bad = tmp_path / "bad.jsonl"
     bad.write_text(json.dumps({"event_id": "evt-1"}) + "\n", encoding="utf-8")

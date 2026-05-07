@@ -74,7 +74,8 @@ def build_reflexio_export_package(**kwargs: Any) -> dict[str, Any]:
 
 def build_reflexio_trajectory(canonical_trace_path: str | Path) -> list[dict[str, Any]]:
     """Build a compact prior-attempt trajectory for Reflexion memory."""
-    events = _read_canonical_trace(Path(canonical_trace_path))
+    trace_path = Path(canonical_trace_path)
+    events = _read_canonical_trace(trace_path)
     trajectory: list[dict[str, Any]] = []
     for event in events:
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
@@ -96,7 +97,7 @@ def build_reflexio_trajectory(canonical_trace_path: str | Path) -> list[dict[str
                     "agent": str(payload.get("agent_name") or payload.get("agent") or ""),
                     "tool_name": str(payload.get("tool_name") or payload.get("tool") or ""),
                     "model": str(event.get("model_name") or ""),
-                    "content": _trajectory_content(event, payload),
+                    "content": _trajectory_content(event, payload, trace_path=trace_path),
                 }
             )
     return trajectory
@@ -132,12 +133,14 @@ def _read_canonical_trace(path: Path) -> list[dict[str, Any]]:
     return events
 
 
-def _trajectory_content(event: dict[str, Any], payload: dict[str, Any]) -> str:
+def _trajectory_content(
+    event: dict[str, Any], payload: dict[str, Any], *, trace_path: Path | None = None
+) -> str:
     action = str(event.get("action") or "")
     if action == "prompt":
-        return content_from_artifacts(event, "USER PROMPT")
+        return content_from_artifacts(event, "USER PROMPT", trace_path=trace_path)
     if action == "response":
-        return content_from_artifacts(event, "RAW RESPONSE")
+        return content_from_artifacts(event, "RAW RESPONSE", trace_path=trace_path)
     if action == "tool_call":
         return str(payload.get("tool_input_preview") or "")
     if action == "tool_result":

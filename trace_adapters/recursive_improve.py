@@ -68,7 +68,8 @@ def build_recursive_improve_trace(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     """Build recursive-improve's eval/traces-style session JSON from canonical trace."""
-    events = _read_canonical_trace(Path(canonical_trace_path))
+    trace_path = Path(canonical_trace_path)
+    events = _read_canonical_trace(trace_path)
     first = events[0] if events else {}
     iteration = payload.get("iteration_context") or {}
     feedback = payload.get("feedback") or {}
@@ -93,7 +94,7 @@ def build_recursive_improve_trace(
             "run_id": str(first.get("run_id") or ""),
             "canonical_trace": str(canonical_trace_path),
         },
-        "messages": _messages_from_events(events),
+        "messages": _messages_from_events(events, trace_path=trace_path),
     }
 
 
@@ -131,20 +132,22 @@ def _read_canonical_trace(path: Path) -> list[dict[str, Any]]:
     return events
 
 
-def _messages_from_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _messages_from_events(
+    events: list[dict[str, Any]], *, trace_path: Path | None = None
+) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     for event in events:
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
         action = str(event.get("action") or "")
         if action == "prompt":
-            system_prompt = content_from_artifacts(event, "SYSTEM PROMPT")
+            system_prompt = content_from_artifacts(event, "SYSTEM PROMPT", trace_path=trace_path)
             if system_prompt:
                 messages.append(_message(event, "system", system_prompt, payload, kind="prompt"))
             messages.append(
                 _message(
                     event,
                     "user",
-                    content_from_artifacts(event, "USER PROMPT"),
+                    content_from_artifacts(event, "USER PROMPT", trace_path=trace_path),
                     payload,
                     kind="prompt",
                 )
@@ -154,7 +157,7 @@ def _messages_from_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 _message(
                     event,
                     "assistant",
-                    content_from_artifacts(event, "RAW RESPONSE"),
+                    content_from_artifacts(event, "RAW RESPONSE", trace_path=trace_path),
                     payload,
                     kind="response",
                 )
