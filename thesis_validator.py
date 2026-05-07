@@ -70,6 +70,13 @@ def _dimension_slug(text: str) -> str:
     return "_".join(words)
 
 
+def _normalize_mechanism_dimension_name(dimension: Any) -> str:
+    if not isinstance(dimension, str):
+        return ""
+    dimension_slug = _dimension_slug(dimension)
+    return MECHANISM_DIMENSION_ALIASES.get(dimension_slug, dimension_slug)
+
+
 def _prior_thesis_details(prior: dict[str, Any]) -> dict[str, Any]:
     details = prior.get("thesis_details")
     return details if isinstance(details, dict) else {}
@@ -80,7 +87,10 @@ def _known_emergent_dimension_names(prior_theses: list[dict[str, Any]] | None) -
     if not prior_theses:
         return known
     for prior in prior_theses:
-        if prior.get("mechanism_dimension") != EMERGENT_MECHANISM_DIMENSION:
+        if (
+            _normalize_mechanism_dimension_name(prior.get("mechanism_dimension"))
+            != EMERGENT_MECHANISM_DIMENSION
+        ):
             continue
         details = _prior_thesis_details(prior)
         name = details.get("new_dimension_name") or prior.get("new_dimension_name")
@@ -186,10 +196,7 @@ def normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
             pass
     dimension = normalized.get("mechanism_dimension")
     if isinstance(dimension, str):
-        normalized_dimension = _dimension_slug(dimension)
-        normalized["mechanism_dimension"] = MECHANISM_DIMENSION_ALIASES.get(
-            normalized_dimension, normalized_dimension
-        )
+        normalized["mechanism_dimension"] = _normalize_mechanism_dimension_name(dimension)
     normalized["expected_effects"] = [
         _normalize_expected_effect(effect) for effect in normalized.get("expected_effects", [])
     ]
@@ -227,9 +234,9 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
                     prior.append(_prior_thesis_entry(row))
                     continue
                 details = _prior_thesis_details(row)
-                if row.get("mechanism_dimension") == EMERGENT_MECHANISM_DIMENSION and details.get(
-                    "new_dimension_name"
-                ):
+                if _normalize_mechanism_dimension_name(
+                    row.get("mechanism_dimension")
+                ) == EMERGENT_MECHANISM_DIMENSION and details.get("new_dimension_name"):
                     prior.append(_prior_thesis_entry(row))
         return prior
 
@@ -247,9 +254,9 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
             prior.append(_prior_thesis_entry(row))
             continue
         details = _prior_thesis_details(row)
-        if row.get("mechanism_dimension") == EMERGENT_MECHANISM_DIMENSION and details.get(
-            "new_dimension_name"
-        ):
+        if _normalize_mechanism_dimension_name(
+            row.get("mechanism_dimension")
+        ) == EMERGENT_MECHANISM_DIMENSION and details.get("new_dimension_name"):
             prior.append(_prior_thesis_entry(row))
     return prior
 

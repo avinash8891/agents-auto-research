@@ -230,6 +230,24 @@ def test_validate_reuses_prior_emergent_dimension_name() -> None:
     assert validated.mechanism_dimension == "liquidity_decay"
 
 
+def test_validate_reuses_prior_emergent_dimension_when_prior_dimension_is_alias() -> None:
+    thesis = _base_engine_change_thesis(
+        "liquidity_decay_followup",
+        "liquidity_decay",
+    )
+    prior = [
+        {
+            "thesis_id": "liquidity_decay_dimension",
+            "mechanism_dimension": "other",
+            "thesis_details": {"new_dimension_name": "liquidity_decay"},
+        }
+    ]
+
+    validated = validate_thesis_dict(thesis, prior_theses=prior)
+
+    assert validated.mechanism_dimension == "liquidity_decay"
+
+
 def test_validate_normalizes_reused_prior_emergent_dimension_name() -> None:
     thesis = _base_engine_change_thesis(
         "liquidity_decay_followup",
