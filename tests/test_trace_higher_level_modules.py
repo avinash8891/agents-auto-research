@@ -271,3 +271,95 @@ def test_adapter_export_packages_include_target_files_and_metadata() -> None:
         == 2
     )
     assert reflexio["files"]["reflexio-event.json"]["episode"]["family"] == "ema"
+
+
+def test_recursive_improve_and_reflexio_exports_include_canonical_trace_details(
+    monkeypatch, tmp_path: Path
+) -> None:
+    modules = _load_modules(monkeypatch, tmp_path)
+    trace_sdk = modules["trace_sdk"]
+    trace_sdk.set_family("ema", job=20)
+    trace_sdk.begin_round(7)
+    trace_sdk.begin_hypothesis("adapter-contract")
+    trace_id = trace_sdk.trace_agent_prompt(
+        "analyst",
+        "Inspect prior failures.",
+        "Stay concrete.",
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_tool_call(
+        "analyst",
+        trace_id,
+        "read_file",
+        "diagnostics.json",
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_tool_result(
+        "analyst",
+        trace_id,
+        "read_file",
+        '{"pf": 1.8}',
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_response(
+        "analyst",
+        trace_id,
+        '{"lesson": "avoid duplicate baseline"}',
+        {"lesson": "avoid duplicate baseline"},
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.record_usage_event(
+        "analyst",
+        model_provider="openai",
+        model_name="gpt-5.2",
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+    )
+
+    from trace_adapters.recursive_improve import build_recursive_improve_export_package
+    from trace_adapters.reflexio import build_reflexio_export_package
+
+    recursive_improve = build_recursive_improve_export_package(
+        research_round=7,
+        thesis_id="th-7",
+        outcome="rejected",
+        family="ema",
+        reasoning="baseline duplicated",
+        rejection_reason="no behavior change",
+        quality={"trend": "down"},
+        usage={"total": {"total_tokens": 15}},
+        canonical_trace_path=trace_sdk.get_event_file(),
+    )
+    reflexio = build_reflexio_export_package(
+        research_round=7,
+        thesis_id="th-7",
+        outcome="rejected",
+        family="ema",
+        reasoning="baseline duplicated",
+        rejection_reason="no behavior change",
+        quality={"trend": "down"},
+        usage={"total": {"total_tokens": 15}},
+        canonical_trace_path=trace_sdk.get_event_file(),
+    )
+
+    ri_trace = recursive_improve["files"]["recursive-improve-trace.json"]
+    assert ri_trace["session_id"] == trace_sdk.get_run_id()
+    assert ri_trace["success"] is False
+    assert ri_trace["feedback"] == "no behavior change"
+    assert ri_trace["metadata"]["candidate_id"] == "th-7"
+    assert any(message["role"] == "system" for message in ri_trace["messages"])
+    assert any(message["kind"] == "tool_result" for message in ri_trace["messages"])
+    assert any(message["kind"] == "usage" for message in ri_trace["messages"])
+
+    reflexio_event = reflexio["files"]["reflexio-event.json"]
+    trajectory = reflexio["files"]["reflexio-trajectory.json"]
+    assert reflexio_event["memory_key"] == "ema:round-7:thesis-th-7"
+    assert reflexio_event["feedback_signal"]["rejection_reason"] == "no behavior change"
+    assert reflexio_event["trajectory"] == trajectory
+    assert any(step["action"] == "tool_result" for step in trajectory)
+    assert any("duplicate baseline" in step["content"] for step in trajectory)

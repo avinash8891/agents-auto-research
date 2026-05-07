@@ -234,6 +234,7 @@ def test_render_runtime_env_file_includes_runtime_env_and_skips_runner_only_keys
 ) -> None:
     monkeypatch.setenv("AUTORESEARCH_DISCORD_WEBHOOK_EMA", "https://example.com/webhook")
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/data/autoresearch")
+    monkeypatch.setenv("AUTORESEARCH_IMPROVEMENT_HALO", "1")
     monkeypatch.setenv("TRACELOOP_API_KEY", "trace-key")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
     monkeypatch.setenv("AUTORESEARCH_JOB", "9")
@@ -241,6 +242,7 @@ def test_render_runtime_env_file_includes_runtime_env_and_skips_runner_only_keys
     content = render_runtime_env_file()
 
     assert "AUTORESEARCH_DATA_ROOT" in content
+    assert "AUTORESEARCH_IMPROVEMENT_HALO" in content
     assert "AUTORESEARCH_JOB" in content
     assert "AUTORESEARCH_DISCORD_WEBHOOK_EMA" not in content
     assert "TRACELOOP_API_KEY" not in content

@@ -55,6 +55,7 @@ from trace_rule_proposals import RuleProposalRegistry
 from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
+    get_event_file,
     trace,
 )
 
@@ -950,7 +951,10 @@ def _write_adapter_exports(
         ("recursive_improve", build_recursive_improve_export_package),
         ("reflexio", build_reflexio_export_package),
     ]:
-        _write_export_package(export_root, dir_name, build_fn(**kwargs))
+        adapter_kwargs = dict(kwargs)
+        if dir_name in {"recursive_improve", "reflexio"}:
+            adapter_kwargs["canonical_trace_path"] = get_event_file()
+        _write_export_package(export_root, dir_name, build_fn(**adapter_kwargs))
 
 
 def _safe_hook(name: str, fn, *args, **kwargs):

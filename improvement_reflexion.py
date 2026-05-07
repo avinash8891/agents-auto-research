@@ -25,6 +25,7 @@ EXPORT_GLOB = "trace_exports/round-{round_str}-*/reflexio/reflexio-event.json"
 def _format_preamble(payload: dict[str, Any], current_round: int) -> str:
     episode = payload.get("episode") or {}
     reflection = payload.get("reflection") or {}
+    trajectory = payload.get("trajectory") if isinstance(payload.get("trajectory"), list) else []
     outcome = episode.get("outcome", "?")
     reasoning = (reflection.get("reasoning") or "").strip()
     rejection_reason = (reflection.get("rejection_reason") or "").strip()
@@ -37,6 +38,15 @@ def _format_preamble(payload: dict[str, Any], current_round: int) -> str:
         body_lines.append(f"  you_reasoned: {reasoning}")
     if rejection_reason:
         body_lines.append(f"  why_it_failed: {rejection_reason}")
+    if trajectory:
+        body_lines.append("  prior_trajectory:")
+        for item in trajectory[-8:]:
+            if not isinstance(item, dict):
+                continue
+            action = item.get("action", "?")
+            summary = str(item.get("summary") or item.get("content") or "").strip()
+            if summary:
+                body_lines.append(f"    - {action}: {summary[:240]}")
     body_lines.append("Avoid repeating this failure mode in this round.")
     return "\n".join(body_lines)
 

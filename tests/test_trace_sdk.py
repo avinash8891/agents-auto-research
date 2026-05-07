@@ -82,6 +82,9 @@ def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path:
     response_event = next(event for event in events if event["action"] == "response")
     assert prompt_event["artifact_paths"] == [str(prompt_file)]
     assert response_event["artifact_paths"] == [str(response_file)]
+    assert prompt_event["payload"]["prompt_preview"] == "user prompt"
+    assert prompt_event["payload"]["system_prompt_preview"] == "system prompt"
+    assert response_event["payload"]["response_preview"] == '{"ok": true}'
     assert prompt_event["model_provider"] == "openai"
     assert prompt_event["model_name"] == "gpt-5.5"
     assert response_event["model_provider"] == "openai"
@@ -90,12 +93,35 @@ def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path:
         assert event["schema_version"] == 1
         assert event["session_id"] == trace_sdk.get_session_id()
         assert event["run_id"] == trace_sdk.get_run_id()
+        assert len(event["otel_trace_id"]) == 32
+        assert len(event["span_id"]) == 16
+        assert isinstance(event["parent_span_id"], str)
+        assert event["span_name"]
+        assert event["span_kind"].startswith("SPAN_KIND_")
+        assert event["span_start_time"].endswith("Z")
+        assert event["span_end_time"].endswith("Z")
+        assert event["span_status_code"].startswith("STATUS_CODE_")
+        assert isinstance(event["resource_attributes"], dict)
+        assert event["resource_attributes"]["service.name"] == "agents-auto-research"
+        assert isinstance(event["scope"], dict)
+        assert event["scope"]["name"]
         assert isinstance(event["payload"], dict)
         assert isinstance(event["artifact_paths"], list)
         assert {
             "event_id",
             "schema_version",
             "timestamp",
+            "otel_trace_id",
+            "span_id",
+            "parent_span_id",
+            "span_name",
+            "span_kind",
+            "span_start_time",
+            "span_end_time",
+            "span_status_code",
+            "span_status_message",
+            "resource_attributes",
+            "scope",
             "source_module",
             "run_id",
             "session_id",

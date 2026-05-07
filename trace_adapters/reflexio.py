@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from trace_adapters import _emit_adapter_event
@@ -16,6 +18,7 @@ def build_reflexio_payload(
     rejection_reason: str = "",
     quality: dict[str, Any] | None = None,
     usage: dict[str, Any] | None = None,
+    trajectory: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "system": "reflexio",
@@ -30,24 +33,72 @@ def build_reflexio_payload(
             "rejection_reason": rejection_reason,
             "quality": deepcopy(quality or {}),
         },
+        "trajectory": deepcopy(trajectory or []),
+        "feedback_signal": {
+            "outcome": outcome,
+            "rejection_reason": rejection_reason,
+            "quality": deepcopy(quality or {}),
+        },
+        "memory_key": f"{family}:round-{research_round}:thesis-{thesis_id}",
         "resources": {"usage": deepcopy(usage or {})},
     }
 
 
 def build_reflexio_export_package(**kwargs: Any) -> dict[str, Any]:
+    canonical_trace_path = kwargs.pop("canonical_trace_path", None)
+    trajectory = (
+        build_reflexio_trajectory(canonical_trace_path)
+        if canonical_trace_path is not None
+        else None
+    )
+    if trajectory is not None:
+        kwargs["trajectory"] = trajectory
     payload = build_reflexio_payload(**kwargs)
+    files: dict[str, Any] = {
+        "reflexio-event.json": payload,
+        "reflexio-summary.json": {
+            "thesis_id": payload["episode"]["thesis_id"],
+            "outcome": payload["episode"]["outcome"],
+            "round": payload["episode"]["round"],
+        },
+    }
+    if trajectory is not None:
+        files["reflexio-trajectory.json"] = trajectory
     return {
         "target": "reflexio",
         "schema_version": 1,
-        "files": {
-            "reflexio-event.json": payload,
-            "reflexio-summary.json": {
-                "thesis_id": payload["episode"]["thesis_id"],
-                "outcome": payload["episode"]["outcome"],
-                "round": payload["episode"]["round"],
-            },
-        },
+        "files": files,
     }
+
+
+def build_reflexio_trajectory(canonical_trace_path: str | Path) -> list[dict[str, Any]]:
+    """Build a compact prior-attempt trajectory for Reflexion memory."""
+    events = _read_canonical_trace(Path(canonical_trace_path))
+    trajectory: list[dict[str, Any]] = []
+    for event in events:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        action = str(event.get("action") or "")
+        category = str(event.get("category") or "")
+        if action in {"prompt", "response", "tool_call", "tool_result"} or category in {
+            "usage",
+            "state",
+            "quality",
+            "trace",
+        }:
+            trajectory.append(
+                {
+                    "event_id": str(event.get("event_id") or ""),
+                    "timestamp": str(event.get("timestamp") or ""),
+                    "category": category,
+                    "action": action,
+                    "summary": str(event.get("summary") or ""),
+                    "agent": str(payload.get("agent_name") or payload.get("agent") or ""),
+                    "tool_name": str(payload.get("tool_name") or payload.get("tool") or ""),
+                    "model": str(event.get("model_name") or ""),
+                    "content": _trajectory_content(event, payload),
+                }
+            )
+    return trajectory
 
 
 def emit_reflexio_event(
@@ -60,3 +111,39 @@ def emit_reflexio_event(
     return _emit_adapter_event(
         "reflexio", action=action, summary=summary, payload=payload, artifact_paths=artifact_paths
     )
+
+
+def _read_canonical_trace(path: Path) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    if not path.exists():
+        return events
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                event = json.loads(line)
+                if isinstance(event, dict):
+                    events.append(event)
+    return events
+
+
+def _trajectory_content(event: dict[str, Any], payload: dict[str, Any]) -> str:
+    action = str(event.get("action") or "")
+    if action == "prompt":
+        return str(payload.get("prompt_preview") or "")
+    if action == "response":
+        return str(payload.get("response_preview") or "")
+    if action == "tool_call":
+        return str(payload.get("tool_input_preview") or "")
+    if action == "tool_result":
+        return str(payload.get("tool_output_preview") or "")
+    if event.get("category") == "usage":
+        return json.dumps(
+            {
+                "agent": payload.get("agent"),
+                "input_tokens": payload.get("input_tokens"),
+                "output_tokens": payload.get("output_tokens"),
+                "total_tokens": payload.get("total_tokens"),
+            },
+            sort_keys=True,
+        )
+    return str(event.get("summary") or "")

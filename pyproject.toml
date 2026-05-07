@@ -64,6 +64,7 @@ py-modules = [
     "strategy_family",
     "thesis_validator",
     "trace_autonomy_ledger",
+    "trace_improvement_report",
     "trace_quality_history",
     "trace_refinement",
     "trace_rule_proposals",
@@ -147,6 +148,7 @@ requires-python = ">=3.10"
 dependencies = [
     "openai-agents==0.14.2",
     "openai>=2.26.0,<3",
+    "halo-engine",
     "pydantic>=2.12.2,<3",
     "opentelemetry-api==1.41.1",
     "opentelemetry-sdk==1.41.1",

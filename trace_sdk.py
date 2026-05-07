@@ -39,6 +39,17 @@ class TraceEvent:
     event_id: str
     schema_version: int
     timestamp: str
+    otel_trace_id: str
+    span_id: str
+    parent_span_id: str
+    span_name: str
+    span_kind: str
+    span_start_time: str
+    span_end_time: str
+    span_status_code: str
+    span_status_message: str
+    resource_attributes: dict[str, Any]
+    scope: dict[str, str]
     source_module: str
     run_id: str
     session_id: str
@@ -84,6 +95,21 @@ class JsonLineTraceExporter(SpanExporter):
                     event_id=_string_attr(span, "autoresearch.event_id"),
                     schema_version=int(span.attributes.get("autoresearch.schema_version", 1)),
                     timestamp=_string_attr(span, "autoresearch.timestamp", span.start_time),
+                    otel_trace_id=_span_trace_id(span),
+                    span_id=_span_id(span),
+                    parent_span_id=_parent_span_id(span),
+                    span_name=str(span.name or ""),
+                    span_kind=_span_kind(span),
+                    span_start_time=_ns_to_iso_z(getattr(span, "start_time", None)),
+                    span_end_time=_ns_to_iso_z(
+                        getattr(span, "end_time", None) or getattr(span, "start_time", None)
+                    ),
+                    span_status_code=_span_status_code(span),
+                    span_status_message=_span_status_message(span),
+                    resource_attributes=dict(
+                        getattr(getattr(span, "resource", None), "attributes", {}) or {}
+                    ),
+                    scope=_span_scope(span),
                     source_module=_string_attr(span, "autoresearch.source_module"),
                     run_id=_string_attr(span, "autoresearch.run_id"),
                     session_id=_string_attr(span, "autoresearch.session_id"),
@@ -363,6 +389,60 @@ def _decode_json_attribute(value: Any) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {"unparsed_payload": str(value)}
     return decoded if isinstance(decoded, dict) else {"value": decoded}
+
+
+def _span_trace_id(span: ReadableSpan) -> str:
+    get_context = getattr(span, "get_span_context", None)
+    if get_context is None:
+        return ""
+    context = get_context()
+    return f"{context.trace_id:032x}" if context and context.trace_id else ""
+
+
+def _span_id(span: ReadableSpan) -> str:
+    get_context = getattr(span, "get_span_context", None)
+    if get_context is None:
+        return ""
+    context = get_context()
+    return f"{context.span_id:016x}" if context and context.span_id else ""
+
+
+def _parent_span_id(span: ReadableSpan) -> str:
+    parent = getattr(span, "parent", None)
+    span_id = getattr(parent, "span_id", 0) if parent is not None else 0
+    return f"{span_id:016x}" if span_id else ""
+
+
+def _span_kind(span: ReadableSpan) -> str:
+    name = getattr(getattr(span, "kind", None), "name", "") or "INTERNAL"
+    return f"SPAN_KIND_{name.upper()}"
+
+
+def _span_status_code(span: ReadableSpan) -> str:
+    status = getattr(span, "status", None)
+    code_name = getattr(getattr(status, "status_code", None), "name", "") or "UNSET"
+    return f"STATUS_CODE_{code_name.upper()}"
+
+
+def _span_status_message(span: ReadableSpan) -> str:
+    status = getattr(span, "status", None)
+    return str(getattr(status, "description", "") or "")
+
+
+def _span_scope(span: ReadableSpan) -> dict[str, str]:
+    scope = getattr(span, "instrumentation_scope", None)
+    return {
+        "name": str(getattr(scope, "name", "") or "agents-auto-research.trace_sdk"),
+        "version": str(getattr(scope, "version", "") or ""),
+    }
+
+
+def _ns_to_iso_z(ns: int | None) -> str:
+    if not ns:
+        return _canonical_ts()
+    seconds, nanos = divmod(int(ns), 1_000_000_000)
+    base = datetime.fromtimestamp(seconds, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    return f"{base}.{nanos:09d}Z"
 
 
 def _log_line(component: str, message: str, data: dict[str, Any] | None, seq: int) -> None:
@@ -680,6 +760,8 @@ def trace_agent_prompt(
             "trace_id": trace_id,
             "prompt_length": len(prompt),
             "system_prompt_length": len(system_prompt),
+            "prompt_preview": prompt[:2000],
+            "system_prompt_preview": system_prompt[:2000],
             "preview_len": min(len(prompt), 200),
         },
         artifact_paths=[prompt_path],
@@ -731,6 +813,7 @@ def trace_agent_response(
             "trace_id": trace_id,
             "status": status,
             "response_length": len(raw_text),
+            "response_preview": raw_text[:2000],
             "preview_len": min(len(raw_text), 200),
             "parsed_keys": sorted(parsed.keys()) if parsed else [],
         },

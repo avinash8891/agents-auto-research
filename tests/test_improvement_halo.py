@@ -24,7 +24,15 @@ def _reset_env(monkeypatch):
 
 def _make_jsonl(tmp_path: Path) -> Path:
     p = tmp_path / "trace-events.jsonl"
-    p.write_text('{"event": 1}\n{"event": 2}\n', encoding="utf-8")
+    p.write_text(
+        '{"event_id":"evt-1","timestamp":"2026-05-07T00:00:00.000Z","run_id":"r1",'
+        '"session_id":"s1","category":"agent","action":"prompt","summary":"prompt",'
+        '"source_module":"trace_sdk","family":"ema","job":1,"model_provider":"openai",'
+        '"model_name":"gpt-5.2","hypothesis_id":"H001","hypothesis_name":"round",'
+        '"seq":1,"payload":{"agent_name":"conductor","trace_id":"t1"},'
+        '"artifact_paths":[]}\n',
+        encoding="utf-8",
+    )
     return p
 
 
@@ -55,6 +63,12 @@ def test_flag_on_missing_jsonl_returns_none(tmp_path, monkeypatch):
 def test_flag_on_success_writes_report(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_HALO, "1")
     monkeypatch.setattr(improvement_halo.shutil, "which", lambda _b: "/usr/bin/halo")
+    ensure_calls: list[bool] = []
+    monkeypatch.setattr(
+        improvement_halo.agent_infra,
+        "_ensure_oauth_proxy",
+        lambda: ensure_calls.append(True),
+    )
 
     captured: dict[str, list] = {}
 
@@ -72,13 +86,35 @@ def test_flag_on_success_writes_report(tmp_path, monkeypatch):
     assert report is not None
     assert report.name == "round-007.md"
     assert report.read_text(encoding="utf-8") == "# HALO report\n- finding 1\n"
-    # Command shape: halo <jsonl> -p <prompt>
+    # Command shape: halo <adapted-jsonl> -p <prompt> --model gpt-5.2
     assert captured["cmd"][0] == "halo"
-    assert captured["cmd"][1] == str(jsonl)
+    assert captured["cmd"][1].endswith("round-007-traces.halo.jsonl")
     assert captured["cmd"][2] == "-p"
     assert "Markdown" in captured["cmd"][3]
+    assert captured["cmd"][4:] == ["--model", "gpt-5.2"]
+    assert (
+        captured["kwargs"]["env"]["OPENAI_BASE_URL"]
+        == improvement_halo.agent_infra._OAUTH_PROXY_URL
+    )
+    assert captured["kwargs"]["env"]["OPENAI_API_KEY"] == "unused"
     assert captured["kwargs"]["timeout"] == improvement_halo.HALO_TIMEOUT_SECONDS
     assert captured["kwargs"]["check"] is False
+    assert (out / "round-007-traces.halo.jsonl").exists()
+    assert ensure_calls == [True]
+
+
+def test_flag_on_oauth_proxy_unavailable_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_HALO, "1")
+    monkeypatch.setattr(improvement_halo.shutil, "which", lambda _b: "/usr/bin/halo")
+    monkeypatch.setattr(
+        improvement_halo.agent_infra,
+        "_ensure_oauth_proxy",
+        lambda: (_ for _ in ()).throw(RuntimeError("proxy down")),
+    )
+    jsonl = _make_jsonl(tmp_path)
+    out = tmp_path / "reports"
+
+    assert improvement_halo.run_halo_after_round(1, jsonl, out) is None
 
 
 def test_flag_on_nonzero_exit_returns_none(tmp_path, monkeypatch):

@@ -182,3 +182,29 @@ def test_missing_optional_fields_yields_minimal_preamble(tmp_path, monkeypatch):
     assert "you_reasoned" not in feedback
     assert "why_it_failed" not in feedback
     assert "Avoid repeating" in feedback
+
+
+def test_feedback_includes_prior_trajectory_when_export_has_it(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
+    payload = build_reflexio_payload(
+        research_round=1,
+        thesis_id="T1",
+        outcome="rejected",
+        family="ema",
+        reasoning="builder produced baseline clone",
+        rejection_reason="same PF/trades as baseline",
+    )
+    payload["trajectory"] = [
+        {"action": "prompt", "summary": "ask analyst to inspect duplicate config"},
+        {"action": "tool_result", "summary": "backtest PF unchanged"},
+    ]
+    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir.mkdir(parents=True)
+    (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    controller = SimpleNamespace(root=tmp_path)
+    feedback = build_reflexion_feedback(controller, current_round=2)
+
+    assert "prior_trajectory" in feedback
+    assert "prompt: ask analyst to inspect duplicate config" in feedback
+    assert "tool_result: backtest PF unchanged" in feedback

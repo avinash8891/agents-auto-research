@@ -13,6 +13,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import agent_infra
 from autoresearch_constants import ENV_HALO_TIMEOUT_SECONDS
 from autoresearch_logging import get_logger
 from improvement_flags import halo_enabled
@@ -33,6 +34,7 @@ def _parse_timeout(env_key: str, default: int) -> int:
 
 
 HALO_BINARY = "halo"
+HALO_MODEL = "gpt-5.2"
 HALO_TIMEOUT_SECONDS = _parse_timeout(ENV_HALO_TIMEOUT_SECONDS, 600)
 
 DIAGNOSTIC_PROMPT = (
@@ -42,6 +44,15 @@ DIAGNOSTIC_PROMPT = (
     "concrete prompt or harness-code changes that would address each. "
     "Output Markdown."
 )
+
+
+def _halo_oauth_env() -> dict[str, str]:
+    """Route HALO's OpenAI SDK calls through the local openai-oauth proxy."""
+    agent_infra._ensure_oauth_proxy()
+    env = os.environ.copy()
+    env["OPENAI_BASE_URL"] = agent_infra._OAUTH_PROXY_URL
+    env["OPENAI_API_KEY"] = "unused"
+    return env
 
 
 def run_halo_after_round(
@@ -69,10 +80,31 @@ def run_halo_after_round(
         )
         return None
     try:
+        halo_env = _halo_oauth_env()
+    except RuntimeError as exc:
+        log.error(
+            f"HALO openai-oauth proxy unavailable on round={research_round}: {exc}. "
+            "Action: start openai-oauth.service before enabling AUTORESEARCH_IMPROVEMENT_HALO."
+        )
+        return None
+    adapted_trace_path = output_dir / f"round-{research_round:03d}-traces.halo.jsonl"
+    try:
+        from trace_adapters.halo import export_halo_trace_jsonl, verify_halo_trace_jsonl
+
+        export_halo_trace_jsonl(jsonl_path, adapted_trace_path)
+        verify_halo_trace_jsonl(adapted_trace_path)
+    except (OSError, ValueError) as exc:
+        log.error(
+            f"HALO trace adaptation failed on round={research_round}: {exc}. "
+            f"Action: inspect canonical trace at {jsonl_path}."
+        )
+        return None
+    try:
         completed = subprocess.run(
-            [HALO_BINARY, str(jsonl_path), "-p", DIAGNOSTIC_PROMPT],
+            [HALO_BINARY, str(adapted_trace_path), "-p", DIAGNOSTIC_PROMPT, "--model", HALO_MODEL],
             capture_output=True,
             text=True,
+            env=halo_env,
             timeout=HALO_TIMEOUT_SECONDS,
             check=False,
         )
