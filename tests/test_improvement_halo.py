@@ -44,7 +44,7 @@ def test_flag_off_returns_none(tmp_path):
 
 def test_flag_on_missing_binary_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_HALO, "1")
-    monkeypatch.setattr(improvement_halo.shutil, "which", lambda _b: None)
+    monkeypatch.setattr(improvement_halo, "_ensure_halo_binary", lambda: None)
     jsonl = _make_jsonl(tmp_path)
     out = tmp_path / "reports"
     assert improvement_halo.run_halo_after_round(1, jsonl, out) is None
@@ -87,7 +87,7 @@ def test_flag_on_success_writes_report(tmp_path, monkeypatch):
     assert report.name == "round-007.md"
     assert report.read_text(encoding="utf-8") == "# HALO report\n- finding 1\n"
     # Command shape: halo <adapted-jsonl> -p <prompt> --model gpt-5.2
-    assert captured["cmd"][0] == "halo"
+    assert captured["cmd"][0] == "/usr/bin/halo"
     assert captured["cmd"][1].endswith("round-007-traces.halo.jsonl")
     assert captured["cmd"][2] == "-p"
     assert "Markdown" in captured["cmd"][3]
@@ -101,6 +101,30 @@ def test_flag_on_success_writes_report(tmp_path, monkeypatch):
     assert captured["kwargs"]["check"] is False
     assert (out / "round-007-traces.halo.jsonl").exists()
     assert ensure_calls == [True]
+
+
+def test_missing_halo_binary_installs_isolated_tool_venv(tmp_path, monkeypatch):
+    monkeypatch.setattr(improvement_halo.shutil, "which", lambda _b: None)
+    monkeypatch.setenv(improvement_halo.HALO_TOOL_VENV_ENV, str(tmp_path / "halo-venv"))
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[:3] == [improvement_halo.sys.executable, "-m", "venv"]:
+            python_bin = tmp_path / "halo-venv" / "bin" / "python"
+            python_bin.parent.mkdir(parents=True)
+            python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+        elif cmd[1:4] == ["-m", "pip", "install"]:
+            halo_bin = tmp_path / "halo-venv" / "bin" / "halo"
+            halo_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(improvement_halo.subprocess, "run", fake_run)
+
+    assert improvement_halo._ensure_halo_binary() == str(tmp_path / "halo-venv" / "bin" / "halo")
+    assert calls[0][:3] == [improvement_halo.sys.executable, "-m", "venv"]
+    assert calls[1][1:4] == ["-m", "pip", "install"]
+    assert calls[1][-1] == "halo-engine==0.1.5"
 
 
 def test_flag_on_oauth_proxy_unavailable_returns_none(tmp_path, monkeypatch):

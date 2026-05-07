@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import agent_infra
@@ -34,8 +35,10 @@ def _parse_timeout(env_key: str, default: int) -> int:
 
 
 HALO_BINARY = "halo"
+HALO_ENGINE_VERSION = "0.1.5"
 HALO_MODEL = "gpt-5.2"
 HALO_TIMEOUT_SECONDS = _parse_timeout(ENV_HALO_TIMEOUT_SECONDS, 600)
+HALO_TOOL_VENV_ENV = "AUTORESEARCH_HALO_TOOL_VENV"
 
 DIAGNOSTIC_PROMPT = (
     "Analyze the attached trace events for systemic failure modes "
@@ -53,6 +56,53 @@ def _halo_oauth_env() -> dict[str, str]:
     env["OPENAI_BASE_URL"] = agent_infra._OAUTH_PROXY_URL
     env["OPENAI_API_KEY"] = "unused"
     return env
+
+
+def _halo_tool_venv() -> Path:
+    raw = os.environ.get(HALO_TOOL_VENV_ENV)
+    if raw:
+        return Path(raw).expanduser()
+    return Path.cwd() / ".halo-tools" / "venv"
+
+
+def _ensure_halo_binary() -> str | None:
+    existing = shutil.which(HALO_BINARY)
+    if existing:
+        return existing
+
+    venv_dir = _halo_tool_venv()
+    python_bin = venv_dir / "bin" / "python"
+    halo_bin = venv_dir / "bin" / HALO_BINARY
+    try:
+        if not python_bin.exists():
+            subprocess.run(
+                [sys.executable, "-m", "venv", str(venv_dir)],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=True,
+            )
+        if not halo_bin.exists():
+            subprocess.run(
+                [
+                    str(python_bin),
+                    "-m",
+                    "pip",
+                    "install",
+                    f"halo-engine=={HALO_ENGINE_VERSION}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,
+                check=True,
+            )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        log.error(
+            f"HALO tool install failed in {venv_dir}: {exc}. "
+            "Action: install halo-engine in an isolated tool venv or unset AUTORESEARCH_IMPROVEMENT_HALO."
+        )
+        return None
+    return str(halo_bin) if halo_bin.exists() else None
 
 
 def run_halo_after_round(
@@ -73,10 +123,11 @@ def run_halo_after_round(
             f"Action: confirm trace_sdk.get_event_file() points to the live trace."
         )
         return None
-    if shutil.which(HALO_BINARY) is None:
+    halo_binary = _ensure_halo_binary()
+    if halo_binary is None:
         log.error(
-            "HALO halo CLI not installed; skipping. "
-            "Action: install the halo binary on PATH or unset AUTORESEARCH_IMPROVEMENT_HALO."
+            "HALO halo CLI unavailable; skipping. "
+            "Action: inspect isolated HALO tool venv or unset AUTORESEARCH_IMPROVEMENT_HALO."
         )
         return None
     try:
@@ -101,7 +152,7 @@ def run_halo_after_round(
         return None
     try:
         completed = subprocess.run(
-            [HALO_BINARY, str(adapted_trace_path), "-p", DIAGNOSTIC_PROMPT, "--model", HALO_MODEL],
+            [halo_binary, str(adapted_trace_path), "-p", DIAGNOSTIC_PROMPT, "--model", HALO_MODEL],
             capture_output=True,
             text=True,
             env=halo_env,
