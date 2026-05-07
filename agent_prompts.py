@@ -172,8 +172,12 @@ CONFIG SCHEMA (only these keys are valid in config_changes):
       "suggested_theses": [
         {{
           "thesis_id": "short_snake_case_name (unique, never reuse)",
-          "mechanism_dimension": "one of: entry_timing, exit_mechanism, signal_quality, regime_conditioning, portfolio_construction, risk_structure, market_microstructure",
+          "mechanism_dimension": "one of: entry_timing, exit_mechanism, signal_quality, regime_conditioning, portfolio_construction, risk_structure, market_microstructure, emergent, or a prior emergent dimension name",
           "dimension_novelty": "why this is not a parameter variation of any prior thesis in the same dimension",
+          "new_dimension_name": "required only when mechanism_dimension is emergent; otherwise empty string",
+          "why_existing_dimensions_do_not_fit": "required only when mechanism_dimension is emergent; otherwise empty string",
+          "mechanism_family_definition": "required only when mechanism_dimension is emergent; otherwise empty string",
+          "expected_reuse_across_future_theses": "required only when mechanism_dimension is emergent; otherwise empty string",
           "hypothesis": "what this tests and what improvement is expected",
           {thesis_json_hint},
           "mechanism": "what structural change it makes and why it should help",

@@ -527,6 +527,10 @@ def _log_validation_rejection(
                 "why_not_overfit",
                 "requires_code_change",
                 "required_diagnostics",
+                "new_dimension_name",
+                "why_existing_dimensions_do_not_fit",
+                "mechanism_family_definition",
+                "expected_reuse_across_future_theses",
             )
             if key in raw_thesis
         },
@@ -1220,6 +1224,10 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
                 "why_not_overfit",
                 "requires_code_change",
                 "required_diagnostics",
+                "new_dimension_name",
+                "why_existing_dimensions_do_not_fit",
+                "mechanism_family_definition",
+                "expected_reuse_across_future_theses",
             )
             if key in thesis_meta
         },

@@ -19,7 +19,12 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_logging import get_logger
-from research_types import MECHANISM_DIMENSIONS, ResearchThesis
+from research_types import (
+    CORE_MECHANISM_DIMENSIONS,
+    EMERGENT_MECHANISM_DIMENSION,
+    MECHANISM_DIMENSIONS,
+    ResearchThesis,
+)
 
 log = get_logger(__name__)
 
@@ -40,6 +45,12 @@ CONFIG_OVERLAP_THRESHOLD = 0.5
 # but are not actual strategy parameters. Including these in novelty checks
 # makes every engine-change thesis look like a duplicate of the previous one.
 CONFIG_OVERLAP_IGNORED_KEYS = frozenset({"requires_engine_change"})
+_MIN_EMERGENT_FIELD_CHARS = 40
+_EMERGENT_REQUIRED_FIELDS = (
+    "why_existing_dimensions_do_not_fit",
+    "mechanism_family_definition",
+    "expected_reuse_across_future_theses",
+)
 
 
 class ThesisValidationError(ValueError):
@@ -50,7 +61,42 @@ class ThesisValidationError(ValueError):
 
 MECHANISM_DIMENSION_ALIASES = {
     "trade_filtering": "signal_quality",
+    "other": EMERGENT_MECHANISM_DIMENSION,
 }
+
+
+def _dimension_slug(text: str) -> str:
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return "_".join(words)
+
+
+def _prior_thesis_details(prior: dict[str, Any]) -> dict[str, Any]:
+    details = prior.get("thesis_details")
+    return details if isinstance(details, dict) else {}
+
+
+def _known_emergent_dimension_names(prior_theses: list[dict[str, Any]] | None) -> set[str]:
+    known: set[str] = set()
+    if not prior_theses:
+        return known
+    for prior in prior_theses:
+        if prior.get("mechanism_dimension") != EMERGENT_MECHANISM_DIMENSION:
+            continue
+        details = _prior_thesis_details(prior)
+        name = details.get("new_dimension_name") or prior.get("new_dimension_name")
+        if isinstance(name, str) and name.strip():
+            known.add(_dimension_slug(name))
+    return known
+
+
+def _prior_thesis_entry(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "thesis_id": row.get("thesis_id", "unknown"),
+        "config_changes": row.get("config_changes") or {},
+        "outcome": row.get("validator_status", "unknown"),
+        "mechanism_dimension": row.get("mechanism_dimension", ""),
+        "thesis_details": row.get("thesis_details", {}),
+    }
 
 
 def _slugify(text: str, max_words: int = 8) -> str:
@@ -140,7 +186,10 @@ def normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
             pass
     dimension = normalized.get("mechanism_dimension")
     if isinstance(dimension, str):
-        normalized["mechanism_dimension"] = MECHANISM_DIMENSION_ALIASES.get(dimension, dimension)
+        normalized_dimension = _dimension_slug(dimension)
+        normalized["mechanism_dimension"] = MECHANISM_DIMENSION_ALIASES.get(
+            normalized_dimension, normalized_dimension
+        )
     normalized["expected_effects"] = [
         _normalize_expected_effect(effect) for effect in normalized.get("expected_effects", [])
     ]
@@ -175,14 +224,13 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
                     continue
                 config_changes = row.get("config_changes") or {}
                 if config_changes:
-                    prior.append(
-                        {
-                            "thesis_id": row.get("thesis_id", "unknown"),
-                            "config_changes": config_changes,
-                            "outcome": row.get("validator_status", "unknown"),
-                            "mechanism_dimension": row.get("mechanism_dimension", ""),
-                        }
-                    )
+                    prior.append(_prior_thesis_entry(row))
+                    continue
+                details = _prior_thesis_details(row)
+                if row.get("mechanism_dimension") == EMERGENT_MECHANISM_DIMENSION and details.get(
+                    "new_dimension_name"
+                ):
+                    prior.append(_prior_thesis_entry(row))
         return prior
 
     for line_no, row in enumerate(db.list_research_thesis_attempts(), start=1):
@@ -196,14 +244,13 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
             continue
         config_changes = row.get("config_changes") or {}
         if config_changes:
-            prior.append(
-                {
-                    "thesis_id": row.get("thesis_id", "unknown"),
-                    "config_changes": config_changes,
-                    "outcome": row.get("validator_status", "unknown"),
-                    "mechanism_dimension": row.get("mechanism_dimension", ""),
-                }
-            )
+            prior.append(_prior_thesis_entry(row))
+            continue
+        details = _prior_thesis_details(row)
+        if row.get("mechanism_dimension") == EMERGENT_MECHANISM_DIMENSION and details.get(
+            "new_dimension_name"
+        ):
+            prior.append(_prior_thesis_entry(row))
     return prior
 
 
@@ -477,11 +524,30 @@ def validate_research_thesis(
             "Missing mechanism_dimension. Every thesis must declare which "
             "dimension it explores: " + ", ".join(sorted(MECHANISM_DIMENSIONS))
         )
-    if thesis.mechanism_dimension not in MECHANISM_DIMENSIONS:
+    known_dimensions = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
+    if thesis.mechanism_dimension not in known_dimensions:
         raise ThesisValidationError(
             f"Invalid mechanism_dimension '{thesis.mechanism_dimension}'. "
-            f"Must be one of: {sorted(MECHANISM_DIMENSIONS)}"
+            f"Must be one of: {sorted(known_dimensions)}"
         )
+    if thesis.mechanism_dimension == EMERGENT_MECHANISM_DIMENSION:
+        new_dimension_name = _dimension_slug(thesis.new_dimension_name)
+        if not new_dimension_name:
+            raise ThesisValidationError(
+                "new_dimension_name is required when mechanism_dimension is emergent"
+            )
+        if new_dimension_name in CORE_MECHANISM_DIMENSIONS:
+            raise ThesisValidationError(
+                f"new_dimension_name '{thesis.new_dimension_name}' duplicates a core "
+                "mechanism dimension; use the core dimension instead"
+            )
+        for field in _EMERGENT_REQUIRED_FIELDS:
+            value = getattr(thesis, field)
+            if len(value.strip()) < _MIN_EMERGENT_FIELD_CHARS:
+                raise ThesisValidationError(
+                    f"{field} must be at least {_MIN_EMERGENT_FIELD_CHARS} characters "
+                    "when mechanism_dimension is emergent"
+                )
     if not thesis.dimension_novelty.strip():
         raise ThesisValidationError(
             "dimension_novelty is empty. "

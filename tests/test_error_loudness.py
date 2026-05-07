@@ -71,6 +71,40 @@ def test_load_prior_theses_logs_bad_sqlite_row(
     assert "PRIOR_THESES_SQLITE_INVALID" in caplog.text
 
 
+def test_load_prior_theses_includes_code_only_emergent_thesis(tmp_path: Path) -> None:
+    from experiment_db import ExperimentDB
+
+    db = ExperimentDB(tmp_path / "experiments.db")
+    db.seed_research_thesis_attempts_rows(
+        [
+            {
+                "research_round_id": "r1",
+                "attempt_number": 1,
+                "thesis_id": "liquidity_decay_dimension",
+                "config_changes": {},
+                "validator_status": "halted",
+                "strategy_family": "ema",
+                "mechanism_dimension": "emergent",
+                "thesis_details": {"new_dimension_name": "liquidity_decay"},
+                "selected_for_execution": 0,
+                "created_at_utc": "2026-04-30T00:00:00+00:00",
+            },
+        ],
+    )
+
+    prior = load_prior_theses(tmp_path, db=db)
+
+    assert prior == [
+        {
+            "thesis_id": "liquidity_decay_dimension",
+            "config_changes": {},
+            "outcome": "halted",
+            "mechanism_dimension": "emergent",
+            "thesis_details": {"new_dimension_name": "liquidity_decay"},
+        }
+    ]
+
+
 def test_baseline_drift_flags_nonnumeric_metrics(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.ERROR)
     tracker = BaselineTracker(Path("/tmp/not-used-baseline.json"))

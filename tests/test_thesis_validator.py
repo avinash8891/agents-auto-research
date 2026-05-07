@@ -164,6 +164,90 @@ def test_validate_real_config_overlap_still_rejected_with_sentinel() -> None:
         validate_thesis_dict(thesis, prior_theses=prior)
 
 
+def test_validate_emergent_mechanism_dimension_requires_autonomous_definition() -> None:
+    thesis = _base_engine_change_thesis("liquidity_decay_dimension", "emergent")
+    thesis.update(
+        {
+            "new_dimension_name": "liquidity_decay",
+            "why_existing_dimensions_do_not_fit": (
+                "This studies persistence decay after an entry event, not only entry "
+                "timing, signal quality, risk sizing, or exit behavior."
+            ),
+            "mechanism_family_definition": (
+                "Liquidity decay mechanisms test whether the market impact and "
+                "fill-quality environment around recent activity changes future edge."
+            ),
+            "expected_reuse_across_future_theses": (
+                "Future theses can reuse this dimension for decay windows, queue "
+                "recovery, and post-event liquidity normalization."
+            ),
+        }
+    )
+
+    validated = validate_thesis_dict(thesis)
+
+    assert validated.mechanism_dimension == "emergent"
+    assert validated.new_dimension_name == "liquidity_decay"
+
+
+def test_validate_emergent_mechanism_dimension_rejects_missing_definition() -> None:
+    thesis = _base_engine_change_thesis("undefined_new_dimension", "emergent")
+    thesis["new_dimension_name"] = "liquidity_decay"
+
+    with pytest.raises(ThesisValidationError, match="why_existing_dimensions_do_not_fit"):
+        validate_thesis_dict(thesis)
+
+
+def test_validate_reuses_prior_emergent_dimension_name() -> None:
+    thesis = _base_engine_change_thesis(
+        "liquidity_decay_followup",
+        "liquidity_decay",
+    )
+    prior = [
+        {
+            "thesis_id": "liquidity_decay_dimension",
+            "mechanism_dimension": "emergent",
+            "thesis_details": {
+                "new_dimension_name": "liquidity_decay",
+                "why_existing_dimensions_do_not_fit": (
+                    "This studies persistence decay after an entry event, not only "
+                    "entry timing, signal quality, risk sizing, or exit behavior."
+                ),
+                "mechanism_family_definition": (
+                    "Liquidity decay mechanisms test whether the market impact and "
+                    "fill-quality environment around recent activity changes future edge."
+                ),
+                "expected_reuse_across_future_theses": (
+                    "Future theses can reuse this dimension for decay windows and "
+                    "post-event liquidity normalization."
+                ),
+            },
+        }
+    ]
+
+    validated = validate_thesis_dict(thesis, prior_theses=prior)
+
+    assert validated.mechanism_dimension == "liquidity_decay"
+
+
+def test_validate_normalizes_reused_prior_emergent_dimension_name() -> None:
+    thesis = _base_engine_change_thesis(
+        "liquidity_decay_followup",
+        "Liquidity Decay",
+    )
+    prior = [
+        {
+            "thesis_id": "liquidity_decay_dimension",
+            "mechanism_dimension": "emergent",
+            "thesis_details": {"new_dimension_name": "Liquidity Decay"},
+        }
+    ]
+
+    validated = validate_thesis_dict(thesis, prior_theses=prior)
+
+    assert validated.mechanism_dimension == "liquidity_decay"
+
+
 def test_generate_variants_does_not_extrapolate_max_trades_below_valid_bound() -> None:
     variants = generate_variants(
         {"max_trades_per_day": 1},

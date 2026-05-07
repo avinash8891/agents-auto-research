@@ -327,6 +327,7 @@ def _index_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "outcome": entry.get("validator_status", "unknown"),
         "mechanism_dimension": entry.get("mechanism_dimension", ""),
         "dimension_novelty": details.get("dimension_novelty", ""),
+        "new_dimension_name": details.get("new_dimension_name", ""),
         "requires_code_change": bool(details.get("requires_code_change")),
         "expected_effect_metrics": [
             effect.get("metric")
@@ -363,6 +364,12 @@ def _attempt_detail(entry: dict[str, Any]) -> dict[str, Any]:
         "created_at_utc": entry.get("created_at_utc"),
         "round_usage": entry.get("round_usage", {}),
         "dimension_novelty": details.get("dimension_novelty", ""),
+        "new_dimension_name": details.get("new_dimension_name", ""),
+        "why_existing_dimensions_do_not_fit": details.get("why_existing_dimensions_do_not_fit", ""),
+        "mechanism_family_definition": details.get("mechanism_family_definition", ""),
+        "expected_reuse_across_future_theses": details.get(
+            "expected_reuse_across_future_theses", ""
+        ),
         "evidence": details.get("evidence", []),
         "expected_effects": details.get("expected_effects", []),
         "disqualifiers": details.get("disqualifiers", []),

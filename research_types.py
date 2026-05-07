@@ -38,8 +38,10 @@ class Disqualifier(BaseModel):
     severity: Literal["hard_fail", "soft_fail"] = "hard_fail"
 
 
-# Valid mechanism dimensions for thesis classification
-MECHANISM_DIMENSIONS = {
+EMERGENT_MECHANISM_DIMENSION = "emergent"
+
+# Stable built-in mechanism dimensions for thesis classification.
+CORE_MECHANISM_DIMENSIONS = {
     "entry_timing",
     "exit_mechanism",
     "signal_quality",
@@ -48,6 +50,10 @@ MECHANISM_DIMENSIONS = {
     "risk_structure",
     "market_microstructure",
 }
+
+# Valid mechanism dimensions for thesis classification. The emergent path is
+# intentionally explicit so autonomous discovery is gated by validator evidence.
+MECHANISM_DIMENSIONS = CORE_MECHANISM_DIMENSIONS | {EMERGENT_MECHANISM_DIMENSION}
 
 
 class ResearchThesis(BaseModel):
@@ -60,8 +66,12 @@ class ResearchThesis(BaseModel):
     mechanism: str
 
     # Mechanism discovery fields — forces structural thinking
-    mechanism_dimension: str = ""  # one of MECHANISM_DIMENSIONS
+    mechanism_dimension: str = ""  # core dimension, emergent, or a prior emergent name
     dimension_novelty: str = ""  # why this is not a parameter variation of prior work
+    new_dimension_name: str = ""  # required when mechanism_dimension == emergent
+    why_existing_dimensions_do_not_fit: str = ""
+    mechanism_family_definition: str = ""
+    expected_reuse_across_future_theses: str = ""
 
     evidence: list[str] = Field(default_factory=list)
 

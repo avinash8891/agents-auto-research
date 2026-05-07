@@ -95,6 +95,17 @@ dimensions across rounds, not variations within the same one.
    Questions: Order flow? Bid-ask spread? Adverse selection?
    Example: "entries coincide with market-maker inventory rebalancing"
 
+8. EMERGENT — A new reusable mechanism family that does not fit the seven
+   core dimensions.
+   Use this only when the idea would be misclassified by every core dimension.
+   You MUST define:
+   - new_dimension_name
+   - why_existing_dimensions_do_not_fit
+   - mechanism_family_definition
+   - expected_reuse_across_future_theses
+   If a prior emergent dimension already exists, reuse that exact dimension
+   name instead of creating another emergent dimension.
+
 When proposing a thesis, you MUST state which dimension it explores.
 If prior theses already explored that dimension, you MUST choose a
 different one OR explain what fundamentally new mechanism within that
@@ -239,8 +250,12 @@ OUTPUT FORMAT (final response after all tool calls):
   "suggested_theses": [
     {{
       "thesis_id": "short_snake_case_name",
-      "mechanism_dimension": "one of: entry_timing, exit_mechanism, signal_quality, regime_conditioning, portfolio_construction, risk_structure, market_microstructure",
+      "mechanism_dimension": "one of: entry_timing, exit_mechanism, signal_quality, regime_conditioning, portfolio_construction, risk_structure, market_microstructure, emergent, or a prior emergent dimension name",
       "dimension_novelty": "why this is not a parameter variation of any prior thesis in the same dimension",
+      "new_dimension_name": "required only when mechanism_dimension is emergent; otherwise empty string",
+      "why_existing_dimensions_do_not_fit": "required only when mechanism_dimension is emergent; otherwise empty string",
+      "mechanism_family_definition": "required only when mechanism_dimension is emergent; otherwise empty string",
+      "expected_reuse_across_future_theses": "required only when mechanism_dimension is emergent; otherwise empty string",
       "hypothesis": "what this tests and why (must be specific and testable)",
       "mechanism": "structural change and WHY it should produce the expected effects",
       "evidence": ["data points from analyst or web research that support this"],

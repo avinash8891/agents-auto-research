@@ -1451,6 +1451,17 @@ def test_get_past_thesis_returns_persisted_full_thesis_contract(tmp_path):
         "why_not_overfit": "Mechanism is tied to opening auction microstructure.",
         "requires_code_change": True,
         "required_diagnostics": ["margin_per_order"],
+        "new_dimension_name": "liquidity_decay",
+        "why_existing_dimensions_do_not_fit": (
+            "This studies edge decay after recent activity, not entry timing alone."
+        ),
+        "mechanism_family_definition": (
+            "Liquidity decay mechanisms evaluate whether recent activity changes "
+            "future fill quality and trade expectancy."
+        ),
+        "expected_reuse_across_future_theses": (
+            "Future theses can reuse this dimension for decay windows and liquidity recovery."
+        ),
     }
     db.add_research_thesis_attempt(
         {
@@ -1494,6 +1505,7 @@ def test_get_past_thesis_returns_persisted_full_thesis_contract(tmp_path):
 
     assert listed["entries"][0]["dimension_novelty"] == thesis_details["dimension_novelty"]
     assert listed["entries"][0]["requires_code_change"] is True
+    assert listed["entries"][0]["new_dimension_name"] == "liquidity_decay"
     assert listed["entries"][0]["expected_effect_metrics"] == ["profit_factor"]
     assert listed["entries"][0]["evidence_count"] == 2
     assert detailed["attempts"][0] | thesis_details == detailed["attempts"][0]
