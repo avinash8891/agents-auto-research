@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -238,17 +238,17 @@ def _parse_timestamp(value: Any) -> datetime | None:
     if "." in text:
         prefix, suffix = text.split(".", 1)
         fraction = suffix
-        timezone = ""
+        timezone_suffix = ""
         for marker in ("+", "-"):
             if marker in suffix:
-                fraction, timezone = suffix.split(marker, 1)
-                timezone = marker + timezone
+                fraction, timezone_suffix = suffix.split(marker, 1)
+                timezone_suffix = marker + timezone_suffix
                 break
-        text = f"{prefix}.{fraction[:6]}{timezone}"
+        text = f"{prefix}.{fraction[:6]}{timezone_suffix}"
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
