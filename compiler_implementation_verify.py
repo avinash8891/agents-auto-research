@@ -128,11 +128,17 @@ def _runtime_code_text(strategy_dir: Path) -> str:
     for path in sorted(strategy_dir.glob("*.py")):
         if path.name in SCHEMA_ONLY_FILES:
             continue
-        try:
-            chunks.append(path.read_text())
-        except OSError:
-            continue
+        text = _read_source_text(path)
+        if text is not None:
+            chunks.append(text)
     return "\n".join(chunks)
+
+
+def _read_source_text(path: Path) -> str | None:
+    try:
+        return path.read_text()
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def _verify_required_diagnostics(root: Path, family_name: str, thesis: dict[str, Any]) -> list[str]:
@@ -162,10 +168,9 @@ def _diagnostic_emission_text(root: Path, family_name: str) -> str:
     for rel in ("metrics.py", "strategy_event_logger.py", "backtest/runner.py"):
         path = root / rel
         if path.exists():
-            try:
-                chunks.append(path.read_text())
-            except OSError:
-                continue
+            text = _read_source_text(path)
+            if text is not None:
+                chunks.append(text)
     return "\n".join(chunks)
 
 
