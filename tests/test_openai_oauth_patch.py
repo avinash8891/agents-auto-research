@@ -18,6 +18,10 @@ def _fixture_source() -> str:
             patch_module.DO_GENERATE_OLD,
             patch_module.STREAM_INIT_OLD,
             patch_module.STREAM_FINISH_OLD,
+            patch_module.SERVER_REPLAY_REJECT_OLD,
+            patch_module.SHARED_STATE_OLD,
+            patch_module.COLLECT_SSE_OLD,
+            patch_module.EXPAND_INPUT_OLD,
         ]
     )
 
@@ -29,12 +33,21 @@ def test_patch_openai_oauth_usage_shape_rewrites_all_targets() -> None:
         "doGenerate usage shape",
         "stream usage init",
         "stream finish usage shape",
+        "responses replay rejection",
+        "responses shared state",
+        "responses SSE state capture",
+        "responses input replay expansion",
     ]
     assert already == []
     assert "inputTokens: {" in patched
     assert "outputTokens: {" in patched
     assert "raw: usage" in patched
     assert "usage.inputTokens.total = value.response.usage.input_tokens" in patched
+    assert "CodexResponsesState expand those references" in patched
+    assert "responsesState: settings.responsesState" in patched
+    assert 'parsed.type === "response.output_item.done"' in patched
+    assert 'item.id.startsWith("rs_")' in patched
+    assert "return [];" in patched
 
 
 def test_patch_openai_oauth_usage_shape_is_idempotent() -> None:
@@ -47,4 +60,8 @@ def test_patch_openai_oauth_usage_shape_is_idempotent() -> None:
         "doGenerate usage shape",
         "stream usage init",
         "stream finish usage shape",
+        "responses replay rejection",
+        "responses shared state",
+        "responses SSE state capture",
+        "responses input replay expansion",
     ]

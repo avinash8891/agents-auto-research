@@ -98,6 +98,7 @@ def test_flag_on_success_writes_report(tmp_path, monkeypatch):
         == improvement_halo.agent_infra._OAUTH_PROXY_URL
     )
     assert captured["kwargs"]["env"]["OPENAI_API_KEY"] == "unused"
+    assert captured["kwargs"]["env"]["OPENAI_AGENTS_DISABLE_TRACING"] == "true"
     assert captured["kwargs"]["timeout"] == improvement_halo.HALO_TIMEOUT_SECONDS
     assert captured["kwargs"]["check"] is False
     assert (out / "round-007-traces.halo.jsonl").exists()

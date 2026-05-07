@@ -54,6 +54,7 @@ def _halo_oauth_env() -> dict[str, str]:
     env = os.environ.copy()
     env["OPENAI_BASE_URL"] = agent_infra._OAUTH_PROXY_URL
     env["OPENAI_API_KEY"] = "unused"
+    env["OPENAI_AGENTS_DISABLE_TRACING"] = "true"
     return env
 
 

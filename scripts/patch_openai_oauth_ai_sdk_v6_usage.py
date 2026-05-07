@@ -59,10 +59,154 @@ STREAM_FINISH_NEW = """              usage.inputTokens.total = value.response.us
               usage.raw = value.response.usage;
 """
 
+SERVER_REPLAY_REJECT_OLD = """  if (usesServerReplayState(body)) {
+    return toErrorResponse(
+      "Stateless Codex responses endpoint does not support `previous_response_id` or `item_reference`. Replay the full conversation history in `input` on each request."
+    );
+  }
+"""
+
+SERVER_REPLAY_REJECT_NEW = """  // HALO/OpenAI Agents SDK uses previous_response_id/item_reference between turns.
+  // Let CodexResponsesState expand those references before forwarding upstream.
+"""
+
+SHARED_STATE_OLD = """  const sharedSettings = {
+    ...settings,
+    responsesState: false
+  };
+"""
+
+SHARED_STATE_NEW = """  const sharedSettings = {
+    ...settings,
+    responsesState: settings.responsesState
+  };
+"""
+
+COLLECT_SSE_OLD = """var collectCompletedResponseFromSse = async (stream) => {
+  let latestResponse;
+  let latestError;
+  for await (const event of iterateServerSentEvents(stream)) {
+    if (typeof event.data !== "string" || event.data.length === 0) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(event.data);
+      if (!isRecord2(parsed)) {
+        continue;
+      }
+      if (event.event === "error") {
+        latestError = parsed;
+        continue;
+      }
+      const response = parsed.response;
+      if (isRecord2(response)) {
+        latestResponse = response;
+      }
+    } catch {
+    }
+  }
+  if (latestResponse) {
+    return latestResponse;
+  }
+  throw new Error(
+    `No completed response found in SSE stream.${latestError ? ` Last error: ${JSON.stringify(latestError)}` : ""}`
+  );
+};
+"""
+
+COLLECT_SSE_NEW = """var collectCompletedResponseFromSse = async (stream) => {
+  let latestResponse;
+  let latestError;
+  let responseId;
+  const output = [];
+  for await (const event of iterateServerSentEvents(stream)) {
+    if (typeof event.data !== "string" || event.data.length === 0) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(event.data);
+      if (!isRecord2(parsed)) {
+        continue;
+      }
+      if (event.event === "error" || parsed.type === "error") {
+        latestError = parsed;
+        continue;
+      }
+      const response = parsed.response;
+      if (isRecord2(response)) {
+        latestResponse = response;
+        continue;
+      }
+      if (parsed.type === "response.created" && isRecord2(parsed.response) && typeof parsed.response.id === "string") {
+        responseId = parsed.response.id;
+      }
+      if (parsed.type === "response.output_item.done" && isRecord2(parsed.item)) {
+        output.push(cloneValue(parsed.item));
+      }
+      if ((parsed.type === "response.completed" || parsed.type === "response.incomplete") && isRecord2(parsed.response)) {
+        latestResponse = parsed.response;
+        if (Array.isArray(parsed.response.output)) {
+          for (const item of parsed.response.output) {
+            if (isRecord2(item)) output.push(cloneValue(item));
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  if (latestResponse) {
+    if (!Array.isArray(latestResponse.output) || latestResponse.output.length === 0) {
+      latestResponse = { ...latestResponse, output };
+    }
+    return latestResponse;
+  }
+  if (responseId || output.length > 0) {
+    return { id: responseId, output };
+  }
+  throw new Error(
+    `No completed response found in SSE stream.${latestError ? ` Last error: ${JSON.stringify(latestError)}` : ""}`
+  );
+};
+"""
+
+EXPAND_INPUT_OLD = """  expandInput(input) {
+    return input.map((item) => {
+      if (isRecord3(item) && item.type === "item_reference" && typeof item.id === "string") {
+        const cachedItem = this.items.get(item.id);
+        if (cachedItem != null) {
+          return cloneValue(cachedItem);
+        }
+      }
+      return cloneValue(item);
+    });
+  }
+"""
+
+EXPAND_INPUT_NEW = """  expandInput(input) {
+    return input.flatMap((item) => {
+      if (isRecord3(item) && typeof item.id === "string" && item.id.startsWith("rs_")) {
+        return [];
+      }
+      if (isRecord3(item) && item.type === "item_reference" && typeof item.id === "string") {
+        const cachedItem = this.items.get(item.id);
+        if (cachedItem != null) {
+          return [cloneValue(cachedItem)];
+        }
+        return [];
+      }
+      return [cloneValue(item)];
+    });
+  }
+"""
+
 REPLACEMENTS = (
     ("doGenerate usage shape", DO_GENERATE_OLD, DO_GENERATE_NEW),
     ("stream usage init", STREAM_INIT_OLD, STREAM_INIT_NEW),
     ("stream finish usage shape", STREAM_FINISH_OLD, STREAM_FINISH_NEW),
+    ("responses replay rejection", SERVER_REPLAY_REJECT_OLD, SERVER_REPLAY_REJECT_NEW),
+    ("responses shared state", SHARED_STATE_OLD, SHARED_STATE_NEW),
+    ("responses SSE state capture", COLLECT_SSE_OLD, COLLECT_SSE_NEW),
+    ("responses input replay expansion", EXPAND_INPUT_OLD, EXPAND_INPUT_NEW),
 )
 
 
