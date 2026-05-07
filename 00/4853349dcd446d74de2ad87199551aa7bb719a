@@ -1,0 +1,24 @@
+tests/test_thesis_validator.py
+  s_df23f17b640abb::t_cf86c2cb5bd6fe 233-250
+tests/test_error_loudness.py
+  s_df23f17b640abb::t_4a60f9fcca3409 108-134
+thesis_validator.py
+  s_df23f17b640abb::t_a0e5fb8ab2c6da 73-79,90-93,199
+  s_df23f17b640abb::t_d660e4a701096b 237-239,257-259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "004853349dcd446d74de2ad87199551aa7bb719a",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
