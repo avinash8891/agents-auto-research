@@ -72,9 +72,6 @@ def _canonical_event(**overrides):
             "tool_name": "read_file",
             "tool_input_preview": "diagnostics.json",
             "tool_input_length": 16,
-            "prompt_preview": "Inspect diagnostics.",
-            "system_prompt_preview": "You are an analyst.",
-            "response_preview": '{"ok": true}',
         },
         "artifact_paths": [],
     }
@@ -165,6 +162,82 @@ def test_export_halo_trace_jsonl_maps_canonical_events_to_openinference_spans(
     assert usage["attributes"]["inference.observation_kind"] == "LLM"
     assert usage["attributes"]["inference.llm.input_tokens"] == 100
     assert usage["attributes"]["inference.llm.output_tokens"] == 20
+
+
+def test_halo_llm_messages_are_read_from_artifacts_not_canonical_payload(
+    tmp_path: Path,
+) -> None:
+    prompt_artifact = tmp_path / "prompt.txt"
+    prompt_artifact.write_text(
+        "\n".join(
+            [
+                "=== TRACE_ID: trace-1 ===",
+                "--- SYSTEM PROMPT ---",
+                "You are an analyst.",
+                "--- USER PROMPT ---",
+                "Inspect diagnostics.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    response_artifact = tmp_path / "response.txt"
+    response_artifact.write_text(
+        "\n".join(
+            [
+                "=== TRACE_ID: trace-1 ===",
+                "--- RAW RESPONSE ---",
+                '{"ok": true}',
+                "--- PARSED JSON ---",
+                '{"ok": true}',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    canonical = tmp_path / "trace-events.jsonl"
+    canonical.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    _canonical_event(
+                        action="prompt",
+                        payload={
+                            "agent_name": "analyst",
+                            "trace_id": "trace-1",
+                            "prompt_length": 20,
+                        },
+                        artifact_paths=[str(prompt_artifact)],
+                    )
+                ),
+                json.dumps(
+                    _canonical_event(
+                        action="response",
+                        payload={
+                            "agent_name": "analyst",
+                            "trace_id": "trace-1",
+                            "response_length": 12,
+                        },
+                        artifact_paths=[str(response_artifact)],
+                    )
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "trace.halo.jsonl"
+
+    export_halo_trace_jsonl(canonical, output)
+    spans = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    input_messages = json.loads(spans[0]["attributes"]["llm.input_messages"])
+    output_messages = json.loads(spans[1]["attributes"]["llm.output_messages"])
+
+    assert input_messages == [
+        {"role": "system", "content": "You are an analyst."},
+        {"role": "user", "content": "Inspect diagnostics."},
+    ]
+    assert output_messages == [{"role": "assistant", "content": '{"ok": true}'}]
 
 
 def test_verify_halo_trace_jsonl_rejects_missing_required_shape(tmp_path: Path) -> None:

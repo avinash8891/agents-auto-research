@@ -82,9 +82,11 @@ def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path:
     response_event = next(event for event in events if event["action"] == "response")
     assert prompt_event["artifact_paths"] == [str(prompt_file)]
     assert response_event["artifact_paths"] == [str(response_file)]
-    assert prompt_event["payload"]["prompt_preview"] == "user prompt"
-    assert prompt_event["payload"]["system_prompt_preview"] == "system prompt"
-    assert response_event["payload"]["response_preview"] == '{"ok": true}'
+    assert "prompt_preview" not in prompt_event["payload"]
+    assert "system_prompt_preview" not in prompt_event["payload"]
+    assert "response_preview" not in response_event["payload"]
+    assert "--- USER PROMPT ---\nuser prompt" in prompt_file.read_text(encoding="utf-8")
+    assert '--- RAW RESPONSE ---\n{"ok": true}' in response_file.read_text(encoding="utf-8")
     assert prompt_event["model_provider"] == "openai"
     assert prompt_event["model_name"] == "gpt-5.5"
     assert response_event["model_provider"] == "openai"

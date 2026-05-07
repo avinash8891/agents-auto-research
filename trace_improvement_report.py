@@ -20,7 +20,7 @@ class RoleStats:
     failed_tool_examples: list[dict[str, Any]] = field(default_factory=list)
     large_tool_results: list[dict[str, Any]] = field(default_factory=list)
     repeated_tool_inputs: list[dict[str, Any]] = field(default_factory=list)
-    usage: Counter[str] = field(default_factory=Counter)
+    usage: defaultdict[str, float] = field(default_factory=lambda: defaultdict(float))
 
 
 def load_trace_events(paths: Iterable[Path]) -> list[dict[str, Any]]:
@@ -103,13 +103,13 @@ def _event_len(event: dict[str, Any], *keys: str) -> int:
     return 0
 
 
-def _usage_numbers(event: dict[str, Any]) -> Counter[str]:
+def _usage_numbers(event: dict[str, Any]) -> dict[str, float]:
     payload = _payload(event)
     usage = payload.get("usage") or payload.get("data") or payload
     if not isinstance(usage, dict):
-        return Counter()
+        return {}
 
-    numbers: Counter[str] = Counter()
+    numbers: dict[str, float] = defaultdict(float)
 
     def visit(prefix: str, obj: Any) -> None:
         if isinstance(obj, dict):
@@ -118,11 +118,11 @@ def _usage_numbers(event: dict[str, Any]) -> Counter[str]:
                 visit(child_prefix, value)
         elif isinstance(obj, (int, float)) and not isinstance(obj, bool):
             lowered = prefix.lower()
-            if "token" in lowered or lowered.endswith(".cost_usd"):
-                numbers[prefix] += int(obj)
+            if "token" in lowered or lowered == "cost_usd" or lowered.endswith(".cost_usd"):
+                numbers[prefix] += float(obj)
 
     visit("", usage)
-    return numbers
+    return dict(numbers)
 
 
 def analyze_trace_events(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
@@ -217,7 +217,8 @@ def analyze_trace_events(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
                 )
 
         if action == "usage" or category == "usage":
-            stats.usage.update(_usage_numbers(event))
+            for key, value in _usage_numbers(event).items():
+                stats.usage[key] += value
 
     for (_trace_key, role, tool, _input_key), count in tool_inputs.items():
         if count > 1:
@@ -325,7 +326,12 @@ def render_markdown_report(analysis: dict[str, Any], trace_paths: Iterable[Path]
         ]
     )
     for role, stats in sorted(analysis["roles"].items()):
-        usage_fields = ", ".join(f"{key}={value}" for key, value in stats.usage.most_common(4))
+        usage_fields = ", ".join(
+            f"{key}={value:g}"
+            for key, value in sorted(stats.usage.items(), key=lambda item: item[1], reverse=True)[
+                :4
+            ]
+        )
         lines.append(
             f"| {role} | {stats.events} | {stats.tool_calls} | {stats.tool_results} | "
             f"{stats.failed_tool_results} | {usage_fields or '-'} |"

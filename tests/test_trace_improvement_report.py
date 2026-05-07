@@ -148,6 +148,25 @@ def test_tool_output_length_is_used_for_large_tool_outputs() -> None:
     assert analysis["roles"]["analyst"].large_tool_results[0]["output_len"] == 20_000
 
 
+def test_usage_analysis_preserves_fractional_costs() -> None:
+    analysis = analyze_trace_events(
+        [
+            _event(
+                action="usage",
+                category="usage",
+                payload={
+                    "agent": "conductor",
+                    "usage": {"total_tokens": 123, "cost_usd": 0.42},
+                },
+            )
+        ]
+    )
+
+    usage = analysis["roles"]["conductor"].usage
+    assert usage["total_tokens"] == 123
+    assert usage["cost_usd"] == 0.42
+
+
 def test_analysis_normalizes_roles_and_deduplicates_bridge_outcomes() -> None:
     events = [
         _event(

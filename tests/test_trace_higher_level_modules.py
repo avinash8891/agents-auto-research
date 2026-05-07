@@ -352,7 +352,9 @@ def test_recursive_improve_and_reflexio_exports_include_canonical_trace_details(
     assert ri_trace["success"] is False
     assert ri_trace["feedback"] == "no behavior change"
     assert ri_trace["metadata"]["candidate_id"] == "th-7"
+    assert ri_trace["duration_s"] > 0
     assert any(message["role"] == "system" for message in ri_trace["messages"])
+    assert any(message["content"] == "Inspect prior failures." for message in ri_trace["messages"])
     assert any(message["kind"] == "tool_result" for message in ri_trace["messages"])
     assert any(message["kind"] == "usage" for message in ri_trace["messages"])
 
@@ -363,3 +365,53 @@ def test_recursive_improve_and_reflexio_exports_include_canonical_trace_details(
     assert reflexio_event["trajectory"] == trajectory
     assert any(step["action"] == "tool_result" for step in trajectory)
     assert any("duplicate baseline" in step["content"] for step in trajectory)
+
+
+def test_trace_export_adapters_skip_malformed_canonical_jsonl(tmp_path: Path) -> None:
+    from trace_adapters.recursive_improve import build_recursive_improve_trace
+    from trace_adapters.reflexio import build_reflexio_trajectory
+
+    trace = tmp_path / "trace-events.jsonl"
+    trace.write_text(
+        "\n".join(
+            [
+                "{bad json",
+                json.dumps(
+                    {
+                        "event_id": "evt-1",
+                        "timestamp": "2026-05-07T00:00:00.000Z",
+                        "run_id": "run-1",
+                        "family": "ema",
+                        "job": 20,
+                        "category": "agent",
+                        "action": "tool_result",
+                        "summary": "tool returned",
+                        "payload": {
+                            "agent_name": "analyst",
+                            "tool_name": "read_file",
+                            "tool_output_preview": "ok",
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    recursive_trace = build_recursive_improve_trace(
+        trace,
+        {
+            "iteration_context": {
+                "round": 1,
+                "family": "ema",
+                "candidate_id": "th-1",
+                "status": "rejected",
+            },
+            "feedback": {"rejection_reason": "bad"},
+        },
+    )
+    trajectory = build_reflexio_trajectory(trace)
+
+    assert recursive_trace["messages"][0]["content"] == "ok"
+    assert trajectory[0]["content"] == "ok"

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from trace_adapters import _emit_adapter_event
+from trace_adapters.artifacts import content_from_artifacts
 
 
 def build_reflexio_payload(
@@ -119,19 +120,24 @@ def _read_canonical_trace(path: Path) -> list[dict[str, Any]]:
         return events
     with path.open(encoding="utf-8") as handle:
         for line in handle:
-            if line.strip():
-                event = json.loads(line)
-                if isinstance(event, dict):
-                    events.append(event)
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                event = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                events.append(event)
     return events
 
 
 def _trajectory_content(event: dict[str, Any], payload: dict[str, Any]) -> str:
     action = str(event.get("action") or "")
     if action == "prompt":
-        return str(payload.get("prompt_preview") or "")
+        return content_from_artifacts(event, "USER PROMPT")
     if action == "response":
-        return str(payload.get("response_preview") or "")
+        return content_from_artifacts(event, "RAW RESPONSE")
     if action == "tool_call":
         return str(payload.get("tool_input_preview") or "")
     if action == "tool_result":

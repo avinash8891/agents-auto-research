@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from trace_adapters import _emit_adapter_event
+from trace_adapters.artifacts import content_from_artifacts
 
 
 def build_recursive_improve_payload(
@@ -117,10 +119,15 @@ def _read_canonical_trace(path: Path) -> list[dict[str, Any]]:
         return events
     with path.open(encoding="utf-8") as handle:
         for line in handle:
-            if line.strip():
-                event = json.loads(line)
-                if isinstance(event, dict):
-                    events.append(event)
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                event = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                events.append(event)
     return events
 
 
@@ -130,12 +137,16 @@ def _messages_from_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
         action = str(event.get("action") or "")
         if action == "prompt":
-            system_prompt = str(payload.get("system_prompt_preview") or "")
+            system_prompt = content_from_artifacts(event, "SYSTEM PROMPT")
             if system_prompt:
                 messages.append(_message(event, "system", system_prompt, payload, kind="prompt"))
             messages.append(
                 _message(
-                    event, "user", str(payload.get("prompt_preview") or ""), payload, kind="prompt"
+                    event,
+                    "user",
+                    content_from_artifacts(event, "USER PROMPT"),
+                    payload,
+                    kind="prompt",
                 )
             )
         elif action == "response":
@@ -143,7 +154,7 @@ def _messages_from_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 _message(
                     event,
                     "assistant",
-                    str(payload.get("response_preview") or ""),
+                    content_from_artifacts(event, "RAW RESPONSE"),
                     payload,
                     kind="response",
                 )
@@ -199,6 +210,39 @@ def _message(
 
 
 def _duration_seconds(events: list[dict[str, Any]]) -> float:
-    if len(events) < 2:
+    timestamps = [
+        parsed
+        for event in events
+        for parsed in [_parse_timestamp(event.get("span_start_time") or event.get("timestamp"))]
+        if parsed is not None
+    ] + [
+        parsed
+        for event in events
+        for parsed in [_parse_timestamp(event.get("span_end_time"))]
+        if parsed is not None
+    ]
+    if len(timestamps) < 2:
         return 0.0
-    return 0.0
+    return max(0.0, (max(timestamps) - min(timestamps)).total_seconds())
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    text = str(value or "")
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    if "." in text:
+        prefix, suffix = text.split(".", 1)
+        fraction = suffix
+        timezone = ""
+        for marker in ("+", "-"):
+            if marker in suffix:
+                fraction, timezone = suffix.split(marker, 1)
+                timezone = marker + timezone
+                break
+        text = f"{prefix}.{fraction[:6]}{timezone}"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None

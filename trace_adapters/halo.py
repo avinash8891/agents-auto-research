@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from trace_adapters import _emit_adapter_event
+from trace_adapters.artifacts import content_from_artifacts
 
 HALO_PROJECT_ID = "agents-auto-research"
 HALO_SERVICE_NAME = "agents-auto-research"
@@ -249,15 +250,20 @@ def _event_specific_attributes(
     if observation_kind == "LLM":
         if action == "prompt":
             messages = []
-            system_prompt = str(payload.get("system_prompt_preview") or "")
+            system_prompt = content_from_artifacts(event, "SYSTEM PROMPT")
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": str(payload.get("prompt_preview") or "")})
+            messages.append(
+                {"role": "user", "content": content_from_artifacts(event, "USER PROMPT")}
+            )
             attributes["llm.input_messages"] = json.dumps(messages)
             _add_flat_messages(attributes, "llm.input_messages", messages)
         elif action == "response":
             messages = [
-                {"role": "assistant", "content": str(payload.get("response_preview") or "")}
+                {
+                    "role": "assistant",
+                    "content": content_from_artifacts(event, "RAW RESPONSE"),
+                }
             ]
             attributes["llm.output_messages"] = json.dumps(messages)
             _add_flat_messages(attributes, "llm.output_messages", messages)
