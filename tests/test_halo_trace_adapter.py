@@ -311,6 +311,8 @@ def test_halo_tool_previews_are_redacted_before_export(tmp_path: Path) -> None:
     assert spans[0]["attributes"]["input.value"] == "OPENAI_API_KEY=<redacted>"
     assert spans[1]["attributes"]["output.value"] == "secret=<redacted>"
     assert spans[1]["attributes"]["error.type"] == "token=<redacted>"
+    assert spans[1]["status"]["code"] == "STATUS_CODE_ERROR"
+    assert spans[1]["status"]["message"] == "token=<redacted>"
 
 
 def test_verify_halo_trace_jsonl_rejects_missing_required_shape(tmp_path: Path) -> None:

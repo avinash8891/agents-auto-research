@@ -337,9 +337,6 @@ def _span_name(event: dict[str, Any], payload: dict[str, Any]) -> str:
 
 
 def _status(event: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    status_code = str(event.get("span_status_code") or "")
-    if status_code.startswith("STATUS_CODE_"):
-        return {"code": status_code, "message": str(event.get("span_status_message") or "")}
     status = str(payload.get("status") or "").lower()
     if status in {"error", "failed", "failure"}:
         return {
@@ -348,6 +345,9 @@ def _status(event: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
                 str(payload.get("error_type") or payload.get("tool_output_preview") or "")
             ),
         }
+    status_code = str(event.get("span_status_code") or "")
+    if status_code.startswith("STATUS_CODE_"):
+        return {"code": status_code, "message": str(event.get("span_status_message") or "")}
     return {"code": "STATUS_CODE_OK"}
 
 

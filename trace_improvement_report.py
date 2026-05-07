@@ -37,6 +37,8 @@ def load_trace_events(paths: Iterable[Path]) -> list[dict[str, Any]]:
                     event = json.loads(stripped)
                 except json.JSONDecodeError as exc:
                     raise ValueError(f"{path}:{line_number}: invalid JSONL event: {exc}") from exc
+                if not isinstance(event, dict):
+                    raise ValueError(f"{path}:{line_number}: trace event must be an object")
                 event["_trace_path"] = str(path)
                 event["_line_number"] = line_number
                 events.append(event)

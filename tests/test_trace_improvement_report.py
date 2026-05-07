@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from trace_improvement_report import (
     analyze_trace_events,
     load_trace_events,
@@ -127,6 +129,14 @@ def test_load_and_write_trace_improvement_report(tmp_path: Path) -> None:
 
     assert write_trace_improvement_report([trace], output) == output
     assert "Trace Improvement Report" in output.read_text(encoding="utf-8")
+
+
+def test_load_trace_events_rejects_non_object_jsonl(tmp_path: Path) -> None:
+    trace = tmp_path / "trace-events.jsonl"
+    trace.write_text("[]\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="trace event must be an object"):
+        load_trace_events([trace])
 
 
 def test_tool_output_length_is_used_for_large_tool_outputs() -> None:
