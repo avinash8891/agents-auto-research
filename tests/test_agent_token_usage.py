@@ -324,6 +324,96 @@ def test_cli_usage_emits_cached_reasoning_and_usage_source_metadata():
     assert emitted[0]["trace_id"] == "trace-web-001"
 
 
+def test_accumulate_usage_emits_token_budget_warning(monkeypatch):
+    warnings = []
+    monkeypatch.setenv("AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL", "1000")
+    monkeypatch.setattr(
+        agent_token_usage,
+        "_emit_token_budget_warning",
+        lambda **kwargs: warnings.append(kwargs),
+    )
+
+    agent_token_usage._accumulate_usage(
+        "analyst",
+        {"input_tokens": 900, "output_tokens": 200, "total_tokens": 1100},
+        provider="openai",
+        model="gpt-5.2",
+        trace_id="trace-analyst-001",
+    )
+
+    assert warnings == [
+        {
+            "agent_type": "analyst",
+            "provider": "openai",
+            "model": "gpt-5.2",
+            "trace_id": "trace-analyst-001",
+            "total_tokens": 1100,
+            "budget_tokens": 1000,
+            "scope": "agent",
+            "thesis_id": "",
+        }
+    ]
+
+
+def test_accumulate_usage_emits_soft_thesis_budget_warning(monkeypatch):
+    warnings = []
+    monkeypatch.setenv("AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL_THESIS", "1000")
+    monkeypatch.setattr(
+        agent_token_usage,
+        "_emit_token_budget_warning",
+        lambda **kwargs: warnings.append(kwargs),
+    )
+
+    agent_token_usage._accumulate_usage(
+        "conductor",
+        {"input_tokens": 700, "output_tokens": 100, "total_tokens": 800},
+        provider="openai",
+        model="gpt-5.2",
+        trace_id="trace-conductor-001",
+        thesis_id="ema-test-thesis",
+    )
+    agent_token_usage._accumulate_usage(
+        "analyst",
+        {"input_tokens": 400, "output_tokens": 100, "total_tokens": 500},
+        provider="openai",
+        model="gpt-5.2",
+        trace_id="trace-analyst-001",
+        thesis_id="ema-test-thesis",
+    )
+
+    assert warnings == [
+        {
+            "agent_type": "thesis",
+            "provider": "openai",
+            "model": "gpt-5.2",
+            "trace_id": "trace-analyst-001",
+            "total_tokens": 1300,
+            "budget_tokens": 1000,
+            "scope": "thesis",
+            "thesis_id": "ema-test-thesis",
+        }
+    ]
+
+
+def test_accumulate_usage_propagates_thesis_id_to_usage_trace():
+    emitted = []
+
+    with patch.object(
+        agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
+    ):
+        agent_token_usage._accumulate_usage(
+            "analyst",
+            {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            provider="openai",
+            model="gpt-5.2",
+            trace_id="trace-analyst-002",
+            thesis_id="ema-thesis-42",
+        )
+
+    assert emitted[0]["trace_id"] == "trace-analyst-002"
+    assert emitted[0]["thesis_id"] == "ema-thesis-42"
+
+
 def test_accumulate_usage_preserves_explicit_zero_without_alias_fallback():
     agent_token_usage._accumulate_usage(
         "web-researcher",

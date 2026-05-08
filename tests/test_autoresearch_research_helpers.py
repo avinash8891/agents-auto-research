@@ -19,6 +19,7 @@ from autoresearch_research import (
     _check_parsed_for_terminal,
     _classify_round_outcome,
     _exhausted_retries_result,
+    _structured_rejection_reason,
     load_baseline_config,
     queue_variants,
 )
@@ -43,6 +44,19 @@ def test_check_parsed_for_terminal_conductor_error_propagates_message() -> None:
     assert out is not None
     assert out["status"] == "conductor_error"
     assert "rate limited at retry 2" in out["rejection_reason"]
+
+
+def test_structured_rejection_reason_classifies_validator_errors() -> None:
+    rejection = _structured_rejection_reason(
+        source="validator",
+        message="missing required config_changes",
+    )
+
+    assert rejection == {
+        "source": "validator",
+        "code": "validator_missing_required_field",
+        "message": "missing required config_changes",
+    }
 
 
 def test_check_parsed_for_terminal_conductor_error_falls_back_to_reasoning() -> None:

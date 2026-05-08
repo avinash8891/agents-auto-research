@@ -3,14 +3,7 @@
     "halo-event.json": {
       "evaluation": {
         "quality": {
-          "delta": {
-            "compiled": 0.0,
-            "conductor_error": 0.0,
-            "needs_code": 0.0,
-            "overall": 0.0,
-            "rejected": 0.0,
-            "stopped": 0.0
-          },
+          "delta": {},
           "dimension_scores": {
             "compiled": 1.0,
             "conductor_error": 0.0,
@@ -21,7 +14,7 @@
           "overall_score": 1.0,
           "regressions": [],
           "run_label": "round-1",
-          "trend": "flat"
+          "trend": "initial"
         },
         "reasoning": "research rationale",
         "rejection_reason": ""

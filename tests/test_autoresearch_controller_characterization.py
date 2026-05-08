@@ -116,6 +116,74 @@ def test_controller_anchors_relative_paths_to_root(tmp_path):
     assert controller.run_queue_dir == tmp_path / family.run_queue_dirname
 
 
+def test_running_state_with_blockers_is_invalid() -> None:
+    state = {
+        "state": "running",
+        "job": 1,
+        "research_round": 3,
+        "blockers": [{"kind": "research_required"}],
+    }
+
+    with pytest.raises(ValueError, match="running.*blockers"):
+        loop_mod.validate_controller_state_invariants(state)
+
+
+def test_builder_deterministic_failure_blocks_as_builder_failed_not_manual_review(
+    controller,
+):
+    state = {"state": "building", "job": 1, "research_round": 4}
+    thesis = {"thesis_id": "bad-builder-thesis"}
+    result = {
+        "status": "error",
+        "error_code": "builder_implementation_contract_failed",
+        "reason": "implementation_contract_failed: config_key_not_consumed_by_runtime:x",
+        "implementation_verification_failures": ["config_key_not_consumed_by_runtime:x"],
+    }
+
+    updated = orchestration_mod._mark_builder_manual_review(
+        controller,
+        state,
+        "bad-builder-thesis",
+        thesis,
+        result,
+        research_round=4,
+    )
+
+    assert updated["state"] == "blocked"
+    assert updated["next_action"]["type"] == "builder_failed"
+    assert updated["blockers"][0]["kind"] == "builder_failed"
+    assert "manual_review_theses" not in updated
+    assert updated["builder_failed_theses"][-1]["builder_result"]["error_code"] == (
+        "builder_implementation_contract_failed"
+    )
+
+
+def test_builder_config_validation_failure_routes_back_to_research(controller):
+    state = {"state": "building", "job": 1, "research_round": 4}
+    thesis = {"thesis_id": "research-should-revise", "hypothesis": "bad config shape"}
+    result = {
+        "status": "error",
+        "error_code": "builder_config_validation_failed",
+        "reason": "generated config failed validation: unsupported key",
+    }
+
+    updated = orchestration_mod._mark_builder_manual_review(
+        controller,
+        state,
+        "research-should-revise",
+        thesis,
+        result,
+        research_round=4,
+    )
+
+    assert updated["state"] == "blocked"
+    assert updated["next_action"]["type"] == "research"
+    assert updated["next_action"]["reason_code"] == "research_retry_required"
+    assert updated["blockers"][0]["kind"] == "research_retry_required"
+    assert "builder_config_validation_failed" in updated["rejection_feedback"]
+    assert "manual_review_theses" not in updated
+
+
 def test_current_commit_returns_git_sha(controller, monkeypatch):
     monkeypatch.setattr(loop_mod, "_git_sha", lambda: "abc1234")
 
@@ -1017,7 +1085,7 @@ def test_resolve_next_action_builds_halted_thesis_when_resume_fails(controller, 
     assert resolved["next_action"]["builder_thesis_id"] == halted_thesis_id
 
 
-def test_resolve_next_action_marks_manual_review_when_builder_fails(controller, monkeypatch):
+def test_resolve_next_action_marks_builder_failed_when_builder_fails(controller, monkeypatch):
     halted_thesis_id = "builder-fails"
     halted_thesis = {
         "thesis_id": halted_thesis_id,
@@ -1042,13 +1110,13 @@ def test_resolve_next_action_marks_manual_review_when_builder_fails(controller, 
     resolved = controller._resolve_next_action()
 
     assert resolved["state"] == "blocked"
-    assert any(b.get("kind") == "manual_review" for b in resolved.get("blockers", []))
-    assert resolved["next_action"]["type"] == "manual_review"
-    manual_review = resolved.get("manual_review_theses", [])
-    assert manual_review
-    assert manual_review[-1]["thesis_id"] == halted_thesis_id
+    assert any(b.get("kind") == "builder_failed" for b in resolved.get("blockers", []))
+    assert resolved["next_action"]["type"] == "builder_failed"
+    builder_failed = resolved.get("builder_failed_theses", [])
+    assert builder_failed
+    assert builder_failed[-1]["thesis_id"] == halted_thesis_id
     assert resolved["heartbeat"]["blocked_thesis"] == halted_thesis_id
-    assert resolved["heartbeat"]["blocked_builder_status"] == "manual_review"
+    assert resolved["heartbeat"]["blocked_builder_status"] == "builder_failed"
     assert resolved["heartbeat"]["blocked_builder_result_status"] == "error"
     assert "Builder failed" in resolved["heartbeat"]["blocked_reason"]
 
@@ -1178,9 +1246,9 @@ def test_execute_once_does_not_resume_halted_thesis_when_runtime_scope_is_invali
     assert not (controller.root / f"experiments/{halted_thesis_id}/runtime_config.json").exists()
     state = controller.read_state()
     assert state["state"] == "blocked"
-    assert state["next_action"]["type"] == "manual_review"
-    assert any(b.get("kind") == "manual_review" for b in state.get("blockers", []))
-    assert state["manual_review_theses"][-1]["thesis_id"] == halted_thesis_id
+    assert state["next_action"]["type"] == "builder_failed"
+    assert any(b.get("kind") == "builder_failed" for b in state.get("blockers", []))
+    assert state["builder_failed_theses"][-1]["thesis_id"] == halted_thesis_id
 
 
 def test_execute_once_resume_halted_thesis_leaves_no_tmp_artifacts(

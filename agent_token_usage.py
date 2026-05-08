@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from autoresearch_logging import get_logger
 
 logger = get_logger(__name__)
 
+TOKEN_BUDGET_WARNING_ENV = "AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL"
+
 UsageTotals = dict[str, int | float]
 
 _ROUND_USAGE: dict[str, UsageTotals] = {}
+_THESIS_USAGE: dict[str, UsageTotals] = {}
 _SEEN_DEDUPE_KEYS: set[str] = set()
+_EMITTED_BUDGET_WARNINGS: set[str] = set()
 
 
 def _infer_provider(model: str | None) -> str | None:
@@ -50,6 +55,7 @@ def _emit_trace_usage(
     estimated_total_tokens: int = 0,
     usage_source: str = "",
     trace_id: str = "",
+    thesis_id: str = "",
 ) -> None:
     """Forward per-call usage to trace_sdk's event stream. Fail-open."""
     try:
@@ -74,9 +80,58 @@ def _emit_trace_usage(
             estimated_total_tokens=estimated_total_tokens,
             usage_source=usage_source,
             trace_id=trace_id,
+            thesis_id=thesis_id,
         )
     except Exception as exc:
         logger.debug("usage trace emission failed: %s", exc)
+
+
+def _token_budget_warning_threshold(agent_type: str) -> int:
+    agent_env = "".join(ch if ch.isalnum() else "_" for ch in agent_type.upper()).strip("_")
+    specific = os.environ.get(f"AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL_{agent_env}")
+    raw = specific or os.environ.get(TOKEN_BUDGET_WARNING_ENV, "")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _emit_token_budget_warning(
+    *,
+    agent_type: str,
+    provider: str | None,
+    model: str | None,
+    trace_id: str,
+    total_tokens: int,
+    budget_tokens: int,
+    scope: str = "agent",
+    thesis_id: str = "",
+) -> None:
+    try:
+        from trace_sdk import record_event
+    except Exception as exc:
+        logger.warning("trace_sdk unavailable, token budget warning skipped: %s", exc)
+        return
+    record_event(
+        source_module="agent_token_usage",
+        category="usage",
+        action="token_budget_warning",
+        summary=(
+            f"{agent_type} token usage {total_tokens} exceeded warning budget " f"{budget_tokens}"
+        ),
+        payload={
+            "agent_type": agent_type,
+            "provider": provider or "",
+            "model": model or "",
+            "trace_id": trace_id,
+            "total_tokens": total_tokens,
+            "budget_tokens": budget_tokens,
+            "scope": scope,
+            "thesis_id": thesis_id,
+        },
+        model_provider=provider or "",
+        model_name=model or "",
+    )
 
 
 def _ensure_entry(agent_type: str) -> UsageTotals:
@@ -95,6 +150,42 @@ def _ensure_entry(agent_type: str) -> UsageTotals:
             "estimated_total_tokens": 0,
         }
     return _ROUND_USAGE[agent_type]
+
+
+def _ensure_thesis_entry(thesis_id: str) -> UsageTotals:
+    if thesis_id not in _THESIS_USAGE:
+        _THESIS_USAGE[thesis_id] = {
+            "total_tokens": 0,
+            "calls": 0,
+        }
+    return _THESIS_USAGE[thesis_id]
+
+
+def _emit_budget_warning_once(
+    *,
+    warning_key: str,
+    agent_type: str,
+    provider: str | None,
+    model: str | None,
+    trace_id: str,
+    total_tokens: int,
+    budget_tokens: int,
+    scope: str,
+    thesis_id: str = "",
+) -> None:
+    if warning_key in _EMITTED_BUDGET_WARNINGS:
+        return
+    _EMITTED_BUDGET_WARNINGS.add(warning_key)
+    _emit_token_budget_warning(
+        agent_type=agent_type,
+        provider=provider,
+        model=model,
+        trace_id=trace_id,
+        total_tokens=total_tokens,
+        budget_tokens=budget_tokens,
+        scope=scope,
+        thesis_id=thesis_id,
+    )
 
 
 def _record_failed_call(agent_type: str, dedupe_key: str | None = None) -> None:
@@ -122,6 +213,7 @@ def _accumulate_usage(
     provider: str | None = None,
     model: str | None = None,
     trace_id: str = "",
+    thesis_id: str | None = None,
 ) -> None:
     """Accumulate token usage for the current round.
 
@@ -164,6 +256,37 @@ def _accumulate_usage(
     if provider is None:
         provider = _infer_provider(model)
 
+    budget = _token_budget_warning_threshold(agent_type)
+    if budget > 0 and int(entry.get("total_tokens") or 0) > budget:
+        _emit_budget_warning_once(
+            warning_key=f"agent:{agent_type}:{budget}",
+            agent_type=agent_type,
+            provider=provider,
+            model=model,
+            trace_id=trace_id,
+            total_tokens=int(entry.get("total_tokens") or 0),
+            budget_tokens=budget,
+            scope="agent",
+        )
+    thesis_id = thesis_id or str((usage or {}).get("thesis_id") or "")
+    if thesis_id:
+        thesis_entry = _ensure_thesis_entry(thesis_id)
+        thesis_entry["calls"] += 1
+        thesis_entry["total_tokens"] += int(tot_tok or 0)
+        thesis_budget = _token_budget_warning_threshold("thesis")
+        if thesis_budget > 0 and int(thesis_entry.get("total_tokens") or 0) > thesis_budget:
+            _emit_budget_warning_once(
+                warning_key=f"thesis:{thesis_id}:{thesis_budget}",
+                agent_type="thesis",
+                provider=provider,
+                model=model,
+                trace_id=trace_id,
+                total_tokens=int(thesis_entry.get("total_tokens") or 0),
+                budget_tokens=thesis_budget,
+                scope="thesis",
+                thesis_id=thesis_id,
+            )
+
     _emit_trace_usage(
         agent_type,
         provider=provider,
@@ -180,13 +303,16 @@ def _accumulate_usage(
         estimated_total_tokens=int(estimated_total_tokens or 0),
         usage_source=str(usage_source or ""),
         trace_id=str(trace_id or ""),
+        thesis_id=str(thesis_id or ""),
     )
 
 
 def reset_round_usage() -> None:
     """Reset usage counters at the start of a new round."""
     _ROUND_USAGE.clear()
+    _THESIS_USAGE.clear()
     _SEEN_DEDUPE_KEYS.clear()
+    _EMITTED_BUDGET_WARNINGS.clear()
 
 
 def get_round_usage() -> dict[str, Any]:

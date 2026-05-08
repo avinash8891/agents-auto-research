@@ -120,6 +120,7 @@ def max_consecutive_research_required() -> int:
 
 
 _RECOVERABLE_BLOCKED_RESUME_KINDS = {"command_failed", "metric_parse_failed"}
+_RESEARCH_BLOCKER_KINDS = {"research_required", "research_retry_required"}
 
 
 def _blocker_kinds(state: dict[str, Any]) -> set[str]:
@@ -131,6 +132,12 @@ def _blocker_kinds(state: dict[str, Any]) -> set[str]:
         for blocker in blockers
         if isinstance(blocker, dict) and blocker.get("kind")
     }
+
+
+def validate_controller_state_invariants(state: dict[str, Any]) -> None:
+    """Reject contradictory controller states before they reach disk."""
+    if state.get("state") == "running" and _blocker_kinds(state):
+        raise ValueError("running controller state cannot carry blockers")
 
 
 def _dict_state_field(state: dict[str, Any], key: str) -> dict[str, Any]:
@@ -180,7 +187,7 @@ def _is_blocked_research_required_resume_state(state: dict[str, Any]) -> bool:
     next_action = state.get("next_action")
     if not isinstance(next_action, dict) or next_action.get("type") != "research":
         return False
-    return "research_required" in _blocker_kinds(state)
+    return bool(_RESEARCH_BLOCKER_KINDS & _blocker_kinds(state))
 
 
 def _is_blocked_failed_experiment_resume_state(state: dict[str, Any]) -> bool:
@@ -460,6 +467,7 @@ class AutoresearchController:
         return _state_read_state(self.state_path)
 
     def write_state(self, state: dict[str, Any]) -> None:
+        validate_controller_state_invariants(state)
         previous_state = self.read_state().get("state", "unknown")
         _state_write_state(self.state_path, state)
         next_state = state.get("state", "unknown")
@@ -822,21 +830,27 @@ class AutoresearchController:
         # Handle blocked state: invoke research conductor
         if state.get("state") == "blocked":
             blockers = state.get("blockers", [])
-            if any(b.get("kind") == "research_required" for b in blockers):
+            if any(b.get("kind") in _RESEARCH_BLOCKER_KINDS for b in blockers):
                 state = self._run_research(state)
                 if state.get("state") == "running":
                     decision = _AUTONOMY_LEDGER.record_decision(
-                        summary="controller accepted research-generated next action",
+                        summary="controller accepted blocker-cleared research next action",
                         decision_type="research_transition",
                         score=None,
                         graduation_status="supervised",
                         outcome="approved",
-                        rationale="research round produced a runnable next action",
-                        constraints=["must still pass experiment execution"],
+                        rationale=(
+                            "research round produced a runnable next action after "
+                            "clearing research blockers"
+                        ),
+                        constraints=[
+                            "must clear blockers before running",
+                            "must still pass experiment execution",
+                        ],
                         evidence_event_ids=[],
                     )
                     _AUTONOMY_LEDGER.record_audit(
-                        summary="controller applied research-generated next action",
+                        summary="controller applied blocker-cleared research next action",
                         action="transition_to_running",
                         approval_status="approved",
                         actor="autoresearch_controller",
@@ -903,7 +917,7 @@ def main() -> int:
             return 0
         if current == "blocked":
             blockers = state.get("blockers", [])
-            if any(b.get("kind") == "research_required" for b in blockers):
+            if any(b.get("kind") in _RESEARCH_BLOCKER_KINDS for b in blockers):
                 consecutive_research_required += 1
                 if consecutive_research_required >= max_consecutive_research_required():
                     trace(

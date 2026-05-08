@@ -477,10 +477,15 @@ async def run_research_conductor(
             return output
 
         @function_tool
-        async def get_experiment_result(thesis_id: str) -> str:
+        async def get_experiment_result(thesis_id: str, detail: bool = False) -> str:
             started = monotonic()
             tool_input = json.dumps(
-                {"root": str(_ROOT), "job_id": current_job, "thesis_id": thesis_id},
+                {
+                    "root": str(_ROOT),
+                    "job_id": current_job,
+                    "thesis_id": thesis_id,
+                    "detail": detail,
+                },
                 default=str,
             )
             trace_agent_tool_call(
@@ -491,7 +496,9 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-            output = get_experiment_result_for_root(_ROOT, thesis_id, job_id=current_job)
+            output = get_experiment_result_for_root(
+                _ROOT, thesis_id, job_id=current_job, detail=detail
+            )
             parsed_status = "ok"
             error_type = ""
             try:

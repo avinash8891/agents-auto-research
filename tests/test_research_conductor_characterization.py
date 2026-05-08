@@ -38,6 +38,44 @@ def _result_message(*, usage=None, model_usage=None, result=None, total_cost_usd
     )
 
 
+def test_analyst_python_prelude_exposes_safe_analysis_helpers():
+    prelude = subagents._analysis_python_prelude(
+        {
+            "artifacts": {"trades_csv": "/tmp/trades.csv"},
+            "strategy_sources": {},
+            "market_data_files": {},
+        }
+    )
+
+    assert "from analyst_dataframe_helpers import" in prelude
+    assert "profit_factor" in prelude
+    assert "bucket_trade_performance" in prelude
+    assert "safe_merge_asof" in prelude
+
+
+def test_analyst_run_python_failure_budget_stops_repeated_failures():
+    budget = subagents.AnalystRunPythonFailureBudget(limit=3)
+
+    assert budget.before_call_message() is None
+    budget.record(status="error", error_type="NonZeroExit")
+    budget.record(status="error", error_type="TimeoutExpired")
+    budget.record(status="error", error_type="NonZeroExit")
+
+    message = budget.before_call_message()
+    assert message is not None
+    assert "RUN_PYTHON_BUDGET_EXCEEDED" in message
+    assert "failed 3 times" in message
+
+
+def test_analyst_run_python_failure_budget_ignores_successes():
+    budget = subagents.AnalystRunPythonFailureBudget(limit=2)
+
+    budget.record(status="error", error_type="NonZeroExit")
+    budget.record(status="ok", error_type="")
+
+    assert budget.before_call_message() is None
+
+
 async def _async_empty_iter():
     if False:
         yield None
@@ -1754,18 +1792,51 @@ def test_list_experiment_results_reaches_latest_and_best_beyond_prompt_cap(tmp_p
                 usage={"total": {"total_tokens": idx}},
             )
         )
+    db.add(
+        ExperimentResult(
+            experiment_id="exp-invalid-duplicate",
+            thesis_id="invalid_duplicate_high_pf",
+            config_path="experiments/invalid_duplicate/runtime_config.json",
+            runtime_config={"param": "duplicate"},
+            code_commit="abc",
+            data_hash="data",
+            train_metrics={},
+            validation_metrics={
+                "profit_factor": 99.0,
+                "trade_count": 100,
+                "max_drawdown": 0.1,
+            },
+            trade_count=100,
+            trades_file="/tmp/invalid_duplicate/trades.csv",
+            strategy_events_file="/tmp/invalid_duplicate/strategy_events.parquet",
+            diagnostics_file="/tmp/invalid_duplicate/diagnostics.json",
+            strategy_diagnostics={"event_counts": {"raw_setup": 99}},
+            accepted=False,
+            rejection_reason="duplicate result",
+            verdict_status="invalid_duplicate_result",
+            verdict_summary="identical runtime_config/artifacts as previous experiment",
+            timestamp="2026-05-06T00:15:00+00:00",
+            family="ema",
+            hypothesis="duplicate high pf should not rank as best",
+            mechanism="duplicate",
+            job=20,
+            usage={"total": {"total_tokens": 99}},
+        )
+    )
+
     latest = json.loads(
         memory.list_experiment_results(tmp_path, job_id=20, order="latest", limit=3)
     )
     best = json.loads(memory.list_experiment_results(tmp_path, job_id=20, order="best", limit=3))
 
-    assert latest["total"] == 15
+    assert latest["total"] == 16
     assert [entry["thesis_id"] for entry in latest["entries"]][:2] == [
+        "invalid_duplicate_high_pf",
         "latest_new_thesis",
-        "thesis_13",
     ]
     assert best["entries"][0]["thesis_id"] == "best_old_thesis"
     assert best["entries"][0]["metric"] == 9.9
+    assert "invalid_duplicate_high_pf" not in [entry["thesis_id"] for entry in best["entries"]]
 
 
 def test_get_experiment_result_returns_full_detail_for_job_scoped_thesis(tmp_path):
@@ -1801,7 +1872,9 @@ def test_get_experiment_result_returns_full_detail_for_job_scoped_thesis(tmp_pat
         )
     )
 
-    parsed = json.loads(memory.get_experiment_result(tmp_path, "full_result", job_id=20))
+    parsed = json.loads(
+        memory.get_experiment_result(tmp_path, "full_result", job_id=20, detail=True)
+    )
 
     assert parsed["status"] == "ok"
     assert parsed["thesis_id"] == "full_result"
@@ -1809,3 +1882,48 @@ def test_get_experiment_result_returns_full_detail_for_job_scoped_thesis(tmp_pat
     assert parsed["result"]["metrics"]["profit_factor"] == 2.5
     assert parsed["result"]["strategy_diagnostics"] == {"rejection_breakdown": {"entry_cutoff": 12}}
     assert parsed["result"]["usage"] == {"total": {"total_tokens": 456}}
+
+
+def test_get_experiment_result_defaults_to_compact_summary(tmp_path):
+    from experiment_db import ExperimentDB, ExperimentResult
+
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    db.add(
+        ExperimentResult(
+            experiment_id="exp-compact",
+            thesis_id="compact_result",
+            config_path="experiments/compact_result/runtime_config.json",
+            runtime_config={f"key_{idx}": idx for idx in range(200)},
+            code_commit="abc",
+            data_hash="data",
+            train_metrics={},
+            validation_metrics={"profit_factor": 2.5, "trade_count": 321},
+            trade_count=321,
+            trades_file="/tmp/trades.csv",
+            strategy_events_file="/tmp/strategy_events.parquet",
+            diagnostics_file="/tmp/diagnostics.json",
+            strategy_diagnostics={"large": "x" * 500_000, "event_counts": {"raw": 100}},
+            accepted=True,
+            rejection_reason="",
+            verdict_status="accepted",
+            verdict_summary="beat threshold",
+            timestamp="2026-05-06T00:00:00+00:00",
+            family="ema",
+            hypothesis="full hypothesis",
+            mechanism="full mechanism",
+            job=20,
+            usage={"total": {"total_tokens": 456}},
+        )
+    )
+
+    raw = memory.get_experiment_result(tmp_path, "compact_result", job_id=20)
+    parsed = json.loads(raw)
+
+    assert len(raw) < 20_000
+    assert parsed["detail"] == "compact"
+    assert parsed["full_result_available"] is True
+    assert "runtime_config" not in parsed["result"]
+    assert parsed["result"]["runtime_config_summary"]["key_count"] == 200
+    assert parsed["result"]["artifact_paths"]["trades_file"] == "/tmp/trades.csv"
+    assert parsed["result"]["diagnostics_summary"]["event_counts"] == {"raw": 100}

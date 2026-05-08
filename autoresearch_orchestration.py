@@ -15,6 +15,23 @@ from trace_sdk import trace
 if TYPE_CHECKING:
     from autoresearch_controller import AutoresearchController
 
+DETERMINISTIC_BUILDER_ERROR_CODES = frozenset(
+    {
+        "builder_cli_unavailable",
+        "builder_config_validation_failed",
+        "builder_implementation_contract_failed",
+        "builder_missing_compilation_artifact",
+        "builder_missing_generated_config",
+        "builder_missing_proposal_artifact",
+        "builder_missing_strategy_family",
+        "builder_malformed_compilation_artifact",
+        "builder_malformed_proposal_artifact",
+        "builder_timeout",
+        "builder_unknown_strategy_family",
+    }
+)
+RESEARCH_RETRY_BUILDER_ERROR_CODES = frozenset({"builder_config_validation_failed"})
+
 
 def _activate_builder_config(
     controller: "AutoresearchController",
@@ -87,6 +104,93 @@ def _mark_builder_manual_review(
     *,
     research_round: int | None = None,
 ) -> dict[str, Any]:
+    error_code = str(builder_result.get("error_code") or "")
+    if error_code in RESEARCH_RETRY_BUILDER_ERROR_CODES:
+        state["state"] = "blocked"
+        if research_round is not None:
+            state["research_round"] = research_round
+        controller.clear_terminal_metadata(state)
+        reason = f"Builder failed for {thesis_id}: {error_code}"
+        feedback = (
+            f"Previous thesis '{thesis_id}' could not be built because {error_code}: "
+            f"{builder_result.get('reason') or 'unknown builder validation failure'}. "
+            "Revise the thesis/config_changes so the generated runtime config is valid, "
+            "or abandon this mechanism if the requested config is not implementable."
+        )
+        state["rejection_feedback"] = feedback
+        state["blockers"] = [
+            {
+                "kind": "research_retry_required",
+                "detail": reason,
+                "error_code": error_code,
+            }
+        ]
+        state["next_action"] = {
+            "type": "research",
+            "reason": feedback,
+            "reason_code": "research_retry_required",
+            "requires_subagent": True,
+            "artifact_dir": controller.family.research_dirname,
+            "failed_thesis_id": thesis_id,
+            "error_code": error_code,
+        }
+        heartbeat = state.setdefault("heartbeat", {})
+        raw_builder_status = str(builder_result.get("status") or "error")
+        _mark_builder_heartbeat_finished(state, thesis_id, "research_retry_required")
+        heartbeat["blocked_thesis"] = thesis_id
+        heartbeat["blocked_builder_status"] = "research_retry_required"
+        heartbeat["blocked_builder_result_status"] = raw_builder_status
+        heartbeat["blocked_reason"] = feedback
+        heartbeat["blocked_error_code"] = error_code
+        controller.write_state(state)
+        controller.write_current_md(state, controller.read_results())
+        return state
+
+    if error_code in DETERMINISTIC_BUILDER_ERROR_CODES:
+        builder_failed = list(state.get("builder_failed_theses") or [])
+        builder_failed.append(
+            {
+                "thesis_id": thesis_id,
+                "round": (
+                    research_round if research_round is not None else state.get("research_round")
+                ),
+                "thesis": thesis,
+                "builder_result": builder_result,
+                "timestamp": iso8601_utc_now(),
+            }
+        )
+        state["builder_failed_theses"] = builder_failed
+        state["state"] = "blocked"
+        if research_round is not None:
+            state["research_round"] = research_round
+        controller.clear_terminal_metadata(state)
+        reason = f"Builder failed for {thesis_id}: {error_code}"
+        state["blockers"] = [
+            {
+                "kind": "builder_failed",
+                "detail": reason,
+                "error_code": error_code,
+            }
+        ]
+        state["next_action"] = {
+            "type": "builder_failed",
+            "reason": reason,
+            "error_code": error_code,
+            "requires_subagent": True,
+            "artifact_dir": f"{controller.family.name}-builder-failed",
+        }
+        heartbeat = state.setdefault("heartbeat", {})
+        raw_builder_status = str(builder_result.get("status") or "error")
+        _mark_builder_heartbeat_finished(state, thesis_id, "builder_failed")
+        heartbeat["blocked_thesis"] = thesis_id
+        heartbeat["blocked_builder_status"] = "builder_failed"
+        heartbeat["blocked_builder_result_status"] = raw_builder_status
+        heartbeat["blocked_reason"] = reason
+        heartbeat["blocked_error_code"] = error_code
+        controller.write_state(state)
+        controller.write_current_md(state, controller.read_results())
+        return state
+
     manual_review = list(state.get("manual_review_theses") or [])
     manual_review.append(
         {

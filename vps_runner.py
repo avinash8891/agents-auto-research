@@ -35,6 +35,7 @@ from trace_sdk import trace, trace_ssh
 log = get_logger(__name__)
 
 KNOWN_HOSTS_ENV = "AUTORESEARCH_KNOWN_HOSTS"
+CURRENT_SHA_MARKER = "AUTORESEARCH_CURRENT_SHA"
 RESOLVED_SHA_MARKER = "AUTORESEARCH_RESOLVED_SHA"
 LEGACY_REMOTE_ROOT = "/root/orb-research"
 REMOTE_ROOT_DENYLIST = {"/", "/root", "/home", "/srv", "/tmp", "/var", "/opt"}
@@ -298,6 +299,37 @@ def build_git_prepare_command(config: VPSConfig) -> str:
     )
 
 
+def build_git_status_command(config: VPSConfig) -> str:
+    """Report the existing VPS checkout SHA and requested Git ref without changing files."""
+    remote_dir = shlex.quote(config.remote_dir)
+    git_repo = shlex.quote(config.git_repo)
+    if re.fullmatch(r"[0-9a-fA-F]{7,40}", config.git_ref):
+        git_ref_q = shlex.quote(config.git_ref)
+        fetch_and_resolve = (
+            "git fetch --prune origin && "
+            f"resolved=$(git rev-parse --verify {git_ref_q}^{{commit}}) && "
+        )
+    else:
+        deploy_spec = shlex.quote(config.deploy_spec)
+        fetch_and_resolve = (
+            f"git fetch --prune origin {deploy_spec} && "
+            "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
+        )
+    return (
+        "set -e && "
+        f"if [ ! -d {remote_dir}/.git ]; then "
+        f"printf '{CURRENT_SHA_MARKER} missing\\n'; "
+        "exit 0; "
+        "fi && "
+        f"cd {remote_dir} && "
+        f"git remote set-url origin {git_repo} && "
+        f"{fetch_and_resolve}"
+        "current=$(git rev-parse --verify HEAD^{commit}) && "
+        f"printf '{CURRENT_SHA_MARKER} %s\\n' \"$current\" && "
+        f"printf '{RESOLVED_SHA_MARKER} %s\\n' \"$resolved\""
+    )
+
+
 def redact_git_repo_url(git_repo: str) -> str:
     parsed = urlsplit(git_repo)
     if not parsed.scheme or "@" not in parsed.netloc:
@@ -320,12 +352,25 @@ def parse_resolved_sha(output: str) -> str:
     return match.group(1)
 
 
+def parse_current_sha(output: str) -> str | None:
+    match = re.search(
+        rf"^{CURRENT_SHA_MARKER} ([0-9a-f]{{40}}|missing)$",
+        output,
+        flags=re.MULTILINE,
+    )
+    if not match:
+        raise RuntimeError("VPS Git status did not report the current commit SHA")
+    current_sha = match.group(1)
+    return None if current_sha == "missing" else current_sha
+
+
 def build_remote_command(
     config: VPSConfig,
     family: StrategyFamily,
     resolved_sha: str,
     *,
     resume_current_job: bool = False,
+    skip_dependency_install: bool = False,
 ) -> str:
     segments = [
         "set -e",
@@ -336,25 +381,34 @@ def build_remote_command(
     ]
     if config.data_root:
         segments.append(f"export {DATA_ROOT_ENV}={shlex.quote(config.data_root)}")
-    segments.extend(
-        [
-            "deps_fingerprint=$(python3 -c 'import hashlib, pathlib; "
-            'p = pathlib.Path("pyproject.toml"); '
-            'print(hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else "missing")'
-            "')",
-            'if [ -f ".venv/.autoresearch-deps.sha256" ] && '
-            '[ "$(cat .venv/.autoresearch-deps.sha256)" != "$deps_fingerprint" ]; '
-            "then rm -rf .venv; fi",
-            'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi',
-            "python_bin=.venv/bin/python",
-            'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
-            '"$python_bin" -m pip install -e .',
-            'printf "%s\\n" "$deps_fingerprint" > .venv/.autoresearch-deps.sha256',
-            (
-                f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
-                + (" --resume-current-job" if resume_current_job else "")
-            ),
-        ]
+    if skip_dependency_install:
+        segments.extend(
+            [
+                'test -x ".venv/bin/python"',
+                "python_bin=.venv/bin/python",
+                'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
+            ]
+        )
+    else:
+        segments.extend(
+            [
+                "deps_fingerprint=$(python3 -c 'import hashlib, pathlib; "
+                'p = pathlib.Path("pyproject.toml"); '
+                'print(hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else "missing")'
+                "')",
+                'if [ -f ".venv/.autoresearch-deps.sha256" ] && '
+                '[ "$(cat .venv/.autoresearch-deps.sha256)" != "$deps_fingerprint" ]; '
+                "then rm -rf .venv; fi",
+                'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi',
+                "python_bin=.venv/bin/python",
+                'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
+                '"$python_bin" -m pip install -e .',
+                'printf "%s\\n" "$deps_fingerprint" > .venv/.autoresearch-deps.sha256',
+            ]
+        )
+    segments.append(
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
+        + (" --resume-current-job" if resume_current_job else "")
     )
     return " && ".join(segments)
 
@@ -637,6 +691,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resume a recoverable current job on the VPS instead of creating a new job",
     )
+    parser.add_argument(
+        "--skip-deploy-if-current",
+        action="store_true",
+        help=(
+            "When resuming, skip Git checkout and dependency install if the VPS checkout "
+            "already matches --git-ref."
+        ),
+    )
     return parser
 
 
@@ -645,6 +707,8 @@ def main():
 
     parser = _build_arg_parser()
     args = parser.parse_args()
+    if args.skip_deploy_if_current and not args.resume_current_job:
+        parser.error("--skip-deploy-if-current requires --resume-current-job")
 
     strategy_name = args.strategy
     family = load_family(strategy_name)
@@ -664,34 +728,75 @@ def main():
         sys.exit(1)
     trace("VPS_RUNNER", "Connected")
 
-    prepare_cmd = build_git_prepare_command(vps_config)
-    safe_prepare_cmd = build_git_prepare_command(
-        replace(vps_config, git_repo=redact_git_repo_url(vps_config.git_repo))
-    )
-    trace("VPS_RUNNER", f"SSH PREPARE: {safe_prepare_cmd}")
-    t0 = time.time()
-    _, prepare_stdout, prepare_stderr = client.exec_command(prepare_cmd, timeout=600)
-    prepare_out = prepare_stdout.read().decode()
-    prepare_err = prepare_stderr.read().decode()
-    safe_prepare_out = redact_secrets(prepare_out, vps_config)
-    safe_prepare_err = redact_secrets(prepare_err, vps_config)
-    prepare_exit = prepare_stdout.channel.recv_exit_status()
-    trace_ssh(safe_prepare_cmd, prepare_exit, safe_prepare_out, safe_prepare_err)
-    if prepare_exit != 0:
-        client.close()
-        if safe_prepare_out:
-            print(safe_prepare_out, end="")
-        if safe_prepare_err:
-            print(safe_prepare_err, end="", file=sys.stderr)
-        sys.exit(prepare_exit)
-    try:
-        resolved_sha = parse_resolved_sha(prepare_out)
-    except RuntimeError as exc:
-        client.close()
-        log.error("Failed to parse resolved SHA: %s", exc)
-        print(str(exc), file=sys.stderr)
-        sys.exit(1)
-    trace("VPS_RUNNER", f"Git prepare complete sha={resolved_sha} elapsed={time.time() - t0:.1f}s")
+    skip_dependency_install = False
+    resolved_sha = ""
+    if args.skip_deploy_if_current:
+        status_cmd = build_git_status_command(vps_config)
+        safe_status_cmd = build_git_status_command(
+            replace(vps_config, git_repo=redact_git_repo_url(vps_config.git_repo))
+        )
+        trace("VPS_RUNNER", f"SSH STATUS: {safe_status_cmd}")
+        _, status_stdout, status_stderr = client.exec_command(status_cmd, timeout=600)
+        status_out = status_stdout.read().decode()
+        status_err = status_stderr.read().decode()
+        safe_status_out = redact_secrets(status_out, vps_config)
+        safe_status_err = redact_secrets(status_err, vps_config)
+        status_exit = status_stdout.channel.recv_exit_status()
+        trace_ssh(safe_status_cmd, status_exit, safe_status_out, safe_status_err)
+        if status_exit != 0:
+            client.close()
+            if safe_status_out:
+                print(safe_status_out, end="")
+            if safe_status_err:
+                print(safe_status_err, end="", file=sys.stderr)
+            sys.exit(status_exit)
+        try:
+            current_sha = parse_current_sha(status_out)
+            resolved_sha = parse_resolved_sha(status_out) if current_sha else ""
+        except RuntimeError as exc:
+            client.close()
+            log.error("Failed to parse Git status: %s", exc)
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        if current_sha and current_sha == resolved_sha:
+            skip_dependency_install = True
+            trace(
+                "VPS_RUNNER",
+                f"Remote already at sha={resolved_sha}; skipping Git prepare and dependency install",
+            )
+
+    if not skip_dependency_install:
+        prepare_cmd = build_git_prepare_command(vps_config)
+        safe_prepare_cmd = build_git_prepare_command(
+            replace(vps_config, git_repo=redact_git_repo_url(vps_config.git_repo))
+        )
+        trace("VPS_RUNNER", f"SSH PREPARE: {safe_prepare_cmd}")
+        t0 = time.time()
+        _, prepare_stdout, prepare_stderr = client.exec_command(prepare_cmd, timeout=600)
+        prepare_out = prepare_stdout.read().decode()
+        prepare_err = prepare_stderr.read().decode()
+        safe_prepare_out = redact_secrets(prepare_out, vps_config)
+        safe_prepare_err = redact_secrets(prepare_err, vps_config)
+        prepare_exit = prepare_stdout.channel.recv_exit_status()
+        trace_ssh(safe_prepare_cmd, prepare_exit, safe_prepare_out, safe_prepare_err)
+        if prepare_exit != 0:
+            client.close()
+            if safe_prepare_out:
+                print(safe_prepare_out, end="")
+            if safe_prepare_err:
+                print(safe_prepare_err, end="", file=sys.stderr)
+            sys.exit(prepare_exit)
+        try:
+            resolved_sha = parse_resolved_sha(prepare_out)
+        except RuntimeError as exc:
+            client.close()
+            log.error("Failed to parse resolved SHA: %s", exc)
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        trace(
+            "VPS_RUNNER",
+            f"Git prepare complete sha={resolved_sha} elapsed={time.time() - t0:.1f}s",
+        )
 
     try:
         materialize_remote_runtime_env(client, vps_config)
@@ -709,7 +814,11 @@ def main():
         trace("VPS_RUNNER", f"Codex auth upload failed: {exc}")
 
     cmd = build_remote_command(
-        vps_config, family, resolved_sha, resume_current_job=args.resume_current_job
+        vps_config,
+        family,
+        resolved_sha,
+        resume_current_job=args.resume_current_job,
+        skip_dependency_install=skip_dependency_install,
     )
     trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
     t1 = time.time()

@@ -540,6 +540,83 @@ def test_build_db_record_marks_duplicate_artifact_output_as_invalid_noop(tmp_pat
     assert "previous" in record.rejection_reason
 
 
+def test_build_db_record_marks_exact_duplicate_config_and_artifacts_as_invalid_noop(
+    tmp_path: Path,
+) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+        root = tmp_path
+        ctx = type("Ctx", (), {})()
+
+        def current_commit(self) -> str:
+            return "abc1234"
+
+    trades = tmp_path / "trades.csv"
+    diagnostics = tmp_path / "diagnostics.json"
+    trades.write_text("same trades\n")
+    diagnostics.write_text('{"same": true}\n')
+    runtime_config = {
+        "ema_length": 5,
+        "opening_drive_gate_enabled": True,
+        "opening_drive_max_return_for_shorts": 0.0,
+    }
+
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    db.add(
+        ExperimentResult(
+            experiment_id="opening-drive-config-hash",
+            thesis_id="opening_drive_directional_regime_gate_block_shorts_on_up_mornings",
+            config_path="experiments/opening_drive/runtime_config.json",
+            runtime_config=runtime_config,
+            code_commit="abc1234",
+            data_hash="data",
+            train_metrics={"profit_factor": 7.5044},
+            validation_metrics={"profit_factor": 7.5044},
+            trade_count=2569,
+            trades_file=str(trades),
+            strategy_events_file="",
+            diagnostics_file=str(diagnostics),
+            strategy_diagnostics={"event_counts": {"executed_trade": 3661}},
+            accepted=True,
+            rejection_reason="N/A",
+            verdict_status="accepted",
+            verdict_summary="old result",
+            family="ema",
+            job=20,
+        )
+    )
+
+    controller = _Controller()
+    controller.experiment_db = db
+    controller.ctx.current_contract = None
+    controller.ctx.parent_experiment_id = ""
+    controller.ctx.latest_config_contents = runtime_config
+
+    record = _build_db_record(
+        controller,
+        config="experiments/widen_stop/runtime_config.json",
+        decision="keep",
+        details={
+            "trade_count": 2569,
+            "profit_factor": 7.5044,
+            "trades_file": str(trades),
+            "diagnostics_file": str(diagnostics),
+            "strategy_diagnostics": {"event_counts": {"executed_trade": 3661}},
+        },
+        analysis={"trade_analysis": {"verdict": {"status": "accepted", "summary": "new high"}}},
+        fallback_experiment_id="widen-stop-thesis",
+        state={"job": 20},
+    )
+
+    assert record.accepted is False
+    assert record.verdict_status == "invalid_duplicate_result"
+    assert "identical runtime_config/artifacts as previous" in record.verdict_summary
+    assert "opening-drive-config-hash" in record.rejection_reason
+
+
 def test_zero_rejection_diagnostic_hints_ignore_boolean_flags() -> None:
     assert experiment_mod._zero_rejection_diagnostic_hints(
         {
@@ -638,6 +715,63 @@ def test_duplicate_artifact_detection_filters_metadata_before_hashing(
 
     assert duplicate is None
     assert hashed == [str(current_trades), str(current_diagnostics)]
+
+
+def test_duplicate_artifact_detection_returns_exact_same_runtime_config_duplicate(
+    tmp_path: Path,
+) -> None:
+    class _Family:
+        name = "ema"
+
+    class _Controller:
+        family = _Family()
+
+    trades = tmp_path / "trades.csv"
+    diagnostics = tmp_path / "diagnostics.json"
+    trades.write_text("same trades\n")
+    diagnostics.write_text("{}\n")
+    runtime_config = {"ema_length": 5, "opening_drive_gate_enabled": True}
+    db = ExperimentDB(tmp_path / "ema_experiments.db")
+    db.add(
+        ExperimentResult(
+            experiment_id="previous",
+            thesis_id="previous-thesis",
+            config_path="experiments/previous/runtime_config.json",
+            runtime_config=runtime_config,
+            code_commit="abc1234",
+            data_hash="data",
+            train_metrics={},
+            validation_metrics={},
+            trade_count=3122,
+            trades_file=str(trades),
+            strategy_events_file="",
+            diagnostics_file=str(diagnostics),
+            strategy_diagnostics={},
+            accepted=True,
+            rejection_reason="N/A",
+            verdict_status="accepted",
+            verdict_summary="old result",
+            family="ema",
+            job=20,
+        )
+    )
+    controller = _Controller()
+    controller.experiment_db = db
+
+    duplicate = _find_duplicate_artifact_output(
+        controller,
+        runtime_config=runtime_config,
+        details={
+            "trade_count": 3122,
+            "trades_file": str(trades),
+            "diagnostics_file": str(diagnostics),
+            "strategy_diagnostics": {},
+        },
+        state={"job": 20},
+    )
+
+    assert duplicate is not None
+    assert duplicate.experiment_id == "previous"
 
 
 def test_duplicate_artifact_detection_ignores_malformed_trade_count(tmp_path: Path) -> None:

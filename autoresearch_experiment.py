@@ -535,8 +535,12 @@ def _build_db_record(
     )
     if duplicate is not None:
         decision = "discard"
-        verdict_status = "invalid_noop_config"
-        verdict_summary = _invalid_noop_summary(duplicate, details)
+        verdict_status = (
+            "invalid_duplicate_result"
+            if duplicate.runtime_config == runtime_config
+            else "invalid_noop_config"
+        )
+        verdict_summary = _invalid_duplicate_result_summary(duplicate, details, runtime_config)
     code_commit = _executed_code_commit(controller, details)
     record = ExperimentResult(
         experiment_id=contract.experiment_id if contract else fallback_experiment_id,
@@ -613,8 +617,6 @@ def _find_duplicate_artifact_output(
             continue
         if current_job is not None and previous.job != current_job:
             continue
-        if previous.runtime_config == runtime_config:
-            continue
         if previous.trade_count != current_trade_count:
             continue
         if previous.strategy_diagnostics != details.get("strategy_diagnostics", {}):
@@ -646,11 +648,22 @@ def _zero_rejection_diagnostic_hints(strategy_diagnostics: dict[str, Any]) -> li
     return hints
 
 
-def _invalid_noop_summary(duplicate: ExperimentResult, details: dict[str, Any]) -> str:
-    parts = [
-        "invalid_noop_config: identical trades/diagnostics as previous "
-        f"experiment {duplicate.experiment_id} despite different runtime_config"
-    ]
+def _invalid_duplicate_result_summary(
+    duplicate: ExperimentResult,
+    details: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> str:
+    if duplicate.runtime_config == runtime_config:
+        summary = (
+            "invalid_duplicate_result: identical runtime_config/artifacts as previous "
+            f"experiment {duplicate.experiment_id}"
+        )
+    else:
+        summary = (
+            "invalid_noop_config: identical trades/diagnostics as previous "
+            f"experiment {duplicate.experiment_id} despite different runtime_config"
+        )
+    parts = [summary]
     strategy_diagnostics = details.get("strategy_diagnostics", {})
     if isinstance(strategy_diagnostics, dict):
         parts.extend(_zero_rejection_diagnostic_hints(strategy_diagnostics))

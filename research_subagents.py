@@ -31,6 +31,7 @@ from web_research_cli import WebResearchCliError, run_codex_web_research
 
 ANALYST_READ_FILE_MAX_CHARS = 12_000
 ANALYST_RUN_PYTHON_MAX_CHARS = 12_000
+ANALYST_RUN_PYTHON_FAILED_CALL_LIMIT = 3
 ANALYST_SOURCE_EXCLUDED_FILES = {
     "__init__.py",
     "contract.py",
@@ -59,6 +60,35 @@ def _compact_tool_output(text: str, *, max_chars: int) -> tuple[str, bool]:
     )
     keep = max(0, max_chars - len(suffix))
     return text[:keep] + suffix, True
+
+
+class AnalystRunPythonFailureBudget:
+    """Soft guard against repeated failed Python attempts inside one analyst run."""
+
+    def __init__(self, *, limit: int = ANALYST_RUN_PYTHON_FAILED_CALL_LIMIT) -> None:
+        self.limit = limit
+        self.failed_calls = 0
+        self.last_error_type = ""
+
+    def before_call_message(self) -> str | None:
+        if self.failed_calls < self.limit:
+            return None
+        return (
+            "RUN_PYTHON_BUDGET_EXCEEDED: run_python already failed "
+            f"{self.failed_calls} times in this analyst run"
+            + (f" (last_error_type={self.last_error_type})." if self.last_error_type else ".")
+            + " Stop broad Python retries. Use successful outputs, inspect the manifest/artifact "
+            "schema with targeted reads, or return a bounded diagnosis explaining what could not "
+            "be computed."
+        )
+
+    def record(self, *, status: str, error_type: str) -> None:
+        if status == "error" or error_type:
+            self.failed_calls += 1
+            self.last_error_type = error_type or status
+            return
+        self.failed_calls = 0
+        self.last_error_type = ""
 
 
 def _analyst_data_root_guidance() -> str:
@@ -233,6 +263,11 @@ def _analysis_python_prelude(manifest: dict[str, object]) -> str:
     return "\n".join(
         [
             "from pathlib import Path",
+            "from analyst_dataframe_helpers import (",
+            "    bucket_trade_performance,",
+            "    profit_factor,",
+            "    safe_merge_asof,",
+            ")",
             f"ANALYSIS_ARTIFACTS = {artifacts!r}",
             f"STRATEGY_SOURCE_FILES = {strategy_sources!r}",
             f"MARKET_DATA_FILES = {market_data_files!r}",
@@ -271,6 +306,7 @@ async def _call_analyst(
         family_name=family_name,
     )
     manifest_prompt = _manifest_prompt_block(manifest)
+    run_python_failure_budget = AnalystRunPythonFailureBudget()
 
     @function_tool
     def list_analysis_artifacts() -> str:
@@ -410,6 +446,24 @@ async def _call_analyst(
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
+        budget_message = run_python_failure_budget.before_call_message()
+        if budget_message is not None:
+            status = "error"
+            error_type = "RunPythonFailureBudgetExceeded"
+            output = budget_message
+            trace_agent_tool_result(
+                "analyst",
+                current_trace_id,
+                "run_python",
+                output,
+                status=status,
+                error_type=error_type,
+                truncated=truncated,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
         try:
             executable_code = _analysis_python_prelude(manifest) + "\n" + code
             result = subprocess.run(
@@ -434,6 +488,7 @@ async def _call_analyst(
             status = "error"
             error_type = e.__class__.__name__
             output = f"ERROR: {e}"
+        run_python_failure_budget.record(status=status, error_type=error_type)
         trace_agent_tool_result(
             "analyst",
             current_trace_id,

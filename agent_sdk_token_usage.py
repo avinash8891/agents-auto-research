@@ -136,6 +136,7 @@ def accumulate_agents_sdk_result_usage(
     input_text: Any = None,
     output_text: Any = None,
     trace_id: str = "",
+    thesis_id: str | None = None,
 ) -> None:
     """Extract and record usage from an OpenAI Agents SDK result object.
 
@@ -225,4 +226,5 @@ def accumulate_agents_sdk_result_usage(
         provider=provider,
         model=model,
         trace_id=trace_id,
+        thesis_id=thesis_id,
     )

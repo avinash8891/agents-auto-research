@@ -14,12 +14,14 @@ from vps_runner import (
     _localize_remote_result_output,
     _sftp_mkdir_p,
     build_git_prepare_command,
+    build_git_status_command,
     build_remote_command,
     config_from_env,
     create_verified_ssh_client,
     materialize_remote_codex_auth,
     materialize_remote_config_if_needed,
     materialize_remote_runtime_env,
+    parse_current_sha,
     parse_resolved_sha,
     redact_git_repo_url,
     redact_secrets,
@@ -124,6 +126,24 @@ def test_vps_runner_parser_accepts_git_sha_alias() -> None:
     assert sha_args.git_ref == "0123456789abcdef0123456789abcdef01234567"
 
 
+def test_vps_runner_parser_accepts_skip_deploy_when_resuming_current_job() -> None:
+    parser = _build_arg_parser()
+
+    args = parser.parse_args(
+        [
+            "--strategy",
+            "ema",
+            "--git-ref",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--resume-current-job",
+            "--skip-deploy-if-current",
+        ]
+    )
+
+    assert args.resume_current_job is True
+    assert args.skip_deploy_if_current is True
+
+
 def test_vps_config_rejects_unsafe_remote_dirs(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
@@ -173,6 +193,35 @@ def test_remote_command_runs_controller_for_family() -> None:
     assert "/root/orb-research" not in command
     assert "backtest_5ema.py" not in command
     assert "scp" not in command.lower()
+
+
+def test_remote_resume_command_can_skip_dependency_install_when_sha_is_current() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_command(
+        config,
+        family,
+        "0" * 40,
+        resume_current_job=True,
+        skip_dependency_install=True,
+    )
+
+    assert '"$python_bin" -m pip install -e .' not in command
+    assert "deps_fingerprint=$(python3 -c" not in command
+    assert 'if [ ! -x ".venv/bin/python" ]; then' not in command
+    assert 'test -x ".venv/bin/python"' in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--resume-current-job"
+    ) in command
 
 
 def test_remote_command_exports_optional_data_root() -> None:
@@ -227,6 +276,37 @@ def test_remote_command_sources_runtime_env_file() -> None:
     assert (
         'if [ -f ".env.autoresearch" ]; then set -a; . ./.env.autoresearch; set +a; fi' in command
     )
+
+
+def test_git_status_command_reports_current_and_resolved_sha_without_checkout() -> None:
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="0123456789abcdef0123456789abcdef01234567",
+    )
+
+    command = build_git_status_command(config)
+
+    assert "git checkout" not in command
+    assert "git reset --hard" not in command
+    assert "git clean" not in command
+    assert "AUTORESEARCH_CURRENT_SHA" in command
+    assert "AUTORESEARCH_RESOLVED_SHA" in command
+
+
+def test_parse_current_sha_reads_remote_status_marker() -> None:
+    output = "\nAUTORESEARCH_CURRENT_SHA abcdef0123456789abcdef0123456789abcdef01\n"
+
+    assert parse_current_sha(output) == "abcdef0123456789abcdef0123456789abcdef01"
+
+
+def test_parse_current_sha_returns_none_when_remote_checkout_is_missing() -> None:
+    output = "\nAUTORESEARCH_CURRENT_SHA missing\n"
+
+    assert parse_current_sha(output) is None
 
 
 def test_render_runtime_env_file_includes_runtime_env_and_skips_runner_only_keys(

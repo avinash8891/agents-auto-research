@@ -201,6 +201,23 @@ def _trace_builder_finish(
         model_provider="codex",
         model_name=BUILDER_CLI_MODEL,
     )
+    if result.get("status") == "error":
+        error_code = str(result.get("error_code") or "builder_error")
+        record_event(
+            source_module="compiler_builder",
+            category="builder",
+            action="builder_error",
+            summary=f"builder error thesis={thesis_id} code={error_code}",
+            payload={
+                "thesis_id": thesis_id,
+                "error_code": error_code,
+                "reason": result.get("reason", ""),
+                "result": result,
+            },
+            artifact_paths=artifact_paths,
+            model_provider="codex",
+            model_name=BUILDER_CLI_MODEL,
+        )
 
 
 def _validate_generated_config_in_fresh_python(
@@ -363,6 +380,7 @@ def _validated_generated_config_result(
             )
         return {
             "status": "error",
+            "error_code": "builder_config_validation_failed",
             "reason": validation_reason,
             "generated_config": None,
             "validation_passed": False,
@@ -382,6 +400,7 @@ def _validated_generated_config_result(
         log.error("Generated config failed implementation verification: %s", verification_reason)
         return {
             "status": "error",
+            "error_code": "builder_implementation_contract_failed",
             "reason": verification_reason,
             "generated_config": None,
             "validation_passed": True,
@@ -416,6 +435,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         if not family_name:
             return {
                 "status": "error",
+                "error_code": "builder_missing_strategy_family",
                 "reason": f"missing strategy_family in thesis artifacts for {thesis_id}",
                 "generated_config": None,
                 "validation_passed": False,
@@ -425,6 +445,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         except (KeyError, ValueError) as exc:
             return {
                 "status": "error",
+                "error_code": "builder_unknown_strategy_family",
                 "reason": f"unknown strategy family for structured thesis {thesis_id}: {exc}",
                 "generated_config": None,
                 "validation_passed": False,
@@ -451,6 +472,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         if compilation_family_name is None:
             return {
                 "status": "error",
+                "error_code": "builder_missing_proposal_artifact",
                 "reason": f"missing proposal artifact for {thesis_id}",
                 "generated_config": None,
                 "validation_passed": False,
@@ -462,6 +484,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         if not proposal_path.exists():
             return {
                 "status": "error",
+                "error_code": "builder_missing_proposal_artifact",
                 "reason": f"missing proposal artifact for {thesis_id}",
                 "generated_config": None,
                 "validation_passed": False,
@@ -469,6 +492,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         if not compilation_path.exists():
             return {
                 "status": "error",
+                "error_code": "builder_missing_compilation_artifact",
                 "reason": f"missing compilation artifact for {thesis_id}",
                 "generated_config": None,
                 "validation_passed": False,
@@ -479,6 +503,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         except (OSError, json.JSONDecodeError) as exc:
             return {
                 "status": "error",
+                "error_code": "builder_malformed_proposal_artifact",
                 "reason": f"malformed proposal artifact for {thesis_id}: {exc}",
                 "generated_config": None,
                 "validation_passed": False,
@@ -491,6 +516,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         except (OSError, json.JSONDecodeError) as exc:
             return {
                 "status": "error",
+                "error_code": "builder_malformed_compilation_artifact",
                 "reason": f"malformed compilation artifact for {thesis_id}: {exc}",
                 "generated_config": None,
                 "validation_passed": False,
@@ -499,6 +525,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         if not family_name:
             return {
                 "status": "error",
+                "error_code": "builder_missing_strategy_family",
                 "reason": f"missing strategy_family/family field in proposal for {thesis_id}",
                 "generated_config": None,
                 "validation_passed": False,
@@ -626,6 +653,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     if not cli:
         result = {
             "status": "error",
+            "error_code": (out.get("error_code") if out is not None else "builder_cli_unavailable"),
             "reason": (
                 out["reason"] if out is not None else "No CLI available for builder dispatch"
             ),
@@ -684,6 +712,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             if out is None:
                 out = {
                     "status": "error",
+                    "error_code": "builder_timeout",
                     "reason": f"builder timed out after {BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}",
                     "generated_config": None,
                     "validation_passed": False,
@@ -713,6 +742,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             else:
                 out = {
                     "status": "error",
+                    "error_code": "builder_missing_generated_config",
                     "reason": proc_output,
                     "generated_config": None,
                     "validation_passed": False,

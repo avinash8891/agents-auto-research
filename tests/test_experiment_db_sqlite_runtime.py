@@ -286,6 +286,55 @@ def test_experiment_db_best_by_metric_treats_zero_as_real_value(tmp_path) -> Non
     assert best.experiment_id == "e1"
 
 
+def test_experiment_db_best_by_metric_ignores_invalid_duplicate_results(tmp_path) -> None:
+    db_path = tmp_path / "ema_experiments.db"
+    db = ExperimentDB(db_path)
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    db.add_from_sqlite_fields(
+        experiment_id="valid-lower",
+        thesis_id="valid-lower",
+        config_path="configs/valid.yaml",
+        runtime_config={"param": "valid"},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"profit_factor": 2.0},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="accepted",
+        verdict_summary="valid accepted experiment",
+        family="ema",
+        job_id=20,
+        run_id="run-1",
+        primary_metric_name="profit_factor",
+        primary_metric_value=2.0,
+    )
+    db.add_from_sqlite_fields(
+        experiment_id="duplicate-higher",
+        thesis_id="duplicate-higher",
+        config_path="configs/duplicate.yaml",
+        runtime_config={"param": "duplicate"},
+        code_commit="abc123",
+        data_hash="data1",
+        metrics={"profit_factor": 99.0},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="discard",
+        verdict_status="invalid_duplicate_result",
+        verdict_summary="identical runtime_config/artifacts as previous experiment",
+        family="ema",
+        job_id=20,
+        run_id="run-2",
+        primary_metric_name="profit_factor",
+        primary_metric_value=99.0,
+    )
+
+    best = db.best_by_metric("profit_factor")
+
+    assert best is not None
+    assert best.experiment_id == "valid-lower"
+
+
 def test_experiment_db_evaluate_metric_uses_train_metric_for_custom_primary_metric(
     tmp_path,
 ) -> None:

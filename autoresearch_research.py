@@ -56,6 +56,7 @@ from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
     get_event_file,
+    record_event,
     trace,
 )
 
@@ -517,6 +518,17 @@ def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] 
         }
         if validation_reason:
             result["validation_reason"] = validation_reason
+        record_event(
+            source_module="autoresearch_research",
+            category="conductor",
+            action="conductor_error",
+            summary=rejection_reason,
+            payload={
+                "error_code": "conductor_error",
+                "error": str(error),
+                "validation_reason": validation_reason,
+            },
+        )
         return result
     if not parsed.get("suggested_theses"):
         reasoning = parsed.get("reasoning") or "research conductor returned no suggested_theses"
@@ -529,6 +541,26 @@ def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] 
     return None
 
 
+def _structured_rejection_reason(*, source: str, message: str) -> dict[str, str]:
+    """Normalize free-form rejection text into stable routing/trace metadata."""
+    lower = message.lower()
+    if "overlap" in lower or "duplicate" in lower:
+        code = f"{source}_duplicate_or_overlap"
+    elif "unsupported" in lower or "not allowed" in lower or "unknown" in lower:
+        code = f"{source}_unsupported_field"
+    elif "missing" in lower or "required" in lower:
+        code = f"{source}_missing_required_field"
+    elif "invalid" in lower:
+        code = f"{source}_invalid_payload"
+    else:
+        code = f"{source}_rejected"
+    return {
+        "source": source,
+        "code": code,
+        "message": message,
+    }
+
+
 def _log_validation_rejection(
     controller: "AutoresearchController",
     research_round: int,
@@ -538,8 +570,26 @@ def _log_validation_rejection(
     reason: str,
 ) -> None:
     rejection_feedback = f"Thesis '{thesis_id}' rejected by validator: {reason}"
+    structured_rejection = _structured_rejection_reason(
+        source="validator",
+        message=reason,
+    )
     log.warning(f"THESIS REJECTED (will retry with feedback): {rejection_feedback}")
     trace("LOOP", f"thesis rejected, retrying: {rejection_feedback}")
+    record_event(
+        source_module="autoresearch_research",
+        category="validation",
+        action="validation_error",
+        summary=rejection_feedback,
+        payload={
+            "error_code": structured_rejection["code"],
+            "rejection": structured_rejection,
+            "research_round": research_round,
+            "attempt": attempt + 1,
+            "thesis_id": thesis_id,
+            "reason": reason,
+        },
+    )
     controller.log_research_round(
         round_number=research_round,
         thesis_id=thesis_id,
@@ -565,7 +615,8 @@ def _log_validation_rejection(
                 "expected_reuse_across_future_theses",
             )
             if key in raw_thesis
-        },
+        }
+        | {"structured_rejection": structured_rejection},
         rejection_reason=reason,
     )
     _RULE_PROPOSALS.create_proposal(
@@ -804,7 +855,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
 
     from improvement_flags import reflexion_enabled
 
-    rejection_feedback = ""
+    rejection_feedback = str(state.get("rejection_feedback") or "")
     agent_reflexions: dict[str, str] = {}
     if reflexion_enabled():
         from improvement_reflexion import build_reflexion_feedback
@@ -1186,6 +1237,7 @@ def _handle_success(
         "source": "research_conductor",
     }
     state["blockers"] = []
+    state.pop("rejection_feedback", None)
     controller.write_state(state)
     log.info(f"HEARTBEAT research generated {thesis_id} -> {gen_config}")
     return state

@@ -22,6 +22,13 @@ from persistence_utils import (
 
 log = get_logger(__name__)
 
+INVALID_RESULT_VERDICTS = frozenset(
+    {
+        "invalid_duplicate_result",
+        "invalid_noop_config",
+    }
+)
+
 
 def _coerce_metric_float(value: Any, *, default: float = 0.0) -> float:
     try:
@@ -42,6 +49,11 @@ def _record_job_as_int(record: ExperimentResult) -> int | None:
         return int(getattr(record, "job", 0))
     except (TypeError, ValueError):
         return None
+
+
+def is_metric_rankable_experiment(record: ExperimentResult) -> bool:
+    """Return whether a record can be used as a best/worst metric candidate."""
+    return bool(record.accepted) and record.verdict_status not in INVALID_RESULT_VERDICTS
 
 
 def _artifact_dir_from_files(paths: tuple[str, str, str]) -> str:
@@ -731,7 +743,7 @@ class ExperimentDB:
         return [r for r in self._load() if r.accepted]
 
     def best_by_metric(self, metric: str) -> ExperimentResult | None:
-        records = self._load()
+        records = [r for r in self._load() if is_metric_rankable_experiment(r)]
         direction = self.best_direction()
         best = None
         for r in records:

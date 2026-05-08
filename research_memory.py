@@ -464,7 +464,11 @@ def _metric_for_record(record: Any, metric_name: str) -> float | int | None:
 def _iter_experiment_records(root: Path, *, job_id: int | None = None) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for db_path in sorted(root.glob("*_experiments.db")):
-        from experiment_db import ExperimentDB
+        from experiment_db import (
+            INVALID_RESULT_VERDICTS,
+            ExperimentDB,
+            is_metric_rankable_experiment,
+        )
 
         db = ExperimentDB(db_path)
         metric_name = db.primary_metric_name()
@@ -481,6 +485,9 @@ def _iter_experiment_records(root: Path, *, job_id: int | None = None) -> list[d
                     "record": record,
                     "metric": _metric_for_record(record, metric_name),
                     "job_id": record_job,
+                    "metric_rankable": is_metric_rankable_experiment(record),
+                    "invalid_result": getattr(record, "verdict_status", "")
+                    in INVALID_RESULT_VERDICTS,
                 }
             )
     return records
@@ -533,12 +540,54 @@ def _experiment_detail(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _experiment_compact_detail(item: dict[str, Any]) -> dict[str, Any]:
+    record = item["record"]
+    runtime_config = getattr(record, "runtime_config", {}) or {}
+    strategy_diagnostics = getattr(record, "strategy_diagnostics", {}) or {}
+    diagnostics_summary = {
+        key: strategy_diagnostics[key]
+        for key in (
+            "event_counts",
+            "rejection_breakdown",
+            "trade_analysis",
+            "verdict",
+        )
+        if key in strategy_diagnostics
+    }
+    return {
+        **_experiment_index_entry(item),
+        "metrics": {
+            **(getattr(record, "train_metrics", {}) or {}),
+            **(getattr(record, "validation_metrics", {}) or {}),
+        },
+        "runtime_config_summary": {
+            "key_count": len(runtime_config),
+            "keys": sorted(runtime_config.keys()),
+        },
+        "artifact_paths": {
+            "config_path": getattr(record, "config_path", ""),
+            "trades_file": getattr(record, "trades_file", ""),
+            "strategy_events_file": getattr(record, "strategy_events_file", ""),
+            "diagnostics_file": getattr(record, "diagnostics_file", ""),
+        },
+        "diagnostics_summary": diagnostics_summary,
+        "rejection_reason": getattr(record, "rejection_reason", ""),
+        "hypothesis": _short_text(getattr(record, "hypothesis", ""), 600),
+        "mechanism": _short_text(getattr(record, "mechanism", ""), 600),
+        "code_commit": getattr(record, "code_commit", ""),
+        "data_hash": getattr(record, "data_hash", ""),
+        "usage_summary": (getattr(record, "usage", {}) or {}).get("total", {}),
+    }
+
+
 def _sort_experiment_records(items: list[dict[str, Any]], order: str) -> list[dict[str, Any]]:
     normalized = str(order or "latest").lower()
     if normalized == "best":
         return sorted(
             items,
             key=lambda item: (
+                not bool(item.get("metric_rankable")),
+                bool(item.get("invalid_result")),
                 item.get("metric") is None,
                 (
                     -(float(item.get("metric") or 0))
@@ -551,6 +600,8 @@ def _sort_experiment_records(items: list[dict[str, Any]], order: str) -> list[di
         return sorted(
             items,
             key=lambda item: (
+                not bool(item.get("metric_rankable")),
+                bool(item.get("invalid_result")),
                 item.get("metric") is None,
                 (
                     float(item.get("metric") or 0)
@@ -590,7 +641,13 @@ def list_experiment_results(
     return json.dumps(payload, indent=2, default=str)
 
 
-def get_experiment_result(root: Path, thesis_id: str, *, job_id: int | None = None) -> str:
+def get_experiment_result(
+    root: Path,
+    thesis_id: str,
+    *,
+    job_id: int | None = None,
+    detail: bool = False,
+) -> str:
     requested_id = str(thesis_id or "").strip()
     if not requested_id:
         return json.dumps(
@@ -610,11 +667,23 @@ def get_experiment_result(root: Path, thesis_id: str, *, job_id: int | None = No
             default=str,
         )
     sorted_matches = _sort_experiment_records(matches, "latest")
+    result = (
+        _experiment_detail(sorted_matches[0])
+        if detail
+        else _experiment_compact_detail(sorted_matches[0])
+    )
     payload = {
         "status": "ok",
         "thesis_id": requested_id,
         "job_id": job_id,
-        "result": _experiment_detail(sorted_matches[0]),
+        "detail": "full" if detail else "compact",
+        "full_result_available": not detail,
+        "result": result,
         "matching_results": [_experiment_index_entry(item) for item in sorted_matches],
     }
+    if not detail:
+        payload["instructions"] = (
+            "This is a compact result. Call get_experiment_result(thesis_id, detail=true) "
+            "only when specific full fields are required."
+        )
     return json.dumps(payload, indent=2, default=str)
