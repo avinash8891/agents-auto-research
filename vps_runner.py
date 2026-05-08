@@ -81,6 +81,7 @@ REMOTE_RUNTIME_ENV_DEFAULTS = {
     "AUTORESEARCH_IMPROVEMENT_REFLEXION": "1",
 }
 PREPARE_SUCCESS_GRACE_SECONDS = 5.0
+PREPARE_COMMAND_TIMEOUT_SECONDS = 300.0
 
 
 def _load_local_env_file() -> None:
@@ -856,12 +857,14 @@ def _stream_remote_prepare_command(
     *,
     success_marker: str = PREPARE_RESULT_MARKER,
     linger_after_success_seconds: float = PREPARE_SUCCESS_GRACE_SECONDS,
+    timeout_seconds: float = PREPARE_COMMAND_TIMEOUT_SECONDS,
 ) -> tuple[int, str, str, bool]:
     channel = stdout.channel
     out_chunks: list[str] = []
     err_chunks: list[str] = []
     success_seen_at: float | None = None
     forced_close = False
+    started_at = time.time()
 
     while True:
         progressed = False
@@ -893,6 +896,12 @@ def _stream_remote_prepare_command(
         ):
             break
 
+        if timeout_seconds >= 0 and time.time() - started_at >= timeout_seconds:
+            forced_close = True
+            channel.close()
+            err_chunks.append("prepare command timed out before reporting completion")
+            break
+
         if (
             success_seen_at is not None
             and linger_after_success_seconds >= 0
@@ -900,15 +909,15 @@ def _stream_remote_prepare_command(
         ):
             forced_close = True
             channel.close()
+            err_chunks.append(
+                "prepare command emitted success marker but did not exit within grace period"
+            )
             break
 
         if not progressed:
             time.sleep(0.1)
 
     if forced_close:
-        err_chunks.append(
-            "prepare command emitted success marker but did not exit within grace period"
-        )
         exit_code = 124
     else:
         exit_code = channel.recv_exit_status()

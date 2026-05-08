@@ -475,7 +475,7 @@ def test_stream_remote_prepare_command_forced_close_returns_failure_code(monkeyp
     )
     stdout = _FakePrepareFile(channel)
     stderr = _FakePrepareFile(channel)
-    times = iter([100.0, 101.0])
+    times = iter([100.0, 100.1, 100.2, 101.0])
     monkeypatch.setattr("vps_runner.time.time", lambda: next(times))
 
     exit_code, out, err, forced_close = _stream_remote_prepare_command(
@@ -489,6 +489,26 @@ def test_stream_remote_prepare_command_forced_close_returns_failure_code(monkeyp
     assert exit_code == 124
     assert "AUTORESEARCH_PREPARE_RESULT" in out
     assert "did not exit within grace period" in err
+
+
+def test_stream_remote_prepare_command_times_out_without_marker(monkeypatch) -> None:
+    channel = _FakePrepareChannel([], [], exit_ready=False)
+    stdout = _FakePrepareFile(channel)
+    stderr = _FakePrepareFile(channel)
+    times = iter([100.0, 101.0])
+    monkeypatch.setattr("vps_runner.time.time", lambda: next(times))
+
+    exit_code, out, err, forced_close = _stream_remote_prepare_command(
+        stdout,
+        stderr,
+        timeout_seconds=0.5,
+    )
+
+    assert forced_close is True
+    assert channel.closed is True
+    assert exit_code == 124
+    assert out == ""
+    assert "timed out before reporting completion" in err
 
 
 def test_vps_runner_parser_accepts_explicit_fresh_job_mode() -> None:
