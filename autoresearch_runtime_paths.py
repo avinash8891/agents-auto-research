@@ -10,3 +10,7 @@ def job_runtime_root(root: Path, job: int) -> Path:
 
 def job_runtime_dir(root: Path, job: int, dirname: str) -> Path:
     return job_runtime_root(root, job) / dirname
+
+
+def job_trace_exports_root(root: Path, job: int) -> Path:
+    return job_runtime_root(root, job) / "trace_exports"

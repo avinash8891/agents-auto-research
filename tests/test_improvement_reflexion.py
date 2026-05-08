@@ -69,6 +69,7 @@ def _write_prior_export(
     root: Path,
     *,
     research_round: int,
+    job: int | None = None,
     thesis_id: str = "T1",
     outcome: str = "rejected",
     reasoning: str = "tried fixed stop loss",
@@ -82,7 +83,12 @@ def _write_prior_export(
         reasoning=reasoning,
         rejection_reason=rejection_reason,
     )
-    target_dir = root / "trace_exports" / f"round-{research_round:03d}-{thesis_id}" / "reflexio"
+    trace_root = (
+        root / "runtime" / "jobs" / f"job-{job}" / "trace_exports"
+        if job is not None
+        else root / "trace_exports"
+    )
+    target_dir = trace_root / f"round-{research_round:03d}-{thesis_id}" / "reflexio"
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / "reflexio-event.json"
     target.write_text(json.dumps(payload), encoding="utf-8")
@@ -118,10 +124,11 @@ def test_flag_on_with_prior_export_returns_preamble(tmp_path, monkeypatch):
     _write_prior_export(
         tmp_path,
         research_round=4,
+        job=22,
         reasoning="tried tight stop",
         rejection_reason="filtered too many trades",
     )
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=22)
     feedback = build_reflexion_feedback(controller, current_round=5)
     assert "PRIOR ROUND REFLEXION (round 4)" in feedback
     assert "research_outcome: rejected" in feedback
@@ -136,11 +143,11 @@ def test_flag_on_picks_most_recent_when_multiple_matches(tmp_path, monkeypatch):
 
     monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
     older = _write_prior_export(
-        tmp_path, research_round=2, thesis_id="A", reasoning="older reasoning"
+        tmp_path, research_round=2, job=22, thesis_id="A", reasoning="older reasoning"
     )
     time.sleep(0.01)
     newer = _write_prior_export(
-        tmp_path, research_round=2, thesis_id="B", reasoning="newer reasoning"
+        tmp_path, research_round=2, job=22, thesis_id="B", reasoning="newer reasoning"
     )
     # Bump newer's mtime to be strictly after older's, defensively.
     import os
@@ -148,7 +155,7 @@ def test_flag_on_picks_most_recent_when_multiple_matches(tmp_path, monkeypatch):
     now = older.stat().st_mtime
     os.utime(newer, (now + 1.0, now + 1.0))
 
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=22)
     feedback = build_reflexion_feedback(controller, current_round=3)
     assert "newer reasoning" in feedback
     assert "older reasoning" not in feedback
@@ -403,3 +410,45 @@ def test_latest_reflexion_feedback_reads_newest_round_for_builder(tmp_path, monk
     assert "PRIOR AGENT REFLEXION (round 3, agent builder)" in feedback
     assert "new builder lesson" in feedback
     assert "old builder lesson" not in feedback
+
+
+def test_current_job_feedback_ignores_repo_global_stale_export(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
+    _write_prior_export(
+        tmp_path, research_round=1, thesis_id="stale-global", reasoning="stale global reasoning"
+    )
+    _write_prior_export(
+        tmp_path,
+        research_round=1,
+        job=26,
+        thesis_id="job-local",
+        reasoning="current job reasoning",
+    )
+
+    controller = SimpleNamespace(root=tmp_path, job=26)
+    feedback = build_reflexion_feedback(controller, current_round=2)
+
+    assert "current job reasoning" in feedback
+    assert "stale global reasoning" not in feedback
+
+
+def test_latest_reflexion_feedback_prefers_job_runtime_exports_over_repo_global(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
+    _write_prior_export(
+        tmp_path, research_round=3, thesis_id="global", reasoning="repo global reasoning"
+    )
+    _write_prior_export(
+        tmp_path,
+        research_round=4,
+        job=30,
+        thesis_id="job-runtime",
+        reasoning="job runtime reasoning",
+    )
+
+    feedback = build_latest_reflexion_feedback(tmp_path)
+
+    assert "round 4" in feedback
+    assert "job runtime reasoning" in feedback
+    assert "repo global reasoning" not in feedback

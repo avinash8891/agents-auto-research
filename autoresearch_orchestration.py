@@ -289,7 +289,12 @@ def _refresh_reflexio_export_after_builder(
     if research_round is None:
         return
     root_path = Path(root)
-    current = _find_reflexio_export_for_thesis(root_path, research_round, thesis_id)
+    current = _find_reflexio_export_for_thesis(
+        root_path,
+        research_round,
+        thesis_id,
+        artifact_root=root_path,
+    )
     if current is None:
         return
     try:
@@ -335,10 +340,15 @@ def _refresh_reflexio_export_after_builder(
 
 
 def _find_reflexio_export_for_thesis(
-    root_path: Path, research_round: int, thesis_id: str
+    root_path: Path,
+    research_round: int,
+    thesis_id: str,
+    *,
+    artifact_root: Path | None = None,
 ) -> Path | None:
+    search_root = artifact_root or root_path
     matches = sorted(
-        (root_path / "trace_exports").glob(
+        (search_root / "trace_exports").glob(
             f"round-{research_round:03d}-*/reflexio/reflexio-event.json"
         ),
         key=lambda path: path.stat().st_mtime,
@@ -403,7 +413,7 @@ def build_missing_primitives_for_state(
     )
     try:
         _refresh_reflexio_export_after_builder(
-            controller.root,
+            controller.job_runtime_root,
             research_round=research_round,
             thesis_id=thesis_id,
             family=controller.family.name,

@@ -598,7 +598,7 @@ def build_missing_primitives(
 
     config_abspath = root / config_path
     prompt_extras = []
-    builder_reflexion = build_latest_reflexion_feedback(root, agent="builder")
+    builder_reflexion = build_latest_reflexion_feedback(artifact_root or root, agent="builder")
     if builder_reflexion:
         prompt_extras.extend(
             [

@@ -1020,7 +1020,7 @@ def _record_round_quality_and_bridges(
         summary=f"reflexio round {research_round}",
         payload=reflexio_package["files"]["reflexio-event.json"],
     )
-    _write_adapter_exports(controller.root, **payload_kwargs)
+    _write_adapter_exports(controller.job_runtime_root, **payload_kwargs)
 
 
 def _write_export_package(export_root: Path, directory_name: str, package: dict[str, Any]) -> None:
@@ -1038,7 +1038,7 @@ def _write_export_package(export_root: Path, directory_name: str, package: dict[
 
 
 def _write_adapter_exports(
-    root: Path,
+    artifact_root: Path,
     *,
     research_round: int,
     thesis_id: str,
@@ -1059,7 +1059,7 @@ def _write_adapter_exports(
         usage=usage,
         quality=quality,
     )
-    export_root = root / "trace_exports" / f"round-{research_round:03d}-{thesis_id}"
+    export_root = artifact_root / "trace_exports" / f"round-{research_round:03d}-{thesis_id}"
     for dir_name, build_fn in [
         ("halo", build_halo_export_package),
         ("recursive_improve", build_recursive_improve_export_package),

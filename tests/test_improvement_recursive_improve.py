@@ -48,9 +48,56 @@ def _write_trace(root: Path, round_id: int, thesis_id: str = "T1") -> Path:
     return target
 
 
+def _write_job_trace(root: Path, job: int, round_id: int, thesis_id: str = "T1") -> Path:
+    trace_dir = (
+        root
+        / "runtime"
+        / "jobs"
+        / f"job-{job}"
+        / "trace_exports"
+        / f"round-{round_id:03d}-{thesis_id}"
+        / "recursive_improve"
+    )
+    trace_dir.mkdir(parents=True)
+    trace = {
+        "session_id": f"round-{round_id}",
+        "success": True,
+        "metadata": {"job": job, "research_round": round_id, "candidate_id": thesis_id},
+        "messages": [
+            {
+                "role": "user",
+                "agent": "research-conductor",
+                "content": "conductor prompt",
+                "kind": "prompt",
+            },
+            {
+                "role": "assistant",
+                "agent": "research-conductor",
+                "content": "conductor response",
+                "kind": "response",
+            },
+            {
+                "role": "tool",
+                "agent": "analyst",
+                "content": "analyst tool",
+                "kind": "tool_result",
+            },
+            {
+                "role": "assistant",
+                "agent": "openai-web-researcher",
+                "content": "web response",
+                "kind": "response",
+            },
+        ],
+    }
+    target = trace_dir / "recursive-improve-trace.json"
+    target.write_text(json.dumps(trace), encoding="utf-8")
+    return target
+
+
 def test_prepare_report_batch_slices_traces_per_agent(tmp_path):
-    _write_trace(tmp_path, 1)
-    _write_trace(tmp_path, 2)
+    _write_job_trace(tmp_path, 22, 1)
+    _write_job_trace(tmp_path, 22, 2)
 
     result = ri.prepare_recursive_improve_report_batch(
         tmp_path,
@@ -80,7 +127,7 @@ def test_prepare_report_batch_slices_traces_per_agent(tmp_path):
 
 def test_scheduled_report_skips_non_interval_round(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_RECURSIVE_IMPROVE, "1")
-    _write_trace(tmp_path, 9)
+    _write_job_trace(tmp_path, 22, 9)
 
     result = ri.run_scheduled_recursive_improve_reports(
         tmp_path,
@@ -96,7 +143,7 @@ def test_scheduled_report_skips_non_interval_round(tmp_path, monkeypatch):
 def test_scheduled_report_prepares_interval_window(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_RECURSIVE_IMPROVE, "1")
     for round_id in range(1, 11):
-        _write_trace(tmp_path, round_id, thesis_id=f"T{round_id}")
+        _write_job_trace(tmp_path, 22, round_id, thesis_id=f"T{round_id}")
 
     result = ri.run_scheduled_recursive_improve_reports(
         tmp_path,
@@ -113,8 +160,8 @@ def test_scheduled_report_prepares_interval_window(tmp_path, monkeypatch):
 
 
 def test_manual_report_can_run_any_range_without_flag(tmp_path):
-    _write_trace(tmp_path, 3)
-    _write_trace(tmp_path, 4)
+    _write_job_trace(tmp_path, 22, 3)
+    _write_job_trace(tmp_path, 22, 4)
 
     result = ri.run_manual_recursive_improve_reports(
         tmp_path,
@@ -129,7 +176,7 @@ def test_manual_report_can_run_any_range_without_flag(tmp_path):
 
 
 def test_execute_report_invokes_command_per_agent(tmp_path, monkeypatch):
-    _write_trace(tmp_path, 1)
+    _write_job_trace(tmp_path, 22, 1)
     calls: list[dict[str, object]] = []
 
     def fake_run(cmd, **kwargs):
@@ -161,3 +208,23 @@ def test_bad_manual_range_raises(tmp_path):
             job=22,
             execute=False,
         )
+
+
+def test_prepare_report_batch_uses_job_scoped_recursive_improve_exports(tmp_path):
+    _write_trace(tmp_path, 1, thesis_id="stale-global")
+    _write_job_trace(tmp_path, 22, 1, thesis_id="job-trace")
+
+    result = ri.prepare_recursive_improve_report_batch(
+        tmp_path,
+        start_round=1,
+        end_round=1,
+        job=22,
+        agents=("conductor",),
+    )
+
+    assert result.status == "prepared"
+    manifest = json.loads((result.output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert any(
+        "job-22/trace_exports/round-001-job-trace" in path for path in manifest["source_traces"]
+    )
+    assert all("stale-global" not in path for path in manifest["source_traces"])

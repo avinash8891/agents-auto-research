@@ -783,7 +783,7 @@ def test_execute_once_writes_adapter_export_packages_to_disk(controller, monkeyp
     rc = controller.execute_once()
 
     assert rc == 0
-    export_root = controller.root / "trace_exports" / "round-001-research-thesis-001"
+    export_root = controller.job_runtime_root / "trace_exports" / "round-001-research-thesis-001"
     assert (export_root / "halo" / "halo-event.json").exists()
     assert (export_root / "halo" / "package.json").exists()
     assert (export_root / "recursive_improve" / "recursive-improve-event.json").exists()
