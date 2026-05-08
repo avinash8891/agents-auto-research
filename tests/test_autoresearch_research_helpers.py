@@ -371,6 +371,32 @@ def test_queue_variants_writes_runtime_config_per_variant(
     assert thesis["_variant_of"] == "primary_exp_id_xyz"
 
 
+def test_queue_variants_can_write_job_scoped_artifacts(
+    tmp_path: Path, thesis_stub, primary_contract_stub
+) -> None:
+    queue_dir = tmp_path / "runtime" / "jobs" / "job-7" / "run-queue"
+    experiments_dir = tmp_path / "runtime" / "jobs" / "job-7" / "experiments"
+
+    queue_variants(
+        tmp_path,
+        queue_dir,
+        [{"_variant_label": "agg", "_variant_factor": 0.5, "ema_length": 3}],
+        thesis_stub,
+        primary_contract_stub,
+        {"ema_length": 5},
+        experiments_dir=experiments_dir,
+        job=7,
+        created_for_commit="abc123",
+    )
+
+    queue_artifact = json.loads(next(queue_dir.glob("*.json")).read_text())
+    assert queue_artifact["job"] == 7
+    assert queue_artifact["created_for_commit"] == "abc123"
+    assert queue_artifact["config"].startswith("runtime/jobs/job-7/experiments/")
+    assert (tmp_path / queue_artifact["config"]).exists()
+    assert not (tmp_path / "experiments").exists()
+
+
 def test_queue_variants_persists_full_runtime_config_in_sidecar_metadata(
     tmp_path: Path, thesis_stub, primary_contract_stub
 ) -> None:

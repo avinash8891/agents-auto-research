@@ -671,14 +671,7 @@ def _on_ready_to_run(
     if baseline_config:
         variants = generate_variants(raw_thesis.get("config_changes", {}), baseline_config)
         if len(variants) > 1:
-            queue_variants(
-                controller.root,
-                controller.run_queue_dir,
-                variants,
-                validated,
-                contract,
-                baseline_config,
-            )
+            controller._queue_variants(variants, validated, contract, baseline_config)
             trace("LOOP", f"queued {len(variants)-1} variant(s) for {thesis_id}")
     return {
         "status": "completed",
