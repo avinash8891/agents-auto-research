@@ -144,6 +144,25 @@ def test_vps_runner_parser_accepts_skip_deploy_when_resuming_current_job() -> No
     assert args.skip_deploy_if_current is True
 
 
+def test_vps_runner_parser_accepts_skip_deploy_for_fresh_job() -> None:
+    parser = _build_arg_parser()
+
+    args = parser.parse_args(
+        [
+            "--strategy",
+            "ema",
+            "--git-ref",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--fresh-job",
+            "--skip-deploy-if-current",
+        ]
+    )
+
+    assert args.fresh_job is True
+    assert args.resume_current_job is False
+    assert args.skip_deploy_if_current is True
+
+
 def test_vps_config_rejects_unsafe_remote_dirs(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
@@ -226,6 +245,32 @@ def test_remote_resume_command_can_skip_dependency_install_when_sha_is_current()
     assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
         "--resume-current-job"
+    ) in command
+
+
+def test_remote_fresh_command_can_skip_dependency_install_when_sha_is_current() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_command(
+        config,
+        family,
+        "0" * 40,
+        skip_dependency_install=True,
+    )
+
+    assert 'if [ ! -x ".venv/bin/python" ]; then' in command
+    assert '"$python_bin" -m pip install -e .' in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--fresh-job"
     ) in command
 
 

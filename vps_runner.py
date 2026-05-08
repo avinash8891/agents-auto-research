@@ -708,8 +708,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--skip-deploy-if-current",
         action="store_true",
         help=(
-            "When resuming, skip Git checkout and dependency install if the VPS checkout "
-            "already matches --git-ref."
+            "Skip Git checkout and dependency install if the VPS checkout already matches "
+            "--git-ref."
         ),
     )
     return parser
@@ -722,8 +722,6 @@ def main():
     args = parser.parse_args()
     if args.fresh_job and args.resume_current_job:
         parser.error("--fresh-job and --resume-current-job are mutually exclusive")
-    if args.skip_deploy_if_current and not args.resume_current_job:
-        parser.error("--skip-deploy-if-current requires --resume-current-job")
 
     strategy_name = args.strategy
     family = load_family(strategy_name)
