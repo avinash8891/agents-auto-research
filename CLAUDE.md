@@ -39,6 +39,10 @@ Operating discipline for Claude Code in this repository. Project-specific contex
 
 - `get_logger` must NOT set `propagate = False` — pytest caplog captures via the root logger; blocking propagation makes all `caplog` assertions return empty strings. No duplicate output risk in production (no root handler attached outside tests).
 - `PYTEST_CURRENT_TEST` is NOT set during pytest module import/collection — only during test execution. Module-level code cannot use it as an import guard. Use it only inside functions.
+- In Codex `workspace-write` sandbox mode, `.git/index.lock` creation may be blocked even when ordinary working-tree edits succeed. Treat Git metadata-changing commands as privileged operations in this repo:
+  - allowed unprivileged: `git status`, `git diff`, `git log`, `git add`
+  - run escalated by default: `git commit -m`, `git commit --amend`, `git push origin HEAD`
+  - RCA: this is an execution-policy constraint around `.git` writes, not a stale-lock or repo-corruption issue
 - No new dependency without justification in commit message. Stdlib → existing deps → new dep, in that order.
 - Hardcoded tunable numbers (thresholds, limits, batch sizes, weights) = config smell. Put them in config, validated on load.
 - **Env-var-backed tunables use lazy accessor functions, not module-level constants.** `MAX_X = int(os.environ.get("AUTORESEARCH_MAX_X", "10"))` at import time means pytest's `monkeypatch.setenv` after the module is imported has no effect — import order silently determines whether overrides stick. Wrap the read in `def max_x() -> int:` and call it at the use site. Validation (int parse, range check) lives inside the accessor and raises with a named env-var on bad input.
