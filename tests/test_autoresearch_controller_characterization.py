@@ -3110,6 +3110,22 @@ def test_main_prepare_launch_state_only_writes_clean_fresh_state_without_executi
     assert payload["state"] == "running"
 
 
+def test_should_hard_exit_prepare_cli_only_for_prepare_mode():
+    assert (
+        loop_mod._should_hard_exit_prepare_cli(["--family", "ema", "--prepare-launch-state-only"])
+        is True
+    )
+    assert (
+        loop_mod._should_hard_exit_prepare_cli(["--family", "ema", "--run-current-state"]) is False
+    )
+    assert (
+        loop_mod._should_hard_exit_prepare_cli(
+            ["--family", "--prepare-launch-state-only", "--run-current-state"]
+        )
+        is False
+    )
+
+
 def test_main_run_current_state_executes_prepared_running_job_without_renormalizing(
     monkeypatch, tmp_path
 ):

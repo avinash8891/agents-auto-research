@@ -485,6 +485,61 @@ def _emit_prepare_result(state: dict[str, Any], job: int) -> None:
     sys.stdout.flush()
 
 
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run autoresearch controller")
+    parser.add_argument("--family", required=True, help="Strategy family to run")
+    parser.add_argument(
+        "--fresh-job",
+        action="store_true",
+        help="Start a new job and ignore prior job-scoped queues.",
+    )
+    parser.add_argument(
+        "--resume-current-job",
+        action="store_true",
+        help=(
+            "Resume a recoverable blocked/interrupted state without incrementing the job id. "
+            "Interrupted research failures are retried in the same research round."
+        ),
+    )
+    parser.add_argument(
+        "--prepare-launch-state-only",
+        action="store_true",
+        help=(
+            "Normalize and persist launch state, then exit without executing the controller loop."
+        ),
+    )
+    parser.add_argument(
+        "--run-current-state",
+        action="store_true",
+        help=(
+            "Execute the controller loop against the already prepared running state without "
+            "renormalizing launch state."
+        ),
+    )
+    return parser
+
+
+def _parse_main_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
+    if args.fresh_job and args.resume_current_job:
+        parser.error("--fresh-job and --resume-current-job are mutually exclusive")
+    if args.run_current_state and (args.fresh_job or args.resume_current_job):
+        parser.error(
+            "--run-current-state cannot be combined with --fresh-job or --resume-current-job"
+        )
+    if args.prepare_launch_state_only and args.run_current_state:
+        parser.error("--prepare-launch-state-only and --run-current-state are mutually exclusive")
+    return args
+
+
+def _should_hard_exit_prepare_cli(argv: list[str]) -> bool:
+    try:
+        return bool(_parse_main_args(argv).prepare_launch_state_only)
+    except SystemExit:
+        return False
+
+
 class AutoresearchController:
     def __init__(
         self,
@@ -1038,46 +1093,7 @@ class AutoresearchController:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run autoresearch controller")
-    parser.add_argument("--family", required=True, help="Strategy family to run")
-    parser.add_argument(
-        "--fresh-job",
-        action="store_true",
-        help="Start a new job and ignore prior job-scoped queues.",
-    )
-    parser.add_argument(
-        "--resume-current-job",
-        action="store_true",
-        help=(
-            "Resume a recoverable blocked/interrupted state without incrementing the job id. "
-            "Interrupted research failures are retried in the same research round."
-        ),
-    )
-    parser.add_argument(
-        "--prepare-launch-state-only",
-        action="store_true",
-        help=(
-            "Normalize and persist launch state, then exit without executing the controller loop."
-        ),
-    )
-    parser.add_argument(
-        "--run-current-state",
-        action="store_true",
-        help=(
-            "Execute the controller loop against the already prepared running state without "
-            "renormalizing launch state."
-        ),
-    )
-    args = parser.parse_args()
-    if args.fresh_job and args.resume_current_job:
-        parser.error("--fresh-job and --resume-current-job are mutually exclusive")
-    if args.run_current_state and (args.fresh_job or args.resume_current_job):
-        parser.error(
-            "--run-current-state cannot be combined with --fresh-job or --resume-current-job"
-        )
-    if args.prepare_launch_state_only and args.run_current_state:
-        parser.error("--prepare-launch-state-only and --run-current-state are mutually exclusive")
-
+    args = _parse_main_args()
     family = load_family(args.family)
     state_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(ROOT, family)
     controller = AutoresearchController(
@@ -1117,4 +1133,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit_code = main()
+    if _should_hard_exit_prepare_cli(sys.argv[1:]):
+        os._exit(exit_code)
+    raise SystemExit(exit_code)
