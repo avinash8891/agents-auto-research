@@ -68,6 +68,10 @@ class ResearchThesis(BaseModel):
     # Mechanism discovery fields — forces structural thinking
     mechanism_dimension: str = ""  # core dimension, emergent, or a prior emergent name
     dimension_novelty: str = ""  # why this is not a parameter variation of prior work
+    causal_cluster: str = ""  # causal family this thesis belongs to, for diversity audits
+    dominant_cluster_overlap: Literal["", "low", "medium", "high"] = ""
+    underexplored_dimensions_considered: list[str] = Field(default_factory=list)
+    novel_connection: str = ""  # why this connects evidence in a materially new way
     new_dimension_name: str = ""  # required when mechanism_dimension == emergent
     why_existing_dimensions_do_not_fit: str = ""
     mechanism_family_definition: str = ""

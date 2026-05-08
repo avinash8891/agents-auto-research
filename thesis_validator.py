@@ -47,6 +47,7 @@ CONFIG_OVERLAP_THRESHOLD = 0.5
 CONFIG_OVERLAP_IGNORED_KEYS = frozenset({"requires_engine_change"})
 CONFIG_CHANGES_METADATA_KEYS = frozenset({"requires_code_change", "new_config_keys_needed"})
 _MIN_EMERGENT_FIELD_CHARS = 40
+_MIN_NOVEL_CONNECTION_CHARS = 40
 _EMERGENT_REQUIRED_FIELDS = (
     "why_existing_dimensions_do_not_fit",
     "mechanism_family_definition",
@@ -602,6 +603,24 @@ def validate_research_thesis(
             "dimension_novelty is empty. "
             "Explain why this is not a parameter variation of a prior thesis."
         )
+    if prior_theses:
+        if not thesis.causal_cluster.strip():
+            raise ThesisValidationError(
+                "causal_cluster is required when prior theses exist. "
+                "Name the causal family this thesis belongs to."
+            )
+        if not thesis.underexplored_dimensions_considered:
+            raise ThesisValidationError(
+                "underexplored_dimensions_considered is required when prior theses exist. "
+                "Compare at least two underexplored dimensions before proposing."
+            )
+        if thesis.dominant_cluster_overlap == "high" and (
+            len(thesis.novel_connection.strip()) < _MIN_NOVEL_CONNECTION_CHARS
+        ):
+            raise ThesisValidationError(
+                "novel_connection must explain why a high-overlap thesis is "
+                "materially new instead of another variation of the dominant cluster."
+            )
 
     if not thesis.config_changes and not thesis.requires_code_change:
         raise ThesisValidationError(

@@ -21,6 +21,16 @@ def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
             "This tests confirmation logic in engine behavior, not a numeric "
             "parameter variation of a previous thesis."
         ),
+        "causal_cluster": "close-confirmed adverse-selection reduction",
+        "dominant_cluster_overlap": "medium",
+        "underexplored_dimensions_considered": [
+            "portfolio_construction",
+            "regime_conditioning",
+        ],
+        "novel_connection": (
+            "Connects wick-only false-break evidence with engine-level close "
+            "confirmation rather than another nearby threshold change."
+        ),
         "config_changes": {"requires_engine_change": True},
         "expected_effects": [
             {
@@ -226,6 +236,76 @@ def test_validate_real_config_overlap_still_rejected_with_sentinel() -> None:
 
     with pytest.raises(ThesisValidationError, match="Config-key overlap"):
         validate_thesis_dict(thesis, prior_theses=prior)
+
+
+def test_validate_thesis_requires_diversity_reasoning_when_prior_context_exists() -> None:
+    thesis = _base_engine_change_thesis("new_signal_quality_gate", "signal_quality")
+    thesis["causal_cluster"] = ""
+    thesis["underexplored_dimensions_considered"] = []
+    prior = [
+        {
+            "thesis_id": "prior_opening_gate",
+            "config_changes": {"entry_cutoff_time": "09:45"},
+            "mechanism_dimension": "entry_timing",
+        }
+    ]
+
+    with pytest.raises(ThesisValidationError, match="causal_cluster is required"):
+        validate_thesis_dict(thesis, prior_theses=prior)
+
+
+def test_validate_thesis_rejects_high_overlap_without_novel_connection() -> None:
+    thesis = _base_engine_change_thesis("opening_gate_followup", "signal_quality")
+    thesis.update(
+        {
+            "causal_cluster": "opening-session short adverse-selection filters",
+            "dominant_cluster_overlap": "high",
+            "underexplored_dimensions_considered": [
+                "portfolio_construction",
+                "regime_conditioning",
+            ],
+            "novel_connection": "",
+        }
+    )
+    prior = [
+        {
+            "thesis_id": "prior_opening_gate",
+            "config_changes": {"entry_cutoff_time": "09:45"},
+            "mechanism_dimension": "entry_timing",
+        }
+    ]
+
+    with pytest.raises(ThesisValidationError, match="novel_connection"):
+        validate_thesis_dict(thesis, prior_theses=prior)
+
+
+def test_validate_thesis_allows_high_overlap_with_novel_connection() -> None:
+    thesis = _base_engine_change_thesis("opening_gate_followup", "signal_quality")
+    thesis.update(
+        {
+            "causal_cluster": "opening-session short adverse-selection filters",
+            "dominant_cluster_overlap": "high",
+            "underexplored_dimensions_considered": [
+                "portfolio_construction",
+                "regime_conditioning",
+            ],
+            "novel_connection": (
+                "Connects previously separate opening adverse-selection evidence "
+                "with symbol-level confirmation, not another nearby time cutoff."
+            ),
+        }
+    )
+    prior = [
+        {
+            "thesis_id": "prior_opening_gate",
+            "config_changes": {"entry_cutoff_time": "09:45"},
+            "mechanism_dimension": "entry_timing",
+        }
+    ]
+
+    validated = validate_thesis_dict(thesis, prior_theses=prior)
+
+    assert validated.causal_cluster == "opening-session short adverse-selection filters"
 
 
 def test_validate_emergent_mechanism_dimension_requires_autonomous_definition() -> None:

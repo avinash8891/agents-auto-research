@@ -374,6 +374,19 @@ def test_conductor_system_prompt_allows_structural_thresholds_without_parameter_
     assert "shifting an EMA cutoff from 09:45 to 09:43" in compact
 
 
+def test_conductor_system_prompt_requires_diversity_check_before_exploiting_cluster():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+    compact = " ".join(prompt.split())
+
+    assert "dominant causal cluster" in compact
+    assert "compare at least two underexplored dimensions" in compact
+    assert "why staying in the dominant cluster is still better" in compact
+    assert '"causal_cluster":' in prompt
+    assert '"dominant_cluster_overlap": "low|medium|high"' in prompt
+    assert '"underexplored_dimensions_considered": []' in prompt
+    assert '"novel_connection":' in prompt
+
+
 def test_conductor_system_prompt_does_not_claim_raw_data_directory_is_always_available():
     prompt = rc._build_conductor_system_prompt("Strategy description")
 

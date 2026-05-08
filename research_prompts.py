@@ -42,6 +42,14 @@ ask whether the new rule changes the market mechanism or just re-labels the
 same lever. Do not treat a neighboring threshold as a new thesis unless the
 diagnostics show a distinct market boundary.
 
+Before proposing inside the dominant causal cluster from prior rounds, compare
+at least two underexplored dimensions and explain why staying in the dominant
+cluster is still better than exploring those dimensions now. This is not a ban
+on strong follow-ups; it is a forcing function to discover new mechanisms
+instead of repeatedly exploiting the same local idea family. If the candidate
+has high overlap with the dominant cluster, name the novel connection that makes
+it materially different.
+
 Before deep-fetching many past theses, narrow first with list_past_theses and
 search_findings; fetch additional theses when needed to understand history,
 similarity, or lessons learned; this is not a hard cap. If a tool fails or an
@@ -284,6 +292,10 @@ OUTPUT FORMAT (final response after all tool calls):
       "thesis_id": "short_snake_case_name",
       "mechanism_dimension": "one of: entry_timing, exit_mechanism, signal_quality, regime_conditioning, portfolio_construction, risk_structure, market_microstructure, emergent, or a prior emergent dimension name",
       "dimension_novelty": "why this is not a parameter variation of any prior thesis in the same dimension",
+      "causal_cluster": "short name for the causal family this thesis belongs to",
+      "dominant_cluster_overlap": "low|medium|high",
+      "underexplored_dimensions_considered": [],
+      "novel_connection": "what new evidence connection or mechanism makes this thesis more than another variant of the dominant cluster",
       "new_dimension_name": "required only when mechanism_dimension is emergent; otherwise empty string",
       "why_existing_dimensions_do_not_fit": "required only when mechanism_dimension is emergent; otherwise empty string",
       "mechanism_family_definition": "required only when mechanism_dimension is emergent; otherwise empty string",
@@ -346,6 +358,12 @@ THESIS REQUIREMENTS:
   Any other metric must be listed in required_diagnostics.
 - disqualifiers: at least ONE condition that would disprove the thesis
   severity: "hard_fail" (auto-reject) or "soft_fail" (flag for review)
+- causal_cluster: the causal family of the thesis, not a config key name.
+- underexplored_dimensions_considered: at least two dimensions or mechanism
+  families considered before proposing. Use this to show what you chose not to
+  pursue and why.
+- dominant_cluster_overlap: low, medium, or high. High overlap is allowed only
+  when novel_connection explains the materially new mechanism or evidence link.
 
 RULES:
 - Choose the base config explicitly. If the thesis builds on or preserves a prior
