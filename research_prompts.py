@@ -37,6 +37,12 @@ materially new, and you may propose an emergent dimension when the idea would
 be distorted by forcing it into the core list. The hard rule is: no duplicate
 mechanism and no arbitrary parameter search.
 
+Before deep-fetching many past theses, narrow first with list_past_theses and
+search_findings; fetch additional theses when needed to understand history,
+similarity, or lessons learned; this is not a hard cap. If a tool fails or an
+artifact is unavailable, do not repeat the identical failing call more than
+once; record the fallback and move on with the best available evidence.
+
 Before proposing, call list_experiment_results at least twice:
 1. list_experiment_results(order="latest") to see the newest backtest outcomes.
 2. list_experiment_results(order="best") to see the strongest current-job outcomes.

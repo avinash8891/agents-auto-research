@@ -348,6 +348,17 @@ def test_conductor_system_prompt_keeps_mechanism_dimensions_open_ended():
     assert "materially new causal mechanism" in compact
 
 
+def test_conductor_system_prompt_requires_retrieval_narrowing_without_hard_caps():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+    compact = " ".join(prompt.split())
+
+    assert "Before deep-fetching many past theses" in compact
+    assert "search_findings" in compact
+    assert "fetch additional theses when needed" in compact
+    assert "not a hard cap" in compact
+    assert "record the fallback and move on" in compact
+
+
 def test_conductor_system_prompt_allows_structural_thresholds_without_parameter_chasing():
     prompt = rc._build_conductor_system_prompt("Strategy description")
     compact = " ".join(prompt.split())
@@ -968,6 +979,13 @@ def test_call_web_researcher_includes_agent_reflexion_feedback(monkeypatch):
     assert json.loads(result)["summary"] == "ok"
     assert "AGENT REFLEXION FEEDBACK" in captured["prompt"]
     assert "prior web search used weak blog sources" in captured["prompt"]
+    assert '"summary"' in captured["instructions"]
+    assert captured["instructions"].index('"summary"') < captured["instructions"].index(
+        '"findings"'
+    )
+    assert "If the response risks exceeding the output budget" in captured["instructions"]
+    assert "Do not cap discovery breadth before research" in captured["instructions"]
+    assert "Return a minimal valid JSON object" in captured["instructions"]
 
 
 def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
@@ -1046,6 +1064,14 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     assert "data unless AUTORESEARCH_DATA_ROOT is unset" in captured["system_prompt"]
     assert "Each run_python call is stateless" in captured["system_prompt"]
     assert "Do NOT guess source paths" in captured["system_prompt"]
+    assert (
+        "Start the JSON response with audit fields before long tables" in captured["system_prompt"]
+    )
+    assert '"artifacts_used"' in captured["system_prompt"]
+    assert '"files_inspected"' in captured["system_prompt"]
+    assert '"keys_found"' in captured["system_prompt"]
+    assert '"feasibility"' in captured["system_prompt"]
+    assert "Every bucketed metric must include n= or N=" in captured["system_prompt"]
     assert captured["tool_names"] == [
         "list_analysis_artifacts",
         "read_artifact",

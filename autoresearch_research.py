@@ -1063,7 +1063,12 @@ def _run_improvement_hooks(
     Each arrow short-circuits when its flag is off, so flag-off behavior
     is byte-identical to the pre-improvement code path.
     """
-    from improvement_flags import halo_apply_enabled, halo_enabled, ratchet_enabled
+    from improvement_flags import (
+        halo_apply_enabled,
+        halo_enabled,
+        ratchet_enabled,
+        recursive_improve_enabled,
+    )
 
     halo_report = None
     if halo_enabled():
@@ -1101,6 +1106,31 @@ def _run_improvement_hooks(
             eval_result_path=latest_eval_result_path(controller.root / EVAL_RESULTS_DIRNAME),
             apply_decision=apply_decision,
         )
+
+    if recursive_improve_enabled():
+        from improvement_recursive_improve import run_scheduled_recursive_improve_reports
+
+        state = controller.read_state()
+        raw_job = state.get("job")
+        try:
+            job = int(raw_job) if raw_job is not None else None
+        except (TypeError, ValueError):
+            job = None
+        report_result = _safe_hook(
+            "RecursiveImproveReports",
+            run_scheduled_recursive_improve_reports,
+            controller.root,
+            research_round=research_round,
+            job=job,
+        )
+        if report_result is not None:
+            log.info(
+                "RECURSIVE_IMPROVE_REPORTS round=%s status=%s output_dir=%s reason=%s",
+                research_round,
+                getattr(report_result, "status", ""),
+                getattr(report_result, "output_dir", ""),
+                getattr(report_result, "reason", ""),
+            )
 
 
 def _record_rejection_rule_if_needed(research_round: int, result: dict[str, Any]) -> None:

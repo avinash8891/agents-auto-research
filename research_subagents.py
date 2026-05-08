@@ -557,10 +557,24 @@ CRITICAL RULES:
 - In run_python, these variables are already defined: TRADES_FILE, EVENTS_FILE,
   DIAGNOSTICS_FILE, RUNTIME_CONFIG_FILE, ANALYSIS_ARTIFACTS,
   STRATEGY_SOURCE_FILES, MARKET_DATA_FILES.
+- Start the JSON response with audit fields before long tables so required
+  deliverables survive truncation.
+- Every bucketed metric must include n= or N=. If the focus question specifies
+  a minimum sample size, explicitly state which buckets meet it.
+- If a join, field, artifact, or code/config lookup is blocked, quantify the
+  blocker and give the best viable alternative instead of silently pivoting.
 
 OUTPUT FORMAT:
 Return ONLY a JSON object:
 {{
+  "feasibility": {{
+    "status": "ok/blocked/partial",
+    "blockers": ["quantified blocker such as missing field or N=0"],
+    "best_viable_alternative": "what you analyzed instead, or empty string"
+  }},
+  "artifacts_used": ["trades_csv", "strategy_events_parquet", "diagnostics_json", "runtime_config_json", "market_data_files if used"],
+  "files_inspected": ["strategy/config/source files read, or NOT_FOUND"],
+  "keys_found": ["config/source keys or fields found, or NOT_FOUND"],
   "focus_answer": "direct answer to the focus question with exact numbers",
   "key_anomalies": [
     {{
@@ -694,6 +708,7 @@ Your ONLY job is to find and report external evidence for the specific question 
 OUTPUT FORMAT:
 Return a JSON object:
 {
+  "summary": "2 sentence synthesis; emit this first",
   "findings": [
     {
       "topic": "short label",
@@ -702,10 +717,16 @@ Return a JSON object:
       "source_quality": "academic/practitioner/blog/forum",
       "actionable_idea": "specific structural change this suggests"
     }
-  ],
-  "summary": "2-3 sentence synthesis"
+  ]
 }
-Return ONLY the JSON object."""
+Return ONLY the JSON object.
+
+Do not cap discovery breadth before research; search broadly enough to find
+the strongest evidence. If the response risks exceeding the output budget,
+prefer the strongest findings and compact the final JSON rather than returning
+invalid JSON. Use concise fields, put "summary" before "findings", and ensure
+the final character is "}". If you cannot fit the full result, Return a minimal valid JSON object
+with summary plus the strongest one or two findings."""
 
     user_prompt = f"RESEARCH QUESTION: {query}\n\nCONTEXT: {context}"
     if reflexion_feedback:

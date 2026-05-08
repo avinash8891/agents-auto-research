@@ -12,6 +12,7 @@ from autoresearch_constants import (
     ENV_IMPROVEMENT_HALO,
     ENV_IMPROVEMENT_HALO_APPLY,
     ENV_IMPROVEMENT_RATCHET,
+    ENV_IMPROVEMENT_RECURSIVE_IMPROVE,
     ENV_IMPROVEMENT_REFLEXION,
 )
 from improvement_flags import (
@@ -20,6 +21,7 @@ from improvement_flags import (
     halo_apply_enabled,
     halo_enabled,
     ratchet_enabled,
+    recursive_improve_enabled,
     reflexion_enabled,
 )
 
@@ -40,6 +42,7 @@ def test_each_helper_default_off():
     assert halo_enabled() is False
     assert halo_apply_enabled() is False
     assert reflexion_enabled() is False
+    assert recursive_improve_enabled() is False
     assert ratchet_enabled() is False
 
 
@@ -66,13 +69,15 @@ def test_each_flag_independently_routable(monkeypatch):
     assert reflexion_enabled() is True
     assert halo_enabled() is False
     assert halo_apply_enabled() is False
+    assert recursive_improve_enabled() is False
     assert ratchet_enabled() is False
 
 
-def test_known_flags_constant_covers_all_four():
+def test_known_flags_constant_covers_all_flags():
     assert set(KNOWN_FLAGS) == {
         ENV_IMPROVEMENT_HALO,
         ENV_IMPROVEMENT_HALO_APPLY,
         ENV_IMPROVEMENT_REFLEXION,
+        ENV_IMPROVEMENT_RECURSIVE_IMPROVE,
         ENV_IMPROVEMENT_RATCHET,
     }
