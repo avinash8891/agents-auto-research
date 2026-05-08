@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from autoresearch_constants import ENV_IMPROVEMENT_REFLEXION
-from improvement_reflexion import build_reflexion_feedback
+from improvement_reflexion import build_latest_reflexion_feedback, build_reflexion_feedback
 
 
 def build_reflexio_payload(
@@ -208,3 +208,101 @@ def test_feedback_includes_prior_trajectory_when_export_has_it(tmp_path, monkeyp
     assert "prior_trajectory" in feedback
     assert "prompt: ask analyst to inspect duplicate config" in feedback
     assert "tool_result: backtest PF unchanged" in feedback
+
+
+def test_agent_scoped_feedback_uses_only_matching_agent_trajectory(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
+    payload = build_reflexio_payload(
+        research_round=1,
+        thesis_id="T1",
+        outcome="builder_failed",
+        family="ema",
+        reasoning="round needed code",
+        rejection_reason="generated config failed validation",
+    )
+    payload["trajectory"] = [
+        {
+            "agent": "analyst",
+            "action": "tool_result",
+            "summary": "missing /data/raw path probe wasted tokens",
+        },
+        {
+            "agent": "builder",
+            "action": "tool_result",
+            "summary": "runtime_config contained unsupported key new_config_keys_needed",
+        },
+        {
+            "agent": "web-researcher",
+            "action": "response",
+            "summary": "external evidence favored volatility expansion filters",
+        },
+    ]
+    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir.mkdir(parents=True)
+    (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    controller = SimpleNamespace(root=tmp_path)
+
+    builder_feedback = build_reflexion_feedback(controller, current_round=2, agent="builder")
+    analyst_feedback = build_reflexion_feedback(controller, current_round=2, agent="analyst")
+
+    assert "PRIOR AGENT REFLEXION (round 1, agent builder)" in builder_feedback
+    assert "unsupported key new_config_keys_needed" in builder_feedback
+    assert "missing /data/raw" not in builder_feedback
+    assert "volatility expansion" not in builder_feedback
+
+    assert "PRIOR AGENT REFLEXION (round 1, agent analyst)" in analyst_feedback
+    assert "missing /data/raw path probe" in analyst_feedback
+    assert "new_config_keys_needed" not in analyst_feedback
+
+
+def test_agent_scoped_feedback_returns_empty_when_no_matching_agent(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
+    payload = build_reflexio_payload(
+        research_round=1,
+        thesis_id="T1",
+        outcome="ok",
+        family="ema",
+    )
+    payload["trajectory"] = [
+        {"agent": "builder", "action": "response", "summary": "builder lesson only"}
+    ]
+    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir.mkdir(parents=True)
+    (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    controller = SimpleNamespace(root=tmp_path)
+
+    assert build_reflexion_feedback(controller, current_round=2, agent="web-researcher") == ""
+
+
+def test_latest_reflexion_feedback_reads_newest_round_for_builder(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
+    old_payload = build_reflexio_payload(
+        research_round=1,
+        thesis_id="old",
+        outcome="failed",
+        family="ema",
+    )
+    old_payload["trajectory"] = [
+        {"agent": "builder", "action": "tool_result", "summary": "old builder lesson"}
+    ]
+    new_payload = build_reflexio_payload(
+        research_round=3,
+        thesis_id="new",
+        outcome="failed",
+        family="ema",
+    )
+    new_payload["trajectory"] = [
+        {"agent": "builder", "action": "tool_result", "summary": "new builder lesson"}
+    ]
+    for round_id, thesis_id, payload in ((1, "old", old_payload), (3, "new", new_payload)):
+        target_dir = tmp_path / "trace_exports" / f"round-{round_id:03d}-{thesis_id}" / "reflexio"
+        target_dir.mkdir(parents=True)
+        (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    feedback = build_latest_reflexion_feedback(tmp_path, agent="builder")
+
+    assert "PRIOR AGENT REFLEXION (round 3, agent builder)" in feedback
+    assert "new builder lesson" in feedback
+    assert "old builder lesson" not in feedback

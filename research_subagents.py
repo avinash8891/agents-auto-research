@@ -254,6 +254,7 @@ async def _call_analyst(
     strategy_events_file: str = "",
     diagnostics_file: str = "",
     family_name: str = "",
+    reflexion_feedback: str = "",
 ) -> str:
     from agents import Agent as OAIAgent
     from agents import RunConfig as OAIRunConfig
@@ -537,6 +538,13 @@ Be brutally honest."""
         user_parts.append(f"STRATEGY EVENTS FILE: {strategy_events_file}")
     if diagnostics_file:
         user_parts.append(f"DIAGNOSTICS FILE: {diagnostics_file}")
+    if reflexion_feedback:
+        user_parts.append(
+            "AGENT REFLEXION FEEDBACK FROM THE PRIOR ROUND:\n"
+            f"{reflexion_feedback}\n"
+            "Apply this lesson only if it is relevant to the focus question. Do not repeat "
+            "the same tool/path/prompt failure."
+        )
     user_parts.append(
         "Load artifacts using read_artifact/read_strategy_source and perform analysis using run_python."
         " Start with diagnostics.json if available for an overview."
@@ -619,7 +627,7 @@ Be brutally honest."""
         return f"ANALYST ERROR: {exc}"
 
 
-async def _call_web_researcher(query: str, context: str) -> str:
+async def _call_web_researcher(query: str, context: str, reflexion_feedback: str = "") -> str:
     web_prompt = """You are a research agent specializing in quantitative trading strategies.
 Your ONLY job is to find and report external evidence for the specific question asked.
 
@@ -645,6 +653,12 @@ Return a JSON object:
 Return ONLY the JSON object."""
 
     user_prompt = f"RESEARCH QUESTION: {query}\n\nCONTEXT: {context}"
+    if reflexion_feedback:
+        user_prompt += (
+            "\n\nAGENT REFLEXION FEEDBACK FROM THE PRIOR ROUND:\n"
+            f"{reflexion_feedback}\n"
+            "Apply this lesson to improve source selection and specificity."
+        )
     trace_id = trace_agent_prompt(
         "web-researcher",
         user_prompt,

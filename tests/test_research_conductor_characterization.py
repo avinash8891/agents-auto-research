@@ -851,6 +851,9 @@ def test_call_web_researcher_uses_codex_cli_web_search(monkeypatch):
 
     result = asyncio.run(subagents._call_web_researcher("prompt", "context"))
 
+    parsed = json.loads(result)
+    assert parsed["summary"] == "codex cli text extraction works"
+    assert parsed["findings"][0]["finding"] == "codex CLI web search returned valid JSON"
     assert "RESEARCH QUESTION: prompt" in captured["prompt"]
     assert "CONTEXT: context" in captured["prompt"]
     assert "Run targeted web searches" in captured["instructions"]
@@ -874,9 +877,36 @@ def test_call_web_researcher_uses_codex_cli_web_search(monkeypatch):
         data for _component, message, data in traces if message == "web_search OK"
     )
     assert structured_success == {"findings": 1}
-    parsed = json.loads(result)
-    assert parsed["summary"] == "codex cli text extraction works"
-    assert parsed["findings"][0]["finding"] == "codex CLI web search returned valid JSON"
+
+
+def test_call_web_researcher_includes_agent_reflexion_feedback(monkeypatch):
+    monkeypatch.setattr(subagents, "trace_agent_response", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        subagents,
+        "trace_agent_prompt",
+        lambda agent, prompt, system_prompt, **kwargs: "web-trace-id",
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_run_codex_web_research(prompt, *, instructions, model):
+        captured["prompt"] = prompt
+        captured["instructions"] = instructions
+        return (json.dumps({"findings": [], "summary": "ok"}), {"exit_code": 0})
+
+    monkeypatch.setattr(subagents, "run_codex_web_research", fake_run_codex_web_research)
+
+    result = asyncio.run(
+        subagents._call_web_researcher(
+            "prompt",
+            "context",
+            reflexion_feedback="prior web search used weak blog sources; prefer papers",
+        )
+    )
+
+    assert json.loads(result)["summary"] == "ok"
+    assert "AGENT REFLEXION FEEDBACK" in captured["prompt"]
+    assert "prior web search used weak blog sources" in captured["prompt"]
 
 
 def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
@@ -961,6 +991,67 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
         "read_strategy_source",
         "run_python",
     ]
+
+
+def test_analyst_prompt_includes_agent_reflexion_feedback(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+
+    def fake_trace_agent_prompt(agent_name, prompt, system_prompt="", **kwargs):
+        captured["agent_name"] = agent_name
+        captured["prompt"] = prompt
+        captured["system_prompt"] = system_prompt
+        return "analyst-trace-id"
+
+    monkeypatch.setattr(subagents, "trace_agent_prompt", fake_trace_agent_prompt)
+    monkeypatch.setattr(subagents, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(subagents, "_get_openai_client", lambda *_: object())
+
+    class FakeResult:
+        async def stream_events(self):
+            if False:
+                yield None
+
+        def final_output_as(self, _type):
+            return json.dumps(
+                {
+                    "focus_answer": "ok",
+                    "key_anomalies": [],
+                    "rejection_insights": [],
+                    "overall_diagnosis": "ok",
+                    "discovery_questions": [],
+                }
+            )
+
+    class FakeRunner:
+        @staticmethod
+        def run_streamed(*args, **kwargs):
+            return FakeResult()
+
+    monkeypatch.setitem(sys.modules, "agents", ModuleType("agents"))
+    agents_mod = sys.modules["agents"]
+    agents_mod.Agent = lambda **kwargs: SimpleNamespace(**kwargs)
+    agents_mod.RunConfig = lambda **kwargs: SimpleNamespace(**kwargs)
+    agents_mod.Runner = FakeRunner
+    agents_mod.function_tool = lambda fn: fn
+    models_mod = ModuleType("agents.models.openai_chatcompletions")
+    models_mod.OpenAIChatCompletionsModel = lambda **kwargs: SimpleNamespace(**kwargs)
+    monkeypatch.setitem(sys.modules, "agents.models", ModuleType("agents.models"))
+    monkeypatch.setitem(sys.modules, "agents.models.openai_chatcompletions", models_mod)
+
+    result = asyncio.run(
+        subagents._call_analyst(
+            str(tmp_path / "trades.csv"),
+            "check opening regime",
+            strategy_events_file=str(tmp_path / "events.parquet"),
+            diagnostics_file=str(tmp_path / "diagnostics.json"),
+            family_name="ema",
+            reflexion_feedback="prior analyst probed missing data paths; use manifest only",
+        )
+    )
+
+    assert json.loads(result)["overall_diagnosis"] == "ok"
+    assert "AGENT REFLEXION FEEDBACK" in captured["prompt"]
+    assert "prior analyst probed missing data paths" in captured["prompt"]
 
 
 def test_analysis_manifest_discovers_strategy_sources_by_family() -> None:
@@ -1663,7 +1754,6 @@ def test_list_experiment_results_reaches_latest_and_best_beyond_prompt_cap(tmp_p
                 usage={"total": {"total_tokens": idx}},
             )
         )
-
     latest = json.loads(
         memory.list_experiment_results(tmp_path, job_id=20, order="latest", limit=3)
     )

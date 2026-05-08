@@ -9,6 +9,7 @@ when off, when no prior round exists, or when the export is unreadable.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -20,20 +21,61 @@ log = get_logger(__name__)
 # Glob shape matches what `_write_adapter_exports` writes:
 #   trace_exports/round-{N:03d}-{thesis_id}/reflexio/reflexio-event.json
 EXPORT_GLOB = "trace_exports/round-{round_str}-*/reflexio/reflexio-event.json"
+LATEST_EXPORT_GLOB = "trace_exports/round-*-*/reflexio/reflexio-event.json"
 
 
-def _format_preamble(payload: dict[str, Any], current_round: int) -> str:
+AGENT_ALIASES: dict[str, set[str]] = {
+    "analyst": {"analyst", "codex-diagnostic-analyst"},
+    "builder": {"builder", "compiler-builder", "codex-builder"},
+    "conductor": {"conductor", "research-conductor"},
+    "web-researcher": {"web-researcher", "web_researcher", "research-agent"},
+}
+
+
+def _normalized_agent(agent: str) -> str:
+    return agent.strip().lower().replace("_", "-")
+
+
+def _agent_matches(value: str, wanted: str) -> bool:
+    normalized_wanted = _normalized_agent(wanted)
+    aliases = AGENT_ALIASES.get(normalized_wanted, {normalized_wanted})
+    return _normalized_agent(value) in aliases
+
+
+def _trajectory_for_agent(trajectory: list[Any], agent: str) -> list[dict[str, Any]]:
+    scoped: list[dict[str, Any]] = []
+    for item in trajectory:
+        if not isinstance(item, dict):
+            continue
+        if _agent_matches(str(item.get("agent") or ""), agent):
+            scoped.append(item)
+    return scoped
+
+
+def _format_preamble(
+    payload: dict[str, Any],
+    current_round: int | None,
+    *,
+    agent: str | None = None,
+    source_round: int | None = None,
+) -> str:
     episode = payload.get("episode") or {}
     reflection = payload.get("reflection") or {}
     trajectory = payload.get("trajectory") if isinstance(payload.get("trajectory"), list) else []
+    if agent is not None:
+        trajectory = _trajectory_for_agent(trajectory, agent)
+        if not trajectory:
+            return ""
     outcome = episode.get("outcome", "?")
     reasoning = (reflection.get("reasoning") or "").strip()
     rejection_reason = (reflection.get("rejection_reason") or "").strip()
-    prev_round = current_round - 1
-    body_lines = [
-        f"PRIOR ROUND REFLEXION (round {prev_round}):",
-        f"  outcome: {outcome}",
-    ]
+    prev_round = source_round if source_round is not None else int(current_round or 1) - 1
+    title = (
+        f"PRIOR AGENT REFLEXION (round {prev_round}, agent {agent})"
+        if agent is not None
+        else f"PRIOR ROUND REFLEXION (round {prev_round})"
+    )
+    body_lines = [f"{title}:", f"  outcome: {outcome}"]
     if reasoning:
         body_lines.append(f"  you_reasoned: {reasoning}")
     if rejection_reason:
@@ -51,7 +93,7 @@ def _format_preamble(payload: dict[str, Any], current_round: int) -> str:
     return "\n".join(body_lines)
 
 
-def build_reflexion_feedback(controller, current_round: int) -> str:
+def build_reflexion_feedback(controller, current_round: int, *, agent: str | None = None) -> str:
     """Return the prior-round reflexion preamble, or empty string.
 
     ``controller`` is duck-typed: only ``controller.root: Path`` is
@@ -93,4 +135,45 @@ def build_reflexion_feedback(controller, current_round: int) -> str:
             f"Action: regenerate the export."
         )
         return ""
-    return _format_preamble(payload, current_round)
+    return _format_preamble(payload, current_round, agent=agent)
+
+
+def build_latest_reflexion_feedback(root: str | Path, *, agent: str | None = None) -> str:
+    """Return the newest available reflexion preamble for long-running side agents.
+
+    Builder runs outside the conductor call and often only has repo root plus
+    thesis_id. It still needs Reflexion memory, so this reads the latest
+    reflexio export by round number and scopes it to the requested agent.
+    """
+    if not reflexion_enabled():
+        return ""
+    controller_root = Path(root)
+    matches = sorted(
+        controller_root.glob(LATEST_EXPORT_GLOB),
+        key=lambda p: (_round_from_export_path(p), p.stat().st_mtime),
+        reverse=True,
+    )
+    if not matches:
+        return ""
+    chosen = matches[0]
+    try:
+        payload = json.loads(chosen.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        log.error(
+            f"REFLEXION failed to read latest export {chosen}: {type(exc).__name__}: {exc}. "
+            f"Action: inspect the file or delete it; returning empty feedback."
+        )
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    return _format_preamble(
+        payload,
+        current_round=None,
+        agent=agent,
+        source_round=_round_from_export_path(chosen),
+    )
+
+
+def _round_from_export_path(path: Path) -> int:
+    match = re.search(r"round-(\d+)-", path.as_posix())
+    return int(match.group(1)) if match else -1

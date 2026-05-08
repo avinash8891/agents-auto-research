@@ -511,6 +511,68 @@ def test_build_missing_primitives_returns_error_when_no_cli(
     }
 
 
+def test_build_missing_primitives_includes_builder_reflexion_feedback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_IMPROVEMENT_REFLEXION", "1")
+    family = load_family("ema")
+    thesis_id = "ema_reflexion_builder"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"thesis_id": thesis_id, "strategy_family": "ema"}) + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"normalized_contract": [], "missing_primitives": ["open_delay"]}) + "\n"
+    )
+    reflexio_dir = tmp_path / "trace_exports" / "round-003-prior" / "reflexio"
+    reflexio_dir.mkdir(parents=True)
+    (reflexio_dir / "reflexio-event.json").write_text(
+        json.dumps(
+            {
+                "system": "reflexio",
+                "episode": {
+                    "round": 3,
+                    "family": "ema",
+                    "thesis_id": "prior",
+                    "outcome": "builder_failed",
+                },
+                "reflection": {
+                    "reasoning": "builder copied planning metadata into runtime config",
+                    "rejection_reason": "unsupported runtime key",
+                    "quality": {},
+                },
+                "trajectory": [
+                    {
+                        "agent": "builder",
+                        "action": "tool_result",
+                        "summary": "new_config_keys_needed leaked into runtime_config.json",
+                    },
+                    {
+                        "agent": "analyst",
+                        "action": "tool_result",
+                        "summary": "analyst path probe should not enter builder prompt",
+                    },
+                ],
+                "resources": {"usage": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: None)
+
+    build_missing_primitives(tmp_path, thesis_id)
+
+    prompt = (tmp_path / family.builder_requests_dirname / thesis_id / "prompt.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "PRIOR AGENT REFLEXION (round 3, agent builder)" in prompt
+    assert "new_config_keys_needed leaked into runtime_config.json" in prompt
+    assert "analyst path probe" not in prompt
+
+
 def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

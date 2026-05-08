@@ -190,9 +190,9 @@ def test_rejection_feedback_appended_to_user_prompt(monkeypatch):
         rejection_feedback="thesis_id must not repeat a past thesis",
     )
 
-    assert "YOUR PREVIOUS THESIS WAS REJECTED BY THE VALIDATOR" in captured["input"]
+    assert "FEEDBACK TO APPLY BEFORE PROPOSING" in captured["input"]
     assert "thesis_id must not repeat a past thesis" in captured["input"]
-    assert "Propose a DIFFERENT thesis" in captured["input"]
+    assert "Propose a thesis that addresses this feedback" in captured["input"]
 
 
 # ── final_output_as path ──────────────────────────────────────────────────────

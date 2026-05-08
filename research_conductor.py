@@ -72,6 +72,7 @@ async def run_research_conductor(
     strategy_events_file: str = "",
     diagnostics_file: str = "",
     rejection_feedback: str = "",
+    agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
 ) -> dict[str, Any] | None:
     strategy_desc = _strategy_description_for(family_name)
@@ -121,9 +122,9 @@ async def run_research_conductor(
 
     if rejection_feedback:
         user_prompt += (
-            f"\n\nYOUR PREVIOUS THESIS WAS REJECTED BY THE VALIDATOR:\n"
+            f"\n\nFEEDBACK TO APPLY BEFORE PROPOSING:\n"
             f"{rejection_feedback}\n\n"
-            f"Propose a DIFFERENT thesis that avoids this issue. "
+            f"Propose a thesis that addresses this feedback. "
             f"Read the source code to understand what the strategy does."
         )
 
@@ -177,6 +178,7 @@ async def run_research_conductor(
                     strategy_events_file=strategy_events_file,
                     diagnostics_file=diagnostics_file,
                     family_name=family_name,
+                    reflexion_feedback=(agent_reflexions or {}).get("analyst", ""),
                 )
             trace_agent_tool_result(
                 "research-conductor",
@@ -203,7 +205,11 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-            output = await _call_web_researcher(query, context)
+            output = await _call_web_researcher(
+                query,
+                context,
+                reflexion_feedback=(agent_reflexions or {}).get("web-researcher", ""),
+            )
             trace_agent_tool_result(
                 "research-conductor",
                 trace_id,
@@ -735,6 +741,7 @@ def run_research_conductor_sync(
     strategy_events_file: str = "",
     diagnostics_file: str = "",
     rejection_feedback: str = "",
+    agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
 ) -> dict[str, Any] | None:
     return _run_coroutine_sync(
@@ -747,6 +754,7 @@ def run_research_conductor_sync(
             strategy_events_file=strategy_events_file,
             diagnostics_file=diagnostics_file,
             rejection_feedback=rejection_feedback,
+            agent_reflexions=agent_reflexions,
             current_job=current_job,
         )
     )

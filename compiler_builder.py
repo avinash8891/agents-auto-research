@@ -13,6 +13,7 @@ from typing import Any
 from artifact_io import timestamp_now, write_json_artifact
 from autoresearch_logging import get_logger
 from compiler_implementation_verify import verify_builder_implementation_contract
+from improvement_reflexion import build_latest_reflexion_feedback
 from persistence_utils import write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import load_family
@@ -548,6 +549,16 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
     )
 
     config_abspath = root / config_path
+    prompt_extras = []
+    builder_reflexion = build_latest_reflexion_feedback(root, agent="builder")
+    if builder_reflexion:
+        prompt_extras.extend(
+            [
+                "AGENT REFLEXION FEEDBACK FROM PRIOR BUILDER ATTEMPTS:",
+                builder_reflexion,
+                "Apply this only to avoid repeated builder failure modes; the thesis artifacts remain the source of truth.",
+            ]
+        )
     prompt = _build_builder_prompt(
         thesis_id=thesis_id,
         root=root,
@@ -557,7 +568,7 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
         family_name=family_name,
         base_config_path=base_config_path,
         missing_primitives=missing_primitives,
-        prompt_extras=[],
+        prompt_extras=prompt_extras,
     )
     cli = _find_cli()
     if cli:

@@ -736,7 +736,8 @@ def _call_conductor(
     latest_outcome: dict[str, Any],
     family_name: str,
     rejection_feedback: str,
-    current_job: int | None,
+    agent_reflexions: dict[str, str] | None = None,
+    current_job: int | None = None,
 ) -> dict[str, Any] | None:
     """One conductor HTTP/SDK call with the per-attempt log preamble."""
     from research_conductor import run_research_conductor_sync
@@ -764,6 +765,7 @@ def _call_conductor(
         strategy_events_file=strategy_events_file,
         diagnostics_file=diagnostics_file,
         rejection_feedback=rejection_feedback,
+        agent_reflexions=agent_reflexions,
         current_job=current_job,
     )
 
@@ -803,10 +805,16 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     from improvement_flags import reflexion_enabled
 
     rejection_feedback = ""
+    agent_reflexions: dict[str, str] = {}
     if reflexion_enabled():
         from improvement_reflexion import build_reflexion_feedback
 
-        rejection_feedback = build_reflexion_feedback(controller, research_round)
+        rejection_feedback = build_reflexion_feedback(controller, research_round, agent="conductor")
+        agent_reflexions = {
+            agent: feedback
+            for agent in ("analyst", "web-researcher")
+            if (feedback := build_reflexion_feedback(controller, research_round, agent=agent))
+        }
     parsed: dict[str, Any] | None = None
     for attempt in range(MAX_VALIDATION_RETRIES):
         parsed = _call_conductor(
@@ -819,6 +827,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             latest_outcome=latest_outcome,
             family_name=controller.family.name,
             rejection_feedback=rejection_feedback,
+            agent_reflexions=agent_reflexions,
             current_job=current_job,
         )
         terminal = _check_parsed_for_terminal(parsed)
