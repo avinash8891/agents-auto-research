@@ -308,7 +308,7 @@ def normalize_controller_launch_state(
             )
         if job < 1:
             job = 1
-    elif not resume_manual_review:
+    else:
         # Fresh jobs start from the next job number so new launches stay
         # distinguishable from earlier runs in traces and experiment rows.
         job += 1
@@ -337,11 +337,9 @@ def normalize_controller_launch_state(
             job,
         )
 
-    # Fresh jobs start from a clean controller state. Manual-review restarts
-    # preserve the pending thesis metadata and job-scoped counters so the same
-    # run can continue natively on the latest code.
-    if resume_manual_review:
-        return _running_resume_state(prior_state, job, preserve_resume_metadata=True), job
+    # Fresh jobs start from a clean controller state. Manual review and other
+    # blocked states resume only through --resume-current-job so VPS deploys
+    # without that flag cannot silently continue an old job.
     state = {
         "state": "running",
         "job": job,

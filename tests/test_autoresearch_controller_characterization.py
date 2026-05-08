@@ -2291,7 +2291,7 @@ def test_main_resume_current_job_tolerates_malformed_heartbeat(monkeypatch, tmp_
     assert captured["executed_state"]["heartbeat"] == {}
 
 
-def test_main_reuses_job_and_preserves_manual_review_history_when_restarting_from_manual_review(
+def test_main_starts_new_job_when_prior_state_is_manual_review_without_resume_flag(
     monkeypatch, tmp_path
 ):
     family = load_family("ema")
@@ -2350,6 +2350,81 @@ def test_main_reuses_job_and_preserves_manual_review_history_when_restarting_fro
     monkeypatch.setattr("trace_sdk.set_family", lambda *args, **kwargs: None)
     monkeypatch.setattr(loop_mod, "trace", lambda *args, **kwargs: None)
     monkeypatch.setattr(sys, "argv", ["autoresearch_controller.py", "--family", "ema"])
+
+    assert loop_mod.main() == 1
+    written = captured["written_state"]
+    assert written == {
+        "state": "running",
+        "job": 10,
+        "research_round": 0,
+        "job_usage": None,
+        "heartbeat": {},
+        "halted_reason": "requires_code_change",
+        "halted_thesis_id": "thesis-456",
+        "halted_thesis": {"thesis_id": "thesis-456", "config_changes": {"ema_length": 13}},
+    }
+    assert "next_action" not in written
+
+
+def test_main_resume_current_job_preserves_manual_review_history(monkeypatch, tmp_path):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    captured: dict[str, dict] = {}
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.calls = 0
+            self.state = {
+                "state": "blocked",
+                "job": 9,
+                "research_round": 2,
+                "job_usage": {"input_tokens": 123, "output_tokens": 456, "total_tokens": 579},
+                "heartbeat": {"last_completed_thesis": "stale"},
+                "halted_reason": "requires_code_change",
+                "halted_thesis_id": "thesis-456",
+                "halted_thesis": {"thesis_id": "thesis-456", "config_changes": {"ema_length": 13}},
+                "manual_review_theses": [
+                    {
+                        "thesis_id": "thesis-456",
+                        "round": 2,
+                        "builder_result": {"status": "error", "reason": "timeout"},
+                    }
+                ],
+                "next_action": {"type": "manual_review"},
+            }
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            self.state = dict(state)
+            captured["written_state"] = dict(state)
+
+        def execute_once(self):
+            self.calls += 1
+            self.state = {"state": "blocked"}
+            return 0
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr("trace_sdk.get_log_file", lambda: "test.log")
+    monkeypatch.setattr("trace_sdk.get_session_id", lambda: "session-1")
+    monkeypatch.setattr("trace_sdk.set_family", lambda *args, **kwargs: None)
+    monkeypatch.setattr(loop_mod, "trace", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        sys, "argv", ["autoresearch_controller.py", "--family", "ema", "--resume-current-job"]
+    )
 
     assert loop_mod.main() == 1
     written = captured["written_state"]
