@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,12 +32,10 @@ def resolve_research_resolution_context(
     runtime = runtime_config or {}
     for key in spec.resolution_config_keys:
         value = runtime.get(key)
-        try:
-            minutes = int(value)
-        except (TypeError, ValueError):
+        minutes = _coerce_positive_resolution_minutes(value)
+        if minutes is None:
             continue
-        if minutes > 0:
-            resolved_minutes_by_key[key] = minutes
+        resolved_minutes_by_key[key] = minutes
 
     minimum_supported = min(resolved_minutes_by_key.values()) if resolved_minutes_by_key else None
     return {
@@ -44,6 +43,18 @@ def resolve_research_resolution_context(
         "resolved_minutes_by_key": resolved_minutes_by_key,
         "minimum_supported_time_bucket_minutes": minimum_supported,
     }
+
+
+def _coerce_positive_resolution_minutes(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if re.fullmatch(r"[1-9][0-9]*", stripped):
+            return int(stripped)
+    return None
 
 
 def validate_family_config_changes(family_name: str, thesis: dict[str, Any]) -> dict[str, Any]:

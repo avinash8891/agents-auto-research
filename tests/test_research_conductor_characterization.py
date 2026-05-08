@@ -609,6 +609,18 @@ def test_resolve_research_resolution_context_uses_runtime_minutes() -> None:
     assert context["minimum_supported_time_bucket_minutes"] == 5
 
 
+def test_resolve_research_resolution_context_ignores_float_and_bool_values() -> None:
+    from family_research_spec import resolve_research_resolution_context
+
+    context = resolve_research_resolution_context(
+        "ema",
+        {"timeframe_short": 5.9, "timeframe_long": True},
+    )
+
+    assert context["resolved_minutes_by_key"] == {}
+    assert context["minimum_supported_time_bucket_minutes"] is None
+
+
 def test_save_research_finding_rejects_bad_type(monkeypatch):
     tracked: dict[str, object] = {}
 

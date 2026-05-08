@@ -275,15 +275,17 @@ def load_baseline_config(root: Path, family: StrategyFamily) -> dict[str, Any] |
 def _resolve_runtime_config_for_record(
     controller: "AutoresearchController", latest: ExperimentRecord
 ) -> dict[str, Any]:
-    latest_config = controller.ctx.latest_config_contents
-    if latest_config:
-        return dict(latest_config)
     config_path = Path(latest.config)
     if not config_path.is_absolute():
         config_path = controller.root / config_path
     try:
         return load_runtime_config(str(config_path), controller.family.name)
-    except Exception:
+    except Exception as exc:
+        trace(
+            "LOOP",
+            f"runtime_config_resolution_failed path={config_path} error={exc.__class__.__name__}",
+        )
+        log.warning("RUNTIME_CONFIG_RESOLUTION_FAILED path=%s error=%s", config_path, exc)
         return {}
 
 
