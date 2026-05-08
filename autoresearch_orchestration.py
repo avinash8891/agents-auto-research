@@ -31,7 +31,12 @@ DETERMINISTIC_BUILDER_ERROR_CODES = frozenset(
         "builder_unknown_strategy_family",
     }
 )
-RESEARCH_RETRY_BUILDER_ERROR_CODES = frozenset({"builder_config_validation_failed"})
+RESEARCH_RETRY_BUILDER_ERROR_CODES = frozenset(
+    {
+        "builder_config_validation_failed",
+        "builder_missing_primitive_contract",
+    }
+)
 
 
 def _activate_builder_config(

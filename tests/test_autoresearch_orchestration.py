@@ -36,6 +36,7 @@ def _make_controller(
     family = SimpleNamespace(
         name=family_name,
         base_config_filename=base_config_filename,
+        research_dirname=f"{family_name}_research",
         benchmark_command=benchmark_command or (lambda cfg: f"run {cfg}"),
     )
 
@@ -337,6 +338,46 @@ def test_build_missing_primitives_does_not_mark_invalid_completed_builder_as_com
     assert result["heartbeat"]["builder_status"] == "manual_review"
     assert result["heartbeat"]["blocked_builder_status"] == "manual_review"
     assert result["heartbeat"]["blocked_builder_result_status"] == "completed"
+
+
+def test_build_missing_primitives_routes_missing_primitive_contract_to_research_retry(
+    tmp_path, monkeypatch
+):
+    thesis_id = "needs_builder"
+    state = {
+        "state": "blocked",
+        "halted_reason": "requires_code_change",
+        "halted_thesis_id": thesis_id,
+        "halted_thesis": {"thesis_id": thesis_id},
+        "next_action": {"type": "research"},
+        "heartbeat": {},
+    }
+    ctrl = _make_controller(state=state, root=tmp_path)
+
+    def fake_build(root: Path, received_thesis_id: str, *, artifact_root=None) -> dict[str, Any]:
+        assert received_thesis_id == thesis_id
+        return {
+            "status": "error",
+            "error_code": "builder_missing_primitive_contract",
+            "reason": "Missing primitives: []",
+        }
+
+    monkeypatch.setattr("compiler_pipeline.build_missing_primitives", fake_build)
+
+    result = orch.build_missing_primitives_for_state(
+        ctrl,
+        state,
+        thesis_id,
+        {"thesis_id": thesis_id},
+        research_round=36,
+    )
+
+    assert result["state"] == "blocked"
+    assert result["next_action"]["type"] == "research"
+    assert result["next_action"]["reason_code"] == "research_retry_required"
+    assert result["blockers"][0]["kind"] == "research_retry_required"
+    assert result["heartbeat"]["builder_status"] == "research_retry_required"
+    assert result["heartbeat"]["blocked_error_code"] == "builder_missing_primitive_contract"
 
 
 def test_refresh_reflexio_export_after_builder_adds_builder_reflection(tmp_path):

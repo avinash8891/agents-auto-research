@@ -728,19 +728,20 @@ def _try_one_validation_attempt(
 
     raw_thesis = parsed["suggested_theses"][0]
     raw_thesis["strategy_family"] = controller.family.name
-    if raw_thesis.get("requires_code_change") and not raw_thesis.get("requested_primitives"):
-        operationalized = operationalize_thesis(dict(raw_thesis))
-        missing = operationalized.get("missing_primitives") or []
-        if missing and not operationalized.get("requested_primitives"):
-            operationalized["requested_primitives"] = missing
-        raw_thesis = operationalized
     thesis_id = raw_thesis.get("thesis_id", "unknown")
-    log.info(
-        f"RESEARCH_RAW thesis_id={thesis_id} "
-        f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
-    )
 
     try:
+        if raw_thesis.get("requires_code_change") and not raw_thesis.get("requested_primitives"):
+            operationalized = operationalize_thesis(dict(raw_thesis))
+            missing = operationalized.get("missing_primitives") or []
+            if missing and not operationalized.get("requested_primitives"):
+                operationalized["requested_primitives"] = missing
+            raw_thesis = operationalized
+        thesis_id = raw_thesis.get("thesis_id", "unknown")
+        log.info(
+            f"RESEARCH_RAW thesis_id={thesis_id} "
+            f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
+        )
         validated = validate_thesis_dict(raw_thesis, prior_theses=prior_theses)
         contract = compile_research_thesis(
             validated, controller.root, artifact_root=controller.job_runtime_root

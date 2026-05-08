@@ -413,3 +413,62 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
     assert captured["validated_raw"]["config_changes"] == {  # type: ignore[index]
         "opening_range_resolution_gate_enabled": True
     }
+
+
+def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_feedback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class _Controller:
+        root = tmp_path
+        job_runtime_root = tmp_path
+        family = type("Family", (), {"name": "ema"})()
+        rejected: list[tuple[str, str]] = []
+
+        def log_research_round(self, *args, **kwargs):
+            self.rejected.append((args, kwargs))
+
+    def fake_operationalize(thesis):
+        raise ValueError("missing_primitives must be a list of strings")
+
+    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
+
+    result, retry_feedback = _try_one_validation_attempt(
+        _Controller(),
+        2,
+        0,
+        {
+            "reasoning": "code change thesis",
+            "suggested_theses": [
+                {
+                    "thesis_id": "opening_range_gate",
+                    "hypothesis": "need a new opening range gate",
+                    "mechanism": "gate post-open entries on opening range resolution",
+                    "mechanism_dimension": "signal_quality",
+                    "dimension_novelty": "new gate",
+                    "expected_effects": [
+                        {
+                            "metric": "profit_factor",
+                            "direction": "increase",
+                            "rationale": "better quality",
+                        }
+                    ],
+                    "disqualifiers": [
+                        {
+                            "name": "trade_count_collapse",
+                            "condition": "trade_count falls too much",
+                            "severity": "hard_fail",
+                        }
+                    ],
+                    "requires_code_change": True,
+                    "requested_primitives": [],
+                }
+            ],
+            "should_stop": False,
+        },
+        prior_theses=[],
+    )
+
+    assert result is None
+    assert retry_feedback is not None
+    assert "rejected by validator" in retry_feedback
+    assert "missing_primitives must be a list of strings" in retry_feedback
