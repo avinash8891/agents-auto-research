@@ -27,6 +27,28 @@ def _load_trace_sdk(monkeypatch, tmp_path: Path):
     return importlib.reload(module)
 
 
+def test_trace_sdk_transaction_mode_skips_provider_initialization(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_TRACE_MODE", "transaction")
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+    built = {"count": 0}
+
+    def fake_build_provider():
+        built["count"] += 1
+        return object()
+
+    monkeypatch.setattr(trace_sdk, "_build_provider", fake_build_provider)
+    trace_sdk._INITIALIZED = False
+    trace_sdk._PROVIDER = None
+
+    trace_sdk._initialize_tracing()
+
+    assert built["count"] == 0
+    assert trace_sdk._PROVIDER is None
+    assert trace_sdk._INITIALIZED is True
+
+
 def test_trace_sdk_uses_openai_agents_not_openai_sdk_instrumentation(
     monkeypatch, tmp_path: Path
 ) -> None:

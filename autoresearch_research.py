@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from pydantic import ValidationError
 
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
@@ -1299,7 +1300,7 @@ def _handle_needs_code(
             prior_theses=None,
             allow_schema_only_code_change_fallback=True,
         )
-    except Exception as exc:
+    except (ValidationError, ValueError) as exc:
         log.warning(
             "LOOP_HALT thesis=%s validation failed; skipping compile: %s",
             thesis_id,

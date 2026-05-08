@@ -504,10 +504,10 @@ def _initialize_tracing() -> None:
     global _PROVIDER, _INITIALIZED
     if _INITIALIZED:
         return
-    _PROVIDER = _build_provider()
     if os.getenv(ENV_TRACE_MODE) == TRACE_MODE_TRANSACTION:
         _INITIALIZED = True
         return
+    _PROVIDER = _build_provider()
     if os.getenv("PYTEST_CURRENT_TEST"):
         _INITIALIZED = True
         return

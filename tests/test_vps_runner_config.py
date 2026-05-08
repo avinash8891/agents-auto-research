@@ -14,6 +14,7 @@ from vps_runner import (
     _localize_remote_result_output,
     _sftp_mkdir_p,
     _should_skip_git_prepare,
+    _stream_remote_prepare_command,
     build_activity_probe_command,
     build_git_prepare_command,
     build_git_status_command,
@@ -423,6 +424,70 @@ def test_activity_probe_command_targets_family_state_and_process() -> None:
     assert "research_round_in_progress" in command
     assert "builder_running" in command
     assert "run_experiment" in command
+    assert "controller_process_running_without_active_state" in command
+    assert "state_error" in command
+
+
+class _FakePrepareChannel:
+    def __init__(self, stdout_chunks, stderr_chunks, *, exit_ready=True):
+        self._stdout_chunks = list(stdout_chunks)
+        self._stderr_chunks = list(stderr_chunks)
+        self._exit_ready = exit_ready
+        self.closed = False
+
+    def recv_ready(self) -> bool:
+        return bool(self._stdout_chunks)
+
+    def recv(self, _size: int) -> bytes:
+        if not self._stdout_chunks:
+            return b""
+        return self._stdout_chunks.pop(0)
+
+    def recv_stderr_ready(self) -> bool:
+        return bool(self._stderr_chunks)
+
+    def recv_stderr(self, _size: int) -> bytes:
+        if not self._stderr_chunks:
+            return b""
+        return self._stderr_chunks.pop(0)
+
+    def exit_status_ready(self) -> bool:
+        return self._exit_ready and not self._stdout_chunks and not self._stderr_chunks
+
+    def recv_exit_status(self) -> int:
+        return 0
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakePrepareFile:
+    def __init__(self, channel: _FakePrepareChannel):
+        self.channel = channel
+
+
+def test_stream_remote_prepare_command_forced_close_returns_failure_code(monkeypatch) -> None:
+    channel = _FakePrepareChannel(
+        [b'AUTORESEARCH_PREPARE_RESULT {"ok": true}\n'],
+        [],
+        exit_ready=False,
+    )
+    stdout = _FakePrepareFile(channel)
+    stderr = _FakePrepareFile(channel)
+    times = iter([100.0, 101.0])
+    monkeypatch.setattr("vps_runner.time.time", lambda: next(times))
+
+    exit_code, out, err, forced_close = _stream_remote_prepare_command(
+        stdout,
+        stderr,
+        linger_after_success_seconds=0.5,
+    )
+
+    assert forced_close is True
+    assert channel.closed is True
+    assert exit_code == 124
+    assert "AUTORESEARCH_PREPARE_RESULT" in out
+    assert "did not exit within grace period" in err
 
 
 def test_vps_runner_parser_accepts_explicit_fresh_job_mode() -> None:

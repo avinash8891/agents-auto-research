@@ -369,11 +369,16 @@ def build_activity_probe_command(config: VPSConfig, family: StrategyFamily) -> s
         "    'research_round_in_progress': None,\n"
         "    'next_action_type': None,\n"
         "    'builder_thesis_id': None,\n"
+        "    'state_error': '',\n"
         "}\n"
         "state = {}\n"
         "if state_path.exists():\n"
-        "    raw = state_path.read_text()\n"
-        "    state = json.loads(raw) if raw.strip() else {}\n"
+        "    try:\n"
+        "        raw = state_path.read_text()\n"
+        "        state = json.loads(raw) if raw.strip() else {}\n"
+        "    except (OSError, json.JSONDecodeError) as exc:\n"
+        "        payload['state_error'] = str(exc)\n"
+        "        state = {}\n"
         "    payload['state'] = state.get('state')\n"
         "    payload['job'] = state.get('job')\n"
         "    payload['research_round'] = state.get('research_round')\n"
@@ -389,7 +394,7 @@ def build_activity_probe_command(config: VPSConfig, family: StrategyFamily) -> s
         "    payload['state_active'] = bool(state_active)\n"
         f"proc = subprocess.run(['pgrep', '-af', 'autoresearch_controller.py --family {family.name}'], capture_output=True, text=True, check=False)\n"
         "payload['process_running'] = proc.returncode == 0\n"
-        "if payload['state_active'] and payload['process_running']:\n"
+        "if payload['process_running'] and payload['state_active']:\n"
         "    payload['active'] = True\n"
         "    if state.get('research_round_in_progress'):\n"
         "        payload['reason'] = f\"research_round_in_progress={state.get('research_round_in_progress')}\"\n"
@@ -397,6 +402,9 @@ def build_activity_probe_command(config: VPSConfig, family: StrategyFamily) -> s
         "        payload['reason'] = f\"run_experiment config={next_action.get('config') or '?'}\"\n"
         "    else:\n"
         "        payload['reason'] = f\"builder_running thesis={payload['builder_thesis_id'] or '?'}\"\n"
+        "elif payload['process_running']:\n"
+        "    payload['active'] = True\n"
+        "    payload['reason'] = 'controller_process_running_without_active_state'\n"
         f"print({ACTIVE_RUN_MARKER!r} + ' ' + json.dumps(payload, sort_keys=True))\n"
         "PY"
     )
@@ -882,6 +890,7 @@ def _stream_remote_prepare_command(
 
         if (
             success_seen_at is not None
+            and linger_after_success_seconds >= 0
             and time.time() - success_seen_at >= linger_after_success_seconds
         ):
             forced_close = True
@@ -891,7 +900,13 @@ def _stream_remote_prepare_command(
         if not progressed:
             time.sleep(0.1)
 
-    exit_code = 0 if forced_close else channel.recv_exit_status()
+    if forced_close:
+        err_chunks.append(
+            "prepare command emitted success marker but did not exit within grace period"
+        )
+        exit_code = 124
+    else:
+        exit_code = channel.recv_exit_status()
     return exit_code, "".join(out_chunks), "".join(err_chunks), forced_close
 
 
