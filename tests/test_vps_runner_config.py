@@ -418,8 +418,9 @@ def test_activity_probe_command_targets_family_state_and_process() -> None:
 
     assert f"cd {shlex.quote(config.remote_dir)}" in command
     assert "state_path = pathlib.Path('ema' + '_autoresearch.next.json')" in command
-    assert "pgrep" in command
+    assert "ps', '-eo', 'command='" in command
     assert "autoresearch_controller.py --family ema" in command
+    assert "'pgrep -af' not in line" in command
     assert "AUTORESEARCH_ACTIVE_RUN" in command
     assert "research_round_in_progress" in command
     assert "builder_running" in command
