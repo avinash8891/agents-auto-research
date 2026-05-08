@@ -1745,14 +1745,26 @@ def test_resolve_conductor_inputs_uses_real_thesis_id_not_runtime_config_stem(
         },
         job=1,
     )
+    runtime_path = controller.root / latest.config
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_payload = json.loads(
+        (REPO_ROOT / "tests" / "fixtures" / "tiny_ema_runtime.json").read_text()
+    )
+    runtime_path.write_text(json.dumps(runtime_payload))
 
     _, _, _, latest_outcome = _resolve_conductor_inputs(controller, [latest])
 
     assert latest_outcome["thesis_id"] == "real_thesis_id"
     assert latest_outcome["metric"] == 2.34
     assert latest_outcome["decision"] == "discard"
+    assert latest_outcome["config_path"] == "experiments/real-thesis-id/runtime_config.json"
     assert latest_outcome["trade_count"] == 123
     assert latest_outcome["profit_factor"] == 2.34
+    assert latest_outcome["resolution_context"]["resolved_minutes_by_key"] == {
+        "timeframe_short": 5,
+        "timeframe_long": 15,
+    }
+    assert latest_outcome["resolution_context"]["minimum_supported_time_bucket_minutes"] == 5
 
 
 def test_resolve_conductor_inputs_passes_invalid_noop_feedback_to_conductor(

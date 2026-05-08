@@ -63,6 +63,32 @@ def _strategy_description_for(family_name: str) -> str:
     return description or f"Strategy family: {family_name}"
 
 
+def _render_resolution_context(resolution_context: dict[str, Any] | None) -> str:
+    context = resolution_context or {}
+    keys = context.get("resolution_config_keys") or []
+    resolved = context.get("resolved_minutes_by_key") or {}
+    minimum = context.get("minimum_supported_time_bucket_minutes")
+    lines = ["EXECUTION RESOLUTION CONTEXT:"]
+    if keys:
+        lines.append(f"- resolution_config_keys: {', '.join(str(key) for key in keys)}")
+    else:
+        lines.append("- resolution_config_keys: none declared")
+    if resolved:
+        for key, minutes in resolved.items():
+            lines.append(f"- {key}: {minutes} minute bars")
+    else:
+        lines.append("- resolved_minutes_by_key: unavailable")
+    if minimum:
+        lines.append(f"- minimum_supported_time_bucket_minutes: {minimum}")
+        lines.append(
+            f"- Treat {minimum}-minute bars as the finest executable time granularity "
+            "unless finer raw data is explicitly available."
+        )
+    else:
+        lines.append("- minimum_supported_time_bucket_minutes: unknown")
+    return "\n".join(lines)
+
+
 async def run_research_conductor(
     trades_file: str,
     experiment_results: str,
@@ -76,12 +102,14 @@ async def run_research_conductor(
     current_job: int | None = None,
 ) -> dict[str, Any] | None:
     strategy_desc = _strategy_description_for(family_name)
+    resolution_context = latest_outcome.get("resolution_context")
 
     system_prompt = _build_conductor_system_prompt(strategy_desc)
 
     outcome_lines = json.dumps(latest_outcome, indent=2) if latest_outcome else "(no results yet)"
     base_prompt = (
         f"Research round: {research_round}\n\n"
+        f"{_render_resolution_context(resolution_context)}\n\n"
         f"LATEST EXPERIMENT OUTCOME:\n{outcome_lines}\n\n"
         f"EXPERIMENT RESULTS SUMMARY:\n{experiment_results}\n\n"
     )
@@ -178,6 +206,7 @@ async def run_research_conductor(
                     strategy_events_file=strategy_events_file,
                     diagnostics_file=diagnostics_file,
                     family_name=family_name,
+                    resolution_context=resolution_context,
                     reflexion_feedback=(agent_reflexions or {}).get("analyst", ""),
                 )
             trace_agent_tool_result(

@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 from time import monotonic
+from typing import Any
 
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import _accumulate_usage
@@ -179,6 +180,29 @@ def _market_data_manifest(trades_file: str) -> str:
     return "\n".join(lines)
 
 
+def _render_analyst_resolution_context(resolution_context: dict[str, Any] | None) -> str:
+    context = resolution_context or {}
+    keys = context.get("resolution_config_keys") or []
+    resolved = context.get("resolved_minutes_by_key") or {}
+    minimum = context.get("minimum_supported_time_bucket_minutes")
+    lines = ["EXECUTION RESOLUTION CONTEXT:"]
+    if keys:
+        lines.append(f"- resolution_config_keys: {', '.join(str(key) for key in keys)}")
+    else:
+        lines.append("- resolution_config_keys: none declared")
+    if resolved:
+        for key, minutes in resolved.items():
+            lines.append(f"- {key}: {minutes} minute bars")
+    else:
+        lines.append("- resolved_minutes_by_key: unavailable")
+    lines.append(
+        f"- minimum_supported_time_bucket_minutes: {minimum}"
+        if minimum
+        else "- minimum_supported_time_bucket_minutes: unknown"
+    )
+    return "\n".join(lines)
+
+
 def _family_name_from_artifact_path(path: str) -> str:
     for part in Path(path).expanduser().parts:
         if part.endswith("_autoresearch-runs"):
@@ -289,6 +313,7 @@ async def _call_analyst(
     strategy_events_file: str = "",
     diagnostics_file: str = "",
     family_name: str = "",
+    resolution_context: dict[str, Any] | None = None,
     reflexion_feedback: str = "",
 ) -> str:
     from agents import Agent as OAIAgent
@@ -512,6 +537,7 @@ async def _call_analyst(
 {_analyst_data_root_guidance()}
 {_market_data_manifest(trades_file)}
 {manifest_prompt}
+{_render_analyst_resolution_context(resolution_context)}
    If no exact universe_path is resolved, do not use raw OHLCV or search for it.
 
 You MUST use ALL provided files. Trades alone show what happened;
@@ -563,6 +589,10 @@ CRITICAL RULES:
   a minimum sample size, explicitly state which buckets meet it.
 - If a join, field, artifact, or code/config lookup is blocked, quantify the
   blocker and give the best viable alternative instead of silently pivoting.
+- If the focus question asks for time buckets finer than
+  minimum_supported_time_bucket_minutes and no finer-grain raw data is exposed,
+  mark feasibility as blocked/partial and restate the analysis at the finest
+  supported bar resolution instead of inventing sub-bar buckets.
 
 OUTPUT FORMAT:
 Return ONLY a JSON object:

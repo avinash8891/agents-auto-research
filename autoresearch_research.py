@@ -36,7 +36,9 @@ from autoresearch_state import (
     read_state,
     write_state,
 )
+from backtest.runtime_config import load_runtime_config
 from config_hash import _config_hash
+from family_research_spec import resolve_research_resolution_context
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_types import ResearchThesis
@@ -270,6 +272,21 @@ def load_baseline_config(root: Path, family: StrategyFamily) -> dict[str, Any] |
         raise ValueError(f"BASELINE_CONFIG_LOAD_FAILED path={base_path}: {exc}") from exc
 
 
+def _resolve_runtime_config_for_record(
+    controller: "AutoresearchController", latest: ExperimentRecord
+) -> dict[str, Any]:
+    latest_config = controller.ctx.latest_config_contents
+    if latest_config:
+        return dict(latest_config)
+    config_path = Path(latest.config)
+    if not config_path.is_absolute():
+        config_path = controller.root / config_path
+    try:
+        return load_runtime_config(str(config_path), controller.family.name)
+    except Exception:
+        return {}
+
+
 def queue_variants(
     root: Path,
     run_queue_dir: Path,
@@ -464,6 +481,12 @@ def _resolve_conductor_inputs(
         latest_outcome["thesis_id"] = latest.asi.get("thesis_id") or Path(latest.config).parent.name
         latest_outcome["metric"] = latest.metric
         latest_outcome["decision"] = latest.status
+        latest_outcome["config_path"] = latest.config
+        runtime_config = _resolve_runtime_config_for_record(controller, latest)
+        latest_outcome["resolution_context"] = resolve_research_resolution_context(
+            controller.family.name,
+            runtime_config,
+        )
         ta = latest.asi.get("trade_analysis", {})
         for key in (
             "trade_count",

@@ -89,4 +89,5 @@ ORB_RESEARCH_SPEC = FamilyResearchSpec(
     ),
     thesis_json_hint='"strategy_family": "orb"',
     allowed_config_keys=frozenset(supported_config_keys()) - {"_research_source"},
+    resolution_config_keys=("timeframe_minutes",),
 )

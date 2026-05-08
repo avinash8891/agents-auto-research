@@ -69,6 +69,17 @@ margin_per_order / capital per trade when that information is available from
 tools or analyst calculations. PF alone is not enough if expectancy, trade
 frequency, or margin usage makes the strategy unusable. For non-built-in metrics such as margin_per_order, list them in required_diagnostics so the pipeline knows they are custom diagnostics rather than built-in backtest metrics.
 
+TIME RESOLUTION CONTRACT:
+- The user prompt includes EXECUTION RESOLUTION CONTEXT derived from the active run config.
+- Treat minimum_supported_time_bucket_minutes as the finest executable time
+  granularity unless finer raw data is explicitly available to the analyst.
+- Do NOT ask the analyst for or claim sub-bar behavior such as "first 2 minutes"
+  on a 5-minute strategy. Reframe the question at executable resolution
+  (for example, "09:30 bar vs later 5-minute bars").
+- If a desired hypothesis truly depends on finer timing than the active bar
+  resolution, say so explicitly and mark it as blocked on finer-grain data or
+  a different execution primitive.
+
 RESEARCH PRINCIPLES (from Lopez de Prado, "Advances in Financial Machine Learning"):
 - "Do not research under the influence of a backtest." Your job is to
   understand the MECHANISM — why the strategy should work or fail — not

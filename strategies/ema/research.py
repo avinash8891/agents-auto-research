@@ -75,4 +75,5 @@ IMPORTANT:
             "range_shift_lookback",
         }
     ),
+    resolution_config_keys=("timeframe_short", "timeframe_long"),
 )

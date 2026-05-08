@@ -156,13 +156,24 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
     result = rc.run_research_conductor_sync(
         trades_file="/tmp/trades.csv",
         experiment_results="results",
-        latest_outcome={"profit_factor": 1.2},
+        latest_outcome={
+            "profit_factor": 1.2,
+            "resolution_context": {
+                "resolution_config_keys": ["timeframe_short", "timeframe_long"],
+                "resolved_minutes_by_key": {"timeframe_short": 5, "timeframe_long": 15},
+                "minimum_supported_time_bucket_minutes": 5,
+            },
+        },
         research_round=3,
         family_name="ema",
     )
 
     assert result == parsed_payload
     assert "5 EMA PULLBACK/REVERSAL STRATEGY" in captured["agent"].instructions
+    assert (
+        "Treat minimum_supported_time_bucket_minutes as the finest executable time"
+        in captured["agent"].instructions
+    )
     assert {tool.name for tool in captured["agent"].tools} >= {
         "list_past_theses",
         "get_past_thesis",
@@ -170,6 +181,7 @@ def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeyp
         "get_experiment_result",
     }
     assert captured["input"].startswith("Research round: 3")
+    assert "minimum_supported_time_bucket_minutes: 5" in captured["input"]
     assert captured["kwargs"]["max_turns"] == 50
     assert captured["kwargs"]["run_config"].tracing_disabled is True
 
@@ -581,6 +593,20 @@ def test_ema_research_spec_matches_supported_operational_keys() -> None:
         assert key in spec.allowed_config_keys
         assert key in spec.config_schema
         assert any(key in rule for rule in spec.config_rules)
+    assert spec.resolution_config_keys == ("timeframe_short", "timeframe_long")
+
+
+def test_resolve_research_resolution_context_uses_runtime_minutes() -> None:
+    from family_research_spec import resolve_research_resolution_context
+
+    context = resolve_research_resolution_context(
+        "ema",
+        {"timeframe_short": 5, "timeframe_long": 15},
+    )
+
+    assert context["resolution_config_keys"] == ["timeframe_short", "timeframe_long"]
+    assert context["resolved_minutes_by_key"] == {"timeframe_short": 5, "timeframe_long": 15}
+    assert context["minimum_supported_time_bucket_minutes"] == 5
 
 
 def test_save_research_finding_rejects_bad_type(monkeypatch):
@@ -1066,6 +1092,11 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
             strategy_events_file=str(tmp_path / "events.parquet"),
             diagnostics_file=str(tmp_path / "diagnostics.json"),
             family_name="ema",
+            resolution_context={
+                "resolution_config_keys": ["timeframe_short", "timeframe_long"],
+                "resolved_minutes_by_key": {"timeframe_short": 5, "timeframe_long": 15},
+                "minimum_supported_time_bucket_minutes": 5,
+            },
         )
     )
 
@@ -1074,6 +1105,9 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     assert "AUTORESEARCH_DATA_ROOT=/root/autoresearch-data" in captured["system_prompt"]
     assert "/root/autoresearch-data/universes/" in captured["system_prompt"]
     assert "ANALYSIS MANIFEST:" in captured["system_prompt"]
+    assert "EXECUTION RESOLUTION CONTEXT:" in captured["system_prompt"]
+    assert "timeframe_short: 5 minute bars" in captured["system_prompt"]
+    assert "minimum_supported_time_bucket_minutes: 5" in captured["system_prompt"]
     assert '"strategy.py"' in captured["system_prompt"]
     assert '"signals.py"' in captured["system_prompt"]
     assert "Do NOT probe" in captured["system_prompt"]
@@ -1088,6 +1122,7 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     assert '"keys_found"' in captured["system_prompt"]
     assert '"feasibility"' in captured["system_prompt"]
     assert "Every bucketed metric must include n= or N=" in captured["system_prompt"]
+    assert "time buckets finer than" in captured["system_prompt"]
     assert captured["tool_names"] == [
         "list_analysis_artifacts",
         "read_artifact",
