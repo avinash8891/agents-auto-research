@@ -1,0 +1,3 @@
+universe_mode: stocks_in_play
+stocks_in_play_top_n: 20
+stocks_in_play_ranking: first30_dollar_volume

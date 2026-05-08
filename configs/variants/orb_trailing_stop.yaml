@@ -1,0 +1,2 @@
+use_volatility_trail: true
+vol_trail_atr_mult: 1.0

@@ -1,0 +1,90 @@
+{
+  "files": {
+    "recursive-improve-event.json": {
+      "feedback": {
+        "quality": {
+          "delta": {},
+          "dimension_scores": {
+            "compiled": 1.0,
+            "conductor_error": 0.0,
+            "needs_code": 0.0,
+            "rejected": 0.0,
+            "stopped": 0.0
+          },
+          "overall_score": 1.0,
+          "regressions": [],
+          "run_label": "round-1",
+          "trend": "initial"
+        },
+        "reasoning": "research rationale",
+        "rejection_reason": ""
+      },
+      "iteration_context": {
+        "candidate_id": "ema5",
+        "family": "ema",
+        "round": 1,
+        "status": "compiled"
+      },
+      "system": "recursive_improve",
+      "usage": {
+        "total": {
+          "input_tokens": 1,
+          "output_tokens": 2,
+          "total_tokens": 3
+        }
+      }
+    },
+    "recursive-improve-summary.json": {
+      "candidate_id": "ema5",
+      "round": 1,
+      "status": "compiled"
+    },
+    "recursive-improve-trace.json": {
+      "duration_s": 5.672012,
+      "error": "",
+      "feedback": "",
+      "git_branch": "",
+      "git_commit": "",
+      "messages": [],
+      "metadata": {
+        "candidate_id": "ema5",
+        "canonical_trace": "/Users/avinashvankadaru/.superset/projects/agents-auto-research/logs/agents-R-20260508-033729/trace-events.jsonl",
+        "family": "ema",
+        "job": 0,
+        "research_round": 1,
+        "run_id": "R-20260508-033729",
+        "source": "agents-auto-research",
+        "usage_summary": {
+          "assistant_matched_completion_tokens": 0,
+          "assistant_matched_prompt_tokens": 0,
+          "assistant_matched_total_tokens": 0,
+          "assistant_usage_message_count": 0,
+          "source": "recursive_improve_adapter_trace_usage",
+          "trace_cached_input_tokens": 0,
+          "trace_completion_tokens": 0,
+          "trace_estimated_total_tokens": 0,
+          "trace_prompt_tokens": 0,
+          "trace_total_tokens": 0,
+          "unmatched_completion_tokens": 0,
+          "unmatched_prompt_tokens": 0,
+          "unmatched_total_tokens": 0
+        }
+      },
+      "output": "research rationale",
+      "session_id": "R-20260508-033729",
+      "success": true,
+      "timestamp": "2026-05-08T03:37:31.785Z",
+      "usage": {
+        "cached_input_tokens": 0,
+        "completion_tokens": 0,
+        "estimated_completion_tokens": 0,
+        "estimated_prompt_tokens": 0,
+        "estimated_total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_tokens": 0
+      }
+    }
+  },
+  "schema_version": 1,
+  "target": "recursive_improve"
+}
