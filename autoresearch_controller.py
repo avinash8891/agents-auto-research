@@ -382,11 +382,16 @@ def normalize_controller_launch_state(
     return _fresh_launch_state(job), job
 
 
-def _validate_current_running_state(prior_state: dict[str, Any]) -> int:
+def _validate_current_executable_state(prior_state: dict[str, Any]) -> int:
     job = _state_coerce_job_to_int(prior_state.get("job"))
-    if prior_state.get("state") != "running" or job < 1:
+    executable_blocked = _is_blocked_research_required_resume_state(prior_state)
+    if (
+        prior_state.get("state") not in {"running", "blocked"}
+        or (prior_state.get("state") == "blocked" and not executable_blocked)
+        or job < 1
+    ):
         raise ValueError(
-            "--run-current-state requires an already prepared running state with a valid job id; "
+            "--run-current-state requires an already prepared executable state with a valid job id; "
             f"found state={prior_state.get('state')}"
         )
     return job
@@ -1069,7 +1074,7 @@ def main() -> int:
     prior_state = controller.read_state()
     if args.run_current_state:
         try:
-            job = _validate_current_running_state(prior_state)
+            job = _validate_current_executable_state(prior_state)
         except ValueError as exc:
             log.error("%s", exc)
             return 1

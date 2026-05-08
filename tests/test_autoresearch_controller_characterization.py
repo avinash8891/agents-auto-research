@@ -3201,6 +3201,62 @@ def test_main_run_current_state_rejects_non_running_state(monkeypatch, tmp_path)
     assert loop_mod.main() == 1
 
 
+def test_main_run_current_state_accepts_prepared_blocked_research_resume(monkeypatch, tmp_path):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    captured: dict[str, int] = {}
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.calls = 0
+            self.state = {
+                "state": "blocked",
+                "job": 26,
+                "research_round": 1,
+                "research_round_in_progress": 2,
+                "next_action": {"type": "research"},
+                "blockers": [{"kind": "research_required", "detail": "retry round 2"}],
+            }
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            raise AssertionError(f"run-current-state should not rewrite prepared state: {state}")
+
+        def execute_once(self):
+            self.calls += 1
+            captured["calls"] = self.calls
+            self.state = {"state": "finished", "job": 26}
+            return 0
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr("trace_sdk.get_log_file", lambda: "test.log")
+    monkeypatch.setattr("trace_sdk.get_session_id", lambda: "session-1")
+    monkeypatch.setattr("trace_sdk.set_family", lambda *args, **kwargs: None)
+    monkeypatch.setattr(loop_mod, "trace", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autoresearch_controller.py", "--family", "ema", "--run-current-state"],
+    )
+
+    assert loop_mod.main() == 0
+    assert captured["calls"] == 1
+
+
 def test_resume_interrupted_research_state_tolerates_malformed_blockers() -> None:
     state = loop_mod._resume_interrupted_research_state(
         {
