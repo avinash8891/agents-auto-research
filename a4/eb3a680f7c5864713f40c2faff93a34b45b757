@@ -1,0 +1,33 @@
+trace_adapters/reflexio.py
+  s_df23f17b640abb::t_ea5bab4f747bb2 8
+reflexio_agent_reflections.py
+  s_df23f17b640abb::t_bd905fe3a5828f 1-156
+tests/test_autoresearch_controller_characterization.py
+  s_df23f17b640abb::t_f559266bf9a0d8 663,712-715
+improvement_reflexion.py
+  s_df23f17b640abb::t_a227ea0bcd9e16 18,71-74,92,94-99
+tests/test_improvement_reflexion.py
+  s_df23f17b640abb::t_dd650168022c59 310-346
+  s_df23f17b640abb::t_ea5bab4f747bb2 309
+tests/test_research_conductor_characterization.py
+  s_df23f17b640abb::t_a366df7e072d33 340-341,343,349-352,361-362
+  s_df23f17b640abb::t_0dda4ff1822dae 342,344-348,353-360
+research_prompts.py
+  s_df23f17b640abb::t_23bf329a945dfa 33-38,68-72,104-105,114-116,137-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "a4eb3a680f7c5864713f40c2faff93a34b45b757",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
