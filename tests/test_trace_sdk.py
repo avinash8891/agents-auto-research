@@ -58,9 +58,6 @@ def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path:
 
     log_text = trace_sdk.get_log_file().read_text(encoding="utf-8")
     assert f"BEGIN {hypothesis_id} name=baseline" in log_text
-    assert f"[AGENT->diagnostic-analyst] PROMPT sent (len={len('user prompt')})" in log_text
-    assert "[AGENT<-diagnostic-analyst] RESPONSE PARSED_OK" in log_text
-
     prompt_file = (
         trace_sdk.get_log_file().parent
         / f"agents-{trace_sdk.get_run_id()}"
@@ -75,6 +72,11 @@ def test_trace_sdk_writes_local_artifacts_and_otel_events(monkeypatch, tmp_path:
     )
     assert prompt_file.exists()
     assert response_file.exists()
+    assert (
+        f"[AGENT->diagnostic-analyst] PROMPT sent (len={len('user prompt')}) "
+        f"artifact={prompt_file}"
+    ) in log_text
+    assert "[AGENT<-diagnostic-analyst] RESPONSE PARSED_OK" in log_text
 
     canonical_file = response_file.parents[1] / "trace-events.jsonl"
     events = [json.loads(line) for line in canonical_file.read_text(encoding="utf-8").splitlines()]

@@ -102,9 +102,14 @@ def _validate_base_config_path(path: str) -> None:
         raise ThesisValidationError(
             f"base_config_path '{path}' must point to a JSON or YAML config artifact"
         )
-    if not normalized.startswith(_ALLOWED_BASE_CONFIG_PREFIXES):
+    parts = [part for part in normalized.split("/") if part]
+    is_allowed = normalized.startswith(_ALLOWED_BASE_CONFIG_PREFIXES) or (
+        len(parts) >= 4 and parts[:2] == ["runtime", "jobs"] and parts[3] == "experiments"
+    )
+    if not is_allowed:
         raise ThesisValidationError(
-            f"base_config_path '{path}' must be under configs/ or experiments/"
+            f"base_config_path '{path}' must be under configs/, experiments/, "
+            "or runtime/jobs/<job>/experiments/"
         )
 
 

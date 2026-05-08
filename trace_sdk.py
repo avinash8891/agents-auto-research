@@ -795,7 +795,7 @@ def trace_agent_prompt(
     )
     _log_line(
         f"AGENT->{agent_name}",
-        f"PROMPT sent (len={len(prompt)})",
+        f"PROMPT sent (len={len(prompt)}) artifact={prompt_path}",
         None,
         seq,
     )
