@@ -397,8 +397,10 @@ def build_remote_command(
         'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi',
         "python_bin=.venv/bin/python",
         'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
-        '"$python_bin" -m pip install -e .',
-        'printf "%s\\n" "$deps_fingerprint" > .venv/.autoresearch-deps.sha256',
+        'if [ ! -f ".venv/.autoresearch-deps.sha256" ] || '
+        '[ "$(cat .venv/.autoresearch-deps.sha256)" != "$deps_fingerprint" ]; then '
+        '"$python_bin" -m pip install -e . && '
+        'printf "%s\\n" "$deps_fingerprint" > .venv/.autoresearch-deps.sha256; fi',
     ]
     if skip_dependency_install:
         fallback_install = " && ".join(dependency_install_segments)
@@ -419,6 +421,10 @@ def build_remote_command(
         + controller_mode
     )
     return " && ".join(segments)
+
+
+def _should_skip_git_prepare(*, current_sha: str | None, resolved_sha: str) -> bool:
+    return bool(current_sha and current_sha == resolved_sha)
 
 
 def materialize_remote_runtime_env(
@@ -743,40 +749,42 @@ def main():
 
     skip_dependency_install = False
     resolved_sha = ""
-    if args.skip_deploy_if_current:
-        status_cmd = build_git_status_command(vps_config)
-        safe_status_cmd = build_git_status_command(
-            replace(vps_config, git_repo=redact_git_repo_url(vps_config.git_repo))
+    status_cmd = build_git_status_command(vps_config)
+    safe_status_cmd = build_git_status_command(
+        replace(vps_config, git_repo=redact_git_repo_url(vps_config.git_repo))
+    )
+    trace("VPS_RUNNER", f"SSH STATUS: {safe_status_cmd}")
+    _, status_stdout, status_stderr = client.exec_command(status_cmd, timeout=600)
+    status_out = status_stdout.read().decode()
+    status_err = status_stderr.read().decode()
+    safe_status_out = redact_secrets(status_out, vps_config)
+    safe_status_err = redact_secrets(status_err, vps_config)
+    status_exit = status_stdout.channel.recv_exit_status()
+    trace_ssh(safe_status_cmd, status_exit, safe_status_out, safe_status_err)
+    if status_exit != 0:
+        client.close()
+        if safe_status_out:
+            print(safe_status_out, end="")
+        if safe_status_err:
+            print(safe_status_err, end="", file=sys.stderr)
+        sys.exit(status_exit)
+    try:
+        current_sha = parse_current_sha(status_out)
+        resolved_sha = parse_resolved_sha(status_out) if current_sha else ""
+    except RuntimeError as exc:
+        client.close()
+        log.error("Failed to parse Git status: %s", exc)
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    if _should_skip_git_prepare(current_sha=current_sha, resolved_sha=resolved_sha):
+        skip_dependency_install = True
+        trace(
+            "VPS_RUNNER",
+            (
+                f"Remote already at sha={resolved_sha}; "
+                "skipping Git prepare and using warm checkout"
+            ),
         )
-        trace("VPS_RUNNER", f"SSH STATUS: {safe_status_cmd}")
-        _, status_stdout, status_stderr = client.exec_command(status_cmd, timeout=600)
-        status_out = status_stdout.read().decode()
-        status_err = status_stderr.read().decode()
-        safe_status_out = redact_secrets(status_out, vps_config)
-        safe_status_err = redact_secrets(status_err, vps_config)
-        status_exit = status_stdout.channel.recv_exit_status()
-        trace_ssh(safe_status_cmd, status_exit, safe_status_out, safe_status_err)
-        if status_exit != 0:
-            client.close()
-            if safe_status_out:
-                print(safe_status_out, end="")
-            if safe_status_err:
-                print(safe_status_err, end="", file=sys.stderr)
-            sys.exit(status_exit)
-        try:
-            current_sha = parse_current_sha(status_out)
-            resolved_sha = parse_resolved_sha(status_out) if current_sha else ""
-        except RuntimeError as exc:
-            client.close()
-            log.error("Failed to parse Git status: %s", exc)
-            print(str(exc), file=sys.stderr)
-            sys.exit(1)
-        if current_sha and current_sha == resolved_sha:
-            skip_dependency_install = True
-            trace(
-                "VPS_RUNNER",
-                f"Remote already at sha={resolved_sha}; skipping Git prepare and dependency install",
-            )
 
     if not skip_dependency_install:
         prepare_cmd = build_git_prepare_command(vps_config)

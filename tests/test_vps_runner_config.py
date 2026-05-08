@@ -13,6 +13,7 @@ from vps_runner import (
     _build_arg_parser,
     _localize_remote_result_output,
     _sftp_mkdir_p,
+    _should_skip_git_prepare,
     build_git_prepare_command,
     build_git_status_command,
     build_remote_command,
@@ -194,11 +195,17 @@ def test_remote_command_runs_controller_for_family() -> None:
     assert f"cd {shlex.quote(config.remote_dir)}" in command
     assert "deps_fingerprint=$(python3 -c" in command
     assert ".venv/.autoresearch-deps.sha256" in command
+    assert 'if [ -f ".venv/.autoresearch-deps.sha256" ] && ' in command
     assert "then rm -rf .venv; fi" in command
     assert 'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi' in command
     assert "python_bin=.venv/bin/python" in command
     assert f"export AUTORESEARCH_RESOLVED_SHA={resolved_sha}" in command
     assert '"$python_bin" -m pip install -e .' in command
+    assert (
+        'if [ ! -f ".venv/.autoresearch-deps.sha256" ] || '
+        '[ "$(cat .venv/.autoresearch-deps.sha256)" != "$deps_fingerprint" ]; then '
+        '"$python_bin" -m pip install -e .'
+    ) in command
     assert 'printf "%s\\n" "$deps_fingerprint" > .venv/.autoresearch-deps.sha256' in command
     assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
@@ -272,6 +279,13 @@ def test_remote_fresh_command_can_skip_dependency_install_when_sha_is_current() 
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
         "--fresh-job"
     ) in command
+
+
+def test_should_skip_git_prepare_when_remote_checkout_already_matches() -> None:
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    assert _should_skip_git_prepare(current_sha=sha, resolved_sha=sha) is True
+    assert _should_skip_git_prepare(current_sha=sha, resolved_sha="f" * 40) is False
+    assert _should_skip_git_prepare(current_sha=None, resolved_sha=sha) is False
 
 
 def test_remote_command_exports_optional_data_root() -> None:
