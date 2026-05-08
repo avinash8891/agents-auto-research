@@ -75,6 +75,9 @@ REMOTE_RUNTIME_ENV_PERSISTED_KEYS = {
     "AUTORESEARCH_VPS_DIR",
     "AUTORESEARCH_DATA_ROOT",
 }
+REMOTE_RUNTIME_ENV_DEFAULTS = {
+    "AUTORESEARCH_IMPROVEMENT_REFLEXION": "1",
+}
 
 
 def _load_local_env_file() -> None:
@@ -231,11 +234,14 @@ def _runtime_env_items() -> list[tuple[str, str]]:
 
 
 def _persisted_runtime_env_items() -> list[tuple[str, str]]:
-    return [
-        (key, value)
+    items = {
+        key: value
         for key, value in _runtime_env_items()
         if key in REMOTE_RUNTIME_ENV_PERSISTED_KEYS
-    ]
+    }
+    for key, value in REMOTE_RUNTIME_ENV_DEFAULTS.items():
+        items.setdefault(key, value)
+    return sorted(items.items())
 
 
 def render_runtime_env_file() -> str:

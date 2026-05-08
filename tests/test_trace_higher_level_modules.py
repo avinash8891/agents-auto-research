@@ -227,6 +227,8 @@ def test_adapter_payload_builders_produce_target_specific_shapes() -> None:
     assert halo["loop_state"]["research_round"] == 3
     assert recursive_improve["iteration_context"]["candidate_id"] == "t-1"
     assert reflexio["episode"]["outcome"] == "compiled"
+    assert reflexio["episode"]["research_outcome"] == "compiled"
+    assert reflexio["episode"]["scope"] == "research_agents"
     quality["trend"] = "down"
     assert halo["evaluation"]["quality"]["trend"] == "up"
 

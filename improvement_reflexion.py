@@ -76,7 +76,7 @@ def _format_preamble(
         trajectory = _trajectory_for_agent(trajectory, agent)
         if not trajectory:
             return ""
-    outcome = episode.get("outcome", "?")
+    outcome = episode.get("research_outcome") or episode.get("outcome", "?")
     reasoning = (reflection.get("reasoning") or "").strip()
     rejection_reason = (reflection.get("rejection_reason") or "").strip()
     prev_round = source_round if source_round is not None else int(current_round or 1) - 1
@@ -85,7 +85,7 @@ def _format_preamble(
         if agent is not None
         else f"PRIOR ROUND REFLEXION (round {prev_round})"
     )
-    body_lines = [f"{title}:", f"  outcome: {outcome}"]
+    body_lines = [f"{title}:", f"  research_outcome: {outcome}"]
     agent_reflection = _agent_reflection_for(agent_reflections, agent) if agent else None
     if agent_reflection:
         _append_agent_reflection_lines(body_lines, agent_reflection)

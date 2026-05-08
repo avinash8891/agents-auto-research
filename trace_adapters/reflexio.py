@@ -31,6 +31,8 @@ def build_reflexio_payload(
             "family": family,
             "thesis_id": thesis_id,
             "outcome": outcome,
+            "research_outcome": outcome,
+            "scope": "research_agents",
         },
         "reflection": {
             "reasoning": reasoning,
@@ -45,7 +47,9 @@ def build_reflexio_payload(
         "trajectory": resolved_trajectory,
         "feedback_signal": {
             "outcome": outcome,
+            "research_outcome": outcome,
             "rejection_reason": rejection_reason,
+            "scope": "research_agents",
             "quality": deepcopy(quality or {}),
         },
         "memory_key": f"{family}:round-{research_round}:thesis-{thesis_id}",
@@ -68,6 +72,10 @@ def build_reflexio_export_package(**kwargs: Any) -> dict[str, Any]:
         "reflexio-summary.json": {
             "thesis_id": payload["episode"]["thesis_id"],
             "outcome": payload["episode"]["outcome"],
+            "research_outcome": payload["episode"].get(
+                "research_outcome", payload["episode"]["outcome"]
+            ),
+            "scope": payload["episode"].get("scope", "research_agents"),
             "round": payload["episode"]["round"],
         },
     }

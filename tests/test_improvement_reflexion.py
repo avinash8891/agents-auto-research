@@ -40,10 +40,19 @@ def build_reflexio_payload(
             "family": family,
             "thesis_id": thesis_id,
             "outcome": outcome,
+            "research_outcome": outcome,
+            "scope": "research_agents",
         },
         "reflection": {
             "reasoning": reasoning,
             "rejection_reason": rejection_reason,
+            "quality": {},
+        },
+        "feedback_signal": {
+            "outcome": outcome,
+            "research_outcome": outcome,
+            "rejection_reason": rejection_reason,
+            "scope": "research_agents",
             "quality": {},
         },
         "resources": {"usage": {}},
@@ -115,7 +124,7 @@ def test_flag_on_with_prior_export_returns_preamble(tmp_path, monkeypatch):
     controller = SimpleNamespace(root=tmp_path)
     feedback = build_reflexion_feedback(controller, current_round=5)
     assert "PRIOR ROUND REFLEXION (round 4)" in feedback
-    assert "outcome: rejected" in feedback
+    assert "research_outcome: rejected" in feedback
     assert "tried tight stop" in feedback
     assert "filtered too many trades" in feedback
     assert "Avoid repeating this failure mode" in feedback
@@ -178,7 +187,7 @@ def test_missing_optional_fields_yields_minimal_preamble(tmp_path, monkeypatch):
     )
     controller = SimpleNamespace(root=tmp_path)
     feedback = build_reflexion_feedback(controller, current_round=2)
-    assert "outcome: conductor_error" in feedback
+    assert "research_outcome: conductor_error" in feedback
     assert "you_reasoned" not in feedback
     assert "why_it_failed" not in feedback
     assert "Avoid repeating" in feedback
