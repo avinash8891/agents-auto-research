@@ -144,6 +144,38 @@ def test_compile_research_thesis_applies_changes_to_declared_base_config(
     assert runtime_config["max_trades_per_day"] == 2
 
 
+def test_compile_research_thesis_rejects_noop_config_change_against_base(
+    tmp_path: Path,
+) -> None:
+    base_dir = tmp_path / "experiments" / "best_opening_drive"
+    base_dir.mkdir(parents=True)
+    base_path = base_dir / "runtime_config.json"
+    base_path.write_text(
+        json.dumps(
+            {
+                **STRATEGIES["ema"].get_defaults(),
+                "max_stop_distance_pct": None,
+            }
+        )
+        + "\n"
+    )
+    thesis = ResearchThesis(
+        thesis_id="widen-stop-noop",
+        strategy_family="ema",
+        hypothesis="Remove the max stop cap on the current best configuration.",
+        mechanism="The stop cap may cause premature exits.",
+        base_experiment_id="best_opening_drive",
+        base_config_path="experiments/best_opening_drive/runtime_config.json",
+        config_changes={"max_stop_distance_pct": None},
+    )
+
+    with pytest.raises(ValueError, match="config_changes did not change runtime_config"):
+        compile_research_thesis(thesis, tmp_path)
+
+    assert not list((tmp_path / "experiments").glob("*/runtime_config.json.tmp"))
+    assert not (tmp_path / "experiments" / "widen-stop-noop" / "runtime_config.json").exists()
+
+
 def test_compile_research_thesis_leaves_no_tmp_artifacts(tmp_path: Path) -> None:
     thesis = ResearchThesis(
         thesis_id="thesis-ready",

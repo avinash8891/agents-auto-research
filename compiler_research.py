@@ -123,6 +123,23 @@ def _runtime_config_for_registered_strategy(
     return {**base_config, **config_changes}
 
 
+def _format_noop_config_change_error(thesis: "ResearchThesis", base_config: dict) -> str:
+    unchanged_keys: list[str] = []
+    for key, value in thesis.config_changes.items():
+        if base_config.get(key) == value:
+            unchanged_keys.append(f"{key}={value!r}")
+    detail = (
+        f" Unchanged keys: {', '.join(unchanged_keys)}."
+        if unchanged_keys
+        else " No config_changes were provided."
+    )
+    return (
+        f"Thesis '{thesis.thesis_id}' rejected: config_changes did not change "
+        f"runtime_config relative to base_config_path '{_resolved_base_config_path(thesis)}'."
+        f"{detail}"
+    )
+
+
 def compile_research_thesis(
     thesis: "ResearchThesis",
     root: Path,
@@ -148,6 +165,8 @@ def compile_research_thesis(
     if runtime_config is not None:
         if not runtime_config:
             return _needs_code_contract(thesis, root)
+        if runtime_config == base_config:
+            raise ValueError(_format_noop_config_change_error(thesis, base_config))
         violations = STRATEGIES[family_name].validate_runtime_config(runtime_config)
         if violations:
             raise ValueError(
