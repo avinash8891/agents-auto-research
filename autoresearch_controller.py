@@ -278,6 +278,17 @@ def _running_resume_state(
     return state
 
 
+def _fresh_launch_state(job: int) -> dict[str, Any]:
+    """Create the only state shape allowed for a new job launch."""
+    return {
+        "state": "running",
+        "job": job,
+        "research_round": 0,
+        "job_usage": None,
+        "heartbeat": {},
+    }
+
+
 def normalize_controller_launch_state(
     prior_state: dict[str, Any],
     *,
@@ -337,23 +348,10 @@ def normalize_controller_launch_state(
             job,
         )
 
-    # Fresh jobs start from a clean controller state. Manual review and other
-    # blocked states resume only through --resume-current-job so VPS deploys
-    # without that flag cannot silently continue an old job.
-    state = {
-        "state": "running",
-        "job": job,
-        "research_round": 0,
-        "job_usage": None,
-        "heartbeat": {},
-    }
-    if prior_state.get("halted_reason") == "requires_code_change" and prior_state.get(
-        "halted_thesis_id"
-    ):
-        for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
-            if key in prior_state:
-                state[key] = prior_state[key]
-    return state, job
+    # Fresh jobs must be isolated from any prior resume/manual-review state.
+    # Resume metadata is intentionally preserved only in the explicit
+    # --resume-current-job branches above.
+    return _fresh_launch_state(job), job
 
 
 IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"

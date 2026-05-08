@@ -2039,7 +2039,7 @@ def test_main_handles_legacy_string_job_state(monkeypatch, tmp_path):
     assert captured["written_state"]["job"] == 1
 
 
-def test_main_preserves_halted_thesis_resume_metadata(monkeypatch, tmp_path):
+def test_main_starts_new_job_when_prior_state_is_halted_without_resume_flag(monkeypatch, tmp_path):
     family = load_family("ema")
 
     monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
@@ -2089,10 +2089,13 @@ def test_main_preserves_halted_thesis_resume_metadata(monkeypatch, tmp_path):
 
     assert loop_mod.main() == 1
     written = captured["written_state"]
-    assert written["job"] == 8
-    assert written["halted_reason"] == "requires_code_change"
-    assert written["halted_thesis_id"] == "thesis-123"
-    assert written["halted_thesis"]["thesis_id"] == "thesis-123"
+    assert written == {
+        "state": "running",
+        "job": 8,
+        "research_round": 0,
+        "job_usage": None,
+        "heartbeat": {},
+    }
     assert "next_action" not in written
 
 
@@ -2359,9 +2362,6 @@ def test_main_starts_new_job_when_prior_state_is_manual_review_without_resume_fl
         "research_round": 0,
         "job_usage": None,
         "heartbeat": {},
-        "halted_reason": "requires_code_change",
-        "halted_thesis_id": "thesis-456",
-        "halted_thesis": {"thesis_id": "thesis-456", "config_changes": {"ema_length": 13}},
     }
     assert "next_action" not in written
 
