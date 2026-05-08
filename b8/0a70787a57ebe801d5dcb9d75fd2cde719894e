@@ -1,0 +1,56 @@
+agent_runners.py
+  s_df23f17b640abb::t_67db3116370814 139,158,179
+research_conductor.py
+  s_df23f17b640abb::t_2d2d0531687fb8 179
+  s_df23f17b640abb::t_bc7f1955442cdb 562
+research_subagents.py
+  s_df23f17b640abb::t_2d2d0531687fb8 34-41,58,152-250,256,266-272,275-300,303,315-316,321-324,334-381,413,415,458,479,498,501-503,541,558
+  s_df23f17b640abb::t_d39a05bd0691b2 585,672-678,723-727
+tests/test_agent_token_usage.py
+  s_df23f17b640abb::t_e8183b236227b3 316,324
+agent_token_usage.py
+  s_df23f17b640abb::t_58f5efa1193ee2 52,76,124,182
+tests/test_trace_higher_level_modules.py
+  s_df23f17b640abb::t_ebaf312a3885d0 549-640,642-665,667,670
+  s_df23f17b640abb::t_5b0c988b2cfc67 673-743
+  s_df23f17b640abb::t_544da1cc1d2341 435-503
+  s_df23f17b640abb::t_e57b7b96a9d206 504-506,508-547,671-672
+  s_df23f17b640abb::t_62e1c078a93c14 507,548,641,666,668-669
+  s_df23f17b640abb::t_b4b8d7a3988feb 370-434
+agent_sdk_token_usage.py
+  s_df23f17b640abb::t_0d2c16a96e949e 138,227
+tests/test_research_conductor_characterization.py
+  s_df23f17b640abb::t_2d2d0531687fb8 886,923-928,943,951-953,957-979
+trace_sdk.py
+  s_df23f17b640abb::t_52f760155bdd5c 731,758
+tests/test_trace_sdk.py
+  s_df23f17b640abb::t_581d3a39847b67 453,472
+agent_openai_calls.py
+  s_df23f17b640abb::t_63ee76bce7fcde 103-109,135,319
+  s_df23f17b640abb::t_37a235a1311ead 292
+trace_adapters/recursive_improve.py
+  s_df23f17b640abb::t_c416e61f1ee654 311-329,351
+  s_df23f17b640abb::t_297c4bc57b2e9a 78-79,98,100-101
+  s_df23f17b640abb::t_46276956d499ab 115-120
+  s_df23f17b640abb::t_bdb7e530e29e30 189,216-220,242-243,252,256,268,273-278
+  s_df23f17b640abb::t_82eecc65f781c2 253-255,257,259-262,269-272,279-289,301-310
+  s_df23f17b640abb::t_bd3c41bcd2e1bb 105-114,121-147,330-350
+  s_df23f17b640abb::t_014a1754d868ac 290-300
+  s_df23f17b640abb::t_862ce2dbd2680b 258,263-267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "b80a70787a57ebe801d5dcb9d75fd2cde719894e",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
