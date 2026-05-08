@@ -883,7 +883,7 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/root/autoresearch-data")
-    captured: dict[str, str] = {}
+    captured: dict[str, object] = {}
 
     def fake_trace_agent_prompt(agent_name, prompt, system_prompt="", **kwargs):
         captured["agent_name"] = agent_name
@@ -920,7 +920,12 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
 
     monkeypatch.setitem(sys.modules, "agents", ModuleType("agents"))
     agents_mod = sys.modules["agents"]
-    agents_mod.Agent = lambda **kwargs: SimpleNamespace(**kwargs)
+
+    def fake_agent(**kwargs):
+        captured["tool_names"] = [tool.__name__ for tool in kwargs["tools"]]
+        return SimpleNamespace(**kwargs)
+
+    agents_mod.Agent = fake_agent
     agents_mod.RunConfig = lambda **kwargs: SimpleNamespace(**kwargs)
     agents_mod.Runner = FakeRunner
     agents_mod.function_tool = lambda fn: fn
@@ -935,6 +940,7 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
             "check opening regime",
             strategy_events_file=str(tmp_path / "events.parquet"),
             diagnostics_file=str(tmp_path / "diagnostics.json"),
+            family_name="ema",
         )
     )
 
@@ -942,9 +948,35 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     assert captured["agent_name"] == "analyst"
     assert "AUTORESEARCH_DATA_ROOT=/root/autoresearch-data" in captured["system_prompt"]
     assert "/root/autoresearch-data/universes/" in captured["system_prompt"]
+    assert "ANALYSIS MANIFEST:" in captured["system_prompt"]
+    assert '"strategy.py"' in captured["system_prompt"]
+    assert '"signals.py"' in captured["system_prompt"]
     assert "Do NOT probe" in captured["system_prompt"]
     assert "data unless AUTORESEARCH_DATA_ROOT is unset" in captured["system_prompt"]
     assert "Each run_python call is stateless" in captured["system_prompt"]
+    assert "Do NOT guess source paths" in captured["system_prompt"]
+    assert captured["tool_names"] == [
+        "list_analysis_artifacts",
+        "read_artifact",
+        "read_strategy_source",
+        "run_python",
+    ]
+
+
+def test_analysis_manifest_discovers_strategy_sources_by_family() -> None:
+    manifest = subagents._analysis_manifest(
+        trades_file="/tmp/ema_autoresearch-runs/job-1/commit/hash/trades.csv",
+        strategy_events_file="/tmp/events.parquet",
+        diagnostics_file="/tmp/diagnostics.json",
+        family_name="ema",
+    )
+
+    assert manifest["family_name"] == "ema"
+    sources = manifest["strategy_sources"]
+    assert isinstance(sources, dict)
+    assert "strategy.py" in sources
+    assert "signals.py" in sources
+    assert "__init__.py" not in sources
 
 
 def test_analyst_prompt_does_not_probe_repo_data_when_market_data_unresolved(monkeypatch, tmp_path):

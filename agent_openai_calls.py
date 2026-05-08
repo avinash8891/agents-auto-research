@@ -100,7 +100,13 @@ async def _run_web_research_openai(
             usage = metadata.get("usage")
             if isinstance(usage, dict):
                 usage = {**usage, "usage_source": metadata.get("usage_source", "")}
-                _accumulate_usage("web-researcher", usage, provider=_PROVIDER, model=_MODEL)
+                _accumulate_usage(
+                    "web-researcher",
+                    usage,
+                    provider=_PROVIDER,
+                    model=_MODEL,
+                    trace_id=trace_id,
+                )
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
             _trace_response("openai-web-researcher", trace_id, output, parsed)
@@ -126,7 +132,7 @@ async def _run_web_research_openai(
                 "web-researcher attempt=%d failed: %s: %s", attempt, exc.__class__.__name__, exc
             )
             accumulate_agents_sdk_result_usage(
-                "web-researcher", None, provider=_PROVIDER, model=_MODEL
+                "web-researcher", None, provider=_PROVIDER, model=_MODEL, trace_id=trace_id
             )
             error = agent_infra._structured_error(
                 "web-researcher",
@@ -283,6 +289,7 @@ async def _run_diagnostic_analyst_openai(
                 model=_MODEL,
                 input_text=f"{DIAGNOSTIC_ANALYST_PROMPT}\n\n{prompt}",
                 output_text=output,
+                trace_id=trace_id,
             )
             parsed_result = agent_infra._parse_json_detailed(output)
             parsed = parsed_result.get("parsed") if parsed_result.get("status") == "ok" else None
@@ -309,7 +316,7 @@ async def _run_diagnostic_analyst_openai(
                 "codex-analyst attempt=%d failed: %s: %s", attempt, exc.__class__.__name__, exc
             )
             accumulate_agents_sdk_result_usage(
-                "codex-analyst", None, provider=_PROVIDER, model=_MODEL
+                "codex-analyst", None, provider=_PROVIDER, model=_MODEL, trace_id=trace_id
             )
             error = agent_infra._structured_error(
                 "diagnostic-analyst",

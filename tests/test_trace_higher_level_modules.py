@@ -367,6 +367,380 @@ def test_recursive_improve_and_reflexio_exports_include_canonical_trace_details(
     assert any("duplicate baseline" in step["content"] for step in trajectory)
 
 
+def test_recursive_improve_trace_attaches_token_usage_to_assistant_messages(
+    monkeypatch, tmp_path: Path
+) -> None:
+    modules = _load_modules(monkeypatch, tmp_path)
+    trace_sdk = modules["trace_sdk"]
+    trace_sdk.set_family("ema", job=20)
+    trace_sdk.begin_round(8)
+    trace_id = trace_sdk.trace_agent_prompt(
+        "conductor",
+        "Find the next thesis.",
+        "Return JSON.",
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_response(
+        "conductor",
+        trace_id,
+        '{"thesis": "delay entries"}',
+        {"thesis": "delay entries"},
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.record_usage_event(
+        "conductor",
+        model_provider="openai",
+        model_name="gpt-5.2",
+        input_tokens=100,
+        output_tokens=25,
+        total_tokens=125,
+        cached_input_tokens=40,
+        estimated_input_tokens=90,
+        estimated_output_tokens=20,
+        estimated_total_tokens=110,
+    )
+
+    from trace_adapters.recursive_improve import build_recursive_improve_trace
+
+    recursive_trace = build_recursive_improve_trace(
+        trace_sdk.get_event_file(),
+        {
+            "iteration_context": {
+                "round": 8,
+                "family": "ema",
+                "candidate_id": "th-8",
+                "status": "compiled",
+            },
+            "feedback": {},
+        },
+    )
+
+    assistant_messages = [
+        message for message in recursive_trace["messages"] if message["role"] == "assistant"
+    ]
+    assert assistant_messages
+    assert assistant_messages[-1]["usage"] == {
+        "prompt_tokens": 100,
+        "completion_tokens": 25,
+        "total_tokens": 125,
+        "cached_input_tokens": 40,
+        "estimated_prompt_tokens": 90,
+        "estimated_completion_tokens": 20,
+        "estimated_total_tokens": 110,
+    }
+
+
+def test_recursive_improve_trace_attaches_usage_when_usage_precedes_response(
+    tmp_path: Path,
+) -> None:
+    from trace_adapters.recursive_improve import build_recursive_improve_trace
+
+    trace = tmp_path / "trace-events.jsonl"
+    trace.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_id": "evt-1",
+                        "timestamp": "2026-05-07T00:00:00.000Z",
+                        "run_id": "run-1",
+                        "family": "ema",
+                        "job": 20,
+                        "category": "usage",
+                        "action": "accumulate",
+                        "model_name": "gpt-5.2",
+                        "payload": {
+                            "agent": "web_researcher",
+                            "input_tokens": 10,
+                            "output_tokens": 5,
+                            "total_tokens": 15,
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_id": "evt-2",
+                        "timestamp": "2026-05-07T00:00:01.000Z",
+                        "run_id": "run-1",
+                        "family": "ema",
+                        "job": 20,
+                        "category": "agent",
+                        "action": "response",
+                        "model_name": "gpt-5.2",
+                        "payload": {
+                            "agent_name": "web-researcher",
+                            "parsed": {"ok": True},
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    recursive_trace = build_recursive_improve_trace(
+        trace,
+        {
+            "iteration_context": {
+                "round": 1,
+                "family": "ema",
+                "candidate_id": "th-1",
+                "status": "compiled",
+            },
+            "feedback": {},
+        },
+    )
+
+    assistant_messages = [
+        message for message in recursive_trace["messages"] if message["role"] == "assistant"
+    ]
+    assert len(assistant_messages) == 1
+    assert assistant_messages[0]["usage"]["total_tokens"] == 15
+
+
+def test_recursive_improve_trace_keeps_unmatched_usage_as_metadata_only(
+    tmp_path: Path,
+) -> None:
+    from trace_adapters.recursive_improve import build_recursive_improve_trace
+
+    trace = tmp_path / "trace-events.jsonl"
+    trace.write_text(
+        json.dumps(
+            {
+                "event_id": "evt-1",
+                "timestamp": "2026-05-07T00:00:00.000Z",
+                "run_id": "run-1",
+                "family": "ema",
+                "job": 20,
+                "category": "usage",
+                "action": "accumulate",
+                "model_name": "gpt-5.2",
+                "payload": {
+                    "agent": "conductor",
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "total_tokens": 15,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    recursive_trace = build_recursive_improve_trace(
+        trace,
+        {
+            "iteration_context": {
+                "round": 1,
+                "family": "ema",
+                "candidate_id": "th-1",
+                "status": "compiled",
+            },
+            "feedback": {},
+        },
+    )
+
+    assert [message["role"] for message in recursive_trace["messages"]] == ["metadata"]
+    assert recursive_trace["usage"]["total_tokens"] == 15
+    metrics = recursive_trace["metadata"]["usage_summary"]
+    assert metrics["trace_total_tokens"] == 15
+    assert metrics["assistant_matched_total_tokens"] == 0
+    assert metrics["unmatched_total_tokens"] == 15
+    assert metrics["assistant_usage_message_count"] == 0
+
+
+def test_recursive_improve_usage_metrics_separate_matched_and_trace_level_usage(
+    tmp_path: Path,
+) -> None:
+    from trace_adapters.recursive_improve import (
+        build_recursive_improve_export_package,
+        build_recursive_improve_trace,
+    )
+
+    trace = tmp_path / "trace-events.jsonl"
+    trace.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_id": "evt-1",
+                        "timestamp": "2026-05-07T00:00:00.000Z",
+                        "run_id": "run-1",
+                        "family": "ema",
+                        "job": 20,
+                        "category": "agent",
+                        "action": "response",
+                        "model_name": "gpt-5.2",
+                        "payload": {"agent_name": "conductor", "parsed": {"ok": True}},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_id": "evt-2",
+                        "timestamp": "2026-05-07T00:00:01.000Z",
+                        "run_id": "run-1",
+                        "family": "ema",
+                        "job": 20,
+                        "category": "usage",
+                        "action": "accumulate",
+                        "model_name": "gpt-5.2",
+                        "payload": {
+                            "agent": "conductor",
+                            "input_tokens": 100,
+                            "output_tokens": 25,
+                            "total_tokens": 125,
+                            "cached_input_tokens": 40,
+                            "estimated_input_tokens": 90,
+                            "estimated_output_tokens": 20,
+                            "estimated_total_tokens": 110,
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_id": "evt-3",
+                        "timestamp": "2026-05-07T00:00:02.000Z",
+                        "run_id": "run-1",
+                        "family": "ema",
+                        "job": 20,
+                        "category": "usage",
+                        "action": "accumulate",
+                        "model_name": "gpt-5.2",
+                        "payload": {
+                            "agent": "web_researcher",
+                            "input_tokens": 80,
+                            "output_tokens": 20,
+                            "total_tokens": 100,
+                            "cached_input_tokens": 30,
+                            "estimated_input_tokens": 70,
+                            "estimated_output_tokens": 10,
+                            "estimated_total_tokens": 80,
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = {
+        "iteration_context": {
+            "round": 1,
+            "family": "ema",
+            "candidate_id": "th-1",
+            "status": "compiled",
+        },
+        "feedback": {},
+    }
+    recursive_trace = build_recursive_improve_trace(trace, payload)
+
+    metrics = recursive_trace["metadata"]["usage_summary"]
+    assert metrics == {
+        "source": "recursive_improve_adapter_trace_usage",
+        "trace_total_tokens": 225,
+        "trace_prompt_tokens": 180,
+        "trace_completion_tokens": 45,
+        "trace_cached_input_tokens": 70,
+        "trace_estimated_total_tokens": 190,
+        "assistant_matched_total_tokens": 125,
+        "assistant_matched_prompt_tokens": 100,
+        "assistant_matched_completion_tokens": 25,
+        "assistant_usage_message_count": 1,
+        "unmatched_total_tokens": 100,
+        "unmatched_prompt_tokens": 80,
+        "unmatched_completion_tokens": 20,
+    }
+
+    export_package = build_recursive_improve_export_package(
+        research_round=1,
+        thesis_id="th-1",
+        outcome="compiled",
+        family="ema",
+        reasoning="solid",
+        canonical_trace_path=trace,
+    )
+    assert "recursive-improve-usage-metrics.json" not in export_package["files"]
+    assert (
+        export_package["files"]["recursive-improve-trace.json"]["metadata"]["usage_summary"]
+        == metrics
+    )
+
+
+def test_recursive_improve_usage_matching_prefers_trace_id_over_agent_alias(
+    tmp_path: Path,
+) -> None:
+    from trace_adapters.recursive_improve import build_recursive_improve_trace
+
+    trace = tmp_path / "trace-events.jsonl"
+    trace.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_id": "evt-1",
+                        "timestamp": "2026-05-07T00:00:00.000Z",
+                        "run_id": "run-1",
+                        "family": "ema",
+                        "job": 20,
+                        "category": "agent",
+                        "action": "response",
+                        "model_name": "gpt-5.2",
+                        "payload": {
+                            "agent_name": "openai-web-researcher",
+                            "trace_id": "trace-web-001",
+                            "parsed": {"ok": True},
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_id": "evt-2",
+                        "timestamp": "2026-05-07T00:00:01.000Z",
+                        "run_id": "run-1",
+                        "family": "ema",
+                        "job": 20,
+                        "category": "usage",
+                        "action": "accumulate",
+                        "model_name": "gpt-5.2",
+                        "payload": {
+                            "agent": "web_researcher",
+                            "trace_id": "trace-web-001",
+                            "input_tokens": 80,
+                            "output_tokens": 20,
+                            "total_tokens": 100,
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    recursive_trace = build_recursive_improve_trace(
+        trace,
+        {
+            "iteration_context": {
+                "round": 1,
+                "family": "ema",
+                "candidate_id": "th-1",
+                "status": "compiled",
+            },
+            "feedback": {},
+        },
+    )
+
+    assistant_messages = [
+        message for message in recursive_trace["messages"] if message["role"] == "assistant"
+    ]
+    assert assistant_messages[0]["usage"]["total_tokens"] == 100
+    assert recursive_trace["metadata"]["usage_summary"]["unmatched_total_tokens"] == 0
+
+
 def test_trace_export_adapters_skip_malformed_canonical_jsonl(tmp_path: Path) -> None:
     from trace_adapters.recursive_improve import build_recursive_improve_trace
     from trace_adapters.reflexio import build_reflexio_trajectory

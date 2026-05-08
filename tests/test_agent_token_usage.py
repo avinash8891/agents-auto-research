@@ -313,6 +313,7 @@ def test_cli_usage_emits_cached_reasoning_and_usage_source_metadata():
             },
             provider="openai",
             model="gpt-5.2",
+            trace_id="trace-web-001",
         )
 
     assert len(emitted) == 1
@@ -320,6 +321,7 @@ def test_cli_usage_emits_cached_reasoning_and_usage_source_metadata():
     assert emitted[0]["cached_input_tokens"] == 20
     assert emitted[0]["reasoning_output_tokens"] == 3
     assert emitted[0]["usage_source"] == "codex_json_last_token_usage"
+    assert emitted[0]["trace_id"] == "trace-web-001"
 
 
 def test_accumulate_usage_preserves_explicit_zero_without_alias_fallback():

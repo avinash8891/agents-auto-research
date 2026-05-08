@@ -136,7 +136,7 @@ async def _run_single_agent(
                 model_name=model_name,
             )
             accumulate_agents_sdk_result_usage(
-                name, None, provider=model_provider, model=model_name
+                name, None, provider=model_provider, model=model_name, trace_id=trace_id
             )
             error = agent_infra._structured_error(
                 name,
@@ -155,7 +155,7 @@ async def _run_single_agent(
                 model_name=model_name,
             )
             accumulate_agents_sdk_result_usage(
-                name, None, provider=model_provider, model=model_name
+                name, None, provider=model_provider, model=model_name, trace_id=trace_id
             )
             error = agent_infra._structured_error(
                 name,
@@ -176,6 +176,7 @@ async def _run_single_agent(
             model=model_name,
             input_text=f"{agent_def.prompt}\n\n{prompt}",
             output_text=result_text,
+            trace_id=trace_id,
         )
 
         parsed_result = agent_infra._parse_json_detailed(result_text)

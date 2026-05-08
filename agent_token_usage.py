@@ -49,6 +49,7 @@ def _emit_trace_usage(
     estimated_output_tokens: int = 0,
     estimated_total_tokens: int = 0,
     usage_source: str = "",
+    trace_id: str = "",
 ) -> None:
     """Forward per-call usage to trace_sdk's event stream. Fail-open."""
     try:
@@ -72,6 +73,7 @@ def _emit_trace_usage(
             estimated_output_tokens=estimated_output_tokens,
             estimated_total_tokens=estimated_total_tokens,
             usage_source=usage_source,
+            trace_id=trace_id,
         )
     except Exception as exc:
         logger.debug("usage trace emission failed: %s", exc)
@@ -119,6 +121,7 @@ def _accumulate_usage(
     dedupe_key: str | None = None,
     provider: str | None = None,
     model: str | None = None,
+    trace_id: str = "",
 ) -> None:
     """Accumulate token usage for the current round.
 
@@ -176,6 +179,7 @@ def _accumulate_usage(
         estimated_output_tokens=int(estimated_output_tokens or 0),
         estimated_total_tokens=int(estimated_total_tokens or 0),
         usage_source=str(usage_source or ""),
+        trace_id=str(trace_id or ""),
     )
 
 

@@ -176,6 +176,7 @@ async def run_research_conductor(
                     focus_question,
                     strategy_events_file=strategy_events_file,
                     diagnostics_file=diagnostics_file,
+                    family_name=family_name,
                 )
             trace_agent_tool_result(
                 "research-conductor",
@@ -558,6 +559,7 @@ async def run_research_conductor(
             model=_CONDUCTOR_MODEL,
             input_text=f"{system_prompt}\n\n{user_prompt}",
             output_text=result_text,
+            trace_id=trace_id,
         )
     except asyncio.TimeoutError:
         trace(

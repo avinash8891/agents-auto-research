@@ -450,6 +450,7 @@ def test_record_usage_event_writes_usage_category_to_jsonl(monkeypatch, tmp_path
         estimated_total_tokens=0,
         cost_usd=0.0045,
         dedupe_key="test-run-001",
+        trace_id="trace-web-001",
     )
 
     events = [
@@ -468,6 +469,7 @@ def test_record_usage_event_writes_usage_category_to_jsonl(monkeypatch, tmp_path
     assert ev["payload"]["cached_input_tokens"] == 300
     assert ev["payload"]["estimated_total_tokens"] == 0
     assert abs(ev["payload"]["cost_usd"] - 0.0045) < 1e-9
+    assert ev["payload"]["trace_id"] == "trace-web-001"
     assert ev["payload"]["dedupe_key"] == "test-run-001"
     assert ev["schema_version"] == 1
     assert ev["action"] == "accumulate"

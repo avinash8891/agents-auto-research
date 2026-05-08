@@ -31,6 +31,14 @@ from web_research_cli import WebResearchCliError, run_codex_web_research
 
 ANALYST_READ_FILE_MAX_CHARS = 12_000
 ANALYST_RUN_PYTHON_MAX_CHARS = 12_000
+ANALYST_SOURCE_EXCLUDED_FILES = {
+    "__init__.py",
+    "contract.py",
+    "defaults.py",
+    "prompt.py",
+    "research.py",
+    "validate.py",
+}
 
 
 def _resolve_tool_max_chars(value: object, *, default: int) -> int:
@@ -47,7 +55,7 @@ def _compact_tool_output(text: str, *, max_chars: int) -> tuple[str, bool]:
     digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16]
     suffix = (
         f"\n... (truncated tool output, {len(text)} total chars, "
-        f"sha256={digest}; use targeted run_python/read_file if more detail is needed)"
+        f"sha256={digest}; use targeted run_python or typed artifact tools if more detail is needed)"
     )
     keep = max(0, max_chars - len(suffix))
     return text[:keep] + suffix, True
@@ -141,11 +149,111 @@ def _market_data_manifest(trades_file: str) -> str:
     return "\n".join(lines)
 
 
+def _family_name_from_artifact_path(path: str) -> str:
+    for part in Path(path).expanduser().parts:
+        if part.endswith("_autoresearch-runs"):
+            return part.removesuffix("_autoresearch-runs")
+    return ""
+
+
+def _discover_strategy_source_files(family_name: str) -> dict[str, str]:
+    if not family_name:
+        return {}
+    strategy_dir = _ROOT / "strategies" / family_name
+    if not strategy_dir.exists():
+        return {}
+    sources: dict[str, str] = {}
+    for path in sorted(strategy_dir.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        if path.name in ANALYST_SOURCE_EXCLUDED_FILES:
+            continue
+        if path.name.startswith("test_") or path.name.endswith("_test.py"):
+            continue
+        key = path.relative_to(strategy_dir).as_posix()
+        sources[key] = str(path)
+    return sources
+
+
+def _analysis_manifest(
+    *,
+    trades_file: str,
+    strategy_events_file: str = "",
+    diagnostics_file: str = "",
+    family_name: str = "",
+) -> dict[str, object]:
+    config_path, runtime_config = _load_runtime_config_for_artifact(trades_file)
+    resolved_family = (
+        family_name
+        or str(runtime_config.get("strategy_family") or "")
+        or str(runtime_config.get("family") or "")
+        or _family_name_from_artifact_path(trades_file)
+    )
+    artifacts = {
+        "trades_csv": trades_file,
+    }
+    if strategy_events_file:
+        artifacts["strategy_events_parquet"] = strategy_events_file
+    if diagnostics_file:
+        artifacts["diagnostics_json"] = diagnostics_file
+    if config_path is not None:
+        artifacts["runtime_config_json"] = str(config_path)
+
+    data_files: dict[str, str] = {}
+    data_universe = runtime_config.get("data_universe")
+    provenance = runtime_config.get("data_provenance")
+    universe_path = ""
+    if isinstance(provenance, dict):
+        universe_path = str(provenance.get("universe_path") or "")
+    data_root = os.environ.get("AUTORESEARCH_DATA_ROOT")
+    if not universe_path and data_root and data_universe:
+        universe_path = str(Path(data_root) / "universes" / str(data_universe))
+    if universe_path:
+        for label in ("open", "high", "low", "close", "volume"):
+            path = Path(universe_path) / f"{label}.parquet"
+            if path.exists():
+                data_files[label] = str(path)
+
+    return {
+        "family_name": resolved_family,
+        "artifacts": artifacts,
+        "strategy_sources": _discover_strategy_source_files(resolved_family),
+        "market_data_files": data_files,
+    }
+
+
+def _manifest_prompt_block(manifest: dict[str, object]) -> str:
+    return "ANALYSIS MANIFEST:\n" + json.dumps(manifest, indent=2, sort_keys=True)
+
+
+def _analysis_python_prelude(manifest: dict[str, object]) -> str:
+    artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else {}
+    strategy_sources = manifest.get("strategy_sources") if isinstance(manifest, dict) else {}
+    market_data_files = manifest.get("market_data_files") if isinstance(manifest, dict) else {}
+    return "\n".join(
+        [
+            "from pathlib import Path",
+            f"ANALYSIS_ARTIFACTS = {artifacts!r}",
+            f"STRATEGY_SOURCE_FILES = {strategy_sources!r}",
+            f"MARKET_DATA_FILES = {market_data_files!r}",
+            "TRADES_FILE = Path(ANALYSIS_ARTIFACTS['trades_csv'])",
+            "EVENTS_FILE = Path(ANALYSIS_ARTIFACTS['strategy_events_parquet']) "
+            "if 'strategy_events_parquet' in ANALYSIS_ARTIFACTS else None",
+            "DIAGNOSTICS_FILE = Path(ANALYSIS_ARTIFACTS['diagnostics_json']) "
+            "if 'diagnostics_json' in ANALYSIS_ARTIFACTS else None",
+            "RUNTIME_CONFIG_FILE = Path(ANALYSIS_ARTIFACTS['runtime_config_json']) "
+            "if 'runtime_config_json' in ANALYSIS_ARTIFACTS else None",
+            "",
+        ]
+    )
+
+
 async def _call_analyst(
     trades_file: str,
     focus_question: str,
     strategy_events_file: str = "",
     diagnostics_file: str = "",
+    family_name: str = "",
 ) -> str:
     from agents import Agent as OAIAgent
     from agents import RunConfig as OAIRunConfig
@@ -155,13 +263,44 @@ async def _call_analyst(
 
     _ensure_oauth_proxy()
     current_trace_id = f"analyst-{focus_question[:40].replace(' ', '_')}"
+    manifest = _analysis_manifest(
+        trades_file=trades_file,
+        strategy_events_file=strategy_events_file,
+        diagnostics_file=diagnostics_file,
+        family_name=family_name,
+    )
+    manifest_prompt = _manifest_prompt_block(manifest)
 
     @function_tool
-    def read_file(file_path: str, max_chars: int = ANALYST_READ_FILE_MAX_CHARS) -> str:
-        """Read a file from the local filesystem.
+    def list_analysis_artifacts() -> str:
+        """Return the exact artifacts, strategy source files, and market data paths available."""
+        output = json.dumps(manifest, indent=2, sort_keys=True)
+        trace_agent_tool_call(
+            "analyst",
+            current_trace_id,
+            "list_analysis_artifacts",
+            "",
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
+        trace_agent_tool_result(
+            "analyst",
+            current_trace_id,
+            "list_analysis_artifacts",
+            output,
+            status="ok",
+            duration_ms=0,
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
+        return output
+
+    @function_tool
+    def read_artifact(kind: str, max_chars: int = ANALYST_READ_FILE_MAX_CHARS) -> str:
+        """Read a manifest artifact by kind, such as diagnostics_json or runtime_config_json.
 
         Args:
-            file_path: Absolute path to the file to read.
+            kind: Artifact key from ANALYSIS MANIFEST artifacts.
             max_chars: Maximum characters to return. Defaults to a compact audit-safe limit.
         """
         started = monotonic()
@@ -173,13 +312,16 @@ async def _call_analyst(
         trace_agent_tool_call(
             "analyst",
             current_trace_id,
-            "read_file",
-            file_path,
+            "read_artifact",
+            kind,
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
         try:
-            with open(file_path) as f:
+            artifacts = manifest.get("artifacts")
+            if not isinstance(artifacts, dict) or kind not in artifacts:
+                raise KeyError(f"Unknown artifact kind: {kind}")
+            with open(str(artifacts[kind])) as f:
                 content = f.read()
             output, truncated = _compact_tool_output(content, max_chars=max_chars)
         except Exception as e:
@@ -189,7 +331,54 @@ async def _call_analyst(
         trace_agent_tool_result(
             "analyst",
             current_trace_id,
-            "read_file",
+            "read_artifact",
+            output,
+            status=status,
+            error_type=error_type,
+            truncated=truncated,
+            duration_ms=int((monotonic() - started) * 1000),
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
+        return output
+
+    @function_tool
+    def read_strategy_source(source_name: str, max_chars: int = ANALYST_READ_FILE_MAX_CHARS) -> str:
+        """Read a strategy source file by name from ANALYSIS MANIFEST strategy_sources.
+
+        Args:
+            source_name: Source key from strategy_sources, for example strategy.py or signals.py.
+            max_chars: Maximum characters to return.
+        """
+        started = monotonic()
+        output = ""
+        status = "ok"
+        error_type = ""
+        truncated = False
+        max_chars = _resolve_tool_max_chars(max_chars, default=ANALYST_READ_FILE_MAX_CHARS)
+        trace_agent_tool_call(
+            "analyst",
+            current_trace_id,
+            "read_strategy_source",
+            source_name,
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
+        try:
+            sources = manifest.get("strategy_sources")
+            if not isinstance(sources, dict) or source_name not in sources:
+                raise KeyError(f"Unknown strategy source: {source_name}")
+            with open(str(sources[source_name])) as f:
+                content = f.read()
+            output, truncated = _compact_tool_output(content, max_chars=max_chars)
+        except Exception as e:
+            status = "error"
+            error_type = e.__class__.__name__
+            output = f"ERROR: {e}"
+        trace_agent_tool_result(
+            "analyst",
+            current_trace_id,
+            "read_strategy_source",
             output,
             status=status,
             error_type=error_type,
@@ -221,8 +410,9 @@ async def _call_analyst(
             model_name=_CONDUCTOR_MODEL,
         )
         try:
+            executable_code = _analysis_python_prelude(manifest) + "\n" + code
             result = subprocess.run(
-                [sys.executable, "-c", code],
+                [sys.executable, "-c", executable_code],
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -265,6 +455,7 @@ async def _call_analyst(
 5. Optional raw OHLCV data, only when the manifest below exposes exact paths:
 {_analyst_data_root_guidance()}
 {_market_data_manifest(trades_file)}
+{manifest_prompt}
    If no exact universe_path is resolved, do not use raw OHLCV or search for it.
 
 You MUST use ALL provided files. Trades alone show what happened;
@@ -285,7 +476,7 @@ STRATEGY EVENTS PARQUET SCHEMA (one row per decision point, read with pd.read_pa
 DIAGNOSTICS JSON: quick summary with event_counts and rejection_breakdown.
 
 WORKFLOW:
-1. ALWAYS start by reading diagnostics.json for the rejection breakdown.
+1. ALWAYS start with read_artifact("diagnostics_json") if present.
 2. Use run_python to execute pandas analysis code on trades and/or events.
 3. When the focus question requires market context (volatility, volume,
    trend, gaps, range characteristics), use raw OHLCV only if the manifest
@@ -304,8 +495,12 @@ CRITICAL RULES:
 - Do NOT invent data
 - Do NOT repeat analyses the focus question doesn't ask for
 - Use raw OHLCV only from exact manifest paths. Never guess or probe data directories.
+- Do NOT guess source paths. Use read_strategy_source with names from ANALYSIS MANIFEST.
 - Do NOT read large source/data files into the chat unless strictly necessary.
   Prefer targeted run_python summaries and print compact tables only.
+- In run_python, these variables are already defined: TRADES_FILE, EVENTS_FILE,
+  DIAGNOSTICS_FILE, RUNTIME_CONFIG_FILE, ANALYSIS_ARTIFACTS,
+  STRATEGY_SOURCE_FILES, MARKET_DATA_FILES.
 
 OUTPUT FORMAT:
 Return ONLY a JSON object:
@@ -343,7 +538,7 @@ Be brutally honest."""
     if diagnostics_file:
         user_parts.append(f"DIAGNOSTICS FILE: {diagnostics_file}")
     user_parts.append(
-        "Load the files and perform your analysis using the run_python and read_file tools."
+        "Load artifacts using read_artifact/read_strategy_source and perform analysis using run_python."
         " Start with diagnostics.json if available for an overview."
     )
     user_prompt = "\n\n".join(user_parts)
@@ -360,7 +555,7 @@ Be brutally honest."""
     agent = OAIAgent(
         name="codex-diagnostic-analyst",
         instructions=analyst_prompt,
-        tools=[read_file, run_python],
+        tools=[list_analysis_artifacts, read_artifact, read_strategy_source, run_python],
         model=model,
     )
 
@@ -387,6 +582,7 @@ Be brutally honest."""
             model=_CONDUCTOR_MODEL,
             input_text=f"{analyst_prompt}\n\n{user_prompt}",
             output_text=output,
+            trace_id=current_trace_id,
         )
         parsed = _parse_json(output)
         if parsed:
@@ -473,7 +669,13 @@ Return ONLY the JSON object."""
         usage = metadata.get("usage")
         if isinstance(usage, dict):
             usage = {**usage, "usage_source": metadata.get("usage_source", "")}
-            _accumulate_usage("web_researcher", usage, provider="openai", model=_CONDUCTOR_MODEL)
+            _accumulate_usage(
+                "web_researcher",
+                usage,
+                provider="openai",
+                model=_CONDUCTOR_MODEL,
+                trace_id=trace_id,
+            )
         trace(
             "CONDUCTOR",
             "web_search codex_cli completed",
@@ -518,7 +720,11 @@ Return ONLY the JSON object."""
         return f"WEB_SEARCH ERROR: could not parse: {output[:500]}"
     except WebResearchCliError as exc:
         accumulate_agents_sdk_result_usage(
-            "web_researcher", None, provider="openai", model=_CONDUCTOR_MODEL
+            "web_researcher",
+            None,
+            provider="openai",
+            model=_CONDUCTOR_MODEL,
+            trace_id=trace_id,
         )
         trace(
             "CONDUCTOR",

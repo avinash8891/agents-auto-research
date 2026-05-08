@@ -728,6 +728,7 @@ def record_usage_event(
     estimated_output_tokens: int = 0,
     estimated_total_tokens: int = 0,
     usage_source: str = "",
+    trace_id: str = "",
 ) -> None:
     """Emit a per-call token-usage trace event into trace-events.jsonl.
 
@@ -754,6 +755,7 @@ def record_usage_event(
                 "cost_usd": float(cost_usd or 0.0),
                 "dedupe_key": dedupe_key,
                 "usage_source": usage_source,
+                "trace_id": trace_id,
             },
             model_provider=model_provider or "",
             model_name=model_name or "",
