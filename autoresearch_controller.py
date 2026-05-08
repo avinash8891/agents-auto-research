@@ -382,6 +382,16 @@ def normalize_controller_launch_state(
     return _fresh_launch_state(job), job
 
 
+def _validate_current_running_state(prior_state: dict[str, Any]) -> int:
+    job = _state_coerce_job_to_int(prior_state.get("job"))
+    if prior_state.get("state") != "running" or job < 1:
+        raise ValueError(
+            "--run-current-state requires an already prepared running state with a valid job id; "
+            f"found state={prior_state.get('state')}"
+        )
+    return job
+
+
 IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
 
 
@@ -415,6 +425,43 @@ __all__ = (
     "COMBINATION_RULES",
     "_notify_discord",
 )
+
+
+def _run_controller_loop(
+    controller: "AutoresearchController", *, family_name: str, job: int
+) -> int:
+    from trace_sdk import get_log_file, get_session_id, set_family
+
+    set_family(family_name, job=job)
+    trace(
+        "MAIN",
+        f"Autoresearch loop starting family={family_name} job={job} session={get_session_id()} log={get_log_file()}",
+    )
+    consecutive_research_required = 0
+    while True:
+        code = controller.execute_once()
+        if code != 0:
+            return code
+        state = controller.read_state()
+        current = state.get("state")
+        if current in ("finished", "interrupted", "halted"):
+            return 0
+        if current == "blocked":
+            blockers = state.get("blockers", [])
+            if any(b.get("kind") in _RESEARCH_BLOCKER_KINDS for b in blockers):
+                consecutive_research_required += 1
+                if consecutive_research_required >= max_consecutive_research_required():
+                    trace(
+                        "MAIN",
+                        f"research_required blocker persisted for {consecutive_research_required} consecutive iterations; treating as terminal",
+                    )
+                    return 1
+                continue
+            # `execute_once()` already performs the only recoverable blocked
+            # transition (`research_required`). Any remaining blocked state is
+            # terminal for the process.
+            return 1
+        consecutive_research_required = 0
 
 
 class AutoresearchController:
@@ -985,9 +1032,30 @@ def main() -> int:
             "Interrupted research failures are retried in the same research round."
         ),
     )
+    parser.add_argument(
+        "--prepare-launch-state-only",
+        action="store_true",
+        help=(
+            "Normalize and persist launch state, then exit without executing the controller loop."
+        ),
+    )
+    parser.add_argument(
+        "--run-current-state",
+        action="store_true",
+        help=(
+            "Execute the controller loop against the already prepared running state without "
+            "renormalizing launch state."
+        ),
+    )
     args = parser.parse_args()
     if args.fresh_job and args.resume_current_job:
         parser.error("--fresh-job and --resume-current-job are mutually exclusive")
+    if args.run_current_state and (args.fresh_job or args.resume_current_job):
+        parser.error(
+            "--run-current-state cannot be combined with --fresh-job or --resume-current-job"
+        )
+    if args.prepare_launch_state_only and args.run_current_state:
+        parser.error("--prepare-launch-state-only and --run-current-state are mutually exclusive")
 
     family = load_family(args.family)
     state_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(ROOT, family)
@@ -999,6 +1067,14 @@ def main() -> int:
         runs_dir=runs_dir,
     )
     prior_state = controller.read_state()
+    if args.run_current_state:
+        try:
+            job = _validate_current_running_state(prior_state)
+        except ValueError as exc:
+            log.error("%s", exc)
+            return 1
+        return _run_controller_loop(controller, family_name=args.family, job=job)
+
     launch_fresh_job = args.fresh_job or not args.resume_current_job
     fresh_job = None
     if launch_fresh_job:
@@ -1013,39 +1089,9 @@ def main() -> int:
         log.error("%s", exc)
         return 1
     controller.write_state(state)
-
-    from trace_sdk import get_log_file, get_session_id, set_family
-
-    set_family(args.family, job=job)
-    trace(
-        "MAIN",
-        f"Autoresearch loop starting family={args.family} job={job} session={get_session_id()} log={get_log_file()}",
-    )
-    consecutive_research_required = 0
-    while True:
-        code = controller.execute_once()
-        if code != 0:
-            return code
-        state = controller.read_state()
-        current = state.get("state")
-        if current in ("finished", "interrupted", "halted"):
-            return 0
-        if current == "blocked":
-            blockers = state.get("blockers", [])
-            if any(b.get("kind") in _RESEARCH_BLOCKER_KINDS for b in blockers):
-                consecutive_research_required += 1
-                if consecutive_research_required >= max_consecutive_research_required():
-                    trace(
-                        "MAIN",
-                        f"research_required blocker persisted for {consecutive_research_required} consecutive iterations; treating as terminal",
-                    )
-                    return 1
-                continue
-            # `execute_once()` already performs the only recoverable blocked
-            # transition (`research_required`). Any remaining blocked state is
-            # terminal for the process.
-            return 1
-        consecutive_research_required = 0
+    if args.prepare_launch_state_only:
+        return 0
+    return _run_controller_loop(controller, family_name=args.family, job=job)
 
 
 if __name__ == "__main__":

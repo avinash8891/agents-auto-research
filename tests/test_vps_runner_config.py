@@ -212,7 +212,11 @@ def test_remote_command_runs_controller_for_family() -> None:
     ) in command
     assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
-        "--fresh-job"
+        "--fresh-job --prepare-launch-state-only"
+    ) in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--run-current-state"
     ) in command
     assert command.index("python_bin=.venv/bin/python") < command.index(
         '"$python_bin" -m pip install -e .'
@@ -251,7 +255,11 @@ def test_remote_resume_command_can_skip_dependency_install_when_sha_is_current()
     assert 'test -x ".venv/bin/python"' not in command
     assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
-        "--resume-current-job"
+        "--resume-current-job --prepare-launch-state-only"
+    ) in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--run-current-state"
     ) in command
 
 
@@ -277,7 +285,11 @@ def test_remote_fresh_command_can_skip_dependency_install_when_sha_is_current() 
     assert '"$python_bin" -m pip install -e .' in command
     assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
-        "--fresh-job"
+        "--fresh-job --prepare-launch-state-only"
+    ) in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--run-current-state"
     ) in command
 
 
@@ -320,7 +332,11 @@ def test_remote_command_can_resume_current_job() -> None:
 
     assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
-        "--resume-current-job"
+        "--resume-current-job --prepare-launch-state-only"
+    ) in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--run-current-state"
     ) in command
 
 

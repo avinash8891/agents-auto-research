@@ -3036,6 +3036,171 @@ def test_main_resume_current_job_rejects_inconsistent_blocked_research_state(mon
     assert loop_mod.main() == 1
 
 
+def test_main_prepare_launch_state_only_writes_clean_fresh_state_without_executing(
+    monkeypatch, tmp_path
+):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    captured: dict[str, dict] = {}
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.state = {
+                "state": "interrupted",
+                "job": 25,
+                "research_round": 3,
+                "current_thesis": {"thesis_id": "stale-thesis"},
+                "next_action": {"type": "research"},
+                "blockers": [{"kind": "research_failed", "detail": "stale"}],
+                "heartbeat": {"last_completed_thesis": "stale"},
+            }
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            self.state = dict(state)
+            captured["written_state"] = dict(state)
+
+        def execute_once(self):
+            raise AssertionError("prepare-launch-state-only should not execute the loop")
+
+        def next_fresh_job_id(self, _prior_state):
+            return 26
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "autoresearch_controller.py",
+            "--family",
+            "ema",
+            "--fresh-job",
+            "--prepare-launch-state-only",
+        ],
+    )
+
+    assert loop_mod.main() == 0
+    assert captured["written_state"] == {
+        "state": "running",
+        "job": 26,
+        "research_round": 0,
+        "job_usage": None,
+        "heartbeat": {},
+    }
+
+
+def test_main_run_current_state_executes_prepared_running_job_without_renormalizing(
+    monkeypatch, tmp_path
+):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    captured: dict[str, dict | int] = {}
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.calls = 0
+            self.state = {
+                "state": "running",
+                "job": 26,
+                "research_round": 0,
+                "job_usage": None,
+                "heartbeat": {},
+                "next_action": {"type": "run_experiment", "config": BASELINE_CONFIG},
+            }
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            captured["written_state"] = dict(state)
+            self.state = dict(state)
+
+        def execute_once(self):
+            self.calls += 1
+            captured["calls"] = self.calls
+            self.state = {"state": "finished", "job": 26}
+            return 0
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr("trace_sdk.get_log_file", lambda: "test.log")
+    monkeypatch.setattr("trace_sdk.get_session_id", lambda: "session-1")
+    monkeypatch.setattr("trace_sdk.set_family", lambda *args, **kwargs: None)
+    monkeypatch.setattr(loop_mod, "trace", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autoresearch_controller.py", "--family", "ema", "--run-current-state"],
+    )
+
+    assert loop_mod.main() == 0
+    assert "written_state" not in captured
+    assert captured["calls"] == 1
+
+
+def test_main_run_current_state_rejects_non_running_state(monkeypatch, tmp_path):
+    family = load_family("ema")
+
+    monkeypatch.setattr(loop_mod, "load_family", lambda _name: family)
+    monkeypatch.setattr(
+        loop_mod,
+        "default_controller_paths",
+        lambda _root, _family: (
+            tmp_path / "ema_autoresearch.next.json",
+            tmp_path / "ema_autoresearch.current.md",
+            tmp_path / "ema_autoresearch.ideas.md",
+            tmp_path / family.runs_dirname,
+        ),
+    )
+
+    class _Controller:
+        def __init__(self, **kwargs):
+            self.state = {"state": "interrupted", "job": 25, "research_round": 3}
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            raise AssertionError(f"run-current-state should not rewrite: {state}")
+
+        def execute_once(self):
+            raise AssertionError("run-current-state should reject before executing")
+
+    monkeypatch.setattr(loop_mod, "AutoresearchController", _Controller)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autoresearch_controller.py", "--family", "ema", "--run-current-state"],
+    )
+
+    assert loop_mod.main() == 1
+
+
 def test_resume_interrupted_research_state_tolerates_malformed_blockers() -> None:
     state = loop_mod._resume_interrupted_research_state(
         {

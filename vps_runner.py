@@ -416,10 +416,11 @@ def build_remote_command(
     else:
         segments.extend(dependency_install_segments)
     controller_mode = " --resume-current-job" if resume_current_job else " --fresh-job"
-    segments.append(
+    controller_base = (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
-        + controller_mode
     )
+    segments.append(controller_base + controller_mode + " --prepare-launch-state-only")
+    segments.append(controller_base + " --run-current-state")
     return " && ".join(segments)
 
 
