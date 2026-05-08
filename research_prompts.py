@@ -30,10 +30,12 @@ theses that are in the same mechanism dimension, strong winners, rejected or
 blocked ideas related to your candidate, code-required ideas that may unlock
 future research, or similar enough that duplication risk exists. Do not propose
 until you have fetched full details for the relevant prior theses. Build on
-prior learning instead of starting from scratch. You MUST propose something that
-explores a DIFFERENT MECHANISM DIMENSION than all previous theses (see
-MECHANISM RESEARCH DIMENSIONS below), or clearly explain why the new thesis is
-a fundamentally new mechanism within a previously explored dimension.
+prior learning instead of starting from scratch. Prefer mechanisms in
+underexplored dimensions, but do not treat the dimension list as a closed
+taxonomy. You may propose a same-dimension thesis when the mechanism is
+materially new, and you may propose an emergent dimension when the idea would
+be distorted by forcing it into the core list. The hard rule is: no duplicate
+mechanism and no arbitrary parameter search.
 
 Before proposing, call list_experiment_results at least twice:
 1. list_experiment_results(order="latest") to see the newest backtest outcomes.
@@ -63,9 +65,11 @@ RESEARCH PRINCIPLES (from Lopez de Prado, "Advances in Financial Machine Learnin
 MECHANISM RESEARCH DIMENSIONS
 ═══════════════════════════════════════════════════════════════════
 
-These are the STRUCTURAL DIMENSIONS of any trading strategy. Each represents
-a fundamentally different research question. You must explore DIFFERENT
-dimensions across rounds, not variations within the same one.
+These are common STRUCTURAL DIMENSIONS of trading strategy research. They are
+a shared vocabulary for comparing prior work, not a closed list of allowed
+ideas. Prefer underexplored dimensions across rounds, but a same-dimension
+thesis is valid when it tests a materially new causal mechanism rather than a
+variation of the same one.
 
 1. ENTRY TIMING — When does the market microstructure create the opportunity?
    Questions: What time window has the strongest edge? Why does it exist?
@@ -97,7 +101,8 @@ dimensions across rounds, not variations within the same one.
 
 8. EMERGENT — A new reusable mechanism family that does not fit the seven
    core dimensions.
-   Use this only when the idea would be misclassified by every core dimension.
+   Use this whenever forcing the idea into a core dimension would hide the
+   real causal mechanism. Do not avoid emergent just because it is new.
    You MUST define:
    - new_dimension_name
    - why_existing_dimensions_do_not_fit
@@ -106,10 +111,9 @@ dimensions across rounds, not variations within the same one.
    If a prior emergent dimension already exists, reuse that exact dimension
    name instead of creating another emergent dimension.
 
-When proposing a thesis, you MUST state which dimension it explores.
-If prior theses already explored that dimension, you MUST choose a
-different one OR explain what fundamentally new mechanism within that
-dimension you are testing (not a parameter variant).
+When proposing a thesis, you MUST state which dimension it explores. If prior
+theses already explored that dimension, explain the materially new mechanism
+within that dimension. If none exists, choose another mechanism or stop.
 
 ═══════════════════════════════════════════════════════════════════
 PARAMETER TUNING DETECTOR
@@ -129,6 +133,17 @@ moving a number? These are PARAMETER TUNING and will be REJECTED:
   ✓ Previous thesis tested entry time window (entry_timing dimension).
     New thesis tests trailing stop vs fixed target (exit_mechanism dimension).
     → DIFFERENT DIMENSION. Acceptable.
+
+  ✓ Previous thesis used a generic opening cutoff.
+    New thesis tests a market-structure boundary such as "avoid the first
+    three minutes because auction/spread noise creates adverse selection",
+    with diagnostics proving that exact boundary is measurable.
+    → STRUCTURAL THRESHOLD. Acceptable.
+
+A threshold or parameter is acceptable only when it represents a claimed
+market-structure boundary, risk boundary, liquidity boundary, or execution
+mechanism that can be falsified by diagnostics. It is not acceptable when the
+only rationale is that a different number may improve PF.
 
 WORKFLOW:
 

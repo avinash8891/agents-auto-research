@@ -660,6 +660,7 @@ def test_execute_once_research_success_records_quality_refinement_and_bridges(
     reflexio.assert_called_once()
     reflexio_payload = reflexio.call_args.kwargs["payload"]
     assert reflexio_payload["episode"]["round"] == 1
+    assert "agent_reflections" in reflexio_payload
     assert reflexio_payload["trajectory"]
     write_exports.assert_called_once()
 
@@ -708,6 +709,10 @@ def test_execute_once_writes_adapter_export_packages_to_disk(controller, monkeyp
     assert (export_root / "halo" / "package.json").exists()
     assert (export_root / "recursive_improve" / "recursive-improve-event.json").exists()
     assert (export_root / "reflexio" / "reflexio-event.json").exists()
+    reflexio_payload = json.loads(
+        (export_root / "reflexio" / "reflexio-event.json").read_text(encoding="utf-8")
+    )
+    assert "agent_reflections" in reflexio_payload
 
 
 def test_execute_once_research_validation_rejection_records_rule_proposal(controller, monkeypatch):

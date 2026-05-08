@@ -306,6 +306,44 @@ def test_agent_scoped_feedback_prefers_agent_reflection_over_round_reasoning(tmp
     assert "analyst-specific lesson" not in builder_feedback
 
 
+def test_agent_scoped_feedback_derives_reflection_from_legacy_trajectory(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
+    payload = build_reflexio_payload(
+        research_round=1,
+        thesis_id="T1",
+        outcome="builder_failed",
+        family="ema",
+        reasoning="generic round lesson must not be used for analyst feedback",
+        rejection_reason="round failed",
+    )
+    payload["trajectory"] = [
+        {
+            "agent": "analyst",
+            "action": "tool_result",
+            "tool_name": "run_python",
+            "summary": "FileNotFoundError: missing /data/raw path probe wasted tokens",
+        },
+        {
+            "agent": "builder",
+            "action": "builder_error",
+            "summary": "builder_implementation_contract_failed unexpected_config_key",
+        },
+    ]
+    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir.mkdir(parents=True)
+    (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    controller = SimpleNamespace(root=tmp_path)
+
+    analyst_feedback = build_reflexion_feedback(controller, current_round=2, agent="analyst")
+
+    assert "agent_lesson:" in analyst_feedback
+    assert "missing /data/raw path probe" in analyst_feedback
+    assert "generic round lesson" not in analyst_feedback
+    assert "builder_implementation_contract_failed" not in analyst_feedback
+    assert "you_reasoned" not in analyst_feedback
+
+
 def test_agent_scoped_feedback_returns_empty_when_no_matching_agent(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
     payload = build_reflexio_payload(

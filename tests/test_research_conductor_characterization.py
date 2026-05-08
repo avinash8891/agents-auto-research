@@ -337,6 +337,29 @@ def test_conductor_system_prompt_exposes_required_diagnostics_for_non_builtin_me
     assert "list them in required_diagnostics" in prompt
 
 
+def test_conductor_system_prompt_keeps_mechanism_dimensions_open_ended():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+    compact = " ".join(prompt.split())
+
+    assert "do not treat the dimension list as a closed taxonomy" in compact
+    assert "not a closed list of allowed ideas" in compact
+    assert "Do not avoid emergent just because it is new" in compact
+    assert "forcing the idea into a core dimension would hide the real causal mechanism" in compact
+    assert "materially new causal mechanism" in compact
+
+
+def test_conductor_system_prompt_allows_structural_thresholds_without_parameter_chasing():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+    compact = " ".join(prompt.split())
+
+    assert "STRUCTURAL THRESHOLD. Acceptable." in compact
+    assert "market-structure boundary" in compact
+    assert "risk boundary" in compact
+    assert "liquidity boundary" in compact
+    assert "execution mechanism" in compact
+    assert "only rationale is that a different number may improve PF" in compact
+
+
 def test_conductor_system_prompt_does_not_claim_raw_data_directory_is_always_available():
     prompt = rc._build_conductor_system_prompt("Strategy description")
 

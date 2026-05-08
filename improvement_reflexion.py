@@ -15,6 +15,7 @@ from typing import Any
 
 from autoresearch_logging import get_logger
 from improvement_flags import reflexion_enabled
+from reflexio_agent_reflections import build_agent_reflections
 
 log = get_logger(__name__)
 
@@ -67,6 +68,10 @@ def _format_preamble(
         else {}
     )
     trajectory = payload.get("trajectory") if isinstance(payload.get("trajectory"), list) else []
+    if not agent_reflections and trajectory:
+        agent_reflections = build_agent_reflections(
+            [item for item in trajectory if isinstance(item, dict)]
+        )
     if agent is not None:
         trajectory = _trajectory_for_agent(trajectory, agent)
         if not trajectory:
@@ -84,8 +89,14 @@ def _format_preamble(
     agent_reflection = _agent_reflection_for(agent_reflections, agent) if agent else None
     if agent_reflection:
         _append_agent_reflection_lines(body_lines, agent_reflection)
-    elif reasoning:
+    elif reasoning and agent is None:
         body_lines.append(f"  you_reasoned: {reasoning}")
+    elif agent is not None:
+        log.warning(
+            "REFLEXION missing agent_reflections for agent=%s despite matching trajectory; "
+            "using trajectory only. Action: inspect Reflexio export generation.",
+            agent,
+        )
     if rejection_reason:
         body_lines.append(f"  why_it_failed: {rejection_reason}")
     if trajectory:
