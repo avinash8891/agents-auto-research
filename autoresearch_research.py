@@ -49,7 +49,7 @@ from trace_adapters.recursive_improve import (
     build_recursive_improve_export_package,
     build_recursive_improve_payload,
 )
-from trace_adapters.reflexio import build_reflexio_export_package, build_reflexio_payload
+from trace_adapters.reflexio import build_reflexio_export_package
 from trace_quality_history import QualityHistory
 from trace_rule_proposals import RuleProposalRegistry
 from trace_sdk import (
@@ -896,16 +896,25 @@ def _record_round_quality_and_bridges(
         "usage": round_usage,
         "quality": quality_event,
     }
+    canonical_trace_path = get_event_file()
+    reflexio_package = build_reflexio_export_package(
+        **payload_kwargs,
+        canonical_trace_path=canonical_trace_path,
+    )
     for emit_fn, build_fn, label in [
         (emit_halo_event, build_halo_payload, "HALO"),
         (emit_recursive_improve_event, build_recursive_improve_payload, "recursive improve"),
-        (emit_reflexio_event, build_reflexio_payload, "reflexio"),
     ]:
         emit_fn(
             action="research_round",
             summary=f"{label} round {research_round}",
             payload=build_fn(**payload_kwargs),
         )
+    emit_reflexio_event(
+        action="research_round",
+        summary=f"reflexio round {research_round}",
+        payload=reflexio_package["files"]["reflexio-event.json"],
+    )
     _write_adapter_exports(controller.root, **payload_kwargs)
 
 

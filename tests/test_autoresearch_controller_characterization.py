@@ -590,6 +590,9 @@ def test_execute_once_research_success_records_quality_refinement_and_bridges(
     halo.assert_called_once()
     recursive_improve.assert_called_once()
     reflexio.assert_called_once()
+    reflexio_payload = reflexio.call_args.kwargs["payload"]
+    assert reflexio_payload["episode"]["round"] == 1
+    assert reflexio_payload["trajectory"]
     write_exports.assert_called_once()
 
 
