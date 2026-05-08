@@ -114,6 +114,16 @@ def test_config_key_overlap_compares_nested_engine_change_keys() -> None:
     assert reason == ""
 
 
+def test_validate_thesis_dict_requires_requested_primitives_for_code_change() -> None:
+    thesis = _base_engine_change_thesis("missing_primitives", "signal_quality")
+    thesis["requested_primitives"] = []
+
+    with pytest.raises(
+        ThesisValidationError, match="requires_code_change theses must declare requested_primitives"
+    ):
+        validate_thesis_dict(thesis)
+
+
 def test_config_key_overlap_rejects_same_nested_engine_change_key() -> None:
     is_duplicate, reason = config_key_overlap(
         {

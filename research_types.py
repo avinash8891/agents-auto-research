@@ -118,6 +118,7 @@ class ExperimentContract(BaseModel):
     expected_effects: list[ExpectedEffect] = Field(default_factory=list)
     disqualifiers: list[Disqualifier] = Field(default_factory=list)
     required_diagnostics: list[str] = Field(default_factory=list)
+    missing_primitives: list[str] = Field(default_factory=list)
 
     status: Literal["ready_to_run", "needs_code", "rejected_at_compile"] = "ready_to_run"
 

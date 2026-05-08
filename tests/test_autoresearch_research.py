@@ -16,6 +16,7 @@ from pathlib import Path
 
 from autoresearch_research import (
     _check_parsed_for_terminal,
+    _try_one_validation_attempt,
     accumulate_job_usage,
     log_research_round,
     notify_discord,
@@ -324,3 +325,91 @@ def test_results_to_dicts_uses_insight_brief_from_either_layer() -> None:
 
 def test_results_to_dicts_handles_empty_input() -> None:
     assert results_to_dicts([]) == []
+
+
+def test_try_one_validation_attempt_operationalizes_code_change_before_validation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _Controller:
+        root = tmp_path
+        job_runtime_root = tmp_path
+        family = type("Family", (), {"name": "ema"})()
+
+        def log_research_round(self, *args, **kwargs):
+            raise AssertionError("should not reject after operationalization")
+
+    def fake_operationalize(thesis):
+        updated = dict(thesis)
+        updated["requested_primitives"] = ["opening_range_resolution_gate_enabled"]
+        updated["config_changes"] = {"opening_range_resolution_gate_enabled": True}
+        return updated
+
+    class _Validated:
+        thesis_id = "opening_range_gate"
+
+    class _Contract:
+        status = "needs_code"
+        experiment_id = "opening_range_gate"
+
+    def fake_validate(raw, prior_theses=None):
+        captured["validated_raw"] = dict(raw)
+        return _Validated()
+
+    def fake_compile(validated, root, artifact_root=None):
+        captured["compiled"] = {
+            "thesis_id": validated.thesis_id,
+            "root": root,
+            "artifact_root": artifact_root,
+        }
+        return _Contract()
+
+    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
+    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
+    monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
+
+    result, retry_feedback = _try_one_validation_attempt(
+        _Controller(),
+        2,
+        0,
+        {
+            "reasoning": "code change thesis",
+            "suggested_theses": [
+                {
+                    "thesis_id": "opening_range_gate",
+                    "hypothesis": "need a new opening range gate",
+                    "mechanism": "gate post-open entries on opening range resolution",
+                    "mechanism_dimension": "signal_quality",
+                    "dimension_novelty": "new gate",
+                    "expected_effects": [
+                        {
+                            "metric": "profit_factor",
+                            "direction": "increase",
+                            "rationale": "better quality",
+                        }
+                    ],
+                    "disqualifiers": [
+                        {
+                            "name": "trade_count_collapse",
+                            "condition": "trade_count falls too much",
+                            "severity": "hard_fail",
+                        }
+                    ],
+                    "requires_code_change": True,
+                    "requested_primitives": [],
+                }
+            ],
+            "should_stop": False,
+        },
+        prior_theses=[],
+    )
+
+    assert retry_feedback is None
+    assert result is not None
+    assert captured["validated_raw"]["requested_primitives"] == [  # type: ignore[index]
+        "opening_range_resolution_gate_enabled"
+    ]
+    assert captured["validated_raw"]["config_changes"] == {  # type: ignore[index]
+        "opening_range_resolution_gate_enabled": True
+    }

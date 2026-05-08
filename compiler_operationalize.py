@@ -17,6 +17,15 @@ AMBIGUOUS_PATTERNS = {
     "wide_or": ("wide or", "wide-or", "wide_or", "wide opening range"),
 }
 
+
+def _coerce_missing_primitives(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("missing_primitives must be a list when provided")
+    return [str(item) for item in value]
+
+
 # ---------------------------------------------------------------------------
 # Operationalization: ambiguous thesis → exact contract
 # ---------------------------------------------------------------------------
@@ -40,6 +49,11 @@ def finalize_thesis_config_changes(
     finalized["operationalization_reasoning"] = clarification.get("reasoning", "")
     primitive_contract = clarification.get("resolved_contract")
     resolved_changes = clarification.get("resolved_changes") or {}
+    resolved_missing = _coerce_missing_primitives(
+        clarification.get("missing_primitives")
+        if clarification.get("missing_primitives") is not None
+        else thesis.get("requested_primitives")
+    )
     if primitive_contract is None:
         if resolved_changes:
             finalized["primitive_contract"] = thesis.get("primitive_contract", [])
@@ -49,9 +63,9 @@ def finalize_thesis_config_changes(
             finalized["config_changes"] = normalized
             finalized["requires_code_change"] = clarification.get("requires_code_change", False)
             if finalized["requires_code_change"]:
-                finalized["missing_primitives"] = clarification.get("missing_primitives", [])
+                finalized["missing_primitives"] = resolved_missing
+                finalized["requested_primitives"] = resolved_missing
                 finalized["code_change_idea"] = clarification.get("code_change_idea")
-                finalized["config_changes"] = {}
             return finalized
         primitive_contract = []
     finalized["primitive_contract"] = primitive_contract
@@ -72,15 +86,16 @@ def finalize_thesis_config_changes(
         )
     if clarification.get("requires_code_change"):
         finalized["requires_code_change"] = True
-        finalized["config_changes"] = {}
-        finalized["missing_primitives"] = (
-            clarification.get("missing_primitives") or support["missing_primitive_types"]
-        )
+        finalized["config_changes"] = dict(resolved_changes)
+        finalized["missing_primitives"] = resolved_missing or support["missing_primitive_types"]
+        finalized["requested_primitives"] = finalized["missing_primitives"]
         finalized["code_change_idea"] = clarification.get("code_change_idea")
         return finalized
 
     finalized["requires_code_change"] = (not support["supported"]) or (not renderable)
     finalized["missing_primitives"] = support["missing_primitive_types"]
+    if finalized["requires_code_change"]:
+        finalized["requested_primitives"] = finalized["missing_primitives"]
     finalized["config_changes"] = rendered_config if renderable and support["supported"] else {}
     if finalized["requires_code_change"] and not finalized.get("code_change_idea"):
         finalized["code_change_idea"] = clarification.get("code_change_idea")
@@ -98,11 +113,17 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
     family_name = thesis["strategy_family"]
     strategy = STRATEGIES[family_name]
     needs_operationalization = thesis_needs_operationalization(thesis)
+    needs_code_contract = bool(thesis.get("requires_code_change")) and not thesis.get(
+        "requested_primitives"
+    )
     if needs_operationalization:
         if thesis.get("config_changes"):
             thesis["primitive_contract"] = thesis.get("primitive_contract", [])
             thesis["requires_code_change"] = thesis.get("requires_code_change", False)
             return thesis
+        clarification = _run_operationalization_agent(thesis)
+        return finalize_thesis_config_changes(thesis, clarification)
+    if needs_code_contract:
         clarification = _run_operationalization_agent(thesis)
         return finalize_thesis_config_changes(thesis, clarification)
 

@@ -71,6 +71,7 @@ def _needs_code_contract(
         expected_effects=thesis.expected_effects,
         disqualifiers=thesis.disqualifiers,
         required_diagnostics=thesis.required_diagnostics,
+        missing_primitives=thesis.requested_primitives,
         status=status,
     )
     write_text_atomic(experiment_dir / "contract.json", contract.model_dump_json(indent=2) + "\n")
@@ -106,6 +107,7 @@ def _compile_runtime_config_contract(
         expected_effects=thesis.expected_effects,
         disqualifiers=thesis.disqualifiers,
         required_diagnostics=thesis.required_diagnostics,
+        missing_primitives=[],
         status="ready_to_run",
     )
     write_text_atomic(experiment_dir / "contract.json", contract.model_dump_json(indent=2) + "\n")

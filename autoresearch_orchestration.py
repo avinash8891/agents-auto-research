@@ -383,6 +383,7 @@ def build_missing_primitives_for_state(
 ) -> dict[str, Any]:
     trace("BUILDER", f"start thesis={thesis_id}")
     trace("LOOP", f"building halted thesis={thesis_id}")
+    job_runtime_root = getattr(controller, "job_runtime_root", controller.root)
     state = _mark_builder_running(
         controller,
         state,
@@ -394,7 +395,7 @@ def build_missing_primitives_for_state(
         import compiler_pipeline
 
         builder_result = compiler_pipeline.build_missing_primitives(
-            controller.root, thesis_id, artifact_root=controller.job_runtime_root
+            controller.root, thesis_id, artifact_root=job_runtime_root
         )
     except (
         Exception
@@ -413,7 +414,7 @@ def build_missing_primitives_for_state(
     )
     try:
         _refresh_reflexio_export_after_builder(
-            controller.job_runtime_root,
+            job_runtime_root,
             research_round=research_round,
             thesis_id=thesis_id,
             family=controller.family.name,

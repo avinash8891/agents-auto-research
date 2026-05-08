@@ -98,24 +98,12 @@ def _verify_no_undeclared_config_drift(
 ) -> list[str]:
     if not isinstance(contract, dict):
         return []
-    base_config_path = contract.get("baseline_config_path")
-    if not isinstance(base_config_path, str) or not base_config_path:
+    loaded = _load_baseline_config(root, contract, family_name)
+    if loaded is None:
         return []
-    base_path = root / base_config_path
-    if not base_path.exists():
-        try:
-            expected_baseline = load_family(family_name).baseline_config_path
-        except ValueError:
-            return [f"base_config_missing:{base_config_path}"]
-        if base_config_path == expected_baseline:
-            base_config = STRATEGIES[family_name].get_defaults()
-        else:
-            return [f"base_config_missing:{base_config_path}"]
-    else:
-        try:
-            base_config = _read_runtime_config(base_path)
-        except Exception as exc:
-            return [f"base_config_unreadable:{base_config_path}:{exc}"]
+    if isinstance(loaded, str):
+        return [loaded]
+    base_config = loaded
     config_changes = thesis.get("config_changes") or {}
     if not isinstance(config_changes, dict):
         return []
@@ -134,6 +122,31 @@ def _verify_no_undeclared_config_drift(
     for key in sorted(set(config) - set(base_config) - allowed_drift):
         failures.append(f"unexpected_config_key:{key}")
     return failures
+
+
+def _load_baseline_config(
+    root: Path,
+    contract: dict[str, Any] | None,
+    family_name: str,
+) -> dict[str, Any] | str | None:
+    if not isinstance(contract, dict):
+        return None
+    base_config_path = contract.get("baseline_config_path")
+    if not isinstance(base_config_path, str) or not base_config_path:
+        return None
+    base_path = root / base_config_path
+    if not base_path.exists():
+        try:
+            expected_baseline = load_family(family_name).baseline_config_path
+        except ValueError:
+            return f"base_config_missing:{base_config_path}"
+        if base_config_path == expected_baseline:
+            return STRATEGIES[family_name].get_defaults()
+        return f"base_config_missing:{base_config_path}"
+    try:
+        return _read_runtime_config(base_path)
+    except Exception as exc:
+        return f"base_config_unreadable:{base_config_path}:{exc}"
 
 
 def _json_equal(left: Any, right: Any) -> bool:

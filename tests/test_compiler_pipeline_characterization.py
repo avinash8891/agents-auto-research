@@ -477,6 +477,57 @@ def test_finalize_thesis_config_changes_rejects_incomplete_resolved_changes_for_
         finalize_thesis_config_changes(thesis, clarification)
 
 
+def test_finalize_thesis_config_changes_preserves_activation_config_for_code_change() -> None:
+    thesis = {
+        "thesis_id": "opening_range_gate",
+        "strategy_family": "ema",
+        "hypothesis": "opening range gate avoids post-open whipsaws",
+        "mechanism": "require an opening-range resolution gate before entries",
+    }
+    clarification = {
+        "resolved_changes": {
+            "opening_range_resolution_gate_enabled": True,
+            "opening_range_resolution_window_end": "09:50",
+        },
+        "reasoning": "Gate needs new runtime support and explicit activation config.",
+        "requires_code_change": True,
+        "missing_primitives": [
+            "opening_range_resolution_gate_enabled",
+            "opening_range_resolution_window_end",
+        ],
+    }
+
+    finalized = finalize_thesis_config_changes(thesis, clarification)
+
+    assert finalized["requires_code_change"] is True
+    assert finalized["config_changes"] == {
+        "opening_range_resolution_gate_enabled": True,
+        "opening_range_resolution_window_end": "09:50",
+    }
+    assert finalized["requested_primitives"] == [
+        "opening_range_resolution_gate_enabled",
+        "opening_range_resolution_window_end",
+    ]
+
+
+def test_finalize_thesis_config_changes_rejects_non_list_missing_primitives() -> None:
+    thesis = {
+        "thesis_id": "opening_range_gate",
+        "strategy_family": "ema",
+        "hypothesis": "opening range gate avoids post-open whipsaws",
+        "mechanism": "require an opening-range resolution gate before entries",
+    }
+    clarification = {
+        "resolved_changes": {"opening_range_resolution_gate_enabled": True},
+        "reasoning": "bad payload shape",
+        "requires_code_change": True,
+        "missing_primitives": "opening_range_resolution_gate_enabled",
+    }
+
+    with pytest.raises(ValueError, match="missing_primitives must be a list"):
+        finalize_thesis_config_changes(thesis, clarification)
+
+
 def test_build_missing_primitives_returns_error_when_no_cli(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -510,6 +561,46 @@ def test_build_missing_primitives_returns_error_when_no_cli(
         "generated_config": None,
         "validation_passed": False,
     }
+
+
+def test_build_missing_primitives_rejects_needs_code_without_primitive_contract(
+    tmp_path: Path,
+) -> None:
+    thesis_id = "missing_primitive_contract"
+    experiment_dir = tmp_path / "experiments" / thesis_id
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    (experiment_dir / "thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "hypothesis": "needs code but is under-specified",
+                "mechanism": "no concrete primitive was declared",
+                "config_changes": {},
+                "requested_primitives": [],
+            }
+        )
+        + "\n"
+    )
+    (experiment_dir / "contract.json").write_text(
+        json.dumps(
+            {
+                "experiment_id": thesis_id,
+                "thesis_id": thesis_id,
+                "strategy_family": "ema",
+                "baseline_config_path": "configs/ema_base.yaml",
+                "runtime_config": {},
+                "missing_primitives": [],
+                "status": "needs_code",
+            }
+        )
+        + "\n"
+    )
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "builder_missing_primitive_contract"
 
 
 def test_build_missing_primitives_includes_builder_reflexion_feedback(
@@ -618,6 +709,19 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
 
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "compiler_builder._validated_generated_config_result",
+        lambda **kwargs: {
+            "status": "completed",
+            "generated_config": kwargs["config_path"],
+            "validation_passed": True,
+            "implementation_verification_passed": True,
+            "timed_out": False,
+            "exit_code": 0,
+            "duration_seconds": 0.1,
+            "reason": "",
+        },
+    )
 
     result = build_missing_primitives(tmp_path, thesis_id)
 
@@ -680,6 +784,19 @@ def test_build_missing_primitives_trace_links_builder_attempt_artifacts(
         "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
     )
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "compiler_builder._validated_generated_config_result",
+        lambda **kwargs: {
+            "status": "completed",
+            "generated_config": kwargs["config_path"],
+            "validation_passed": True,
+            "implementation_verification_passed": True,
+            "timed_out": False,
+            "exit_code": 0,
+            "duration_seconds": 0.1,
+            "reason": "",
+        },
+    )
     monkeypatch.setattr("compiler_builder.trace", lambda *args, **kwargs: None)
     monkeypatch.setattr("compiler_builder.record_event", lambda **kwargs: events.append(kwargs))
 
@@ -752,7 +869,7 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
                 "hypothesis": "gate trailing by opening momentum",
                 "mechanism": "only allow trailing in persistent opening regimes",
                 "config_changes": {"requires_engine_change": True},
-                "requested_primitives": [],
+                "requested_primitives": ["momentum_activation_enabled"],
             }
         )
         + "\n"
@@ -767,6 +884,7 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
                 "runtime_config": {},
                 "hypothesis": "gate trailing by opening momentum",
                 "mechanism": "only allow trailing in persistent opening regimes",
+                "missing_primitives": ["momentum_activation_enabled"],
                 "status": "needs_code",
             }
         )
@@ -790,6 +908,19 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
         "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
     )
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "compiler_builder._validated_generated_config_result",
+        lambda **kwargs: {
+            "status": "completed",
+            "generated_config": kwargs["config_path"],
+            "validation_passed": True,
+            "implementation_verification_passed": True,
+            "timed_out": True,
+            "exit_code": None,
+            "duration_seconds": 0.1,
+            "reason": "builder timed out after writing a valid config",
+        },
+    )
 
     result = build_missing_primitives(tmp_path, thesis_id)
 
@@ -1022,6 +1153,15 @@ def test_builder_normalizes_legacy_new_config_keys_needed_before_missing_primiti
     assert compiler_builder._resolve_missing_primitives(normalized, {}) == [
         "open_execution_delay_enabled",
         "open_execution_delay_minutes",
+    ]
+
+
+def test_builder_missing_primitives_falls_back_to_contract_when_requested_is_empty() -> None:
+    proposal = {"requested_primitives": []}
+    compilation = {"missing_primitives": ["opening_range_resolution_gate_enabled"]}
+
+    assert compiler_builder._resolve_missing_primitives(proposal, compilation) == [
+        "opening_range_resolution_gate_enabled"
     ]
 
 
@@ -1464,7 +1604,7 @@ def test_build_missing_primitives_reports_timeout_when_generated_config_is_inval
                 "hypothesis": "generate an invalid config",
                 "mechanism": "missing required runtime fields",
                 "config_changes": {"requires_engine_change": True},
-                "requested_primitives": [],
+                "requested_primitives": ["engine_change_probe"],
             }
         )
         + "\n"
@@ -1479,6 +1619,7 @@ def test_build_missing_primitives_reports_timeout_when_generated_config_is_inval
                 "runtime_config": {},
                 "hypothesis": "generate an invalid config",
                 "mechanism": "missing required runtime fields",
+                "missing_primitives": ["engine_change_probe"],
                 "status": "needs_code",
             }
         )
@@ -1560,6 +1701,19 @@ print(f"generated {{config}}")
 """)
     codex.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setattr(
+        "compiler_builder._validated_generated_config_result",
+        lambda **kwargs: {
+            "status": "completed",
+            "generated_config": kwargs["config_path"],
+            "validation_passed": True,
+            "implementation_verification_passed": True,
+            "timed_out": False,
+            "exit_code": 0,
+            "duration_seconds": 0.1,
+            "reason": "",
+        },
+    )
 
     result = build_missing_primitives(tmp_path, thesis_id)
 

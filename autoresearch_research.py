@@ -723,11 +723,17 @@ def _try_one_validation_attempt(
     loop with that result. If `retry_feedback` is not None, retry the
     conductor with that feedback string.
     """
-    from compiler_pipeline import compile_research_thesis
+    from compiler_pipeline import compile_research_thesis, operationalize_thesis
     from thesis_validator import ThesisValidationError, validate_thesis_dict
 
     raw_thesis = parsed["suggested_theses"][0]
     raw_thesis["strategy_family"] = controller.family.name
+    if raw_thesis.get("requires_code_change") and not raw_thesis.get("requested_primitives"):
+        operationalized = operationalize_thesis(dict(raw_thesis))
+        missing = operationalized.get("missing_primitives") or []
+        if missing and not operationalized.get("requested_primitives"):
+            operationalized["requested_primitives"] = missing
+        raw_thesis = operationalized
     thesis_id = raw_thesis.get("thesis_id", "unknown")
     log.info(
         f"RESEARCH_RAW thesis_id={thesis_id} "

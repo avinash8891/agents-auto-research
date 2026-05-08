@@ -632,6 +632,8 @@ def validate_research_thesis(
         raise ThesisValidationError(
             "Thesis has neither config_changes nor requires_code_change=true"
         )
+    if thesis.requires_code_change and not thesis.requested_primitives:
+        raise ThesisValidationError("requires_code_change theses must declare requested_primitives")
     _validate_base_config_path(thesis.base_config_path)
     if _requires_explicit_base_config(thesis) and not thesis.base_config_path:
         raise ThesisValidationError(

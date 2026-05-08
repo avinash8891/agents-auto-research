@@ -54,14 +54,35 @@ def _timeout_output(exc: subprocess.TimeoutExpired) -> tuple[str, str]:
 def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str, Any]) -> list[str]:
     rp = proposal.get("requested_primitives")
     mp = compilation.get("missing_primitives")
-    if rp is not None:
+    if isinstance(rp, list) and rp:
         return rp
-    if mp is not None:
+    if isinstance(mp, list) and mp:
+        return mp
+    if isinstance(rp, list):
+        return rp
+    if isinstance(mp, list):
         return mp
     config_changes = proposal.get("config_changes") or {}
     if not isinstance(config_changes, dict):
         return []
     return sorted(key for key in config_changes if key not in THESIS_METADATA_CONFIG_KEYS)
+
+
+def _validate_missing_primitives_contract(
+    *, thesis_id: str, compilation: dict[str, Any], missing_primitives: list[str]
+) -> dict[str, Any] | None:
+    if compilation.get("status") == "needs_code" and not missing_primitives:
+        return {
+            "status": "error",
+            "error_code": "builder_missing_primitive_contract",
+            "reason": (
+                f"needs_code thesis '{thesis_id}' is missing requested/missing primitives; "
+                "operationalization must resolve the code-change contract before builder"
+            ),
+            "generated_config": None,
+            "validation_passed": False,
+        }
+    return None
 
 
 def _normalize_proposal_config_changes(proposal: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -466,6 +487,11 @@ def build_missing_primitives(
             compilation = {**compilation, "baseline_config_path": base_config_path}
         normalized_contract = compilation.get("normalized_contract") or []
         missing_primitives = _resolve_missing_primitives(proposal, compilation)
+        invalid_contract = _validate_missing_primitives_contract(
+            thesis_id=thesis_id, compilation=compilation, missing_primitives=missing_primitives
+        )
+        if invalid_contract is not None:
+            return invalid_contract
         generated_name = (
             (artifact_root / "experiments" / thesis_id / "runtime_config.json")
             .relative_to(root)
@@ -554,6 +580,11 @@ def build_missing_primitives(
             compilation = {**compilation, "baseline_config_path": base_config_path}
         normalized_contract = compilation.get("normalized_contract") or []
         missing_primitives = _resolve_missing_primitives(proposal, compilation)
+        invalid_contract = _validate_missing_primitives_contract(
+            thesis_id=thesis_id, compilation=compilation, missing_primitives=missing_primitives
+        )
+        if invalid_contract is not None:
+            return invalid_contract
         generated_name = (
             f"{family.name}_{thesis_id}.yaml"
             if not thesis_id.startswith(f"{family.name}_")

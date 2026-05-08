@@ -218,7 +218,7 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
     written_states: list = []
     ctrl = _make_controller(state=state, root=tmp_path, written_states=written_states)
 
-    def fake_build(root: Path, received_thesis_id: str) -> dict[str, Any]:
+    def fake_build(root: Path, received_thesis_id: str, *, artifact_root=None) -> dict[str, Any]:
         assert received_thesis_id == thesis_id
         assert written_states
         active = written_states[-1]
@@ -314,7 +314,7 @@ def test_build_missing_primitives_does_not_mark_invalid_completed_builder_as_com
     written_states: list = []
     ctrl = _make_controller(state=state, root=tmp_path, written_states=written_states)
 
-    def fake_build(root: Path, received_thesis_id: str) -> dict[str, Any]:
+    def fake_build(root: Path, received_thesis_id: str, *, artifact_root=None) -> dict[str, Any]:
         assert received_thesis_id == thesis_id
         return {
             "status": "completed",
