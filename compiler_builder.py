@@ -124,21 +124,26 @@ def _read_json_artifact(path: Path) -> dict[str, Any] | None:
 
 
 def _load_structured_thesis_artifacts(
-    root: Path, thesis_id: str
+    root: Path, thesis_id: str, *, artifact_root: Path | None = None
 ) -> tuple[dict[str, Any], dict[str, Any], Path, Path] | None:
-    experiment_dir = root / "experiments" / thesis_id
-    thesis_path = experiment_dir / "thesis.json"
-    contract_path = experiment_dir / "contract.json"
-    thesis = _read_json_artifact(thesis_path)
-    contract = _read_json_artifact(contract_path)
-    if thesis is None or contract is None:
-        return None
-    return thesis, contract, thesis_path, contract_path
+    roots = [artifact_root] if artifact_root is not None else []
+    roots.append(root)
+    for current_root in roots:
+        experiment_dir = current_root / "experiments" / thesis_id
+        thesis_path = experiment_dir / "thesis.json"
+        contract_path = experiment_dir / "contract.json"
+        thesis = _read_json_artifact(thesis_path)
+        contract = _read_json_artifact(contract_path)
+        if thesis is not None and contract is not None:
+            return thesis, contract, thesis_path, contract_path
+    return None
 
 
-def _builder_artifact_dir(root: Path, family_name: str, thesis_id: str) -> Path:
+def _builder_artifact_dir(
+    root: Path, family_name: str, thesis_id: str, *, artifact_root: Path | None = None
+) -> Path:
     family = load_family(family_name)
-    return root / family.builder_requests_dirname / thesis_id
+    return (artifact_root or root) / family.builder_requests_dirname / thesis_id
 
 
 def _write_builder_attempt_artifacts(
@@ -425,10 +430,13 @@ def _validated_generated_config_result(
     }
 
 
-def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
+def build_missing_primitives(
+    root: Path, thesis_id: str, *, artifact_root: Path | None = None
+) -> dict[str, Any]:
     """Dispatch CLI builder to implement missing primitives for a thesis."""
     started_at = time.monotonic()
-    structured = _load_structured_thesis_artifacts(root, thesis_id)
+    artifact_root = artifact_root or root
+    structured = _load_structured_thesis_artifacts(root, thesis_id, artifact_root=artifact_root)
     if structured is not None:
         proposal, compilation, proposal_path, compilation_path = structured
         proposal, proposal_normalized = _normalize_proposal_config_changes(proposal)
@@ -458,15 +466,23 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             compilation = {**compilation, "baseline_config_path": base_config_path}
         normalized_contract = compilation.get("normalized_contract") or []
         missing_primitives = _resolve_missing_primitives(proposal, compilation)
-        generated_name = f"experiments/{thesis_id}/runtime_config.json"
+        generated_name = (
+            (artifact_root / "experiments" / thesis_id / "runtime_config.json")
+            .relative_to(root)
+            .as_posix()
+        )
         config_path = generated_name
-        builder_requests_dir = root / family.builder_requests_dirname
-        attempt_dir = _builder_artifact_dir(root, family_name, thesis_id)
+        builder_requests_dir = artifact_root / family.builder_requests_dirname
+        attempt_dir = _builder_artifact_dir(
+            root, family_name, thesis_id, artifact_root=artifact_root
+        )
     else:
         compilation_family_name = None
         for candidate_family in sorted(STRATEGIES):
             candidate_proposal_path = (
-                root / load_family(candidate_family).proposals_dirname / f"{thesis_id}.json"
+                artifact_root
+                / load_family(candidate_family).proposals_dirname
+                / f"{thesis_id}.json"
             )
             if candidate_proposal_path.exists():
                 compilation_family_name = candidate_family
@@ -482,8 +498,8 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             }
 
         family = load_family(compilation_family_name)
-        proposal_path = root / family.proposals_dirname / f"{thesis_id}.json"
-        compilation_path = root / family.compilations_dirname / f"{thesis_id}.json"
+        proposal_path = artifact_root / family.proposals_dirname / f"{thesis_id}.json"
+        compilation_path = artifact_root / family.compilations_dirname / f"{thesis_id}.json"
         if not proposal_path.exists():
             return {
                 "status": "error",
@@ -544,8 +560,10 @@ def build_missing_primitives(root: Path, thesis_id: str) -> dict[str, Any]:
             else f"{thesis_id}.yaml"
         )
         config_path = f"configs/variants/{generated_name}"
-        builder_requests_dir = root / family.builder_requests_dirname
-        attempt_dir = _builder_artifact_dir(root, family_name, thesis_id)
+        builder_requests_dir = artifact_root / family.builder_requests_dirname
+        attempt_dir = _builder_artifact_dir(
+            root, family_name, thesis_id, artifact_root=artifact_root
+        )
     request_payload = {
         "thesis_id": thesis_id,
         "family": family_name,

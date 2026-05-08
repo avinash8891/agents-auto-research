@@ -383,7 +383,9 @@ def build_missing_primitives_for_state(
     try:
         import compiler_pipeline
 
-        builder_result = compiler_pipeline.build_missing_primitives(controller.root, thesis_id)
+        builder_result = compiler_pipeline.build_missing_primitives(
+            controller.root, thesis_id, artifact_root=controller.job_runtime_root
+        )
     except (
         Exception
     ) as exc:  # noqa: BLE001 — builder failures must route to manual-review, not crash the loop

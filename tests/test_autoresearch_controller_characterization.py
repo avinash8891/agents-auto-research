@@ -109,11 +109,13 @@ def test_controller_anchors_relative_paths_to_root(tmp_path):
     assert controller.current_md_path == tmp_path / "ema_autoresearch.current.md"
     assert controller.ideas_md_path == tmp_path / "ema_autoresearch.ideas.md"
     assert controller.runs_dir == tmp_path / family.runs_dirname
-    assert controller.research_dir == tmp_path / family.research_dirname
-    assert controller.proposals_dir == tmp_path / family.proposals_dirname
-    assert controller.compilations_dir == tmp_path / family.compilations_dirname
-    assert controller.contracts_dir == tmp_path / family.contracts_dirname
-    assert controller.run_queue_dir == tmp_path / family.run_queue_dirname
+    controller.write_state({"state": "running", "job": 23, "research_round": 0})
+    assert controller.job_runtime_root == tmp_path / "runtime" / "jobs" / "job-23"
+    assert controller.research_dir == controller.job_runtime_root / "research"
+    assert controller.proposals_dir == controller.job_runtime_root / "proposals"
+    assert controller.compilations_dir == controller.job_runtime_root / "compilations"
+    assert controller.contracts_dir == controller.job_runtime_root / "contracts"
+    assert controller.run_queue_dir == controller.job_runtime_root / "run-queue"
 
 
 def test_running_state_with_blockers_is_invalid() -> None:
@@ -435,6 +437,8 @@ def test_execute_once_runs_pending_queue_before_research(controller, monkeypatch
         "config": queued_config,
         "status": "pending",
         "source": "multi_variant_probe",
+        "job": 1,
+        "created_for_commit": controller.current_commit(),
     }
     controller.run_queue_dir.mkdir(parents=True, exist_ok=True)
     (controller.run_queue_dir / "queued-thesis-001.json").write_text(json.dumps(queue_artifact))
@@ -444,6 +448,78 @@ def test_execute_once_runs_pending_queue_before_research(controller, monkeypatch
     # Research should NOT be called — fail loudly if it is.
     def _research_should_not_be_called(self):  # pragma: no cover - guard
         raise AssertionError("research conductor invoked when run-queue artifact was pending")
+
+    monkeypatch.setattr(
+        AutoresearchController, "execute_research_one", _research_should_not_be_called
+    )
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    assert queued_config in captured["command"]
+
+
+def test_execute_once_ignores_stale_global_queue_for_fresh_job(controller, monkeypatch, tmp_path):
+    _seed_existing_result(controller, BASELINE_CONFIG)
+
+    stale_config = "experiments/stale-runtime/runtime_config.json"
+    stale_path = tmp_path / stale_config
+    stale_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_path.write_text(json.dumps({"ema_length": 5, "rr_ratio": 3.0}))
+    stale_queue_dir = tmp_path / controller.family.run_queue_dirname
+    stale_queue_dir.mkdir(parents=True, exist_ok=True)
+    (stale_queue_dir / "stale-runtime.json").write_text(
+        json.dumps({"thesis_id": "stale-runtime", "config": stale_config, "status": "pending"})
+    )
+
+    generated_config = "runtime/jobs/job-1/experiments/generated/runtime_config.json"
+    generated_path = tmp_path / generated_config
+    generated_path.parent.mkdir(parents=True, exist_ok=True)
+    generated_path.write_text(json.dumps({"ema_length": 7, "rr_ratio": 2.5}))
+
+    def fake_research(self):
+        return {
+            "status": "completed",
+            "generated_config": generated_config,
+            "generated_config_needs_build": False,
+            "generated_thesis_id": "generated",
+            "thesis_id": "generated",
+            "should_stop": False,
+        }
+
+    monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
+    captured = _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    rc = controller.execute_once()
+
+    assert rc == 0
+    assert stale_config not in captured["command"]
+    assert generated_config in captured["command"]
+
+
+def test_execute_once_consumes_current_job_queue(controller, monkeypatch, tmp_path):
+    _seed_existing_result(controller, BASELINE_CONFIG)
+
+    queued_config = "runtime/jobs/job-1/experiments/current/runtime_config.json"
+    queued_path = tmp_path / queued_config
+    queued_path.parent.mkdir(parents=True, exist_ok=True)
+    queued_path.write_text(json.dumps({"ema_length": 5, "rr_ratio": 3.0}))
+
+    queue_artifact = {
+        "thesis_id": "current-job-thesis",
+        "config": queued_config,
+        "status": "pending",
+        "source": "multi_variant_probe",
+        "job": 1,
+        "created_for_commit": controller.current_commit(),
+    }
+    controller.run_queue_dir.mkdir(parents=True, exist_ok=True)
+    (controller.run_queue_dir / "current-job-thesis.json").write_text(json.dumps(queue_artifact))
+
+    captured = _patch_run_command_success(controller, monkeypatch, tmp_path)
+
+    def _research_should_not_be_called(self):  # pragma: no cover - guard
+        raise AssertionError("research conductor invoked when current-job queue was pending")
 
     monkeypatch.setattr(
         AutoresearchController, "execute_research_one", _research_should_not_be_called
@@ -527,21 +603,24 @@ def test_execute_once_research_needs_code_invokes_builder(controller, monkeypatc
         }
 
     def fake_builder(controller_obj, state, thesis_id, thesis, *, research_round=None):
-        experiment_dir = controller_obj.root / "experiments" / thesis_id
+        experiment_dir = controller_obj.experiments_dir / thesis_id
         assert (experiment_dir / "thesis.json").exists()
         assert (experiment_dir / "contract.json").exists()
         state = dict(state)
         state["state"] = "running"
+        config_path = (
+            (controller_obj.experiments_dir / thesis_id / "runtime_config.json")
+            .relative_to(controller_obj.root)
+            .as_posix()
+        )
         state["current_thesis"] = {
-            "config": "experiments/needs-code-thesis/runtime_config.json",
+            "config": config_path,
             "status": "ready_to_run",
         }
         state["next_action"] = {
             "type": "run_experiment",
-            "config": "experiments/needs-code-thesis/runtime_config.json",
-            "benchmark_command": controller_obj.family.benchmark_command(
-                "experiments/needs-code-thesis/runtime_config.json"
-            ),
+            "config": config_path,
+            "benchmark_command": controller_obj.family.benchmark_command(config_path),
             "requires_trade_analysis": True,
             "source": "builder",
             "builder_thesis_id": thesis_id,
@@ -1309,6 +1388,8 @@ def test_execute_once_end_to_end_tiny_ema_fixture(controller, monkeypatch, tmp_p
                 "config": config_rel,
                 "status": "pending",
                 "source": "characterization",
+                "job": 1,
+                "created_for_commit": controller.current_commit(),
             }
         )
     )
@@ -1399,6 +1480,8 @@ def test_execute_once_queued_runtime_config_uses_thesis_sidecar_metadata(
                 "config": config_rel,
                 "status": "pending",
                 "source": "characterization",
+                "job": 1,
+                "created_for_commit": controller.current_commit(),
             }
         )
     )

@@ -284,6 +284,7 @@ def build_git_prepare_command(config: VPSConfig) -> str:
         "-e '.venv' -e '.venv/**' "
         "-e '*_autoresearch-runs' -e '*_autoresearch-runs/**' "
         "-e 'data' -e 'data/**' "
+        "-e 'runtime' -e 'runtime/**' "
         "-e 'experiments' -e 'experiments/**' "
         "-e 'proposals' -e 'proposals/**' "
         "-e '*-proposals' -e '*-proposals/**' "
@@ -412,9 +413,10 @@ def build_remote_command(
         )
     else:
         segments.extend(dependency_install_segments)
+    controller_mode = " --resume-current-job" if resume_current_job else " --fresh-job"
     segments.append(
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
-        + (" --resume-current-job" if resume_current_job else "")
+        + controller_mode
     )
     return " && ".join(segments)
 
@@ -693,6 +695,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Git branch, tag, or commit SHA to deploy on VPS",
     )
     parser.add_argument(
+        "--fresh-job",
+        action="store_true",
+        help="Create a new job on the VPS and ignore prior job-scoped work queues",
+    )
+    parser.add_argument(
         "--resume-current-job",
         action="store_true",
         help="Resume a recoverable current job on the VPS instead of creating a new job",
@@ -713,6 +720,8 @@ def main():
 
     parser = _build_arg_parser()
     args = parser.parse_args()
+    if args.fresh_job and args.resume_current_job:
+        parser.error("--fresh-job and --resume-current-job are mutually exclusive")
     if args.skip_deploy_if_current and not args.resume_current_job:
         parser.error("--skip-deploy-if-current requires --resume-current-job")
 

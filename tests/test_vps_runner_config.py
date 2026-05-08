@@ -184,6 +184,10 @@ def test_remote_command_runs_controller_for_family() -> None:
     assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
     ) in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--fresh-job"
+    ) in command
     assert command.index("python_bin=.venv/bin/python") < command.index(
         '"$python_bin" -m pip install -e .'
     )
@@ -259,6 +263,15 @@ def test_remote_command_can_resume_current_job() -> None:
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
         "--resume-current-job"
     ) in command
+
+
+def test_vps_runner_parser_accepts_explicit_fresh_job_mode() -> None:
+    parser = _build_arg_parser()
+
+    args = parser.parse_args(["--strategy", "ema", "--git-ref", "main", "--fresh-job"])
+
+    assert args.fresh_job is True
+    assert args.resume_current_job is False
 
 
 def test_remote_command_sources_runtime_env_file() -> None:

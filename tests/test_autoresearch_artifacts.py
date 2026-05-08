@@ -177,6 +177,56 @@ def test_queue_excludes_already_attempted_configs(tmp_path: Path) -> None:
     assert queued == [config_to_run]
 
 
+def test_queue_ignores_artifacts_from_other_jobs(tmp_path: Path) -> None:
+    run_queue_dir = tmp_path / "runtime" / "jobs" / "job-2" / "run-queue"
+    stale_config = "runtime/jobs/job-1/experiments/stale/runtime_config.json"
+    current_config = "runtime/jobs/job-2/experiments/current/runtime_config.json"
+    for config in (stale_config, current_config):
+        full = tmp_path / config
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text("{}")
+
+    _write_artifact(
+        run_queue_dir,
+        "stale.json",
+        {"thesis_id": "stale", "config": stale_config, "status": "pending", "job": 1},
+    )
+    _write_artifact(
+        run_queue_dir,
+        "current.json",
+        {"thesis_id": "current", "config": current_config, "status": "pending", "job": 2},
+    )
+
+    queued = queue_from_thesis_artifacts(run_queue_dir, tmp_path, [], job=2)
+
+    assert queued == [current_config]
+
+
+def test_queue_ignores_legacy_artifacts_without_job_for_fresh_jobs(tmp_path: Path) -> None:
+    run_queue_dir = tmp_path / "runtime" / "jobs" / "job-2" / "run-queue"
+    legacy_config = "experiments/legacy/runtime_config.json"
+    current_config = "runtime/jobs/job-2/experiments/current/runtime_config.json"
+    for config in (legacy_config, current_config):
+        full = tmp_path / config
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text("{}")
+
+    _write_artifact(
+        run_queue_dir,
+        "legacy.json",
+        {"thesis_id": "legacy", "config": legacy_config, "status": "pending"},
+    )
+    _write_artifact(
+        run_queue_dir,
+        "current.json",
+        {"thesis_id": "current", "config": current_config, "status": "pending", "job": 2},
+    )
+
+    queued = queue_from_thesis_artifacts(run_queue_dir, tmp_path, [], job=2)
+
+    assert queued == [current_config]
+
+
 def test_queue_skips_non_pending_status(tmp_path: Path) -> None:
     run_queue_dir = tmp_path / "queue"
     config_path = "experiments/x/runtime_config.json"

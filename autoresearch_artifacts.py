@@ -80,12 +80,29 @@ def queue_from_thesis_artifacts(
     run_queue_dir: Path,
     root: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> list[str]:
     """Return pending run-queue config paths that exist on disk and have
     not already been attempted."""
     attempted = {result.config for result in results if result.config}
     queued: list[str] = []
     for artifact in read_run_queue(run_queue_dir, root):
+        if job is not None:
+            raw_job = artifact.get("job")
+            if raw_job is None:
+                continue
+            try:
+                artifact_job = int(raw_job)
+            except (TypeError, ValueError) as exc:
+                _log.warning(
+                    "Skipping queue artifact with malformed job field (path=%s, job=%r): %s",
+                    artifact.get("artifact_path", "<unknown>"),
+                    raw_job,
+                    exc,
+                )
+                continue
+            if artifact_job != job:
+                continue
         if artifact.get("status") != "pending":
             continue
         config = artifact.get("config")

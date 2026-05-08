@@ -277,6 +277,10 @@ def queue_variants(
     thesis: Any,  # ResearchThesis
     primary_contract: Any,  # ExperimentContract
     baseline_config: dict[str, Any],
+    *,
+    experiments_dir: Path | None = None,
+    job: int | None = None,
+    created_for_commit: str = "",
 ) -> None:
     """Write variant runtime configs so the loop picks them up as queued experiments."""
     for variant in variants:
@@ -305,7 +309,7 @@ def queue_variants(
                 continue
         config_hash = _config_hash(runtime)
         variant_id = f"{thesis.thesis_id}_{label}"
-        exp_dir = root / "experiments" / config_hash
+        exp_dir = (experiments_dir or (root / "experiments")) / config_hash
         exp_dir.mkdir(parents=True, exist_ok=True)
 
         _write_text_atomic(exp_dir / "runtime_config.json", json.dumps(runtime, indent=2) + "\n")
@@ -321,13 +325,17 @@ def queue_variants(
         run_queue_dir.mkdir(parents=True, exist_ok=True)
         queue_artifact = {
             "thesis_id": variant_id,
-            "config": f"experiments/{config_hash}/runtime_config.json",
+            "config": (exp_dir / "runtime_config.json").relative_to(root).as_posix(),
             "status": "pending",
             "source": "multi_variant_probe",
             "variant_of": primary_contract.experiment_id,
             "variant_label": label,
             "variant_factor": factor,
         }
+        if job is not None:
+            queue_artifact["job"] = job
+        if created_for_commit:
+            queue_artifact["created_for_commit"] = created_for_commit
         _write_text_atomic(
             run_queue_dir / f"{variant_id}.json",
             json.dumps(queue_artifact, indent=2) + "\n",
@@ -650,7 +658,11 @@ def _on_ready_to_run(
     probes; return the success result dict."""
     from thesis_validator import generate_variants
 
-    config_path = f"experiments/{contract.experiment_id}/runtime_config.json"
+    config_path = (
+        (controller.experiments_dir / contract.experiment_id / "runtime_config.json")
+        .relative_to(controller.root)
+        .as_posix()
+    )
     controller.ctx.current_contract = contract
     latest_db = controller.experiment_db.latest(1)
     controller.ctx.parent_experiment_id = latest_db[0].experiment_id if latest_db else ""
@@ -706,7 +718,9 @@ def _try_one_validation_attempt(
 
     try:
         validated = validate_thesis_dict(raw_thesis, prior_theses=prior_theses)
-        contract = compile_research_thesis(validated, controller.root)
+        contract = compile_research_thesis(
+            validated, controller.root, artifact_root=controller.job_runtime_root
+        )
     except (ThesisValidationError, ValueError) as exc:
         _log_validation_rejection(
             controller, research_round, attempt, raw_thesis, thesis_id, str(exc)
@@ -1232,7 +1246,9 @@ def _handle_needs_code(
         from compiler_pipeline import compile_research_thesis
 
         try:
-            compile_research_thesis(validated, controller.root)
+            compile_research_thesis(
+                validated, controller.root, artifact_root=controller.job_runtime_root
+            )
         except Exception as exc:
             log.warning(
                 "LOOP_HALT thesis=%s could not materialize builder artifacts: %s",

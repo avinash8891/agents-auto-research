@@ -50,11 +50,12 @@ def _needs_code_contract(
     thesis: "ResearchThesis",
     root: Path,
     *,
+    artifact_root: Path | None = None,
     status: str = "needs_code",
 ) -> "ExperimentContract":
     family_name = thesis.strategy_family
     experiment_id = thesis.thesis_id
-    experiment_dir = root / "experiments" / experiment_id
+    experiment_dir = (artifact_root or root) / "experiments" / experiment_id
     experiment_dir.mkdir(parents=True, exist_ok=True)
     write_text_atomic(experiment_dir / "thesis.json", thesis.model_dump_json(indent=2) + "\n")
     contract = ExperimentContract(
@@ -80,10 +81,12 @@ def _compile_runtime_config_contract(
     thesis: "ResearchThesis",
     root: Path,
     runtime_config: dict,
+    *,
+    artifact_root: Path | None = None,
 ) -> "ExperimentContract":
     family_name = thesis.strategy_family
     experiment_id = _config_hash(runtime_config)
-    experiment_dir = root / "experiments" / experiment_id
+    experiment_dir = (artifact_root or root) / "experiments" / experiment_id
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
     write_text_atomic(experiment_dir / "thesis.json", thesis.model_dump_json(indent=2) + "\n")
@@ -143,20 +146,22 @@ def _format_noop_config_change_error(thesis: "ResearchThesis", base_config: dict
 def compile_research_thesis(
     thesis: "ResearchThesis",
     root: Path,
+    *,
+    artifact_root: Path | None = None,
 ) -> "ExperimentContract":
     """Convert a validated ResearchThesis into an ExperimentContract.
 
     Creates:
-      experiments/{experiment_id}/thesis.json
-      experiments/{experiment_id}/contract.json
-      experiments/{experiment_id}/runtime_config.json
+      {artifact_root or root}/experiments/{experiment_id}/thesis.json
+      {artifact_root or root}/experiments/{experiment_id}/contract.json
+      {artifact_root or root}/experiments/{experiment_id}/runtime_config.json
 
     The experiment_id is a content hash of the runtime config.
     """
     family_name = thesis.strategy_family
 
     if thesis.requires_code_change:
-        return _needs_code_contract(thesis, root)
+        return _needs_code_contract(thesis, root, artifact_root=artifact_root)
 
     base_config = _load_base_runtime_config(root, thesis)
     runtime_config = _runtime_config_for_registered_strategy(
@@ -164,7 +169,7 @@ def compile_research_thesis(
     )
     if runtime_config is not None:
         if not runtime_config:
-            return _needs_code_contract(thesis, root)
+            return _needs_code_contract(thesis, root, artifact_root=artifact_root)
         if runtime_config == base_config:
             raise ValueError(_format_noop_config_change_error(thesis, base_config))
         violations = STRATEGIES[family_name].validate_runtime_config(runtime_config)
@@ -173,6 +178,8 @@ def compile_research_thesis(
                 f"Config validation failed for thesis '{thesis.thesis_id}': "
                 + "; ".join(violations)
             )
-        return _compile_runtime_config_contract(thesis, root, runtime_config)
+        return _compile_runtime_config_contract(
+            thesis, root, runtime_config, artifact_root=artifact_root
+        )
 
     raise ValueError(f"compile_research_thesis does not support family '{family_name}' yet")

@@ -74,8 +74,9 @@ def pending_configs(
     family: StrategyFamily,
     run_queue_dir: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> list[str]:
-    return _valid_queue_configs(root, family, run_queue_dir, results)
+    return _valid_queue_configs(root, family, run_queue_dir, results, job=job)
 
 
 def _read_runtime_config_payload(path: Path) -> Any:
@@ -132,10 +133,11 @@ def _valid_queue_configs(
     family: StrategyFamily,
     run_queue_dir: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> list[str]:
     return [
         config
-        for config in queue_from_thesis_artifacts(run_queue_dir, root, results)
+        for config in queue_from_thesis_artifacts(run_queue_dir, root, results, job=job)
         if _is_valid_queued_runtime_config(root, family, config)
     ]
 
@@ -145,9 +147,19 @@ def thesis_statuses(
     family: StrategyFamily,
     run_queue_dir: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> dict[str, dict[str, Any]]:
     statuses: dict[str, dict[str, Any]] = {}
     for artifact in read_run_queue(run_queue_dir, root):
+        if job is not None:
+            raw_job = artifact.get("job")
+            if raw_job is None:
+                continue
+            try:
+                if int(raw_job) != job:
+                    continue
+            except (TypeError, ValueError):
+                continue
         config = artifact.get("config")
         if not config:
             continue
@@ -217,6 +229,7 @@ def generate_theses_from_ideas(
     run_queue_dir: Path,
     proposals_dir: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> list[str]:
     """Generate thesis artifacts for untested candidates from ideas backlog."""
     attempted = {r.config for r in results if r.config}
@@ -248,7 +261,7 @@ def generate_theses_from_ideas(
         }
         path = proposals_dir / f"{candidate['slug']}.json"
         _write_text_atomic(path, json.dumps(proposal, indent=2) + "\n")
-        compile_proposal_artifact(proposal, root)
+        compile_proposal_artifact(proposal, root, artifact_root=proposals_dir.parent, job=job)
         generated.append(config)
     return generated
 
@@ -337,6 +350,7 @@ def _write_combination_proposal(
     family_b: str,
     merged: Any,
     root: Path,
+    job: int | None = None,
 ) -> None:
     proposal = {
         "thesis_id": combo_slug,
@@ -355,7 +369,7 @@ def _write_combination_proposal(
     }
     _write_text_atomic(proposals_dir / f"{combo_slug}.json", json.dumps(proposal, indent=2) + "\n")
     if isinstance(merged, list):
-        compile_proposal_artifact(proposal, root)
+        compile_proposal_artifact(proposal, root, artifact_root=proposals_dir.parent, job=job)
 
 
 def _try_combine_pair(
@@ -365,6 +379,7 @@ def _try_combine_pair(
     a: ExperimentRecord,
     b: ExperimentRecord,
     attempted: set[str],
+    job: int | None = None,
 ) -> str | None:
     """Try to materialize a combination of two kept theses.
     Returns the combo config path on success, None if the pair is
@@ -408,6 +423,7 @@ def _try_combine_pair(
         family_b=family_b,
         merged=merged,
         root=root,
+        job=job,
     )
     try:
         load_runtime_config(str(root / final_combo_config), strategy_name=family.name)
@@ -430,6 +446,7 @@ def generate_combination_candidates(
     family: StrategyFamily,
     proposals_dir: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> list[str]:
     """Generate combination configs from 2+ independent winners.
     Excludes the family's baseline config from the kept set so that
@@ -442,7 +459,7 @@ def generate_combination_candidates(
     generated: list[str] = []
     for i, a in enumerate(kept):
         for b in kept[i + 1 :]:
-            combo = _try_combine_pair(root, family, proposals_dir, a, b, attempted)
+            combo = _try_combine_pair(root, family, proposals_dir, a, b, attempted, job=job)
             if combo is not None:
                 generated.append(combo)
     return generated
@@ -459,7 +476,7 @@ def should_terminate(
     results: list[ExperimentRecord],
     job: int | None = None,
 ) -> bool:
-    if _valid_queue_configs(root, family, run_queue_dir, results):
+    if _valid_queue_configs(root, family, run_queue_dir, results, job=job):
         return False
     research = read_research_artifacts(research_dir, root, job=job)
     if not research:
@@ -522,8 +539,9 @@ def _thesis_queue_branch(
     family: StrategyFamily,
     run_queue_dir: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> dict[str, Any] | None:
-    queue = _valid_queue_configs(root, family, run_queue_dir, results)
+    queue = _valid_queue_configs(root, family, run_queue_dir, results, job=job)
     if not queue:
         return None
     return _running_state(queue[0], family, source="thesis_artifact")
@@ -534,8 +552,9 @@ def _combination_branch(
     family: StrategyFamily,
     proposals_dir: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> dict[str, Any] | None:
-    combos = generate_combination_candidates(root, family, proposals_dir, results)
+    combos = generate_combination_candidates(root, family, proposals_dir, results, job=job)
     if not combos:
         return None
     return _running_state(combos[0], family, source="combination_phase")
@@ -548,9 +567,10 @@ def _ideas_branch(
     run_queue_dir: Path,
     proposals_dir: Path,
     results: list[ExperimentRecord],
+    job: int | None = None,
 ) -> dict[str, Any] | None:
     configs = generate_theses_from_ideas(
-        root, family, ideas_md_path, run_queue_dir, proposals_dir, results
+        root, family, ideas_md_path, run_queue_dir, proposals_dir, results, job=job
     )
     if not configs:
         return None
@@ -578,9 +598,9 @@ def select_research_next_action(
     """
     for branch in (
         _baseline_branch(root, family, results),
-        _thesis_queue_branch(root, family, run_queue_dir, results),
-        _combination_branch(root, family, proposals_dir, results),
-        _ideas_branch(root, family, ideas_md_path, run_queue_dir, proposals_dir, results),
+        _thesis_queue_branch(root, family, run_queue_dir, results, job=job),
+        _combination_branch(root, family, proposals_dir, results, job=job),
+        _ideas_branch(root, family, ideas_md_path, run_queue_dir, proposals_dir, results, job=job),
     ):
         if branch is not None:
             return branch

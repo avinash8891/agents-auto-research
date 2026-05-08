@@ -20,6 +20,10 @@ def compile_config_thesis(
     thesis_id: str,
     config_changes: dict[str, Any],
     root: Path,
+    *,
+    artifact_root: Path | None = None,
+    job: int | None = None,
+    created_for_commit: str = "",
 ) -> dict[str, Any]:
     """Compile a registered strategy thesis from config changes.
 
@@ -68,14 +72,15 @@ def compile_config_thesis(
 
     config_hash = _config_hash(runtime_config)
 
-    contracts_dir = root / family.contracts_dirname
+    runtime_root = artifact_root or root
+    contracts_dir = runtime_root / family.contracts_dirname
     contracts_dir.mkdir(parents=True, exist_ok=True)
     config_path = contracts_dir / f"{config_hash}.json"
 
     if not config_path.exists():
         write_text_atomic(config_path, json.dumps(runtime_config, indent=2) + "\n")
 
-    run_queue_dir = root / family.run_queue_dirname
+    run_queue_dir = runtime_root / family.run_queue_dirname
     run_queue_dir.mkdir(parents=True, exist_ok=True)
     write_json_artifact(
         run_queue_dir / f"{config_hash}.json",
@@ -85,6 +90,8 @@ def compile_config_thesis(
             "status": "pending",
             "config": config_path.relative_to(root).as_posix(),
             "timestamp": timestamp_now(),
+            **({"job": job} if job is not None else {}),
+            **({"created_for_commit": created_for_commit} if created_for_commit else {}),
         },
     )
     return {
@@ -98,6 +105,10 @@ def compile_config_thesis(
 def compile_proposal_artifact(
     proposal: dict[str, Any],
     root: Path,
+    *,
+    artifact_root: Path | None = None,
+    job: int | None = None,
+    created_for_commit: str = "",
 ) -> dict[str, Any]:
     """Compile a thesis proposal into a family-specific runtime artifact."""
     thesis_id = proposal["thesis_id"]
@@ -106,9 +117,10 @@ def compile_proposal_artifact(
     contract = proposal.get("primitive_contract", [])
     result = STRATEGIES[family_name].compile_contract(contract)
 
-    compilations_dir = root / family.compilations_dirname
-    run_queue_dir = root / family.run_queue_dirname
-    contracts_dir = root / family.contracts_dirname
+    runtime_root = artifact_root or root
+    compilations_dir = runtime_root / family.compilations_dirname
+    run_queue_dir = runtime_root / family.run_queue_dirname
+    contracts_dir = runtime_root / family.contracts_dirname
     contracts_dir.mkdir(parents=True, exist_ok=True)
     run_queue_dir.mkdir(parents=True, exist_ok=True)
 
@@ -151,6 +163,10 @@ def compile_proposal_artifact(
         "config": contract_path.relative_to(root).as_posix(),
         "timestamp": timestamp_now(),
     }
+    if job is not None:
+        queue_payload["job"] = job
+    if created_for_commit:
+        queue_payload["created_for_commit"] = created_for_commit
     try:
         write_text_atomic(contract_path, json.dumps(result.normalized_contract, indent=2) + "\n")
         write_json_artifact(run_queue_dir / f"{thesis_id}.json", queue_payload)
@@ -168,6 +184,10 @@ def create_executable_artifact(
     base_config_path: Path,
     thesis: dict[str, Any],
     root: Path,
+    *,
+    artifact_root: Path | None = None,
+    job: int | None = None,
+    created_for_commit: str = "",
 ) -> dict[str, Any]:
     """Create executable config from a thesis.
 
@@ -183,9 +203,10 @@ def create_executable_artifact(
     family_name = thesis["strategy_family"]
 
     family = load_family(family_name)
+    runtime_root = artifact_root or root
 
     if thesis.get("requires_code_change"):
-        proposals_dir = root / family.proposals_dirname
+        proposals_dir = runtime_root / family.proposals_dirname
         write_json_artifact(
             proposals_dir / f"{thesis_id}.json",
             {
@@ -197,6 +218,8 @@ def create_executable_artifact(
                 "requires_code_change": True,
                 "evidence": thesis.get("evidence", []),
                 "timestamp": timestamp_now(),
+                **({"job": job} if job is not None else {}),
+                **({"created_for_commit": created_for_commit} if created_for_commit else {}),
             },
         )
         return {
@@ -207,7 +230,15 @@ def create_executable_artifact(
 
     if family_name in STRATEGIES and thesis.get("config_changes"):
         config_changes = thesis.get("config_changes", {})
-        result = compile_config_thesis(family_name, thesis_id, config_changes, root)
+        result = compile_config_thesis(
+            family_name,
+            thesis_id,
+            config_changes,
+            root,
+            artifact_root=artifact_root,
+            job=job,
+            created_for_commit=created_for_commit,
+        )
         if result["status"] != "ready_to_run":
             return {
                 "generated_config": None,
@@ -215,7 +246,7 @@ def create_executable_artifact(
                 "generated_thesis_id": thesis_id,
             }
         config_hash = result["config_hash"]
-        proposals_dir = root / family.proposals_dirname
+        proposals_dir = runtime_root / family.proposals_dirname
         write_json_artifact(
             proposals_dir / f"{config_hash}.json",
             {
@@ -227,6 +258,8 @@ def create_executable_artifact(
                 "config_changes": thesis.get("config_changes", {}),
                 "evidence": thesis.get("evidence", []),
                 "timestamp": timestamp_now(),
+                **({"job": job} if job is not None else {}),
+                **({"created_for_commit": created_for_commit} if created_for_commit else {}),
             },
         )
         return {
@@ -247,7 +280,13 @@ def create_executable_artifact(
         "primitive_contract": thesis.get("primitive_contract", []),
         "timestamp": timestamp_now(),
     }
-    compilation = compile_proposal_artifact(proposal, root)
+    compilation = compile_proposal_artifact(
+        proposal,
+        root,
+        artifact_root=artifact_root,
+        job=job,
+        created_for_commit=created_for_commit,
+    )
     if compilation["status"] != "ready_to_run":
         return {
             "generated_config": None,
@@ -255,7 +294,9 @@ def create_executable_artifact(
             "generated_thesis_id": thesis_id,
         }
     return {
-        "generated_config": f"{family.contracts_dirname}/{thesis_id}.json",
+        "generated_config": (runtime_root / family.contracts_dirname / f"{thesis_id}.json")
+        .relative_to(root)
+        .as_posix(),
         "generated_config_needs_build": False,
         "generated_thesis_id": thesis_id,
     }
@@ -266,6 +307,10 @@ def derive_thesis_artifacts(
     base_config_path: Path,
     parsed: dict[str, Any],
     root: Path,
+    *,
+    artifact_root: Path | None = None,
+    job: int | None = None,
+    created_for_commit: str = "",
 ) -> list[str]:
     """Create thesis artifacts + configs from research findings.
 
@@ -280,7 +325,15 @@ def derive_thesis_artifacts(
     for thesis in suggested:
         thesis.setdefault("strategy_family", _infer_family_from_paths(thesis_dir, base_config_path))
         thesis = validate_family_config_changes(thesis["strategy_family"], thesis)
-        result = create_executable_artifact(thesis_dir, base_config_path, thesis, root)
+        result = create_executable_artifact(
+            thesis_dir,
+            base_config_path,
+            thesis,
+            root,
+            artifact_root=artifact_root,
+            job=job,
+            created_for_commit=created_for_commit,
+        )
         if result.get("generated_config"):
             generated.append(result["generated_config"])
 

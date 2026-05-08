@@ -75,6 +75,7 @@ from autoresearch_research import notify_discord as _notify_discord
 from autoresearch_research import queue_variants as _research_queue_variants
 from autoresearch_research import results_to_dicts as _research_results_to_dicts
 from autoresearch_research import run_research as _research_run_research
+from autoresearch_runtime_paths import job_runtime_root as _job_runtime_root
 from autoresearch_state import ExperimentRecord, RunContext
 from autoresearch_state import _coerce_job_to_int as _state_coerce_job_to_int
 from autoresearch_state import best_result as _state_best_result
@@ -424,17 +425,30 @@ class AutoresearchController:
         self.runs_dir = (
             raw_runs_dir.resolve() if raw_runs_dir.is_absolute() else self.root / raw_runs_dir
         )
-        self.research_dir = self.root / self.family.research_dirname
-        self.proposals_dir = self.root / self.family.proposals_dirname
-        self.compilations_dir = self.root / self.family.compilations_dirname
-        self.contracts_dir = self.root / self.family.contracts_dirname
-        self.run_queue_dir = self.root / self.family.run_queue_dirname
+        self._set_runtime_paths_for_job(0)
         self.experiment_db = ExperimentDB(self.root / f"{self.family.name}_experiments.db")
         self.baseline_tracker = BaselineTracker(
             self.root / f"{self.family.name}_baseline_checkpoints.json"
         )
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()
+
+    def _set_runtime_paths_for_job(self, job: int) -> None:
+        self.job_runtime_root = _job_runtime_root(self.root, job)
+        self.research_dir = self.job_runtime_root / "research"
+        self.proposals_dir = self.job_runtime_root / "proposals"
+        self.compilations_dir = self.job_runtime_root / "compilations"
+        self.contracts_dir = self.job_runtime_root / "contracts"
+        self.experiments_dir = self.job_runtime_root / "experiments"
+        self.run_queue_dir = self.job_runtime_root / "run-queue"
+        self.builder_requests_dir = self.job_runtime_root / "builder-requests"
+
+    def _current_job(self) -> int | None:
+        job = self.read_state().get("job")
+        try:
+            return int(job) if job is not None else None
+        except (TypeError, ValueError):
+            return None
 
     def clear_transient_context(self) -> None:
         """Clear per-experiment and per-research-round context.
@@ -465,6 +479,10 @@ class AutoresearchController:
             changed = True
         if changed:
             self.write_state(state)
+        else:
+            job = _state_coerce_job_to_int(state.get("job"))
+            if job > 0:
+                self._set_runtime_paths_for_job(job)
 
     def read_state(self) -> dict[str, Any]:
         return _state_read_state(self.state_path)
@@ -473,6 +491,9 @@ class AutoresearchController:
         validate_controller_state_invariants(state)
         previous_state = self.read_state().get("state", "unknown")
         _state_write_state(self.state_path, state)
+        job = _state_coerce_job_to_int(state.get("job"))
+        if job > 0:
+            self._set_runtime_paths_for_job(job)
         next_state = state.get("state", "unknown")
         if previous_state != next_state:
             trace_state_change(previous_state, next_state, state.get("finished_reason", ""))
@@ -514,7 +535,9 @@ class AutoresearchController:
         return _artifacts_read_artifacts_relative_to_root(directory, self.root)
 
     def read_research_artifacts(self) -> list[dict[str, Any]]:
-        return _artifacts_read_research_artifacts(self.research_dir, self.root)
+        return _artifacts_read_research_artifacts(
+            self.research_dir, self.root, job=self._current_job()
+        )
 
     def read_thesis_artifacts(self) -> list[dict[str, Any]]:
         return _artifacts_read_thesis_artifacts(self.proposals_dir, self.root)
@@ -532,16 +555,22 @@ class AutoresearchController:
         return _planning_list_known_variant_configs(self.root, self.family)
 
     def pending_configs(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_pending_configs(self.root, self.family, self.run_queue_dir, results)
+        return _planning_pending_configs(
+            self.root, self.family, self.run_queue_dir, results, job=self._current_job()
+        )
 
     def thesis_statuses(self, results: list[ExperimentRecord]) -> dict[str, dict[str, Any]]:
-        return _planning_thesis_statuses(self.root, self.family, self.run_queue_dir, results)
+        return _planning_thesis_statuses(
+            self.root, self.family, self.run_queue_dir, results, job=self._current_job()
+        )
 
     def read_run_queue(self) -> list[dict[str, Any]]:
         return _artifacts_read_run_queue(self.run_queue_dir, self.root)
 
     def queue_from_thesis_artifacts(self, results: list[ExperimentRecord]) -> list[str]:
-        return _artifacts_queue_from_thesis_artifacts(self.run_queue_dir, self.root, results)
+        return _artifacts_queue_from_thesis_artifacts(
+            self.run_queue_dir, self.root, results, job=self._current_job()
+        )
 
     def promote_missing_known_results(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return _state_promote_missing_known_results(entries)
@@ -562,6 +591,7 @@ class AutoresearchController:
             self.run_queue_dir,
             self.proposals_dir,
             results,
+            job=self._current_job(),
         )
 
     # ── WS-5: Combination phase ───────────────────────────────────────
@@ -571,7 +601,7 @@ class AutoresearchController:
 
     def generate_combination_candidates(self, results: list[ExperimentRecord]) -> list[str]:
         return _planning_generate_combination_candidates(
-            self.root, self.family, self.proposals_dir, results
+            self.root, self.family, self.proposals_dir, results, job=self._current_job()
         )
 
     def parse_result_json(self, output: str) -> dict[str, Any] | None:
@@ -592,12 +622,18 @@ class AutoresearchController:
             self.ideas_md_path,
             self.research_dir,
             results,
+            job=self._current_job(),
         )
 
     def should_terminate(self, results: list[ExperimentRecord] | None = None) -> bool:
         current_results = results if results is not None else self.read_results()
         return _planning_should_terminate(
-            self.root, self.family, self.run_queue_dir, self.research_dir, current_results
+            self.root,
+            self.family,
+            self.run_queue_dir,
+            self.research_dir,
+            current_results,
+            job=self._current_job(),
         )
 
     def plan_next_action(
@@ -781,6 +817,9 @@ class AutoresearchController:
             thesis,
             primary_contract,
             baseline_config,
+            experiments_dir=self.experiments_dir,
+            job=self._current_job(),
+            created_for_commit=self.current_commit(),
         )
 
     def _results_to_dicts(self, results: list) -> list[dict[str, Any]]:
@@ -873,6 +912,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run autoresearch controller")
     parser.add_argument("--family", required=True, help="Strategy family to run")
     parser.add_argument(
+        "--fresh-job",
+        action="store_true",
+        help="Start a new job and ignore prior job-scoped queues.",
+    )
+    parser.add_argument(
         "--resume-current-job",
         action="store_true",
         help=(
@@ -881,6 +925,8 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if args.fresh_job and args.resume_current_job:
+        parser.error("--fresh-job and --resume-current-job are mutually exclusive")
 
     family = load_family(args.family)
     state_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(ROOT, family)
