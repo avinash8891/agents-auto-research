@@ -851,7 +851,13 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         current_job = int(raw_job) if raw_job is not None else None
     except (TypeError, ValueError):
         current_job = None
-    research_round = state.get("research_round", 0) + 1
+    active_round = state.get("research_round_in_progress")
+    try:
+        research_round = int(active_round) if active_round is not None else None
+    except (TypeError, ValueError):
+        research_round = None
+    if research_round is None or research_round < 1:
+        research_round = state.get("research_round", 0) + 1
     results = controller.read_results()
     result_dicts = results_to_dicts(results)
     if current_job is not None:
@@ -864,7 +870,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         results,
         current_job=current_job,
     )
-    state["research_round"] = research_round
+    state["research_round_in_progress"] = research_round
     controller.write_state(state)
 
     from improvement_flags import reflexion_enabled
@@ -1171,6 +1177,7 @@ def _handle_max_rounds_reached(
 ) -> dict[str, Any]:
     state["state"] = "finished"
     state["finished_reason"] = "max_research_rounds_reached"
+    state.pop("research_round_in_progress", None)
     log.info(f"LOOP_STOP finished: max research rounds ({MAX_RESEARCH_ROUNDS}) reached")
     best = state.get("current_best", {})
     _close_run(
@@ -1191,6 +1198,8 @@ def _handle_should_stop(
     state["state"] = "finished"
     state["finished_reason"] = "research_recommends_stop"
     state["research_stop_reasoning"] = result.get("reasoning", "")
+    state["research_round"] = result.get("research_round", state.get("research_round", 0))
+    state.pop("research_round_in_progress", None)
     log.info("LOOP_STOP finished: research recommends stop")
     best = state.get("current_best", {})
     _close_run(
@@ -1220,6 +1229,8 @@ def _handle_needs_code(
     # builder-artifact materialization step; any failure must not skip the halt
     # state mutation or the operator notification at _close_run.
     state["state"] = "halted"
+    state["research_round"] = result.get("research_round", state.get("research_round", 0))
+    state.pop("research_round_in_progress", None)
     state["halted_reason"] = "requires_code_change"
     state["halted_thesis_id"] = thesis_id
     state["halted_thesis"] = thesis
@@ -1274,6 +1285,7 @@ def _handle_success(
     trace("LOOP", f"research produced config: {gen_config} thesis={thesis_id}")
     state["state"] = "running"
     state["research_round"] = research_round
+    state.pop("research_round_in_progress", None)
     state["current_thesis"] = {"config": gen_config, "status": "ready_to_run"}
     state["next_action"] = {
         "type": "run_experiment",
@@ -1299,6 +1311,7 @@ def _handle_round_failure(
     trace("LOOP", f"research round {research_round} produced no config: {reason}")
     log.warning(f"HEARTBEAT research round {research_round} failed: {reason}")
     state["research_round"] = research_round
+    state.pop("research_round_in_progress", None)
     state.update(
         build_research_failure_state(
             controller.root,
@@ -1345,6 +1358,7 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         return _handle_max_rounds_reached(controller, state)
 
     result, round_usage = _invoke_conductor_round(controller, research_round)
+    result["research_round"] = research_round
     state = controller.read_state()  # refresh after _invoke_conductor_round mutated state
 
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"

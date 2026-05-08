@@ -1020,6 +1020,80 @@ def test_sqlite_research_fields_are_meaningfully_populated_from_real_ready_thesi
     assert controller.round_kwargs["mechanism_dimension"] == "timing"
 
 
+def test_run_research_retries_in_progress_round_without_incrementing() -> None:
+    from autoresearch_research import run_research
+
+    class _Controller:
+        def __init__(self) -> None:
+            self.root = Path(__file__).resolve().parents[1]
+            self.family = SimpleNamespace(
+                name="ema",
+                benchmark_command=lambda config: f"python3 -m backtest.runner --strategy ema --config {config}",
+            )
+            self.research_dir = self.root / "ema-research"
+            self.state = {
+                "state": "blocked",
+                "job": 25,
+                "research_round": 0,
+                "research_round_in_progress": 1,
+                "job_usage": None,
+            }
+            self.round_kwargs = None
+
+        def read_state(self) -> dict[str, object]:
+            return dict(self.state)
+
+        def write_state(self, state: dict[str, object]) -> None:
+            self.state = dict(state)
+
+        def _accumulate_job_usage(self, round_usage: dict[str, object]) -> None:
+            self.state["job_usage"] = round_usage
+
+        def execute_research_one(self) -> dict[str, object]:
+            # execute_research_sdk should preserve the in-flight round number.
+            assert self.state["research_round"] == 0
+            assert self.state["research_round_in_progress"] == 1
+            return {
+                "status": "completed",
+                "generated_config": "experiments/ema5/runtime_config.json",
+                "generated_config_needs_build": False,
+                "generated_thesis_id": "ema5",
+                "thesis_id": "ema5",
+                "experiment_id": "ema5",
+                "should_stop": False,
+                "reasoning": "research rationale",
+                "thesis": {
+                    "thesis_id": "ema5",
+                    "strategy_family": "ema",
+                    "config_changes": {"ema_length": 5},
+                    "hypothesis": "ema 5 should react faster",
+                    "mechanism": "reduce lag in entries",
+                    "mechanism_dimension": "timing",
+                },
+            }
+
+        def log_research_round(self, **kwargs: object) -> None:
+            self.round_kwargs = kwargs
+
+    controller = _Controller()
+    state = controller.read_state()
+
+    with (
+        patch("trace_sdk.begin_round", lambda *_: None),
+        patch("research_conductor.reset_round_usage", lambda: None),
+        patch(
+            "research_conductor.get_round_usage",
+            lambda: {"total": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}},
+        ),
+    ):
+        out = run_research(controller, state)
+
+    assert controller.round_kwargs is not None
+    assert controller.round_kwargs["round_number"] == 1
+    assert out["research_round"] == 1
+    assert "research_round_in_progress" not in out
+
+
 def test_handle_success_preserves_contract_for_follow_on_experiment() -> None:
     from autoresearch_research import _handle_success
 

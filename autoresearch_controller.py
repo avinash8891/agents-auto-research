@@ -229,6 +229,7 @@ def _resume_interrupted_research_state(prior_state: dict[str, Any], job: int) ->
             "state": "blocked",
             "job": job,
             "research_round": retry_from_round,
+            "research_round_in_progress": failed_round,
             "blockers": [
                 {
                     "kind": "research_required",

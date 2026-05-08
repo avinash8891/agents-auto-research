@@ -2924,6 +2924,7 @@ def test_main_resume_current_job_retries_interrupted_research_failure_without_in
     assert written["state"] == "blocked"
     assert written["job"] == 20
     assert written["research_round"] == 8
+    assert written["research_round_in_progress"] == 9
     assert written["job_usage"] == {"rounds": 8, "total_tokens": 1234}
     assert written["heartbeat"]["last_completed_thesis"] == "experiments/prev/runtime_config.json"
     assert written["current_best"]["metric"] == 4.9409
@@ -3037,6 +3038,7 @@ def test_resume_interrupted_research_state_tolerates_malformed_blockers() -> Non
     assert state["state"] == "blocked"
     assert state["job"] == 20
     assert state["research_round"] == 8
+    assert state["research_round_in_progress"] == 9
     assert state["blockers"] == [
         {
             "kind": "research_required",
