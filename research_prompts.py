@@ -371,6 +371,7 @@ OUTPUT FORMAT (final response after all tool calls):
           "severity": "hard_fail"
         }}
       ],
+      "requested_primitives": ["required when requires_code_change=true; name the exact missing engine/runtime primitives"],
       "requires_code_change": false
     }}
   ],
@@ -412,6 +413,7 @@ RULES:
 - Do NOT repeat a thesis_id from the experiment results table.
 - Every thesis must have config_changes (to test the mechanism) or requires_code_change=true.
 - If requires_code_change=true, describe what the engine needs in "mechanism".
+- If requires_code_change=true, also fill requested_primitives with the exact missing engine/runtime primitives needed to implement the thesis.
 - Reason from the data. Do not anchor to previous rounds' conclusions.
 - A thesis without a structural mechanism backed by both data AND external
   evidence will be REJECTED. "I think X might work" is not a thesis.

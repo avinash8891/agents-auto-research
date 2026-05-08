@@ -26,6 +26,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import paramiko
 
+from autoresearch_constants import ENV_TRACE_MODE, PREPARE_RESULT_MARKER, TRACE_MODE_TRANSACTION
 from autoresearch_logging import get_logger
 from backtest.data_universe import DATA_ROOT_ENV
 from strategies import STRATEGIES
@@ -37,6 +38,7 @@ log = get_logger(__name__)
 KNOWN_HOSTS_ENV = "AUTORESEARCH_KNOWN_HOSTS"
 CURRENT_SHA_MARKER = "AUTORESEARCH_CURRENT_SHA"
 RESOLVED_SHA_MARKER = "AUTORESEARCH_RESOLVED_SHA"
+ACTIVE_RUN_MARKER = "AUTORESEARCH_ACTIVE_RUN"
 LEGACY_REMOTE_ROOT = "/root/orb-research"
 REMOTE_ROOT_DENYLIST = {"/", "/root", "/home", "/srv", "/tmp", "/var", "/opt"}
 REMOTE_RUNTIME_ENV_FILENAME = ".env.autoresearch"
@@ -78,6 +80,7 @@ REMOTE_RUNTIME_ENV_PERSISTED_KEYS = {
 REMOTE_RUNTIME_ENV_DEFAULTS = {
     "AUTORESEARCH_IMPROVEMENT_REFLEXION": "1",
 }
+PREPARE_SUCCESS_GRACE_SECONDS = 5.0
 
 
 def _load_local_env_file() -> None:
@@ -341,6 +344,64 @@ def build_git_status_command(config: VPSConfig) -> str:
     )
 
 
+def build_activity_probe_command(config: VPSConfig, family: StrategyFamily) -> str:
+    remote_dir = shlex.quote(config.remote_dir)
+    return (
+        "set -e && "
+        f"if [ ! -d {remote_dir}/.git ]; then "
+        f"printf '{ACTIVE_RUN_MARKER} %s\\n' "
+        + shlex.quote(json.dumps({"active": False, "reason": "missing_checkout"}))
+        + "; exit 0; fi && "
+        f"cd {remote_dir} && "
+        "python3 - <<'PY'\n"
+        "import json\n"
+        "import pathlib\n"
+        "import subprocess\n"
+        f"state_path = pathlib.Path({family.name!r} + '_autoresearch.next.json')\n"
+        "payload = {\n"
+        "    'active': False,\n"
+        "    'process_running': False,\n"
+        "    'state_active': False,\n"
+        "    'reason': '',\n"
+        "    'state': None,\n"
+        "    'job': None,\n"
+        "    'research_round': None,\n"
+        "    'research_round_in_progress': None,\n"
+        "    'next_action_type': None,\n"
+        "    'builder_thesis_id': None,\n"
+        "}\n"
+        "state = {}\n"
+        "if state_path.exists():\n"
+        "    raw = state_path.read_text()\n"
+        "    state = json.loads(raw) if raw.strip() else {}\n"
+        "    payload['state'] = state.get('state')\n"
+        "    payload['job'] = state.get('job')\n"
+        "    payload['research_round'] = state.get('research_round')\n"
+        "    payload['research_round_in_progress'] = state.get('research_round_in_progress')\n"
+        "    next_action = state.get('next_action') if isinstance(state.get('next_action'), dict) else {}\n"
+        "    payload['next_action_type'] = next_action.get('type')\n"
+        "    payload['builder_thesis_id'] = next_action.get('builder_thesis_id') or state.get('halted_thesis_id')\n"
+        "    state_active = bool(state.get('research_round_in_progress')) or (\n"
+        "        state.get('state') == 'building' and next_action.get('type') == 'builder_running'\n"
+        "    ) or (\n"
+        "        state.get('state') == 'running' and next_action.get('type') == 'run_experiment'\n"
+        "    )\n"
+        "    payload['state_active'] = bool(state_active)\n"
+        f"proc = subprocess.run(['pgrep', '-af', 'autoresearch_controller.py --family {family.name}'], capture_output=True, text=True, check=False)\n"
+        "payload['process_running'] = proc.returncode == 0\n"
+        "if payload['state_active'] and payload['process_running']:\n"
+        "    payload['active'] = True\n"
+        "    if state.get('research_round_in_progress'):\n"
+        "        payload['reason'] = f\"research_round_in_progress={state.get('research_round_in_progress')}\"\n"
+        "    elif state.get('state') == 'running' and next_action.get('type') == 'run_experiment':\n"
+        "        payload['reason'] = f\"run_experiment config={next_action.get('config') or '?'}\"\n"
+        "    else:\n"
+        "        payload['reason'] = f\"builder_running thesis={payload['builder_thesis_id'] or '?'}\"\n"
+        f"print({ACTIVE_RUN_MARKER!r} + ' ' + json.dumps(payload, sort_keys=True))\n"
+        "PY"
+    )
+
+
 def redact_git_repo_url(git_repo: str) -> str:
     parsed = urlsplit(git_repo)
     if not parsed.scheme or "@" not in parsed.netloc:
@@ -375,14 +436,34 @@ def parse_current_sha(output: str) -> str | None:
     return None if current_sha == "missing" else current_sha
 
 
-def build_remote_command(
+def parse_activity_probe(output: str) -> dict[str, object]:
+    match = re.search(rf"^{ACTIVE_RUN_MARKER} (.+)$", output, flags=re.MULTILINE)
+    if not match:
+        raise RuntimeError("VPS activity probe did not report active-run status")
+    payload = json.loads(match.group(1))
+    if not isinstance(payload, dict):
+        raise RuntimeError("VPS activity probe payload was not a JSON object")
+    return payload
+
+
+def parse_prepare_result(output: str) -> dict[str, object]:
+    match = re.search(rf"^{PREPARE_RESULT_MARKER} (.+)$", output, flags=re.MULTILINE)
+    if not match:
+        raise RuntimeError("VPS prepare command did not report a prepare result")
+    payload = json.loads(match.group(1))
+    if not isinstance(payload, dict):
+        raise RuntimeError("VPS prepare result payload was not a JSON object")
+    if payload.get("ok") is not True:
+        raise RuntimeError(f"VPS prepare command reported a non-success payload: {payload}")
+    return payload
+
+
+def _build_remote_bootstrap_segments(
     config: VPSConfig,
-    family: StrategyFamily,
     resolved_sha: str,
     *,
-    resume_current_job: bool = False,
     skip_dependency_install: bool = False,
-) -> str:
+) -> list[str]:
     segments = [
         "set -e",
         f"cd {shlex.quote(config.remote_dir)}",
@@ -421,13 +502,72 @@ def build_remote_command(
         )
     else:
         segments.extend(dependency_install_segments)
+    return segments
+
+
+def build_remote_prepare_command(
+    config: VPSConfig,
+    family: StrategyFamily,
+    resolved_sha: str,
+    *,
+    resume_current_job: bool = False,
+    skip_dependency_install: bool = False,
+) -> str:
+    segments = _build_remote_bootstrap_segments(
+        config,
+        resolved_sha,
+        skip_dependency_install=skip_dependency_install,
+    )
     controller_mode = " --resume-current-job" if resume_current_job else " --fresh-job"
     controller_base = (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
     )
+    segments.append(f"export {ENV_TRACE_MODE}={shlex.quote(TRACE_MODE_TRANSACTION)}")
     segments.append(controller_base + controller_mode + " --prepare-launch-state-only")
-    segments.append(controller_base + " --run-current-state")
     return " && ".join(segments)
+
+
+def build_remote_run_command(
+    config: VPSConfig,
+    family: StrategyFamily,
+    resolved_sha: str,
+    *,
+    skip_dependency_install: bool = False,
+) -> str:
+    segments = _build_remote_bootstrap_segments(
+        config,
+        resolved_sha,
+        skip_dependency_install=skip_dependency_install,
+    )
+    segments.append(f"unset {ENV_TRACE_MODE} || true")
+    segments.append(
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} --run-current-state'
+    )
+    return " && ".join(segments)
+
+
+def build_remote_command(
+    config: VPSConfig,
+    family: StrategyFamily,
+    resolved_sha: str,
+    *,
+    resume_current_job: bool = False,
+    skip_dependency_install: bool = False,
+) -> str:
+    prepare_cmd = build_remote_prepare_command(
+        config,
+        family,
+        resolved_sha,
+        resume_current_job=resume_current_job,
+        skip_dependency_install=skip_dependency_install,
+    )
+    run_cmd = build_remote_run_command(
+        config,
+        family,
+        resolved_sha,
+        skip_dependency_install=skip_dependency_install,
+    )
+    return f"{prepare_cmd} && {run_cmd}"
 
 
 def _should_skip_git_prepare(*, current_sha: str | None, resolved_sha: str) -> bool:
@@ -697,6 +837,64 @@ def _stream_remote_command(
     return exit_code, "".join(out_chunks), "".join(err_chunks)
 
 
+def _stream_remote_prepare_command(
+    stdout: paramiko.channel.ChannelFile,
+    stderr: paramiko.channel.ChannelStderrFile,
+    *,
+    success_marker: str = PREPARE_RESULT_MARKER,
+    linger_after_success_seconds: float = PREPARE_SUCCESS_GRACE_SECONDS,
+) -> tuple[int, str, str, bool]:
+    channel = stdout.channel
+    out_chunks: list[str] = []
+    err_chunks: list[str] = []
+    success_seen_at: float | None = None
+    forced_close = False
+
+    while True:
+        progressed = False
+
+        while channel.recv_ready():
+            chunk = channel.recv(4096)
+            if not chunk:
+                break
+            text = chunk.decode(errors="replace")
+            out_chunks.append(text)
+            print(text, end="", flush=True)
+            progressed = True
+            if success_seen_at is None and success_marker in "".join(out_chunks):
+                success_seen_at = time.time()
+
+        while channel.recv_stderr_ready():
+            chunk = channel.recv_stderr(4096)
+            if not chunk:
+                break
+            text = chunk.decode(errors="replace")
+            err_chunks.append(text)
+            print(text, end="", file=sys.stderr, flush=True)
+            progressed = True
+
+        if (
+            channel.exit_status_ready()
+            and not channel.recv_ready()
+            and not channel.recv_stderr_ready()
+        ):
+            break
+
+        if (
+            success_seen_at is not None
+            and time.time() - success_seen_at >= linger_after_success_seconds
+        ):
+            forced_close = True
+            channel.close()
+            break
+
+        if not progressed:
+            time.sleep(0.1)
+
+    exit_code = 0 if forced_close else channel.recv_exit_status()
+    return exit_code, "".join(out_chunks), "".join(err_chunks), forced_close
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run autoresearch controller on the VPS")
     parser.add_argument("--strategy", required=True, choices=sorted(STRATEGIES))
@@ -724,6 +922,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "Skip Git checkout and dependency install if the VPS checkout already matches "
             "--git-ref."
         ),
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Override the VPS active-round safety check and deploy anyway.",
     )
     return parser
 
@@ -753,6 +956,43 @@ def main():
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     trace("VPS_RUNNER", "Connected")
+
+    if not args.force:
+        activity_cmd = build_activity_probe_command(vps_config, family)
+        trace("VPS_RUNNER", f"SSH ACTIVE_CHECK: {activity_cmd}")
+        _, activity_stdout, activity_stderr = client.exec_command(activity_cmd, timeout=60)
+        activity_out = activity_stdout.read().decode()
+        activity_err = activity_stderr.read().decode()
+        safe_activity_out = redact_secrets(activity_out, vps_config)
+        safe_activity_err = redact_secrets(activity_err, vps_config)
+        activity_exit = activity_stdout.channel.recv_exit_status()
+        trace_ssh(activity_cmd, activity_exit, safe_activity_out, safe_activity_err)
+        if activity_exit != 0:
+            client.close()
+            if safe_activity_out:
+                print(safe_activity_out, end="")
+            if safe_activity_err:
+                print(safe_activity_err, end="", file=sys.stderr)
+            sys.exit(activity_exit)
+        try:
+            activity = parse_activity_probe(activity_out)
+        except (RuntimeError, json.JSONDecodeError) as exc:
+            client.close()
+            log.error("Failed to parse active-run probe: %s", exc)
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        if activity.get("active"):
+            client.close()
+            reason = str(activity.get("reason") or "active round running")
+            message = (
+                "Refusing VPS deploy/resume while an active research/builder round is running. "
+                f"family={family.name} job={activity.get('job')} state={activity.get('state')} "
+                f"next_action={activity.get('next_action_type')} reason={reason}. "
+                "Pass --force to override."
+            )
+            trace("VPS_RUNNER", message)
+            print(message, file=sys.stderr)
+            sys.exit(2)
 
     skip_dependency_install = False
     resolved_sha = ""
@@ -841,27 +1081,77 @@ def main():
         log.warning("Codex auth upload failed, continuing without it: %s", exc)
         trace("VPS_RUNNER", f"Codex auth upload failed: {exc}")
 
-    cmd = build_remote_command(
+    prepare_cmd = build_remote_prepare_command(
         vps_config,
         family,
         resolved_sha,
         resume_current_job=args.resume_current_job,
         skip_dependency_install=skip_dependency_install,
     )
-    trace("VPS_RUNNER", f"SSH EXEC: {cmd}")
+    safe_prepare_exec_cmd = prepare_cmd
+    trace("VPS_RUNNER", f"SSH PREPARE_EXEC: {safe_prepare_exec_cmd}")
     t1 = time.time()
+    try:
+        _stdin, stdout, stderr = client.exec_command(prepare_cmd)
+        prepare_exec_code, prepare_exec_out, prepare_exec_err, forced_close = (
+            _stream_remote_prepare_command(stdout, stderr)
+        )
+    except Exception as exc:
+        log.error("Remote prepare command stream failed: %s", exc)
+        prepare_exec_code, prepare_exec_out, prepare_exec_err, forced_close = (
+            1,
+            "",
+            str(exc),
+            False,
+        )
+    trace_ssh(
+        prepare_cmd,
+        prepare_exec_code,
+        redact_secrets(prepare_exec_out, vps_config),
+        redact_secrets(prepare_exec_err, vps_config),
+    )
+    if prepare_exec_code != 0:
+        client.close()
+        if prepare_exec_out:
+            print(redact_secrets(prepare_exec_out, vps_config), end="")
+        if prepare_exec_err:
+            print(redact_secrets(prepare_exec_err, vps_config), end="", file=sys.stderr)
+        sys.exit(prepare_exec_code)
+    try:
+        prepare_result = parse_prepare_result(prepare_exec_out)
+    except (RuntimeError, json.JSONDecodeError) as exc:
+        client.close()
+        log.error("Failed to parse prepare result: %s", exc)
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    trace(
+        "VPS_RUNNER",
+        (
+            f"Prepare complete job={prepare_result.get('job')} state={prepare_result.get('state')} "
+            f"forced_close={forced_close} elapsed={time.time() - t1:.1f}s"
+        ),
+    )
+
+    run_cmd = build_remote_run_command(
+        vps_config,
+        family,
+        resolved_sha,
+        skip_dependency_install=skip_dependency_install,
+    )
+    trace("VPS_RUNNER", f"SSH RUN_EXEC: {run_cmd}")
+    t2 = time.time()
     # Controller runs are long-lived; do not enforce a 10-minute SSH timeout.
     try:
-        _stdin, stdout, stderr = client.exec_command(cmd)
+        _stdin, stdout, stderr = client.exec_command(run_cmd)
         exit_code, out, err = _stream_remote_command(stdout, stderr)
     except Exception as exc:
         log.error("Remote command stream failed: %s", exc)
         exit_code, out, err = 1, "", str(exc)
     finally:
         client.close()
-    elapsed = time.time() - t1
+    elapsed = time.time() - t2
 
-    trace_ssh(cmd, exit_code, redact_secrets(out, vps_config), redact_secrets(err, vps_config))
+    trace_ssh(run_cmd, exit_code, redact_secrets(out, vps_config), redact_secrets(err, vps_config))
     trace(
         "VPS_RUNNER",
         f"DONE exit={exit_code} elapsed={elapsed:.1f}s stdout_len={len(out)} stderr_len={len(err)}",

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from autoresearch_research import (
     _check_parsed_for_terminal,
+    _handle_needs_code,
     _try_one_validation_attempt,
     accumulate_job_usage,
     log_research_round,
@@ -24,6 +25,7 @@ from autoresearch_research import (
 )
 from autoresearch_state import ExperimentRecord, write_state
 from experiment_db import ExperimentDB
+from thesis_validator import ThesisValidationError
 
 # ── notify_discord fail-open contract ────────────────────────────
 
@@ -472,3 +474,157 @@ def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_f
     assert retry_feedback is not None
     assert "rejected by validator" in retry_feedback
     assert "missing_primitives must be a list of strings" in retry_feedback
+
+
+def test_handle_needs_code_uses_full_validation_contract_before_compile(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _Controller:
+        root = tmp_path
+        job_runtime_root = tmp_path
+        family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
+
+    def fake_operationalize(thesis):
+        updated = dict(thesis)
+        updated["requested_primitives"] = ["buffered_trailing_stop_rule"]
+        updated["config_changes"] = {"buffered_trailing_stop_rule": True}
+        return updated
+
+    class _Validated:
+        thesis_id = "buffered_trailing"
+
+    def fake_validate(raw, prior_theses=None):
+        captured["validated_raw"] = dict(raw)
+        return _Validated()
+
+    def fake_compile(validated, root, artifact_root=None):
+        captured["compiled"] = {
+            "thesis_id": validated.thesis_id,
+            "root": root,
+            "artifact_root": artifact_root,
+        }
+        return None
+
+    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
+    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
+    monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
+    monkeypatch.setattr("autoresearch_research._close_run", lambda *args, **kwargs: None)
+
+    state = {"state": "running", "job": 26, "research_round_in_progress": 6}
+    result = {
+        "generated_thesis_id": "buffered_trailing",
+        "research_round": 6,
+        "thesis": {
+            "thesis_id": "buffered_trailing",
+            "hypothesis": "buffered trailing should reduce premature exits",
+            "mechanism": "trailing rule needs a code primitive",
+            "mechanism_dimension": "exit_mechanism",
+            "dimension_novelty": "new trailing rule shape",
+            "expected_effects": [
+                {
+                    "metric": "profit_factor",
+                    "direction": "increase",
+                    "rationale": "fewer premature trail exits",
+                }
+            ],
+            "disqualifiers": [
+                {
+                    "name": "trade_count_collapse",
+                    "condition": "trade_count falls too much",
+                    "severity": "hard_fail",
+                }
+            ],
+            "requires_code_change": True,
+            "requested_primitives": [],
+        },
+    }
+
+    updated = _handle_needs_code(_Controller(), state, result)
+
+    assert updated["state"] == "halted"
+    assert captured["validated_raw"]["requested_primitives"] == [  # type: ignore[index]
+        "buffered_trailing_stop_rule"
+    ]
+    assert captured["validated_raw"]["config_changes"] == {  # type: ignore[index]
+        "buffered_trailing_stop_rule": True
+    }
+
+
+def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_change_fallback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _Controller:
+        root = tmp_path
+        job_runtime_root = tmp_path
+        family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
+
+    def fake_operationalize(thesis):
+        updated = dict(thesis)
+        updated["requested_primitives"] = ["buffered_trailing_stop_rule"]
+        updated["config_changes"] = {"buffered_trailing_stop_rule": True}
+        return updated
+
+    def fake_validate(raw, prior_theses=None):
+        captured["validated_raw"] = dict(raw)
+        raise ThesisValidationError("Missing mechanism_dimension")
+
+    def fake_compile(validated, root, artifact_root=None):
+        captured["compiled"] = {
+            "thesis_id": validated.thesis_id,
+            "root": root,
+            "artifact_root": artifact_root,
+            "mechanism_dimension": validated.mechanism_dimension,
+            "requested_primitives": list(validated.requested_primitives),
+        }
+        return None
+
+    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
+    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
+    monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
+    monkeypatch.setattr("autoresearch_research._close_run", lambda *args, **kwargs: None)
+
+    state = {"state": "running", "job": 26, "research_round_in_progress": 6}
+    result = {
+        "generated_thesis_id": "buffered_trailing",
+        "research_round": 6,
+        "thesis": {
+            "thesis_id": "buffered_trailing",
+            "hypothesis": "buffered trailing should reduce premature exits",
+            "mechanism": "trailing rule needs a code primitive",
+            "dimension_novelty": "new trailing rule shape",
+            "expected_effects": [
+                {
+                    "metric": "profit_factor",
+                    "direction": "increase",
+                    "rationale": "fewer premature trail exits",
+                }
+            ],
+            "disqualifiers": [
+                {
+                    "name": "trade_count_collapse",
+                    "condition": "trade_count falls too much",
+                    "severity": "hard_fail",
+                }
+            ],
+            "requires_code_change": True,
+            "requested_primitives": [],
+        },
+    }
+
+    updated = _handle_needs_code(_Controller(), state, result)
+
+    assert updated["state"] == "halted"
+    assert captured["validated_raw"]["requested_primitives"] == [  # type: ignore[index]
+        "buffered_trailing_stop_rule"
+    ]
+    assert captured["compiled"] == {
+        "thesis_id": "buffered_trailing",
+        "root": tmp_path,
+        "artifact_root": tmp_path,
+        "mechanism_dimension": "",
+        "requested_primitives": ["buffered_trailing_stop_rule"],
+    }

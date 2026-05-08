@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
 import autoresearch_controller as loop_mod
 import autoresearch_orchestration as orchestration_mod
 import autoresearch_research as research_mod
+from autoresearch_constants import PREPARE_RESULT_MARKER
 from autoresearch_controller import AutoresearchController
 from experiment_db import BaselineCheckpoint, BaselineTracker, ExperimentDB
 from strategies import STRATEGIES
@@ -3037,7 +3038,7 @@ def test_main_resume_current_job_rejects_inconsistent_blocked_research_state(mon
 
 
 def test_main_prepare_launch_state_only_writes_clean_fresh_state_without_executing(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, capsys
 ):
     family = load_family("ema")
 
@@ -3101,6 +3102,12 @@ def test_main_prepare_launch_state_only_writes_clean_fresh_state_without_executi
         "job_usage": None,
         "heartbeat": {},
     }
+    stdout = capsys.readouterr().out
+    assert PREPARE_RESULT_MARKER in stdout
+    payload = json.loads(stdout.split(PREPARE_RESULT_MARKER, 1)[1].strip())
+    assert payload["ok"] is True
+    assert payload["job"] == 26
+    assert payload["state"] == "running"
 
 
 def test_main_run_current_state_executes_prepared_running_job_without_renormalizing(

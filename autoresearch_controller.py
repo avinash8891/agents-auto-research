@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ from autoresearch_artifacts import (
 from autoresearch_artifacts import read_research_artifacts as _artifacts_read_research_artifacts
 from autoresearch_artifacts import read_run_queue as _artifacts_read_run_queue
 from autoresearch_artifacts import read_thesis_artifacts as _artifacts_read_thesis_artifacts
+from autoresearch_constants import PREPARE_RESULT_MARKER
 from autoresearch_experiment import artifact_dir_for as _experiment_artifact_dir_for
 from autoresearch_experiment import derive_trade_analysis as _experiment_derive_trade_analysis
 from autoresearch_experiment import evaluate_metric as _experiment_evaluate_metric
@@ -467,6 +469,20 @@ def _run_controller_loop(
             # terminal for the process.
             return 1
         consecutive_research_required = 0
+
+
+def _emit_prepare_result(state: dict[str, Any], job: int) -> None:
+    next_action = state.get("next_action")
+    payload = {
+        "ok": True,
+        "job": job,
+        "state": str(state.get("state") or ""),
+        "research_round": state.get("research_round"),
+        "research_round_in_progress": state.get("research_round_in_progress"),
+        "next_action_type": next_action.get("type") if isinstance(next_action, dict) else None,
+    }
+    sys.stdout.write(f"{PREPARE_RESULT_MARKER} {json.dumps(payload, sort_keys=True)}\n")
+    sys.stdout.flush()
 
 
 class AutoresearchController:
@@ -1095,6 +1111,7 @@ def main() -> int:
         return 1
     controller.write_state(state)
     if args.prepare_launch_state_only:
+        _emit_prepare_result(state, job)
         return 0
     return _run_controller_loop(controller, family_name=args.family, job=job)
 

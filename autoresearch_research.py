@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
-from pydantic import ValidationError
 
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
@@ -44,7 +43,6 @@ from persistence_utils import write_text_atomic as _write_text_atomic
 from research_types import ResearchThesis
 from strategies import STRATEGIES
 from strategy_family import StrategyFamily
-from thesis_validator import normalize_thesis_payload
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
 from trace_adapters.halo import build_halo_export_package, build_halo_payload
 from trace_adapters.recursive_improve import (
@@ -75,6 +73,37 @@ def _record_event_fail_open(**kwargs: Any) -> None:
         record_event(**kwargs)
     except Exception as exc:
         log.debug("trace event emission failed: %s", exc)
+
+
+def _prepare_thesis_for_validation(
+    thesis: dict[str, Any],
+    *,
+    strategy_family: str,
+    prior_theses: list[dict[str, Any]] | None = None,
+    allow_schema_only_code_change_fallback: bool = False,
+):
+    from compiler_pipeline import operationalize_thesis
+    from thesis_validator import (
+        ThesisValidationError,
+        normalize_thesis_payload,
+        validate_thesis_dict,
+    )
+
+    raw_thesis = dict(thesis)
+    raw_thesis["strategy_family"] = strategy_family
+    if raw_thesis.get("requires_code_change") and not raw_thesis.get("requested_primitives"):
+        operationalized = operationalize_thesis(dict(raw_thesis))
+        missing = operationalized.get("missing_primitives") or []
+        if missing and not operationalized.get("requested_primitives"):
+            operationalized["requested_primitives"] = missing
+        raw_thesis = operationalized
+    try:
+        validated = validate_thesis_dict(raw_thesis, prior_theses=prior_theses)
+    except ThesisValidationError:
+        if not (allow_schema_only_code_change_fallback and raw_thesis.get("requires_code_change")):
+            raise
+        validated = ResearchThesis.model_validate(normalize_thesis_payload(raw_thesis))
+    return raw_thesis, validated
 
 
 # ── Discord notification ──────────────────────────────────────────
@@ -723,26 +752,23 @@ def _try_one_validation_attempt(
     loop with that result. If `retry_feedback` is not None, retry the
     conductor with that feedback string.
     """
-    from compiler_pipeline import compile_research_thesis, operationalize_thesis
-    from thesis_validator import ThesisValidationError, validate_thesis_dict
+    from compiler_pipeline import compile_research_thesis
+    from thesis_validator import ThesisValidationError
 
     raw_thesis = parsed["suggested_theses"][0]
-    raw_thesis["strategy_family"] = controller.family.name
     thesis_id = raw_thesis.get("thesis_id", "unknown")
 
     try:
-        if raw_thesis.get("requires_code_change") and not raw_thesis.get("requested_primitives"):
-            operationalized = operationalize_thesis(dict(raw_thesis))
-            missing = operationalized.get("missing_primitives") or []
-            if missing and not operationalized.get("requested_primitives"):
-                operationalized["requested_primitives"] = missing
-            raw_thesis = operationalized
+        raw_thesis, validated = _prepare_thesis_for_validation(
+            raw_thesis,
+            strategy_family=controller.family.name,
+            prior_theses=prior_theses,
+        )
         thesis_id = raw_thesis.get("thesis_id", "unknown")
         log.info(
             f"RESEARCH_RAW thesis_id={thesis_id} "
             f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
         )
-        validated = validate_thesis_dict(raw_thesis, prior_theses=prior_theses)
         contract = compile_research_thesis(
             validated, controller.root, artifact_root=controller.job_runtime_root
         )
@@ -1266,14 +1292,16 @@ def _handle_needs_code(
     state["halted_reason"] = "requires_code_change"
     state["halted_thesis_id"] = thesis_id
     state["halted_thesis"] = thesis
-    # Normalize before validation so mechanism_dimension aliases and raw
-    # expected_effects/disqualifiers match ResearchThesis schema (mirrors
-    # thesis_validator.validate_thesis_dict).
     try:
-        validated = ResearchThesis.model_validate(normalize_thesis_payload(thesis_payload))
-    except ValidationError as exc:
+        _, validated = _prepare_thesis_for_validation(
+            thesis_payload,
+            strategy_family=controller.family.name,
+            prior_theses=None,
+            allow_schema_only_code_change_fallback=True,
+        )
+    except Exception as exc:
         log.warning(
-            "LOOP_HALT thesis=%s schema validation failed; skipping compile: %s",
+            "LOOP_HALT thesis=%s validation failed; skipping compile: %s",
             thesis_id,
             exc,
         )

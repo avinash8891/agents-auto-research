@@ -21,6 +21,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, Sp
 from traceloop.sdk import Traceloop
 from traceloop.sdk.instruments import Instruments
 
+from autoresearch_constants import ENV_TRACE_MODE, TRACE_MODE_TRANSACTION
 from persistence_utils import write_text_atomic
 
 # Traceloop SDK is the OpenLLMetry layer used for model/workflow instrumentation.
@@ -504,6 +505,9 @@ def _initialize_tracing() -> None:
     if _INITIALIZED:
         return
     _PROVIDER = _build_provider()
+    if os.getenv(ENV_TRACE_MODE) == TRACE_MODE_TRANSACTION:
+        _INITIALIZED = True
+        return
     if os.getenv("PYTEST_CURRENT_TEST"):
         _INITIALIZED = True
         return

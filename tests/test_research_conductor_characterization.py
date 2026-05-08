@@ -432,6 +432,7 @@ def test_conductor_system_prompt_includes_thesis_quality_accounting_fields():
         in prompt
     )
     assert '"falsification_or_alternative":' in prompt
+    assert '"requested_primitives": ["required when requires_code_change=true;' in prompt
 
 
 def test_conductor_system_prompt_does_not_claim_raw_data_directory_is_always_available():

@@ -14,15 +14,20 @@ from vps_runner import (
     _localize_remote_result_output,
     _sftp_mkdir_p,
     _should_skip_git_prepare,
+    build_activity_probe_command,
     build_git_prepare_command,
     build_git_status_command,
     build_remote_command,
+    build_remote_prepare_command,
+    build_remote_run_command,
     config_from_env,
     create_verified_ssh_client,
     materialize_remote_codex_auth,
     materialize_remote_config_if_needed,
     materialize_remote_runtime_env,
+    parse_activity_probe,
     parse_current_sha,
+    parse_prepare_result,
     parse_resolved_sha,
     redact_git_repo_url,
     redact_secrets,
@@ -164,6 +169,24 @@ def test_vps_runner_parser_accepts_skip_deploy_for_fresh_job() -> None:
     assert args.skip_deploy_if_current is True
 
 
+def test_vps_runner_parser_accepts_force_override() -> None:
+    parser = _build_arg_parser()
+
+    args = parser.parse_args(
+        [
+            "--strategy",
+            "ema",
+            "--git-ref",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--resume-current-job",
+            "--force",
+        ]
+    )
+
+    assert args.resume_current_job is True
+    assert args.force is True
+
+
 def test_vps_config_rejects_unsafe_remote_dirs(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
@@ -227,6 +250,42 @@ def test_remote_command_runs_controller_for_family() -> None:
     assert "/root/orb-research" not in command
     assert "backtest_5ema.py" not in command
     assert "scp" not in command.lower()
+
+
+def test_remote_prepare_command_uses_transaction_trace_mode() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_prepare_command(config, family, "0" * 40)
+
+    assert "export AUTORESEARCH_TRACE_MODE=transaction" in command
+    assert "--fresh-job --prepare-launch-state-only" in command
+    assert "--run-current-state" not in command
+
+
+def test_remote_run_command_clears_transaction_trace_mode() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_run_command(config, family, "0" * 40)
+
+    assert "unset AUTORESEARCH_TRACE_MODE || true" in command
+    assert "--run-current-state" in command
+    assert "--prepare-launch-state-only" not in command
 
 
 def test_remote_resume_command_can_skip_dependency_install_when_sha_is_current() -> None:
@@ -334,10 +393,36 @@ def test_remote_command_can_resume_current_job() -> None:
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
         "--resume-current-job --prepare-launch-state-only"
     ) in command
-    assert (
-        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
-        "--run-current-state"
-    ) in command
+
+
+def test_parse_prepare_result_reads_success_payload() -> None:
+    payload = {"ok": True, "job": 26, "state": "blocked", "research_round_in_progress": 6}
+    output = f"AUTORESEARCH_PREPARE_RESULT {json.dumps(payload)}\n"
+
+    assert parse_prepare_result(output) == payload
+
+
+def test_activity_probe_command_targets_family_state_and_process() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_activity_probe_command(config, family)
+
+    assert f"cd {shlex.quote(config.remote_dir)}" in command
+    assert "state_path = pathlib.Path('ema' + '_autoresearch.next.json')" in command
+    assert "pgrep" in command
+    assert "autoresearch_controller.py --family ema" in command
+    assert "AUTORESEARCH_ACTIVE_RUN" in command
+    assert "research_round_in_progress" in command
+    assert "builder_running" in command
+    assert "run_experiment" in command
 
 
 def test_vps_runner_parser_accepts_explicit_fresh_job_mode() -> None:
@@ -392,6 +477,20 @@ def test_parse_current_sha_reads_remote_status_marker() -> None:
     output = "\nAUTORESEARCH_CURRENT_SHA abcdef0123456789abcdef0123456789abcdef01\n"
 
     assert parse_current_sha(output) == "abcdef0123456789abcdef0123456789abcdef01"
+
+
+def test_parse_activity_probe_reads_remote_marker() -> None:
+    output = (
+        'AUTORESEARCH_ACTIVE_RUN {"active": true, "job": 26, "state": "building", '
+        '"next_action_type": "builder_running", "reason": "builder_running thesis=T1"}\n'
+    )
+
+    payload = parse_activity_probe(output)
+
+    assert payload["active"] is True
+    assert payload["job"] == 26
+    assert payload["state"] == "building"
+    assert payload["next_action_type"] == "builder_running"
 
 
 def test_parse_current_sha_returns_none_when_remote_checkout_is_missing() -> None:
