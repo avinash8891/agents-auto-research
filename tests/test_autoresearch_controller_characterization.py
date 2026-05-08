@@ -2600,6 +2600,123 @@ def test_fresh_launch_state_has_exact_clean_key_set_for_prior_terminal_states(
     }
 
 
+def test_normalize_controller_launch_state_honors_explicit_fresh_job() -> None:
+    state, job = loop_mod.normalize_controller_launch_state(
+        {"state": "finished", "job": 9},
+        resume_current_job=False,
+        fresh_job=24,
+    )
+
+    assert job == 24
+    assert state == {
+        "state": "running",
+        "job": 24,
+        "research_round": 0,
+        "job_usage": None,
+        "heartbeat": {},
+    }
+
+
+def test_next_fresh_job_id_uses_checkout_history_to_avoid_collisions(tmp_path, monkeypatch):
+    family = load_family("ema")
+    monkeypatch.setattr(loop_mod, "_notify_discord", lambda *a, **k: None)
+    monkeypatch.setattr(research_mod, "notify_discord", lambda *a, **k: None)
+
+    src_yaml = REPO_ROOT / BASELINE_CONFIG
+    dst_yaml = tmp_path / BASELINE_CONFIG
+    dst_yaml.parent.mkdir(parents=True, exist_ok=True)
+    dst_yaml.write_text(src_yaml.read_text())
+
+    controller = AutoresearchController(
+        root=tmp_path,
+        state_path=tmp_path / "ema_autoresearch.next.json",
+        current_md_path=tmp_path / "ema_autoresearch.current.md",
+        ideas_md_path=tmp_path / "ema_autoresearch.ideas.md",
+        runs_dir=tmp_path / family.runs_dirname,
+        family=family,
+    )
+
+    controller.write_entries(
+        [
+            {
+                "run": 1,
+                "job": 23,
+                "metric": 1.0,
+                "metrics": {},
+                "status": "keep",
+                "description": "strict-native loop: ema_base",
+                "timestamp": 1,
+                "asi": {"config": BASELINE_CONFIG, "thesis_id": "ema_base"},
+            }
+        ]
+    )
+    controller.write_state({"state": "finished", "job": 22, "research_round": 7})
+
+    legacy_queue_dir = tmp_path / family.run_queue_dirname
+    legacy_queue_dir.mkdir(parents=True, exist_ok=True)
+    (legacy_queue_dir / "legacy.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "legacy-thesis",
+                "config": "experiments/legacy/runtime_config.json",
+                "status": "pending",
+                "job": 25,
+            }
+        )
+    )
+    (tmp_path / "runtime" / "jobs" / "job-24" / "run-queue").mkdir(parents=True, exist_ok=True)
+
+    assert controller.next_fresh_job_id(controller.read_state()) == 26
+
+
+def test_reconcile_state_uses_new_fresh_job_id_instead_of_historical_job_results(
+    tmp_path, monkeypatch
+):
+    family = load_family("ema")
+    monkeypatch.setattr(loop_mod, "_notify_discord", lambda *a, **k: None)
+    monkeypatch.setattr(research_mod, "notify_discord", lambda *a, **k: None)
+
+    src_yaml = REPO_ROOT / BASELINE_CONFIG
+    dst_yaml = tmp_path / BASELINE_CONFIG
+    dst_yaml.parent.mkdir(parents=True, exist_ok=True)
+    dst_yaml.write_text(src_yaml.read_text())
+
+    controller = AutoresearchController(
+        root=tmp_path,
+        state_path=tmp_path / "ema_autoresearch.next.json",
+        current_md_path=tmp_path / "ema_autoresearch.current.md",
+        ideas_md_path=tmp_path / "ema_autoresearch.ideas.md",
+        runs_dir=tmp_path / family.runs_dirname,
+        family=family,
+    )
+
+    controller.write_entries(
+        [
+            {
+                "run": 1,
+                "job": 23,
+                "metric": 1.0,
+                "metrics": {},
+                "status": "keep",
+                "description": "strict-native loop: ema_base",
+                "timestamp": 1,
+                "asi": {"config": BASELINE_CONFIG, "thesis_id": "ema_base"},
+            }
+        ]
+    )
+    controller.write_state({"state": "finished", "job": 22, "research_round": 7})
+
+    fresh_job = controller.next_fresh_job_id(controller.read_state())
+    controller.write_state(loop_mod._fresh_launch_state(fresh_job))
+
+    state = controller.reconcile_state()
+
+    assert state["job"] == 24
+    assert state["next_action"]["type"] == "run_experiment"
+    assert state["next_action"]["config"] == BASELINE_CONFIG
+    assert state["next_action"]["source"] == "baseline"
+
+
 def test_resume_current_job_accepts_builder_failed_blocked_state():
     prior_state = {
         "state": "blocked",

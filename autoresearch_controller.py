@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -300,10 +301,18 @@ def _fresh_launch_state(job: int) -> dict[str, Any]:
     }
 
 
+def _next_fresh_job_for_launch(controller: Any, prior_state: dict[str, Any]) -> int:
+    allocator = getattr(controller, "next_fresh_job_id", None)
+    if callable(allocator):
+        return int(allocator(prior_state))
+    return max(_state_coerce_job_to_int(prior_state.get("job")) + 1, 1)
+
+
 def normalize_controller_launch_state(
     prior_state: dict[str, Any],
     *,
     resume_current_job: bool,
+    fresh_job: int | None = None,
 ) -> tuple[dict[str, Any], int]:
     job = _state_coerce_job_to_int(prior_state.get("job"))
     resume_manual_review = _is_manual_review_resume_state(prior_state)
@@ -333,7 +342,9 @@ def normalize_controller_launch_state(
     else:
         # Fresh jobs start from the next job number so new launches stay
         # distinguishable from earlier runs in traces and experiment rows.
-        job += 1
+        job = fresh_job if fresh_job is not None else job + 1
+        if job < 1:
+            job = 1
 
     if resume_current_job and resume_research_failure:
         return _resume_interrupted_research_state(prior_state, job), job
@@ -449,6 +460,50 @@ class AutoresearchController:
             return int(job) if job is not None else None
         except (TypeError, ValueError):
             return None
+
+    def _max_runtime_job_id(self) -> int:
+        jobs_root = self.root / "runtime" / "jobs"
+        if not jobs_root.exists():
+            return 0
+        max_job = 0
+        for path in jobs_root.iterdir():
+            if not path.is_dir() or not path.name.startswith("job-"):
+                continue
+            try:
+                max_job = max(max_job, int(path.name.removeprefix("job-")))
+            except ValueError:
+                continue
+        return max_job
+
+    def _max_job_in_legacy_queue_dir(self) -> int:
+        legacy_queue_dir = self.root / self.family.run_queue_dirname
+        if not legacy_queue_dir.exists():
+            return 0
+        max_job = 0
+        for path in legacy_queue_dir.glob("*.json"):
+            try:
+                payload = json.loads(path.read_text())
+            except (OSError, ValueError, TypeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            max_job = max(max_job, _state_coerce_job_to_int(payload.get("job")))
+        return max_job
+
+    def next_fresh_job_id(self, prior_state: dict[str, Any] | None = None) -> int:
+        """Pick a fresh job id that cannot collide with checkout history.
+
+        Fresh launches must not reuse a historical job id from the local
+        state file, experiment DB, runtime job tree, or legacy queue artifacts.
+        Reusing one of those ids makes a "fresh" job inherit stale baseline
+        decisions, queued theses, or old results.
+        """
+        prior = prior_state if prior_state is not None else self.read_state()
+        max_seen = _state_coerce_job_to_int(prior.get("job"))
+        max_seen = max(max_seen, self.experiment_db.max_job_id())
+        max_seen = max(max_seen, self._max_runtime_job_id())
+        max_seen = max(max_seen, self._max_job_in_legacy_queue_dir())
+        return max_seen + 1 if max_seen > 0 else 1
 
     def clear_transient_context(self) -> None:
         """Clear per-experiment and per-research-round context.
@@ -938,10 +993,14 @@ def main() -> int:
         runs_dir=runs_dir,
     )
     prior_state = controller.read_state()
+    fresh_job = (
+        None if args.resume_current_job else _next_fresh_job_for_launch(controller, prior_state)
+    )
     try:
         state, job = normalize_controller_launch_state(
             prior_state,
             resume_current_job=args.resume_current_job,
+            fresh_job=fresh_job,
         )
     except ValueError as exc:
         log.error("%s", exc)

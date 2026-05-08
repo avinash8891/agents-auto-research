@@ -739,6 +739,18 @@ class ExperimentDB:
             records, key=lambda r: coerce_timestamp_to_epoch_ms(r.timestamp), reverse=True
         )[:n]
 
+    def max_job_id(self) -> int:
+        with self._connect() as conn:
+            experiment_row = conn.execute(
+                "SELECT COALESCE(MAX(job), 0) FROM experiments"
+            ).fetchone()
+            research_row = conn.execute(
+                "SELECT COALESCE(MAX(job_id), 0) FROM research_rounds"
+            ).fetchone()
+        experiment_job = int(experiment_row[0] or 0) if experiment_row else 0
+        research_job = int(research_row[0] or 0) if research_row else 0
+        return max(experiment_job, research_job)
+
     def accepted_experiments(self) -> list[ExperimentResult]:
         return [r for r in self._load() if r.accepted]
 
