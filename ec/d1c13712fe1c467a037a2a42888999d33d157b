@@ -1,0 +1,38 @@
+autoresearch_orchestration.py
+  s_df23f17b640abb::t_a0174a6c2e11e0 5
+  s_df23f17b640abb::t_b82227c023e0ba 273-292,296-348,385-394
+  s_df23f17b640abb::t_03d0834bc38fb6 293-295
+trace_adapters/reflexio.py
+  s_df23f17b640abb::t_03d0834bc38fb6 192-195
+  s_df23f17b640abb::t_6c027dcf93bbbd 23,25,39-44,96,98-100,108,117-191,196-263
+tests/test_trace_higher_level_modules.py
+  s_df23f17b640abb::t_db5e7eb6c73d39 368,372-401,404-458
+  s_df23f17b640abb::t_bd3014287c89bf 402-403
+  s_df23f17b640abb::t_6f795236aee06c 369-371
+tests/test_autoresearch_orchestration.py
+  s_df23f17b640abb::t_0423a5f0b91ea2 342-407
+tests/test_improvement_reflexion.py
+  s_df23f17b640abb::t_03d0834bc38fb6 259
+  s_df23f17b640abb::t_18b9479b082fde 260-308
+tests/test_compiler_pipeline_characterization.py
+  s_df23f17b640abb::t_dc883f09cf173c 508
+improvement_reflexion.py
+  s_df23f17b640abb::t_25fbe72c87c780 64,68,84-87,104-133
+  s_df23f17b640abb::t_03d0834bc38fb6 65-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "ecd1c13712fe1c467a037a2a42888999d33d157b",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
