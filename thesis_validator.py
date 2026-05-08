@@ -402,6 +402,12 @@ def check_hypothesis_alignment(
         ],
         "max_trades_per_day": [
             r"max.{0,5}trade",
+            r"one.{0,5}trade.{0,10}day",
+            r"single.{0,5}trade.{0,10}day",
+            r"first.{0,10}trade",
+            r"first.{0,10}executed.{0,10}trade",
+            r"first.{0,10}setup",
+            r"only.{0,10}first",
             r"position limit",
             r"portfolio",
             r"daily.{0,5}cap",

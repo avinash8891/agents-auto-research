@@ -4,6 +4,7 @@ import pytest
 
 from thesis_validator import (
     ThesisValidationError,
+    check_hypothesis_alignment,
     config_key_overlap,
     generate_variants,
     validate_thesis_dict,
@@ -431,3 +432,19 @@ def test_generate_variants_does_not_extrapolate_max_hold_bars_below_valid_bound(
     )
 
     assert all(variant["max_hold_bars"] >= 1 for variant in variants)
+
+
+def test_hypothesis_alignment_accepts_first_trade_only_for_max_trades_per_day() -> None:
+    score, explanation = check_hypothesis_alignment(
+        hypothesis=(
+            "If the strategy's edge is concentrated in the first executed trade per symbol per day, "
+            "then taking only that first trade should improve profit factor."
+        ),
+        mechanism=(
+            "Capture the opening dislocation only and avoid lower-quality subsequent setups later in the day."
+        ),
+        config_changes={"max_trades_per_day": 1},
+    )
+
+    assert score == 1.0
+    assert explanation == "Config changes align with hypothesis."
