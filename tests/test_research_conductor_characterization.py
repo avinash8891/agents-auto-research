@@ -369,6 +369,9 @@ def test_conductor_system_prompt_allows_structural_thresholds_without_parameter_
     assert "liquidity boundary" in compact
     assert "execution mechanism" in compact
     assert "only rationale is that a different number may improve PF" in compact
+    assert "group them into causal clusters" in compact
+    assert "neighboring threshold" in compact
+    assert "shifting an EMA cutoff from 09:45 to 09:43" in compact
 
 
 def test_conductor_system_prompt_does_not_claim_raw_data_directory_is_always_available():

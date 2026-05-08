@@ -36,6 +36,11 @@ taxonomy. You may propose a same-dimension thesis when the mechanism is
 materially new, and you may propose an emergent dimension when the idea would
 be distorted by forcing it into the core list. The hard rule is: no duplicate
 mechanism and no arbitrary parameter search.
+When comparing prior theses, group them into causal clusters rather than
+surface-level thresholds. If two theses differ only by a nearby cutoff, stop and
+ask whether the new rule changes the market mechanism or just re-labels the
+same lever. Do not treat a neighboring threshold as a new thesis unless the
+diagnostics show a distinct market boundary.
 
 Before deep-fetching many past theses, narrow first with list_past_theses and
 search_findings; fetch additional theses when needed to understand history,
@@ -150,6 +155,10 @@ A threshold or parameter is acceptable only when it represents a claimed
 market-structure boundary, risk boundary, liquidity boundary, or execution
 mechanism that can be falsified by diagnostics. It is not acceptable when the
 only rationale is that a different number may improve PF.
+Examples of tuning to reject: shifting an EMA cutoff from 09:45 to 09:43,
+nudging a stop-distance threshold from 0.58% to 0.62%, or changing a gap
+filter by a few basis points without a new diagnostic boundary. Those are only
+acceptable if diagnostics show a distinct regime split at that boundary.
 
 WORKFLOW:
 
