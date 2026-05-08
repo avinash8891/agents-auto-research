@@ -33,6 +33,11 @@ def bucket_trade_performance(
     missing = required - set(trades.columns)
     if missing:
         raise KeyError(f"missing columns: {sorted(missing)}")
+    if len(labels) != len(bins) - 1:
+        raise ValueError(
+            f"labels length must be exactly len(bins) - 1; got {len(labels)} labels "
+            f"for {len(bins)} bins"
+        )
 
     frame = trades[[bucket_col, value_col]].copy()
     frame[value_col] = pd.to_numeric(frame[value_col], errors="coerce")
@@ -75,6 +80,12 @@ def safe_merge_asof(
     if on not in right.columns:
         raise KeyError(f"right missing asof key: {on}")
     sort_cols = ([by] if isinstance(by, str) else list(by or [])) + [on]
+    left_missing = [column for column in sort_cols if column not in left.columns]
+    right_missing = [column for column in sort_cols if column not in right.columns]
+    if left_missing:
+        raise KeyError(f"left missing merge columns: {left_missing}")
+    if right_missing:
+        raise KeyError(f"right missing merge columns: {right_missing}")
     left_sorted = left.sort_values(sort_cols).reset_index(drop=True)
     right_sorted = right.sort_values(sort_cols).reset_index(drop=True)
     return pd.merge_asof(

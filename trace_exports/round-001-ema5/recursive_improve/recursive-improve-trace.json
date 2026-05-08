@@ -7,7 +7,7 @@
   "messages": [],
   "metadata": {
     "candidate_id": "ema5",
-    "canonical_trace": "/Users/avinashvankadaru/.superset/projects/agents-auto-research/logs/agents-R-20260508-033729/trace-events.jsonl",
+    "canonical_trace": "logs/agents-R-20260508-033729/trace-events.jsonl",
     "family": "ema",
     "job": 0,
     "research_round": 1,

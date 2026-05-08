@@ -214,10 +214,11 @@ def test_remote_resume_command_can_skip_dependency_install_when_sha_is_current()
         skip_dependency_install=True,
     )
 
-    assert '"$python_bin" -m pip install -e .' not in command
-    assert "deps_fingerprint=$(python3 -c" not in command
-    assert 'if [ ! -x ".venv/bin/python" ]; then' not in command
-    assert 'test -x ".venv/bin/python"' in command
+    assert 'if [ ! -x ".venv/bin/python" ]; then' in command
+    assert "Existing checkout matches requested ref but .venv is missing" in command
+    assert '"$python_bin" -m pip install -e .' in command
+    assert "deps_fingerprint=$(python3 -c" in command
+    assert 'test -x ".venv/bin/python"' not in command
     assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
         "--resume-current-job"
@@ -293,6 +294,8 @@ def test_git_status_command_reports_current_and_resolved_sha_without_checkout() 
     assert "git checkout" not in command
     assert "git reset --hard" not in command
     assert "git clean" not in command
+    assert "git remote set-url" not in command
+    assert "git -c remote.origin.url=https://github.com/example/repo.git fetch" in command
     assert "AUTORESEARCH_CURRENT_SHA" in command
     assert "AUTORESEARCH_RESOLVED_SHA" in command
 

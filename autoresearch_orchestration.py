@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -269,6 +270,99 @@ def _mark_builder_running(
     return state
 
 
+def _refresh_reflexio_export_after_builder(
+    root,
+    *,
+    research_round: int | None,
+    thesis_id: str,
+    family: str,
+    builder_result: dict[str, Any],
+    canonical_trace_path: Path | None = None,
+) -> None:
+    """Refresh the round Reflexio export after builder events are traced.
+
+    Research-round exports are first written before the long builder subprocess.
+    Refreshing the same export after builder completion keeps one source of
+    truth while allowing the next builder attempt to receive builder-specific
+    Reflexion memory.
+    """
+    if research_round is None:
+        return
+    root_path = Path(root)
+    current = _find_reflexio_export_for_thesis(root_path, research_round, thesis_id)
+    if current is None:
+        return
+    try:
+        payload = json.loads(current.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _log.warning("could not refresh reflexio export after builder: %s", exc)
+        return
+    if not isinstance(payload, dict):
+        return
+
+    from trace_adapters.reflexio import build_reflexio_export_package
+
+    trace_path = canonical_trace_path
+    if trace_path is None:
+        from trace_sdk import get_event_file
+
+        trace_path = get_event_file()
+    episode = payload.get("episode") if isinstance(payload.get("episode"), dict) else {}
+    reflection = payload.get("reflection") if isinstance(payload.get("reflection"), dict) else {}
+    resources = payload.get("resources") if isinstance(payload.get("resources"), dict) else {}
+    outcome = _builder_reflexio_outcome(builder_result)
+    package = build_reflexio_export_package(
+        research_round=int(episode.get("round") or research_round),
+        thesis_id=str(episode.get("thesis_id") or thesis_id),
+        outcome=outcome,
+        family=str(episode.get("family") or family),
+        reasoning=str(reflection.get("reasoning") or ""),
+        rejection_reason=str(reflection.get("rejection_reason") or ""),
+        quality=reflection.get("quality") if isinstance(reflection.get("quality"), dict) else {},
+        usage=resources.get("usage") if isinstance(resources.get("usage"), dict) else {},
+        canonical_trace_path=trace_path,
+    )
+    target_dir = current.parent
+    for filename, content in package.get("files", {}).items():
+        _write_text_atomic(
+            target_dir / filename,
+            json.dumps(content, indent=2, sort_keys=True) + "\n",
+        )
+    _write_text_atomic(
+        target_dir / "package.json",
+        json.dumps(package, indent=2, sort_keys=True) + "\n",
+    )
+
+
+def _find_reflexio_export_for_thesis(
+    root_path: Path, research_round: int, thesis_id: str
+) -> Path | None:
+    matches = sorted(
+        (root_path / "trace_exports").glob(
+            f"round-{research_round:03d}-*/reflexio/reflexio-event.json"
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    requested = str(thesis_id)
+    for path in matches:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            _log.warning("could not inspect reflexio export for builder refresh: %s", exc)
+            continue
+        episode = payload.get("episode") if isinstance(payload, dict) else None
+        if isinstance(episode, dict) and str(episode.get("thesis_id") or "") == requested:
+            return path
+    return None
+
+
+def _builder_reflexio_outcome(builder_result: dict[str, Any]) -> str:
+    if builder_result.get("status") == "completed" and builder_result.get("validation_passed"):
+        return "compiled"
+    return "builder_failed"
+
+
 def build_missing_primitives_for_state(
     controller: "AutoresearchController",
     state: dict[str, Any],
@@ -305,6 +399,16 @@ def build_missing_primitives_for_state(
         f"finish thesis={thesis_id} status={builder_result.get('status')} "
         f"generated={builder_result.get('generated_config') or ''}",
     )
+    try:
+        _refresh_reflexio_export_after_builder(
+            controller.root,
+            research_round=research_round,
+            thesis_id=thesis_id,
+            family=controller.family.name,
+            builder_result=builder_result,
+        )
+    except Exception as exc:  # noqa: BLE001 - improvement export must not block orchestration
+        _log.warning("refreshing reflexio export after builder failed: %s", exc)
     if builder_result.get("status") == "completed" and builder_result.get("validation_passed"):
         generated_config = builder_result.get("generated_config")
         if generated_config and (controller.root / generated_config).exists():

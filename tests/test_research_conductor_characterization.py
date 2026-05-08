@@ -1402,9 +1402,9 @@ def test_mcp_research_history_tools_use_bound_current_job(monkeypatch, tmp_path)
         }
         return json.dumps({"job_id": job_id, "entries": []})
 
-    def fake_get_result(root, thesis_id, *, job_id=None):
-        calls["get_result"] = (thesis_id, job_id)
-        return json.dumps({"thesis_id": thesis_id, "job_id": job_id})
+    def fake_get_result(root, thesis_id, *, job_id=None, detail=False):
+        calls["get_result"] = (thesis_id, job_id, detail)
+        return json.dumps({"thesis_id": thesis_id, "job_id": job_id, "detail": detail})
 
     mcp = tools_mcp._build_research_tools_mcp(
         trades_file="/tmp/trades.csv",
@@ -1427,7 +1427,9 @@ def test_mcp_research_history_tools_use_bound_current_job(monkeypatch, tmp_path)
     list_results_payload = json.loads(
         asyncio.run(tools["list_experiment_results"].fn(order="best", limit=2))
     )
-    get_result_payload = json.loads(asyncio.run(tools["get_experiment_result"].fn("result_thesis")))
+    get_result_payload = json.loads(
+        asyncio.run(tools["get_experiment_result"].fn("result_thesis", detail=True))
+    )
 
     assert list_past_payload["job_id"] == 20
     assert get_past_payload["job_id"] == 20
@@ -1436,7 +1438,7 @@ def test_mcp_research_history_tools_use_bound_current_job(monkeypatch, tmp_path)
     assert calls["list_past"] == {"job_id": 20, "offset": 0, "limit": 3}
     assert calls["get_past"] == ("prior_thesis", 20)
     assert calls["list_results"] == {"job_id": 20, "order": "best", "offset": 0, "limit": 2}
-    assert calls["get_result"] == ("result_thesis", 20)
+    assert calls["get_result"] == ("result_thesis", 20, True)
 
 
 def test_mcp_research_history_tools_do_not_expose_job_id_override(monkeypatch, tmp_path):

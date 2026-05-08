@@ -191,33 +191,36 @@ def _trace_builder_finish(
         model_provider="codex",
         model_name=BUILDER_CLI_MODEL,
     )
-    record_event(
-        source_module="compiler_builder",
-        category="builder",
-        action="finish",
-        summary=f"builder finish thesis={thesis_id} status={result['status']}",
-        payload={"thesis_id": thesis_id, "result": result},
-        artifact_paths=artifact_paths,
-        model_provider="codex",
-        model_name=BUILDER_CLI_MODEL,
-    )
-    if result.get("status") == "error":
-        error_code = str(result.get("error_code") or "builder_error")
+    try:
         record_event(
             source_module="compiler_builder",
             category="builder",
-            action="builder_error",
-            summary=f"builder error thesis={thesis_id} code={error_code}",
-            payload={
-                "thesis_id": thesis_id,
-                "error_code": error_code,
-                "reason": result.get("reason", ""),
-                "result": result,
-            },
+            action="finish",
+            summary=f"builder finish thesis={thesis_id} status={result['status']}",
+            payload={"thesis_id": thesis_id, "result": result},
             artifact_paths=artifact_paths,
             model_provider="codex",
             model_name=BUILDER_CLI_MODEL,
         )
+        if result.get("status") == "error":
+            error_code = str(result.get("error_code") or "builder_error")
+            record_event(
+                source_module="compiler_builder",
+                category="builder",
+                action="builder_error",
+                summary=f"builder error thesis={thesis_id} code={error_code}",
+                payload={
+                    "thesis_id": thesis_id,
+                    "error_code": error_code,
+                    "reason": result.get("reason", ""),
+                    "result": result,
+                },
+                artifact_paths=artifact_paths,
+                model_provider="codex",
+                model_name=BUILDER_CLI_MODEL,
+            )
+    except Exception as exc:
+        log.debug("builder trace event emission failed: %s", exc)
 
 
 def _validate_generated_config_in_fresh_python(

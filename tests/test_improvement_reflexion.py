@@ -256,6 +256,56 @@ def test_agent_scoped_feedback_uses_only_matching_agent_trajectory(tmp_path, mon
     assert "new_config_keys_needed" not in analyst_feedback
 
 
+def test_agent_scoped_feedback_prefers_agent_reflection_over_round_reasoning(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
+    payload = build_reflexio_payload(
+        research_round=1,
+        thesis_id="T1",
+        outcome="builder_failed",
+        family="ema",
+        reasoning="generic round lesson should not drive analyst feedback",
+        rejection_reason="round failed",
+    )
+    payload["agent_reflections"] = {
+        "analyst": {
+            "lesson": "analyst-specific lesson: answer the focus question with compact pandas",
+            "avoid": ["probing missing /data paths"],
+            "repeat": ["read diagnostics first"],
+            "evidence": ["run_python failed twice before succeeding"],
+        },
+        "builder": {
+            "lesson": "builder-specific lesson: map keys through contract",
+            "avoid": ["unsupported runtime keys"],
+            "repeat": ["run verifier before reporting success"],
+            "evidence": ["builder_implementation_contract_failed"],
+        },
+    }
+    payload["trajectory"] = [
+        {"agent": "analyst", "action": "tool_result", "summary": "analyst trace"},
+        {"agent": "builder", "action": "builder_error", "summary": "builder trace"},
+    ]
+    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir.mkdir(parents=True)
+    (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    controller = SimpleNamespace(root=tmp_path)
+
+    analyst_feedback = build_reflexion_feedback(controller, current_round=2, agent="analyst")
+    builder_feedback = build_reflexion_feedback(controller, current_round=2, agent="builder")
+
+    assert "analyst-specific lesson" in analyst_feedback
+    assert "probing missing /data paths" in analyst_feedback
+    assert "read diagnostics first" in analyst_feedback
+    assert "run_python failed twice" in analyst_feedback
+    assert "generic round lesson" not in analyst_feedback
+    assert "builder-specific lesson" not in analyst_feedback
+
+    assert "builder-specific lesson" in builder_feedback
+    assert "unsupported runtime keys" in builder_feedback
+    assert "run verifier before reporting success" in builder_feedback
+    assert "analyst-specific lesson" not in builder_feedback
+
+
 def test_agent_scoped_feedback_returns_empty_when_no_matching_agent(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
     payload = build_reflexio_payload(

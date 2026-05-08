@@ -112,26 +112,30 @@ def _emit_token_budget_warning(
     except Exception as exc:
         logger.warning("trace_sdk unavailable, token budget warning skipped: %s", exc)
         return
-    record_event(
-        source_module="agent_token_usage",
-        category="usage",
-        action="token_budget_warning",
-        summary=(
-            f"{agent_type} token usage {total_tokens} exceeded warning budget " f"{budget_tokens}"
-        ),
-        payload={
-            "agent_type": agent_type,
-            "provider": provider or "",
-            "model": model or "",
-            "trace_id": trace_id,
-            "total_tokens": total_tokens,
-            "budget_tokens": budget_tokens,
-            "scope": scope,
-            "thesis_id": thesis_id,
-        },
-        model_provider=provider or "",
-        model_name=model or "",
-    )
+    try:
+        record_event(
+            source_module="agent_token_usage",
+            category="usage",
+            action="token_budget_warning",
+            summary=(
+                f"{agent_type} token usage {total_tokens} exceeded warning budget "
+                f"{budget_tokens}"
+            ),
+            payload={
+                "agent_type": agent_type,
+                "provider": provider or "",
+                "model": model or "",
+                "trace_id": trace_id,
+                "total_tokens": total_tokens,
+                "budget_tokens": budget_tokens,
+                "scope": scope,
+                "thesis_id": thesis_id,
+            },
+            model_provider=provider or "",
+            model_name=model or "",
+        )
+    except Exception as exc:
+        logger.debug("token budget warning trace emission failed: %s", exc)
 
 
 def _ensure_entry(agent_type: str) -> UsageTotals:

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from trace_adapters import _emit_adapter_event
-from trace_adapters.artifacts import content_from_artifacts, redact_text
+from trace_adapters.artifacts import content_from_artifacts, portable_path, redact_text
 
 
 def build_recursive_improve_payload(
@@ -94,7 +94,7 @@ def build_recursive_improve_trace(
             "research_round": int(iteration.get("round") or 0),
             "candidate_id": str(iteration.get("candidate_id") or ""),
             "run_id": str(first.get("run_id") or ""),
-            "canonical_trace": str(canonical_trace_path),
+            "canonical_trace": portable_path(canonical_trace_path),
             "usage_summary": _usage_metrics(usage, _assistant_usage_totals({"messages": messages})),
         },
         "usage": usage,

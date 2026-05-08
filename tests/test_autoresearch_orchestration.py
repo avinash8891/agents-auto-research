@@ -339,6 +339,96 @@ def test_build_missing_primitives_does_not_mark_invalid_completed_builder_as_com
     assert result["heartbeat"]["blocked_builder_result_status"] == "completed"
 
 
+def test_refresh_reflexio_export_after_builder_adds_builder_reflection(tmp_path):
+    thesis_id = "needs_builder"
+    other_dir = tmp_path / "trace_exports" / "round-004-other_thesis" / "reflexio"
+    other_dir.mkdir(parents=True)
+    (other_dir / "reflexio-event.json").write_text(
+        json.dumps(
+            {
+                "system": "reflexio",
+                "episode": {
+                    "round": 4,
+                    "family": "ema",
+                    "thesis_id": "other_thesis",
+                    "outcome": "needs_code",
+                },
+                "reflection": {"reasoning": "", "rejection_reason": "", "quality": {}},
+                "trajectory": [],
+                "resources": {"usage": {}},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    export_dir = tmp_path / "trace_exports" / f"round-004-{thesis_id}" / "reflexio"
+    export_dir.mkdir(parents=True)
+    (export_dir / "reflexio-event.json").write_text(
+        json.dumps(
+            {
+                "system": "reflexio",
+                "episode": {
+                    "round": 4,
+                    "family": "ema",
+                    "thesis_id": thesis_id,
+                    "outcome": "needs_code",
+                },
+                "reflection": {
+                    "reasoning": "round-level research lesson",
+                    "rejection_reason": "",
+                    "quality": {},
+                },
+                "trajectory": [],
+                "resources": {"usage": {}},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    trace_file = tmp_path / "trace-events.jsonl"
+    trace_file.write_text(
+        json.dumps(
+            {
+                "event_id": "evt-builder",
+                "timestamp": "2026-05-08T00:00:00.000Z",
+                "category": "builder",
+                "action": "builder_error",
+                "summary": "builder error thesis=needs_builder code=builder_implementation_contract_failed",
+                "model_name": "gpt-5.2",
+                "payload": {
+                    "thesis_id": thesis_id,
+                    "error_code": "builder_implementation_contract_failed",
+                    "reason": "unexpected_config_key:opening_min_stop_distance_pct",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    orch._refresh_reflexio_export_after_builder(
+        tmp_path,
+        research_round=4,
+        thesis_id=thesis_id,
+        family="ema",
+        builder_result={"status": "error", "error_code": "builder_implementation_contract_failed"},
+        canonical_trace_path=trace_file,
+    )
+
+    refreshed = json.loads((export_dir / "reflexio-event.json").read_text(encoding="utf-8"))
+    assert refreshed["episode"]["outcome"] == "builder_failed"
+    assert refreshed["agent_reflections"]["builder"]["lesson"].startswith(
+        "Map thesis requirements through the contract/schema"
+    )
+    assert "builder_implementation_contract_failed" in " ".join(
+        refreshed["agent_reflections"]["builder"]["evidence"]
+    )
+    assert refreshed["trajectory"][0]["agent"] == "builder"
+    other = json.loads((other_dir / "reflexio-event.json").read_text(encoding="utf-8"))
+    assert other["episode"]["outcome"] == "needs_code"
+    assert other["trajectory"] == []
+
+
 # ── resolve_next_action ───────────────────────────────────────────────────────
 
 

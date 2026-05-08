@@ -505,6 +505,7 @@ def test_build_missing_primitives_returns_error_when_no_cli(
 
     assert result == {
         "status": "error",
+        "error_code": "builder_cli_unavailable",
         "reason": "No CLI available for builder dispatch",
         "generated_config": None,
         "validation_passed": False,

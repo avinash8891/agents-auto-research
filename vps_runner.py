@@ -306,13 +306,13 @@ def build_git_status_command(config: VPSConfig) -> str:
     if re.fullmatch(r"[0-9a-fA-F]{7,40}", config.git_ref):
         git_ref_q = shlex.quote(config.git_ref)
         fetch_and_resolve = (
-            "git fetch --prune origin && "
+            f"git -c remote.origin.url={git_repo} fetch --prune origin && "
             f"resolved=$(git rev-parse --verify {git_ref_q}^{{commit}}) && "
         )
     else:
         deploy_spec = shlex.quote(config.deploy_spec)
         fetch_and_resolve = (
-            f"git fetch --prune origin {deploy_spec} && "
+            f"git -c remote.origin.url={git_repo} fetch --prune origin {deploy_spec} && "
             "resolved=$(git rev-parse --verify FETCH_HEAD^{commit}) && "
         )
     return (
@@ -322,7 +322,6 @@ def build_git_status_command(config: VPSConfig) -> str:
         "exit 0; "
         "fi && "
         f"cd {remote_dir} && "
-        f"git remote set-url origin {git_repo} && "
         f"{fetch_and_resolve}"
         "current=$(git rev-parse --verify HEAD^{commit}) && "
         f"printf '{CURRENT_SHA_MARKER} %s\\n' \"$current\" && "
@@ -381,31 +380,33 @@ def build_remote_command(
     ]
     if config.data_root:
         segments.append(f"export {DATA_ROOT_ENV}={shlex.quote(config.data_root)}")
+    dependency_install_segments = [
+        "deps_fingerprint=$(python3 -c 'import hashlib, pathlib; "
+        'p = pathlib.Path("pyproject.toml"); '
+        'print(hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else "missing")'
+        "')",
+        'if [ -f ".venv/.autoresearch-deps.sha256" ] && '
+        '[ "$(cat .venv/.autoresearch-deps.sha256)" != "$deps_fingerprint" ]; '
+        "then rm -rf .venv; fi",
+        'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi',
+        "python_bin=.venv/bin/python",
+        'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
+        '"$python_bin" -m pip install -e .',
+        'printf "%s\\n" "$deps_fingerprint" > .venv/.autoresearch-deps.sha256',
+    ]
     if skip_dependency_install:
+        fallback_install = " && ".join(dependency_install_segments)
         segments.extend(
             [
-                'test -x ".venv/bin/python"',
+                'if [ ! -x ".venv/bin/python" ]; then '
+                "echo 'Existing checkout matches requested ref but .venv is missing; "
+                f"installing dependencies.' && {fallback_install}; fi",
                 "python_bin=.venv/bin/python",
                 'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
             ]
         )
     else:
-        segments.extend(
-            [
-                "deps_fingerprint=$(python3 -c 'import hashlib, pathlib; "
-                'p = pathlib.Path("pyproject.toml"); '
-                'print(hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else "missing")'
-                "')",
-                'if [ -f ".venv/.autoresearch-deps.sha256" ] && '
-                '[ "$(cat .venv/.autoresearch-deps.sha256)" != "$deps_fingerprint" ]; '
-                "then rm -rf .venv; fi",
-                'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi',
-                "python_bin=.venv/bin/python",
-                'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
-                '"$python_bin" -m pip install -e .',
-                'printf "%s\\n" "$deps_fingerprint" > .venv/.autoresearch-deps.sha256',
-            ]
-        )
+        segments.extend(dependency_install_segments)
     segments.append(
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
         + (" --resume-current-job" if resume_current_job else "")

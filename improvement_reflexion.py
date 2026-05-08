@@ -61,6 +61,11 @@ def _format_preamble(
 ) -> str:
     episode = payload.get("episode") or {}
     reflection = payload.get("reflection") or {}
+    agent_reflections = (
+        payload.get("agent_reflections")
+        if isinstance(payload.get("agent_reflections"), dict)
+        else {}
+    )
     trajectory = payload.get("trajectory") if isinstance(payload.get("trajectory"), list) else []
     if agent is not None:
         trajectory = _trajectory_for_agent(trajectory, agent)
@@ -76,7 +81,10 @@ def _format_preamble(
         else f"PRIOR ROUND REFLEXION (round {prev_round})"
     )
     body_lines = [f"{title}:", f"  outcome: {outcome}"]
-    if reasoning:
+    agent_reflection = _agent_reflection_for(agent_reflections, agent) if agent else None
+    if agent_reflection:
+        _append_agent_reflection_lines(body_lines, agent_reflection)
+    elif reasoning:
         body_lines.append(f"  you_reasoned: {reasoning}")
     if rejection_reason:
         body_lines.append(f"  why_it_failed: {rejection_reason}")
@@ -91,6 +99,38 @@ def _format_preamble(
                 body_lines.append(f"    - {action}: {summary[:240]}")
     body_lines.append("Avoid repeating this failure mode in this round.")
     return "\n".join(body_lines)
+
+
+def _agent_reflection_for(
+    agent_reflections: dict[str, Any], agent: str | None
+) -> dict[str, Any] | None:
+    if not agent:
+        return None
+    for key, value in agent_reflections.items():
+        if _agent_matches(str(key), agent) and isinstance(value, dict):
+            return value
+    return None
+
+
+def _append_agent_reflection_lines(body_lines: list[str], reflection: dict[str, Any]) -> None:
+    lesson = str(reflection.get("lesson") or "").strip()
+    if lesson:
+        body_lines.append(f"  agent_lesson: {lesson}")
+    for label, key in (
+        ("avoid", "avoid"),
+        ("repeat", "repeat"),
+        ("evidence", "evidence"),
+        ("error_evidence", "error_evidence"),
+    ):
+        values = reflection.get(key)
+        if not isinstance(values, list):
+            continue
+        clean_values = [str(value).strip() for value in values if str(value).strip()]
+        if not clean_values:
+            continue
+        body_lines.append(f"  {label}:")
+        for value in clean_values[:5]:
+            body_lines.append(f"    - {value[:240]}")
 
 
 def build_reflexion_feedback(controller, current_round: int, *, agent: str | None = None) -> str:

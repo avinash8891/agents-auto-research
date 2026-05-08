@@ -352,6 +352,7 @@ def test_recursive_improve_and_reflexio_exports_include_canonical_trace_details(
     assert ri_trace["success"] is False
     assert ri_trace["feedback"] == "no behavior change"
     assert ri_trace["metadata"]["candidate_id"] == "th-7"
+    assert not ri_trace["metadata"]["canonical_trace"].startswith("/")
     assert ri_trace["duration_s"] > 0
     assert any(message["role"] == "system" for message in ri_trace["messages"])
     assert any(message["content"] == "Inspect prior failures." for message in ri_trace["messages"])
@@ -365,6 +366,116 @@ def test_recursive_improve_and_reflexio_exports_include_canonical_trace_details(
     assert reflexio_event["trajectory"] == trajectory
     assert any(step["action"] == "tool_result" for step in trajectory)
     assert any("duplicate baseline" in step["content"] for step in trajectory)
+    assert not any(str(tmp_path) in json.dumps(step) for step in trajectory)
+    assert reflexio_event["agent_reflections"]["analyst"]["lesson"]
+    assert "read_file result ok" in " ".join(
+        reflexio_event["agent_reflections"]["analyst"]["evidence"]
+    )
+
+
+def test_trace_export_redaction_removes_local_absolute_paths() -> None:
+    from trace_adapters.artifacts import redact_text
+
+    redacted = redact_text(
+        "START: /Library/Frameworks/Python.framework/Versions/3.14/bin/python "
+        "--repo /root/autoresearch-2026-05-02 --tmp /tmp/pytest-local/file.csv "
+        "--config /Users/dev/project/runtime_config.json "
+        "source https://example.com/home/research-paper"
+    )
+
+    assert "/Library/Frameworks" not in redacted
+    assert "/root/autoresearch" not in redacted
+    assert "/tmp/pytest-local" not in redacted
+    assert "/Users/dev" not in redacted
+    assert "<local-abs-path>" in redacted
+    assert "https://example.com/home/research-paper" in redacted
+
+
+def test_reflexio_export_builds_distinct_agent_reflections_from_trace(
+    monkeypatch, tmp_path: Path
+) -> None:
+    modules = _load_modules(monkeypatch, tmp_path)
+    trace_sdk = modules["trace_sdk"]
+    trace_sdk.set_family("ema", job=22)
+    trace_sdk.begin_round(9)
+    trace_sdk.begin_hypothesis("agent-specific-reflexion")
+    analyst_trace = trace_sdk.trace_agent_prompt(
+        "analyst",
+        "Analyze failed trades.",
+        "Use compact pandas.",
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_tool_call(
+        "analyst",
+        analyst_trace,
+        "run_python",
+        "pd.read_csv('/missing/path.csv')",
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_tool_result(
+        "analyst",
+        analyst_trace,
+        "run_python",
+        "FileNotFoundError: /missing/path.csv",
+        status="error",
+        error_type="FileNotFoundError",
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    web_trace = trace_sdk.trace_agent_prompt(
+        "web-researcher",
+        "Find academic market microstructure evidence.",
+        "Prefer papers.",
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.trace_agent_response(
+        "web-researcher",
+        web_trace,
+        '{"findings": [{"source_quality": "academic"}]}',
+        {"findings": [{"source_quality": "academic"}]},
+        model_provider="openai",
+        model_name="gpt-5.2",
+    )
+    trace_sdk.record_event(
+        source_module="compiler_builder",
+        category="builder",
+        action="builder_error",
+        summary="builder error thesis=T1 code=builder_implementation_contract_failed",
+        payload={
+            "thesis_id": "T1",
+            "error_code": "builder_implementation_contract_failed",
+            "reason": "unexpected_config_key:foo",
+        },
+        model_provider="codex",
+        model_name="gpt-5.2",
+    )
+
+    from trace_adapters.reflexio import build_reflexio_export_package
+
+    reflexio = build_reflexio_export_package(
+        research_round=9,
+        thesis_id="T1",
+        outcome="builder_failed",
+        family="ema",
+        reasoning="generic round lesson",
+        rejection_reason="builder failed",
+        quality={"trend": "flat"},
+        usage={},
+        canonical_trace_path=trace_sdk.get_event_file(),
+    )
+
+    agent_reflections = reflexio["files"]["reflexio-event.json"]["agent_reflections"]
+    assert set(agent_reflections) >= {"analyst", "web-researcher", "builder"}
+    assert "run_python" in " ".join(agent_reflections["analyst"]["evidence"])
+    assert "FileNotFoundError" in " ".join(agent_reflections["analyst"]["evidence"])
+    assert "academic" in " ".join(agent_reflections["web-researcher"]["evidence"])
+    assert "builder_implementation_contract_failed" in " ".join(
+        agent_reflections["builder"]["evidence"]
+    )
+    assert agent_reflections["analyst"]["lesson"] != agent_reflections["builder"]["lesson"]
 
 
 def test_recursive_improve_trace_attaches_token_usage_to_assistant_messages(

@@ -180,13 +180,17 @@ def _build_research_tools_mcp(
         )
 
     @mcp.tool()
-    async def get_experiment_result(thesis_id: str) -> str:
-        """Fetch full stored details for one experiment/thesis result."""
+    async def get_experiment_result(thesis_id: str, detail: bool = False) -> str:
+        """Fetch stored details for one experiment/thesis result.
+
+        Defaults to a compact result for context efficiency. Pass detail=true
+        only when the compact result is insufficient for the current decision.
+        """
         if get_experiment_result_for_root is None:
             from research_memory import get_experiment_result as _get_result_for_root
 
-            return _get_result_for_root(root, thesis_id, job_id=current_job)
-        return get_experiment_result_for_root(root, thesis_id, job_id=current_job)
+            return _get_result_for_root(root, thesis_id, job_id=current_job, detail=detail)
+        return get_experiment_result_for_root(root, thesis_id, job_id=current_job, detail=detail)
 
     track(
         mcp,

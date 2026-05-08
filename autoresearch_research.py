@@ -68,6 +68,13 @@ _QUALITY_HISTORY = QualityHistory()
 _RULE_PROPOSALS = RuleProposalRegistry()
 
 
+def _record_event_fail_open(**kwargs: Any) -> None:
+    try:
+        record_event(**kwargs)
+    except Exception as exc:
+        log.debug("trace event emission failed: %s", exc)
+
+
 # ── Discord notification ──────────────────────────────────────────
 
 
@@ -518,7 +525,7 @@ def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] 
         }
         if validation_reason:
             result["validation_reason"] = validation_reason
-        record_event(
+        _record_event_fail_open(
             source_module="autoresearch_research",
             category="conductor",
             action="conductor_error",
@@ -576,7 +583,7 @@ def _log_validation_rejection(
     )
     log.warning(f"THESIS REJECTED (will retry with feedback): {rejection_feedback}")
     trace("LOOP", f"thesis rejected, retrying: {rejection_feedback}")
-    record_event(
+    _record_event_fail_open(
         source_module="autoresearch_research",
         category="validation",
         action="validation_error",

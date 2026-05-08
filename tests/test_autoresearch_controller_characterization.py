@@ -2512,6 +2512,33 @@ def test_fresh_launch_state_has_exact_clean_key_set_for_prior_terminal_states(
     }
 
 
+def test_resume_current_job_accepts_builder_failed_blocked_state():
+    prior_state = {
+        "state": "blocked",
+        "job": 22,
+        "research_round": 8,
+        "blockers": [{"kind": "builder_failed", "detail": "deterministic verifier failed"}],
+        "next_action": {
+            "type": "builder_failed",
+            "reason": "builder_implementation_contract_failed",
+        },
+        "current_thesis": {"thesis_id": "needs_builder"},
+        "builder_failed_theses": [{"thesis_id": "needs_builder"}],
+    }
+
+    state, job = loop_mod.normalize_controller_launch_state(
+        prior_state,
+        resume_current_job=True,
+    )
+
+    assert job == 22
+    assert state["state"] == "running"
+    assert state["job"] == 22
+    assert state["research_round"] == 8
+    assert state["resume_previous_blocker"]["kind"] == "builder_failed"
+    assert state["resume_previous_blocker"]["next_action"]["type"] == "builder_failed"
+
+
 def test_main_resume_current_job_preserves_manual_review_history(monkeypatch, tmp_path):
     family = load_family("ema")
 

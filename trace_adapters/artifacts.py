@@ -13,6 +13,18 @@ _SECRET_PATTERNS = [
     re.compile(r"\b(sk-[A-Za-z0-9_-]{12,})\b"),
 ]
 
+_LOCAL_PATH_PATTERNS = [
+    (re.compile(r"/Users/[A-Za-z0-9._-]+/[^\s\"',)]+"), "<local-user-path>"),
+    (re.compile(r"/private/var/[^\s\"',)]+"), "<local-temp-path>"),
+    (re.compile(r"/tmp/[^\s\"',)]+"), "<tmp-path>"),
+    (
+        re.compile(
+            r"(?<!\S)/(?:Applications|Library|Network|System|Volumes|home|opt|root|var)/[^\s\"',)]+"
+        ),
+        "<local-abs-path>",
+    ),
+]
+
 
 def content_from_artifacts(
     event: dict[str, Any], section: str, *, trace_path: Path | None = None
@@ -67,7 +79,21 @@ def redact_text(text: str, *, max_chars: int | None = None) -> str:
     redacted = text
     for pattern in _SECRET_PATTERNS:
         redacted = pattern.sub(_redact_match, redacted)
+    for pattern, replacement in _LOCAL_PATH_PATTERNS:
+        redacted = pattern.sub(replacement, redacted)
     return redacted
+
+
+def portable_path(path: str | Path) -> str:
+    """Return a non-machine-specific path for exported third-party traces."""
+    value = Path(str(path))
+    parts = value.parts
+    for anchor in ("logs", "trace_exports", "improvement_reports"):
+        if anchor in parts:
+            idx = parts.index(anchor)
+            return Path(*parts[idx:]).as_posix()
+    text = value.as_posix()
+    return redact_text(text)
 
 
 def _redact_match(match: re.Match[str]) -> str:

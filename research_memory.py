@@ -48,7 +48,7 @@ def _resolve_palace_dir() -> str:
 def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor") -> dict:
     """Add a drawer to the palace via palace.get_collection + ChromaDB upsert."""
     import hashlib
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     try:
         from mempalace.palace import get_collection
@@ -68,7 +68,7 @@ def _palace_add(wing: str, room: str, content: str, added_by: str = "conductor")
                     "source_file": "",
                     "chunk_index": 0,
                     "added_by": added_by,
-                    "filed_at": datetime.now().isoformat(),
+                    "filed_at": datetime.now(timezone.utc).isoformat(),
                 }
             ],
         )

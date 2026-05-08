@@ -119,7 +119,7 @@ def max_consecutive_research_required() -> int:
     return value
 
 
-_RECOVERABLE_BLOCKED_RESUME_KINDS = {"command_failed", "metric_parse_failed"}
+_RECOVERABLE_BLOCKED_RESUME_KINDS = {"builder_failed", "command_failed", "metric_parse_failed"}
 _RESEARCH_BLOCKER_KINDS = {"research_required", "research_retry_required"}
 
 
@@ -194,7 +194,10 @@ def _is_blocked_failed_experiment_resume_state(state: dict[str, Any]) -> bool:
     if state.get("state") != "blocked":
         return False
     next_action = state.get("next_action")
-    if not isinstance(next_action, dict) or next_action.get("type") != "blocked":
+    if not isinstance(next_action, dict) or next_action.get("type") not in {
+        "blocked",
+        "builder_failed",
+    }:
         return False
     reason = next_action.get("reason")
     return bool(_RECOVERABLE_BLOCKED_RESUME_KINDS & _blocker_kinds(state)) or (
