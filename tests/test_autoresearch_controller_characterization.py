@@ -2366,6 +2366,84 @@ def test_main_starts_new_job_when_prior_state_is_manual_review_without_resume_fl
     assert "next_action" not in written
 
 
+@pytest.mark.parametrize(
+    "prior_state",
+    [
+        {
+            "state": "halted",
+            "job": 9,
+            "research_round": 5,
+            "job_usage": {"total_tokens": 123},
+            "heartbeat": {"builder_status": "stale"},
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": "stale-thesis",
+            "halted_thesis": {"thesis_id": "stale-thesis"},
+            "next_action": {"type": "terminated"},
+        },
+        {
+            "state": "blocked",
+            "job": 9,
+            "research_round": 5,
+            "job_usage": {"total_tokens": 123},
+            "heartbeat": {"blocked_thesis": "stale-thesis"},
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": "stale-thesis",
+            "halted_thesis": {"thesis_id": "stale-thesis"},
+            "manual_review_theses": [{"thesis_id": "stale-thesis"}],
+            "next_action": {"type": "manual_review"},
+        },
+        {
+            "state": "building",
+            "job": 9,
+            "research_round": 5,
+            "job_usage": {"total_tokens": 123},
+            "heartbeat": {"builder_status": "running"},
+            "halted_reason": "requires_code_change",
+            "halted_thesis_id": "stale-thesis",
+            "halted_thesis": {"thesis_id": "stale-thesis"},
+            "next_action": {"type": "builder_running"},
+        },
+        {
+            "state": "interrupted",
+            "job": 9,
+            "research_round": 5,
+            "job_usage": {"total_tokens": 123},
+            "heartbeat": {"last_error": "research_failed"},
+            "blockers": [{"kind": "research_failed", "detail": "stale failure"}],
+            "current_thesis": {"config": "experiments/stale/runtime_config.json"},
+            "pending_configs": ["experiments/stale/runtime_config.json"],
+            "next_action": {"type": "research"},
+        },
+        {
+            "state": "finished",
+            "job": 9,
+            "research_round": 5,
+            "job_usage": {"total_tokens": 123},
+            "heartbeat": {"finished": True},
+            "finished_reason": "max_rounds",
+            "current_best": {"config": "experiments/stale/runtime_config.json"},
+            "baseline_drift": {"status": "stale"},
+        },
+    ],
+)
+def test_fresh_launch_state_has_exact_clean_key_set_for_prior_terminal_states(
+    prior_state,
+):
+    state, job = loop_mod.normalize_controller_launch_state(
+        prior_state,
+        resume_current_job=False,
+    )
+
+    assert job == 10
+    assert state == {
+        "state": "running",
+        "job": 10,
+        "research_round": 0,
+        "job_usage": None,
+        "heartbeat": {},
+    }
+
+
 def test_main_resume_current_job_preserves_manual_review_history(monkeypatch, tmp_path):
     family = load_family("ema")
 
