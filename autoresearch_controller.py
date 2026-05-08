@@ -304,7 +304,12 @@ def _fresh_launch_state(job: int) -> dict[str, Any]:
 def _next_fresh_job_for_launch(controller: Any, prior_state: dict[str, Any]) -> int:
     allocator = getattr(controller, "next_fresh_job_id", None)
     if callable(allocator):
-        return int(allocator(prior_state))
+        try:
+            fresh_job = int(allocator(prior_state))
+        except (TypeError, ValueError):
+            fresh_job = 0
+        if fresh_job >= 1:
+            return fresh_job
     return max(_state_coerce_job_to_int(prior_state.get("job")) + 1, 1)
 
 
@@ -993,9 +998,10 @@ def main() -> int:
         runs_dir=runs_dir,
     )
     prior_state = controller.read_state()
-    fresh_job = (
-        None if args.resume_current_job else _next_fresh_job_for_launch(controller, prior_state)
-    )
+    launch_fresh_job = args.fresh_job or not args.resume_current_job
+    fresh_job = None
+    if launch_fresh_job:
+        fresh_job = _next_fresh_job_for_launch(controller, prior_state)
     try:
         state, job = normalize_controller_launch_state(
             prior_state,
