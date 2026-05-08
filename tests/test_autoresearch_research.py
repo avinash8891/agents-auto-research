@@ -17,8 +17,11 @@ from pathlib import Path
 from autoresearch_research import (
     _check_parsed_for_terminal,
     _handle_needs_code,
+    _handle_round_failure,
+    _handle_success,
     _try_one_validation_attempt,
     accumulate_job_usage,
+    execute_research_sdk,
     log_research_round,
     notify_discord,
     results_to_dicts,
@@ -628,3 +631,119 @@ def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_ch
         "mechanism_dimension": "",
         "requested_primitives": ["buffered_trailing_stop_rule"],
     }
+
+
+def test_execute_research_sdk_persists_research_activity_before_conductor_call(
+    tmp_path: Path, monkeypatch
+) -> None:
+    writes: list[dict[str, object]] = []
+
+    class _Controller:
+        root = tmp_path
+        family = type("Family", (), {"name": "ema"})()
+
+        def __init__(self) -> None:
+            self.state = {"state": "blocked", "job": 26, "research_round": 7}
+
+        def read_state(self):
+            return dict(self.state)
+
+        def write_state(self, state):
+            self.state = dict(state)
+            writes.append(dict(state))
+
+        def read_results(self):
+            return []
+
+    monkeypatch.setattr(
+        "agent_formatters.format_experiment_results_summary", lambda result_dicts: []
+    )
+    monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root: [])
+    monkeypatch.setattr(
+        "autoresearch_research._resolve_conductor_inputs",
+        lambda *args, **kwargs: ("trades.csv", "events.parquet", "diagnostics.json", {}),
+    )
+    monkeypatch.setattr("improvement_flags.reflexion_enabled", lambda: False)
+    monkeypatch.setattr(
+        "autoresearch_research._call_conductor",
+        lambda *args, **kwargs: {"status": "completed", "reasoning": "done"},
+    )
+    monkeypatch.setattr(
+        "autoresearch_research._check_parsed_for_terminal",
+        lambda parsed: {
+            "status": "completed",
+            "generated_config": "runtime/jobs/job-26/experiments/abc/runtime_config.json",
+            "should_stop": False,
+        },
+    )
+
+    result = execute_research_sdk(_Controller())
+
+    assert result["generated_config"] == "runtime/jobs/job-26/experiments/abc/runtime_config.json"
+    assert writes[0]["research_round_in_progress"] == 8
+    assert writes[0]["activity"] == {
+        "type": "research",
+        "phase": "conductor_running",
+        "round": 8,
+    }
+
+
+def test_handle_success_sets_pending_experiment_activity(tmp_path: Path) -> None:
+    class _Family:
+        @staticmethod
+        def benchmark_command(config: str) -> str:
+            return f"python bench.py --config {config}"
+
+    class _Controller:
+        family = _Family()
+
+        def write_state(self, state):
+            self.state = dict(state)
+
+    state = {
+        "state": "blocked",
+        "job": 26,
+        "research_round": 7,
+        "research_round_in_progress": 8,
+        "activity": {"type": "research", "phase": "conductor_running", "round": 8},
+        "blockers": [{"kind": "research_required"}],
+        "rejection_feedback": "prior",
+    }
+    result = {
+        "generated_config": "runtime/jobs/job-26/experiments/abc/runtime_config.json",
+        "thesis_id": "abc",
+    }
+
+    updated = _handle_success(_Controller(), state, result, research_round=8)
+
+    assert updated["state"] == "running"
+    assert updated["activity"] == {
+        "type": "experiment",
+        "phase": "pending_backtest",
+        "round": 8,
+        "config": "runtime/jobs/job-26/experiments/abc/runtime_config.json",
+        "thesis_id": "abc",
+    }
+
+
+def test_handle_round_failure_clears_activity(tmp_path: Path) -> None:
+    class _Controller:
+        root = tmp_path
+        research_dir = tmp_path / "research"
+
+        def write_state(self, state):
+            self.state = dict(state)
+
+    state = {
+        "state": "blocked",
+        "job": 26,
+        "research_round": 7,
+        "research_round_in_progress": 8,
+        "activity": {"type": "research", "phase": "conductor_running", "round": 8},
+    }
+    result = {"rejection_reason": "no thesis generated"}
+
+    updated = _handle_round_failure(_Controller(), state, result, research_round=8)
+
+    assert updated["research_round"] == 8
+    assert "activity" not in updated

@@ -1053,6 +1053,7 @@ def test_run_experiment_uses_runtime_config_fallback_for_baseline_checkpoint(
                 parent_experiment_id="",
                 latest_config_contents={"ema_length": 5},
             )
+            self.write_calls: list[dict[str, object]] = []
 
         def current_commit(self) -> str:
             return "abc1234"
@@ -1070,6 +1071,7 @@ def test_run_experiment_uses_runtime_config_fallback_for_baseline_checkpoint(
 
         def write_state(self, state: dict[str, object]) -> None:
             self.state = dict(state)
+            self.write_calls.append(dict(state))
 
         def clear_transient_context(self) -> None:
             return None
@@ -1110,12 +1112,26 @@ def test_run_experiment_uses_runtime_config_fallback_for_baseline_checkpoint(
         "_record_baseline_checkpoint",
         lambda controller, details, runtime_cfg: captured.setdefault("runtime_cfg", runtime_cfg),
     )
-    monkeypatch.setattr(experiment_mod, "_finalize_experiment", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        experiment_mod,
+        "_finalize_experiment",
+        lambda controller, config, metric, decision, verdict: (
+            controller.state.pop("activity", None),
+            controller.write_state(controller.state),
+        ),
+    )
 
     rc = experiment_mod.run_experiment(controller, controller.read_state())
 
     assert rc == 0
     assert captured["runtime_cfg"] == {"ema_length": 5}
+    assert controller.write_calls[0]["activity"] == {
+        "type": "experiment",
+        "phase": "backtest_running",
+        "config": "configs/ema_base.yaml",
+        "source": "baseline",
+    }
+    assert "activity" not in controller.write_calls[-1]
 
 
 def test_baseline_checkpoint_metrics_excludes_non_metric_artifacts() -> None:

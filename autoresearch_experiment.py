@@ -861,6 +861,7 @@ def _block_with_command_failed(
             "blockers": [{"kind": "command_failed", "detail": command, "exit_code": code}],
         }
     )
+    state.pop("activity", None)
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
     log.error(
@@ -896,6 +897,7 @@ def _block_with_metric_parse_failed(
             "blockers": [{"kind": "metric_parse_failed", "detail": command}],
         }
     )
+    state.pop("activity", None)
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
     log.error(
@@ -1117,6 +1119,13 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     """Run a single experiment (backtest + evaluate + log). Returns exit code."""
     next_action = state["next_action"]
     config = next_action["config"]
+    state["activity"] = {
+        "type": "experiment",
+        "phase": "backtest_running",
+        "config": config,
+        "source": next_action.get("source"),
+    }
+    controller.write_state(state)
 
     try:
         run_output_dir, command = _setup_run(controller, config)
@@ -1156,6 +1165,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             )
             state = controller.read_state()
             state.update(interrupted)
+            state.pop("activity", None)
             controller.write_state(state)
             controller.write_current_md(state, controller.read_results())
             log.error(
@@ -1218,6 +1228,10 @@ def _finalize_experiment(
     send the completion notification."""
     end_hypothesis(decision=decision, metric=metric)
     state = controller.reconcile_state()
+    if "activity" in state:
+        state.pop("activity", None)
+        controller.write_state(state)
+        controller.write_current_md(state, controller.read_results())
     trace(
         "LOOP",
         f"ITERATION DONE thesis={config} metric={metric} decision={decision} "

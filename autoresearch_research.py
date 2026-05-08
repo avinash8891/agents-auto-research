@@ -930,6 +930,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         current_job=current_job,
     )
     state["research_round_in_progress"] = research_round
+    state["activity"] = _research_activity(research_round=research_round, phase="conductor_running")
     controller.write_state(state)
 
     from improvement_flags import reflexion_enabled
@@ -978,6 +979,10 @@ def execute_research_one(controller: "AutoresearchController") -> dict[str, Any]
 
 
 # ── Round orchestration ──────────────────────────────────────────
+
+
+def _research_activity(*, research_round: int, phase: str) -> dict[str, Any]:
+    return {"type": "research", "phase": phase, "round": research_round}
 
 
 def _classify_round_outcome(result: dict[str, Any]) -> str:
@@ -1237,6 +1242,7 @@ def _handle_max_rounds_reached(
     state["state"] = "finished"
     state["finished_reason"] = "max_research_rounds_reached"
     state.pop("research_round_in_progress", None)
+    state.pop("activity", None)
     log.info(f"LOOP_STOP finished: max research rounds ({MAX_RESEARCH_ROUNDS}) reached")
     best = state.get("current_best", {})
     _close_run(
@@ -1259,6 +1265,7 @@ def _handle_should_stop(
     state["research_stop_reasoning"] = result.get("reasoning", "")
     state["research_round"] = result.get("research_round", state.get("research_round", 0))
     state.pop("research_round_in_progress", None)
+    state.pop("activity", None)
     log.info("LOOP_STOP finished: research recommends stop")
     best = state.get("current_best", {})
     _close_run(
@@ -1290,6 +1297,7 @@ def _handle_needs_code(
     state["state"] = "halted"
     state["research_round"] = result.get("research_round", state.get("research_round", 0))
     state.pop("research_round_in_progress", None)
+    state.pop("activity", None)
     state["halted_reason"] = "requires_code_change"
     state["halted_thesis_id"] = thesis_id
     state["halted_thesis"] = thesis
@@ -1347,6 +1355,13 @@ def _handle_success(
     state["state"] = "running"
     state["research_round"] = research_round
     state.pop("research_round_in_progress", None)
+    state["activity"] = {
+        "type": "experiment",
+        "phase": "pending_backtest",
+        "round": research_round,
+        "config": gen_config,
+        "thesis_id": thesis_id,
+    }
     state["current_thesis"] = {"config": gen_config, "status": "ready_to_run"}
     state["next_action"] = {
         "type": "run_experiment",
@@ -1373,6 +1388,7 @@ def _handle_round_failure(
     log.warning(f"HEARTBEAT research round {research_round} failed: {reason}")
     state["research_round"] = research_round
     state.pop("research_round_in_progress", None)
+    state.pop("activity", None)
     state.update(
         build_research_failure_state(
             controller.root,
