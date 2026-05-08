@@ -72,6 +72,17 @@ class ResearchThesis(BaseModel):
     dominant_cluster_overlap: Literal["", "low", "medium", "high"] = ""
     underexplored_dimensions_considered: list[str] = Field(default_factory=list)
     novel_connection: str = ""  # why this connects evidence in a materially new way
+    closest_prior_theses_considered: list[str] = Field(default_factory=list)
+    orthogonality_defense: str = ""  # why this is orthogonal vs merely adjacent
+    evidence_strength: Literal["", "direct", "proxy", "mixed", "speculative"] = ""
+    thesis_role: Literal[
+        "",
+        "orthogonal_discovery",
+        "winning_cluster_follow_up",
+        "implementation_unlock",
+        "cleanup_validation_follow_up",
+    ] = ""
+    falsification_or_alternative: str = ""  # what would weaken this mechanism
     new_dimension_name: str = ""  # required when mechanism_dimension == emergent
     why_existing_dimensions_do_not_fit: str = ""
     mechanism_family_definition: str = ""

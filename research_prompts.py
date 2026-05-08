@@ -50,6 +50,14 @@ instead of repeatedly exploiting the same local idea family. If the candidate
 has high overlap with the dominant cluster, name the novel connection that makes
 it materially different.
 
+Before proposing, build a compact evidence synthesis for yourself:
+- closest prior theses/results and why they are relevant
+- evidence that directly supports this candidate
+- evidence that weakens it, leaves it only partially supported, or points to an alternative
+- why this is a new mechanism instead of the same story with a new label
+Treat this as a research defense, not paperwork. Behave like a research lead
+who must justify why this is the next experiment.
+
 Before deep-fetching many past theses, narrow first with list_past_theses and
 search_findings; fetch additional theses when needed to understand history,
 similarity, or lessons learned; this is not a hard cap. If a tool fails or an
@@ -192,6 +200,15 @@ WORKFLOW:
    - What is the weakest link in the strategy's logic chain?
    Use this to choose specific tool calls. Final reasoning should cite the evidence gathered from tools, not pre-commit to a thesis before tool use.
 
+2a. SYNTHESIZE EVIDENCE BEFORE PROPOSING.
+   Distinguish:
+   - directly supported evidence from analyst outputs or code
+   - partially supported or proxy-based evidence
+   - unsupported claims that still require a new experiment
+   Do not turn partial evidence into measured fact. If the analyst says a claim
+   is only partially supported, narrow the thesis to the supported claim or
+   explicitly frame the thesis as a test of the uncertainty.
+
 3. SEARCH FOR EXTERNAL EVIDENCE FIRST. Call web_search to find published
    research, academic papers, or practitioner discussions about the
    mechanism you identified. You need an economic rationale BEFORE
@@ -260,6 +277,11 @@ If there is a gap, you must either:
      evidence (step 3) and validated by data (step 4)
    - Explain WHY the change works mechanistically, not just that "the
      numbers look better"
+   - State what evidence could falsify this mechanism or make a different
+     mechanism more plausible
+   - Fill closest_prior_theses_considered, orthogonality_defense,
+     evidence_strength, thesis_role, and falsification_or_alternative
+     honestly. These are quality-accounting fields, not hard gates.
    - If you cannot articulate the causal chain, you have not done enough
      research. Go back to steps 2-5.
 
@@ -307,6 +329,11 @@ OUTPUT FORMAT (final response after all tool calls):
       "dominant_cluster_overlap": "low|medium|high",
       "underexplored_dimensions_considered": [],
       "novel_connection": "what new evidence connection or mechanism makes this thesis more than another variant of the dominant cluster",
+      "closest_prior_theses_considered": ["thesis_ids explicitly compared against before proposing"],
+      "orthogonality_defense": "why this is orthogonal rather than merely adjacent to the closest prior theses",
+      "evidence_strength": "direct|proxy|mixed|speculative",
+      "thesis_role": "orthogonal_discovery|winning_cluster_follow_up|implementation_unlock|cleanup_validation_follow_up",
+      "falsification_or_alternative": "what evidence would weaken this mechanism or make an alternative more plausible",
       "new_dimension_name": "required only when mechanism_dimension is emergent; otherwise empty string",
       "why_existing_dimensions_do_not_fit": "required only when mechanism_dimension is emergent; otherwise empty string",
       "mechanism_family_definition": "required only when mechanism_dimension is emergent; otherwise empty string",

@@ -593,15 +593,32 @@ CRITICAL RULES:
   minimum_supported_time_bucket_minutes and no finer-grain raw data is exposed,
   mark feasibility as blocked/partial and restate the analysis at the finest
   supported bar resolution instead of inventing sub-bar buckets.
+- Distinguish direct evidence from inference:
+  - supported = directly measured from the current artifacts/source code
+  - partially_supported = a narrower or proxy-based claim is supported, but the
+    full requested claim is not directly provable
+  - unsupported_missing_data = the core claim depends on missing fields,
+    unavailable raw data, or insufficient resolution
+  - unsupported_tool_failure = the core claim could not be evaluated because
+    tool execution failed or timed out
+- Never present an unsupported claim as if it were measured. If you proceed with
+  a proxy or narrower claim, say exactly what is supported and what remains
+  unproven.
 
 OUTPUT FORMAT:
 Return ONLY a JSON object:
 {{
   "feasibility": {{
-    "status": "ok/blocked/partial",
+    "status": "supported/partially_supported/unsupported_missing_data/unsupported_tool_failure",
     "blockers": ["quantified blocker such as missing field or N=0"],
     "best_viable_alternative": "what you analyzed instead, or empty string"
   }},
+  "supported_claims": [
+    "claims directly supported by current artifacts or source code"
+  ],
+  "unsupported_claims": [
+    "claims the current artifacts do not directly support"
+  ],
   "artifacts_used": ["trades_csv", "strategy_events_parquet", "diagnostics_json", "runtime_config_json", "market_data_files if used"],
   "files_inspected": ["strategy/config/source files read, or NOT_FOUND"],
   "keys_found": ["config/source keys or fields found, or NOT_FOUND"],
@@ -730,22 +747,27 @@ async def _call_web_researcher(query: str, context: str, reflexion_feedback: str
     web_prompt = """You are a research agent specializing in quantitative trading strategies.
 Your ONLY job is to find and report external evidence for the specific question asked.
 
-1. Run targeted web searches.
-2. Prefer primary sources: academic papers > practitioner research > blogs.
-3. Read sources in full. Extract specific claims and data points.
-4. Be skeptical.
+1. Restate the mechanism being tested in concrete causal terms before searching.
+2. Run targeted web searches for evidence that SUPPORTS or FALSIFIES that exact mechanism.
+3. Prefer primary sources: academic papers > practitioner research > blogs.
+4. Read sources in full. Extract specific claims and data points.
+5. Be skeptical. Generic market commentary is weak evidence unless you tie it directly to the mechanism.
+6. For every finding, explain the actionable implication for THIS strategy and what observable should be checked in our data.
 
 OUTPUT FORMAT:
 Return a JSON object:
 {
   "summary": "2 sentence synthesis; emit this first",
+  "mechanism_under_test": "one sentence restatement of the exact mechanism",
   "findings": [
     {
       "topic": "short label",
       "finding": "specific claim with attribution",
       "source": "URL or null",
       "source_quality": "academic/practitioner/blog/forum",
-      "actionable_idea": "specific structural change this suggests"
+      "stance": "supports/falsifies/adjacent",
+      "actionable_idea": "specific structural change this suggests",
+      "data_check": "specific observable to validate in our data"
     }
   ]
 }

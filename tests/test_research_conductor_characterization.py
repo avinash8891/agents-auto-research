@@ -399,6 +399,41 @@ def test_conductor_system_prompt_requires_diversity_check_before_exploiting_clus
     assert '"novel_connection":' in prompt
 
 
+def test_conductor_system_prompt_requires_evidence_synthesis_and_novelty_defense():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+    compact = " ".join(prompt.split())
+
+    assert "closest prior theses/results and why they are relevant" in compact
+    assert "evidence that directly supports this candidate" in compact
+    assert "evidence that weakens it, leaves it only partially supported" in compact
+    assert "why this is a new mechanism instead of the same story with a new label" in compact
+    assert "Behave like a research lead" in compact
+
+
+def test_conductor_system_prompt_distinguishes_supported_partial_and_unsupported_evidence():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+    compact = " ".join(prompt.split())
+
+    assert "directly supported evidence from analyst outputs or code" in compact
+    assert "partially supported or proxy-based evidence" in compact
+    assert "unsupported claims that still require a new experiment" in compact
+    assert "Do not turn partial evidence into measured fact" in compact
+    assert "State what evidence could falsify this mechanism" in compact
+
+
+def test_conductor_system_prompt_includes_thesis_quality_accounting_fields():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+
+    assert '"closest_prior_theses_considered":' in prompt
+    assert '"orthogonality_defense":' in prompt
+    assert '"evidence_strength": "direct|proxy|mixed|speculative"' in prompt
+    assert (
+        '"thesis_role": "orthogonal_discovery|winning_cluster_follow_up|implementation_unlock|cleanup_validation_follow_up"'
+        in prompt
+    )
+    assert '"falsification_or_alternative":' in prompt
+
+
 def test_conductor_system_prompt_does_not_claim_raw_data_directory_is_always_available():
     prompt = rc._build_conductor_system_prompt("Strategy description")
 
@@ -983,6 +1018,10 @@ def test_call_web_researcher_uses_codex_cli_web_search(monkeypatch):
     assert "RESEARCH QUESTION: prompt" in captured["prompt"]
     assert "CONTEXT: context" in captured["prompt"]
     assert "Run targeted web searches" in captured["instructions"]
+    assert '"mechanism_under_test"' in captured["instructions"]
+    assert '"stance": "supports/falsifies/adjacent"' in captured["instructions"]
+    assert '"data_check"' in captured["instructions"]
+    assert "Generic market commentary is weak evidence" in captured["instructions"]
     assert captured["model"] == subagents._CONDUCTOR_MODEL
     assert trace_prompts
     assert trace_prompts[0][0] == "web-researcher"
@@ -1133,8 +1172,15 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     assert '"files_inspected"' in captured["system_prompt"]
     assert '"keys_found"' in captured["system_prompt"]
     assert '"feasibility"' in captured["system_prompt"]
+    assert (
+        '"status": "supported/partially_supported/unsupported_missing_data/unsupported_tool_failure"'
+        in captured["system_prompt"]
+    )
+    assert '"supported_claims"' in captured["system_prompt"]
+    assert '"unsupported_claims"' in captured["system_prompt"]
     assert "Every bucketed metric must include n= or N=" in captured["system_prompt"]
     assert "time buckets finer than" in captured["system_prompt"]
+    assert "Never present an unsupported claim as if it were measured" in captured["system_prompt"]
     assert captured["tool_names"] == [
         "list_analysis_artifacts",
         "read_artifact",

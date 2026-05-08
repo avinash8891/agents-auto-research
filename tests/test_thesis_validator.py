@@ -231,6 +231,34 @@ def test_validate_thesis_accepts_job_scoped_experiment_base_config_path() -> Non
     )
 
 
+def test_validate_thesis_accepts_quality_accounting_fields() -> None:
+    thesis = _base_engine_change_thesis("quality_accounting_fields", "market_microstructure")
+    thesis["closest_prior_theses_considered"] = [
+        "prior_opening_whipsaw_filter",
+        "prior_trailing_stop_follow_up",
+    ]
+    thesis["orthogonality_defense"] = (
+        "This thesis changes the mechanism family from entry filtering to execution "
+        "payoff capture rather than relabeling the same open-whipsaw story."
+    )
+    thesis["evidence_strength"] = "mixed"
+    thesis["thesis_role"] = "orthogonal_discovery"
+    thesis["falsification_or_alternative"] = (
+        "If the observed improvement disappears when compared to the current best "
+        "trailing configuration, the right-tail story is weaker than a simpler "
+        "risk-compression alternative."
+    )
+
+    validated = validate_thesis_dict(thesis, prior_theses=[])
+
+    assert validated.closest_prior_theses_considered == [
+        "prior_opening_whipsaw_filter",
+        "prior_trailing_stop_follow_up",
+    ]
+    assert validated.evidence_strength == "mixed"
+    assert validated.thesis_role == "orthogonal_discovery"
+
+
 def test_validate_thesis_does_not_require_base_config_for_unrelated_best_or_preserve_language() -> (
     None
 ):
