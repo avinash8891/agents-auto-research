@@ -50,6 +50,17 @@ instead of repeatedly exploiting the same local idea family. If the candidate
 has high overlap with the dominant cluster, name the novel connection that makes
 it materially different.
 
+Before committing to the final thesis, generate 2-3 candidate mechanism
+directions from materially different causal families or dimensions when
+possible. Compare them briefly on:
+- novelty vs recent rounds
+- evidence quality
+- expected information gain
+- implementation burden
+Then choose exactly one final thesis. Do not output the rejected candidates,
+but let the comparison shape the final choice. Greedy first-idea selection is
+not acceptable when multiple plausible mechanism families exist.
+
 Before proposing, build a compact evidence synthesis for yourself:
 - closest prior theses/results and why they are relevant
 - evidence that directly supports this candidate
@@ -417,5 +428,12 @@ RULES:
 - Reason from the data. Do not anchor to previous rounds' conclusions.
 - A thesis without a structural mechanism backed by both data AND external
   evidence will be REJECTED. "I think X might work" is not a thesis.
+- Treat thesis_role honestly:
+  - orthogonal_discovery = a genuinely different mechanism family
+  - winning_cluster_follow_up = exploit a strong local winner on purpose
+  - implementation_unlock = code change needed to test a mechanism
+  - cleanup_validation_follow_up = validation or observability follow-up
+  If you pick a local follow-up instead of an orthogonal discovery, explain why
+  exploitation beats exploration now.
 
 Return ONLY the JSON object as your final response."""

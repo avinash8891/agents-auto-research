@@ -410,6 +410,16 @@ def test_conductor_system_prompt_requires_evidence_synthesis_and_novelty_defense
     assert "Behave like a research lead" in compact
 
 
+def test_conductor_system_prompt_requires_candidate_comparison_before_commit():
+    prompt = rc._build_conductor_system_prompt("Strategy description")
+    compact = " ".join(prompt.split())
+
+    assert "generate 2-3 candidate mechanism directions" in compact
+    assert "novelty vs recent rounds" in compact
+    assert "expected information gain" in compact
+    assert "Greedy first-idea selection is not acceptable" in compact
+
+
 def test_conductor_system_prompt_distinguishes_supported_partial_and_unsupported_evidence():
     prompt = rc._build_conductor_system_prompt("Strategy description")
     compact = " ".join(prompt.split())
@@ -433,6 +443,7 @@ def test_conductor_system_prompt_includes_thesis_quality_accounting_fields():
     )
     assert '"falsification_or_alternative":' in prompt
     assert '"requested_primitives": ["required when requires_code_change=true;' in prompt
+    assert "If you pick a local follow-up instead of an orthogonal discovery" in prompt
 
 
 def test_conductor_system_prompt_does_not_claim_raw_data_directory_is_always_available():
@@ -1020,9 +1031,14 @@ def test_call_web_researcher_uses_codex_cli_web_search(monkeypatch):
     assert "CONTEXT: context" in captured["prompt"]
     assert "Run targeted web searches" in captured["instructions"]
     assert '"mechanism_under_test"' in captured["instructions"]
+    assert '"overall_verdict"' in captured["instructions"]
+    assert '"strongest_support"' in captured["instructions"]
+    assert '"strongest_contradiction"' in captured["instructions"]
     assert '"stance": "supports/falsifies/adjacent"' in captured["instructions"]
     assert '"data_check"' in captured["instructions"]
     assert "Generic market commentary is weak evidence" in captured["instructions"]
+    assert "actively look for contradiction" in captured["instructions"]
+    assert "Include at least one non-supportive item" in captured["instructions"]
     assert captured["model"] == subagents._CONDUCTOR_MODEL
     assert trace_prompts
     assert trace_prompts[0][0] == "web-researcher"

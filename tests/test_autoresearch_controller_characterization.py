@@ -703,10 +703,19 @@ def test_execute_once_research_success_records_quality_refinement_and_bridges(
             "experiment_id": "research-thesis-001",
             "should_stop": False,
             "reasoning": "fake",
-            "config_changes": {"ema_length": 7},
-            "hypothesis": "improve trend entry",
-            "mechanism": "faster trend detection",
-            "mechanism_dimension": "entry_timing",
+            "thesis": {
+                "thesis_id": "research-thesis-001",
+                "strategy_family": "ema",
+                "config_changes": {"ema_length": 7},
+                "hypothesis": "improve trend entry",
+                "mechanism": "faster trend detection",
+                "mechanism_dimension": "entry_timing",
+                "closest_prior_theses_considered": ["ema_base"],
+                "orthogonality_defense": "entry timing changed after comparing the baseline",
+                "evidence_strength": "direct",
+                "thesis_role": "orthogonal_discovery",
+                "falsification_or_alternative": "if PF gain disappears with equal trade count, it is noise",
+            },
         }
 
     monkeypatch.setattr(AutoresearchController, "execute_research_one", fake_research)
@@ -735,6 +744,9 @@ def test_execute_once_research_success_records_quality_refinement_and_bridges(
     assert append_run.call_args.kwargs["run_label"] == "round-1"
     assert append_run.call_args.kwargs["overall_score"] == 1.0
     assert append_run.call_args.kwargs["dimension_scores"]["compiled"] == 1.0
+    assert append_run.call_args.kwargs["dimension_scores"]["prior_comparison"] == 1.0
+    assert append_run.call_args.kwargs["dimension_scores"]["orthogonality_defense"] == 1.0
+    assert append_run.call_args.kwargs["dimension_scores"]["falsification_discipline"] == 1.0
     halo.assert_called_once()
     recursive_improve.assert_called_once()
     reflexio.assert_called_once()

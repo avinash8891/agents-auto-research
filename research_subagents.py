@@ -753,12 +753,19 @@ Your ONLY job is to find and report external evidence for the specific question 
 4. Read sources in full. Extract specific claims and data points.
 5. Be skeptical. Generic market commentary is weak evidence unless you tie it directly to the mechanism.
 6. For every finding, explain the actionable implication for THIS strategy and what observable should be checked in our data.
+7. You must actively look for contradiction, boundary conditions, or alternative explanations.
+   Do not stop after finding only supporting sources.
+8. If direct falsification evidence is weak, say so explicitly and return the
+   strongest adjacent contradiction or boundary-condition evidence you found.
 
 OUTPUT FORMAT:
 Return a JSON object:
 {
   "summary": "2 sentence synthesis; emit this first",
   "mechanism_under_test": "one sentence restatement of the exact mechanism",
+  "overall_verdict": "supports|mixed|weak|falsified",
+  "strongest_support": "one sentence on the best supporting evidence, or empty string",
+  "strongest_contradiction": "one sentence on the best contradiction/boundary-condition evidence, or empty string",
   "findings": [
     {
       "topic": "short label",
@@ -778,7 +785,16 @@ the strongest evidence. If the response risks exceeding the output budget,
 prefer the strongest findings and compact the final JSON rather than returning
 invalid JSON. Use concise fields, put "summary" before "findings", and ensure
 the final character is "}". If you cannot fit the full result, Return a minimal valid JSON object
-with summary plus the strongest one or two findings."""
+with summary, overall_verdict, strongest_support, strongest_contradiction,
+and the strongest one or two findings.
+
+Minimum content rules:
+- Include at least one non-supportive item:
+  - a finding with stance="falsifies", or
+  - a finding with stance="adjacent" that clearly states a boundary condition,
+    failure mode, or alternative mechanism.
+- If all sources only support the mechanism, say that explicitly in
+  strongest_contradiction and explain what contradiction you failed to find."""
 
     user_prompt = f"RESEARCH QUESTION: {query}\n\nCONTEXT: {context}"
     if reflexion_feedback:

@@ -420,6 +420,82 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
     }
 
 
+def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class _Controller:
+        root = tmp_path
+        job_runtime_root = tmp_path
+        family = type("Family", (), {"name": "ema"})()
+        ctx = type("Ctx", (), {"current_contract": None, "parent_experiment_id": ""})()
+        experiments_dir = tmp_path / "experiments"
+
+        def _queue_variants(self, variants, validated, contract, baseline_config):
+            raise AssertionError("no variants expected")
+
+        def experiment_db(self):
+            raise AssertionError("not used")
+
+    class _Validated:
+        thesis_id = "symbol_day_gate"
+
+    class _Contract:
+        status = "ready_to_run"
+        experiment_id = "exp-001"
+
+    monkeypatch.setattr(
+        "thesis_validator.validate_thesis_dict", lambda raw, prior_theses=None: _Validated()
+    )
+    monkeypatch.setattr(
+        "compiler_pipeline.compile_research_thesis",
+        lambda validated, root, artifact_root=None: _Contract(),
+    )
+    monkeypatch.setattr("autoresearch_research.load_baseline_config", lambda root, family: {})
+
+    controller = _Controller()
+    controller.experiment_db = type("DB", (), {"latest": lambda self, n: []})()
+
+    parsed = {
+        "reasoning": "candidate looks good",
+        "suggested_theses": [
+            {
+                "thesis_id": "symbol_day_gate",
+                "hypothesis": "gate later shorts on 09:30 raw setup presence",
+                "mechanism": "symbol-day setup gate",
+                "mechanism_dimension": "regime_conditioning",
+                "dimension_novelty": "uses symbol-day acceptance history",
+                "closest_prior_theses_considered": [
+                    "block_shorts_on_early_impulse_trend_open_days"
+                ],
+                "orthogonality_defense": "uses acceptance provenance rather than price impulse",
+                "evidence_strength": "mixed",
+                "thesis_role": "winning_cluster_follow_up",
+                "falsification_or_alternative": "if 09:30 setup days still fail, trend-open narrative is weak",
+                "config_changes": {"symbol_day_opening_setup_gate_enabled": True},
+                "expected_effects": [],
+                "disqualifiers": [],
+            }
+        ],
+        "should_stop": False,
+    }
+
+    result, retry_feedback = _try_one_validation_attempt(
+        controller,
+        8,
+        0,
+        parsed,
+        prior_theses=[],
+    )
+
+    assert retry_feedback is None
+    assert result is not None
+    assert result["generated_config"] == "experiments/exp-001/runtime_config.json"
+    assert result["thesis"]["closest_prior_theses_considered"] == [
+        "block_shorts_on_early_impulse_trend_open_days"
+    ]
+    assert result["thesis"]["falsification_or_alternative"].startswith("if 09:30 setup days")
+
+
 def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_feedback(
     tmp_path: Path, monkeypatch
 ) -> None:

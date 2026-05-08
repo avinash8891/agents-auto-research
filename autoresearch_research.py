@@ -735,6 +735,7 @@ def _on_ready_to_run(
         "generated_thesis_id": thesis_id,
         "experiment_id": contract.experiment_id,
         "thesis_id": thesis_id,
+        "thesis": raw_thesis,
         "should_stop": should_stop,
         "reasoning": parsed.get("reasoning", ""),
     }
@@ -985,6 +986,54 @@ def _research_activity(*, research_round: int, phase: str) -> dict[str, Any]:
     return {"type": "research", "phase": phase, "round": research_round}
 
 
+def _thesis_meta_from_result(result: dict[str, Any], family_name: str) -> dict[str, Any]:
+    thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
+    thesis_meta = result.get("thesis")
+    if isinstance(thesis_meta, dict):
+        return thesis_meta
+    return {
+        "thesis_id": thesis_id,
+        "strategy_family": family_name,
+        "config_changes": result.get("config_changes") or {},
+        "hypothesis": result.get("hypothesis") or result.get("reasoning", ""),
+        "mechanism": result.get("mechanism") or result.get("reasoning", ""),
+        "mechanism_dimension": result.get("mechanism_dimension") or "",
+    }
+
+
+def _thesis_quality_dimension_scores(thesis_meta: dict[str, Any]) -> dict[str, float]:
+    if not thesis_meta:
+        return {}
+
+    closest_prior = thesis_meta.get("closest_prior_theses_considered")
+    if not isinstance(closest_prior, list):
+        closest_prior = []
+    requested_primitives = thesis_meta.get("requested_primitives")
+    if not isinstance(requested_primitives, list):
+        requested_primitives = []
+
+    orthogonality_defense = str(thesis_meta.get("orthogonality_defense") or "").strip()
+    evidence_strength = str(thesis_meta.get("evidence_strength") or "").strip()
+    thesis_role = str(thesis_meta.get("thesis_role") or "").strip()
+    falsification = str(thesis_meta.get("falsification_or_alternative") or "").strip()
+    requires_code_change = bool(thesis_meta.get("requires_code_change"))
+
+    dimension_scores = {
+        "prior_comparison": 1.0 if closest_prior else 0.0,
+        "orthogonality_defense": 1.0 if orthogonality_defense else 0.0,
+        "evidence_strength_labeled": 1.0 if evidence_strength else 0.0,
+        "falsification_discipline": 1.0 if falsification else 0.0,
+        "thesis_role_labeled": 1.0 if thesis_role else 0.0,
+    }
+    if thesis_role == "winning_cluster_follow_up":
+        dimension_scores["follow_up_honesty"] = 1.0 if orthogonality_defense else 0.0
+    elif thesis_role:
+        dimension_scores["follow_up_honesty"] = 1.0
+    if requires_code_change:
+        dimension_scores["code_change_contract"] = 1.0 if requested_primitives else 0.0
+    return dimension_scores
+
+
 def _classify_round_outcome(result: dict[str, Any]) -> str:
     from eval_metrics import (
         OUTCOME_COMPILED,
@@ -1013,12 +1062,14 @@ def _record_round_quality_and_bridges(
 ) -> None:
     outcome = _classify_round_outcome(result)
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
+    thesis_meta = _thesis_meta_from_result(result, controller.family.name)
     reasoning = result.get("reasoning", "")
     rejection_reason = result.get("rejection_reason", "")
     dimension_scores = {
         k: 1.0 if k == outcome else 0.0
         for k in ("compiled", "needs_code", "stopped", "rejected", "conductor_error")
     }
+    dimension_scores.update(_thesis_quality_dimension_scores(thesis_meta))
     overall_score = 1.0 if outcome in {"compiled", "stopped"} else 0.0
     artifact_paths = []
     if result.get("generated_config"):
@@ -1439,14 +1490,7 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
     state = controller.read_state()  # refresh after _invoke_conductor_round mutated state
 
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
-    thesis_meta = result.get("thesis") or {
-        "thesis_id": thesis_id,
-        "strategy_family": controller.family.name,
-        "config_changes": result.get("config_changes") or {},
-        "hypothesis": result.get("hypothesis") or result.get("reasoning", ""),
-        "mechanism": result.get("mechanism") or result.get("reasoning", ""),
-        "mechanism_dimension": result.get("mechanism_dimension") or "",
-    }
+    thesis_meta = _thesis_meta_from_result(result, controller.family.name)
     controller.log_research_round(
         round_number=research_round,
         thesis_id=thesis_id,
@@ -1465,7 +1509,13 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
                 "disqualifiers",
                 "why_not_overfit",
                 "requires_code_change",
+                "requested_primitives",
                 "required_diagnostics",
+                "closest_prior_theses_considered",
+                "orthogonality_defense",
+                "evidence_strength",
+                "thesis_role",
+                "falsification_or_alternative",
                 "new_dimension_name",
                 "why_existing_dimensions_do_not_fit",
                 "mechanism_family_definition",
