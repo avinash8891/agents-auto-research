@@ -1,0 +1,71 @@
+Goal:
+  Find other bug classes in builder/implementation-verification/experiment-contract handling, especially around
+  codegen, diagnostics, runtime config, and resume/retry behavior.
+
+  Scope:
+  - `compiler_builder.py`
+  - `compiler_implementation_verify.py`
+  - `compiler_research.py`
+  - `compiler_operationalize.py`
+  - `autoresearch_orchestration.py`
+  - `autoresearch_research.py`
+  - `autoresearch_experiment.py`
+  - `research_types.py`
+  - any EMA strategy/runtime files touched by builder verification paths
+  - relevant tests:
+    - `tests/test_compiler_pipeline_characterization.py`
+    - `tests/test_autoresearch_research.py`
+    - `tests/test_autoresearch_experiment.py`
+    - `tests/test_autoresearch_orchestration.py`
+
+  Review objectives:
+  1. Identify bug classes, not style issues.
+  2. Focus on contract drift, false positives, false negatives, and retry/resume hazards.
+  3. Think like the builder is an imperfect codegen agent that:
+     - may implement the mechanism but miss diagnostics
+     - may emit diagnostics in the wrong layer
+     - may invent config keys
+     - may satisfy verifier heuristics without producing the real artifact
+     - may partially succeed across attempts
+  4. Prefer real edge cases over generic concerns.
+  5. Ground every finding in exact code paths and explain the failure chain.
+  6. Where possible, propose a minimal repro or missing test.
+
+  Specific questions to answer:
+  - Are there other places where prose is being normalized into machine contracts?
+  - Does verifier still rely on source-text heuristics where artifact-level verification is needed?
+  - Can comments, aliases, or dead code satisfy verifier checks incorrectly?
+  - Are there diagnostics that belong to experiment-evaluation or result payloads but are still being checked
+  only in source files?
+  - Are there config/runtime validation gaps that can still let no-op or invalid implementations through?
+  - Can builder “pass” while the mechanism is not really wired into runtime behavior?
+  - Can retries hide or overwrite a partial failure in a way that leaves inconsistent artifacts?
+  - Can resume/orchestration paths consume malformed or stale builder artifacts?
+  - Are baseline-comparison diagnostics generally under-specified beyond the one we fixed?
+  - Are there bug classes around aliases, canonical diagnostic keys, or surface ownership?
+  - Are there tests missing for:
+    - wrong-surface diagnostic emission
+    - alias drift
+    - comment-only compliance
+    - partial builder success across retry
+    - stale contract/thesis/result artifacts after retry
+    - resumed halted thesis with updated contract schema
+
+  Deliverable format:
+  1. Findings first, ordered by severity.
+  2. For each finding include:
+     - severity
+     - title
+     - exact files/lines
+     - failure scenario
+     - why current tests miss it
+     - suggested fix direction
+  3. Then include:
+     - “Missing test matrix”
+     - “Edge cases I explicitly checked”
+     - “Residual risks if no changes are made”
+
+  Important:
+  - Do not propose broad rewrites unless necessary.
+  - Be skeptical of any logic that treats source-text presence as proof of behavior.
+  - Treat builder as codegen under weak contracts and look for ways the system can be fooled.
