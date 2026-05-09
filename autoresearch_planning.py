@@ -88,7 +88,7 @@ def _read_runtime_config_payload(path: Path) -> Any:
 def _queued_config_path(root: Path, config: str) -> Path | None:
     raw = Path(config)
     if raw.is_absolute():
-        return None
+        return raw
     candidate = (root / raw).resolve()
     try:
         candidate.relative_to(root.resolve())
@@ -569,7 +569,8 @@ def _ideas_branch(
 
 
 def select_research_next_action(
-    root: Path,
+    code_root: Path,
+    runtime_root: Path,
     family: StrategyFamily,
     run_queue_dir: Path,
     proposals_dir: Path,
@@ -587,15 +588,17 @@ def select_research_next_action(
     5. Block for research otherwise.
     """
     for branch in (
-        _baseline_branch(root, family, results),
-        _thesis_queue_branch(root, family, run_queue_dir, results, job=job),
-        _ideas_branch(root, family, ideas_md_path, run_queue_dir, proposals_dir, results, job=job),
+        _baseline_branch(code_root, family, results),
+        _thesis_queue_branch(runtime_root, family, run_queue_dir, results, job=job),
+        _ideas_branch(
+            code_root, family, ideas_md_path, run_queue_dir, proposals_dir, results, job=job
+        ),
     ):
         if branch is not None:
             return branch
-    if should_terminate(root, family, run_queue_dir, research_dir, results, job=job):
+    if should_terminate(runtime_root, family, run_queue_dir, research_dir, results, job=job):
         return _finished_state()
-    return _blocked_for_research_state(root, research_dir)
+    return _blocked_for_research_state(runtime_root, research_dir)
 
 
 def _finished_state() -> dict[str, Any]:
@@ -652,7 +655,8 @@ def build_research_failure_state(
 def plan_next_action(
     state: dict[str, Any],
     results: list[ExperimentRecord],
-    root: Path,
+    code_root: Path,
+    runtime_root: Path,
     family: StrategyFamily,
     run_queue_dir: Path,
     proposals_dir: Path,
@@ -664,7 +668,7 @@ def plan_next_action(
         return state
     # Brand-new job policy: baseline always runs first for the family.
     if not results:
-        baseline = _baseline_branch(root, family, results)
+        baseline = _baseline_branch(code_root, family, results)
         if baseline is not None:
             state.update(baseline)
             state.pop("finished_reason", None)
@@ -678,7 +682,8 @@ def plan_next_action(
         job = None
     state.update(
         select_research_next_action(
-            root,
+            code_root,
+            runtime_root,
             family,
             run_queue_dir,
             proposals_dir,

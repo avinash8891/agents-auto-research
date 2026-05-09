@@ -15,6 +15,7 @@ from typing import Any
 
 from artifact_io import timestamp_now, write_json_artifact
 from autoresearch_logging import get_logger
+from autoresearch_paths import serialize_config_path
 from compiler_implementation_verify import verify_builder_implementation_contract
 from improvement_reflexion import build_latest_reflexion_feedback
 from persistence_utils import write_text_atomic
@@ -1333,11 +1334,9 @@ def build_missing_primitives(
         if invalid_contract is not None:
             return invalid_contract
         generated_name = (
-            (artifact_root / "experiments" / thesis_id / "runtime_config.json")
-            .relative_to(root)
-            .as_posix()
-        )
-        config_path = generated_name
+            artifact_root / "experiments" / thesis_id / "runtime_config.json"
+        ).resolve()
+        config_path = serialize_config_path(generated_name, code_root=root)
         builder_requests_dir = artifact_root / family.builder_requests_dirname
         attempt_dir = _builder_artifact_dir(
             root, family_name, thesis_id, artifact_root=artifact_root
@@ -1468,8 +1467,8 @@ def build_missing_primitives(
     request_payload = {
         "thesis_id": thesis_id,
         "family": family_name,
-        "proposal_path": proposal_path.relative_to(root).as_posix(),
-        "compilation_path": compilation_path.relative_to(root).as_posix(),
+        "proposal_path": serialize_config_path(proposal_path, code_root=root),
+        "compilation_path": serialize_config_path(compilation_path, code_root=root),
         "base_config_path": base_config_path,
         "missing_primitives": missing_primitives,
         "normalized_contract": normalized_contract,

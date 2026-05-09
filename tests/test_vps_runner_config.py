@@ -8,7 +8,6 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
-from autoresearch_state import read_state
 from strategy_family import load_family
 from vps_runner import (
     VPSConfig,
@@ -223,7 +222,7 @@ def test_remote_command_runs_controller_for_family() -> None:
     assert f"cd {shlex.quote(release_dir)}" in command
     assert "os.symlink(target, link)" in command
     assert f"{family.runs_dirname}" in command
-    assert f"{family.name}_experiments.db" in command
+    assert f"export AUTORESEARCH_RUNTIME_ROOT={shlex.quote(config.remote_dir)}" in command
     assert "deps_fingerprint=$(python3 -c" in command
     assert ".venv/.autoresearch-deps.sha256" in command
     assert 'if [ -f ".venv/.autoresearch-deps.sha256" ] && ' in command
@@ -243,7 +242,7 @@ def test_remote_command_runs_controller_for_family() -> None:
     ) in command
 
 
-def test_release_symlink_bootstrap_initializes_valid_state_file(tmp_path: Path) -> None:
+def test_release_symlink_bootstrap_only_links_shared_dirs(tmp_path: Path) -> None:
     family = load_family("ema")
     remote_dir = tmp_path / "remote"
     resolved_sha = "0123456789abcdef0123456789abcdef01234567"
@@ -261,9 +260,9 @@ def test_release_symlink_bootstrap_initializes_valid_state_file(tmp_path: Path) 
 
     subprocess.run(["bash", "-lc", command], check=True, cwd=tmp_path)
 
-    state_path = remote_dir / f"{family.name}_autoresearch.next.json"
-    assert state_path.exists()
-    assert read_state(state_path) == {"state": "running"}
+    assert (release_dir / family.runs_dirname).is_symlink()
+    assert (release_dir / "logs").is_symlink()
+    assert not (release_dir / f"{family.name}_autoresearch.next.json").exists()
 
 
 def test_remote_prepare_command_uses_transaction_trace_mode() -> None:
@@ -314,6 +313,8 @@ def test_remote_run_command_clears_transaction_trace_mode() -> None:
     command = build_remote_run_command(config, family, "0" * 40)
 
     assert "unset AUTORESEARCH_TRACE_MODE || true" in command
+    assert f"export AUTORESEARCH_RUNTIME_ROOT={config.remote_dir}" in command
+    assert "os.symlink(target, link)" not in command
     assert "--run-current-state" in command
     assert "--prepare-launch-state-only" not in command
 

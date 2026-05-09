@@ -42,7 +42,9 @@ def verify_builder_implementation_contract(
     family_name: str,
 ) -> ImplementationVerification:
     """Verify builder output satisfies the deterministic thesis implementation contract."""
-    config_path = root / generated_config_path
+    config_path = Path(generated_config_path)
+    if not config_path.is_absolute():
+        config_path = root / config_path
     config = _read_runtime_config(config_path)
     failures: list[str] = []
 

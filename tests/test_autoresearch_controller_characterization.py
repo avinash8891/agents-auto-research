@@ -119,6 +119,35 @@ def test_controller_anchors_relative_paths_to_root(tmp_path):
     assert controller.run_queue_dir == controller.job_runtime_root / "run-queue"
 
 
+def test_controller_can_split_code_root_from_runtime_root(tmp_path):
+    family = load_family("ema")
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime-home"
+    code_root.mkdir()
+    runtime_root.mkdir()
+    (code_root / "configs").mkdir()
+    (code_root / "configs" / "ema_base.yaml").write_text((REPO_ROOT / BASELINE_CONFIG).read_text())
+    controller = AutoresearchController(
+        root=code_root,
+        runtime_root=runtime_root,
+        state_path=Path("ema_autoresearch.next.json"),
+        current_md_path=Path("ema_autoresearch.current.md"),
+        ideas_md_path=Path("ema_autoresearch.ideas.md"),
+        runs_dir=Path(family.runs_dirname),
+        family=family,
+    )
+
+    assert controller.root == code_root
+    assert controller.runtime_root == runtime_root
+    assert controller.state_path == runtime_root / "ema_autoresearch.next.json"
+    assert controller.current_md_path == runtime_root / "ema_autoresearch.current.md"
+    assert controller.ideas_md_path == runtime_root / "ema_autoresearch.ideas.md"
+    assert controller.runs_dir == code_root / family.runs_dirname
+    controller.write_state({"state": "running", "job": 2, "research_round": 0})
+    assert controller.state_path.exists()
+    assert controller.job_runtime_root == code_root / "runtime" / "jobs" / "job-2"
+
+
 def test_running_state_with_blockers_is_invalid() -> None:
     state = {
         "state": "running",

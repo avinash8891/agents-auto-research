@@ -290,18 +290,10 @@ def _render_release_symlink_bootstrap(
         "logs",
         family.runs_dirname,
     ]
-    shared_files = [
-        f"{family.name}_autoresearch.next.json",
-        f"{family.name}_autoresearch.current.md",
-        f"{family.name}_autoresearch.ideas.md",
-        f"{family.name}_experiments.db",
-        f"{family.name}_baseline_checkpoints.json",
-    ]
     payload = {
         "release_dir": release_dir,
         "runtime_root": runtime_root,
         "shared_dirs": shared_dirs,
-        "shared_files": shared_files,
     }
     return (
         "{ python3 - <<'PY'\n"
@@ -315,22 +307,6 @@ def _render_release_symlink_bootstrap(
         "for rel in payload['shared_dirs']:\n"
         "    target = runtime_root / rel\n"
         "    target.mkdir(parents=True, exist_ok=True)\n"
-        "    link = release_dir / rel\n"
-        "    if link.is_symlink() or link.exists():\n"
-        "        if link.is_dir() and not link.is_symlink():\n"
-        "            shutil.rmtree(link)\n"
-        "        else:\n"
-        "            link.unlink()\n"
-        "    link.parent.mkdir(parents=True, exist_ok=True)\n"
-        "    os.symlink(target, link)\n"
-        "for rel in payload['shared_files']:\n"
-        "    target = runtime_root / rel\n"
-        "    target.parent.mkdir(parents=True, exist_ok=True)\n"
-        "    if not target.exists():\n"
-        "        if rel.endswith('_autoresearch.next.json'):\n"
-        '            target.write_text(\'{"state": "running"}\\n\')\n'
-        "        else:\n"
-        "            target.touch()\n"
         "    link = release_dir / rel\n"
         "    if link.is_symlink() or link.exists():\n"
         "        if link.is_dir() and not link.is_symlink():\n"
@@ -560,6 +536,7 @@ def _build_remote_bootstrap_segments(
     resolved_sha: str,
     *,
     skip_dependency_install: bool = False,
+    include_release_bootstrap: bool = True,
 ) -> list[str]:
     release_dir = _remote_release_dir(config, resolved_sha)
     segments = [
@@ -567,10 +544,12 @@ def _build_remote_bootstrap_segments(
         f"if [ -f {shlex.quote(str(PurePosixPath(config.remote_dir) / REMOTE_RUNTIME_ENV_FILENAME))} ]; then "
         f"set -a; . {shlex.quote(str(PurePosixPath(config.remote_dir) / REMOTE_RUNTIME_ENV_FILENAME))}; set +a; fi",
         f"export AUTORESEARCH_RESOLVED_SHA={shlex.quote(resolved_sha)}",
+        f"export AUTORESEARCH_RUNTIME_ROOT={shlex.quote(config.remote_dir)}",
         f"export CODEX_HOME={shlex.quote(_remote_codex_home(config.user))}",
-        _render_release_symlink_bootstrap(config, family, resolved_sha),
-        f"cd {shlex.quote(release_dir)}",
     ]
+    if include_release_bootstrap:
+        segments.append(_render_release_symlink_bootstrap(config, family, resolved_sha))
+    segments.append(f"cd {shlex.quote(release_dir)}")
     if config.data_root:
         segments.append(f"export {DATA_ROOT_ENV}={shlex.quote(config.data_root)}")
     dependency_install_segments = [
@@ -618,6 +597,7 @@ def build_remote_prepare_command(
         family,
         resolved_sha,
         skip_dependency_install=skip_dependency_install,
+        include_release_bootstrap=True,
     )
     controller_mode = " --resume-current-job" if resume_current_job else " --fresh-job"
     controller_base = (
@@ -640,6 +620,7 @@ def build_remote_run_command(
         family,
         resolved_sha,
         skip_dependency_install=skip_dependency_install,
+        include_release_bootstrap=False,
     )
     segments.append(f"unset {ENV_TRACE_MODE} || true")
     segments.append(

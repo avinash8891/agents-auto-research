@@ -49,6 +49,7 @@ from autoresearch_orchestration import resolve_next_action as _orchestration_res
 from autoresearch_orchestration import (
     try_resume_halted_thesis as _orchestration_try_resume_halted_thesis,
 )
+from autoresearch_paths import resolve_runtime_root as _resolve_runtime_root
 from autoresearch_planning import (
     COMBINATION_RULES,
     DEFAULT_CONFIG_ORDER,
@@ -100,8 +101,9 @@ log = get_logger(__name__)
 
 ROOT = Path(__file__).resolve().parent
 _AUTONOMY_LEDGER = AutonomyLedger()
-STATE_PATH = ROOT / "autoresearch.next.json"
-CURRENT_MD_PATH = ROOT / "autoresearch.current.md"
+RUNTIME_ROOT = _resolve_runtime_root(ROOT)
+STATE_PATH = RUNTIME_ROOT / "autoresearch.next.json"
+CURRENT_MD_PATH = RUNTIME_ROOT / "autoresearch.current.md"
 
 
 def max_consecutive_research_required() -> int:
@@ -429,17 +431,19 @@ def _validate_current_executable_state(prior_state: dict[str, Any]) -> int:
     return job
 
 
-IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
+IDEAS_MD_PATH = RUNTIME_ROOT / "autoresearch.ideas.md"
 
 
-def default_controller_paths(root: Path, family: StrategyFamily) -> tuple[Path, Path, Path, Path]:
+def default_controller_paths(
+    runtime_root: Path, family: StrategyFamily
+) -> tuple[Path, Path, Path, Path]:
     """Returns state_path, current_md_path, ideas_md_path, runs_dir."""
     prefix = family.name
     return (
-        root / f"{prefix}_autoresearch.next.json",
-        root / f"{prefix}_autoresearch.current.md",
-        root / f"{prefix}_autoresearch.ideas.md",
-        root / family.runs_dirname,
+        runtime_root / f"{prefix}_autoresearch.next.json",
+        runtime_root / f"{prefix}_autoresearch.current.md",
+        runtime_root / f"{prefix}_autoresearch.ideas.md",
+        runtime_root / family.runs_dirname,
     )
 
 
@@ -454,6 +458,7 @@ __all__ = (
     "default_controller_paths",
     "main",
     "ROOT",
+    "RUNTIME_ROOT",
     "STATE_PATH",
     "CURRENT_MD_PATH",
     "IDEAS_MD_PATH",
@@ -573,20 +578,35 @@ def _should_hard_exit_prepare_cli(argv: list[str]) -> bool:
 class AutoresearchController:
     def __init__(
         self,
-        root: Path = ROOT,
-        state_path: Path = STATE_PATH,
-        current_md_path: Path = CURRENT_MD_PATH,
-        ideas_md_path: Path = IDEAS_MD_PATH,
+        root: Path | None = None,
+        runtime_root: Path | None = None,
+        state_path: Path | None = None,
+        current_md_path: Path | None = None,
+        ideas_md_path: Path | None = None,
         runs_dir: Path | None = None,
         family: StrategyFamily | None = None,
     ) -> None:
-        self.root = root.resolve()
-        self.state_path = state_path if state_path.is_absolute() else self.root / state_path
+        self.root = (root or ROOT).resolve()
+        self.runtime_root = (runtime_root or self.root).resolve()
+        resolved_state_path = state_path or (self.runtime_root / "autoresearch.next.json")
+        resolved_current_md_path = current_md_path or (
+            self.runtime_root / "autoresearch.current.md"
+        )
+        resolved_ideas_md_path = ideas_md_path or (self.runtime_root / "autoresearch.ideas.md")
+        self.state_path = (
+            resolved_state_path
+            if resolved_state_path.is_absolute()
+            else self.runtime_root / resolved_state_path
+        )
         self.current_md_path = (
-            current_md_path if current_md_path.is_absolute() else self.root / current_md_path
+            resolved_current_md_path
+            if resolved_current_md_path.is_absolute()
+            else self.runtime_root / resolved_current_md_path
         )
         self.ideas_md_path = (
-            ideas_md_path if ideas_md_path.is_absolute() else self.root / ideas_md_path
+            resolved_ideas_md_path
+            if resolved_ideas_md_path.is_absolute()
+            else self.runtime_root / resolved_ideas_md_path
         )
         if family is None:
             raise ValueError("AutoresearchController requires an explicit strategy family")
@@ -596,9 +616,9 @@ class AutoresearchController:
             raw_runs_dir.resolve() if raw_runs_dir.is_absolute() else self.root / raw_runs_dir
         )
         self._set_runtime_paths_for_job(0)
-        self.experiment_db = ExperimentDB(self.root / f"{self.family.name}_experiments.db")
+        self.experiment_db = ExperimentDB(self.runtime_root / f"{self.family.name}_experiments.db")
         self.baseline_tracker = BaselineTracker(
-            self.root / f"{self.family.name}_baseline_checkpoints.json"
+            self.runtime_root / f"{self.family.name}_baseline_checkpoints.json"
         )
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()
@@ -831,6 +851,7 @@ class AutoresearchController:
     def select_research_next_action(self, results: list[ExperimentRecord]) -> dict[str, Any]:
         return _planning_select_research_next_action(
             self.root,
+            self.root,
             self.family,
             self.run_queue_dir,
             self.proposals_dir,
@@ -857,6 +878,7 @@ class AutoresearchController:
         return _planning_plan_next_action(
             state,
             results,
+            self.root,
             self.root,
             self.family,
             self.run_queue_dir,
@@ -1001,7 +1023,7 @@ class AutoresearchController:
         except (TypeError, ValueError):
             job_id = None
         return _experiment_evaluate_metric(
-            self.root,
+            self.runtime_root,
             self.experiment_db.path.name,
             metric,
             job_id=job_id,
@@ -1126,8 +1148,13 @@ class AutoresearchController:
 def main() -> int:
     args = _parse_main_args()
     family = load_family(args.family)
-    state_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(ROOT, family)
+    runtime_root = _resolve_runtime_root(ROOT)
+    state_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(
+        runtime_root, family
+    )
     controller = AutoresearchController(
+        root=ROOT,
+        runtime_root=runtime_root,
         family=family,
         state_path=state_path,
         current_md_path=current_md_path,

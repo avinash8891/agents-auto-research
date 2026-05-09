@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from artifact_io import timestamp_now, write_json_artifact
+from autoresearch_paths import serialize_config_path
 from backtest.runtime_config import load_runtime_config
 from compiler_operationalize import operationalize_thesis
 from config_hash import _config_hash
@@ -88,7 +89,7 @@ def compile_config_thesis(
             "queue_id": config_hash,
             "thesis_id": thesis_id,
             "status": "pending",
-            "config": config_path.relative_to(root).as_posix(),
+            "config": serialize_config_path(config_path, code_root=root),
             "timestamp": timestamp_now(),
             **({"job": job} if job is not None else {}),
             **({"created_for_commit": created_for_commit} if created_for_commit else {}),
@@ -96,7 +97,7 @@ def compile_config_thesis(
     )
     return {
         "status": "ready_to_run",
-        "config_path": config_path.relative_to(root).as_posix(),
+        "config_path": serialize_config_path(config_path, code_root=root),
         "config_hash": config_hash,
         "runtime_config": runtime_config,
     }
@@ -160,7 +161,7 @@ def compile_proposal_artifact(
         "queue_id": thesis_id,
         "thesis_id": thesis_id,
         "status": "pending",
-        "config": contract_path.relative_to(root).as_posix(),
+        "config": serialize_config_path(contract_path, code_root=root),
         "timestamp": timestamp_now(),
     }
     if job is not None:

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 _log = logging.getLogger(__name__)
 
+from autoresearch_paths import serialize_config_path
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from strategies import STRATEGIES
@@ -622,10 +623,12 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         runtime = STRATEGIES[controller.family.name].validate_runtime_config_scope(runtime)
     except ValueError:
         return None
-    exp_dir = controller.root / "experiments" / halted_id
+    runtime_root = getattr(controller, "runtime_root", controller.root)
+    exp_dir = runtime_root / "experiments" / halted_id
     exp_dir.mkdir(parents=True, exist_ok=True)
-    config_path = f"experiments/{halted_id}/runtime_config.json"
-    _write_text_atomic(controller.root / config_path, json.dumps(runtime, indent=2) + "\n")
+    config_abspath = exp_dir / "runtime_config.json"
+    config_path = serialize_config_path(config_abspath, code_root=controller.root)
+    _write_text_atomic(config_abspath, json.dumps(runtime, indent=2) + "\n")
     resumed_thesis = dict(raw_thesis)
     resumed_thesis.setdefault("thesis_id", halted_id)
     resumed_thesis.setdefault("config_changes", config_changes)

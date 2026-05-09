@@ -30,6 +30,7 @@ from autoresearch_logging import get_logger
 from autoresearch_orchestration import (
     build_missing_primitives_for_state as _orchestration_build_missing_primitives_for_state,
 )
+from autoresearch_paths import resolve_config_path
 from autoresearch_planning import build_research_failure_state
 from autoresearch_state import (
     ExperimentRecord,
@@ -305,9 +306,12 @@ def load_baseline_config(root: Path, family: StrategyFamily) -> dict[str, Any] |
 def _resolve_runtime_config_for_record(
     controller: "AutoresearchController", latest: ExperimentRecord
 ) -> dict[str, Any]:
-    config_path = Path(latest.config)
-    if not config_path.is_absolute():
-        config_path = controller.root / config_path
+    config_path = resolve_config_path(
+        latest.config,
+        code_root=controller.root,
+        runtime_root=controller.runtime_root,
+        execution_root=controller.ctx.execution_root,
+    )
     try:
         return load_runtime_config(str(config_path), controller.family.name)
     except Exception as exc:
