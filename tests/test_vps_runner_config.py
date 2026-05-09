@@ -284,6 +284,22 @@ def test_remote_prepare_command_uses_transaction_trace_mode() -> None:
     assert "--run-current-state" not in command
 
 
+def test_remote_prepare_command_is_shell_parseable_when_bootstrap_is_chained() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_prepare_command(config, family, "0" * 40)
+
+    subprocess.run(["bash", "-n"], input=command, text=True, check=True)
+
+
 def test_remote_run_command_clears_transaction_trace_mode() -> None:
     family = load_family("ema")
     config = VPSConfig(

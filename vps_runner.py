@@ -304,7 +304,7 @@ def _render_release_symlink_bootstrap(
         "shared_files": shared_files,
     }
     return (
-        "python3 - <<'PY'\n"
+        "{ python3 - <<'PY'\n"
         "import json\n"
         "import os\n"
         "import pathlib\n"
@@ -339,7 +339,8 @@ def _render_release_symlink_bootstrap(
         "            link.unlink()\n"
         "    link.parent.mkdir(parents=True, exist_ok=True)\n"
         "    os.symlink(target, link)\n"
-        "PY"
+        "PY\n"
+        "}"
     )
 
 
