@@ -18,7 +18,6 @@ class FamilyDirnames:
     compilations: str
     contracts: str
     run_queue: str
-    research: str
     builder_requests: str
     base_config_filename: str
     runs: str
@@ -63,8 +62,6 @@ class BaseStrategy:
     combination_rules: dict[tuple[str, str], str] = {}
     requires_data_universe = True
     research_spec: FamilyResearchSpec
-    # Override to change the research directory suffix (e.g. "research-artifacts").
-    _research_dirname_suffix: str = "research"
 
     @property
     def family_dirnames(self) -> FamilyDirnames:
@@ -73,7 +70,6 @@ class BaseStrategy:
             compilations=f"{self.name}-compilations",
             contracts=f"{self.name}-contracts",
             run_queue=f"{self.name}-run-queue",
-            research=f"{self.name}-{self._research_dirname_suffix}",
             builder_requests=f"{self.name}-builder-requests",
             base_config_filename=f"{self.name}_base.yaml",
             runs=f"{self.name}_autoresearch-runs",

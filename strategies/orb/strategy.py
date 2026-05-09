@@ -20,7 +20,6 @@ class ORBStrategy(BaseStrategy):
     benchmark_script = "backtest_orb_v2.py"
     description_for_research = DESCRIPTION_FOR_RESEARCH
     research_spec = ORB_RESEARCH_SPEC
-    _research_dirname_suffix = "research-artifacts"
     default_variants = (
         "configs/variants/orb_spy_only.yaml",
         "configs/variants/orb_stocks_in_play.yaml",

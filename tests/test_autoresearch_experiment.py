@@ -1252,7 +1252,7 @@ def test_run_experiment_uses_runtime_config_fallback_for_baseline_checkpoint(
         def __init__(self) -> None:
             self.root = tmp_path
             self.runs_dir = tmp_path / "ema-runs"
-            self.research_dir = tmp_path / "ema-research"
+            self.research_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research"
             self.state_path = tmp_path / "ema_autoresearch.next.json"
             self.family = SimpleNamespace(
                 name="ema",

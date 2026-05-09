@@ -962,7 +962,7 @@ def test_sqlite_research_fields_are_meaningfully_populated_from_real_ready_thesi
                 name="ema",
                 benchmark_command=lambda config: f"python3 -m backtest.runner --strategy ema --config {config}",
             )
-            self.research_dir = self.root / "ema-research"
+            self.research_dir = self.root / "runtime" / "jobs" / "job-7" / "research"
             self.state = {"state": "blocked", "job": 7, "research_round": 0, "job_usage": None}
             self.round_kwargs = None
 
@@ -1030,7 +1030,7 @@ def test_run_research_retries_in_progress_round_without_incrementing() -> None:
                 name="ema",
                 benchmark_command=lambda config: f"python3 -m backtest.runner --strategy ema --config {config}",
             )
-            self.research_dir = self.root / "ema-research"
+            self.research_dir = self.root / "runtime" / "jobs" / "job-25" / "research"
             self.state = {
                 "state": "blocked",
                 "job": 25,

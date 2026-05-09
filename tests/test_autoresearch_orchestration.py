@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -36,7 +38,6 @@ def _make_controller(
     family = SimpleNamespace(
         name=family_name,
         base_config_filename=base_config_filename,
-        research_dirname=f"{family_name}_research",
         benchmark_command=benchmark_command or (lambda cfg: f"run {cfg}"),
     )
 
@@ -48,6 +49,7 @@ def _make_controller(
         read_results=lambda: [],
         write_current_md=lambda state, results: None,
         root=root,
+        research_dir=root / "runtime" / "jobs" / "job-1" / "research",
         family=family,
         ctx=ctx,
     )
@@ -486,10 +488,43 @@ def test_build_missing_primitives_routes_missing_primitive_contract_to_research_
     assert result["state"] == "blocked"
     assert result["next_action"]["type"] == "research"
     assert result["next_action"]["reason_code"] == "research_retry_required"
+    assert result["next_action"]["artifact_dir"] == "runtime/jobs/job-1/research"
     assert result["blockers"][0]["kind"] == "research_retry_required"
     assert result["heartbeat"]["builder_status"] == "research_retry_required"
     assert result["heartbeat"]["blocked_error_code"] == "builder_missing_primitive_contract"
     assert result["next_action"]["builder_context"]["builder_phase"] == "preflight_failed"
+
+
+def test_research_retry_requires_job_scoped_research_dir(tmp_path, monkeypatch):
+    thesis_id = "needs_builder"
+    state = {
+        "state": "blocked",
+        "halted_reason": "requires_code_change",
+        "halted_thesis_id": thesis_id,
+        "halted_thesis": {"thesis_id": thesis_id},
+        "next_action": {"type": "research"},
+        "heartbeat": {},
+    }
+    ctrl = _make_controller(state=state, root=tmp_path)
+    delattr(ctrl, "research_dir")
+
+    def fake_build(root: Path, received_thesis_id: str, *, artifact_root=None) -> dict[str, Any]:
+        return {
+            "status": "error",
+            "error_code": "builder_missing_primitive_contract",
+            "reason": "Missing primitives: []",
+        }
+
+    monkeypatch.setattr("compiler_pipeline.build_missing_primitives", fake_build)
+
+    with pytest.raises(RuntimeError, match="job-scoped research_dir"):
+        orch.build_missing_primitives_for_state(
+            ctrl,
+            state,
+            thesis_id,
+            {"thesis_id": thesis_id},
+            research_round=36,
+        )
 
 
 def test_refresh_reflexio_export_after_builder_adds_builder_reflection(tmp_path):

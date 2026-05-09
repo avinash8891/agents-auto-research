@@ -2137,7 +2137,7 @@ def test_main_resume_current_job_continues_blocked_research_required_state(monke
                 "next_action": {
                     "type": "research",
                     "requires_subagent": True,
-                    "artifact_dir": "ema-research",
+                    "artifact_dir": "runtime/jobs/job-20/research",
                 },
             }
 
@@ -2919,7 +2919,7 @@ def test_main_resume_current_job_retries_interrupted_research_failure_without_in
                 "next_action": {
                     "type": "terminated",
                     "reason": "round 9 failed: research conductor failed: exception",
-                    "artifact_dir": "ema-research",
+                    "artifact_dir": "runtime/jobs/job-20/research",
                 },
                 "blockers": [
                     {

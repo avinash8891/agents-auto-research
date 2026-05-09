@@ -122,7 +122,7 @@ def _persist_web_research_result(
         room=f"{family}-web-research",
         content=content,
         agent_name="web-researcher",
-        diary_key=f"{family}-research",
+        diary_key=f"runtime/jobs/job-{research_round}/research",
         diary_summary=f"ROUND:{research_round}|FINDINGS:{len(findings)}|{summary[:100]}",
     )
 

@@ -18,7 +18,6 @@ class StrategyFamily:
     compilations_dirname: str = "compilations"
     contracts_dirname: str = "contracts"
     run_queue_dirname: str = "run-queue"
-    research_dirname: str = "research"
     builder_requests_dirname: str = "builder-requests"
     base_config_filename: str = "base.yaml"
     runs_dirname: str = "autoresearch-runs"
@@ -89,7 +88,6 @@ def _families() -> dict[str, StrategyFamily]:
             compilations_dirname=strategy.family_dirnames.compilations,
             contracts_dirname=strategy.family_dirnames.contracts,
             run_queue_dirname=strategy.family_dirnames.run_queue,
-            research_dirname=strategy.family_dirnames.research,
             builder_requests_dirname=strategy.family_dirnames.builder_requests,
             base_config_filename=strategy.family_dirnames.base_config_filename,
             runs_dirname=strategy.family_dirnames.runs,

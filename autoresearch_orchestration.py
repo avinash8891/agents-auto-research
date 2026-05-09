@@ -38,6 +38,19 @@ RESEARCH_RETRY_BUILDER_ERROR_CODES = frozenset(
 )
 
 
+def _controller_research_artifact_dir(controller: "AutoresearchController") -> str:
+    research_dir = getattr(controller, "research_dir", None)
+    root = getattr(controller, "root", None)
+    if research_dir is None or root is None:
+        raise RuntimeError("Controller must provide job-scoped research_dir for research artifacts")
+    try:
+        return Path(research_dir).relative_to(Path(root)).as_posix()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Controller research_dir must be inside root: research_dir={research_dir} root={root}"
+        ) from exc
+
+
 def _builder_result_context(builder_result: dict[str, Any]) -> dict[str, Any]:
     context: dict[str, Any] = {}
     for key in (
@@ -224,7 +237,7 @@ def _mark_builder_manual_review(
             "reason": feedback,
             "reason_code": "research_retry_required",
             "requires_subagent": True,
-            "artifact_dir": controller.family.research_dirname,
+            "artifact_dir": _controller_research_artifact_dir(controller),
             "failed_thesis_id": thesis_id,
             "error_code": error_code,
             "builder_context": _builder_result_context(builder_result),

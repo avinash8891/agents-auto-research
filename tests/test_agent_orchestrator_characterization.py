@@ -148,7 +148,7 @@ def test_run_web_research_returns_findings_and_writes_memory(monkeypatch):
     assert diary_entries == [
         (
             "web-researcher",
-            "ema-research",
+            "runtime/jobs/job-2/research",
             "ROUND:2|FINDINGS:1|External work supports narrowing the entry window.",
         )
     ]
