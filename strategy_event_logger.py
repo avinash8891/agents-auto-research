@@ -13,7 +13,6 @@ Design:
 
 from __future__ import annotations
 
-import json
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +37,18 @@ class _EventBatch:
     reason: str
     entry_prices: np.ndarray  # float64
     stop_prices: np.ndarray  # float64
+    extras: dict[str, np.ndarray]
+
+
+_CORE_EVENT_COLUMNS = (
+    "timestamp",
+    "symbol",
+    "direction",
+    "event_type",
+    "reason",
+    "entry_price",
+    "stop_price",
+)
 
 
 class StrategyEventLogger:
@@ -56,6 +67,32 @@ class StrategyEventLogger:
         # For multi-symbol batches from record_dataframe
         self._multi_arrays: dict[int, tuple] = {}  # batch_index -> (sym_arr, dir_arr, rsn_arr)
 
+    @staticmethod
+    def _normalize_extra_array(values: Any, n: int) -> np.ndarray:
+        arr = np.asarray(values)
+        if arr.ndim == 0:
+            arr = np.full(n, arr.item(), dtype=object)
+        if len(arr) != n:
+            raise ValueError(f"event extra length mismatch: expected {n}, got {len(arr)}")
+        if np.issubdtype(arr.dtype, np.datetime64):
+            return arr.astype("datetime64[ns]")
+        if np.issubdtype(arr.dtype, np.floating):
+            return arr.astype(np.float64, copy=False)
+        if np.issubdtype(arr.dtype, np.integer):
+            return arr.astype(np.float64)
+        return arr.astype(object, copy=False)
+
+    @classmethod
+    def _normalize_extras(cls, extras: dict[str, Any] | None, n: int) -> dict[str, np.ndarray]:
+        if not extras:
+            return {}
+        normalized: dict[str, np.ndarray] = {}
+        for key, values in extras.items():
+            if key in _CORE_EVENT_COLUMNS:
+                continue
+            normalized[key] = cls._normalize_extra_array(values, n)
+        return normalized
+
     def record_events(
         self,
         timestamps: pd.DatetimeIndex | np.ndarray,
@@ -66,6 +103,7 @@ class StrategyEventLogger:
         reason: str = "",
         entry_prices: np.ndarray | None = None,
         stop_prices: np.ndarray | None = None,
+        extras: dict[str, Any] | None = None,
     ) -> None:
         """Record events from a boolean mask. Extracts indices, stores raw arrays."""
         indices = np.flatnonzero(mask)
@@ -80,7 +118,13 @@ class StrategyEventLogger:
         ts = np.asarray(timestamps)[indices]
         ep = entry_prices[indices] if entry_prices is not None else np.full(n, np.nan)
         sp = stop_prices[indices] if stop_prices is not None else np.full(n, np.nan)
-        self._batches.append(_EventBatch(ts, symbol, direction, event_type, reason, ep, sp))
+        sliced_extras = self._normalize_extras(
+            {key: np.asarray(values)[indices] for key, values in (extras or {}).items()},
+            n,
+        )
+        self._batches.append(
+            _EventBatch(ts, symbol, direction, event_type, reason, ep, sp, sliced_extras)
+        )
 
     def record_dataframe(self, df: pd.DataFrame, event_type: str, reason: str = "") -> None:
         """Record events from an existing DataFrame (e.g. daily cap rejections)."""
@@ -106,6 +150,22 @@ class StrategyEventLogger:
             if "stop_price" in df.columns
             else np.full(n, np.nan)
         )
+        extra_source = {
+            col: df[col].to_numpy(copy=False)
+            for col in df.columns
+            if col not in _CORE_EVENT_COLUMNS
+        }
+        if "trigger_bar_timestamp" not in extra_source and "timestamp" in df.columns:
+            extra_source["trigger_bar_timestamp"] = ts
+        if "stop_distance_pct" not in extra_source:
+            valid = np.isfinite(ep) & np.isfinite(sp) & (ep > 0)
+            stop_distance_pct = np.full(n, np.nan, dtype=np.float64)
+            stop_distance_pct[valid] = np.abs(ep[valid] - sp[valid]) / ep[valid] * 100.0
+            extra_source["stop_distance_pct"] = stop_distance_pct
+        extras = self._normalize_extras(
+            extra_source,
+            n,
+        )
 
         has_multi_sym = "symbol" in df.columns and df["symbol"].nunique() > 1
         has_multi_dir = "direction" in df.columns and df["direction"].nunique() > 1
@@ -114,7 +174,16 @@ class StrategyEventLogger:
         if has_multi_sym or has_multi_dir or has_multi_rsn:
             batch_idx = len(self._batches)
             self._batches.append(
-                _EventBatch(ts, "__multi__", "__multi__", event_type, "__multi__", ep, sp)
+                _EventBatch(
+                    ts,
+                    "__multi__",
+                    "__multi__",
+                    event_type,
+                    "__multi__",
+                    ep,
+                    sp,
+                    extras,
+                )
             )
             self._multi_arrays[batch_idx] = (
                 df["symbol"].values if "symbol" in df.columns else np.full(n, ""),
@@ -125,7 +194,7 @@ class StrategyEventLogger:
             sym = df["symbol"].iloc[0] if "symbol" in df.columns else ""
             dr = df["direction"].iloc[0] if "direction" in df.columns else ""
             rsn = df["reason"].iloc[0] if "reason" in df.columns else reason
-            self._batches.append(_EventBatch(ts, sym, dr, event_type, rsn, ep, sp))
+            self._batches.append(_EventBatch(ts, sym, dr, event_type, rsn, ep, sp, extras))
 
     def log(self, **kwargs: Any) -> None:
         """Log a single event (for low-volume per-trade rejections in exits)."""
@@ -148,8 +217,26 @@ class StrategyEventLogger:
             )
             ts = np.array([np.datetime64("NaT")])
 
-        ep = np.array([kwargs.get("entry_price", np.nan)], dtype=np.float64)
-        sp = np.array([kwargs.get("stop_price", np.nan)], dtype=np.float64)
+        entry_price = kwargs.get("entry_price", np.nan)
+        stop_price = kwargs.get("stop_price", np.nan)
+        ep = np.array([entry_price], dtype=np.float64)
+        sp = np.array([stop_price], dtype=np.float64)
+        extra_items = {
+            key: value
+            for key, value in kwargs.items()
+            if key not in _CORE_EVENT_COLUMNS
+            and key not in {"symbol", "direction", "event_type", "reason"}
+        }
+        if (
+            "stop_distance_pct" not in extra_items
+            and np.isfinite(ep[0])
+            and np.isfinite(sp[0])
+            and ep[0] > 0
+        ):
+            extra_items["stop_distance_pct"] = abs(ep[0] - sp[0]) / ep[0] * 100.0
+        if "trigger_bar_timestamp" not in extra_items:
+            extra_items["trigger_bar_timestamp"] = ts[0]
+        extras = self._normalize_extras(extra_items, 1)
         self._batches.append(
             _EventBatch(
                 ts,
@@ -159,8 +246,25 @@ class StrategyEventLogger:
                 kwargs.get("reason", ""),
                 ep,
                 sp,
+                extras,
             )
         )
+
+    @staticmethod
+    def _extra_kind(arr: np.ndarray) -> str:
+        if np.issubdtype(arr.dtype, np.datetime64):
+            return "datetime"
+        if np.issubdtype(arr.dtype, np.floating):
+            return "numeric"
+        return "object"
+
+    @staticmethod
+    def _empty_extra_column(kind: str, total: int) -> np.ndarray:
+        if kind == "datetime":
+            return np.full(total, np.datetime64("NaT"), dtype="datetime64[ns]")
+        if kind == "numeric":
+            return np.full(total, np.nan, dtype=np.float64)
+        return np.full(total, "", dtype=object)
 
     def to_dataframe(self) -> pd.DataFrame:
         """Build one DataFrame from all accumulated batches. Single allocation."""
@@ -175,6 +279,13 @@ class StrategyEventLogger:
         dir_all = np.empty(total, dtype=object)
         evt_all = np.empty(total, dtype=object)
         rsn_all = np.empty(total, dtype=object)
+        extra_kinds: dict[str, str] = {}
+        for batch in self._batches:
+            for key, values in batch.extras.items():
+                extra_kinds.setdefault(key, self._extra_kind(values))
+        extra_columns = {
+            key: self._empty_extra_column(kind, total) for key, kind in extra_kinds.items()
+        }
 
         pos = 0
         for i, b in enumerate(self._batches):
@@ -195,19 +306,23 @@ class StrategyEventLogger:
                 dir_all[pos:end] = b.direction
                 rsn_all[pos:end] = b.reason
 
+            for key, column in extra_columns.items():
+                if key in b.extras:
+                    column[pos:end] = b.extras[key]
+
             pos = end
 
-        return pd.DataFrame(
-            {
-                "timestamp": ts_all,
-                "symbol": sym_all,
-                "direction": dir_all,
-                "event_type": evt_all,
-                "reason": rsn_all,
-                "entry_price": ep_all,
-                "stop_price": sp_all,
-            }
-        )
+        payload: dict[str, Any] = {
+            "timestamp": ts_all,
+            "symbol": sym_all,
+            "direction": dir_all,
+            "event_type": evt_all,
+            "reason": rsn_all,
+            "entry_price": ep_all,
+            "stop_price": sp_all,
+        }
+        payload.update(extra_columns)
+        return pd.DataFrame(payload)
 
     def write_parquet(self, path: str | Path) -> None:
         """Build DataFrame and write to parquet in one shot."""
@@ -218,18 +333,8 @@ class StrategyEventLogger:
         path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(path, index=False)
 
-    def build_diagnostics(self, trade_count: int) -> dict:
-        """Build diagnostics.json from aggregate counters."""
-        return {
-            "trade_count": trade_count,
-            "event_counts": dict(self._event_counts),
-            "rejection_breakdown": dict(self._rejection_counts),
-        }
+    def event_counts_snapshot(self) -> dict[str, int]:
+        return dict(self._event_counts)
 
-    def write_diagnostics(self, path: str | Path, trade_count: int) -> dict:
-        """Build and write diagnostics.json. Returns the diagnostics dict."""
-        diag = self.build_diagnostics(trade_count)
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(diag, indent=2) + "\n")
-        return diag
+    def rejection_breakdown_snapshot(self) -> dict[str, int]:
+        return dict(self._rejection_counts)

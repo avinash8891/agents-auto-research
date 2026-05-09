@@ -31,6 +31,7 @@ from autoresearch_constants import (
     DISCORD_COLOR_WARNING,
 )
 from autoresearch_logging import get_logger
+from autoresearch_paths import path_within_allowed_roots, resolve_config_path
 from autoresearch_planning import build_research_failure_state
 from autoresearch_state import (
     read_state,
@@ -70,10 +71,19 @@ def _execution_root(controller: "AutoresearchController") -> Path:
     return getattr(ctx, "execution_root", None) or controller.root
 
 
+def _runtime_root(controller: "AutoresearchController") -> Path:
+    return getattr(controller, "runtime_root", controller.root)
+
+
 def _thesis_sidecar_path(
     controller: "AutoresearchController", config: str, experiment_slug: str
 ) -> Path:
-    config_path = _execution_root(controller) / config
+    config_path = resolve_config_path(
+        config,
+        code_root=controller.root,
+        runtime_root=_runtime_root(controller),
+        execution_root=_execution_root(controller),
+    )
     sibling = config_path.parent / "thesis.json"
     if (
         sibling.exists()
@@ -90,13 +100,12 @@ def _validated_execution_root(
     if not isinstance(execution_root_value, str):
         return None
     resolved = Path(execution_root_value).resolve()
-    root = controller.root.resolve()
-    try:
-        resolved.relative_to(root)
-    except ValueError as exc:
-        raise ValueError(
-            f"execution_root must stay under controller root: {execution_root_value}"
-        ) from exc
+    if not path_within_allowed_roots(
+        resolved,
+        code_root=controller.root,
+        runtime_root=_runtime_root(controller),
+    ):
+        raise ValueError(f"execution_root must stay under controller root: {execution_root_value}")
     return resolved
 
 
@@ -173,15 +182,21 @@ def _safe_stdout_flush() -> None:
 # ── Output parsing ────────────────────────────────────────────────
 
 
+def _result_json_path_from_output(output: str) -> Path | None:
+    match = re.search(r"^RESULT_JSON (.+)$", output, flags=re.MULTILINE)
+    if not match:
+        return None
+    return Path(match.group(1).strip())
+
+
 def parse_result_json(output: str, *, allow_inline_json: bool = False) -> dict[str, Any] | None:
     """Find RESULT_JSON line in output.
 
     Inline JSON payloads are only accepted when explicitly opted in, to keep
     modern runners fail-closed on missing RESULT_JSON markers.
     """
-    match = re.search(r"^RESULT_JSON (.+)$", output, flags=re.MULTILINE)
-    if match:
-        result_path = Path(match.group(1).strip())
+    result_path = _result_json_path_from_output(output)
+    if result_path is not None:
         if not result_path.exists():
             msg = f"RESULT_JSON path does not exist: {result_path}"
             log.error(
@@ -211,17 +226,41 @@ def parse_result_json(output: str, *, allow_inline_json: bool = False) -> dict[s
     return payload if isinstance(payload, dict) else None
 
 
+def _load_json_file(path: Path) -> dict[str, Any]:
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ResultJsonError(f"malformed JSON at {path}: {exc}") from exc
+    except OSError as exc:
+        raise ResultJsonError(f"unreadable JSON at {path}: {exc}") from exc
+
+
+def _resolve_artifact_path(manifest_path: Path | None, artifact_value: str) -> Path | None:
+    if not artifact_value:
+        return None
+    artifact_path = Path(artifact_value)
+    if artifact_path.is_absolute() or manifest_path is None:
+        return artifact_path
+    return manifest_path.parent / artifact_path
+
+
 def parse_benchmark_details(output: str, *, allow_legacy: bool = False) -> dict[str, Any]:
-    """Extract metrics from result.json written by backtest.
+    """Extract metrics from the backtest manifest and its pointed artifacts.
 
     Legacy stdout parsing is only available when explicitly enabled.
     """
     result_json = parse_result_json(output)
     if result_json:
         details: dict[str, Any] = {}
-        metrics = result_json.get("metrics", {})
-        if metrics:
-            details["train_metrics"] = dict(metrics)
+        manifest_path = _result_json_path_from_output(output)
+        metrics_file = result_json.get("metrics_file", "")
+        if not metrics_file:
+            raise ResultJsonError("RESULT_JSON missing required metrics_file pointer")
+        metrics_path = _resolve_artifact_path(manifest_path, metrics_file)
+        if metrics_path is None or not metrics_path.exists():
+            raise ResultJsonError(f"metrics.json not found at {metrics_path}")
+        metrics = _load_json_file(metrics_path)
+        details["train_metrics"] = dict(metrics)
         for key in (
             "trade_count",
             "profit_factor",
@@ -232,17 +271,42 @@ def parse_benchmark_details(output: str, *, allow_legacy: bool = False) -> dict[
         ):
             if key in metrics:
                 details[key] = metrics[key]
+        for key, value in metrics.items():
+            if key in {
+                "median_expectancy",
+                "trade_count",
+                "profit_factor",
+                "max_drawdown",
+                "pct_profitable_windows",
+                "avg_sharpe_across_windows",
+                "win_rate",
+                "diagnostics",
+                "exit_reason_counts",
+            }:
+                continue
+            if key.startswith("_"):
+                continue
+            details[key] = value
+        if metrics_file:
+            details["metrics_file"] = metrics_file
         for key in (
-            "diagnostics",
             "trades_file",
             "strategy_events_file",
             "diagnostics_file",
-            "strategy_diagnostics",
             "git_sha",
             "config_hash",
         ):
             if result_json.get(key):
                 details[key] = result_json[key]
+        diagnostics_file = result_json.get("diagnostics_file", "")
+        if not diagnostics_file:
+            raise ResultJsonError("RESULT_JSON missing required diagnostics_file pointer")
+        diagnostics_path = _resolve_artifact_path(manifest_path, diagnostics_file)
+        if diagnostics_path is None or not diagnostics_path.exists():
+            raise ResultJsonError(f"diagnostics.json not found at {diagnostics_path}")
+        details["strategy_diagnostics"] = _load_json_file(diagnostics_path)
+        if "diagnostics" in metrics:
+            details["diagnostics"] = metrics["diagnostics"]
         return details
 
     if not allow_legacy:
@@ -298,7 +362,15 @@ def parse_metric(
 ) -> float | None:
     result_json = parse_result_json(output)
     if result_json:
-        val = result_json.get("metrics", {}).get(name)
+        manifest_path = _result_json_path_from_output(output)
+        metrics_file = result_json.get("metrics_file", "")
+        if not metrics_file:
+            raise ResultJsonError("RESULT_JSON missing required metrics_file pointer")
+        metrics_path = _resolve_artifact_path(manifest_path, metrics_file)
+        if metrics_path is None or not metrics_path.exists():
+            raise ResultJsonError(f"metrics.json not found at {metrics_path}")
+        metrics = _load_json_file(metrics_path)
+        val = metrics.get(name)
         return float(val) if val is not None else None
     if not allow_legacy:
         return None
@@ -326,7 +398,12 @@ def derive_trade_analysis(
     details = parse_benchmark_details(output)
 
     config_contents: dict[str, Any] = {}
-    config_path = _execution_root(controller) / config
+    config_path = resolve_config_path(
+        config,
+        code_root=controller.root,
+        runtime_root=controller.runtime_root,
+        execution_root=_execution_root(controller),
+    )
     if config_path.exists():
         try:
             if config_path.suffix in (".yaml", ".yml"):
@@ -852,7 +929,12 @@ def log_experiment_result(
 def _compute_run_output_dir(controller: "AutoresearchController", config: str) -> tuple[Path, Path]:
     """Compute the per-job output directory using a config-content hash.
     Returns (run_output_dir, config_path_full)."""
-    config_path_full = _execution_root(controller) / config
+    config_path_full = resolve_config_path(
+        config,
+        code_root=controller.root,
+        runtime_root=_runtime_root(controller),
+        execution_root=_execution_root(controller),
+    )
     if config_path_full.exists():
         if config_path_full.suffix in (".yaml", ".yml"):
             _cfg = yaml.safe_load(config_path_full.read_text())
@@ -1001,7 +1083,12 @@ def _build_thesis_for_eval(contract: Any) -> Any:
 def _persist_verdict(
     controller: "AutoresearchController", contract: Any, verdict: Any, config: str
 ) -> None:
-    experiment_dir = (_execution_root(controller) / config).parent
+    experiment_dir = resolve_config_path(
+        config,
+        code_root=controller.root,
+        runtime_root=controller.runtime_root,
+        execution_root=_execution_root(controller),
+    ).parent
     if experiment_dir.exists():
         write_text_atomic(
             experiment_dir / "verdict.json",

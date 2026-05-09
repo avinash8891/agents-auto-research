@@ -26,6 +26,7 @@ from strategy_event_logger import StrategyEventLogger
 def _log_filter_rejections(
     event_logger: StrategyEventLogger,
     frame: pd.DataFrame,
+    signals,
     before_mask: np.ndarray,
     after_mask: np.ndarray,
     entry_prices: np.ndarray,
@@ -44,6 +45,7 @@ def _log_filter_rejections(
         reason=reason,
         entry_prices=entry_prices,
         stop_prices=stop_prices,
+        extras=_standard_event_extras(frame, signals),
     )
 
 
@@ -62,6 +64,7 @@ def _log_raw_setups(
         event_type="raw_setup",
         entry_prices=signals.entry_price.values,
         stop_prices=signals.stop_price.values,
+        extras=_standard_event_extras(frame, signals),
     )
 
 
@@ -80,7 +83,62 @@ def _log_accepted_signals(
         event_type="accepted_signal",
         entry_prices=signals.entry_price.values,
         stop_prices=signals.stop_price.values,
+        extras=_standard_event_extras(frame, signals),
     )
+
+
+def _entry_bar_index_from_open(index: pd.Index) -> np.ndarray:
+    n = len(index)
+    if not isinstance(index, pd.DatetimeIndex) or n == 0:
+        return np.arange(n, dtype=np.int64)
+    values = np.zeros(n, dtype=np.int64)
+    days = index.normalize()
+    current = 0
+    values[0] = 0
+    for i in range(1, n):
+        if days[i] == days[i - 1]:
+            current += 1
+        else:
+            current = 0
+        values[i] = current
+    return values
+
+
+def _standard_event_extras(frame: pd.DataFrame, signals) -> dict[str, np.ndarray]:
+    n = len(frame)
+    if n == 0:
+        return {}
+
+    stop_distance_pct = np.full(n, np.nan, dtype=np.float64)
+    entry_values = signals.entry_price.to_numpy(dtype=float, copy=False)
+    stop_values = signals.stop_price.to_numpy(dtype=float, copy=False)
+    valid_prices = np.isfinite(entry_values) & np.isfinite(stop_values) & (entry_values > 0)
+    stop_distance_pct[valid_prices] = (
+        np.abs(entry_values[valid_prices] - stop_values[valid_prices])
+        / entry_values[valid_prices]
+        * 100.0
+    )
+
+    trigger_bar_timestamp = (
+        frame.index.to_numpy(dtype="datetime64[ns]")
+        if isinstance(frame.index, pd.DatetimeIndex)
+        else np.full(n, np.datetime64("NaT"), dtype="datetime64[ns]")
+    )
+    ema_alert_bar_timestamp = np.full(n, np.datetime64("NaT"), dtype="datetime64[ns]")
+    alert_idx = getattr(signals, "alert_bar_idx", None)
+    if alert_idx is not None and isinstance(frame.index, pd.DatetimeIndex):
+        alert_idx_values = pd.Series(alert_idx).to_numpy(dtype=int, copy=False)
+        valid_alert_idx = (alert_idx_values >= 0) & (alert_idx_values < n)
+        ema_alert_bar_timestamp[valid_alert_idx] = trigger_bar_timestamp[
+            alert_idx_values[valid_alert_idx]
+        ]
+
+    return {
+        "stop_distance_pct": stop_distance_pct,
+        "trigger_bar_timestamp": trigger_bar_timestamp,
+        "entry_bar_index_from_open": _entry_bar_index_from_open(frame.index),
+        "ema.alert_bar_timestamp": ema_alert_bar_timestamp,
+    }
 
 
 def run_backtest(config: dict) -> dict:
@@ -148,6 +206,8 @@ def run_backtest(config: dict) -> dict:
 
             if entry_cutoff and isinstance(long_frame.index, pd.DatetimeIndex):
                 before = long_signals.entries.values.copy()
+                entry_before = long_signals.entry_price.values.copy()
+                stop_before = long_signals.stop_price.values.copy()
                 mask = long_frame.index.time <= entry_cutoff
                 long_signals.entries[~mask] = False
                 long_signals.entry_price[~mask] = np.nan
@@ -155,24 +215,28 @@ def run_backtest(config: dict) -> dict:
                 _log_filter_rejections(
                     event_logger,
                     long_frame,
+                    long_signals,
                     before,
                     long_signals.entries.values,
-                    long_signals.entry_price.values,
-                    long_signals.stop_price.values,
+                    entry_before,
+                    stop_before,
                     symbol,
                     "long",
                     "entry_cutoff",
                 )
             if gap_filter:
                 before = long_signals.entries.values.copy()
+                entry_before = long_signals.entry_price.values.copy()
+                stop_before = long_signals.stop_price.values.copy()
                 _filter_signals_to_days(long_signals, long_frame, gap_down_days)
                 _log_filter_rejections(
                     event_logger,
                     long_frame,
+                    long_signals,
                     before,
                     long_signals.entries.values,
-                    long_signals.entry_price.values,
-                    long_signals.stop_price.values,
+                    entry_before,
+                    stop_before,
                     symbol,
                     "long",
                     "gap_filter",
@@ -186,32 +250,38 @@ def run_backtest(config: dict) -> dict:
                 )
                 if min_stop_distance_pct is not None:
                     before = long_signals.entries.values.copy()
+                    entry_before = long_signals.entry_price.values.copy()
+                    stop_before = long_signals.stop_price.values.copy()
                     long_signals.entries[long_stop_dist < min_stop_distance_pct] = False
                     long_signals.entry_price[long_stop_dist < min_stop_distance_pct] = np.nan
                     long_signals.stop_price[long_stop_dist < min_stop_distance_pct] = np.nan
                     _log_filter_rejections(
                         event_logger,
                         long_frame,
+                        long_signals,
                         before,
                         long_signals.entries.values,
-                        long_signals.entry_price.values,
-                        long_signals.stop_price.values,
+                        entry_before,
+                        stop_before,
                         symbol,
                         "long",
                         "min_stop_distance",
                     )
                 if max_stop_distance_pct is not None:
                     before = long_signals.entries.values.copy()
+                    entry_before = long_signals.entry_price.values.copy()
+                    stop_before = long_signals.stop_price.values.copy()
                     long_signals.entries[long_stop_dist > max_stop_distance_pct] = False
                     long_signals.entry_price[long_stop_dist > max_stop_distance_pct] = np.nan
                     long_signals.stop_price[long_stop_dist > max_stop_distance_pct] = np.nan
                     _log_filter_rejections(
                         event_logger,
                         long_frame,
+                        long_signals,
                         before,
                         long_signals.entries.values,
-                        long_signals.entry_price.values,
-                        long_signals.stop_price.values,
+                        entry_before,
+                        stop_before,
                         symbol,
                         "long",
                         "max_stop_distance",
@@ -239,6 +309,8 @@ def run_backtest(config: dict) -> dict:
 
             if entry_cutoff and isinstance(short_frame.index, pd.DatetimeIndex):
                 before = short_signals.entries.values.copy()
+                entry_before = short_signals.entry_price.values.copy()
+                stop_before = short_signals.stop_price.values.copy()
                 mask = short_frame.index.time <= entry_cutoff
                 short_signals.entries[~mask] = False
                 short_signals.entry_price[~mask] = np.nan
@@ -246,10 +318,11 @@ def run_backtest(config: dict) -> dict:
                 _log_filter_rejections(
                     event_logger,
                     short_frame,
+                    short_signals,
                     before,
                     short_signals.entries.values,
-                    short_signals.entry_price.values,
-                    short_signals.stop_price.values,
+                    entry_before,
+                    stop_before,
                     symbol,
                     "short",
                     "entry_cutoff",
@@ -257,14 +330,17 @@ def run_backtest(config: dict) -> dict:
             if gap_filter:
                 # Short on gap-up days (fade the gap — transcript core rule)
                 before = short_signals.entries.values.copy()
+                entry_before = short_signals.entry_price.values.copy()
+                stop_before = short_signals.stop_price.values.copy()
                 _filter_signals_to_days(short_signals, short_frame, gap_up_days)
                 _log_filter_rejections(
                     event_logger,
                     short_frame,
+                    short_signals,
                     before,
                     short_signals.entries.values,
-                    short_signals.entry_price.values,
-                    short_signals.stop_price.values,
+                    entry_before,
+                    stop_before,
                     symbol,
                     "short",
                     "gap_filter",
@@ -272,14 +348,17 @@ def run_backtest(config: dict) -> dict:
 
             if gap_exclude and gap_exclude_up_days:
                 before = short_signals.entries.values.copy()
+                entry_before = short_signals.entry_price.values.copy()
+                stop_before = short_signals.stop_price.values.copy()
                 _exclude_signals_on_days(short_signals, short_frame, gap_exclude_up_days)
                 _log_filter_rejections(
                     event_logger,
                     short_frame,
+                    short_signals,
                     before,
                     short_signals.entries.values,
-                    short_signals.entry_price.values,
-                    short_signals.stop_price.values,
+                    entry_before,
+                    stop_before,
                     symbol,
                     "short",
                     "gap_exclude",
@@ -293,32 +372,38 @@ def run_backtest(config: dict) -> dict:
                 )
                 if min_stop_distance_pct is not None:
                     before = short_signals.entries.values.copy()
+                    entry_before = short_signals.entry_price.values.copy()
+                    stop_before = short_signals.stop_price.values.copy()
                     short_signals.entries[short_stop_dist < min_stop_distance_pct] = False
                     short_signals.entry_price[short_stop_dist < min_stop_distance_pct] = np.nan
                     short_signals.stop_price[short_stop_dist < min_stop_distance_pct] = np.nan
                     _log_filter_rejections(
                         event_logger,
                         short_frame,
+                        short_signals,
                         before,
                         short_signals.entries.values,
-                        short_signals.entry_price.values,
-                        short_signals.stop_price.values,
+                        entry_before,
+                        stop_before,
                         symbol,
                         "short",
                         "min_stop_distance",
                     )
                 if max_stop_distance_pct is not None:
                     before = short_signals.entries.values.copy()
+                    entry_before = short_signals.entry_price.values.copy()
+                    stop_before = short_signals.stop_price.values.copy()
                     short_signals.entries[short_stop_dist > max_stop_distance_pct] = False
                     short_signals.entry_price[short_stop_dist > max_stop_distance_pct] = np.nan
                     short_signals.stop_price[short_stop_dist > max_stop_distance_pct] = np.nan
                     _log_filter_rejections(
                         event_logger,
                         short_frame,
+                        short_signals,
                         before,
                         short_signals.entries.values,
-                        short_signals.entry_price.values,
-                        short_signals.stop_price.values,
+                        entry_before,
+                        stop_before,
                         symbol,
                         "short",
                         "max_stop_distance",

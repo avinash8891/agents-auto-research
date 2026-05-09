@@ -87,7 +87,7 @@ def test_parse_result_json_loads_real_fixture(fixtures_dir: Path) -> None:
     output = f"some preamble\nRESULT_JSON {path}\n"
     payload = parse_result_json(output)
     assert payload is not None
-    assert payload["metrics"]["trade_count"] == 287
+    assert payload["metrics_file"] == "metrics.json"
     assert payload["git_sha"] == "b96e64e"
 
 
@@ -251,6 +251,7 @@ def test_parse_benchmark_details_extracts_metrics_from_real_fixture(fixtures_dir
     # Auxiliary fields propagate verbatim.
     assert details["trades_file"] == "trades.csv"
     assert details["strategy_events_file"] == "strategy_events.parquet"
+    assert details["metrics_file"] == "metrics.json"
     assert details["diagnostics_file"] == "diagnostics.json"
     assert details["strategy_diagnostics"] == {
         "exits_at_target": 102,
@@ -273,6 +274,8 @@ def test_parse_benchmark_details_preserves_12_char_config_hash(
     payload = json.loads((fixtures_dir / "result_v1.json").read_text())
     payload["config_hash"] = "123456789abc"
     payload_path = tmp_path / "result_v1_config_hash.json"
+    (tmp_path / "metrics.json").write_text((fixtures_dir / "metrics.json").read_text())
+    (tmp_path / "diagnostics.json").write_text((fixtures_dir / "diagnostics.json").read_text())
     payload_path.write_text(json.dumps(payload) + "\n")
     try:
         details = parse_benchmark_details(f"RESULT_JSON {payload_path}\n")
@@ -280,6 +283,14 @@ def test_parse_benchmark_details_preserves_12_char_config_hash(
         payload_path.unlink(missing_ok=True)
 
     assert details["config_hash"] == "123456789abc"
+
+
+def test_parse_benchmark_details_rejects_inline_metrics_manifest(tmp_path: Path) -> None:
+    result_path = tmp_path / "result.json"
+    result_path.write_text(json.dumps({"metrics": {"profit_factor": 1.2}}))
+
+    with pytest.raises(ResultJsonError, match="missing required metrics_file"):
+        parse_benchmark_details(f"RESULT_JSON {result_path}\n")
 
 
 def test_compute_run_output_dir_for_missing_config_uses_12_char_hash_slug(tmp_path: Path) -> None:
@@ -356,6 +367,14 @@ def test_parse_metric_legacy_path() -> None:
 def test_parse_metric_rejects_legacy_stdout_by_default() -> None:
     output = "METRIC median_expectancy=1.42\n"
     assert parse_metric(output, name="median_expectancy") is None
+
+
+def test_parse_metric_rejects_inline_metrics_manifest(tmp_path: Path) -> None:
+    result_path = tmp_path / "result.json"
+    result_path.write_text(json.dumps({"metrics": {"median_expectancy": 1.42}}))
+
+    with pytest.raises(ResultJsonError, match="missing required metrics_file"):
+        parse_metric(f"RESULT_JSON {result_path}\n", name="median_expectancy")
 
 
 def test_parse_metric_returns_none_when_no_signal() -> None:
@@ -1157,7 +1176,13 @@ def test_log_experiment_result_uses_legacy_runtime_config_fallback(tmp_path: Pat
     controller.state_path.write_text(json.dumps({"state": "running", "job": 1}))
 
     result_path = tmp_path / "result.json"
-    result_path.write_text(json.dumps({"metrics": {"median_expectancy": 1.25, "trade_count": 10}}))
+    metrics_path = tmp_path / "metrics.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    metrics_path.write_text(json.dumps({"median_expectancy": 1.25, "trade_count": 10}))
+    diagnostics_path.write_text(json.dumps({"event_counts": {"raw_setup": 1}}))
+    result_path.write_text(
+        json.dumps({"metrics_file": str(metrics_path), "diagnostics_file": str(diagnostics_path)})
+    )
 
     experiment_mod.log_experiment_result(
         controller,
@@ -1214,10 +1239,15 @@ def test_log_experiment_result_moves_artifacts_to_executed_vps_commit(
     source_artifact_dir.mkdir(parents=True)
     (source_artifact_dir / "config.json").write_text("{}\n")
     result_path = tmp_path / "result.json"
+    metrics_path = tmp_path / "metrics.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    metrics_path.write_text(json.dumps({"median_expectancy": 1.25, "trade_count": 10}))
+    diagnostics_path.write_text(json.dumps({"event_counts": {"raw_setup": 1}}))
     result_path.write_text(
         json.dumps(
             {
-                "metrics": {"median_expectancy": 1.25, "trade_count": 10},
+                "metrics_file": str(metrics_path),
+                "diagnostics_file": str(diagnostics_path),
                 "git_sha": executed_sha,
             }
         )
