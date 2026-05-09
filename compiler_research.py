@@ -9,7 +9,7 @@ import yaml
 from config_hash import _config_hash
 from diagnostic_contracts import build_required_diagnostic_specs
 from persistence_utils import write_text_atomic
-from research_types import ExperimentContract
+from research_types import BacktestContract
 from strategies import STRATEGIES
 from strategy_family import load_family
 
@@ -23,9 +23,9 @@ def _baseline_config_path_for_family(family_name: str) -> str:
 
 def _resolved_base_config_path(thesis: "ResearchThesis") -> str:
     baseline_path = _baseline_config_path_for_family(thesis.strategy_family)
-    if thesis.base_experiment_id:
+    if thesis.base_contract_id:
         raise ValueError(
-            f"Thesis '{thesis.thesis_id}' cannot set base_experiment_id; "
+            f"Thesis '{thesis.thesis_id}' cannot set base_contract_id; "
             "research theses must start from the family baseline."
         )
     if thesis.base_config_path and thesis.base_config_path != baseline_path:
@@ -71,18 +71,20 @@ def _needs_code_contract(
     *,
     artifact_root: Path | None = None,
     status: str = "needs_code",
-) -> "ExperimentContract":
+) -> "BacktestContract":
     family_name = thesis.strategy_family
-    experiment_id = thesis.thesis_id
-    experiment_dir = (artifact_root or root) / "experiments" / experiment_id
+    contract_id = thesis.thesis_id
+    if artifact_root is None:
+        raise ValueError("research round artifact_root is required for needs-code contracts")
+    experiment_dir = artifact_root / "builder_request"
     experiment_dir.mkdir(parents=True, exist_ok=True)
     write_text_atomic(experiment_dir / "thesis.json", thesis.model_dump_json(indent=2) + "\n")
-    contract = ExperimentContract(
-        experiment_id=experiment_id,
+    contract = BacktestContract(
+        contract_id=contract_id,
         thesis_id=thesis.thesis_id,
         strategy_family=family_name,
         baseline_config_path=_resolved_base_config_path(thesis),
-        base_experiment_id=thesis.base_experiment_id,
+        base_contract_id=thesis.base_contract_id,
         base_config_hash=_config_hash(_load_base_runtime_config(root, thesis)),
         runtime_config={},
         hypothesis=thesis.hypothesis,
@@ -107,22 +109,26 @@ def _compile_runtime_config_contract(
     runtime_config: dict,
     *,
     artifact_root: Path | None = None,
-) -> "ExperimentContract":
+) -> "BacktestContract":
     family_name = thesis.strategy_family
-    experiment_id = _config_hash(runtime_config)
-    experiment_dir = (artifact_root or root) / "experiments" / experiment_id
+    contract_id = _config_hash(runtime_config)
+    if artifact_root is None:
+        raise ValueError("research round artifact_root is required for compiled contracts")
+    experiment_dir = artifact_root
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
-    write_text_atomic(experiment_dir / "thesis.json", thesis.model_dump_json(indent=2) + "\n")
     write_text_atomic(
-        experiment_dir / "runtime_config.json", json.dumps(runtime_config, indent=2) + "\n"
+        experiment_dir / "selected_thesis.json", thesis.model_dump_json(indent=2) + "\n"
     )
-    contract = ExperimentContract(
-        experiment_id=experiment_id,
+    write_text_atomic(
+        experiment_dir / "selected_config.json", json.dumps(runtime_config, indent=2) + "\n"
+    )
+    contract = BacktestContract(
+        contract_id=contract_id,
         thesis_id=thesis.thesis_id,
         strategy_family=family_name,
         baseline_config_path=_resolved_base_config_path(thesis),
-        base_experiment_id=thesis.base_experiment_id,
+        base_contract_id=thesis.base_contract_id,
         base_config_hash=_config_hash(_load_base_runtime_config(root, thesis)),
         runtime_config=runtime_config,
         hypothesis=thesis.hypothesis,
@@ -137,7 +143,9 @@ def _compile_runtime_config_contract(
         missing_primitives=[],
         status="ready_to_run",
     )
-    write_text_atomic(experiment_dir / "contract.json", contract.model_dump_json(indent=2) + "\n")
+    write_text_atomic(
+        experiment_dir / "selected_contract.json", contract.model_dump_json(indent=2) + "\n"
+    )
     return contract
 
 
@@ -177,15 +185,12 @@ def compile_research_thesis(
     root: Path,
     *,
     artifact_root: Path | None = None,
-) -> "ExperimentContract":
-    """Convert a validated ResearchThesis into an ExperimentContract.
+) -> "BacktestContract":
+    """Convert a validated ResearchThesis into an BacktestContract.
 
-    Creates:
-      {artifact_root or root}/experiments/{experiment_id}/thesis.json
-      {artifact_root or root}/experiments/{experiment_id}/contract.json
-      {artifact_root or root}/experiments/{experiment_id}/runtime_config.json
+    Creates round-scoped selected thesis/config/contract artifacts.
 
-    The experiment_id is a content hash of the runtime config.
+    The contract_id is a content hash of the runtime config.
     """
     family_name = thesis.strategy_family
     if not thesis.required_diagnostic_specs:

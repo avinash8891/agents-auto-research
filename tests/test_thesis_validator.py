@@ -207,10 +207,18 @@ def test_validate_thesis_rejects_prior_best_language_with_base_config_path() -> 
     thesis["mechanism"] = (
         "Preserve the current best trailing-stop edge while adding a new execution filter."
     )
-    thesis["base_experiment_id"] = "05287d64f61f"
+    thesis["base_contract_id"] = "05287d64f61f"
     thesis["base_config_path"] = "experiments/05287d64f61f/runtime_config.json"
 
-    with pytest.raises(ThesisValidationError, match="base_experiment_id is not allowed"):
+    with pytest.raises(ThesisValidationError, match="legacy experiments/ inheritance paths"):
+        validate_thesis_dict(thesis, prior_theses=[])
+
+
+def test_validate_thesis_rejects_legacy_experiments_base_config_path() -> None:
+    thesis = _base_engine_change_thesis("legacy_experiments_base_path", "market_microstructure")
+    thesis["base_config_path"] = "experiments/05287d64f61f/runtime_config.json"
+
+    with pytest.raises(ThesisValidationError, match="legacy experiments/ inheritance paths"):
         validate_thesis_dict(thesis, prior_theses=[])
 
 
@@ -219,10 +227,10 @@ def test_validate_thesis_rejects_job_scoped_experiment_base_config_path() -> Non
     thesis["mechanism"] = (
         "Preserve the current best trailing-stop edge while adding a new execution filter."
     )
-    thesis["base_experiment_id"] = "05287d64f61f"
+    thesis["base_contract_id"] = "05287d64f61f"
     thesis["base_config_path"] = "runtime/jobs/job-26/experiments/05287d64f61f/runtime_config.json"
 
-    with pytest.raises(ThesisValidationError, match="base_experiment_id is not allowed"):
+    with pytest.raises(ThesisValidationError, match="legacy experiments/ inheritance paths"):
         validate_thesis_dict(thesis, prior_theses=[])
 
 

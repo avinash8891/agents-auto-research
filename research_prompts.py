@@ -415,7 +415,7 @@ THESIS REQUIREMENTS:
 
 RULES:
 - All research theses must start from the family baseline config.
-- Leave base_experiment_id empty.
+- Leave base_contract_id empty.
 - Leave base_config_path empty. The compiler will use the family baseline.
 - config_changes is a DELTA against the family baseline config. Keys you omit
   must stay at baseline values.

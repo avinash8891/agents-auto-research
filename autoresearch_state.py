@@ -1,4 +1,4 @@
-"""State, experiment results, and current.md rendering for autoresearch.
+"""State, backtest-run results, and current.md rendering for autoresearch.
 
 Pure functions. The controller composes these with its own paths.
 """
@@ -67,7 +67,7 @@ def coerce_timestamp_to_epoch_ms(value: Any) -> int:
 
 
 @dataclass
-class ExperimentRecord:
+class BacktestResultRecord:
     config: str
     metric: float
     status: str
@@ -88,14 +88,14 @@ class RunContext:
       then cleared): current_artifact_dir.
     - Per-research-round (set in execute_research_sdk, consumed by run_experiment
       and log_experiment_result, then cleared): current_contract,
-      parent_experiment_id.
+      parent_backtest_run_id.
     - Cross-iteration (overwritten by each derive_trade_analysis call, read by
       the next research round): latest_trades_file, latest_strategy_events_file,
       latest_diagnostics_file, latest_config_contents.
     """
 
     current_contract: Any = None
-    parent_experiment_id: str = ""
+    parent_backtest_run_id: str = ""
     current_artifact_dir: Path | None = None
     execution_root: Path | None = None
     latest_trades_file: str = ""
@@ -133,14 +133,14 @@ def _coerce_job_to_int(job_value: Any) -> int:
         return 0
 
 
-def read_results(entries: list[dict[str, Any]]) -> list[ExperimentRecord]:
-    results: list[ExperimentRecord] = []
+def read_results(entries: list[dict[str, Any]]) -> list[BacktestResultRecord]:
+    results: list[BacktestResultRecord] = []
     for entry in entries:
         if entry.get("type") in ("config", "research_round"):
             continue
         asi = entry.get("asi") or {}
         results.append(
-            ExperimentRecord(
+            BacktestResultRecord(
                 config=asi.get("config", ""),
                 metric=entry["metric"],
                 status=entry["status"],
@@ -167,7 +167,7 @@ def is_better(direction_str: str, candidate: float, current: float | None) -> bo
     return candidate > current if direction_str == "higher" else candidate < current
 
 
-def best_result(results: list[ExperimentRecord], direction_str: str) -> dict[str, Any]:
+def best_result(results: list[BacktestResultRecord], direction_str: str) -> dict[str, Any]:
     best: dict[str, Any] | None = None
     for result in results:
         if result.status != "keep":
@@ -177,7 +177,7 @@ def best_result(results: list[ExperimentRecord], direction_str: str) -> dict[str
     return best or {}
 
 
-def latest_result(results: list[ExperimentRecord]) -> ExperimentRecord | None:
+def latest_result(results: list[BacktestResultRecord]) -> BacktestResultRecord | None:
     if not results:
         return None
     return max(results, key=lambda result: coerce_timestamp_to_epoch_ms(result.timestamp))
@@ -238,7 +238,7 @@ def deduplicate_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # ── current.md rendering ──────────────────────────────────────────
 
 
-def _format_latest_lines(latest: ExperimentRecord | None, best: dict[str, Any]) -> list[str]:
+def _format_latest_lines(latest: BacktestResultRecord | None, best: dict[str, Any]) -> list[str]:
     lines: list[str] = []
     if latest is not None:
         lines.append(f"- Last completed thesis: `{latest.config}`")
@@ -246,7 +246,7 @@ def _format_latest_lines(latest: ExperimentRecord | None, best: dict[str, Any]) 
     if best:
         lines.append(f"- Current best: `{best.get('config')}` at `{best.get('metric')}`")
     if not lines:
-        lines.append("- No experiments logged yet.")
+        lines.append("- No backtest runs logged yet.")
     return lines
 
 
@@ -274,7 +274,7 @@ def _format_blocker_lines(blockers: list[dict[str, Any]]) -> list[str]:
 
 def render_current_md(
     state: dict[str, Any],
-    results: list[ExperimentRecord],
+    results: list[BacktestResultRecord],
     *,
     family_name: str | None = None,
     metric_name: str = "profit_factor",
@@ -316,7 +316,7 @@ def render_current_md(
 def write_current_md(
     current_md_path: Path,
     state: dict[str, Any],
-    results: list[ExperimentRecord],
+    results: list[BacktestResultRecord],
     *,
     family_name: str | None = None,
     metric_name: str = "profit_factor",

@@ -770,15 +770,26 @@ def materialize_remote_config_if_needed(
     config: VPSConfig,
     config_path: str,
 ) -> str:
-    """Upload ignored generated experiment configs as run inputs, not code deployment."""
+    """Upload ignored round-scoped generated configs as run inputs, not code deployment."""
     rel_path = _relative_repo_path(config_path)
     if _is_git_tracked(rel_path):
         return rel_path.as_posix()
 
-    if rel_path.parts[:1] != ("experiments",):
+    parts = rel_path.parts
+    is_round_selected_config = (
+        len(parts) == 6
+        and parts[0] == "runtime"
+        and parts[1] == "jobs"
+        and parts[2].startswith("job-")
+        and parts[3] == "research"
+        and parts[4].startswith("round-")
+        and parts[5] == "selected_config.json"
+    )
+    if not is_round_selected_config:
         raise RuntimeError(
             "VPS Git deployment only accepts tracked config files or generated "
-            f"experiments/ configs; refused untracked config: {rel_path.as_posix()}"
+            "runtime/jobs/job-N/research/round-*/selected_config.json inputs; "
+            f"refused untracked config: {rel_path.as_posix()}"
         )
 
     local_path = _repo_root() / rel_path

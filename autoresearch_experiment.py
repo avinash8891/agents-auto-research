@@ -3,7 +3,7 @@
 Owns the path from `next_action.config` to a logged experiment record:
 shell out via run_command, parse RESULT_JSON / metrics, decide keep/discard,
 optionally evaluate against a thesis contract, and persist to the structured
-ExperimentDB.
+BacktestRunDB.
 """
 
 from __future__ import annotations
@@ -33,22 +33,21 @@ from autoresearch_constants import (
 from autoresearch_logging import get_logger
 from autoresearch_paths import path_within_allowed_roots, resolve_config_path
 from autoresearch_planning import build_research_failure_state
-from autoresearch_runtime_paths import job_run_artifact_dir
+from autoresearch_runtime_paths import research_round_backtest_root
 from autoresearch_state import (
     read_state,
     write_state,
 )
-from config_hash import _config_hash, _git_sha
-from diagnostic_contracts import build_required_diagnostic_specs, enrich_required_diagnostics
-from experiment_db import (
+from backtest_run_db import (
+    BacktestRunRecord,
     BaselineCheckpoint,
-    ExperimentResult,
     build_config_hash,
     build_data_hash,
 )
+from diagnostic_contracts import build_required_diagnostic_specs, enrich_required_diagnostics
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic, write_text_atomic
-from research_types import ExperimentContract
+from research_types import BacktestContract
 from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
@@ -76,6 +75,36 @@ def _runtime_root(controller: "AutoresearchController") -> Path:
     return getattr(controller, "runtime_root", controller.root)
 
 
+def _round_context_from_state(state: dict[str, Any], *, config: str) -> tuple[int, int, bool]:
+    raw_job = state.get("job")
+    try:
+        job = int(raw_job)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"job id is required for backtest artifact path; got {raw_job!r}") from exc
+    if job < 1:
+        raise ValueError(f"job id is required for backtest artifact path; got {job!r}")
+
+    raw_round = state.get("research_round")
+    try:
+        round_number = int(raw_round)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"research round is required for backtest artifact path; got {raw_round!r}"
+        ) from exc
+    if round_number < 0:
+        raise ValueError(f"research round must be >= 0; got {round_number!r}")
+
+    config_name = Path(config).name
+    is_baseline = config_name.endswith("_base.yaml")
+    if round_number == 0 and not is_baseline:
+        raise ValueError(
+            f"round 0 is reserved for baseline backtests; got non-baseline config {config!r}"
+        )
+    if round_number > 0 and is_baseline:
+        raise ValueError(f"baseline backtest must run only in round 0; got round={round_number}")
+    return job, round_number, is_baseline
+
+
 def _thesis_sidecar_path(
     controller: "AutoresearchController", config: str, experiment_slug: str
 ) -> Path:
@@ -85,14 +114,18 @@ def _thesis_sidecar_path(
         runtime_root=_runtime_root(controller),
         execution_root=_execution_root(controller),
     )
-    sibling = config_path.parent / "thesis.json"
-    if (
-        sibling.exists()
-        and config_path.parent.name == experiment_slug
-        and config_path.parent.parent.name == "experiments"
-    ):
-        return sibling
-    return _execution_root(controller) / "experiments" / experiment_slug / "thesis.json"
+    for sibling_name in ("selected_thesis.json", "thesis.json"):
+        sibling = config_path.parent / sibling_name
+        if not sibling.exists():
+            continue
+        if sibling_name == "selected_thesis.json":
+            return sibling
+        if config_path.parent.name in {"builder_request", experiment_slug}:
+            return sibling
+    legacy_path = _execution_root(controller) / "experiments" / experiment_slug / "thesis.json"
+    if legacy_path.exists():
+        raise ValueError(f"legacy experiment sidecar path is not supported: {legacy_path}")
+    return config_path.parent / "selected_thesis.json"
 
 
 def _validated_execution_root(
@@ -380,9 +413,9 @@ def parse_metric(
 
 
 def evaluate_metric(root: Path, db_name: str, metric: float, *, job_id: int | None = None) -> str:
-    from experiment_db import ExperimentDB
+    from backtest_run_db import BacktestRunDB
 
-    db = ExperimentDB(root / db_name)
+    db = BacktestRunDB(root / db_name)
     return db.evaluate_metric(metric, job_id=job_id)
 
 
@@ -450,25 +483,17 @@ def derive_trade_analysis(
 
 def artifact_dir_for(
     state_path: Path,
-    runs_dir: Path,
+    runtime_root: Path,
     config: str,
     *,
     git_commit: str | None = None,
     config_hash: str | None = None,
 ) -> Path:
     state = read_state(state_path)
-    raw_job = state.get("job")
-    try:
-        job = int(raw_job)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"job id is required for backtest run artifact path; got {raw_job!r}"
-        ) from exc
-    if job < 1:
-        raise ValueError(f"job id is required for backtest run artifact path; got {job!r}")
-    path = job_run_artifact_dir(
-        runs_dir.resolve().parents[3], job, git_commit or "", config_hash or ""
-    )
+    del git_commit
+    del config_hash
+    job, round_number, _ = _round_context_from_state(state, config=config)
+    path = research_round_backtest_root(runtime_root.resolve(), job, round_number)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -482,7 +507,7 @@ def sanitize_duplicate_entries(db: Any, config: str) -> None:
         same_config = record.config_path == config
         low_information = description == f"loop: {slug}"
         if same_config and low_information:
-            removable_ids.append(record.experiment_id)
+            removable_ids.append(record.run_id)
     if not removable_ids:
         return
     db.import_entries(
@@ -505,28 +530,21 @@ def _resolve_artifact_dir(
     present, otherwise compute a fresh per-job dir."""
     if artifact_dir is not None:
         return artifact_dir
-    config_hash = details.get("config_hash")
-    if not isinstance(config_hash, str) or not config_hash.strip():
-        computed_dir, _ = _compute_run_output_dir(controller, config)
-        return computed_dir
-    return artifact_dir_for(
-        controller.state_path,
-        controller.runs_dir,
-        config,
-        git_commit=_executed_code_commit(controller, details),
-        config_hash=config_hash,
-    )
+    computed_dir, _ = _compute_run_output_dir(controller, config)
+    return computed_dir
 
 
 def _read_thesis_metadata(
     controller: "AutoresearchController", config: str
 ) -> tuple[str, dict[str, Any]]:
-    """Look for an experiments/<id>/thesis.json sidecar and return the
-    (thesis_id, config_changes) override pair. Falls back to (config-stem, {})."""
+    """Read the selected thesis sidecar and return `(thesis_id, config_changes)`.
+
+    Legacy `experiments/<id>/thesis.json` paths are rejected in `_thesis_sidecar_path()`.
+    """
     contract = controller.ctx.current_contract
     thesis_id = contract.thesis_id if contract else Path(config).stem
     config_changes: dict[str, Any] = {}
-    experiment_slug = contract.experiment_id if contract else Path(config).parent.name
+    experiment_slug = contract.contract_id if contract else Path(config).parent.name
     thesis_json_path = _thesis_sidecar_path(controller, config, experiment_slug)
     if thesis_json_path.exists():
         try:
@@ -570,8 +588,8 @@ def _contract_from_sidecar(controller: "AutoresearchController", config: str) ->
             f"| hint=the thesis sidecar exists but cannot be read"
         )
         raise
-    return ExperimentContract.from_sidecar(
-        experiment_id=experiment_slug,
+    return BacktestContract.from_sidecar(
+        contract_id=experiment_slug,
         strategy_family=controller.family.name,
         baseline_config_path=f"configs/{controller.family.base_config_filename}",
         runtime_config={},
@@ -592,8 +610,8 @@ def _analysis_identity(controller: "AutoresearchController", config: str) -> str
 def _serialize_artifact_dir(controller: "AutoresearchController", artifact_dir: Path) -> str:
     """Prefer a repo-relative artifact path, but keep absolute paths valid.
 
-    The controller accepts an absolute runs_dir, so result logging must not
-    assume every artifact directory lives under controller.root.
+    Result logging must not assume every artifact directory lives under
+    controller.root.
     """
     try:
         return artifact_dir.relative_to(controller.root).as_posix()
@@ -649,7 +667,7 @@ def _build_db_record(
     runtime_config: dict[str, Any] | None = None,
     fallback_experiment_id: str,
     state: dict[str, Any],
-) -> ExperimentResult:
+) -> BacktestRunRecord:
     contract = _contract_from_sidecar(controller, config)
     verdict = analysis.get("trade_analysis", {}).get("verdict", {})
     if runtime_config is None:
@@ -682,8 +700,16 @@ def _build_db_record(
         )
         verdict_summary = _invalid_duplicate_result_summary(duplicate, details, runtime_config)
     code_commit = _executed_code_commit(controller, details)
-    record = ExperimentResult(
-        experiment_id=contract.experiment_id if contract else fallback_experiment_id,
+    round_number = int(state.get("research_round", -1) or -1)
+    research_round_id = (
+        f"job-{state.get('job', 0)}-round-{round_number}" if round_number >= 0 else ""
+    )
+    is_baseline = round_number == 0
+    backtest_run_id = (
+        f"{research_round_id}-backtest" if research_round_id else fallback_experiment_id
+    )
+    record = BacktestRunRecord(
+        run_id=contract.contract_id if contract else fallback_experiment_id,
         thesis_id=contract.thesis_id if contract else Path(config).stem,
         config_path=config,
         runtime_config=runtime_config,
@@ -700,13 +726,17 @@ def _build_db_record(
         rejection_reason=verdict_summary if decision != "keep" else "N/A",
         verdict_status=verdict_status,
         verdict_summary=verdict_summary,
-        parent_experiment_id=controller.ctx.parent_experiment_id,
+        parent_backtest_run_id=controller.ctx.parent_backtest_run_id,
         timestamp=iso8601_utc_now(),
         family=controller.family.name,
         hypothesis=contract.hypothesis if contract else "",
         mechanism=contract.mechanism if contract else "",
         job=state.get("job", 0),
         usage=state.get("_last_round_usage", {}),
+        backtest_run_id=backtest_run_id,
+        research_round_id=research_round_id,
+        research_round_number=round_number,
+        is_baseline=is_baseline,
     )
     return record
 
@@ -740,9 +770,9 @@ def _find_duplicate_artifact_output(
     runtime_config: dict[str, Any],
     details: dict[str, Any],
     state: dict[str, Any],
-) -> ExperimentResult | None:
-    experiment_db = getattr(controller, "experiment_db", None)
-    if experiment_db is None or not hasattr(experiment_db, "all"):
+) -> BacktestRunRecord | None:
+    backtest_run_db = getattr(controller, "backtest_run_db", None)
+    if backtest_run_db is None or not hasattr(backtest_run_db, "all"):
         return None
     trades_hash = _sha256_file(details.get("trades_file"))
     diagnostics_hash = _sha256_file(details.get("diagnostics_file"))
@@ -752,7 +782,7 @@ def _find_duplicate_artifact_output(
     current_trade_count = _coerce_int_or_none(details.get("trade_count", 0) or 0)
     if current_trade_count is None:
         return None
-    for previous in reversed(experiment_db.all()):
+    for previous in reversed(backtest_run_db.all()):
         if previous.family and previous.family != controller.family.name:
             continue
         if current_job is not None and previous.job != current_job:
@@ -789,19 +819,19 @@ def _zero_rejection_diagnostic_hints(strategy_diagnostics: dict[str, Any]) -> li
 
 
 def _invalid_duplicate_result_summary(
-    duplicate: ExperimentResult,
+    duplicate: BacktestRunRecord,
     details: dict[str, Any],
     runtime_config: dict[str, Any],
 ) -> str:
     if duplicate.runtime_config == runtime_config:
         summary = (
             "invalid_duplicate_result: identical runtime_config/artifacts as previous "
-            f"experiment {duplicate.experiment_id}"
+            f"backtest_run {duplicate.run_id}"
         )
     else:
         summary = (
             "invalid_noop_config: identical trades/diagnostics as previous "
-            f"experiment {duplicate.experiment_id} despite different runtime_config"
+            f"backtest_run {duplicate.run_id} despite different runtime_config"
         )
     parts = [summary]
     strategy_diagnostics = details.get("strategy_diagnostics", {})
@@ -834,12 +864,19 @@ def _build_export_entry(
     contract = _contract_from_sidecar(controller, config)
     identity = _resolve_identity(contract, config)
     run_id = f"job-{state.get('job', 0)}-run-{next_run}-{identity}"
-    experiment_id = contract.experiment_id if contract else run_id
+    round_number = int(state.get("research_round", -1) or -1)
+    research_round_id = (
+        f"job-{state.get('job', 0)}-round-{round_number}" if round_number >= 0 else ""
+    )
     return {
+        "type": "backtest_run",
         "run": next_run,
         "job": state.get("job"),
         "run_id": run_id,
-        "experiment_id": experiment_id,
+        "backtest_run_id": f"{research_round_id}-backtest" if research_round_id else run_id,
+        "research_round_id": research_round_id,
+        "research_round_number": round_number,
+        "is_baseline": round_number == 0,
         "hypothesis_id": identity,
         "commit": _executed_code_commit(controller, details),
         "metric": metric,
@@ -860,37 +897,6 @@ def _write_run_artifacts(artifact_dir: Path, output: str, analysis: dict[str, An
     write_json_atomic(artifact_dir / "analysis.json", analysis)
 
 
-def _artifact_dir_for_executed_commit(
-    controller: "AutoresearchController",
-    artifact_dir: Path,
-    details: dict[str, Any],
-) -> Path:
-    executed_commit = _executed_code_commit(controller, details)
-    current_commit = controller.current_commit()
-    if executed_commit == current_commit:
-        return artifact_dir
-
-    target_dir = artifact_dir.parent.parent / executed_commit / artifact_dir.name
-    if target_dir == artifact_dir:
-        return artifact_dir
-    target_dir.mkdir(parents=True, exist_ok=True)
-    if artifact_dir.exists():
-        for child in artifact_dir.iterdir():
-            dest = target_dir / child.name
-            if dest.exists():
-                if dest.is_dir():
-                    shutil.rmtree(dest)
-                else:
-                    dest.unlink()
-            shutil.move(str(child), str(dest))
-        try:
-            artifact_dir.rmdir()
-            artifact_dir.parent.rmdir()
-        except OSError:
-            pass
-    return target_dir
-
-
 def log_experiment_result(
     controller: "AutoresearchController",
     *,
@@ -907,7 +913,6 @@ def log_experiment_result(
     artifact_dir = _resolve_artifact_dir(
         controller, config, details=details, artifact_dir=artifact_dir
     )
-    artifact_dir = _artifact_dir_for_executed_commit(controller, artifact_dir, details)
     _write_run_artifacts(artifact_dir, output, analysis)
 
     thesis_id, config_changes = _read_thesis_metadata(controller, config)
@@ -923,7 +928,7 @@ def log_experiment_result(
         config_changes=config_changes,
         next_action=next_action,
     )
-    next_run = 1 + controller.experiment_db.count()
+    next_run = 1 + controller.backtest_run_db.count()
     state = controller.read_state()
     entry = _build_export_entry(
         controller,
@@ -948,14 +953,14 @@ def log_experiment_result(
     )
     setattr(record, "_asi_export", asi)
     setattr(record, "_description_export", entry["description"])
-    controller.experiment_db.add(record)
+    controller.backtest_run_db.add(record)
 
 
 # ── Run experiment orchestrator ──────────────────────────────────
 
 
 def _compute_run_output_dir(controller: "AutoresearchController", config: str) -> tuple[Path, Path]:
-    """Compute the per-job output directory using a config-content hash.
+    """Compute the round-scoped backtest output directory.
     Returns (run_output_dir, config_path_full)."""
     config_path_full = resolve_config_path(
         config,
@@ -963,30 +968,9 @@ def _compute_run_output_dir(controller: "AutoresearchController", config: str) -
         runtime_root=_runtime_root(controller),
         execution_root=_execution_root(controller),
     )
-    if config_path_full.exists():
-        if config_path_full.suffix in (".yaml", ".yml"):
-            _cfg = yaml.safe_load(config_path_full.read_text())
-        else:
-            _cfg = json.loads(config_path_full.read_text())
-        if isinstance(_cfg, dict) and "runtime_config" in _cfg:
-            _cfg = _cfg["runtime_config"]
-        config_hash = _config_hash(_cfg)
-    else:
-        config_hash = _config_hash({"config_path": config})
     state = controller.read_state()
-    raw_job = state.get("job")
-    try:
-        job = int(raw_job)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"job id is required for backtest run output dir; got {raw_job!r}"
-        ) from exc
-    if job < 1:
-        raise ValueError(f"job id is required for backtest run output dir; got {job!r}")
-    current_commit = (
-        controller.current_commit() if hasattr(controller, "current_commit") else _git_sha()
-    )
-    run_output_dir = job_run_artifact_dir(controller.root, job, current_commit, config_hash)
+    job, round_number, _ = _round_context_from_state(state, config=config)
+    run_output_dir = research_round_backtest_root(_runtime_root(controller), job, round_number)
     run_output_dir.mkdir(parents=True, exist_ok=True)
     return run_output_dir, config_path_full
 
@@ -1140,7 +1124,7 @@ def _evaluate_against_thesis(
     evaluator exception is logged and the decision passes through
     unchanged."""
     try:
-        from experiment_evaluator import evaluate_experiment
+        from experiment_evaluator import evaluate_backtest
 
         candidate_metrics = dict(details)
         primary_metric_name = (
@@ -1165,11 +1149,11 @@ def _evaluate_against_thesis(
             candidate_metrics=candidate_metrics,
             strategy_diagnostics=details.get("strategy_diagnostics"),
         )
-        verdict = evaluate_experiment(
+        verdict = evaluate_backtest(
             thesis=_build_thesis_for_eval(contract),
             baseline_metrics=baseline_metrics,
             candidate_metrics=candidate_metrics,
-            experiment_id=contract.experiment_id,
+            contract_id=contract.contract_id,
             strategy_diagnostics=details.get("strategy_diagnostics"),
         )
         trace(
@@ -1302,10 +1286,37 @@ def _setup_run(controller: "AutoresearchController", config: str) -> tuple[Path,
     return run_output_dir, command if command else None
 
 
+def _validate_backtest_request(controller: "AutoresearchController", state: dict[str, Any]) -> None:
+    next_action = state["next_action"]
+    config = str(next_action.get("config") or "")
+    if not config:
+        raise ValueError("backtest requires config path")
+    job, round_number, is_baseline = _round_context_from_state(state, config=config)
+    if is_baseline:
+        if round_number != 0:
+            raise ValueError(f"baseline backtest must run in round 0; got round={round_number}")
+        return
+    contract = controller.ctx.current_contract
+    thesis_id = str(
+        next_action.get("selected_thesis_id")
+        or next_action.get("thesis_id")
+        or getattr(contract, "thesis_id", "")
+        or state.get("selected_thesis_id")
+        or ""
+    )
+    if not thesis_id:
+        raise ValueError("non-baseline backtest requires selected thesis id")
+    if job < 1:
+        raise ValueError("non-baseline backtest requires valid job id")
+    if round_number < 1:
+        raise ValueError("non-baseline backtest requires research round >= 1")
+
+
 def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) -> int:
     """Run a single experiment (backtest + evaluate + log). Returns exit code."""
     next_action = state["next_action"]
     config = next_action["config"]
+    _validate_backtest_request(controller, state)
     execution_root_value = next_action.get("execution_root")
     controller.ctx.execution_root = _validated_execution_root(controller, execution_root_value)
     state["activity"] = {
@@ -1313,6 +1324,8 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         "phase": "backtest_running",
         "config": config,
         "source": next_action.get("source"),
+        "round": state.get("research_round"),
+        "thesis_id": next_action.get("selected_thesis_id") or next_action.get("thesis_id"),
     }
     if execution_root_value:
         state["activity"]["execution_root"] = execution_root_value
@@ -1378,7 +1391,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         if verdict:
             analysis["trade_analysis"]["verdict"] = verdict.model_dump()
         if controller.ctx.current_contract is None:
-            controller.ctx.parent_experiment_id = ""
+            controller.ctx.parent_backtest_run_id = ""
             controller.ctx.execution_root = None
             current_state = controller.read_state()
             if current_state.pop("_last_round_usage", None) is not None:

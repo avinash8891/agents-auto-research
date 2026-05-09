@@ -67,7 +67,7 @@ python autoresearch_controller.py --family orb   # run ORB strategy family
 python vps_runner.py --strategy ema --git-ref main       # deploy branch/tag
 python vps_runner.py --strategy ema --git-sha <git-sha>   # deploy exact commit
 
-# Experiment tracking CLI
+# Backtest run tracking CLI
 python autoresearch_cli.py init   --session-path <path>
 python autoresearch_cli.py log    --session-path <path> --metric sharpe --value 1.23
 python autoresearch_cli.py status --session-path <path>
@@ -97,7 +97,7 @@ Copy `.env.example` → `.env`. Required vars:
 autoresearch_controller.py   ← main entry point; state machine per strategy family
   ├─ autoresearch_planning.py        ← thesis generation
   ├─ autoresearch_research.py        ← per-thesis research rounds
-  ├─ autoresearch_experiment.py      ← experiment logging + metric evaluation
+  ├─ autoresearch_experiment.py      ← backtest logging + metric evaluation
   ├─ autoresearch_orchestration.py   ← state-transition helpers (resume, baseline rerun, next action)
   └─ compiler_pipeline.py            ← top-level compiler orchestrator
        ├─ compiler_builder.py            ← builds missing strategy primitives
@@ -120,7 +120,7 @@ trace_sdk.py                 ← trace event schema + writer
 trace_adapters/              ← per-adapter trace transformers (halo, recursive_improve, reflexio)
 
 autoresearch_cli.py          ← SQLite-backed experiment tracking CLI
-experiment_db.py             ← ExperimentDB (SQLite schema + queries)
+backtest_run_db.py             ← BacktestRunDB (SQLite schema + queries)
 autoresearch_state.py        ← state file read/write helpers
 
 strategies/ema/              ← EMA strategy (registered as "ema")
@@ -133,7 +133,7 @@ vps_runner.py                ← deploys git ref to VPS + launches controller
 scripts/token_audit.py       ← post-run token cost analysis (--by model/agent)
 trace_exports/               ← per-round trace artifacts (gitignored raw outputs)
 prompts.db                   ← runtime SQLite; accumulated prompt history (gitignored)
-ema_experiments.db           ← runtime SQLite; EMA experiment records (gitignored)
+ema_backtest_runs.db         ← runtime SQLite; EMA backtest-run records (gitignored)
 ```
 
 ## Violations

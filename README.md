@@ -9,7 +9,7 @@ The system runs an agentic research loop for trading strategy families (currentl
 1. **Plans** — selects the next thesis to test based on prior experiment results.
 2. **Researches** — the conductor agent proposes a structured thesis (config changes, expected effects, disqualifiers) informed by trade analysis, web search, and cross-session memory.
 3. **Compiles** — builder agents generate and validate any missing strategy primitives for the thesis config.
-4. **Experiments** — the validated config is run through the backtest engine and results are evaluated.
+4. **Backtests** — the validated config is run through the backtest engine and results are evaluated.
 5. **Iterates** — findings feed into the next round until a stopping criterion is met or the operator halts.
 
 ## Architecture
@@ -55,7 +55,7 @@ The system is organized into five planes:
          ▼
 ┌─────────────────────────────────────────────────────────┐
 │  Persistence plane                                      │
-│  experiment_db.py      — SQLite experiment records      │
+│  backtest_run_db.py      — SQLite experiment records      │
 │  research_memory.py    — MemPalace cross-session memory │
 │  trace_sdk.py          — OpenTelemetry trace events     │
 │  autoresearch_state.py — JSON state file helpers        │

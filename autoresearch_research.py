@@ -35,17 +35,15 @@ from autoresearch_paths import resolve_config_path
 from autoresearch_planning import build_research_failure_state
 from autoresearch_runtime_paths import research_round_root
 from autoresearch_state import (
-    ExperimentRecord,
+    BacktestResultRecord,
     read_state,
     write_state,
 )
 from backtest.runtime_config import load_runtime_config
-from config_hash import _config_hash
 from family_research_spec import resolve_research_resolution_context
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_types import ResearchThesis
-from strategies import STRATEGIES
 from strategy_family import StrategyFamily
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
 from trace_adapters.halo import build_halo_export_package, build_halo_payload
@@ -204,9 +202,9 @@ def log_research_round(
     usage: dict[str, Any] | None = None,
 ) -> None:
     """Log every research round outcome to canonical persistence."""
-    from experiment_db import ExperimentDB
+    from backtest_run_db import BacktestRunDB
 
-    db = ExperimentDB(db_path)
+    db = BacktestRunDB(db_path)
     state = read_state(state_path)
     attempt_number = 1
     if outcome.startswith("rejected_attempt_"):
@@ -244,7 +242,7 @@ def log_research_round(
 # ── Pure helpers ──────────────────────────────────────────────────
 
 
-def results_to_dicts(results: list[ExperimentRecord]) -> list[dict[str, Any]]:
+def results_to_dicts(results: list[BacktestResultRecord]) -> list[dict[str, Any]]:
     """Convert ExperimentRecords to plain dicts for formatting."""
     result_dicts: list[dict[str, Any]] = []
     for r in results:
@@ -306,7 +304,7 @@ def load_baseline_config(root: Path, family: StrategyFamily) -> dict[str, Any] |
 
 
 def _resolve_runtime_config_for_record(
-    controller: "AutoresearchController", latest: ExperimentRecord
+    controller: "AutoresearchController", latest: BacktestResultRecord
 ) -> dict[str, Any]:
     config_path = resolve_config_path(
         latest.config,
@@ -330,72 +328,16 @@ def queue_variants(
     run_queue_dir: Path,
     variants: list[dict[str, Any]],
     thesis: Any,  # ResearchThesis
-    primary_contract: Any,  # ExperimentContract
+    primary_contract: Any,  # BacktestContract
     baseline_config: dict[str, Any],
     *,
     experiments_dir: Path | None = None,
     job: int | None = None,
     created_for_commit: str = "",
 ) -> None:
-    """Write variant runtime configs so the loop picks them up as queued experiments."""
-    for variant in variants:
-        variant = dict(variant)
-        label = variant.pop("_variant_label", "variant")
-        factor = variant.pop("_variant_factor", 1.0)
-        if factor == 1.0:
-            continue  # skip the proposed value — it's already the primary
-
-        runtime = {**baseline_config, **variant}
-        family_name = getattr(thesis, "strategy_family", None) or getattr(
-            primary_contract, "strategy_family", None
-        )
-        strategy = STRATEGIES.get(family_name) if family_name else None
-        if strategy is not None:
-            try:
-                runtime = strategy.validate_runtime_config_scope(runtime)
-                violations = strategy.validate_runtime_config(runtime)
-            except ValueError as exc:
-                violations = [str(exc)]
-            if violations:
-                trace(
-                    "LOOP",
-                    f"skipped invalid variant {thesis.thesis_id}_{label}: {'; '.join(violations)}",
-                )
-                continue
-        config_hash = _config_hash(runtime)
-        variant_id = f"{thesis.thesis_id}_{label}"
-        exp_dir = (experiments_dir or (root / "experiments")) / config_hash
-        exp_dir.mkdir(parents=True, exist_ok=True)
-
-        _write_text_atomic(exp_dir / "runtime_config.json", json.dumps(runtime, indent=2) + "\n")
-        variant_thesis = thesis.model_dump()
-        variant_thesis["thesis_id"] = variant_id
-        variant_thesis["_variant_of"] = primary_contract.experiment_id
-        variant_thesis["_variant_label"] = label
-        variant_thesis["_variant_factor"] = factor
-        variant_thesis["config_changes"] = runtime
-        variant_thesis["config_changes_kind"] = "full_runtime"
-        _write_text_atomic(exp_dir / "thesis.json", json.dumps(variant_thesis, indent=2) + "\n")
-
-        run_queue_dir.mkdir(parents=True, exist_ok=True)
-        queue_artifact = {
-            "thesis_id": variant_id,
-            "config": (exp_dir / "runtime_config.json").relative_to(root).as_posix(),
-            "status": "pending",
-            "source": "multi_variant_probe",
-            "variant_of": primary_contract.experiment_id,
-            "variant_label": label,
-            "variant_factor": factor,
-        }
-        if job is not None:
-            queue_artifact["job"] = job
-        if created_for_commit:
-            queue_artifact["created_for_commit"] = created_for_commit
-        _write_text_atomic(
-            run_queue_dir / f"{variant_id}.json",
-            json.dumps(queue_artifact, indent=2) + "\n",
-        )
-        trace("LOOP", f"queued variant {variant_id} ({label}) config_hash={config_hash}")
+    raise RuntimeError(
+        "variant backtest queueing is no longer supported; each research round may select at most one backtest"
+    )
 
 
 # ── Conductor invocation ──────────────────────────────────────────
@@ -403,7 +345,7 @@ def queue_variants(
 
 def _backfill_artifact_files_from_latest_dir(
     controller: "AutoresearchController",
-    latest: ExperimentRecord,
+    latest: BacktestResultRecord,
     trades_file: str,
     strategy_events_file: str,
     diagnostics_file: str,
@@ -467,7 +409,7 @@ def _existing_artifact_file(controller: "AutoresearchController", raw_path: Any)
 
 def _artifact_files_from_latest_record(
     controller: "AutoresearchController",
-    latest: ExperimentRecord,
+    latest: BacktestResultRecord,
     trades_file: str,
     strategy_events_file: str,
     diagnostics_file: str,
@@ -485,7 +427,7 @@ def _artifact_files_from_latest_record(
 
 def _resolve_conductor_inputs(
     controller: "AutoresearchController",
-    results: list[ExperimentRecord],
+    results: list[BacktestResultRecord],
     *,
     current_job: int | None = None,
 ) -> tuple[str, str, str, dict[str, Any]]:
@@ -709,38 +651,27 @@ def _log_validation_rejection(
 
 def _on_ready_to_run(
     controller: "AutoresearchController",
+    research_round: int,
     contract: Any,
     raw_thesis: dict[str, Any],
-    validated: Any,
     thesis_id: str,
     parsed: dict[str, Any],
     should_stop: bool,
 ) -> dict[str, Any]:
-    """Wire the contract into the controller and queue any multi-variant
-    probes; return the success result dict."""
-    from thesis_validator import generate_variants
-
-    config_path = (
-        (controller.experiments_dir / contract.experiment_id / "runtime_config.json")
-        .relative_to(controller.root)
-        .as_posix()
+    """Wire the selected round thesis into the controller."""
+    round_root = research_round_root(
+        controller.root, int(controller.read_state().get("job")), research_round
     )
+    config_path = (round_root / "selected_config.json").relative_to(controller.root).as_posix()
     controller.ctx.current_contract = contract
-    latest_db = controller.experiment_db.latest(1)
-    controller.ctx.parent_experiment_id = latest_db[0].experiment_id if latest_db else ""
-
-    baseline_config = load_baseline_config(controller.root, controller.family)
-    if baseline_config:
-        variants = generate_variants(raw_thesis.get("config_changes", {}), baseline_config)
-        if len(variants) > 1:
-            controller._queue_variants(variants, validated, contract, baseline_config)
-            trace("LOOP", f"queued {len(variants)-1} variant(s) for {thesis_id}")
+    latest_db = controller.backtest_run_db.latest(1)
+    controller.ctx.parent_backtest_run_id = latest_db[0].run_id if latest_db else ""
     return {
         "status": "completed",
         "generated_config": config_path,
         "generated_config_needs_build": False,
         "generated_thesis_id": thesis_id,
-        "experiment_id": contract.experiment_id,
+        "contract_id": contract.contract_id,
         "thesis_id": thesis_id,
         "thesis": raw_thesis,
         "should_stop": should_stop,
@@ -778,9 +709,10 @@ def _try_one_validation_attempt(
             f"RESEARCH_RAW thesis_id={thesis_id} "
             f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
         )
-        contract = compile_research_thesis(
-            validated, controller.root, artifact_root=controller.job_runtime_root
+        round_root = research_round_root(
+            controller.root, int(controller.read_state().get("job")), research_round
         )
+        contract = compile_research_thesis(validated, controller.root, artifact_root=round_root)
     except (ThesisValidationError, ValueError) as exc:
         _log_validation_rejection(
             controller, research_round, attempt, raw_thesis, thesis_id, str(exc)
@@ -816,7 +748,7 @@ def _dispatch_compiled_contract(
     if contract.status == "ready_to_run":
         return (
             _on_ready_to_run(
-                controller, contract, raw_thesis, validated, thesis_id, parsed, should_stop
+                controller, research_round, contract, raw_thesis, thesis_id, parsed, should_stop
             ),
             None,
         )
@@ -1208,15 +1140,22 @@ def _write_research_round_artifacts(
         round_root / "links.json",
         {
             "generated_config_path": result.get("generated_config"),
-            "experiment_sidecar_path": (
-                f"runtime/jobs/job-{job}/experiments/{thesis_id}/thesis.json" if thesis_id else None
+            "selected_thesis_path": (
+                f"runtime/jobs/job-{job}/research/round-{research_round}/selected_thesis.json"
+                if thesis_id
+                else None
+            ),
+            "selected_contract_path": (
+                f"runtime/jobs/job-{job}/research/round-{research_round}/selected_contract.json"
+                if thesis_id and result.get("generated_config")
+                else None
             ),
             "related_backtest_run_artifact_path": result.get("related_backtest_run_artifact_path"),
             "related_trace_export_path": (
                 f"runtime/jobs/job-{job}/research/round-{research_round}/trace_exports"
             ),
             "related_builder_request_path": (
-                f"runtime/jobs/job-{job}/builder-requests/{thesis_id}"
+                f"runtime/jobs/job-{job}/research/round-{research_round}/builder_request"
                 if thesis_id and result.get("generated_config_needs_build")
                 else None
             ),
@@ -1477,13 +1416,24 @@ def _handle_success(
         "config": gen_config,
         "thesis_id": thesis_id,
     }
-    state["current_thesis"] = {"config": gen_config, "status": "ready_to_run"}
+    state["current_thesis"] = {
+        "config": gen_config,
+        "status": "ready_to_run",
+        "selected_thesis_id": thesis_id,
+    }
+    state["selected_thesis_id"] = thesis_id
+    state["selected_config_path"] = gen_config
+    state["backtest_target_path"] = (
+        f"runtime/jobs/job-{state.get('job')}/research/round-{research_round}/backtest"
+    )
     state["next_action"] = {
         "type": "run_experiment",
         "config": gen_config,
         "benchmark_command": controller.family.benchmark_command(gen_config),
         "requires_trade_analysis": True,
         "source": "research_conductor",
+        "research_round": research_round,
+        "selected_thesis_id": thesis_id,
     }
     state["blockers"] = []
     state.pop("rejection_feedback", None)

@@ -29,9 +29,9 @@ def _append_bounded(lines: list[str], line: str, *, budget: int, emitted: int) -
 
 
 def format_result_history(results: list[dict[str, Any]]) -> str:
-    """Format experiment results into a readable history for prompts."""
+    """Format backtest-run results into a readable history for prompts."""
     if not results:
-        return "No experiments run yet."
+        return "No backtest runs yet."
     lines: list[str] = []
     emitted = 0
     for idx, r in enumerate(results):
@@ -124,7 +124,7 @@ def format_result_history(results: list[dict[str, Any]]) -> str:
 def format_experiment_results_summary(results: list[dict[str, Any]]) -> str:
     """Small prompt seed; conductor tools provide full experiment history."""
     if not results:
-        return "No experiments run yet."
+        return "No backtest runs yet."
     metric_name = "metric"
     latest = results[-1]
 

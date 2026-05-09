@@ -7,25 +7,25 @@ It excludes optional tables and optional columns.
 
 1. SQLite is the only canonical durable store.
 2. SQLite-backed exports may exist for reporting, but never as source of truth.
-3. Runtime controller state JSON remains operational state, not durable experiment history.
+3. Runtime controller state JSON remains operational state, not durable backtest-run history.
 4. Artifact files remain on disk; SQLite stores references only.
 5. Timestamps are ISO-8601 UTC strings.
 6. Model `research_round` and `research_thesis_attempt` separately.
-7. Validator rejection history belongs in `research_thesis_attempts`, not `experiments`.
+7. Validator rejection history belongs in `research_thesis_attempts`, not `backtest_runs`.
 
 ---
 
-## Required table: `experiments`
+## Required table: `backtest_runs`
 
-One row per executed experiment/backtest only.
+One row per executed backtest only.
 
 | Column | Type | Source today | Notes |
 |---|---|---|---|
-| `experiment_id` | TEXT PRIMARY KEY | existing | canonical experiment id |
+| `run_id` | TEXT PRIMARY KEY | existing | canonical backtest run id |
 | `thesis_id` | TEXT | existing | selected thesis that reached execution |
 | `strategy_family` | TEXT | existing | current `family` field |
 | `job_id` | INTEGER | existing | controller job number |
-| `run_id` | TEXT | existing | trace/session run id |
+| `trace_run_id` | TEXT | existing | trace/session run id |
 | `created_at_utc` | TEXT | existing | current `timestamp` |
 | `decision_status` | TEXT | existing | currently `keep` / `discard` only |
 | `verdict_status` | TEXT | existing | accepted/rejected/inconclusive/none |
@@ -41,12 +41,12 @@ One row per executed experiment/backtest only.
 | `strategy_diagnostics_json` | TEXT | existing | full diagnostics payload |
 
 ### Required indexes
-- `idx_experiments_thesis_id`
-- `idx_experiments_strategy_family_created_at`
-- `idx_experiments_job_id`
-- `idx_experiments_code_commit`
-- `idx_experiments_decision_status`
-- `idx_experiments_primary_metric_value`
+- `idx_backtest_runs_thesis_id`
+- `idx_backtest_runs_strategy_family_created_at`
+- `idx_backtest_runs_job_id`
+- `idx_backtest_runs_code_commit`
+- `idx_backtest_runs_decision_status`
+- `idx_backtest_runs_primary_metric_value`
 
 ---
 
@@ -114,7 +114,7 @@ One row per baseline checkpoint.
 ## Explicit non-goals
 
 Do not model the following as already-existing persisted data:
-- experiment statuses `blocked` / `failed`
+- backtest-run statuses `blocked` / `failed`
 - `asi.hypothesis` as true hypothesis text
 - checkpoint drift as already persisted checkpoint data
 - conductor reasoning as already persisted research-round data

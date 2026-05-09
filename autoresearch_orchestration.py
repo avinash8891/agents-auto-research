@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 _log = logging.getLogger(__name__)
 
 from autoresearch_paths import serialize_config_path
+from autoresearch_runtime_paths import research_round_root
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from strategies import STRATEGIES
@@ -129,7 +130,7 @@ def _activate_builder_config(
     state["current_thesis"] = {
         "config": generated_config,
         "status": "ready_to_run",
-        "thesis_id": thesis_id,
+        "selected_thesis_id": thesis_id,
         "source": "builder",
     }
     if execution_root:
@@ -141,6 +142,8 @@ def _activate_builder_config(
         "requires_trade_analysis": True,
         "source": "builder",
         "builder_thesis_id": thesis_id,
+        "selected_thesis_id": thesis_id,
+        "research_round": research_round,
     }
     if execution_root:
         state["next_action"]["execution_root"] = execution_root
@@ -150,12 +153,16 @@ def _activate_builder_config(
     state.pop("halted_thesis", None)
     state.pop("manual_review_theses", None)
     state.pop("builder_failed_theses", None)
-    controller.ctx.parent_experiment_id = ""
+    state["selected_thesis_id"] = thesis_id
+    state["selected_config_path"] = generated_config
+    if research_round is not None:
+        state["backtest_target_path"] = (
+            f"runtime/jobs/job-{state.get('job')}/research/round-{research_round}/backtest"
+        )
+    controller.ctx.parent_backtest_run_id = ""
     base_root = Path(execution_root) if execution_root else controller.root
     config_path = base_root / generated_config
-    thesis_path = config_path.parent / "thesis.json"
-    if not thesis_path.exists():
-        thesis_path = base_root / "experiments" / thesis_id / "thesis.json"
+    thesis_path = config_path.parent / "selected_thesis.json"
     thesis_payload: dict[str, Any] = {"thesis_id": thesis_id}
     if thesis_path.exists():
         try:
@@ -166,10 +173,10 @@ def _activate_builder_config(
             thesis_payload = loaded
         else:
             raise RuntimeError(f"thesis.json is not an object for {thesis_id}")
-    from research_types import ExperimentContract
+    from research_types import BacktestContract
 
-    controller.ctx.current_contract = ExperimentContract.from_sidecar(
-        experiment_id=thesis_id,
+    controller.ctx.current_contract = BacktestContract.from_sidecar(
+        contract_id=thesis_id,
         strategy_family=controller.family.name,
         baseline_config_path=f"configs/{controller.family.base_config_filename}",
         runtime_config={},
@@ -509,6 +516,16 @@ def build_missing_primitives_for_state(
     trace("BUILDER", f"start thesis={thesis_id}")
     trace("LOOP", f"building halted thesis={thesis_id}")
     job_runtime_root = getattr(controller, "job_runtime_root", controller.root)
+    raw_job = state.get("job")
+    try:
+        job = int(raw_job) if raw_job is not None else None
+    except (TypeError, ValueError):
+        job = None
+    round_root = (
+        research_round_root(controller.root, job, int(research_round))
+        if research_round is not None and job is not None
+        else job_runtime_root
+    )
     state = _mark_builder_running(
         controller,
         state,
@@ -520,7 +537,7 @@ def build_missing_primitives_for_state(
         import compiler_pipeline
 
         builder_result = compiler_pipeline.build_missing_primitives(
-            controller.root, thesis_id, artifact_root=job_runtime_root
+            controller.root, thesis_id, artifact_root=round_root
         )
     except (
         Exception
@@ -539,7 +556,7 @@ def build_missing_primitives_for_state(
     )
     try:
         _refresh_reflexio_export_after_builder(
-            job_runtime_root,
+            round_root,
             research_round=research_round,
             thesis_id=thesis_id,
             family=controller.family.name,
@@ -623,17 +640,25 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         runtime = STRATEGIES[controller.family.name].validate_runtime_config_scope(runtime)
     except ValueError:
         return None
-    runtime_root = getattr(controller, "runtime_root", controller.root)
-    exp_dir = runtime_root / "experiments" / halted_id
+    raw_round = state.get("research_round")
+    try:
+        research_round = int(raw_round)
+    except (TypeError, ValueError):
+        research_round = -1
+    if research_round < 1:
+        raise RuntimeError(
+            f"halted thesis resume requires a non-baseline research round, got {raw_round!r}"
+        )
+    exp_dir = research_round_root(controller.root, int(state.get("job")), research_round)
     exp_dir.mkdir(parents=True, exist_ok=True)
-    config_abspath = exp_dir / "runtime_config.json"
+    config_abspath = exp_dir / "selected_config.json"
     config_path = serialize_config_path(config_abspath, code_root=controller.root)
     _write_text_atomic(config_abspath, json.dumps(runtime, indent=2) + "\n")
     resumed_thesis = dict(raw_thesis)
     resumed_thesis.setdefault("thesis_id", halted_id)
     resumed_thesis.setdefault("config_changes", config_changes)
     thesis_sidecar = {
-        "experiment_id": halted_id,
+        "contract_id": halted_id,
         "strategy_family": controller.family.name,
         "thesis_id": resumed_thesis.get("thesis_id", halted_id),
         "hypothesis": resumed_thesis.get("hypothesis", ""),
@@ -645,13 +670,13 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         "required_diagnostic_specs": resumed_thesis.get("required_diagnostic_specs", []),
     }
     _write_text_atomic(
-        exp_dir / "thesis.json",
+        exp_dir / "selected_thesis.json",
         json.dumps(thesis_sidecar, indent=2) + "\n",
     )
-    from research_types import ExperimentContract
+    from research_types import BacktestContract
 
-    contract = ExperimentContract.from_sidecar(
-        experiment_id=halted_id,
+    contract = BacktestContract.from_sidecar(
+        contract_id=halted_id,
         strategy_family=controller.family.name,
         baseline_config_path=f"configs/{controller.family.base_config_filename}",
         runtime_config=runtime,
@@ -659,11 +684,11 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         status="ready_to_run",
     )
     _write_text_atomic(
-        exp_dir / "contract.json",
+        exp_dir / "selected_contract.json",
         contract.model_dump_json(indent=2) + "\n",
     )
     controller.ctx.current_contract = contract
-    controller.ctx.parent_experiment_id = ""
+    controller.ctx.parent_backtest_run_id = ""
     _archive_reactivated_blocker(state, source="resumed_halted_thesis")
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
@@ -674,7 +699,14 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         "benchmark_command": controller.family.benchmark_command(config_path),
         "requires_trade_analysis": True,
         "source": "resumed_halted_thesis",
+        "research_round": research_round,
+        "selected_thesis_id": resumed_thesis.get("thesis_id", halted_id),
     }
+    state["selected_thesis_id"] = resumed_thesis.get("thesis_id", halted_id)
+    state["selected_config_path"] = config_path
+    state["backtest_target_path"] = (
+        f"runtime/jobs/job-{state.get('job')}/research/round-{research_round}/backtest"
+    )
     state["blockers"] = []
     state.pop("halted_thesis_id", None)
     state.pop("halted_reason", None)

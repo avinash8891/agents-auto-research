@@ -18,7 +18,7 @@ Many recommendations were implemented after job 20. The concrete follow-ups from
 | Fail fast on missing research inputs | Implemented with scoped semantics | `research_required` remains a valid autonomous trigger, not a hard error. Missing trade artifacts are represented in conductor prompts/tools, while invalid `running` states with blockers are rejected before state writes. |
 | Block controller actions while blockers remain | Implemented | The controller only transitions to experiment execution when research returns `running` with blockers cleared. The autonomy trace wording now says "blocker-cleared research next action" and records the clear-blockers constraint. |
 | Add invariant tests for blocked/running transitions | Implemented | `validate_controller_state_invariants()` rejects `running` state with non-empty blockers, and characterization tests cover the invariant. |
-| Canonical thesis to config schema | Implemented | `ResearchThesis -> ExperimentContract -> runtime_config` exists and is high-value. |
+| Canonical thesis to config schema | Implemented | `ResearchThesis -> BacktestContract -> runtime_config` exists and is high-value. |
 | Deduplicate prior theses before validation | Implemented enough for now | Config-key Jaccard overlap, dimension checks, and prior-thesis tools are active. Full semantic/cosine dedupe remains deferred unless duplicate pollution recurs. |
 | Emit structured rejection reasons | Implemented | Validator rejections now emit structured `{source, code, message}` metadata and trace `validation_error` payloads use stable error codes. Builder and conductor paths also emit typed error codes/actions. |
 | Add novelty/diversity constraints | Implemented enough for now | Prompt and validator enforce mechanism dimensions and novelty explanation. A full diversity scheduler remains deferred because it could over-constrain creative thesis generation. |
@@ -44,7 +44,7 @@ Many recommendations were implemented after job 20. The concrete follow-ups from
 
 Relevant current code:
 
-- `research_types.py`: structured `ResearchThesis`, `ExperimentContract`, `ExperimentVerdict`
+- `research_types.py`: structured `ResearchThesis`, `BacktestContract`, `BacktestVerdict`
 - `compiler_research.py`: compiles validated thesis into runtime config contract
 - `thesis_validator.py`: mechanism dimensions, metadata-key rejection, config-overlap dedupe, hypothesis/config alignment
 - `research_prompts.py`: prior-thesis tools, experiment-result tools, mechanism dimension rules, implementation-gap check

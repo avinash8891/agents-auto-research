@@ -15,10 +15,10 @@ Last verified: 2026-05-04 (full code read, no memory)
 ## Executive summary
 
 - 0 Critical, 4 High, 8 Medium, 8 Low findings (20 total; extended from first-pass 15 after full-repo read)
-- Largest debt concentration: `experiment_db.py` + `autoresearch_orchestration.py` (packaging gap, cache hazard)
+- Largest debt concentration: `backtest_run_db.py` + `autoresearch_orchestration.py` (packaging gap, cache hazard)
 - `research_conductor.py` is the most under-tested module at **61%** (verified by running coverage) — below the project's own 70% gate
 - Coverage gate frozen at 70% despite CLAUDE.md requiring 80%; the promised ratchet in pyproject.toml never landed
-- Three duplicated UTC helpers → **two remain** (autoresearch_state.py still exports `iso8601_utc_now`; experiment_db.py now imports from persistence_utils)
+- Three duplicated UTC helpers → **two remain** (autoresearch_state.py still exports `iso8601_utc_now`; backtest_run_db.py now imports from persistence_utils)
 - OAuth proxy constant (`10531`) and `_ensure_oauth_proxy()` duplicated across `agent_infra.py` and `research_paths.py`
 - `write_json_atomic_strict` deleted ✅; `autoresearch_planning.py` local `_write_text_atomic` deleted ✅
 
@@ -36,7 +36,7 @@ The system is an autonomous strategy-research loop for algorithmic trading. It r
 
 3. **LLM agent layer** (`research_conductor.py`, `agent_runners.py`, `agent_openai_calls.py`) — OpenAI Agents SDK (v0.14.2) routed through a local OAuth proxy at `127.0.0.1:10531`. Agents generate theses, compile configs, and analyze trade diagnostics.
 
-4. **Persistence** (`experiment_db.py`, `autoresearch_state.py`, `persistence_utils.py`) — sqlite3 is the canonical store for experiment results; JSON files hold state, run queue, and ideas backlog. `persistence_utils.write_text_atomic` uses fsync + rename for crash safety.
+4. **Persistence** (`backtest_run_db.py`, `autoresearch_state.py`, `persistence_utils.py`) — sqlite3 is the canonical store for experiment results; JSON files hold state, run queue, and ideas backlog. `persistence_utils.write_text_atomic` uses fsync + rename for crash safety.
 
 5. **VPS deployment** (`vps_runner.py`) — paramiko SSH client that clones the git repo at an exact commit SHA on a remote VPS and launches the controller there.
 
@@ -51,16 +51,16 @@ The README contains only pre-commit setup. The system description, entry points,
 | 🔴 TODO | F001 | Dep & config debt | `pyproject.toml` (py-modules list) | High | S | `autoresearch_orchestration` is on disk and imported by `autoresearch_controller.py` but absent from `py-modules`. Verified: not in the list. Package installs outside editable mode will silently fail at import time. → **FIXED** | Add `"autoresearch_orchestration"` to the `py-modules` list in `pyproject.toml`. |
 | 🔴 TODO | F002 | Test debt | `pyproject.toml:fail_under = 70` | High | M | Coverage gate is 70%; project rule (CLAUDE.md) requires 80%. The comment says "Will ratchet to 80% once integration test fixtures land in PR 5" — PR 5 shipped long ago. Verified: `fail_under = 70` still in pyproject.toml. → **FIXED** | Raise `fail_under` to 80. Fix F003 first. |
 | 🔴 TODO | F003 | Test debt | `research_conductor.py:41–42,66,72,84,93,132–196,226,228–237,259–274,311–386` | High | M | `research_conductor.py` is at **61%** — verified by running `python3 -m coverage run -m pytest`. Below the project's own 70% gate. Untested: `_run_coroutine_sync` threading path, agent tool injection block (lines 132–196), result-parsing / validation branches (lines 311–386). → **FIXED** | Add unit tests with mocked conductor. Start with threading fallback and `should_stop` / `validation_failed` branches. |
-| 🔴 TODO | F004 | Architectural decay | `experiment_db.py:537–539` | High | M | `ExperimentDB._load()` returns `self._records` if not None without re-querying sqlite. Verified at line 538: `if self._records is not None: return self._records`. Any external write (VPS run, migration) makes the cache serve stale data for the process lifetime. → **FIXED** | Add a `reload()` method clearing `self._records = None`. Call it in `read_results()` / `all()` for cross-process callers, or add a runtime assertion enforcing single-process use. |
-| 🟡 PARTIAL | F005 | Consistency rot | `autoresearch_state.py:20` | Medium | S | `experiment_db.py` now imports `utc_now_iso8601` from `persistence_utils` ✅ — that duplicate is gone. But `autoresearch_state.py:20` still defines `iso8601_utc_now()` and `autoresearch_orchestration.py:7` still imports from there. Two of three duplicates remain. → **FIXED** | Delete `iso8601_utc_now` from `autoresearch_state.py`. Update `autoresearch_orchestration.py` to import from `persistence_utils`. |
+| 🔴 TODO | F004 | Architectural decay | `backtest_run_db.py:537–539` | High | M | `BacktestRunDB._load()` returns `self._records` if not None without re-querying sqlite. Verified at line 538: `if self._records is not None: return self._records`. Any external write (VPS run, migration) makes the cache serve stale data for the process lifetime. → **FIXED** | Add a `reload()` method clearing `self._records = None`. Call it in `read_results()` / `all()` for cross-process callers, or add a runtime assertion enforcing single-process use. |
+| 🟡 PARTIAL | F005 | Consistency rot | `autoresearch_state.py:20` | Medium | S | `backtest_run_db.py` now imports `utc_now_iso8601` from `persistence_utils` ✅ — that duplicate is gone. But `autoresearch_state.py:20` still defines `iso8601_utc_now()` and `autoresearch_orchestration.py:7` still imports from there. Two of three duplicates remain. → **FIXED** | Delete `iso8601_utc_now` from `autoresearch_state.py`. Update `autoresearch_orchestration.py` to import from `persistence_utils`. |
 | 🟡 PARTIAL | F006 | Consistency rot | `agent_openai_calls.py:10`, `research_paths.py:11`, `agent_runners.py:92`, `agent_prompts.py:209` | Medium | S | Two module-level constants now exist: `_OPENAI_AGENT_MODEL = "gpt-5.5"` in `agent_openai_calls.py:10` and `_CONDUCTOR_MODEL = "gpt-5.5"` in `research_paths.py:11` — an improvement. But `agent_runners.py:92` still has `getattr(agent_def, "model", "gpt-5.5")` inline, and `agent_prompts.py:209` still has `model="gpt-5.5"` literal. No unified constant in `autoresearch_constants.py`. → **FIXED** | Add `DEFAULT_AGENT_MODEL = "gpt-5.5"` to `autoresearch_constants.py`. Unify `_OPENAI_AGENT_MODEL` and `_CONDUCTOR_MODEL` to import from there. Fix `agent_runners.py:92` and `agent_prompts.py:209`. |
 | 🔴 TODO | F007 | Performance & resource hygiene | `agent_runners.py:91`, `agent_openai_calls.py:30,205` | Medium | M | `AsyncOpenAI` is instantiated inside each runner function on every call — verified at `agent_openai_calls.py:30` and `agent_runners.py:91`. No shared singleton in `agent_infra.py`. Each research round opens and closes connections independently. → **FIXED** | Create a `_get_client()` factory in `agent_infra.py` returning a singleton keyed by base URL. Import from there in all agent callers. |
-| 🔴 TODO | F008 | Consistency rot | `agent_infra.py:54`, `agent_memory.py:8`, `agent_token_usage.py:6`, `compiler_operationalize.py:12`, `experiment_db.py:21`, `metrics.py:14`, `research_memory.py:11`, `research_paths.py:12`, `strategy_event_logger.py:26`, `thesis_validator.py:24` | Medium | S | 10 source files use `logging.getLogger(__name__)` directly instead of `autoresearch_logging.get_logger`. Verified by grep. These callers miss the project's structured UTC log format. → **FIXED** | Replace all `logging.getLogger(__name__)` in non-test source files with `from autoresearch_logging import get_logger; log = get_logger(__name__)`. |
+| 🔴 TODO | F008 | Consistency rot | `agent_infra.py:54`, `agent_memory.py:8`, `agent_token_usage.py:6`, `compiler_operationalize.py:12`, `backtest_run_db.py:21`, `metrics.py:14`, `research_memory.py:11`, `research_paths.py:12`, `strategy_event_logger.py:26`, `thesis_validator.py:24` | Medium | S | 10 source files use `logging.getLogger(__name__)` directly instead of `autoresearch_logging.get_logger`. Verified by grep. These callers miss the project's structured UTC log format. → **FIXED** | Replace all `logging.getLogger(__name__)` in non-test source files with `from autoresearch_logging import get_logger; log = get_logger(__name__)`. |
 | 🔴 TODO | F009 | Documentation drift | `README.md` | Medium | S | README contains only 4 lines of pre-commit setup. No architecture overview, no entry points, no env var reference. Verified: `cat README.md` shows only the pre-commit block. → **FIXED** | Add `## Overview` and `## Architecture` sections covering the five planes, entry points, and env vars. |
 | 🔴 TODO | F010 | Dep & config debt | `pyproject.toml:[tool.coverage.run]source` | Medium | S | `autoresearch_orchestration` absent from `[tool.coverage.run] source`. Verified: coverage source list does not include it. Its state-machine logic is never measured. → **FIXED** | Add `"autoresearch_orchestration"` to the coverage source list. |
 | 🔴 TODO | F011 | Error handling & observability | `agent_runners.py:170–171`, `research_conductor.py:229–231` | Low | S | Both sites have `except Exception: result_text = ""` with zero logging. Verified at both lines. If the SDK changes its output API, all agents silently return empty results with no observable signal. → **FIXED** | Replace with `except Exception as exc: log.warning("final_output_as failed: %s", exc); result_text = ""`. |
 | ✅ STALE | F012 | Architectural decay | `persistence_utils.py` | Low | S | `write_json_atomic_strict` was deleted by the simplify pass. `persistence_utils.py` now has only `write_json_atomic`. Both call sites updated. Fixed. | — |
-| 🔴 TODO | F013 | Architectural decay | `experiment_db.py:651` | Low | S | `if val > best_val: best = r` at line 651 — hardcoded "higher is better" regardless of `best_direction`. Verified: `best_direction()` is read in `evaluate_metric()` (line 199) but not in `best_by_metric()`. Any caller on a "lower is better" metric (drawdown) gets the worst result. → **FIXED** | `direction = self.best_direction(); if (val > best_val if direction == "higher" else val < best_val): best = r` |
+| 🔴 TODO | F013 | Architectural decay | `backtest_run_db.py:651` | Low | S | `if val > best_val: best = r` at line 651 — hardcoded "higher is better" regardless of `best_direction`. Verified: `best_direction()` is read in `evaluate_metric()` (line 199) but not in `best_by_metric()`. Any caller on a "lower is better" metric (drawdown) gets the worst result. → **FIXED** | `direction = self.best_direction(); if (val > best_val if direction == "higher" else val < best_val): best = r` |
 | 🔴 TODO | F014 | Consistency rot | `autoresearch_orchestration.py` (filename) | Low | S | `vps_runner.py` does git-based deployment but was not renamed. Minor contributor confusion. → **FIXED** | Document in README; no code change needed. |
 | 🔴 TODO | F015 | Test debt | `autoresearch_orchestration.py` | Low | M | No test file exists for `autoresearch_orchestration.py`. Verified: `ls tests/ | grep orchestration` returns nothing. The key mismatch guard in `try_resume_halted_thesis` is untested. → **FIXED** | Add `tests/test_autoresearch_orchestration.py` covering `try_resume_halted_thesis`, `apply_forced_baseline_rerun`, `resolve_next_action`. |
 
@@ -89,8 +89,8 @@ The threading fallback (testable by patching `asyncio.get_running_loop`) and `sh
 ### 4. F006 — Centralize `gpt-5.5` into a constant — **FIXED**
 `DEFAULT_AGENT_MODEL = "gpt-5.5"` added to `autoresearch_constants.py`. All four sites (`_OPENAI_AGENT_MODEL`, `_CONDUCTOR_MODEL`, `agent_runners.py:96` fallback, `agent_prompts.py:211`) unified to import from there.
 
-### 5. F004 — Document or enforce `ExperimentDB` single-process constraint — **FIXED**
-`ExperimentDB.reload()` added. Clears `self._records = None` so the next `_load()` re-reads from SQLite.
+### 5. F004 — Document or enforce `BacktestRunDB` single-process constraint — **FIXED**
+`BacktestRunDB.reload()` added. Clears `self._records = None` so the next `_load()` re-reads from SQLite.
 
 ---
 
@@ -100,7 +100,7 @@ The threading fallback (testable by patching `asyncio.get_running_loop`) and `sh
 - [x] **F005**: `iso8601_utc_now` deleted from `autoresearch_state.py`; `autoresearch_orchestration.py` imports from `persistence_utils` ✅ — FIXED
 - [x] **F010**: Add `"autoresearch_orchestration"` to `[tool.coverage.run] source` — 1 line — FIXED
 - [x] **F012**: `write_json_atomic_strict` deleted ✅ — DONE
-- [x] **F013**: Fix `ExperimentDB.best_by_metric` direction bug at `experiment_db.py:651` — 3 lines changed — FIXED
+- [x] **F013**: Fix `BacktestRunDB.best_by_metric` direction bug at `backtest_run_db.py:651` — 3 lines changed — FIXED
 - [x] **F011**: Add `log.warning(...)` before silencing `final_output_as` exception at `agent_runners.py:170` and `research_conductor.py:230` — 2 lines per site — FIXED
 - [x] **F016**: Remove `_ensure_oauth_proxy` and `_OAUTH_PROXY_PORT` from `research_paths.py`; import from `agent_infra` — FIXED
 - [x] **F017**: Local `_write_text_atomic` removed from `autoresearch_planning.py` ✅ — DONE
@@ -128,7 +128,7 @@ The threading fallback (testable by patching `asyncio.get_running_loop`) and `sh
 
 **`from trace_sdk import ...` inside `main()` in `autoresearch_controller.py:619`.** This import-inside-function pattern looks like a mistake, but it's intentional: `trace_sdk` initializes global module-level state (the OTel tracer provider) at import time. Moving it to top-level would trigger that initialization for every test that imports `autoresearch_controller`, which is undesirable.
 
-**`ExperimentDB._save()` calling `_load()` after `import_entries()` sets `_records`.** The flow looks like it might double-write, but the ordering is correct: `import_entries` sets `self._records = records` _before_ calling `_save()`, so `_save()` reads the already-set cache and persists it. Not a bug, just reads confusingly.
+**`BacktestRunDB._save()` calling `_load()` after `import_entries()` sets `_records`.** The flow looks like it might double-write, but the ordering is correct: `import_entries` sets `self._records = records` _before_ calling `_save()`, so `_save()` reads the already-set cache and persists it. Not a bug, just reads confusingly.
 
 **The `_localize_remote_result_output` tempdir not cleaned on success.** This is intentional: the caller receives a RESULT_JSON path pointing _into_ the tempdir. Cleaning the dir would invalidate the path before it can be consumed by the experiment pipeline downstream. The files are small (result JSON + trade CSVs) and `/tmp` is cleaned by the OS between runs.
 
@@ -142,7 +142,7 @@ The threading fallback (testable by patching `asyncio.get_running_loop`) and `sh
 
 3. `backtest_5ema.py` and `backtest_orb_v2.py` appear in `pyproject.toml:py-modules` but they look like top-level scripts (not importable modules). Are they used as entry points, or are they legacy artifacts that should be moved under `strategies/ema/` and `strategies/orb/`?
 
-4. `ExperimentDB` is used by both the local controller and (when the VPS syncs results back) potentially by local analysis tools. Is there a scenario where two processes share the same `.db` file? If so, the in-memory cache is a real hazard.
+4. `BacktestRunDB` is used by both the local controller and (when the VPS syncs results back) potentially by local analysis tools. Is there a scenario where two processes share the same `.db` file? If so, the in-memory cache is a real hazard.
 
 5. The `AUTORESEARCH_VPS_DIR` denylist in `vps_runner.py` contains `/srv` — but the `.env.example` recommends `/srv/autoresearch-YYYY-MM-DD` as the default. Is the denylist entry for the bare `/srv` only, or is this a sign that `/srv` subdirectories were intended to be blocked too?
 

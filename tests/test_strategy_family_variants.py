@@ -62,7 +62,6 @@ def test_orb_family_is_built_from_registered_strategy_metadata() -> None:
     assert family.benchmark_script == strategy.benchmark_script
     assert family.description_for_research == strategy.description_for_research
     assert not hasattr(strategy.family_dirnames, "research")
-    assert family.builder_requests_dirname == strategy.family_dirnames.builder_requests
     assert family.base_config_filename == strategy.family_dirnames.base_config_filename
     removed_field = "runs" "_dirname"
     assert removed_field not in {field.name for field in fields(StrategyFamily)}

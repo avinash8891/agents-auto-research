@@ -11,7 +11,7 @@ from typing import Any
 
 from artifact_io import timestamp_now
 from autoresearch_logging import get_logger
-from experiment_db import ExperimentDB, ExperimentResult
+from backtest_run_db import BacktestRunDB, BacktestRunRecord
 from persistence_utils import json_loads_metric_sentinels
 
 _log = get_logger("autoresearch_cli")
@@ -25,8 +25,8 @@ def _confidence_label(confidence: float) -> str:
     return "within noise"
 
 
-def _db(path: str) -> ExperimentDB:
-    return ExperimentDB(Path(path))
+def _db(path: str) -> BacktestRunDB:
+    return BacktestRunDB(Path(path))
 
 
 def _coerce_cli_metric(value: Any) -> float | None:
@@ -200,7 +200,7 @@ def cmd_init(args):
 
 
 def cmd_log(args):
-    """Append an experiment result to the sqlite-backed session."""
+    """Append a backtest-run result to the sqlite-backed session."""
     config, results = read_session(args.db)
 
     if config is None:
@@ -249,8 +249,8 @@ def cmd_log(args):
     entry["confidence"] = confidence
 
     db = _db(args.db)
-    record = ExperimentResult(
-        experiment_id=f"cli-run-{entry['run']}",
+    record = BacktestRunRecord(
+        run_id=f"cli-run-{entry['run']}",
         thesis_id=f"cli-run-{entry['run']}",
         config_path=args.description,
         runtime_config={},
@@ -294,7 +294,7 @@ def cmd_evaluate(args):
     config, results = read_session(args.db)
 
     if not config:
-        _log.info("No config found in the experiment database. Run init first.")
+        _log.info("No config found in the backtest-run database. Run init first.")
         sys.exit(1)
 
     segment = config.get("_segment", 0)
@@ -343,7 +343,7 @@ def cmd_summary(args):
     config, results = read_session(args.db)
 
     if not config:
-        _log.info("No experiments found.")
+        _log.info("No backtest runs found.")
         return
 
     segment = config.get("_segment", 0)
@@ -378,7 +378,7 @@ def cmd_summary(args):
         _log.info(f"Confidence: {confidence}x ({label})")
 
     _log.info("")
-    _log.info("Kept experiments:")
+    _log.info("Kept backtest runs:")
     for r in kept:
         desc = r.get("description", "")
         metric = r.get("metric", 0)
@@ -436,7 +436,7 @@ def main():
 
     # init
     p_init = subparsers.add_parser("init", help="Initialize experiment session")
-    p_init.add_argument("--db", required=True, help="Path to experiments sqlite database")
+    p_init.add_argument("--db", required=True, help="Path to backtest_runs sqlite database")
     p_init.add_argument("--name", required=True, help="Session name")
     p_init.add_argument("--metric-name", required=True, help="Primary metric name")
     p_init.add_argument("--metric-unit", default="", help="Metric unit (e.g., us, ms, s, kb)")
@@ -444,7 +444,7 @@ def main():
 
     # log
     p_log = subparsers.add_parser("log", help="Log an experiment result")
-    p_log.add_argument("--db", required=True, help="Path to experiments sqlite database")
+    p_log.add_argument("--db", required=True, help="Path to backtest_runs sqlite database")
     p_log.add_argument("--commit", required=True, help="Git commit hash")
     p_log.add_argument("--metric", required=True, type=float, help="Primary metric value")
     p_log.add_argument(
@@ -459,7 +459,7 @@ def main():
 
     # evaluate
     p_eval = subparsers.add_parser("evaluate", help="Evaluate whether to keep or discard")
-    p_eval.add_argument("--db", required=True, help="Path to experiments sqlite database")
+    p_eval.add_argument("--db", required=True, help="Path to backtest_runs sqlite database")
     p_eval.add_argument("--metric", required=True, type=float, help="New metric value to evaluate")
     p_eval.add_argument(
         "--direction", choices=["lower", "higher"], help="Override direction from config"
@@ -467,11 +467,11 @@ def main():
 
     # summary
     p_summary = subparsers.add_parser("summary", help="Print experiment summary")
-    p_summary.add_argument("--db", required=True, help="Path to experiments sqlite database")
+    p_summary.add_argument("--db", required=True, help="Path to backtest_runs sqlite database")
 
     # status
     p_status = subparsers.add_parser("status", help="Print current status as JSON")
-    p_status.add_argument("--db", required=True, help="Path to experiments sqlite database")
+    p_status.add_argument("--db", required=True, help="Path to backtest_runs sqlite database")
 
     args = parser.parse_args()
 

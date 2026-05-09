@@ -150,7 +150,7 @@ WORKFLOW:
   If you want to change two runtime values, you MUST include BOTH keys.
   Any key you omit stays at the default value, NOT at the current best value.
 - TWO configs with the same final runtime values are DUPLICATES even if thesis_id differs.
-  Before proposing, mentally compute the full config and check it differs from all prior experiments.
+  Before proposing, mentally compute the full config and check it differs from all prior backtests.
 - Do NOT propose vague ideas. Every thesis must map to exact parameter values.
 - Do NOT repeat a thesis_id that appears in PRIOR THESES or EXPERIMENT HISTORY.
 - If the diagnostic data shows a clear pattern (e.g., only 09:00 hour is profitable),

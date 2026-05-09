@@ -19,7 +19,7 @@
 - Run folders include the resolved SHA.
 
 ```text
-runtime/jobs/job-12/runs/<commit_sha>/<config_hash>
+runtime/jobs/job-12/research/round-7/backtest
 ```
 
 ## 3. Use one VPS checkout folder
@@ -42,7 +42,7 @@ runtime/jobs/job-12/runs/<commit_sha>/<config_hash>
 Target:
 
 ```text
-runtime/jobs/job-12/runs/<commit_sha>/<config_hash>
+runtime/jobs/job-12/research/round-7/backtest
 ```
 
 ## 5. Treat builder primitive flow as a gated workflow

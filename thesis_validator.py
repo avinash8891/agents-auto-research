@@ -7,8 +7,8 @@ Three guardrails inspired by AlphaAgent (arxiv 2502.16789v2):
    keys as a prior thesis (their AST subtree isomorphism equivalent).
 2. Hypothesis-config alignment scoring — cheap LLM check that config_changes
    actually test the stated hypothesis (their c1/c2 consistency scoring).
-3. Multi-variant probing — generate 3 configs per continuous param to separate
-   "mechanism works" from "got lucky with value" (their multi-factor-per-hypothesis).
+3. Duplicate/runtime-compatibility rejection — fail loudly on legacy inheritance
+   paths or reused runtime shapes instead of probing extra variants.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ _EMERGENT_REQUIRED_FIELDS = (
     "mechanism_family_definition",
     "expected_reuse_across_future_theses",
 )
-_ALLOWED_BASE_CONFIG_PREFIXES = ("configs/", "experiments/")
+_ALLOWED_BASE_CONFIG_PREFIXES = ("configs/",)
 _PRIOR_BASE_LANGUAGE_PATTERNS = (
     r"\bcurrent\s+best\b",
     r"\bbest\s+(?:config|configuration|experiment|result|winner|runtime|trailing|pf)\b",
@@ -103,14 +103,11 @@ def _validate_base_config_path(path: str) -> None:
         raise ThesisValidationError(
             f"base_config_path '{path}' must point to a JSON or YAML config artifact"
         )
-    parts = [part for part in normalized.split("/") if part]
-    is_allowed = normalized.startswith(_ALLOWED_BASE_CONFIG_PREFIXES) or (
-        len(parts) >= 4 and parts[:2] == ["runtime", "jobs"] and parts[3] == "experiments"
-    )
+    is_allowed = normalized.startswith(_ALLOWED_BASE_CONFIG_PREFIXES)
     if not is_allowed:
         raise ThesisValidationError(
-            f"base_config_path '{path}' must be under configs/, experiments/, "
-            "or runtime/jobs/<job>/experiments/"
+            f"base_config_path '{path}' must be under configs/ only; "
+            "legacy experiments/ inheritance paths are not allowed"
         )
 
 
@@ -272,10 +269,10 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
     """Load all previously proposed theses from canonical persistence."""
     prior: list[dict[str, Any]] = []
     if db is None:
-        from experiment_db import ExperimentDB
+        from backtest_run_db import BacktestRunDB
 
-        for db_path in sorted(root.glob("*_experiments.db")):
-            db = ExperimentDB(db_path)
+        for db_path in sorted(root.glob("*_backtest_runs.db")):
+            db = BacktestRunDB(db_path)
             for line_no, row in enumerate(db.list_research_thesis_attempts(), start=1):
                 if not isinstance(row, dict):
                     log.warning(
@@ -648,9 +645,9 @@ def validate_research_thesis(
     if thesis.requires_code_change and not thesis.requested_primitives:
         raise ThesisValidationError("requires_code_change theses must declare requested_primitives")
     _validate_base_config_path(thesis.base_config_path)
-    if thesis.base_experiment_id:
+    if thesis.base_contract_id:
         raise ThesisValidationError(
-            "base_experiment_id is not allowed; research theses must start from the family "
+            "base_contract_id is not allowed; research theses must start from the family "
             "baseline instead of inheriting a prior winner."
         )
     baseline_path = _family_baseline_path(thesis)

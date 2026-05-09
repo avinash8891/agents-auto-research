@@ -26,8 +26,8 @@ from autoresearch_research import (
     notify_discord,
     results_to_dicts,
 )
-from autoresearch_state import ExperimentRecord, write_state
-from experiment_db import ExperimentDB
+from autoresearch_state import BacktestResultRecord, write_state
+from backtest_run_db import BacktestRunDB
 from thesis_validator import ThesisValidationError
 
 # ── notify_discord fail-open contract ────────────────────────────
@@ -161,7 +161,7 @@ def test_check_parsed_for_terminal_preserves_conductor_validation_reason() -> No
 
 
 def test_log_research_round_persists_required_fields_to_sqlite(tmp_path: Path) -> None:
-    db = ExperimentDB(tmp_path / "experiments.db")
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
     state_path = tmp_path / "state.json"
     write_state(state_path, {"state": "running", "job": 5})
 
@@ -186,7 +186,7 @@ def test_log_research_round_persists_required_fields_to_sqlite(tmp_path: Path) -
 def test_log_research_round_persists_explicit_hypothesis_id_without_trace_context(
     tmp_path: Path,
 ) -> None:
-    db = ExperimentDB(tmp_path / "experiments.db")
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
     state_path = tmp_path / "state.json"
     write_state(state_path, {"state": "running", "job": 5})
 
@@ -204,8 +204,8 @@ def test_log_research_round_persists_explicit_hypothesis_id_without_trace_contex
 
 
 def test_log_research_round_persists_full_thesis_details_to_attempt(tmp_path: Path) -> None:
-    db_path = tmp_path / "experiments.db"
-    ExperimentDB(db_path)
+    db_path = tmp_path / "backtest_runs.db"
+    BacktestRunDB(db_path)
     state_path = tmp_path / "state.json"
     write_state(state_path, {"state": "running", "job": 5, "family": "ema"})
     details = {
@@ -251,7 +251,7 @@ def test_log_research_round_persists_full_thesis_details_to_attempt(tmp_path: Pa
         thesis_details=details,
     )
 
-    attempts = ExperimentDB(db_path).list_research_thesis_attempts(
+    attempts = BacktestRunDB(db_path).list_research_thesis_attempts(
         job_id=5, thesis_id="opening_liquidity"
     )
 
@@ -262,7 +262,7 @@ def test_log_research_round_persists_full_thesis_details_to_attempt(tmp_path: Pa
 
 
 def test_results_to_dicts_copies_core_fields() -> None:
-    record = ExperimentRecord(
+    record = BacktestResultRecord(
         config="configs/ema_base.yaml",
         metric=1.42,
         status="keep",
@@ -283,7 +283,7 @@ def test_results_to_dicts_copies_core_fields() -> None:
 
 
 def test_results_to_dicts_includes_trade_analysis_subkeys_when_present() -> None:
-    record = ExperimentRecord(
+    record = BacktestResultRecord(
         config="configs/variants/ema_aggressive.yaml",
         metric=1.5,
         status="keep",
@@ -317,7 +317,7 @@ def test_results_to_dicts_includes_trade_analysis_subkeys_when_present() -> None
 
 def test_results_to_dicts_uses_insight_brief_from_either_layer() -> None:
     """insight_brief on asi takes precedence; falls back to trade_analysis."""
-    record_top = ExperimentRecord(
+    record_top = BacktestResultRecord(
         "c.yaml",
         1.0,
         "keep",
@@ -325,7 +325,7 @@ def test_results_to_dicts_uses_insight_brief_from_either_layer() -> None:
         100,
         asi={"insight_brief": "from-top", "trade_analysis": {"insight_brief": "from-ta"}},
     )
-    record_ta = ExperimentRecord(
+    record_ta = BacktestResultRecord(
         "c.yaml",
         1.0,
         "keep",
@@ -351,6 +351,9 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema"})()
 
+        def read_state(self):
+            return {"job": 2}
+
         def log_research_round(self, *args, **kwargs):
             raise AssertionError("should not reject after operationalization")
 
@@ -365,7 +368,7 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
 
     class _Contract:
         status = "needs_code"
-        experiment_id = "opening_range_gate"
+        contract_id = "opening_range_gate"
 
     def fake_validate(raw, prior_theses=None):
         captured["validated_raw"] = dict(raw)
@@ -436,13 +439,15 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
         root = tmp_path
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema"})()
-        ctx = type("Ctx", (), {"current_contract": None, "parent_experiment_id": ""})()
-        experiments_dir = tmp_path / "experiments"
+        ctx = type("Ctx", (), {"current_contract": None, "parent_backtest_run_id": ""})()
+
+        def read_state(self):
+            return {"job": 8}
 
         def _queue_variants(self, variants, validated, contract, baseline_config):
             raise AssertionError("no variants expected")
 
-        def experiment_db(self):
+        def backtest_run_db(self):
             raise AssertionError("not used")
 
     class _Validated:
@@ -450,7 +455,7 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
 
     class _Contract:
         status = "ready_to_run"
-        experiment_id = "exp-001"
+        contract_id = "exp-001"
 
     monkeypatch.setattr(
         "thesis_validator.validate_thesis_dict", lambda raw, prior_theses=None: _Validated()
@@ -462,7 +467,7 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
     monkeypatch.setattr("autoresearch_research.load_baseline_config", lambda root, family: {})
 
     controller = _Controller()
-    controller.experiment_db = type("DB", (), {"latest": lambda self, n: []})()
+    controller.backtest_run_db = type("DB", (), {"latest": lambda self, n: []})()
 
     parsed = {
         "reasoning": "candidate looks good",
@@ -498,7 +503,7 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
 
     assert retry_feedback is None
     assert result is not None
-    assert result["generated_config"] == "experiments/exp-001/runtime_config.json"
+    assert result["generated_config"] == "runtime/jobs/job-8/research/round-8/selected_config.json"
     assert result["thesis"]["closest_prior_theses_considered"] == [
         "block_shorts_on_early_impulse_trend_open_days"
     ]
@@ -757,14 +762,14 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
         "autoresearch_research._check_parsed_for_terminal",
         lambda parsed: {
             "status": "completed",
-            "generated_config": "runtime/jobs/job-26/experiments/abc/runtime_config.json",
+            "generated_config": "runtime/jobs/job-26/research/round-8/selected_config.json",
             "should_stop": False,
         },
     )
 
     result = execute_research_sdk(_Controller())
 
-    assert result["generated_config"] == "runtime/jobs/job-26/experiments/abc/runtime_config.json"
+    assert result["generated_config"] == "runtime/jobs/job-26/research/round-8/selected_config.json"
     assert writes[0]["research_round_in_progress"] == 8
     assert writes[0]["activity"] == {
         "type": "research",
@@ -795,7 +800,7 @@ def test_handle_success_sets_pending_experiment_activity(tmp_path: Path) -> None
         "rejection_feedback": "prior",
     }
     result = {
-        "generated_config": "runtime/jobs/job-26/experiments/abc/runtime_config.json",
+        "generated_config": "runtime/jobs/job-26/research/round-8/selected_config.json",
         "thesis_id": "abc",
     }
 
@@ -806,7 +811,7 @@ def test_handle_success_sets_pending_experiment_activity(tmp_path: Path) -> None
         "type": "experiment",
         "phase": "pending_backtest",
         "round": 8,
-        "config": "runtime/jobs/job-26/experiments/abc/runtime_config.json",
+        "config": "runtime/jobs/job-26/research/round-8/selected_config.json",
         "thesis_id": "abc",
     }
 

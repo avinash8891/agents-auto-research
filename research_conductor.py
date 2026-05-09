@@ -147,7 +147,7 @@ async def run_research_conductor(
             )
         else:
             no_trades_instruction = (
-                "No current-job experiments have completed yet. No trades file is available. "
+                "No current-job backtests have completed yet. No trades file is available. "
                 "Check memory for data facts, do web research on the strategy, and propose "
                 "the first thesis."
             )

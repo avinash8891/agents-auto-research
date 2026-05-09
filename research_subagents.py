@@ -15,7 +15,7 @@ from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import _accumulate_usage
 from autoresearch_paths import resolve_runtime_root
 from autoresearch_state import coerce_timestamp_to_epoch_ms
-from experiment_db import ExperimentDB
+from backtest_run_db import BacktestRunDB
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,
@@ -49,7 +49,7 @@ ANALYST_SOURCE_EXCLUDED_FILES = {
 
 
 @dataclass
-class AnalystExperimentIndex:
+class AnalystRoundIndex:
     family_name: str
     db_path: str
     job_id: int | None
@@ -130,11 +130,11 @@ def _analyst_data_root_guidance() -> str:
 
 def _load_runtime_config_for_artifact(artifact_file: str) -> tuple[Path | None, dict]:
     artifact_path = Path(artifact_file).expanduser()
-    config_hash = artifact_path.parent.name
-    if not config_hash:
-        return None, {}
-    for ancestor in artifact_path.parents:
-        candidate = ancestor / "experiments" / config_hash / "runtime_config.json"
+    candidates = (
+        artifact_path.parent / "config.json",
+        artifact_path.parent / "selected_config.json",
+    )
+    for candidate in candidates:
         if not candidate.exists():
             continue
         try:
@@ -250,16 +250,16 @@ def _infer_job_id_from_artifact_path(path: str) -> int | None:
     return None
 
 
-def _resolve_experiment_db_path(trades_file: str, family_name: str) -> Path | None:
+def _resolve_backtest_db_path(trades_file: str, family_name: str) -> Path | None:
     if not family_name:
         return None
     artifact_path = Path(trades_file).expanduser()
     candidates: list[Path] = []
     runtime_root = resolve_runtime_root(_ROOT)
-    candidates.append(runtime_root / f"{family_name}_experiments.db")
+    candidates.append(runtime_root / f"{family_name}_backtest_runs.db")
     for parent in artifact_path.parents:
-        candidates.append(parent / f"{family_name}_experiments.db")
-        candidates.append(parent / "runtime" / f"{family_name}_experiments.db")
+        candidates.append(parent / f"{family_name}_backtest_runs.db")
+        candidates.append(parent / "runtime" / f"{family_name}_backtest_runs.db")
     seen: set[Path] = set()
     for candidate in candidates:
         resolved = candidate.expanduser()
@@ -316,7 +316,9 @@ def _record_metric(record: Any, primary_metric_name: str) -> float | None:
 def _record_summary(record: Any, primary_metric_name: str) -> dict[str, Any]:
     metric = _record_metric(record, primary_metric_name)
     return {
-        "experiment_id": getattr(record, "experiment_id", ""),
+        "backtest_run_id": getattr(record, "backtest_run_id", ""),
+        "research_round_id": getattr(record, "research_round_id", ""),
+        "research_round_number": getattr(record, "research_round_number", -1),
         "thesis_id": getattr(record, "thesis_id", ""),
         "config_path": getattr(record, "config_path", ""),
         "metric": metric,
@@ -327,13 +329,13 @@ def _record_summary(record: Any, primary_metric_name: str) -> dict[str, Any]:
     }
 
 
-def _build_experiment_index(
+def _build_round_index(
     *,
     trades_file: str,
     strategy_events_file: str = "",
     diagnostics_file: str = "",
     family_name: str = "",
-) -> AnalystExperimentIndex | None:
+) -> AnalystRoundIndex | None:
     config_path, runtime_config = _load_runtime_config_for_artifact(trades_file)
     resolved_family = (
         family_name
@@ -341,10 +343,10 @@ def _build_experiment_index(
         or str(runtime_config.get("family") or "")
         or _family_name_from_artifact_path(trades_file)
     )
-    db_path = _resolve_experiment_db_path(trades_file, resolved_family)
+    db_path = _resolve_backtest_db_path(trades_file, resolved_family)
     if db_path is None:
         return None
-    db = ExperimentDB(db_path)
+    db = BacktestRunDB(db_path)
     primary_metric_name = db.primary_metric_name()
     records = db.all()
     target_trades = _normalized_existing_path(trades_file)
@@ -387,13 +389,14 @@ def _build_experiment_index(
     for idx, record in enumerate(ordered, start=1):
         ref = f"sequence:{idx}"
         ordered_refs.append(ref)
-        manifests_by_ref[ref] = {
+        manifest = {
             "summary": _record_summary(record, primary_metric_name),
             "artifacts": _record_artifacts(record),
         }
-        thesis_id = getattr(record, "thesis_id", "") or ""
-        if thesis_id and thesis_id not in manifests_by_ref:
-            manifests_by_ref[thesis_id] = manifests_by_ref[ref]
+        manifests_by_ref[ref] = manifest
+        round_number = getattr(record, "research_round_number", -1)
+        if isinstance(round_number, int) and round_number >= 0:
+            round_ref_map[f"round:{round_number}"] = ref
     aliases = {
         "current": current_record,
         "latest": latest_record,
@@ -407,17 +410,10 @@ def _build_experiment_index(
             "summary": _record_summary(record, primary_metric_name),
             "artifacts": _record_artifacts(record),
         }
-    for row in db.list_research_rounds():
-        if row.get("job_id") != job_id:
-            continue
-        round_number = row.get("round_number")
-        thesis_id = str(row.get("selected_thesis_id") or "")
-        if not thesis_id:
-            continue
-        ref = f"round:{round_number}"
-        round_ref_map[ref] = thesis_id
+    if "baseline" in manifests_by_ref:
+        round_ref_map["round:0"] = "baseline"
     default_ref = "baseline" if "baseline" in manifests_by_ref else "current"
-    return AnalystExperimentIndex(
+    return AnalystRoundIndex(
         family_name=resolved_family,
         db_path=str(db_path),
         job_id=job_id,
@@ -429,31 +425,25 @@ def _build_experiment_index(
     )
 
 
-def _resolve_experiment_ref(
-    index: AnalystExperimentIndex | None, experiment_ref: str
-) -> str | None:
+def _resolve_round_ref(index: AnalystRoundIndex | None, round_ref: str) -> str | None:
     if index is None:
         return None
-    ref = (experiment_ref or "").strip() or index.default_ref
+    ref = (round_ref or "").strip() or index.default_ref
     if ref in index.round_ref_map:
-        thesis_ref = index.round_ref_map[ref]
-        if thesis_ref in index.manifests_by_ref:
-            return thesis_ref
+        mapped_ref = index.round_ref_map[ref]
+        if mapped_ref in index.manifests_by_ref:
+            return mapped_ref
     if ref in index.manifests_by_ref:
         return ref
-    if ref.startswith("round:"):
-        thesis_ref = index.round_ref_map.get(ref)
-        if thesis_ref and thesis_ref in index.manifests_by_ref:
-            return thesis_ref
     return None
 
 
 def _resolve_artifacts_for_ref(
-    index: AnalystExperimentIndex | None, experiment_ref: str
+    index: AnalystRoundIndex | None, round_ref: str
 ) -> tuple[str, dict[str, str], dict[str, Any]]:
     if index is None:
         return "", {}, {}
-    resolved_ref = _resolve_experiment_ref(index, experiment_ref)
+    resolved_ref = _resolve_round_ref(index, round_ref)
     if resolved_ref is None:
         return "", {}, {}
     manifest = index.manifests_by_ref.get(resolved_ref) or {}
@@ -499,7 +489,7 @@ def _analysis_manifest(
         or str(runtime_config.get("family") or "")
         or _family_name_from_artifact_path(trades_file)
     )
-    index = _build_experiment_index(
+    index = _build_round_index(
         trades_file=trades_file,
         strategy_events_file=strategy_events_file,
         diagnostics_file=diagnostics_file,
@@ -549,11 +539,11 @@ def _analysis_manifest(
 
     return {
         "family_name": resolved_family,
-        "default_experiment_ref": resolved_ref,
+        "default_round_ref": resolved_ref,
         "default_scope": "baseline" if resolved_ref == "baseline" else "current",
-        "default_experiment_summary": default_summary,
+        "default_round_summary": default_summary,
         "artifacts": artifacts,
-        "job_experiment_index": (
+        "job_round_index": (
             {
                 "db_path": index.db_path,
                 "job_id": index.job_id,
@@ -577,9 +567,7 @@ def _analysis_python_prelude(manifest: dict[str, object]) -> str:
     artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else {}
     strategy_sources = manifest.get("strategy_sources") if isinstance(manifest, dict) else {}
     market_data_files = manifest.get("market_data_files") if isinstance(manifest, dict) else {}
-    default_experiment_ref = (
-        manifest.get("default_experiment_ref") if isinstance(manifest, dict) else None
-    )
+    default_round_ref = manifest.get("default_round_ref") if isinstance(manifest, dict) else None
     return "\n".join(
         [
             "from pathlib import Path",
@@ -591,7 +579,7 @@ def _analysis_python_prelude(manifest: dict[str, object]) -> str:
             f"ANALYSIS_ARTIFACTS = {artifacts!r}",
             f"STRATEGY_SOURCE_FILES = {strategy_sources!r}",
             f"MARKET_DATA_FILES = {market_data_files!r}",
-            f"DEFAULT_EXPERIMENT_REF = {default_experiment_ref!r}",
+            f"DEFAULT_ROUND_REF = {default_round_ref!r}",
             "TRADES_FILE = Path(ANALYSIS_ARTIFACTS['trades_csv'])",
             "METRICS_FILE = Path(ANALYSIS_ARTIFACTS['metrics_json']) "
             "if 'metrics_json' in ANALYSIS_ARTIFACTS else None",
@@ -632,7 +620,7 @@ async def _call_analyst(
         diagnostics_file=diagnostics_file,
         family_name=family_name,
     )
-    experiment_index = _build_experiment_index(
+    round_index = _build_round_index(
         trades_file=trades_file,
         strategy_events_file=strategy_events_file,
         diagnostics_file=diagnostics_file,
@@ -667,48 +655,48 @@ async def _call_analyst(
         return output
 
     @function_tool
-    def list_job_experiments() -> str:
-        """Return the current job's experiment refs and summaries for cross-round analysis."""
+    def list_job_rounds() -> str:
+        """Return the current job's round refs and summaries for cross-round analysis."""
         output = ""
         status = "ok"
         error_type = ""
         trace_agent_tool_call(
             "analyst",
             current_trace_id,
-            "list_job_experiments",
+            "list_job_rounds",
             "",
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
-        if experiment_index is None:
+        if round_index is None:
             status = "error"
-            error_type = "NoExperimentIndex"
-            output = "ERROR: No current-job experiment index is available for this analyst call."
+            error_type = "NoRoundIndex"
+            output = "ERROR: No current-job round index is available for this analyst call."
         else:
             payload = {
-                "family_name": experiment_index.family_name,
-                "db_path": experiment_index.db_path,
-                "job_id": experiment_index.job_id,
-                "default_ref": experiment_index.default_ref,
-                "current_ref": experiment_index.current_ref,
-                "round_refs": experiment_index.round_ref_map,
-                "experiments": [
+                "family_name": round_index.family_name,
+                "db_path": round_index.db_path,
+                "job_id": round_index.job_id,
+                "default_ref": round_index.default_ref,
+                "current_ref": round_index.current_ref,
+                "round_refs": round_index.round_ref_map,
+                "rounds": [
                     {
                         "ref": ref,
                         **(
-                            experiment_index.manifests_by_ref.get(ref, {}).get("summary", {})
-                            if isinstance(experiment_index.manifests_by_ref.get(ref, {}), dict)
+                            round_index.manifests_by_ref.get(ref, {}).get("summary", {})
+                            if isinstance(round_index.manifests_by_ref.get(ref, {}), dict)
                             else {}
                         ),
                     }
-                    for ref in experiment_index.ordered_refs
+                    for ref in round_index.ordered_refs
                 ],
             }
             output = json.dumps(payload, indent=2, sort_keys=True)
         trace_agent_tool_result(
             "analyst",
             current_trace_id,
-            "list_job_experiments",
+            "list_job_rounds",
             output,
             status=status,
             error_type=error_type,
@@ -766,12 +754,12 @@ async def _call_analyst(
         return output
 
     @function_tool
-    def read_experiment_artifact(
-        experiment_ref: str,
+    def read_round_artifact(
+        round_ref: str,
         kind: str,
         max_chars: int = ANALYST_READ_FILE_MAX_CHARS,
     ) -> str:
-        """Read an artifact for a specific experiment ref like baseline, latest, best, round:3, or sequence:2."""
+        """Read an artifact for a specific round ref like baseline, latest, best, round:3, or sequence:2."""
         started = monotonic()
         output = ""
         status = "ok"
@@ -781,19 +769,17 @@ async def _call_analyst(
         trace_agent_tool_call(
             "analyst",
             current_trace_id,
-            "read_experiment_artifact",
-            json.dumps({"experiment_ref": experiment_ref, "kind": kind}),
+            "read_round_artifact",
+            json.dumps({"round_ref": round_ref, "kind": kind}),
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
         try:
-            if experiment_index is None:
-                raise KeyError("No current-job experiment index is available")
-            _, artifacts, _ = _resolve_artifacts_for_ref(experiment_index, experiment_ref)
+            if round_index is None:
+                raise KeyError("No current-job round index is available")
+            _, artifacts, _ = _resolve_artifacts_for_ref(round_index, round_ref)
             if kind not in artifacts:
-                raise KeyError(
-                    f"Artifact {kind!r} is unavailable for experiment_ref={experiment_ref!r}"
-                )
+                raise KeyError(f"Artifact {kind!r} is unavailable for round_ref={round_ref!r}")
             with open(str(artifacts[kind])) as f:
                 content = f.read()
             output, truncated = _compact_tool_output(content, max_chars=max_chars)
@@ -804,7 +790,7 @@ async def _call_analyst(
         trace_agent_tool_result(
             "analyst",
             current_trace_id,
-            "read_experiment_artifact",
+            "read_round_artifact",
             output,
             status=status,
             error_type=error_type,
@@ -954,11 +940,11 @@ CANONICAL LATEST OUTCOME SUMMARY:
    If no exact universe_path is resolved, do not use raw OHLCV or search for it.
 
 The default preloaded artifact bundle is the baseline anchor for this job when
-baseline artifacts exist; otherwise it falls back to the current experiment.
+baseline artifacts exist; otherwise it falls back to the current round.
 Use that default anchor for mechanism-discovery questions unless the focus
 question is clearly about the latest run, the current best run, or a named
-research round. For cross-round questions, use list_job_experiments and
-read_experiment_artifact to fetch the exact comparison artifacts you need.
+research round. For cross-round questions, use list_job_rounds and
+read_round_artifact to fetch the exact comparison artifacts you need.
 
 You MUST ground conclusions in the artifacts you actually read. Trades alone
 show what happened; strategy_events show what DIDN'T happen and WHY.
@@ -978,7 +964,7 @@ STRATEGY EVENTS PARQUET SCHEMA (one row per decision point, read with pd.read_pa
 
   event_type values: raw_setup, accepted_signal, rejected_signal, order_rejected, executed_trade
   reason values: strategy-specific (read diagnostics.json for the actual reasons
-                 used in this experiment)
+                 used in this backtest)
 
 DIAGNOSTICS JSON: quick summary with event_counts and rejection_breakdown.
 
@@ -987,8 +973,8 @@ WORKFLOW:
    read_artifact("result_json") first if present, then read_artifact("metrics_json")
    and read_artifact("diagnostics_json").
 2. If the focus question is about latest/current behavior, best-run behavior,
-   or longitudinal comparison, call list_job_experiments and then fetch the
-   exact artifacts you need with read_experiment_artifact.
+   or longitudinal comparison, call list_job_rounds and then fetch the
+   exact artifacts you need with read_round_artifact.
 3. Use run_python to execute pandas analysis code on trades and/or events.
 4. When the focus question requires market context (volatility, volume,
    trend, gaps, range characteristics), use raw OHLCV only if the manifest
@@ -1014,12 +1000,12 @@ CRITICAL RULES:
   analysis. If you recompute PF/expectancy/trade_count from raw trades, mark
   those values as derived and explain why the recomputation was needed.
 - Treat CANONICAL LATEST OUTCOME SUMMARY as a compact prompt-level restatement
-  of the latest experiment metrics. Use it for orientation, but prefer the
+  of the latest backtest metrics. Use it for orientation, but prefer the
   artifact you explicitly read as the authoritative source.
 - In run_python, these variables are already defined: TRADES_FILE, METRICS_FILE,
   RESULT_FILE, EVENTS_FILE, DIAGNOSTICS_FILE, RUNTIME_CONFIG_FILE,
   ANALYSIS_ARTIFACTS, STRATEGY_SOURCE_FILES, MARKET_DATA_FILES,
-  DEFAULT_EXPERIMENT_REF.
+  DEFAULT_ROUND_REF.
 - Start the JSON response with audit fields before long tables so required
   deliverables survive truncation.
 - Every bucketed metric must include n= or N=. If the focus question specifies
@@ -1099,7 +1085,7 @@ Be brutally honest."""
             "the same tool/path/prompt failure."
         )
     user_parts.append(
-        "Load artifacts using read_artifact/read_experiment_artifact/read_strategy_source and "
+        "Load artifacts using read_artifact/read_round_artifact/read_strategy_source and "
         "perform analysis using run_python. Start from the default baseline anchor unless the "
         "question is explicitly about latest/current/best or a named round."
     )
@@ -1119,9 +1105,9 @@ Be brutally honest."""
         instructions=analyst_prompt,
         tools=[
             list_analysis_artifacts,
-            list_job_experiments,
+            list_job_rounds,
             read_artifact,
-            read_experiment_artifact,
+            read_round_artifact,
             read_strategy_source,
             run_python,
         ],

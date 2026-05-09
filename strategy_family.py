@@ -14,11 +14,6 @@ class StrategyFamily:
     name: str
     benchmark_script: str
     description_for_research: str = ""
-    proposals_dirname: str = "proposals"
-    compilations_dirname: str = "compilations"
-    contracts_dirname: str = "contracts"
-    run_queue_dirname: str = "run-queue"
-    builder_requests_dirname: str = "builder-requests"
     base_config_filename: str = "base.yaml"
     discord_webhook: str = ""
     # Family-aware variant config conventions. Variant config files live
@@ -83,11 +78,6 @@ def _families() -> dict[str, StrategyFamily]:
             name=name,
             benchmark_script=strategy.benchmark_script or f"backtest_{name}.py",
             description_for_research=strategy.description_for_research,
-            proposals_dirname=strategy.family_dirnames.proposals,
-            compilations_dirname=strategy.family_dirnames.compilations,
-            contracts_dirname=strategy.family_dirnames.contracts,
-            run_queue_dirname=strategy.family_dirnames.run_queue,
-            builder_requests_dirname=strategy.family_dirnames.builder_requests,
             base_config_filename=strategy.family_dirnames.base_config_filename,
             discord_webhook=_discord_webhook_for(name),
             variant_prefix=strategy.family_dirnames.variant_prefix,

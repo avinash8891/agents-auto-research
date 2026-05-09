@@ -8,7 +8,6 @@ conductor round to test.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,7 +22,7 @@ from autoresearch_research import (
     load_baseline_config,
     queue_variants,
 )
-from autoresearch_state import ExperimentRecord
+from autoresearch_state import BacktestResultRecord
 from strategy_family import load_family
 
 # ── _check_parsed_for_terminal ──────────────────────────────────
@@ -102,7 +101,7 @@ def test_classify_round_outcome_needs_code() -> None:
 
 
 def test_classify_round_outcome_compiled() -> None:
-    result = {"generated_config": "experiments/x/runtime_config.json"}
+    result = {"generated_config": "runtime/jobs/job-1/research/round-1/selected_config.json"}
     assert _classify_round_outcome(result) == "compiled"
 
 
@@ -172,7 +171,7 @@ def test_backfill_finds_trades_csv_in_artifact_dir(tmp_path: Path) -> None:
     artifact_dir = tmp_path / "runs" / "job-1" / "abc123"
     artifact_dir.mkdir(parents=True)
     (artifact_dir / "first.trades.csv").write_text("a,b\n1,2\n")
-    latest = ExperimentRecord(
+    latest = BacktestResultRecord(
         config="x",
         metric=1.0,
         status="keep",
@@ -191,7 +190,7 @@ def test_backfill_finds_strategy_events_parquet(tmp_path: Path) -> None:
     artifact_dir = tmp_path / "runs" / "abc"
     artifact_dir.mkdir(parents=True)
     (artifact_dir / "x.strategy_events.parquet").write_text("")
-    latest = ExperimentRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
+    latest = BacktestResultRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
     controller = SimpleNamespace(root=tmp_path)
     trades, events, diag = _backfill_artifact_files_from_latest_dir(controller, latest, "", "", "")
     assert events.endswith("x.strategy_events.parquet")
@@ -201,7 +200,7 @@ def test_backfill_falls_back_to_csv_for_strategy_events(tmp_path: Path) -> None:
     artifact_dir = tmp_path / "runs" / "abc"
     artifact_dir.mkdir(parents=True)
     (artifact_dir / "y.strategy_events.csv").write_text("")
-    latest = ExperimentRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
+    latest = BacktestResultRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
     controller = SimpleNamespace(root=tmp_path)
     _, events, _ = _backfill_artifact_files_from_latest_dir(controller, latest, "", "", "")
     assert events.endswith("y.strategy_events.csv")
@@ -211,7 +210,7 @@ def test_backfill_finds_diagnostics_json(tmp_path: Path) -> None:
     artifact_dir = tmp_path / "runs" / "abc"
     artifact_dir.mkdir(parents=True)
     (artifact_dir / "x.diagnostics.json").write_text("{}")
-    latest = ExperimentRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
+    latest = BacktestResultRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
     controller = SimpleNamespace(root=tmp_path)
     _, _, diag = _backfill_artifact_files_from_latest_dir(controller, latest, "", "", "")
     assert diag.endswith("x.diagnostics.json")
@@ -220,7 +219,7 @@ def test_backfill_finds_diagnostics_json(tmp_path: Path) -> None:
 def test_backfill_passes_through_when_inputs_already_set(tmp_path: Path) -> None:
     """If the caller already has all three files, the helper returns
     them unchanged."""
-    latest = ExperimentRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
+    latest = BacktestResultRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
     controller = SimpleNamespace(root=tmp_path)
     out = _backfill_artifact_files_from_latest_dir(
         controller, latest, "/preset/trades.csv", "/preset/events.parquet", "/preset/diag.json"
@@ -229,7 +228,9 @@ def test_backfill_passes_through_when_inputs_already_set(tmp_path: Path) -> None
 
 
 def test_backfill_returns_originals_when_artifact_dir_missing(tmp_path: Path) -> None:
-    latest = ExperimentRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/does-not-exist"})
+    latest = BacktestResultRecord(
+        "x", 1.0, "keep", "", 100, {"artifact_dir": "runs/does-not-exist"}
+    )
     controller = SimpleNamespace(root=tmp_path)
     assert _backfill_artifact_files_from_latest_dir(controller, latest, "", "", "") == ("", "", "")
 
@@ -238,7 +239,7 @@ def test_backfill_ignores_absolute_artifact_dir_outside_controller_root(tmp_path
     outside = tmp_path.parent / f"{tmp_path.name}-outside"
     outside.mkdir()
     (outside / "trades.csv").write_text("entry_date,pnl_pct\n")
-    latest = ExperimentRecord("x", 1.0, "keep", "", 100, {"artifact_dir": str(outside)})
+    latest = BacktestResultRecord("x", 1.0, "keep", "", 100, {"artifact_dir": str(outside)})
     controller = SimpleNamespace(root=tmp_path)
 
     assert _backfill_artifact_files_from_latest_dir(controller, latest, "", "", "") == ("", "", "")
@@ -249,7 +250,7 @@ def test_backfill_prefers_matching_artifacts_when_multiple_exist(tmp_path: Path)
     artifact_dir.mkdir(parents=True)
     (artifact_dir / "other.strategy_events.parquet").write_text("")
     (artifact_dir / "x.strategy_events.parquet").write_text("")
-    latest = ExperimentRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
+    latest = BacktestResultRecord("x", 1.0, "keep", "", 100, {"artifact_dir": "runs/abc"})
     controller = SimpleNamespace(root=tmp_path)
 
     _, events, _ = _backfill_artifact_files_from_latest_dir(controller, latest, "", "", "")
@@ -322,139 +323,35 @@ def thesis_stub():
 
 @pytest.fixture
 def primary_contract_stub():
-    return SimpleNamespace(experiment_id="primary_exp_id_xyz")
+    return SimpleNamespace(contract_id="primary_exp_id_xyz")
 
 
-def test_queue_variants_skips_factor_one(
+def test_queue_variants_fails_loudly_for_removed_variant_backtests(
     tmp_path: Path, thesis_stub, primary_contract_stub
 ) -> None:
-    """Variants with factor=1.0 are the primary itself and must be skipped."""
-    queue_dir = tmp_path / "queue"
-    variants = [
-        {"_variant_label": "primary", "_variant_factor": 1.0, "ema_length": 5},
-        {"_variant_label": "aggressive", "_variant_factor": 0.5, "ema_length": 3},
-    ]
-    queue_variants(
-        tmp_path, queue_dir, variants, thesis_stub, primary_contract_stub, {"ema_length": 5}
-    )
-    queued_files = sorted(queue_dir.glob("*.json"))
-    # Only the aggressive variant gets queued.
-    assert len(queued_files) == 1
-    artifact = json.loads(queued_files[0].read_text())
-    assert artifact["thesis_id"] == "stub_thesis_aggressive"
-    assert artifact["status"] == "pending"
-    assert artifact["source"] == "multi_variant_probe"
-    assert artifact["variant_label"] == "aggressive"
-    assert artifact["variant_factor"] == 0.5
+    with pytest.raises(RuntimeError, match="no longer supported"):
+        queue_variants(
+            tmp_path,
+            tmp_path / "queue",
+            [{"_variant_label": "agg", "_variant_factor": 0.5, "ema_length": 3}],
+            thesis_stub,
+            primary_contract_stub,
+            {"ema_length": 5, "rr_ratio": 3.0},
+        )
 
 
-def test_queue_variants_writes_runtime_config_per_variant(
+def test_queue_variants_leaves_no_artifacts_when_rejected(
     tmp_path: Path, thesis_stub, primary_contract_stub
 ) -> None:
-    queue_dir = tmp_path / "queue"
-    variants = [
-        {"_variant_label": "agg", "_variant_factor": 0.5, "ema_length": 3},
-    ]
-    queue_variants(
-        tmp_path, queue_dir, variants, thesis_stub, primary_contract_stub, {"ema_length": 5}
-    )
-    # The runtime_config and thesis.json land under experiments/<hash>/.
-    experiments_dirs = list((tmp_path / "experiments").iterdir())
-    assert len(experiments_dirs) == 1
-    runtime = json.loads((experiments_dirs[0] / "runtime_config.json").read_text())
-    # Variant overlays the baseline.
-    assert runtime["ema_length"] == 3
-    thesis = json.loads((experiments_dirs[0] / "thesis.json").read_text())
-    assert thesis["thesis_id"] == "stub_thesis_agg"
-    assert thesis["_variant_label"] == "agg"
-    assert thesis["_variant_factor"] == 0.5
-    assert thesis["_variant_of"] == "primary_exp_id_xyz"
-
-
-def test_queue_variants_can_write_job_scoped_artifacts(
-    tmp_path: Path, thesis_stub, primary_contract_stub
-) -> None:
-    queue_dir = tmp_path / "runtime" / "jobs" / "job-7" / "run-queue"
-    experiments_dir = tmp_path / "runtime" / "jobs" / "job-7" / "experiments"
-
-    queue_variants(
-        tmp_path,
-        queue_dir,
-        [{"_variant_label": "agg", "_variant_factor": 0.5, "ema_length": 3}],
-        thesis_stub,
-        primary_contract_stub,
-        {"ema_length": 5},
-        experiments_dir=experiments_dir,
-        job=7,
-        created_for_commit="abc123",
-    )
-
-    queue_artifact = json.loads(next(queue_dir.glob("*.json")).read_text())
-    assert queue_artifact["job"] == 7
-    assert queue_artifact["created_for_commit"] == "abc123"
-    assert queue_artifact["config"].startswith("runtime/jobs/job-7/experiments/")
-    assert (tmp_path / queue_artifact["config"]).exists()
-    assert not (tmp_path / "experiments").exists()
-
-
-def test_queue_variants_persists_full_runtime_config_in_sidecar_metadata(
-    tmp_path: Path, thesis_stub, primary_contract_stub
-) -> None:
-    queue_dir = tmp_path / "queue"
-    variants = [
-        {"_variant_label": "agg", "_variant_factor": 0.5, "ema_length": 3},
-    ]
-
-    queue_variants(
-        tmp_path,
-        queue_dir,
-        variants,
-        thesis_stub,
-        primary_contract_stub,
-        {"ema_length": 5, "rr_ratio": 3.0},
-    )
-
-    experiments_dirs = list((tmp_path / "experiments").iterdir())
-    thesis = json.loads((experiments_dirs[0] / "thesis.json").read_text())
-    assert thesis["config_changes"] == {"ema_length": 3, "rr_ratio": 3.0}
-    assert thesis["config_changes_kind"] == "full_runtime"
-
-
-def test_queue_variants_skips_invalid_runtime_configs(
-    tmp_path: Path, thesis_stub, primary_contract_stub
-) -> None:
-    queue_dir = tmp_path / "queue"
-
-    thesis_stub.strategy_family = "ema"
-    queue_variants(
-        tmp_path,
-        queue_dir,
-        [
-            {
-                "_variant_label": "invalid",
-                "_variant_factor": 2.0,
-                "max_trades_per_day": -1,
-            }
-        ],
-        thesis_stub,
-        primary_contract_stub,
-        {"max_trades_per_day": 3},
-    )
-
-    assert not queue_dir.exists()
-    assert not (tmp_path / "experiments").exists()
-
-
-def test_queue_variants_leaves_no_tmp_artifacts(
-    tmp_path: Path, thesis_stub, primary_contract_stub
-) -> None:
-    queue_variants(
-        tmp_path,
-        tmp_path / "queue",
-        [{"_variant_label": "agg", "_variant_factor": 0.5, "ema_length": 3}],
-        thesis_stub,
-        primary_contract_stub,
-        {"ema_length": 5, "rr_ratio": 3.0},
-    )
+    with pytest.raises(RuntimeError):
+        queue_variants(
+            tmp_path,
+            tmp_path / "queue",
+            [{"_variant_label": "agg", "_variant_factor": 0.5, "ema_length": 3}],
+            thesis_stub,
+            primary_contract_stub,
+            {"ema_length": 5, "rr_ratio": 3.0},
+        )
 
     assert not list(tmp_path.rglob("*.tmp"))
+    assert not (tmp_path / "experiments").exists()

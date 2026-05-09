@@ -14,28 +14,32 @@ def job_runtime_dir(root: Path, job: int, dirname: str) -> Path:
     return job_runtime_root(root, job) / dirname
 
 
-def job_runs_root(root: Path, job: int) -> Path:
-    return job_runtime_root(root, job) / "runs"
-
-
-def job_run_artifact_dir(root: Path, job: int, git_commit: str, config_hash: str) -> Path:
-    git_commit = str(git_commit or "").strip()
-    config_hash = str(config_hash or "").strip()
-    if not git_commit:
-        raise ValueError("git commit is required for backtest run artifact path")
-    if not config_hash:
-        raise ValueError("config hash is required for backtest run artifact path")
-    return job_runs_root(root, job) / git_commit / config_hash
-
-
 def job_research_root(root: Path, job: int) -> Path:
     return job_runtime_root(root, job) / "research"
 
 
 def research_round_root(root: Path, job: int, round_number: int) -> Path:
-    if round_number < 1:
-        raise ValueError(f"research round number must be >= 1; got {round_number}")
+    if round_number < 0:
+        raise ValueError(f"research round number must be >= 0; got {round_number}")
+    if round_number == 0:
+        return job_research_root(root, job) / "round-0-baseline"
     return job_research_root(root, job) / f"round-{round_number}"
+
+
+def research_round_backtest_root(root: Path, job: int, round_number: int) -> Path:
+    return research_round_root(root, job, round_number) / "backtest"
+
+
+def research_round_attempts_root(root: Path, job: int, round_number: int) -> Path:
+    return research_round_root(root, job, round_number) / "attempts"
+
+
+def research_round_attempt_root(
+    root: Path, job: int, round_number: int, attempt_number: int
+) -> Path:
+    if attempt_number < 1:
+        raise ValueError(f"attempt number must be >= 1; got {attempt_number}")
+    return research_round_attempts_root(root, job, round_number) / f"attempt-{attempt_number}"
 
 
 def research_round_trace_exports_root(root: Path, job: int, round_number: int) -> Path:
@@ -44,7 +48,3 @@ def research_round_trace_exports_root(root: Path, job: int, round_number: int) -
 
 def job_builder_requests_root(root: Path, job: int) -> Path:
     return job_runtime_root(root, job) / "builder-requests"
-
-
-def job_run_queue_root(root: Path, job: int) -> Path:
-    return job_runtime_root(root, job) / "run-queue"

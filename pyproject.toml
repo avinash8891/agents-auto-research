@@ -45,7 +45,7 @@ py-modules = [
     "compiler_validate",
     "config_hash",
     "data_loader",
-    "experiment_db",
+    "backtest_run_db",
     "experiment_evaluator",
     "family_research_spec",
     "metrics",

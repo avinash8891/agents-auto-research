@@ -13,9 +13,9 @@ from typing import Any
 
 from diagnostic_contracts import build_required_diagnostic_specs
 from research_types import (
+    BacktestVerdict,
     Disqualifier,
     ExpectedEffect,
-    ExperimentVerdict,
     ResearchThesis,
 )
 
@@ -138,13 +138,13 @@ def evaluate_disqualifier(
     return False, True
 
 
-def evaluate_experiment(
+def evaluate_backtest(
     thesis: ResearchThesis,
     baseline_metrics: dict[str, Any],
     candidate_metrics: dict[str, Any],
-    experiment_id: str = "",
+    contract_id: str = "",
     strategy_diagnostics: dict[str, Any] | None = None,
-) -> ExperimentVerdict:
+) -> BacktestVerdict:
     """Evaluate a backtest result against thesis predictions."""
     passed: list[str] = []
     failed: list[str] = []
@@ -224,8 +224,8 @@ def evaluate_experiment(
             parts.append(f"Top rejections: {dict(top_rejections)}")
     summary = ". ".join(parts) if parts else "No effects evaluated."
 
-    return ExperimentVerdict(
-        experiment_id=experiment_id,
+    return BacktestVerdict(
+        contract_id=contract_id,
         thesis_id=thesis.thesis_id,
         status=status,
         passed_effects=passed,

@@ -10,7 +10,7 @@ import pytest
 
 from agent_infra import _parse_json as parse_agent_json
 from autoresearch_research import load_baseline_config
-from experiment_db import BaselineCheckpoint, BaselineTracker
+from backtest_run_db import BaselineCheckpoint, BaselineTracker
 from metrics import compute_diagnostics, compute_metrics
 from research_paths import _parse_json as parse_research_json
 from strategy_event_logger import StrategyEventLogger
@@ -45,10 +45,10 @@ def test_load_baseline_config_raises_on_malformed_yaml(tmp_path: Path) -> None:
 def test_load_prior_theses_logs_bad_sqlite_row(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    from experiment_db import ExperimentDB
+    from backtest_run_db import BacktestRunDB
 
     caplog.set_level(logging.WARNING)
-    db = ExperimentDB(tmp_path / "experiments.db")
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
     db.seed_research_thesis_attempts_rows(
         [
             {"not": "a valid thesis attempt row"},
@@ -72,9 +72,9 @@ def test_load_prior_theses_logs_bad_sqlite_row(
 
 
 def test_load_prior_theses_includes_code_only_emergent_thesis(tmp_path: Path) -> None:
-    from experiment_db import ExperimentDB
+    from backtest_run_db import BacktestRunDB
 
-    db = ExperimentDB(tmp_path / "experiments.db")
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
     db.seed_research_thesis_attempts_rows(
         [
             {
@@ -106,9 +106,9 @@ def test_load_prior_theses_includes_code_only_emergent_thesis(tmp_path: Path) ->
 
 
 def test_load_prior_theses_includes_code_only_emergent_alias(tmp_path: Path) -> None:
-    from experiment_db import ExperimentDB
+    from backtest_run_db import BacktestRunDB
 
-    db = ExperimentDB(tmp_path / "experiments.db")
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
     db.seed_research_thesis_attempts_rows(
         [
             {

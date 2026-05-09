@@ -17,14 +17,9 @@ from typing import Any
 # because callers should always go through the controller, never the module
 # functions directly.
 from autoresearch_artifacts import (
-    queue_from_thesis_artifacts as _artifacts_queue_from_thesis_artifacts,
-)
-from autoresearch_artifacts import (
     read_artifacts_relative_to_root as _artifacts_read_artifacts_relative_to_root,
 )
 from autoresearch_artifacts import read_research_artifacts as _artifacts_read_research_artifacts
-from autoresearch_artifacts import read_run_queue as _artifacts_read_run_queue
-from autoresearch_artifacts import read_thesis_artifacts as _artifacts_read_thesis_artifacts
 from autoresearch_constants import PREPARE_RESULT_MARKER
 from autoresearch_experiment import artifact_dir_for as _experiment_artifact_dir_for
 from autoresearch_experiment import derive_trade_analysis as _experiment_derive_trade_analysis
@@ -56,20 +51,13 @@ from autoresearch_planning import (
     THESIS_FAMILY,
 )
 from autoresearch_planning import check_baseline_rerun as _planning_check_baseline_rerun
-from autoresearch_planning import (
-    generate_combination_candidates as _planning_generate_combination_candidates,
-)
-from autoresearch_planning import generate_theses_from_ideas as _planning_generate_theses_from_ideas
 from autoresearch_planning import list_known_variant_configs as _planning_list_known_variant_configs
-from autoresearch_planning import parse_ideas_backlog as _planning_parse_ideas_backlog
-from autoresearch_planning import pending_configs as _planning_pending_configs
 from autoresearch_planning import plan_next_action as _planning_plan_next_action
 from autoresearch_planning import (
     select_research_next_action as _planning_select_research_next_action,
 )
 from autoresearch_planning import should_terminate as _planning_should_terminate
 from autoresearch_planning import thesis_family_for as _planning_thesis_family_for
-from autoresearch_planning import thesis_statuses as _planning_thesis_statuses
 from autoresearch_research import accumulate_job_usage as _research_accumulate_job_usage
 from autoresearch_research import execute_research_one as _research_execute_research_one
 from autoresearch_research import execute_research_sdk as _research_execute_research_sdk
@@ -79,8 +67,7 @@ from autoresearch_research import notify_discord as _notify_discord
 from autoresearch_research import queue_variants as _research_queue_variants
 from autoresearch_research import results_to_dicts as _research_results_to_dicts
 from autoresearch_research import run_research as _research_run_research
-from autoresearch_runtime_paths import job_runtime_root as _job_runtime_root
-from autoresearch_state import ExperimentRecord, RunContext
+from autoresearch_state import BacktestResultRecord, RunContext
 from autoresearch_state import _coerce_job_to_int as _state_coerce_job_to_int
 from autoresearch_state import best_result as _state_best_result
 from autoresearch_state import deduplicate_entries as _state_deduplicate_entries
@@ -91,8 +78,8 @@ from autoresearch_state import read_state as _state_read_state
 from autoresearch_state import render_current_md as _state_render_current_md
 from autoresearch_state import write_current_md as _state_write_current_md
 from autoresearch_state import write_state as _state_write_state
+from backtest_run_db import BacktestRunDB, BaselineTracker
 from config_hash import _git_sha
-from experiment_db import BaselineTracker, ExperimentDB
 from strategy_family import StrategyFamily, load_family
 from trace_autonomy_ledger import AutonomyLedger
 from trace_sdk import trace, trace_state_change
@@ -431,18 +418,12 @@ def _validate_current_executable_state(prior_state: dict[str, Any]) -> int:
     return job
 
 
-IDEAS_MD_PATH = RUNTIME_ROOT / "autoresearch.ideas.md"
-
-
-def default_controller_paths(
-    runtime_root: Path, family: StrategyFamily
-) -> tuple[Path, Path, Path, Path]:
-    """Returns state_path, current_md_path, ideas_md_path, runs_dir."""
+def default_controller_paths(runtime_root: Path, family: StrategyFamily) -> tuple[Path, Path, Path]:
+    """Returns state_path, current_md_path, jobs_root."""
     prefix = family.name
     return (
         runtime_root / f"{prefix}_autoresearch.next.json",
         runtime_root / f"{prefix}_autoresearch.current.md",
-        runtime_root / f"{prefix}_autoresearch.ideas.md",
         runtime_root / "runtime" / "jobs",
     )
 
@@ -453,7 +434,7 @@ def default_controller_paths(
 # linters do not silently remove the import.
 __all__ = (
     "AutoresearchController",
-    "ExperimentRecord",
+    "BacktestResultRecord",
     "RunContext",
     "default_controller_paths",
     "main",
@@ -461,7 +442,6 @@ __all__ = (
     "RUNTIME_ROOT",
     "STATE_PATH",
     "CURRENT_MD_PATH",
-    "IDEAS_MD_PATH",
     "DEFAULT_CONFIG_ORDER",
     "THESIS_FAMILY",
     "COMBINATION_RULES",
@@ -582,8 +562,7 @@ class AutoresearchController:
         runtime_root: Path | None = None,
         state_path: Path | None = None,
         current_md_path: Path | None = None,
-        ideas_md_path: Path | None = None,
-        runs_dir: Path | None = None,
+        jobs_root: Path | None = None,
         family: StrategyFamily | None = None,
     ) -> None:
         self.root = (root or ROOT).resolve()
@@ -592,7 +571,6 @@ class AutoresearchController:
         resolved_current_md_path = current_md_path or (
             self.runtime_root / "autoresearch.current.md"
         )
-        resolved_ideas_md_path = ideas_md_path or (self.runtime_root / "autoresearch.ideas.md")
         self.state_path = (
             resolved_state_path
             if resolved_state_path.is_absolute()
@@ -603,16 +581,19 @@ class AutoresearchController:
             if resolved_current_md_path.is_absolute()
             else self.runtime_root / resolved_current_md_path
         )
-        self.ideas_md_path = (
-            resolved_ideas_md_path
-            if resolved_ideas_md_path.is_absolute()
-            else self.runtime_root / resolved_ideas_md_path
+        resolved_jobs_root = jobs_root or (self.runtime_root / "runtime" / "jobs")
+        self.jobs_root = (
+            resolved_jobs_root
+            if resolved_jobs_root.is_absolute()
+            else self.runtime_root / resolved_jobs_root
         )
         if family is None:
             raise ValueError("AutoresearchController requires an explicit strategy family")
         self.family = family
         self._clear_runtime_paths()
-        self.experiment_db = ExperimentDB(self.runtime_root / f"{self.family.name}_experiments.db")
+        self.backtest_run_db = BacktestRunDB(
+            self.runtime_root / f"{self.family.name}_backtest_runs.db"
+        )
         self.baseline_tracker = BaselineTracker(
             self.runtime_root / f"{self.family.name}_baseline_checkpoints.json"
         )
@@ -620,28 +601,15 @@ class AutoresearchController:
         self.ctx = RunContext()
 
     def _clear_runtime_paths(self) -> None:
-        jobs_root = self.root / "runtime" / "jobs"
-        self.job_runtime_root = jobs_root
-        self.runs_dir = jobs_root
-        self.research_dir = jobs_root
-        self.proposals_dir = jobs_root
-        self.compilations_dir = jobs_root
-        self.contracts_dir = jobs_root
-        self.experiments_dir = jobs_root
-        self.run_queue_dir = jobs_root
-        self.builder_requests_dir = jobs_root
+        self.job_runtime_root = self.jobs_root
+        self.research_dir = self.jobs_root
+        self.builder_requests_dir = self.jobs_root
 
     def _set_runtime_paths_for_job(self, job: int) -> None:
         if job < 1:
             raise ValueError(f"job id is required for job-scoped runtime paths; got {job!r}")
-        self.job_runtime_root = _job_runtime_root(self.root, job)
-        self.runs_dir = self.job_runtime_root / "runs"
+        self.job_runtime_root = self.jobs_root / f"job-{job}"
         self.research_dir = self.job_runtime_root / "research"
-        self.proposals_dir = self.job_runtime_root / "proposals"
-        self.compilations_dir = self.job_runtime_root / "compilations"
-        self.contracts_dir = self.job_runtime_root / "contracts"
-        self.experiments_dir = self.job_runtime_root / "experiments"
-        self.run_queue_dir = self.job_runtime_root / "run-queue"
         self.builder_requests_dir = self.job_runtime_root / "builder-requests"
 
     def _current_job(self) -> int | None:
@@ -652,7 +620,7 @@ class AutoresearchController:
             return None
 
     def _max_runtime_job_id(self) -> int:
-        jobs_root = self.root / "runtime" / "jobs"
+        jobs_root = self.jobs_root
         if not jobs_root.exists():
             return 0
         max_job = 0
@@ -675,7 +643,7 @@ class AutoresearchController:
         """
         prior = prior_state if prior_state is not None else self.read_state()
         max_seen = _state_coerce_job_to_int(prior.get("job"))
-        max_seen = max(max_seen, self.experiment_db.max_job_id())
+        max_seen = max(max_seen, self.backtest_run_db.max_job_id())
         max_seen = max(max_seen, self._max_runtime_job_id())
         return max_seen + 1 if max_seen > 0 else 1
 
@@ -686,7 +654,7 @@ class AutoresearchController:
         the same controller process.
         """
         self.ctx.current_contract = None
-        self.ctx.parent_experiment_id = ""
+        self.ctx.parent_backtest_run_id = ""
         self.ctx.execution_root = None
 
     def clear_terminal_metadata(self, state: dict[str, Any]) -> None:
@@ -730,19 +698,19 @@ class AutoresearchController:
             trace_state_change(previous_state, next_state, state.get("finished_reason", ""))
 
     def read_entries(self) -> list[dict[str, Any]]:
-        return self.experiment_db.export_entries()
+        return self.backtest_run_db.export_entries()
 
     def write_entries(self, entries: list[dict[str, Any]]) -> None:
-        self.experiment_db.import_entries(entries)
+        self.backtest_run_db.import_entries(entries)
 
     def current_commit(self) -> str:
         return _git_sha()
 
     def direction(self) -> str:
-        return self.experiment_db.best_direction()
+        return self.backtest_run_db.best_direction()
 
-    def read_results(self) -> list[ExperimentRecord]:
-        all_results = self.experiment_db.read_results()
+    def read_results(self) -> list[BacktestResultRecord]:
+        all_results = self.backtest_run_db.read_results()
         state = self.read_state()
         job = state.get("job")
         if job is None:
@@ -752,7 +720,7 @@ class AutoresearchController:
         except (TypeError, ValueError):
             return all_results
 
-        scoped: list[ExperimentRecord] = []
+        scoped: list[BacktestResultRecord] = []
         for result in all_results:
             try:
                 result_job = int(result.job)
@@ -771,37 +739,31 @@ class AutoresearchController:
         )
 
     def read_thesis_artifacts(self) -> list[dict[str, Any]]:
-        return _artifacts_read_thesis_artifacts(self.proposals_dir, self.root)
+        return []
 
     def is_better(self, candidate: float, current: float | None) -> bool:
         return _state_is_better(self.direction(), candidate, current)
 
-    def best_result(self, results: list[ExperimentRecord]) -> dict[str, Any]:
+    def best_result(self, results: list[BacktestResultRecord]) -> dict[str, Any]:
         return _state_best_result(results, self.direction())
 
-    def latest_result(self, results: list[ExperimentRecord]) -> ExperimentRecord | None:
+    def latest_result(self, results: list[BacktestResultRecord]) -> BacktestResultRecord | None:
         return _state_latest_result(results)
 
     def list_known_variant_configs(self) -> list[str]:
         return _planning_list_known_variant_configs(self.root, self.family)
 
-    def pending_configs(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_pending_configs(
-            self.root, self.family, self.run_queue_dir, results, job=self._current_job()
-        )
+    def pending_configs(self, results: list[BacktestResultRecord]) -> list[str]:
+        return []
 
-    def thesis_statuses(self, results: list[ExperimentRecord]) -> dict[str, dict[str, Any]]:
-        return _planning_thesis_statuses(
-            self.root, self.family, self.run_queue_dir, results, job=self._current_job()
-        )
+    def thesis_statuses(self, results: list[BacktestResultRecord]) -> dict[str, dict[str, Any]]:
+        return {}
 
     def read_run_queue(self) -> list[dict[str, Any]]:
-        return _artifacts_read_run_queue(self.run_queue_dir, self.root)
+        return []
 
-    def queue_from_thesis_artifacts(self, results: list[ExperimentRecord]) -> list[str]:
-        return _artifacts_queue_from_thesis_artifacts(
-            self.run_queue_dir, self.root, results, job=self._current_job()
-        )
+    def queue_from_thesis_artifacts(self, results: list[BacktestResultRecord]) -> list[str]:
+        return []
 
     def promote_missing_known_results(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return _state_promote_missing_known_results(entries)
@@ -809,31 +771,15 @@ class AutoresearchController:
     def deduplicate_entries(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return _state_deduplicate_entries(entries)
 
-    # ── WS-2: Thesis generation from ideas backlog ──────────────────────
-
-    def parse_ideas_backlog(self) -> list[dict[str, Any]]:
-        return _planning_parse_ideas_backlog(self.ideas_md_path, self.family)
-
-    def generate_theses_from_ideas(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_generate_theses_from_ideas(
-            self.root,
-            self.family,
-            self.ideas_md_path,
-            self.run_queue_dir,
-            self.proposals_dir,
-            results,
-            job=self._current_job(),
-        )
-
     # ── WS-5: Combination phase ───────────────────────────────────────
 
     def thesis_family_for(self, config: str) -> str:
-        return _planning_thesis_family_for(config, self.family, self.proposals_dir, self.root)
-
-    def generate_combination_candidates(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_generate_combination_candidates(
-            self.root, self.family, self.proposals_dir, results, job=self._current_job()
+        return _planning_thesis_family_for(
+            config, self.family, self.builder_requests_dir, self.root
         )
+
+    def generate_combination_candidates(self, results: list[BacktestResultRecord]) -> list[str]:
+        return []
 
     def parse_result_json(self, output: str) -> dict[str, Any] | None:
         return _experiment_parse_result_json(output)
@@ -844,32 +790,31 @@ class AutoresearchController:
     def _parse_benchmark_details_legacy(self, output: str) -> dict[str, Any]:
         return _experiment_parse_benchmark_details_legacy(output)
 
-    def select_research_next_action(self, results: list[ExperimentRecord]) -> dict[str, Any]:
+    def select_research_next_action(self, results: list[BacktestResultRecord]) -> dict[str, Any]:
         return _planning_select_research_next_action(
             self.root,
             self.root,
             self.family,
-            self.run_queue_dir,
-            self.proposals_dir,
-            self.ideas_md_path,
+            self.builder_requests_dir,
+            self.builder_requests_dir,
             self.research_dir,
             results,
             job=self._current_job(),
         )
 
-    def should_terminate(self, results: list[ExperimentRecord] | None = None) -> bool:
+    def should_terminate(self, results: list[BacktestResultRecord] | None = None) -> bool:
         current_results = results if results is not None else self.read_results()
         return _planning_should_terminate(
             self.root,
             self.family,
-            self.run_queue_dir,
+            self.builder_requests_dir,
             self.research_dir,
             current_results,
             job=self._current_job(),
         )
 
     def plan_next_action(
-        self, state: dict[str, Any], results: list[ExperimentRecord]
+        self, state: dict[str, Any], results: list[BacktestResultRecord]
     ) -> dict[str, Any]:
         return _planning_plan_next_action(
             state,
@@ -877,13 +822,12 @@ class AutoresearchController:
             self.root,
             self.root,
             self.family,
-            self.run_queue_dir,
-            self.proposals_dir,
-            self.ideas_md_path,
+            self.builder_requests_dir,
+            self.builder_requests_dir,
             self.research_dir,
         )
 
-    def render_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> str:
+    def render_current_md(self, state: dict[str, Any], results: list[BacktestResultRecord]) -> str:
         return _state_render_current_md(
             state,
             results,
@@ -891,7 +835,7 @@ class AutoresearchController:
             metric_name=self.primary_metric_name(),
         )
 
-    def write_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> None:
+    def write_current_md(self, state: dict[str, Any], results: list[BacktestResultRecord]) -> None:
         _state_write_current_md(
             self.current_md_path,
             state,
@@ -939,10 +883,10 @@ class AutoresearchController:
         return state
 
     def artifact_dir_for(self, config: str) -> Path:
-        return _experiment_artifact_dir_for(self.state_path, self.runs_dir, config)
+        return _experiment_artifact_dir_for(self.state_path, self.runtime_root, config)
 
     def sanitize_duplicate_entries(self, config: str) -> None:
-        _experiment_sanitize_duplicate_entries(self.experiment_db, config)
+        _experiment_sanitize_duplicate_entries(self.backtest_run_db, config)
 
     def _accumulate_job_usage(self, round_usage: dict[str, Any]) -> None:
         _research_accumulate_job_usage(self.state_path, round_usage)
@@ -963,7 +907,7 @@ class AutoresearchController:
         usage: dict[str, Any] | None = None,
     ) -> None:
         _research_log_research_round(
-            self.experiment_db.path,
+            self.backtest_run_db.path,
             self.state_path,
             round_number=round_number,
             thesis_id=thesis_id,
@@ -1004,7 +948,7 @@ class AutoresearchController:
         return _experiment_run_command(self.ctx.execution_root or self.root, command)
 
     def primary_metric_name(self) -> str:
-        return self.experiment_db.primary_metric_name()
+        return self.backtest_run_db.primary_metric_name()
 
     def parse_metric(self, output: str, name: str = "profit_factor") -> float | None:
         return _experiment_parse_metric(output, name)
@@ -1020,7 +964,7 @@ class AutoresearchController:
             job_id = None
         return _experiment_evaluate_metric(
             self.runtime_root,
-            self.experiment_db.path.name,
+            self.backtest_run_db.path.name,
             metric,
             job_id=job_id,
         )
@@ -1045,12 +989,12 @@ class AutoresearchController:
     ) -> None:
         _research_queue_variants(
             self.root,
-            self.run_queue_dir,
+            self.builder_requests_dir,
             variants,
             thesis,
             primary_contract,
             baseline_config,
-            experiments_dir=self.experiments_dir,
+            experiments_dir=self.builder_requests_dir,
             job=self._current_job(),
             created_for_commit=self.current_commit(),
         )
@@ -1145,17 +1089,14 @@ def main() -> int:
     args = _parse_main_args()
     family = load_family(args.family)
     runtime_root = _resolve_runtime_root(ROOT)
-    state_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(
-        runtime_root, family
-    )
+    state_path, current_md_path, jobs_root = default_controller_paths(runtime_root, family)
     controller = AutoresearchController(
         root=ROOT,
         runtime_root=runtime_root,
         family=family,
         state_path=state_path,
         current_md_path=current_md_path,
-        ideas_md_path=ideas_md_path,
-        runs_dir=runs_dir,
+        jobs_root=jobs_root,
     )
     prior_state = controller.read_state()
     if args.run_current_state:

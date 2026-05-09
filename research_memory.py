@@ -383,10 +383,10 @@ def _iter_thesis_attempts(
     root: Path, *, job_id: int | None = None, thesis_id: str | None = None
 ) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
-    for db_path in sorted(root.glob("*_experiments.db")):
-        from experiment_db import ExperimentDB
+    for db_path in sorted(root.glob("*_backtest_runs.db")):
+        from backtest_run_db import BacktestRunDB
 
-        db = ExperimentDB(db_path)
+        db = BacktestRunDB(db_path)
         entries.extend(db.list_research_thesis_attempts(job_id=job_id, thesis_id=thesis_id))
     return entries
 
@@ -463,14 +463,14 @@ def _metric_for_record(record: Any, metric_name: str) -> float | int | None:
 
 def _iter_experiment_records(root: Path, *, job_id: int | None = None) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for db_path in sorted(root.glob("*_experiments.db")):
-        from experiment_db import (
+    for db_path in sorted(root.glob("*_backtest_runs.db")):
+        from backtest_run_db import (
             INVALID_RESULT_VERDICTS,
-            ExperimentDB,
-            is_metric_rankable_experiment,
+            BacktestRunDB,
+            is_metric_rankable_backtest_run,
         )
 
-        db = ExperimentDB(db_path)
+        db = BacktestRunDB(db_path)
         metric_name = db.primary_metric_name()
         direction = db.best_direction()
         for record in db.all():
@@ -485,7 +485,7 @@ def _iter_experiment_records(root: Path, *, job_id: int | None = None) -> list[d
                     "record": record,
                     "metric": _metric_for_record(record, metric_name),
                     "job_id": record_job,
-                    "metric_rankable": is_metric_rankable_experiment(record),
+                    "metric_rankable": is_metric_rankable_backtest_run(record),
                     "invalid_result": getattr(record, "verdict_status", "")
                     in INVALID_RESULT_VERDICTS,
                 }
@@ -498,7 +498,7 @@ def _experiment_index_entry(item: dict[str, Any]) -> dict[str, Any]:
     metrics = dict(getattr(record, "train_metrics", {}) or {})
     metrics.update(getattr(record, "validation_metrics", {}) or {})
     return {
-        "experiment_id": getattr(record, "experiment_id", ""),
+        "run_id": getattr(record, "run_id", ""),
         "thesis_id": getattr(record, "thesis_id", ""),
         "job_id": item.get("job_id"),
         "family": getattr(record, "family", ""),
@@ -658,7 +658,7 @@ def get_experiment_result(
         item
         for item in _iter_experiment_records(root, job_id=job_id)
         if getattr(item["record"], "thesis_id", "") == requested_id
-        or getattr(item["record"], "experiment_id", "") == requested_id
+        or getattr(item["record"], "run_id", "") == requested_id
     ]
     if not matches:
         return json.dumps(

@@ -978,11 +978,14 @@ def test_sftp_mkdir_p_uses_posix_remote_parts_on_windows(monkeypatch) -> None:
 
     monkeypatch.setattr("vps_runner.Path", PureWindowsPath)
 
-    _sftp_mkdir_p(FakeSFTP(), "/srv/autoresearch/experiments/ema5")
+    _sftp_mkdir_p(FakeSFTP(), "/srv/autoresearch/runtime/jobs/job-4/research/round-2")
 
     assert created_dirs == [
-        "/srv/autoresearch/experiments",
-        "/srv/autoresearch/experiments/ema5",
+        "/srv/autoresearch/runtime",
+        "/srv/autoresearch/runtime/jobs",
+        "/srv/autoresearch/runtime/jobs/job-4",
+        "/srv/autoresearch/runtime/jobs/job-4/research",
+        "/srv/autoresearch/runtime/jobs/job-4/research/round-2",
     ]
 
 
@@ -1016,7 +1019,9 @@ def test_materialize_remote_config_skips_tracked_configs(monkeypatch, tmp_path) 
 def test_materialize_remote_config_uploads_generated_experiment_input(
     monkeypatch, tmp_path
 ) -> None:
-    config_file = tmp_path / "experiments" / "ema5" / "runtime_config.json"
+    config_file = (
+        tmp_path / "runtime" / "jobs" / "job-4" / "research" / "round-2" / "selected_config.json"
+    )
     config_file.parent.mkdir(parents=True)
     config_file.write_text('{"strategy": "ema"}\n')
     uploaded: list[tuple[str, str]] = []
@@ -1055,24 +1060,26 @@ def test_materialize_remote_config_uploads_generated_experiment_input(
     remote_config = materialize_remote_config_if_needed(
         FakeClient(),
         config,
-        "experiments/ema5/runtime_config.json",
+        "runtime/jobs/job-4/research/round-2/selected_config.json",
     )
 
-    assert remote_config == "experiments/ema5/runtime_config.json"
+    assert remote_config == "runtime/jobs/job-4/research/round-2/selected_config.json"
     assert uploaded == [
         (
             str(config_file),
-            "/srv/autoresearch/experiments/ema5/runtime_config.json",
+            "/srv/autoresearch/runtime/jobs/job-4/research/round-2/selected_config.json",
         )
     ]
-    assert "/srv/autoresearch/experiments" in created_dirs
-    assert "/srv/autoresearch/experiments/ema5" in created_dirs
+    assert "/srv/autoresearch/runtime/jobs/job-4/research" in created_dirs
+    assert "/srv/autoresearch/runtime/jobs/job-4/research/round-2" in created_dirs
 
 
 def test_materialize_remote_config_uses_posix_remote_parent_on_windows(
     monkeypatch, tmp_path
 ) -> None:
-    config_file = tmp_path / "experiments" / "ema5" / "runtime_config.json"
+    config_file = (
+        tmp_path / "runtime" / "jobs" / "job-4" / "research" / "round-2" / "selected_config.json"
+    )
     config_file.parent.mkdir(parents=True)
     config_file.write_text('{"strategy": "ema"}\n')
     created_dirs: list[str] = []
@@ -1087,7 +1094,10 @@ def test_materialize_remote_config_uses_posix_remote_parent_on_windows(
 
         def put(self, local_path: str, remote_path: str) -> None:
             assert local_path == str(config_file)
-            assert remote_path == "/srv/autoresearch/experiments/ema5/runtime_config.json"
+            assert (
+                remote_path
+                == "/srv/autoresearch/runtime/jobs/job-4/research/round-2/selected_config.json"
+            )
 
         def close(self) -> None:
             pass
@@ -1113,12 +1123,15 @@ def test_materialize_remote_config_uses_posix_remote_parent_on_windows(
     materialize_remote_config_if_needed(
         FakeClient(),
         config,
-        "experiments/ema5/runtime_config.json",
+        "runtime/jobs/job-4/research/round-2/selected_config.json",
     )
 
     assert created_dirs == [
-        "/srv/autoresearch/experiments",
-        "/srv/autoresearch/experiments/ema5",
+        "/srv/autoresearch/runtime",
+        "/srv/autoresearch/runtime/jobs",
+        "/srv/autoresearch/runtime/jobs/job-4",
+        "/srv/autoresearch/runtime/jobs/job-4/research",
+        "/srv/autoresearch/runtime/jobs/job-4/research/round-2",
     ]
 
 
@@ -1146,7 +1159,8 @@ def test_materialize_remote_config_rejects_untracked_non_experiment_configs(
     monkeypatch.setattr("vps_runner._is_git_tracked", lambda rel_path: False)
 
     with pytest.raises(
-        RuntimeError, match="tracked config files or generated experiments/ configs"
+        RuntimeError,
+        match="tracked config files or generated runtime/jobs/job-N/research/round-\\*/selected_config.json inputs",
     ):
         materialize_remote_config_if_needed(FakeClient(), config, "tmp/runtime_config.json")
 

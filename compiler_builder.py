@@ -19,7 +19,6 @@ from autoresearch_paths import serialize_config_path
 from compiler_implementation_verify import verify_builder_implementation_contract
 from improvement_reflexion import build_latest_reflexion_feedback
 from persistence_utils import write_text_atomic
-from strategies import STRATEGIES
 from strategy_family import load_family
 from trace_sdk import record_event, record_usage_event, trace
 
@@ -573,13 +572,18 @@ def _load_structured_thesis_artifacts(
     roots = [artifact_root] if artifact_root is not None else []
     roots.append(root)
     for current_root in roots:
-        experiment_dir = current_root / "experiments" / thesis_id
-        thesis_path = experiment_dir / "thesis.json"
-        contract_path = experiment_dir / "contract.json"
-        thesis = _read_json_artifact(thesis_path)
-        contract = _read_json_artifact(contract_path)
-        if thesis is not None and contract is not None:
-            return thesis, contract, thesis_path, contract_path
+        for experiment_dir in (current_root / "builder_request",):
+            thesis_path = experiment_dir / "thesis.json"
+            contract_path = experiment_dir / "contract.json"
+            thesis = _read_json_artifact(thesis_path)
+            contract = _read_json_artifact(contract_path)
+            if thesis is not None and contract is not None:
+                return thesis, contract, thesis_path, contract_path
+        legacy_dir = current_root / "experiments" / thesis_id
+        if legacy_dir.exists():
+            raise RuntimeError(
+                f"legacy builder experiment directory is not supported: {legacy_dir}"
+            )
     return None
 
 
@@ -588,7 +592,7 @@ def _builder_artifact_dir(
 ) -> Path:
     if artifact_root is None:
         raise ValueError("job-scoped artifact_root is required for builder artifacts")
-    return artifact_root / "builder-requests" / thesis_id
+    return artifact_root / "builder_request"
 
 
 def _builder_attempt_artifact_dir(artifact_dir: Path, attempt_number: int) -> Path:
@@ -1335,100 +1339,23 @@ def build_missing_primitives(
         )
         if invalid_contract is not None:
             return invalid_contract
-        generated_name = (
-            artifact_root / "experiments" / thesis_id / "runtime_config.json"
-        ).resolve()
+        generated_name = (artifact_root / "selected_config.json").resolve()
         config_path = serialize_config_path(generated_name, code_root=root)
-        builder_requests_dir = artifact_root / "builder-requests"
+        builder_requests_dir = artifact_root / "builder_request"
         attempt_dir = _builder_artifact_dir(
             root, family_name, thesis_id, artifact_root=artifact_root
         )
     else:
-        compilation_family_name = None
-        for candidate_family in sorted(STRATEGIES):
-            proposal_path = artifact_root / "proposals" / f"{thesis_id}.json"
-            if proposal_path.exists():
-                compilation_family_name = candidate_family
-                break
-
-        if compilation_family_name is None:
-            return {
-                "status": "error",
-                "error_code": "builder_missing_proposal_artifact",
-                "reason": f"missing proposal artifact for {thesis_id}",
-                "generated_config": None,
-                "validation_passed": False,
-            }
-        load_family(compilation_family_name)
-        proposal_path = artifact_root / "proposals" / f"{thesis_id}.json"
-        compilation_path = artifact_root / "compilations" / f"{thesis_id}.json"
-        if not proposal_path.exists():
-            return {
-                "status": "error",
-                "error_code": "builder_missing_proposal_artifact",
-                "reason": f"missing proposal artifact for {thesis_id}",
-                "generated_config": None,
-                "validation_passed": False,
-            }
-        if not compilation_path.exists():
-            return {
-                "status": "error",
-                "error_code": "builder_missing_compilation_artifact",
-                "reason": f"missing compilation artifact for {thesis_id}",
-                "generated_config": None,
-                "validation_passed": False,
-            }
-
-        try:
-            proposal = json.loads(proposal_path.read_text())
-        except (OSError, json.JSONDecodeError) as exc:
-            return {
-                "status": "error",
-                "error_code": "builder_malformed_proposal_artifact",
-                "reason": f"malformed proposal artifact for {thesis_id}: {exc}",
-                "generated_config": None,
-                "validation_passed": False,
-            }
-        proposal, proposal_normalized = _normalize_proposal_config_changes(proposal)
-        if proposal_normalized:
-            write_json_artifact(proposal_path, proposal)
-        try:
-            compilation = json.loads(compilation_path.read_text())
-        except (OSError, json.JSONDecodeError) as exc:
-            return {
-                "status": "error",
-                "error_code": "builder_malformed_compilation_artifact",
-                "reason": f"malformed compilation artifact for {thesis_id}: {exc}",
-                "generated_config": None,
-                "validation_passed": False,
-            }
-        family_name = proposal.get("strategy_family") or proposal.get("family")
-        if not family_name:
-            return {
-                "status": "error",
-                "error_code": "builder_missing_strategy_family",
-                "reason": f"missing strategy_family/family field in proposal for {thesis_id}",
-                "generated_config": None,
-                "validation_passed": False,
-            }
-        base_config_path = _resolved_builder_base_config_path(compilation, family_name)
-        if not compilation.get("baseline_config_path"):
-            compilation = {**compilation, "baseline_config_path": base_config_path}
-        normalized_contract = compilation.get("normalized_contract") or []
-        missing_primitives = _resolve_missing_primitives(proposal, compilation)
-        invalid_contract = _validate_missing_primitives_contract(
-            thesis_id=thesis_id, compilation=compilation, missing_primitives=missing_primitives
-        )
-        if invalid_contract is not None:
-            return invalid_contract
-        generated_name = (
-            artifact_root / "experiments" / thesis_id / "runtime_config.json"
-        ).resolve()
-        config_path = serialize_config_path(generated_name, code_root=root)
-        builder_requests_dir = artifact_root / "builder-requests"
-        attempt_dir = _builder_artifact_dir(
-            root, family_name, thesis_id, artifact_root=artifact_root
-        )
+        return {
+            "status": "error",
+            "error_code": "builder_missing_round_artifacts",
+            "reason": (
+                f"missing round-scoped builder_request artifacts for {thesis_id}; legacy "
+                "proposal/compilation inputs are not supported"
+            ),
+            "generated_config": None,
+            "validation_passed": False,
+        }
     workspace_root = _builder_workspace_dir(attempt_dir)
     _copy_builder_source_tree(root, workspace_root)
     workspace_proposal_path = _copy_file_into_workspace(
@@ -1826,6 +1753,11 @@ def build_missing_primitives(
                         self_check=parsed_self_check,
                     )
             if out.get("status") == "completed" and out.get("validation_passed"):
+                source_config_path = root / config_path
+                workspace_config_path = workspace_root / config_path
+                if workspace_config_path.exists():
+                    source_config_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(workspace_config_path, source_config_path)
                 promotion_manifest = _record_builder_promotion_candidate(
                     source_root=root,
                     workspace_root=workspace_root,

@@ -1,10 +1,10 @@
 """Research types u2014 structured schema for the research pipeline.
 
-ResearchThesis  u2192  ExperimentContract  u2192  RuntimeConfig
+ResearchThesis  u2192  BacktestContract  u2192  RuntimeConfig
 
 The conductor produces a ResearchThesis (why, what should happen, what disproves it).
-The compiler converts it to an ExperimentContract (executable config + research metadata).
-The evaluator checks the result against predictions and produces an ExperimentVerdict.
+The compiler converts it to an BacktestContract (executable config + research metadata).
+The evaluator checks the result against predictions and produces an BacktestVerdict.
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ class ResearchThesis(BaseModel):
 
     # Research theses are baseline-first. These fields remain for compatibility
     # but must stay empty (or explicitly reference the family baseline path).
-    base_experiment_id: str = ""
+    base_contract_id: str = ""
     base_config_path: str = ""
 
     config_changes: dict[str, Any] = Field(default_factory=dict)
@@ -126,19 +126,19 @@ class ResearchThesis(BaseModel):
     why_not_overfit: str = ""
 
 
-class ExperimentContract(BaseModel):
+class BacktestContract(BaseModel):
     """Connects a research thesis to an executable backtest.
 
     The runtime_config is for the backtester.
     Everything else is for the evaluator.
     """
 
-    experiment_id: str  # config content hash
+    contract_id: str  # config content hash
     thesis_id: str
     strategy_family: str
 
     baseline_config_path: str
-    base_experiment_id: str = ""
+    base_contract_id: str = ""
     base_config_hash: str = ""
     runtime_config: dict[str, Any]
     config_changes: dict[str, Any] = Field(default_factory=dict)
@@ -158,19 +158,19 @@ class ExperimentContract(BaseModel):
     def from_sidecar(
         cls,
         *,
-        experiment_id: str,
+        contract_id: str,
         strategy_family: str,
         baseline_config_path: str,
         runtime_config: dict[str, Any],
         sidecar: dict[str, Any],
         status: Literal["ready_to_run", "needs_code", "rejected_at_compile"] = "ready_to_run",
         missing_primitives: list[str] | None = None,
-    ) -> "ExperimentContract":
+    ) -> "BacktestContract":
         from diagnostic_contracts import build_required_diagnostic_specs
 
         return cls(
-            experiment_id=experiment_id,
-            thesis_id=str(sidecar.get("thesis_id") or experiment_id),
+            contract_id=contract_id,
+            thesis_id=str(sidecar.get("thesis_id") or contract_id),
             strategy_family=str(sidecar.get("strategy_family") or strategy_family),
             baseline_config_path=baseline_config_path,
             runtime_config=runtime_config,
@@ -189,10 +189,10 @@ class ExperimentContract(BaseModel):
         )
 
 
-class ExperimentVerdict(BaseModel):
+class BacktestVerdict(BaseModel):
     """Result of evaluating a backtest against the thesis predictions."""
 
-    experiment_id: str
+    contract_id: str
     thesis_id: str
 
     status: Literal["accepted", "rejected", "inconclusive"]

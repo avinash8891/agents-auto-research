@@ -1,9 +1,4 @@
-"""Directory-based artifact discovery for autoresearch.
-
-Wraps artifact_io.read_json_artifacts so that the returned `artifact_path`
-fields are made relative to the controller root, then exposes the family-
-specific lookups (research artifacts, thesis proposals, run-queue artifacts).
-"""
+"""Directory-based artifact discovery for round-scoped autoresearch."""
 
 from __future__ import annotations
 
@@ -13,7 +8,6 @@ from typing import Any
 
 from artifact_io import read_json_artifacts as read_artifact_json_files
 from autoresearch_logging import get_logger
-from autoresearch_state import ExperimentRecord
 
 _log = get_logger(__name__)
 
@@ -80,51 +74,26 @@ def read_research_artifacts(
 
 
 def read_thesis_artifacts(proposals_dir: Path, root: Path) -> list[dict[str, Any]]:
-    return read_artifacts_relative_to_root(proposals_dir, root)
+    raise RuntimeError(
+        "loose thesis artifact discovery is no longer supported; read artifacts from a specific "
+        "research round or builder_request directory"
+    )
 
 
 def read_run_queue(run_queue_dir: Path, root: Path) -> list[dict[str, Any]]:
-    return read_artifacts_relative_to_root(run_queue_dir, root)
+    raise RuntimeError(
+        "variant backtest queues are no longer supported; read round-scoped backtest artifacts "
+        "instead of run-queue entries"
+    )
 
 
 def queue_from_thesis_artifacts(
     run_queue_dir: Path,
     root: Path,
-    results: list[ExperimentRecord],
+    results: list[object],
     job: int | None = None,
 ) -> list[str]:
-    """Return pending run-queue config paths that exist on disk and have
-    not already been attempted."""
-    attempted = {result.config for result in results if result.config}
-    queued: list[str] = []
-    for artifact in read_run_queue(run_queue_dir, root):
-        if job is not None:
-            raw_job = artifact.get("job")
-            if raw_job is None:
-                continue
-            try:
-                artifact_job = int(raw_job)
-            except (TypeError, ValueError) as exc:
-                _log.warning(
-                    "Skipping queue artifact with malformed job field (path=%s, job=%r): %s",
-                    artifact.get("artifact_path", "<unknown>"),
-                    raw_job,
-                    exc,
-                )
-                continue
-            if artifact_job != job:
-                continue
-        if artifact.get("status") != "pending":
-            continue
-        config = artifact.get("config")
-        if not config or config in attempted or config in queued:
-            continue
-        config_path = root / config
-        if not config_path.exists():
-            continue
-        try:
-            json.loads(config_path.read_text())
-        except (OSError, ValueError, TypeError):
-            continue
-        queued.append(config)
-    return queued
+    raise RuntimeError(
+        "queue-driven thesis execution is no longer supported; each research round may select at "
+        "most one backtest"
+    )
