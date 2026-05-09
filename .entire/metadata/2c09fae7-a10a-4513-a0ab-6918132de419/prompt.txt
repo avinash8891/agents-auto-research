@@ -74,3 +74,101 @@
 ---
 
 where is the report?
+
+---
+
+• Verified the report against live code, reproed the real issues, and fixed them.
+
+  What was real and is now fixed
+
+  1. Diagnostic verifier still accepted the wrong shapes
+
+  - Fixed in compiler_implementation_verify.py
+  - Diagnostic verification now requires payload-key emission sites, not arbitrary string arguments
+  - logger.info("key") no longer satisfies diagnostic emission
+  - Registry-backed experiment-evaluation diagnostics are accepted from registered
+    DiagnosticRequirementSpec(...), not random analysis code
+
+  2. Disqualifier parsing silently accepted unparseable prose
+
+  - Fixed in experiment_evaluator.py
+  - Unparseable disqualifiers are now surfaced as unparsed_disqualifiers
+  - Verdict becomes inconclusive instead of silently acting as “not triggered”
+  - Added field in research_types.py
+
+  3. Halted/resumed thesis path was dropping structured diagnostic specs
+
+  - Fixed in autoresearch_orchestration.py
+  - required_diagnostic_specs now persists through:
+      - thesis.json
+      - rewritten contract.json
+      - ctx.current_contract
+
+  4. Research-round thesis serialization was dropping structured diagnostic specs
+
+  - Fixed in autoresearch_research.py
+  - Both thesis-detail whitelists now include required_diagnostic_specs
+
+  5. Baseline comparison was using results[0]
+
+  - Fixed in autoresearch_experiment.py
+  - Baseline metrics now come from baseline_tracker.latest() when available
+  - Falls back safely when no tracker exists
+
+  6. Analysis-only diagnostics were being treated as runtime obligations
+
+  - Fixed in diagnostic_contracts.py
+  - definition_check: / implementation_... style diagnostics are skipped from runtime verification
+
+  7. VWAP dependency check was driven by thesis prose
+
+  - Fixed in compiler_implementation_verify.py
+  - VWAP dependency now keys off structured config/primitives/diagnostic tokens, not arbitrary prose like
+    “anti-vwap”
+
+  8. Missing-input enrichment silently disappeared
+
+  - Fixed in diagnostic_contracts.py
+  - Registered baseline-comparison enrichment now emits missing_inputs instead of silently skipping
+
+  9. Legacy missing-primitives synthesis could hide bad needs-code contracts
+
+  - Tightened in compiler_builder.py
+  - _resolve_missing_primitives(...) no longer invents primitives from config_changes
+
+  What was already stale in the report
+  These were already fixed before this pass:
+
+  - config-key consumption raw substring matching
+  - per-attempt builder artifact overwrite
+  - config-validation retry dead path
+  - resumed contract.json staying stale
+  - evaluator ignoring missing required diagnostics
+
+  Tests added/updated
+
+  - tests/test_compiler_pipeline_characterization.py
+  - tests/test_autoresearch_orchestration.py
+  - tests/test_autoresearch_research.py
+  - tests/test_autoresearch_experiment.py
+
+  Coverage now includes:
+
+  - logger-only diagnostic rejection
+  - analysis-only diagnostic skip
+  - anti-VWAP prose not triggering VWAP dependency
+  - resumed thesis preserving structured diagnostic specs
+  - research log persistence of structured specs
+  - unparsed disqualifier becomes inconclusive
+  - baseline comparison using checkpoint metrics
+  - missing-input enrichment surfacing explicitly
+
+  Verification
+
+  - ruff check ...
+      - passed
+  - black --check ...
+      - passed
+  - pytest tests/test_compiler_pipeline_characterization.py tests/test_autoresearch_orchestration.py tests/
+    test_autoresearch_research.py tests/test_autoresearch_experiment.py -q
+      - 161 passed can you check and confirm and other issues
