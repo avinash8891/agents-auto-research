@@ -1,0 +1,17 @@
+I need to understand the current builder, orchestration, and state management flow in this codebase. Please read and return the full contents (or key sections) of these files:
+
+1. `autoresearch_orchestration.py` - full file
+2. `compiler_builder.py` - full file
+3. `compiler_pipeline.py` - full file
+4. `autoresearch_state.py` - full file
+5. `agent_infra.py` - at minimum the part that creates workspaces or directories
+6. Any file that references "workspace" or "deploy" or "checkout" or "builder" directories
+
+For each file, return:
+- The full path
+- The key functions/classes and what they do
+- How directories/workspaces are currently managed (working tree, deploy checkout, builder workspaces, etc.)
+- How state transitions work (resume, halt, etc.)
+- How the builder currently operates (does it mutate in-place? does it have its own workspace?)
+
+Be thorough - this is for planning an architecture change.

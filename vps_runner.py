@@ -82,6 +82,9 @@ REMOTE_RUNTIME_ENV_DEFAULTS = {
 }
 PREPARE_SUCCESS_GRACE_SECONDS = 5.0
 PREPARE_COMMAND_TIMEOUT_SECONDS = 300.0
+REMOTE_RELEASES_DIRNAME = "releases"
+REMOTE_REPO_CACHE_DIRNAME = "repo-cache"
+REMOTE_CURRENT_RELEASE_LINK = "current"
 
 
 def _load_local_env_file() -> None:
@@ -260,9 +263,89 @@ def render_runtime_env_file() -> str:
     return "\n".join(lines) + "\n"
 
 
+def _remote_repo_cache_dir(config: VPSConfig) -> str:
+    return str(PurePosixPath(config.remote_dir) / REMOTE_REPO_CACHE_DIRNAME)
+
+
+def _remote_releases_dir(config: VPSConfig) -> str:
+    return str(PurePosixPath(config.remote_dir) / REMOTE_RELEASES_DIRNAME)
+
+
+def _remote_current_release_link(config: VPSConfig) -> str:
+    return str(PurePosixPath(config.remote_dir) / REMOTE_CURRENT_RELEASE_LINK)
+
+
+def _remote_release_dir(config: VPSConfig, resolved_sha: str) -> str:
+    return str(PurePosixPath(_remote_releases_dir(config)) / resolved_sha)
+
+
+def _render_release_symlink_bootstrap(
+    config: VPSConfig, family: StrategyFamily, resolved_sha: str
+) -> str:
+    release_dir = _remote_release_dir(config, resolved_sha)
+    runtime_root = config.remote_dir
+    shared_dirs = [
+        ".venv",
+        "runtime",
+        "logs",
+        family.runs_dirname,
+    ]
+    shared_files = [
+        f"{family.name}_autoresearch.next.json",
+        f"{family.name}_autoresearch.current.md",
+        f"{family.name}_autoresearch.ideas.md",
+        f"{family.name}_experiments.db",
+        f"{family.name}_baseline_checkpoints.json",
+    ]
+    payload = {
+        "release_dir": release_dir,
+        "runtime_root": runtime_root,
+        "shared_dirs": shared_dirs,
+        "shared_files": shared_files,
+    }
+    return (
+        "python3 - <<'PY'\n"
+        "import json\n"
+        "import os\n"
+        "import pathlib\n"
+        "import shutil\n"
+        f"payload = json.loads({json.dumps(json.dumps(payload))})\n"
+        "release_dir = pathlib.Path(payload['release_dir'])\n"
+        "runtime_root = pathlib.Path(payload['runtime_root'])\n"
+        "for rel in payload['shared_dirs']:\n"
+        "    target = runtime_root / rel\n"
+        "    target.mkdir(parents=True, exist_ok=True)\n"
+        "    link = release_dir / rel\n"
+        "    if link.is_symlink() or link.exists():\n"
+        "        if link.is_dir() and not link.is_symlink():\n"
+        "            shutil.rmtree(link)\n"
+        "        else:\n"
+        "            link.unlink()\n"
+        "    link.parent.mkdir(parents=True, exist_ok=True)\n"
+        "    os.symlink(target, link)\n"
+        "for rel in payload['shared_files']:\n"
+        "    target = runtime_root / rel\n"
+        "    target.parent.mkdir(parents=True, exist_ok=True)\n"
+        "    if not target.exists():\n"
+        "        target.touch()\n"
+        "    link = release_dir / rel\n"
+        "    if link.is_symlink() or link.exists():\n"
+        "        if link.is_dir() and not link.is_symlink():\n"
+        "            shutil.rmtree(link)\n"
+        "        else:\n"
+        "            link.unlink()\n"
+        "    link.parent.mkdir(parents=True, exist_ok=True)\n"
+        "    os.symlink(target, link)\n"
+        "PY"
+    )
+
+
 def build_git_prepare_command(config: VPSConfig) -> str:
     remote_dir = shlex.quote(config.remote_dir)
     remote_parent = shlex.quote(str(PurePosixPath(config.remote_dir).parent))
+    repo_cache_dir = shlex.quote(_remote_repo_cache_dir(config))
+    releases_dir = shlex.quote(_remote_releases_dir(config))
+    current_link = shlex.quote(_remote_current_release_link(config))
     git_repo = shlex.quote(config.git_repo)
     # Fetch strategy differs: full 40-char SHAs cannot be used as refspecs,
     # so fetch all refs and verify the SHA is present locally.
@@ -281,43 +364,29 @@ def build_git_prepare_command(config: VPSConfig) -> str:
         )
     return (
         "set -e && "
-        f"mkdir -p {remote_parent} && "
-        f"if [ ! -d {remote_dir}/.git ]; then "
-        f"git clone --no-checkout {git_repo} {remote_dir}; "
+        f"mkdir -p {remote_parent} {remote_dir} {releases_dir} && "
+        f"if [ ! -d {repo_cache_dir}/.git ]; then "
+        f"git clone --no-checkout {git_repo} {repo_cache_dir}; "
         "fi && "
-        f"cd {remote_dir} && "
+        f"cd {repo_cache_dir} && "
         f"git remote set-url origin {git_repo} && "
         f"{fetch_and_resolve}"
-        'git checkout --detach "$resolved" && '
-        'git reset --hard "$resolved" && '
-        "git clean -ffdx "
-        "-e '.venv' -e '.venv/**' "
-        "-e '*_autoresearch-runs' -e '*_autoresearch-runs/**' "
-        "-e 'data' -e 'data/**' "
-        "-e 'runtime' -e 'runtime/**' "
-        "-e 'experiments' -e 'experiments/**' "
-        "-e 'proposals' -e 'proposals/**' "
-        "-e '*-proposals' -e '*-proposals/**' "
-        "-e 'compilations' -e 'compilations/**' "
-        "-e '*-compilations' -e '*-compilations/**' "
-        "-e 'contracts' -e 'contracts/**' "
-        "-e '*-contracts' -e '*-contracts/**' "
-        "-e 'run-queue' -e 'run-queue/**' "
-        "-e '*-run-queue' -e '*-run-queue/**' "
-        "-e 'research' -e 'research/**' "
-        "-e '*-research' -e '*-research/**' "
-        "-e 'builder-requests' -e 'builder-requests/**' "
-        "-e '*-builder-requests' -e '*-builder-requests/**' "
-        "-e '*_autoresearch.next.json' -e '*_autoresearch.current.md' "
-        "-e '*_autoresearch.ideas.md' -e '*_baseline_checkpoints.json' "
-        "-e '*_experiments.db' -e 'logs' -e 'logs/**' && "
+        'release_dir="' + shlex.quote(_remote_releases_dir(config)) + '/$resolved" && '
+        'if [ ! -d "$release_dir" ]; then '
+        'tmp_release="${release_dir}.tmp.$$" && '
+        'rm -rf "$tmp_release" && mkdir -p "$tmp_release" && '
+        'git archive "$resolved" | tar -x -C "$tmp_release" && '
+        'mv "$tmp_release" "$release_dir"; '
+        "fi && "
+        f'ln -sfn "$release_dir" {current_link} && '
         f"printf '{RESOLVED_SHA_MARKER} %s\\n' \"$resolved\""
     )
 
 
 def build_git_status_command(config: VPSConfig) -> str:
     """Report the existing VPS checkout SHA and requested Git ref without changing files."""
-    remote_dir = shlex.quote(config.remote_dir)
+    repo_cache_dir = shlex.quote(_remote_repo_cache_dir(config))
+    current_link = shlex.quote(_remote_current_release_link(config))
     git_repo = shlex.quote(config.git_repo)
     if re.fullmatch(r"[0-9a-fA-F]{7,40}", config.git_ref):
         git_ref_q = shlex.quote(config.git_ref)
@@ -333,13 +402,13 @@ def build_git_status_command(config: VPSConfig) -> str:
         )
     return (
         "set -e && "
-        f"if [ ! -d {remote_dir}/.git ]; then "
+        f"if [ ! -d {repo_cache_dir}/.git ]; then "
         f"printf '{CURRENT_SHA_MARKER} missing\\n'; "
         "exit 0; "
         "fi && "
-        f"cd {remote_dir} && "
+        f"cd {repo_cache_dir} && "
         f"{fetch_and_resolve}"
-        "current=$(git rev-parse --verify HEAD^{commit}) && "
+        f'current="missing" && if [ -L {current_link} ]; then current=$(basename "$(readlink {current_link})"); fi && '
         f"printf '{CURRENT_SHA_MARKER} %s\\n' \"$current\" && "
         f"printf '{RESOLVED_SHA_MARKER} %s\\n' \"$resolved\""
     )
@@ -347,9 +416,10 @@ def build_git_status_command(config: VPSConfig) -> str:
 
 def build_activity_probe_command(config: VPSConfig, family: StrategyFamily) -> str:
     remote_dir = shlex.quote(config.remote_dir)
+    repo_cache_dir = shlex.quote(_remote_repo_cache_dir(config))
     return (
         "set -e && "
-        f"if [ ! -d {remote_dir}/.git ]; then "
+        f"if [ ! -d {repo_cache_dir}/.git ]; then "
         f"printf '{ACTIVE_RUN_MARKER} %s\\n' "
         + shlex.quote(json.dumps({"active": False, "reason": "missing_checkout"}))
         + "; exit 0; fi && "
@@ -474,16 +544,20 @@ def parse_prepare_result(output: str) -> dict[str, object]:
 
 def _build_remote_bootstrap_segments(
     config: VPSConfig,
+    family: StrategyFamily,
     resolved_sha: str,
     *,
     skip_dependency_install: bool = False,
 ) -> list[str]:
+    release_dir = _remote_release_dir(config, resolved_sha)
     segments = [
         "set -e",
-        f"cd {shlex.quote(config.remote_dir)}",
-        f'if [ -f "{REMOTE_RUNTIME_ENV_FILENAME}" ]; then set -a; . ./{REMOTE_RUNTIME_ENV_FILENAME}; set +a; fi',
+        f"if [ -f {shlex.quote(str(PurePosixPath(config.remote_dir) / REMOTE_RUNTIME_ENV_FILENAME))} ]; then "
+        f"set -a; . {shlex.quote(str(PurePosixPath(config.remote_dir) / REMOTE_RUNTIME_ENV_FILENAME))}; set +a; fi",
         f"export AUTORESEARCH_RESOLVED_SHA={shlex.quote(resolved_sha)}",
         f"export CODEX_HOME={shlex.quote(_remote_codex_home(config.user))}",
+        _render_release_symlink_bootstrap(config, family, resolved_sha),
+        f"cd {shlex.quote(release_dir)}",
     ]
     if config.data_root:
         segments.append(f"export {DATA_ROOT_ENV}={shlex.quote(config.data_root)}")
@@ -529,6 +603,7 @@ def build_remote_prepare_command(
 ) -> str:
     segments = _build_remote_bootstrap_segments(
         config,
+        family,
         resolved_sha,
         skip_dependency_install=skip_dependency_install,
     )
@@ -550,6 +625,7 @@ def build_remote_run_command(
 ) -> str:
     segments = _build_remote_bootstrap_segments(
         config,
+        family,
         resolved_sha,
         skip_dependency_install=skip_dependency_install,
     )
