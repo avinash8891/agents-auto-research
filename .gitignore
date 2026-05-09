@@ -231,3 +231,5 @@ logs/
 experiments/
 research_findings.jsonl
 .remember/
+prompts.db
+ema_experiments.db
