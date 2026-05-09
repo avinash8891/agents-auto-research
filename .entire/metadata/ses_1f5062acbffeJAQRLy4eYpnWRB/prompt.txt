@@ -1,0 +1,8 @@
+Read the following files and return their FULL contents. Do not summarize or truncate. Return each file's complete content with its filename as a header.
+
+1. compiler_pipeline.py
+2. compiler_thesis_io.py
+3. research_conductor.py
+4. research_memory.py
+5. autoresearch_state.py
+6. experiment_db.py
