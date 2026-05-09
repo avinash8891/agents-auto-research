@@ -1,0 +1,62 @@
+# 5 EMA autoresearch base configuration
+# Grounded in transcripts: T1 (Modified), T2 (Best Use), T4 (Game Changer)
+family: "ema"
+data_universe: "nasdaq8"
+symbols: null
+
+validation_start: "2020-01-01"
+validation_end: "2023-12-31"
+
+ema_length: 5
+timeframe_short: 5
+timeframe_long: 15
+rr_ratio: 3.0
+
+# Transcript T2: "99% selling side" u2014 short only is the core strategy
+direction_bias: "short_only"
+
+# Transcript T2: entries in first 10-15 min after open
+# Using 10:00 (first 30 min of 9:30 open) as conservative cutoff
+entry_cutoff_time: "10:00"
+
+# Transcript T2: "When I had completed five trades, I would end them"
+# T4: "not more than 3 times a day"
+# Baseline uses 5 (T2), autoresearch can explore 3-10
+max_trades_per_day: 3
+
+# Minimum stop distance filter: reject signals where the stop is too tight
+# for slippage to be absorbed. Value in percent (0.20 = 0.20% of entry price).
+# null = disabled (no filtering)
+min_stop_distance_pct: null
+
+# Maximum stop distance: filter out trades where the alert candle is too large
+# (extreme moves likely to reverse). Value in percent (0.50 = 0.50% of entry price).
+# null = disabled (no filtering)
+max_stop_distance_pct: null
+
+# Gap filter: only trade on gap days (shorts on gap-up, longs on gap-down).
+# false = disabled (trade all days). gap_pct = minimum gap size.
+gap_filter: false
+gap_pct: 0.01
+
+# Gap exclude: skip short entries on gap-up days (fading inflated opens is risky).
+# false = disabled. gap_exclude_pct = minimum gap size to trigger exclusion.
+gap_exclude: false
+gap_exclude_pct: 0.005
+
+# Trail after R: once a trade moves this many R favorable, switch from
+# fixed target to candle-by-candle trailing stop.
+# Transcript: "minimum target is 1:3" then trail. Subashish trails candle-wise
+# after the minimum target is reached, letting winners run to 1:4, 1:5, or bigger.
+# null = disabled (fixed target at rr_ratio). 3.0 = trail after 3R.
+trail_after_r: null
+
+# Max hold bars: maximum number of bars to hold a trade before forced exit.
+# 78 = full trading day on 5-min bars (6.5 hours * 12 bars/hour).
+# Lower values (e.g. 12 = 60 minutes) capture reversal before dissipation.
+max_hold_bars: 78
+
+# Range shift: use a lookback window to adjust EMA entry levels.
+# false = disabled.
+use_range_shift: false
+range_shift_lookback: 20

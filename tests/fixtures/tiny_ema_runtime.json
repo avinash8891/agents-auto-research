@@ -1,0 +1,19 @@
+{
+  "family": "ema",
+  "data_universe": "tiny_ema_data",
+  "symbols": [
+    "AAA",
+    "BBB"
+  ],
+  "validation_start": "2024-01-02",
+  "validation_end": "2024-01-02 23:59:59",
+  "ema_length": 2,
+  "timeframe_long": 15,
+  "timeframe_short": 5,
+  "rr_ratio": 1.0,
+  "direction_bias": "both",
+  "max_hold_bars": 10,
+  "slippage_pct": 0.05,
+  "gap_filter": false,
+  "entry_cutoff_time": "15:30"
+}

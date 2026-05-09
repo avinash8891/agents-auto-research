@@ -1,0 +1,89 @@
+Debug whether the repeated EMA profit factors are caused by a real pipeline bug or by genuinely inactive
+  theses.
+
+  Repo: /Users/avinashvankadaru/.superset/projects/agents-auto-research
+
+  Task:
+  Do a forensic RCA for EMA job 26 rounds 16, 17, 19, 20, and 22, which all report PF 34.1115.
+
+  What is already proven:
+  - The configs differ across those rounds.
+  - The executed economics are identical:
+    - trade_count = 1147
+    - gross_win = 26.23356753504531
+    - gross_loss = 0.7690539257572769
+    - exact PF = 34.11147990592919
+  - Round 16 and 17 have byte-identical trades.csv.
+  - Rounds 19, 20, 22 have different trades.csv bytes only because of extra diagnostic columns; all shared
+  trade fields match round 16.
+
+  Your job:
+  Determine whether this happened for a valid reason or because of a bug in thesis generation, thesis-to-config
+  conversion, strategy execution, experiment evaluation, caching, or artifact wiring.
+
+  Do not guess. Reproduce from code and artifacts.
+
+  Required approach:
+  1. Read the live code path end-to-end for:
+     - research thesis creation/validation
+     - compile_research_thesis / create_executable_artifact
+     - runtime config loading
+     - backtest runner invocation
+     - strategy execution for EMA
+     - diagnostics/event generation
+     - result parsing / PF computation
+  2. For rounds 16, 17, 19, 20, 22:
+     - inspect thesis.json
+     - inspect contract.json
+     - inspect runtime_config.json
+     - inspect result.json
+     - inspect diagnostics.json
+     - inspect strategy_events / trades artifacts as needed
+  3. Identify exactly where each thesis should have changed behavior.
+  4. Prove whether that behavior was:
+     - not wired into runtime at all
+     - wired but never activated
+     - activated but neutralized by another gate
+     - silently dropped during thesis->config->runtime conversion
+     - ignored due to caching / artifact reuse / path mixup
+     - present only in diagnostics columns, not trading logic
+  5. Check for these bug classes explicitly:
+     - config key exists in thesis but is never consumed in strategy runtime
+     - thesis compiles to config but config field is dead/unread
+     - strategy reads wrong field name / alias / default
+     - evaluator or backtest loads a stale config
+     - multiple experiment dirs map to same effective config after normalization
+     - result artifacts copied/reused from another run
+     - diagnostics-only engine changes accidentally presented as trading theses
+     - thesis validator/operationalizer mutates meaning unexpectedly
+  6. If you find a bug:
+     - give exact root cause
+     - provide minimal repro
+     - propose or implement a fix
+     - add regression tests
+  7. If you do not find a bug:
+     - prove why each repeated-PF thesis was expected to leave executed trades unchanged
+
+  Output format:
+  - Findings first, ordered by severity
+  - Each finding must include:
+    - severity
+    - file:line
+    - what is wrong
+    - why it explains the repeated PFs
+    - concrete evidence
+  - Then:
+    - “What each thesis meant”
+    - “Why it did or did not affect trades”
+    - “Proven root cause summary”
+
+  Constraints:
+  - No handwaving
+  - No “likely”
+  - No “probably” unless explicitly marked as unproven
+  - Ground everything in code and live artifacts
+  - Prefer tiny targeted repros over broad speculation
+
+  Important:
+  I suspect a bug. Challenge the assumption that identical PF means valid no-op behavior. Try to falsify the
+  system first.
