@@ -997,6 +997,11 @@ def _evaluate_against_thesis(
             getattr(contract, "required_diagnostics", []),
             getattr(contract, "required_diagnostic_specs", []),
         )
+        if any(spec.surface == "experiment_evaluation" for spec in required_diagnostic_specs) and (
+            not getattr(controller, "baseline_tracker", None)
+            or controller.baseline_tracker.latest() is None
+        ):
+            raise ValueError("baseline checkpoint missing for experiment_evaluation diagnostics")
         details["strategy_diagnostics"] = enrich_required_diagnostics(
             required_diagnostic_specs,
             baseline_metrics=baseline_metrics,
@@ -1018,6 +1023,8 @@ def _evaluate_against_thesis(
         log.info(f"VERDICT {verdict.status}: {verdict.summary}")
         _persist_verdict(controller, contract, verdict)
         if verdict.status == "rejected":
+            return verdict, "discard"
+        if verdict.status == "inconclusive":
             return verdict, "discard"
         if verdict.status == "accepted" and decision == "discard":
             trace("EVAL", "thesis accepted despite metric threshold")

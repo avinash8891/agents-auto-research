@@ -199,6 +199,56 @@ def test_try_resume_happy_path_writes_config_and_thesis_files(tmp_path, monkeypa
     assert len(written_states) == 1
 
 
+def test_activate_builder_config_preserves_required_diagnostic_specs(tmp_path):
+    thesis_id = "builder_resume_specs"
+    experiment_dir = tmp_path / "experiments" / thesis_id
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": thesis_id,
+                "hypothesis": "h",
+                "mechanism": "m",
+                "config_changes": {"ema_length": 7},
+                "expected_effects": [],
+                "disqualifiers": [],
+                "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
+                "required_diagnostic_specs": [
+                    {
+                        "key": "max_drawdown_and_pct_profitable_windows_vs_base",
+                        "surface": "experiment_evaluation",
+                        "payload_fields": ["candidate_max_drawdown"],
+                        "aliases": [],
+                        "description": "baseline comparison diagnostic",
+                    }
+                ],
+            }
+        )
+        + "\n"
+    )
+
+    written_states: list = []
+    ctrl = _make_controller(
+        state={"state": "building", "blockers": []},
+        root=tmp_path,
+        written_states=written_states,
+    )
+    state = {"state": "building", "blockers": []}
+
+    result = orch._activate_builder_config(
+        ctrl,
+        state,
+        thesis_id,
+        f"experiments/{thesis_id}/runtime_config.json",
+        research_round=9,
+    )
+
+    assert result["state"] == "running"
+    assert ctrl.ctx.current_contract.required_diagnostic_specs[0]["key"] == (
+        "max_drawdown_and_pct_profitable_windows_vs_base"
+    )
+
+
 # ── apply_forced_baseline_rerun ───────────────────────────────────────────────
 
 

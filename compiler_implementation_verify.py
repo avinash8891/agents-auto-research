@@ -50,7 +50,7 @@ def verify_builder_implementation_contract(
     failures.extend(_verify_no_undeclared_config_drift(root, contract, thesis, config, family_name))
     failures.extend(_verify_config_key_consumption(root, family_name, thesis))
     failures.extend(_verify_required_diagnostics(root, family_name, thesis))
-    failures.extend(_verify_data_dependencies(root, thesis, config))
+    failures.extend(_verify_data_dependencies(root, family_name, thesis, config))
     test_failures = _verify_tests_cover_behavior(root, thesis, contract)
     failures.extend(test_failures)
 
@@ -279,7 +279,7 @@ def _diagnostic_emission_texts(
 def _diagnostic_spec_emitted(texts: dict[str, list[str]], spec: dict[str, Any]) -> bool:
     key = str(spec.get("key") or "").strip()
     if not key:
-        return True
+        return False
     aliases = [str(alias).strip() for alias in spec.get("aliases") or [] if str(alias).strip()]
     tokens = [key, *aliases]
     surface = str(spec.get("surface") or "any")
@@ -316,12 +316,30 @@ def _diagnostic_spec_emitted(texts: dict[str, list[str]], spec: dict[str, Any]) 
     return False
 
 
+def _reachable_ast_nodes(node: ast.AST) -> list[ast.AST]:
+    nodes: list[ast.AST] = []
+
+    def walk(current: ast.AST) -> None:
+        nodes.append(current)
+        if isinstance(current, ast.If):
+            if isinstance(current.test, ast.Constant) and isinstance(current.test.value, bool):
+                branch = current.body if current.test.value else current.orelse
+                for child in branch:
+                    walk(child)
+                return
+        for child in ast.iter_child_nodes(current):
+            walk(child)
+
+    walk(node)
+    return nodes
+
+
 def _config_key_consumed_by_runtime(text: str, token: str) -> bool:
     try:
         tree = ast.parse(text)
     except SyntaxError:
         return False
-    for node in ast.walk(tree):
+    for node in _reachable_ast_nodes(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             if node.func.attr == "get" and node.args:
                 first = node.args[0]
@@ -339,7 +357,11 @@ def _active_string_token_present(text: str, token: str) -> bool:
         tree = ast.parse(text)
     except SyntaxError:
         return False
-    for node in ast.walk(tree):
+    for node in _reachable_ast_nodes(tree):
+        if isinstance(node, ast.Dict):
+            for key in node.keys:
+                if isinstance(key, ast.Constant) and key.value == token:
+                    return True
         if isinstance(node, ast.Call):
             for arg in list(node.args) + [kw.value for kw in node.keywords]:
                 if isinstance(arg, ast.Constant) and arg.value == token:
@@ -355,7 +377,7 @@ def _payload_key_token_present(text: str, token: str) -> bool:
         tree = ast.parse(text)
     except SyntaxError:
         return False
-    for node in ast.walk(tree):
+    for node in _reachable_ast_nodes(tree):
         if isinstance(node, ast.Dict):
             for key in node.keys:
                 if isinstance(key, ast.Constant) and key.value == token:
@@ -394,7 +416,7 @@ def _subscript_string_key(node: ast.Subscript) -> str | None:
 
 
 def _verify_data_dependencies(
-    root: Path, thesis: dict[str, Any], config: dict[str, Any]
+    root: Path, family_name: str, thesis: dict[str, Any], config: dict[str, Any]
 ) -> list[str]:
     relevant_tokens: list[str] = []
     config_changes = thesis.get("config_changes") or {}
@@ -411,6 +433,10 @@ def _verify_data_dependencies(
         relevant_tokens.append(spec.key.lower())
         relevant_tokens.extend(alias.lower() for alias in spec.aliases)
     relevant_tokens.extend(str(key).lower() for key in config)
+    runtime_modules, _runtime_failures = _runtime_code_modules_with_failures(
+        root / "strategies" / family_name
+    )
+    relevant_tokens.extend(text.lower() for text in runtime_modules)
     if not any("vwap" in token for token in relevant_tokens):
         return []
     universe = config.get("data_universe")

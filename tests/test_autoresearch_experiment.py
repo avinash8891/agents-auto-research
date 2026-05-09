@@ -448,6 +448,36 @@ def test_evaluate_experiment_marks_unparsed_disqualifier_inconclusive() -> None:
     assert "Unparsed disqualifiers" in verdict.summary
 
 
+def test_evaluate_experiment_treats_missing_inputs_diagnostic_as_missing() -> None:
+    from experiment_evaluator import evaluate_experiment
+    from research_types import ResearchThesis
+
+    thesis = ResearchThesis(
+        thesis_id="diag-missing-inputs",
+        strategy_family="ema",
+        hypothesis="Need baseline-relative diagnostic",
+        mechanism="compare candidate vs baseline",
+        required_diagnostics=["Max_drawdown and pct_profitable_windows vs base"],
+    )
+
+    verdict = evaluate_experiment(
+        thesis=thesis,
+        baseline_metrics={"profit_factor": 1.0},
+        candidate_metrics={"profit_factor": 1.2},
+        experiment_id="exp-3",
+        strategy_diagnostics={
+            "max_drawdown_and_pct_profitable_windows_vs_base": {
+                "missing_inputs": ["base_pct_profitable_windows"]
+            }
+        },
+    )
+
+    assert verdict.status == "inconclusive"
+    assert verdict.missing_required_diagnostics == [
+        "max_drawdown_and_pct_profitable_windows_vs_base"
+    ]
+
+
 def test_evaluate_metric_uses_sqlite_experiment_db(tmp_path: Path) -> None:
     db = ExperimentDB(tmp_path / "experiments.db")
     db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
@@ -1531,6 +1561,18 @@ def test_evaluate_against_thesis_enriches_registered_baseline_comparison_diagnos
 
     class _Controller:
         root = Path(".")
+        baseline_tracker = SimpleNamespace(
+            latest=lambda: SimpleNamespace(
+                metrics={
+                    "trade_count": 10,
+                    "profit_factor": 2.0,
+                    "max_drawdown": 0.22,
+                    "pct_profitable_windows": 0.55,
+                    "avg_sharpe_across_windows": 0.7,
+                    "median_expectancy": 0.01,
+                }
+            )
+        )
 
         def read_results(self):
             return [_Result()]
@@ -1582,6 +1624,105 @@ def test_evaluate_against_thesis_enriches_registered_baseline_comparison_diagnos
         "base_pct_profitable_windows": 0.55,
         "delta_pct_profitable_windows": 0.06,
     }
+
+
+def test_evaluate_against_thesis_discards_inconclusive_verdict(monkeypatch) -> None:
+    class _Contract:
+        thesis_id = "t1"
+        strategy_family = "ema"
+        hypothesis = "h"
+        mechanism = "m"
+        expected_effects = []
+        disqualifiers = []
+        required_diagnostics = ["Max_drawdown and pct_profitable_windows vs base"]
+        required_diagnostic_specs = []
+        experiment_id = "exp-1"
+
+    class _Checkpoint:
+        metrics = {
+            "trade_count": 10,
+            "profit_factor": 2.0,
+            "max_drawdown": 0.22,
+            "pct_profitable_windows": 0.55,
+        }
+
+    class _Controller:
+        root = Path(".")
+        baseline_tracker = SimpleNamespace(latest=lambda: _Checkpoint())
+
+        def read_results(self):
+            return []
+
+        def primary_metric_name(self):
+            return "profit_factor"
+
+    class _Verdict:
+        status = "inconclusive"
+        passed_effects: list[str] = []
+        failed_effects: list[str] = []
+        triggered_disqualifiers: list[str] = []
+        unparsed_disqualifiers: list[str] = ["profit_factor_under_one"]
+        missing_required_diagnostics: list[str] = []
+        summary = "unparsed disqualifier"
+
+        def model_dump_json(self, indent=2):
+            return "{}"
+
+    monkeypatch.setattr(
+        experiment_mod, "_persist_verdict", lambda controller, contract, verdict: None
+    )
+    monkeypatch.setattr("experiment_evaluator.evaluate_experiment", lambda **kwargs: _Verdict())
+
+    verdict, decision = _evaluate_against_thesis(
+        _Controller(),
+        _Contract(),
+        2.4,
+        "keep",
+        {
+            "trade_count": 9,
+            "profit_factor": 2.4,
+            "max_drawdown": 0.18,
+            "pct_profitable_windows": 0.61,
+            "strategy_diagnostics": {},
+        },
+    )
+
+    assert verdict.status == "inconclusive"
+    assert decision == "discard"
+
+
+def test_evaluate_against_thesis_requires_baseline_checkpoint_for_experiment_eval_diagnostic() -> (
+    None
+):
+    class _Contract:
+        thesis_id = "t1"
+        strategy_family = "ema"
+        hypothesis = "h"
+        mechanism = "m"
+        expected_effects = []
+        disqualifiers = []
+        required_diagnostics = ["Max_drawdown and pct_profitable_windows vs base"]
+        required_diagnostic_specs = []
+        experiment_id = "exp-1"
+
+    class _Controller:
+        root = Path(".")
+        baseline_tracker = SimpleNamespace(latest=lambda: None)
+
+        def read_results(self):
+            return []
+
+        def primary_metric_name(self):
+            return "profit_factor"
+
+    with pytest.raises(ValueError, match="baseline checkpoint missing"):
+        _evaluate_against_thesis(
+            _Controller(),
+            _Contract(),
+            1.0,
+            "keep",
+            {"trade_count": 1, "profit_factor": 1.0, "strategy_diagnostics": {}},
+        )
 
 
 def test_evaluate_against_thesis_uses_latest_baseline_checkpoint_metrics(monkeypatch) -> None:
@@ -1686,7 +1827,15 @@ def test_evaluate_against_thesis_surfaces_missing_inputs_for_registered_diagnost
 
     class _Controller:
         root = Path(".")
-        baseline_tracker = SimpleNamespace(latest=lambda: None)
+        baseline_tracker = SimpleNamespace(
+            latest=lambda: SimpleNamespace(
+                metrics={
+                    "trade_count": 10,
+                    "profit_factor": 2.0,
+                    "max_drawdown": 0.22,
+                }
+            )
+        )
 
         def read_results(self):
             return [_Result()]

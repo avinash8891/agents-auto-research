@@ -174,7 +174,12 @@ def evaluate_experiment(
     available_diagnostics = strategy_diagnostics if isinstance(strategy_diagnostics, dict) else {}
     for spec in required_specs:
         tokens = [spec.key, *(spec.aliases or [])]
-        if not any(token in available_diagnostics for token in tokens):
+        matched_key = next((token for token in tokens if token in available_diagnostics), None)
+        if matched_key is None:
+            missing_required_diagnostics.append(spec.key)
+            continue
+        payload = available_diagnostics.get(matched_key)
+        if isinstance(payload, dict) and payload.get("missing_inputs"):
             missing_required_diagnostics.append(spec.key)
 
     # Determine verdict

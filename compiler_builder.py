@@ -265,7 +265,10 @@ def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str,
 def _validate_missing_primitives_contract(
     *, thesis_id: str, compilation: dict[str, Any], missing_primitives: list[str]
 ) -> dict[str, Any] | None:
-    if compilation.get("status") == "needs_code" and not missing_primitives:
+    requires_code_change = bool(
+        compilation.get("status") == "needs_code" or compilation.get("requires_code_change")
+    )
+    if requires_code_change and not missing_primitives:
         return {
             "status": "error",
             "error_code": "builder_missing_primitive_contract",
