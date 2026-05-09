@@ -1,0 +1,2 @@
+use_trend_filter: true
+trend_ema_period: 20
