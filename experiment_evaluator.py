@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from diagnostic_contracts import build_required_diagnostic_specs
 from research_types import (
     Disqualifier,
     ExpectedEffect,
@@ -127,6 +128,7 @@ def evaluate_experiment(
     passed: list[str] = []
     failed: list[str] = []
     triggered: list[str] = []
+    missing_required_diagnostics: list[str] = []
 
     for effect in thesis.expected_effects:
         effect_result = evaluate_effect(effect, baseline_metrics, candidate_metrics)
@@ -139,6 +141,17 @@ def evaluate_experiment(
         if evaluate_disqualifier(dq, baseline_metrics, candidate_metrics):
             triggered.append(dq.name)
 
+    required_specs = build_required_diagnostic_specs(
+        thesis.required_diagnostics,
+        [spec.model_dump() for spec in thesis.required_diagnostic_specs],
+    )
+    strategy_diagnostics = strategy_diagnostics or {}
+    available_diagnostics = strategy_diagnostics if isinstance(strategy_diagnostics, dict) else {}
+    for spec in required_specs:
+        tokens = [spec.key, *(spec.aliases or [])]
+        if not any(token in available_diagnostics for token in tokens):
+            missing_required_diagnostics.append(spec.key)
+
     # Determine verdict
     hard_fails = [
         dq.name
@@ -148,6 +161,8 @@ def evaluate_experiment(
 
     if hard_fails:
         status = "rejected"
+    elif missing_required_diagnostics:
+        status = "inconclusive"
     elif triggered:  # only soft_fails
         status = "inconclusive"
     elif failed:
@@ -163,9 +178,11 @@ def evaluate_experiment(
         parts.append(f"Failed: {', '.join(failed)}")
     if triggered:
         parts.append(f"Disqualifiers triggered: {', '.join(triggered)}")
-    if strategy_diagnostics:
-        ec = strategy_diagnostics.get("event_counts", {})
-        rb = strategy_diagnostics.get("rejection_breakdown", {})
+    if missing_required_diagnostics:
+        parts.append(f"Missing required diagnostics: {', '.join(missing_required_diagnostics)}")
+    if available_diagnostics:
+        ec = available_diagnostics.get("event_counts", {})
+        rb = available_diagnostics.get("rejection_breakdown", {})
         if ec:
             parts.append(f"Signal funnel: {ec}")
         if rb:
@@ -180,5 +197,6 @@ def evaluate_experiment(
         passed_effects=passed,
         failed_effects=failed,
         triggered_disqualifiers=triggered,
+        missing_required_diagnostics=missing_required_diagnostics,
         summary=summary,
     )

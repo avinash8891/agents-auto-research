@@ -52,6 +52,7 @@ def _builder_result_context(builder_result: dict[str, Any]) -> dict[str, Any]:
         "generated_config",
         "status",
         "validation_passed",
+        "usage",
     ):
         if key in builder_result:
             context[key] = builder_result[key]
@@ -103,10 +104,11 @@ def _activate_builder_config(
         try:
             loaded = json.loads(thesis_path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
-            _log.warning("thesis.json unreadable for %s: %s", thesis_id, exc)
-            loaded = {}
+            raise RuntimeError(f"thesis.json unreadable for {thesis_id}: {exc}") from exc
         if isinstance(loaded, dict):
             thesis_payload = loaded
+        else:
+            raise RuntimeError(f"thesis.json is not an object for {thesis_id}")
     controller.ctx.current_contract = SimpleNamespace(
         experiment_id=thesis_id,
         strategy_family=controller.family.name,
@@ -495,13 +497,32 @@ def build_missing_primitives_for_state(
         if generated_config and (controller.root / generated_config).exists():
             _mark_builder_heartbeat_finished(state, thesis_id, "completed")
             _attach_builder_runtime_context(state, builder_result)
-            state = _activate_builder_config(
-                controller,
-                state,
-                thesis_id,
-                generated_config,
-                research_round=research_round,
-            )
+            try:
+                state = _activate_builder_config(
+                    controller,
+                    state,
+                    thesis_id,
+                    generated_config,
+                    research_round=research_round,
+                )
+            except Exception as exc:  # noqa: BLE001
+                builder_result = {
+                    **builder_result,
+                    "status": "error",
+                    "error_code": "builder_activation_failed",
+                    "reason": f"failed to activate builder config for {thesis_id}: {exc}",
+                    "validation_passed": False,
+                }
+                state = _mark_builder_manual_review(
+                    controller,
+                    state,
+                    thesis_id,
+                    thesis,
+                    builder_result,
+                    research_round=research_round,
+                )
+                trace("LOOP", f"builder activation failed thesis={thesis_id}: {exc}")
+                return state
             trace("LOOP", f"builder generated thesis={thesis_id} -> {generated_config}")
             return state
     state = _mark_builder_manual_review(
@@ -561,11 +582,40 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         "expected_effects": resumed_thesis.get("expected_effects", []),
         "disqualifiers": resumed_thesis.get("disqualifiers", []),
         "required_diagnostics": resumed_thesis.get("required_diagnostics", []),
+        "required_diagnostic_specs": resumed_thesis.get("required_diagnostic_specs", []),
     }
     _write_text_atomic(
         exp_dir / "thesis.json",
         json.dumps(thesis_sidecar, indent=2) + "\n",
     )
+    try:
+        from diagnostic_contracts import build_required_diagnostic_specs
+        from research_types import ExperimentContract
+
+        contract = ExperimentContract(
+            experiment_id=halted_id,
+            thesis_id=thesis_sidecar["thesis_id"],
+            strategy_family=controller.family.name,
+            baseline_config_path=f"configs/{controller.family.base_config_filename}",
+            runtime_config=runtime,
+            hypothesis=thesis_sidecar["hypothesis"],
+            mechanism=thesis_sidecar["mechanism"],
+            expected_effects=resumed_thesis.get("expected_effects", []),
+            disqualifiers=resumed_thesis.get("disqualifiers", []),
+            required_diagnostics=thesis_sidecar["required_diagnostics"],
+            required_diagnostic_specs=build_required_diagnostic_specs(
+                thesis_sidecar["required_diagnostics"],
+                thesis_sidecar["required_diagnostic_specs"],
+            ),
+            missing_primitives=[],
+            status="ready_to_run",
+        )
+        _write_text_atomic(
+            exp_dir / "contract.json",
+            contract.model_dump_json(indent=2) + "\n",
+        )
+    except Exception as exc:
+        _log.warning("failed to refresh contract.json for resumed thesis %s: %s", halted_id, exc)
     controller.ctx.current_contract = SimpleNamespace(
         experiment_id=halted_id,
         strategy_family=controller.family.name,

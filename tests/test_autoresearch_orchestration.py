@@ -166,6 +166,12 @@ def test_try_resume_happy_path_writes_config_and_thesis_files(tmp_path, monkeypa
     assert sidecar["thesis_id"] == "entry_window_test"
     assert sidecar["strategy_family"] == "ema"
 
+    contract_path = tmp_path / "experiments" / "entry_window_test" / "contract.json"
+    assert contract_path.exists()
+    contract = json.loads(contract_path.read_text())
+    assert contract["status"] == "ready_to_run"
+    assert contract["runtime_config"] == validated_runtime
+
     # controller.write_state called
     assert len(written_states) == 1
 
@@ -247,6 +253,7 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
             "builder_phase": "completed",
             "builder_task": {"thesis_id": thesis_id, "family_name": "ema"},
             "builder_self_check": {"mechanism_implemented": True},
+            "usage": {"input_tokens": 17, "output_tokens": 5, "total_tokens": 22},
         }
 
     monkeypatch.setattr("compiler_pipeline.build_missing_primitives", fake_build)
@@ -272,6 +279,7 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
     assert result["heartbeat"]["builder_status"] == "completed"
     assert result["heartbeat"]["builder_result_context"]["builder_phase"] == "completed"
     assert result["heartbeat"]["builder_result_context"]["builder_task"]["thesis_id"] == thesis_id
+    assert result["heartbeat"]["builder_result_context"]["usage"]["total_tokens"] == 22
     assert "builder_finished_at" in result["heartbeat"]
     assert written_states[0]["state"] == "building"
     assert written_states[-1]["state"] == "running"

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import ast
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -30,6 +30,7 @@ THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change", "new_config_key
 class ImplementationVerification:
     passed: bool
     failures: list[str]
+    tests_covering_behavior: bool = False
 
 
 def verify_builder_implementation_contract(
@@ -50,8 +51,14 @@ def verify_builder_implementation_contract(
     failures.extend(_verify_config_key_consumption(root, family_name, thesis))
     failures.extend(_verify_required_diagnostics(root, family_name, thesis))
     failures.extend(_verify_data_dependencies(root, thesis, config))
+    test_failures = _verify_tests_cover_behavior(root, thesis, contract)
+    failures.extend(test_failures)
 
-    return ImplementationVerification(passed=not failures, failures=failures)
+    return ImplementationVerification(
+        passed=not failures,
+        failures=failures,
+        tests_covering_behavior=not test_failures,
+    )
 
 
 def _read_runtime_config(path: Path) -> dict[str, Any]:
@@ -167,7 +174,7 @@ def _verify_config_key_consumption(
     for key in sorted(_runtime_config_changes(config_changes)):
         if key in default_keys:
             continue
-        if key not in runtime_text:
+        if not _config_key_consumed_by_runtime(runtime_text, key):
             failures.append(f"config_key_not_consumed_by_runtime:{key}")
     return failures
 
@@ -245,6 +252,7 @@ def _diagnostic_emission_texts(root: Path, family_name: str) -> tuple[dict[str, 
         ("runtime_output", "backtest/runner.py"),
         ("experiment_evaluation", "autoresearch_experiment.py"),
         ("experiment_evaluator", "experiment_evaluator.py"),
+        ("experiment_evaluation_registry", "diagnostic_contracts.py"),
     ):
         path = root / rel
         if path.exists():
@@ -275,16 +283,57 @@ def _diagnostic_spec_emitted(texts: dict[str, str], spec: dict[str, Any]) -> boo
         haystack = "\n".join(
             text
             for name, text in texts.items()
-            if name in {"experiment_evaluation", "experiment_evaluator"}
+            if name
+            in {
+                "experiment_evaluation",
+                "experiment_evaluator",
+                "experiment_evaluation_registry",
+            }
         )
     else:
         haystack = "\n".join(texts.values())
-    return any(_string_literal_present(haystack, token) for token in tokens)
+    return any(_active_string_token_present(haystack, token) for token in tokens)
 
 
-def _string_literal_present(text: str, token: str) -> bool:
-    pattern = re.compile(rf"[\"']{re.escape(token)}[\"']")
-    return bool(pattern.search(text))
+def _config_key_consumed_by_runtime(text: str, token: str) -> bool:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "get" and node.args:
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and first.value == token:
+                    return True
+        if isinstance(node, ast.Subscript):
+            subscript_key = _subscript_string_key(node)
+            if subscript_key == token:
+                return True
+    return False
+
+
+def _active_string_token_present(text: str, token: str) -> bool:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            for arg in list(node.args) + [kw.value for kw in node.keywords]:
+                if isinstance(arg, ast.Constant) and arg.value == token:
+                    return True
+        if isinstance(node, ast.Subscript):
+            if _subscript_string_key(node) == token:
+                return True
+    return False
+
+
+def _subscript_string_key(node: ast.Subscript) -> str | None:
+    slice_node = node.slice
+    if isinstance(slice_node, ast.Constant) and isinstance(slice_node.value, str):
+        return slice_node.value
+    return None
 
 
 def _verify_data_dependencies(
@@ -299,4 +348,59 @@ def _verify_data_dependencies(
     vwap_path = data_universe_path(str(universe)) / "vwap.parquet"
     if not vwap_path.exists():
         return [f"vwap_data_dependency_missing:{vwap_path}"]
+    return []
+
+
+def _verify_tests_cover_behavior(
+    root: Path,
+    thesis: dict[str, Any],
+    contract: dict[str, Any] | None,
+) -> list[str]:
+    requested_primitives = thesis.get("requested_primitives") or []
+    if not isinstance(requested_primitives, list):
+        requested_primitives = []
+    contract_missing = []
+    if isinstance(contract, dict):
+        raw_missing = contract.get("missing_primitives") or []
+        if isinstance(raw_missing, list):
+            contract_missing = raw_missing
+    requires_code_change = bool(
+        thesis.get("requires_code_change") or requested_primitives or contract_missing
+    )
+    if not requires_code_change:
+        return []
+
+    tokens: list[str] = []
+    tokens.extend(str(item) for item in requested_primitives if str(item).strip())
+    tokens.extend(str(item) for item in contract_missing if str(item).strip())
+    config_changes = thesis.get("config_changes") or {}
+    if isinstance(config_changes, dict):
+        tokens.extend(
+            str(key)
+            for key in _runtime_config_changes(config_changes)
+            if str(key).strip() and key not in THESIS_METADATA_CONFIG_KEYS
+        )
+    required_specs = build_required_diagnostic_specs(
+        thesis.get("required_diagnostics") or [],
+        thesis.get("required_diagnostic_specs") or [],
+    )
+    for spec in required_specs:
+        tokens.append(spec.key)
+    unique_tokens = sorted({token for token in tokens if token})
+    if not unique_tokens:
+        return []
+
+    tests_dir = root / "tests"
+    if not tests_dir.exists():
+        return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
+    test_texts: list[str] = []
+    for path in sorted(tests_dir.rglob("test*.py")):
+        text, _failure = _read_source_text(path)
+        if text is not None:
+            test_texts.append(text)
+    haystack = "\n".join(test_texts)
+    if not haystack:
+        return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
+    if not any(_active_string_token_present(haystack, token) for token in unique_tokens):
+        return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
     return []

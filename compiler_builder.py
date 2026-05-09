@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -18,7 +19,7 @@ from improvement_reflexion import build_latest_reflexion_feedback
 from persistence_utils import write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import load_family
-from trace_sdk import record_event, trace
+from trace_sdk import record_event, record_usage_event, trace
 
 log = get_logger(__name__)
 
@@ -86,6 +87,165 @@ def _timeout_output(exc: subprocess.TimeoutExpired) -> tuple[str, str]:
     if stdout is None:
         stdout = getattr(exc, "output", "")
     return _coerce_subprocess_output(stdout), _coerce_subprocess_output(getattr(exc, "stderr", ""))
+
+
+def _coerce_builder_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes", "1"}:
+            return True
+        if lowered in {"false", "no", "0"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return False
+
+
+def _normalize_builder_notes(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _builder_self_check_with_note(note: str) -> BuilderSelfCheck:
+    return BuilderSelfCheck(
+        mechanism_implemented=False,
+        diagnostics_emitted=False,
+        config_surface_valid=False,
+        tests_covering_behavior=False,
+        notes=[note],
+    )
+
+
+def _verified_builder_self_check(
+    verification: Any,
+    builder_self_check: BuilderSelfCheck | None,
+) -> BuilderSelfCheck:
+    base = builder_self_check or _builder_self_check_with_note(
+        "builder_final_report_missing_or_malformed"
+    )
+    return BuilderSelfCheck(
+        mechanism_implemented=base.mechanism_implemented,
+        diagnostics_emitted=base.diagnostics_emitted,
+        config_surface_valid=base.config_surface_valid,
+        tests_covering_behavior=bool(getattr(verification, "tests_covering_behavior", False)),
+        notes=list(base.notes),
+    )
+
+
+def _extract_codex_cli_usage(stdout: str) -> tuple[dict[str, int], str] | None:
+    usage_result: tuple[dict[str, int], str] | None = None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
+            raw_usage = event["usage"]
+            input_tokens = int(raw_usage.get("input_tokens") or 0)
+            output_tokens = int(raw_usage.get("output_tokens") or 0)
+            if "total_tokens" in raw_usage and raw_usage["total_tokens"] is not None:
+                total_tokens = int(raw_usage["total_tokens"])
+            else:
+                total_tokens = input_tokens + output_tokens
+            usage_result = (
+                {
+                    "input_tokens": input_tokens,
+                    "cached_input_tokens": int(raw_usage.get("cached_input_tokens") or 0),
+                    "output_tokens": output_tokens,
+                    "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
+                    "total_tokens": total_tokens,
+                },
+                "codex_json_turn_completed",
+            )
+            continue
+        if event.get("type") != "event_msg":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") != "token_count":
+            continue
+        info = payload.get("info")
+        if not isinstance(info, dict):
+            continue
+        raw_usage = info.get("last_token_usage") or info.get("total_token_usage")
+        if not isinstance(raw_usage, dict):
+            continue
+        usage_result = (
+            {
+                "input_tokens": int(raw_usage.get("input_tokens") or 0),
+                "cached_input_tokens": int(raw_usage.get("cached_input_tokens") or 0),
+                "output_tokens": int(raw_usage.get("output_tokens") or 0),
+                "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
+                "total_tokens": int(raw_usage.get("total_tokens") or 0),
+            },
+            "codex_json_last_token_usage",
+        )
+    return usage_result
+
+
+def _extract_builder_self_check(output: str) -> BuilderSelfCheck | None:
+    if not output.strip():
+        return None
+    decoder = json.JSONDecoder()
+    last_match: BuilderSelfCheck | None = None
+    saw_candidate = False
+    for index, char in enumerate(output):
+        if char != "{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(output[index:])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        candidate = payload.get("builder_self_check")
+        if not isinstance(candidate, dict):
+            continue
+        saw_candidate = True
+        last_match = BuilderSelfCheck(
+            mechanism_implemented=_coerce_builder_bool(candidate.get("mechanism_implemented")),
+            diagnostics_emitted=_coerce_builder_bool(candidate.get("diagnostics_emitted")),
+            config_surface_valid=_coerce_builder_bool(candidate.get("config_surface_valid")),
+            tests_covering_behavior=_coerce_builder_bool(candidate.get("tests_covering_behavior")),
+            notes=_normalize_builder_notes(candidate.get("notes")),
+        )
+    if last_match is not None:
+        return last_match
+    if saw_candidate:
+        return _builder_self_check_with_note("builder_self_check_unusable")
+    return None
+
+
+def _emit_builder_usage(
+    *,
+    thesis_id: str,
+    attempt_number: int,
+    usage_result: tuple[dict[str, int], str] | None,
+) -> dict[str, Any] | None:
+    if usage_result is None:
+        return None
+    usage, usage_source = usage_result
+    record_usage_event(
+        "builder",
+        model_provider="codex",
+        model_name=BUILDER_CLI_MODEL,
+        input_tokens=int(usage.get("input_tokens") or 0),
+        output_tokens=int(usage.get("output_tokens") or 0),
+        total_tokens=int(usage.get("total_tokens") or 0),
+        cached_input_tokens=int(usage.get("cached_input_tokens") or 0),
+        reasoning_output_tokens=int(usage.get("reasoning_output_tokens") or 0),
+        usage_source=usage_source,
+        dedupe_key=f"builder:{thesis_id}:attempt:{attempt_number}",
+        thesis_id=thesis_id,
+    )
+    return {**usage, "usage_source": usage_source}
 
 
 def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str, Any]) -> list[str]:
@@ -276,6 +436,8 @@ def _ensure_builder_envelope(
 ) -> dict[str, Any]:
     if "builder_task" in result and "builder_phase" in result and "builder_self_check" in result:
         return result
+    if self_check is None and phase == "completed":
+        self_check = _builder_self_check_with_note("builder_final_report_missing_or_malformed")
     return _result_with_builder_envelope(
         result,
         task=task,
@@ -366,6 +528,10 @@ def _builder_artifact_dir(
     return (artifact_root or root) / family.builder_requests_dirname / thesis_id
 
 
+def _builder_attempt_artifact_dir(artifact_dir: Path, attempt_number: int) -> Path:
+    return artifact_dir / f"attempt-{attempt_number}"
+
+
 def _write_builder_attempt_artifacts(
     *,
     artifact_dir: Path,
@@ -427,6 +593,25 @@ def _trace_builder_finish(
             model_provider="codex",
             model_name=BUILDER_CLI_MODEL,
         )
+        notes = result.get("builder_self_check", {}).get("notes", [])
+        if isinstance(notes, list) and any(
+            note in {"builder_final_report_missing_or_malformed", "builder_self_check_unusable"}
+            for note in notes
+        ):
+            record_event(
+                source_module="compiler_builder",
+                category="builder",
+                action="builder_quality_warning",
+                summary=f"builder quality warning thesis={thesis_id}",
+                payload={
+                    "thesis_id": thesis_id,
+                    "notes": notes,
+                    "result": result,
+                },
+                artifact_paths=artifact_paths,
+                model_provider="codex",
+                model_name=BUILDER_CLI_MODEL,
+            )
         if result.get("status") == "error":
             error_code = str(result.get("error_code") or "builder_error")
             record_event(
@@ -571,7 +756,9 @@ def _implementation_retry_prompt_extras(previous_result: dict[str, Any]) -> list
 
 
 def _should_retry_builder_result(result: dict[str, Any]) -> bool:
-    return bool(result.get("implementation_verification_failures"))
+    return bool(result.get("implementation_verification_failures")) or (
+        result.get("error_code") == "builder_config_validation_failed"
+    )
 
 
 def _builder_retry_prompt(
@@ -615,6 +802,7 @@ def _validated_generated_config_result(
     exit_code: int | None,
     timed_out: bool,
     duration_seconds: float,
+    builder_self_check: BuilderSelfCheck | None = None,
 ) -> dict[str, Any] | None:
     if not config_abspath.exists():
         return None
@@ -674,13 +862,7 @@ def _validated_generated_config_result(
         },
         task=task,
         phase="completed",
-        self_check=BuilderSelfCheck(
-            mechanism_implemented=True,
-            diagnostics_emitted=True,
-            config_surface_valid=True,
-            tests_covering_behavior=True,
-            notes=[],
-        ),
+        self_check=_verified_builder_self_check(verification, builder_self_check),
     )
 
 
@@ -897,11 +1079,22 @@ def build_missing_primitives(
     )
     cli = _find_cli()
     if cli:
-        builder_cmd = [cli, "exec", "--model", BUILDER_CLI_MODEL]
+        output_dir = Path(tempfile.mkdtemp(prefix="autoresearch-builder-"))
+        output_path = output_dir / "last_message.txt"
+        builder_cmd = [
+            cli,
+            "exec",
+            "--json",
+            "--output-last-message",
+            str(output_path),
+            "--model",
+            BUILDER_CLI_MODEL,
+        ]
         if _codex_supports_sandbox_flag(cli):
             builder_cmd[2:2] = ["--sandbox", "workspace-write"]
     else:
         builder_cmd = []
+        output_path = None
     if BUILDER_CLI_REASONING_EFFORT:
         builder_cmd.extend(["-c", f'model_reasoning_effort="{BUILDER_CLI_REASONING_EFFORT}"'])
     _write_artifacts = functools.partial(
@@ -949,12 +1142,8 @@ def build_missing_primitives(
                 existing_result,
                 task=builder_task,
                 phase="completed",
-                self_check=BuilderSelfCheck(
-                    mechanism_implemented=True,
-                    diagnostics_emitted=True,
-                    config_surface_valid=True,
-                    tests_covering_behavior=True,
-                    notes=[],
+                self_check=_builder_self_check_with_note(
+                    "builder_final_report_missing_or_malformed"
                 ),
             )
             artifact_paths = _write_artifacts(result=existing_result)
@@ -987,6 +1176,8 @@ def build_missing_primitives(
     stderr_log = ""
     last_prompt = prompt
     for attempt_index in range(BUILDER_IMPLEMENTATION_RETRY_LIMIT + 1):
+        if output_path is not None and output_path.exists():
+            output_path.unlink()
         attempt_prompt = prompt
         if out:
             attempt_prompt = _builder_retry_prompt(
@@ -1013,6 +1204,17 @@ def build_missing_primitives(
             )
         except subprocess.TimeoutExpired as exc:
             stdout_log, stderr_log = _timeout_output(exc)
+            usage_payload = _emit_builder_usage(
+                thesis_id=thesis_id,
+                attempt_number=attempt_index + 1,
+                usage_result=_extract_codex_cli_usage(stdout_log),
+            )
+            output_text = (
+                output_path.read_text() if output_path is not None and output_path.exists() else ""
+            )
+            parsed_self_check = _extract_builder_self_check(
+                "\n".join(part for part in (output_text, stdout_log, stderr_log) if part)
+            )
             duration_seconds = time.monotonic() - started_at
             out = _validated_generated_config_result(
                 task=builder_task,
@@ -1029,7 +1231,10 @@ def build_missing_primitives(
                 exit_code=None,
                 timed_out=True,
                 duration_seconds=duration_seconds,
+                builder_self_check=parsed_self_check,
             )
+            if out is not None and usage_payload is not None:
+                out["usage"] = usage_payload
             if out is None:
                 out = {
                     "status": "error",
@@ -1041,32 +1246,36 @@ def build_missing_primitives(
                     "exit_code": None,
                     "duration_seconds": round(duration_seconds, 3),
                 }
+                if usage_payload is not None:
+                    out["usage"] = usage_payload
                 out = _result_with_builder_envelope(
                     out,
                     task=builder_task,
                     phase="builder_timeout",
+                    self_check=parsed_self_check,
                 )
             else:
                 out = _ensure_builder_envelope(
                     out,
                     task=builder_task,
                     phase="completed" if out.get("status") != "error" else "builder_timeout",
-                    self_check=(
-                        BuilderSelfCheck(
-                            mechanism_implemented=True,
-                            diagnostics_emitted=True,
-                            config_surface_valid=True,
-                            tests_covering_behavior=True,
-                            notes=[],
-                        )
-                        if out.get("status") != "error"
-                        else None
-                    ),
+                    self_check=parsed_self_check,
                 )
         else:
             stdout_log = proc.stdout or ""
             stderr_log = proc.stderr or ""
             proc_output = stdout_log + stderr_log
+            usage_payload = _emit_builder_usage(
+                thesis_id=thesis_id,
+                attempt_number=attempt_index + 1,
+                usage_result=_extract_codex_cli_usage(stdout_log),
+            )
+            output_text = (
+                output_path.read_text() if output_path is not None and output_path.exists() else ""
+            )
+            parsed_self_check = _extract_builder_self_check(
+                "\n".join(part for part in (output_text, stdout_log, stderr_log) if part)
+            )
             generated = config_path if config_abspath.exists() else None
             if generated:
                 out = _validated_generated_config_result(
@@ -1081,23 +1290,16 @@ def build_missing_primitives(
                     exit_code=proc.returncode,
                     timed_out=False,
                     duration_seconds=time.monotonic() - started_at,
+                    builder_self_check=parsed_self_check,
                 )
                 assert out is not None
+                if usage_payload is not None:
+                    out["usage"] = usage_payload
                 out = _ensure_builder_envelope(
                     out,
                     task=builder_task,
                     phase="completed" if out.get("status") != "error" else "validation_failed",
-                    self_check=(
-                        BuilderSelfCheck(
-                            mechanism_implemented=True,
-                            diagnostics_emitted=True,
-                            config_surface_valid=True,
-                            tests_covering_behavior=True,
-                            notes=[],
-                        )
-                        if out.get("status") != "error"
-                        else None
-                    ),
+                    self_check=parsed_self_check,
                 )
             else:
                 out = {
@@ -1110,13 +1312,26 @@ def build_missing_primitives(
                     "timed_out": False,
                     "duration_seconds": round(time.monotonic() - started_at, 3),
                 }
+                if usage_payload is not None:
+                    out["usage"] = usage_payload
                 out = _result_with_builder_envelope(
                     out,
                     task=builder_task,
                     phase="missing_generated_config",
+                    self_check=parsed_self_check,
                 )
         out["builder_attempts"] = attempt_index + 1
         out["builder_task"] = asdict(builder_task)
+        _write_builder_attempt_artifacts(
+            artifact_dir=_builder_attempt_artifact_dir(attempt_dir, attempt_index + 1),
+            prompt=attempt_prompt,
+            command=builder_cmd,
+            cwd=root,
+            timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+            result=out,
+            stdout=stdout_log,
+            stderr=stderr_log,
+        )
         if out["status"] != "error" or not _should_retry_builder_result(out):
             break
     assert out is not None

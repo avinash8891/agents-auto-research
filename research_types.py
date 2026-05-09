@@ -166,5 +166,6 @@ class ExperimentVerdict(BaseModel):
     passed_effects: list[str] = Field(default_factory=list)
     failed_effects: list[str] = Field(default_factory=list)
     triggered_disqualifiers: list[str] = Field(default_factory=list)
+    missing_required_diagnostics: list[str] = Field(default_factory=list)
 
     summary: str = ""

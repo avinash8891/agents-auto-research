@@ -390,6 +390,33 @@ def test_evaluate_effect_returns_none_when_metric_is_missing() -> None:
     assert evaluate_effect(effect, {"profit_factor": 1.0}, {}) is None
 
 
+def test_evaluate_experiment_marks_missing_required_diagnostics_inconclusive() -> None:
+    from experiment_evaluator import evaluate_experiment
+    from research_types import ResearchThesis
+
+    thesis = ResearchThesis(
+        thesis_id="diag-gap",
+        strategy_family="ema",
+        hypothesis="Need diagnostic output to validate mechanism",
+        mechanism="Compare baseline-relative behavior",
+        required_diagnostics=["Max_drawdown and pct_profitable_windows vs base"],
+    )
+
+    verdict = evaluate_experiment(
+        thesis=thesis,
+        baseline_metrics={"profit_factor": 1.0},
+        candidate_metrics={"profit_factor": 1.2},
+        experiment_id="exp-1",
+        strategy_diagnostics={},
+    )
+
+    assert verdict.status == "inconclusive"
+    assert verdict.missing_required_diagnostics == [
+        "max_drawdown_and_pct_profitable_windows_vs_base"
+    ]
+    assert "Missing required diagnostics" in verdict.summary
+
+
 def test_evaluate_metric_uses_sqlite_experiment_db(tmp_path: Path) -> None:
     db = ExperimentDB(tmp_path / "experiments.db")
     db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
