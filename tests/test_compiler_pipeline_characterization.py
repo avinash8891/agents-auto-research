@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 import compiler_builder
+import compiler_implementation_verify
 import compiler_operationalize as co
 import persistence_utils
 from compiler_implementation_verify import verify_builder_implementation_contract
@@ -896,6 +898,70 @@ def test_record_builder_promotion_candidate_tolerates_missing_artifact_root(
     )
 
     assert manifest["artifact_root"] == source_root.as_posix()
+
+
+def test_seed_workspace_from_capability_rejects_path_traversal(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    workspace_root = tmp_path / "workspace"
+    outside_path = tmp_path / "escape.py"
+    promotion_root = source_root / "runtime" / "builder-promotions" / "ema" / "seeded"
+    (promotion_root / "files").mkdir(parents=True)
+    (promotion_root / "files" / ".." / "escape.py").resolve().parent.mkdir(
+        parents=True, exist_ok=True
+    )
+    (promotion_root / "files" / ".." / "escape.py").resolve().write_text("ESCAPE = True\n")
+
+    seeded = compiler_builder._seed_workspace_from_capability(
+        source_root=source_root,
+        workspace_root=workspace_root,
+        seed_entry={
+            "promotion_dir": "runtime/builder-promotions/ema/seeded",
+            "promoted_files": ["../escape.py"],
+        },
+    )
+
+    assert seeded == []
+    assert not outside_path.exists()
+
+
+def test_record_builder_promotion_candidate_rejects_traversal_thesis_id(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    workspace_root = tmp_path / "workspace"
+    source_strategy = source_root / "strategies" / "ema" / "strategy.py"
+    workspace_strategy = workspace_root / "strategies" / "ema" / "strategy.py"
+    source_strategy.parent.mkdir(parents=True)
+    workspace_strategy.parent.mkdir(parents=True)
+    source_strategy.write_text("ORIGINAL = True\n")
+    workspace_strategy.write_text("PROMOTED = True\n")
+    task = compiler_builder.BuilderTask(
+        thesis_id="../escape",
+        family_name="ema",
+        proposal_path="experiments/escape/thesis.json",
+        compilation_path="experiments/escape/contract.json",
+        config_path="experiments/escape/runtime_config.json",
+        base_config_path="configs/ema_base.yaml",
+        missing_primitives=["missing_probe"],
+        required_diagnostics=[],
+        required_diagnostic_specs=[],
+        config_change_keys=[],
+        mechanism_contract_kind="code_only",
+        implementation_scope=["strategy_runtime"],
+    )
+
+    with pytest.raises(ValueError, match="unsafe thesis_id"):
+        compiler_builder._record_builder_promotion_candidate(
+            source_root=source_root,
+            workspace_root=workspace_root,
+            artifact_root=None,
+            task=task,
+            thesis_id=task.thesis_id,
+        )
+
+
+def test_compare_constants_returns_none_for_invalid_comparison() -> None:
+    node = ast.parse("1 < 'a'", mode="eval").body
+
+    assert compiler_implementation_verify._constant_truthiness(node) is None
 
 
 def test_build_missing_primitives_trace_links_builder_attempt_artifacts(

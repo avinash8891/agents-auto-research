@@ -617,14 +617,23 @@ def _copy_file_into_workspace(*, source: Path, source_root: Path, workspace_root
 
 def _append_jsonl(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing = path.read_text() if path.exists() else ""
     line = json.dumps(payload, sort_keys=True)
-    write_text_atomic(path, existing + line + "\n")
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+
+
+def _safe_builder_relative_path(relative_path: str) -> Path | None:
+    rel = Path(relative_path)
+    if not rel.parts or rel.is_absolute():
+        return None
+    if any(part in {"", ".", ".."} for part in rel.parts):
+        return None
+    return rel
 
 
 def _promotable_builder_path(relative_path: str) -> bool:
-    rel = Path(relative_path)
-    if not rel.parts:
+    rel = _safe_builder_relative_path(relative_path)
+    if rel is None:
         return False
     if rel.parts[0] in {"runtime", "logs", "data", "build", "dist"}:
         return False
@@ -681,8 +690,14 @@ def _workspace_unified_diff(
     for rel in changed_files:
         source_path = source_root / rel
         workspace_path = workspace_root / rel
-        before = source_path.read_text().splitlines(keepends=True) if source_path.exists() else []
-        after = workspace_path.read_text().splitlines(keepends=True)
+        before = (
+            source_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+            if source_path.exists()
+            else []
+        )
+        after = workspace_path.read_text(encoding="utf-8", errors="replace").splitlines(
+            keepends=True
+        )
         chunks.extend(
             unified_diff(
                 before,
@@ -746,21 +761,29 @@ def _seed_workspace_from_capability(
 ) -> list[str]:
     if not seed_entry:
         return []
-    promotion_root = source_root / str(seed_entry.get("promotion_dir") or "")
+    promotion_dir = _safe_builder_relative_path(str(seed_entry.get("promotion_dir") or ""))
+    if promotion_dir is None:
+        return []
+    promotion_root = source_root / promotion_dir
     changed_files = [
-        str(item) for item in seed_entry.get("promoted_files") or [] if str(item).strip()
+        str(item)
+        for item in seed_entry.get("promoted_files") or []
+        if _promotable_builder_path(str(item))
     ]
     if not promotion_root.exists():
         return []
     seeded: list[str] = []
     for rel in changed_files:
-        source = promotion_root / "files" / rel
+        safe_rel = _safe_builder_relative_path(rel)
+        if safe_rel is None:
+            continue
+        source = promotion_root / "files" / safe_rel
         if not source.exists():
             continue
-        destination = workspace_root / rel
+        destination = workspace_root / safe_rel
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
-        seeded.append(rel)
+        seeded.append(safe_rel.as_posix())
     return seeded
 
 
@@ -773,11 +796,14 @@ def _record_builder_promotion_candidate(
     thesis_id: str,
 ) -> dict[str, Any]:
     artifact_root_path = artifact_root or source_root
+    safe_thesis_id = _safe_builder_relative_path(thesis_id)
+    if safe_thesis_id is None or len(safe_thesis_id.parts) != 1:
+        raise ValueError(f"unsafe thesis_id for builder promotion: {thesis_id!r}")
     changed_files = _workspace_changed_promotable_files(
         source_root=source_root,
         workspace_root=workspace_root,
     )
-    promotion_root = source_root / BUILDER_PROMOTIONS_DIR / task.family_name / thesis_id
+    promotion_root = source_root / BUILDER_PROMOTIONS_DIR / task.family_name / safe_thesis_id
     if promotion_root.exists():
         shutil.rmtree(promotion_root)
     (promotion_root / "files").mkdir(parents=True, exist_ok=True)

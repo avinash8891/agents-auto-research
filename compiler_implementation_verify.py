@@ -361,7 +361,10 @@ def _constant_truthiness(node: ast.AST) -> bool | None:
             return None
         current = left
         for op, right in zip(node.ops, comparators):
-            if not _compare_constants(current, op, right):
+            comparison = _compare_constants(current, op, right)
+            if comparison is None:
+                return None
+            if not comparison:
                 return False
             current = right
         return True
@@ -375,7 +378,7 @@ def _constant_value(node: ast.AST) -> Any | None:
         return None
 
 
-def _compare_constants(left: Any, op: ast.cmpop, right: Any) -> bool:
+def _compare_constants(left: Any, op: ast.cmpop, right: Any) -> bool | None:
     try:
         if isinstance(op, ast.Eq):
             return left == right
@@ -398,8 +401,8 @@ def _compare_constants(left: Any, op: ast.cmpop, right: Any) -> bool:
         if isinstance(op, ast.NotIn):
             return left not in right
     except Exception:
-        return False
-    return False
+        return None
+    return None
 
 
 def _config_key_consumed_by_runtime(text: str, token: str) -> bool:

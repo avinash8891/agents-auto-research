@@ -24,6 +24,8 @@ from autoresearch_experiment import (
     _evaluate_against_thesis,
     _find_duplicate_artifact_output,
     _sha256_file,
+    _thesis_sidecar_path,
+    _validated_execution_root,
     artifact_dir_for,
     evaluate_metric,
     parse_benchmark_details,
@@ -207,6 +209,29 @@ def test_contract_from_sidecar_prefers_execution_root_sibling_thesis_json(tmp_pa
     assert contract.required_diagnostic_specs[0].key == (
         "max_drawdown_and_pct_profitable_windows_vs_base"
     )
+
+
+def test_thesis_sidecar_path_ignores_unrelated_sibling_thesis_json(tmp_path: Path) -> None:
+    controller = SimpleNamespace(
+        root=tmp_path,
+        ctx=SimpleNamespace(current_contract=None, execution_root=None),
+    )
+    unrelated = tmp_path / "configs" / "thesis.json"
+    unrelated.parent.mkdir(parents=True, exist_ok=True)
+    unrelated.write_text("{}\n")
+    expected = tmp_path / "experiments" / "opening_gate" / "thesis.json"
+
+    resolved = _thesis_sidecar_path(controller, "configs/runtime_config.json", "opening_gate")
+
+    assert resolved == expected
+
+
+def test_validated_execution_root_rejects_paths_outside_controller_root(tmp_path: Path) -> None:
+    controller = SimpleNamespace(root=tmp_path)
+    outside = tmp_path.parent / "outside-workspace"
+
+    with pytest.raises(ValueError, match="execution_root must stay under controller root"):
+        _validated_execution_root(controller, outside.as_posix())
 
 
 # ── parse_benchmark_details (RESULT_JSON path) ──────────────────

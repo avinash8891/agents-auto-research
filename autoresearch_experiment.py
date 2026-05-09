@@ -75,9 +75,29 @@ def _thesis_sidecar_path(
 ) -> Path:
     config_path = _execution_root(controller) / config
     sibling = config_path.parent / "thesis.json"
-    if sibling.exists():
+    if (
+        sibling.exists()
+        and config_path.parent.name == experiment_slug
+        and config_path.parent.parent.name == "experiments"
+    ):
         return sibling
     return _execution_root(controller) / "experiments" / experiment_slug / "thesis.json"
+
+
+def _validated_execution_root(
+    controller: "AutoresearchController", execution_root_value: str | None
+) -> Path | None:
+    if not isinstance(execution_root_value, str):
+        return None
+    resolved = Path(execution_root_value).resolve()
+    root = controller.root.resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(
+            f"execution_root must stay under controller root: {execution_root_value}"
+        ) from exc
+    return resolved
 
 
 # ── Shell out ─────────────────────────────────────────────────────
@@ -1169,9 +1189,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     next_action = state["next_action"]
     config = next_action["config"]
     execution_root_value = next_action.get("execution_root")
-    controller.ctx.execution_root = (
-        Path(execution_root_value).resolve() if isinstance(execution_root_value, str) else None
-    )
+    controller.ctx.execution_root = _validated_execution_root(controller, execution_root_value)
     state["activity"] = {
         "type": "experiment",
         "phase": "backtest_running",
