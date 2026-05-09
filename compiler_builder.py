@@ -259,10 +259,7 @@ def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str,
         return rp
     if isinstance(mp, list):
         return mp
-    config_changes = proposal.get("config_changes") or {}
-    if not isinstance(config_changes, dict):
-        return []
-    return sorted(key for key in config_changes if key not in THESIS_METADATA_CONFIG_KEYS)
+    return []
 
 
 def _validate_missing_primitives_contract(
@@ -473,7 +470,7 @@ def _find_cli() -> str | None:
     return None
 
 
-def _codex_supports_sandbox_flag(cli: str) -> bool:
+def _codex_exec_help_text(cli: str) -> str:
     try:
         help_result = subprocess.run(
             [cli, "exec", "--help"],
@@ -483,9 +480,16 @@ def _codex_supports_sandbox_flag(cli: str) -> bool:
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return False
-    help_text = f"{help_result.stdout}\n{help_result.stderr}"
-    return "--sandbox" in help_text
+        return ""
+    return f"{help_result.stdout}\n{help_result.stderr}"
+
+
+def _codex_supports_exec_flag(cli: str, flag: str) -> bool:
+    return flag in _codex_exec_help_text(cli)
+
+
+def _codex_supports_sandbox_flag(cli: str) -> bool:
+    return _codex_supports_exec_flag(cli, "--sandbox")
 
 
 def _read_json_artifact(path: Path) -> dict[str, Any] | None:

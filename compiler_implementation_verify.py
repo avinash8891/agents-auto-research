@@ -170,11 +170,14 @@ def _verify_config_key_consumption(
     if not isinstance(config_changes, dict) or not config_changes:
         return failures
     default_keys = _default_runtime_keys(family_name)
-    runtime_text = _runtime_code_text(strategy_dir)
+    runtime_modules, runtime_failures = _runtime_code_modules_with_failures(strategy_dir)
+    failures.extend(runtime_failures)
     for key in sorted(_runtime_config_changes(config_changes)):
         if key in default_keys:
             continue
-        if not _config_key_consumed_by_runtime(runtime_text, key):
+        if not any(
+            _config_key_consumed_by_runtime(module_text, key) for module_text in runtime_modules
+        ):
             failures.append(f"config_key_not_consumed_by_runtime:{key}")
     return failures
 
@@ -199,11 +202,11 @@ def _runtime_code_text(strategy_dir: Path) -> str:
     return text
 
 
-def _runtime_code_text_with_failures(strategy_dir: Path) -> tuple[str, list[str]]:
+def _runtime_code_modules_with_failures(strategy_dir: Path) -> tuple[list[str], list[str]]:
     chunks: list[str] = []
     failures: list[str] = []
     if not strategy_dir.exists():
-        return "", failures
+        return chunks, failures
     for path in sorted(strategy_dir.glob("*.py")):
         if path.name in SCHEMA_ONLY_FILES:
             continue
@@ -212,6 +215,11 @@ def _runtime_code_text_with_failures(strategy_dir: Path) -> tuple[str, list[str]
             failures.append(failure)
         if text is not None:
             chunks.append(text)
+    return chunks, failures
+
+
+def _runtime_code_text_with_failures(strategy_dir: Path) -> tuple[str, list[str]]:
+    chunks, failures = _runtime_code_modules_with_failures(strategy_dir)
     return "\n".join(chunks), failures
 
 
@@ -236,15 +244,19 @@ def _verify_required_diagnostics(root: Path, family_name: str, thesis: dict[str,
     return failures
 
 
-def _diagnostic_emission_texts(root: Path, family_name: str) -> tuple[dict[str, str], list[str]]:
+def _diagnostic_emission_texts(
+    root: Path, family_name: str
+) -> tuple[dict[str, list[str]], list[str]]:
     """Code surfaces allowed to emit required diagnostics.
 
     Some diagnostics are emitted by the family runtime/event logger, while
     aggregate PF buckets are emitted by the post-backtest metrics layer.
     """
-    strategy_text, failures = _runtime_code_text_with_failures(root / "strategies" / family_name)
-    texts: dict[str, str] = {
-        "strategy_runtime": strategy_text,
+    strategy_modules, failures = _runtime_code_modules_with_failures(
+        root / "strategies" / family_name
+    )
+    texts: dict[str, list[str]] = {
+        "strategy_runtime": strategy_modules,
     }
     for surface, rel in (
         ("metrics", "metrics.py"),
@@ -260,39 +272,48 @@ def _diagnostic_emission_texts(root: Path, family_name: str) -> tuple[dict[str, 
             if failure:
                 failures.append(failure)
             if text is not None:
-                texts[surface] = text
+                texts[surface] = [text]
     return texts, failures
 
 
-def _diagnostic_spec_emitted(texts: dict[str, str], spec: dict[str, Any]) -> bool:
+def _diagnostic_spec_emitted(texts: dict[str, list[str]], spec: dict[str, Any]) -> bool:
     key = str(spec.get("key") or "").strip()
     if not key:
         return True
     aliases = [str(alias).strip() for alias in spec.get("aliases") or [] if str(alias).strip()]
     tokens = [key, *aliases]
     surface = str(spec.get("surface") or "any")
+    emission_surfaces: list[str]
+    allow_registry = False
     if surface == "metrics":
-        haystack = texts.get("metrics", "")
+        emission_surfaces = ["metrics"]
     elif surface == "strategy_diagnostics":
-        haystack = "\n".join(
-            text
-            for name, text in texts.items()
-            if name in {"strategy_diagnostics", "strategy_runtime", "runtime_output"}
-        )
+        emission_surfaces = ["strategy_diagnostics", "strategy_runtime", "runtime_output"]
     elif surface == "experiment_evaluation":
-        haystack = "\n".join(
-            text
-            for name, text in texts.items()
-            if name
-            in {
-                "experiment_evaluation",
-                "experiment_evaluator",
-                "experiment_evaluation_registry",
-            }
-        )
+        emission_surfaces = ["experiment_evaluation"]
+        allow_registry = True
     else:
-        haystack = "\n".join(texts.values())
-    return any(_active_string_token_present(haystack, token) for token in tokens)
+        emission_surfaces = [
+            "metrics",
+            "strategy_diagnostics",
+            "strategy_runtime",
+            "runtime_output",
+            "experiment_evaluation",
+        ]
+        allow_registry = True
+
+    for token in tokens:
+        if any(
+            _payload_key_token_present(text, token)
+            for name in emission_surfaces
+            for text in texts.get(name, [])
+        ):
+            return True
+        if allow_registry and _registered_spec_key_present(
+            "\n".join(texts.get("experiment_evaluation_registry", [])), token
+        ):
+            return True
+    return False
 
 
 def _config_key_consumed_by_runtime(text: str, token: str) -> bool:
@@ -329,6 +350,42 @@ def _active_string_token_present(text: str, token: str) -> bool:
     return False
 
 
+def _payload_key_token_present(text: str, token: str) -> bool:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            for key in node.keys:
+                if isinstance(key, ast.Constant) and key.value == token:
+                    return True
+        if isinstance(node, ast.Subscript) and _subscript_string_key(node) == token:
+            return True
+    return False
+
+
+def _registered_spec_key_present(text: str, token: str) -> bool:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Name) or func.id != "DiagnosticRequirementSpec":
+            continue
+        for keyword in node.keywords:
+            if (
+                keyword.arg == "key"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value == token
+            ):
+                return True
+    return False
+
+
 def _subscript_string_key(node: ast.Subscript) -> str | None:
     slice_node = node.slice
     if isinstance(slice_node, ast.Constant) and isinstance(slice_node.value, str):
@@ -339,8 +396,22 @@ def _subscript_string_key(node: ast.Subscript) -> str | None:
 def _verify_data_dependencies(
     root: Path, thesis: dict[str, Any], config: dict[str, Any]
 ) -> list[str]:
-    haystack = json.dumps(thesis, sort_keys=True).lower()
-    if "vwap" not in haystack:
+    relevant_tokens: list[str] = []
+    config_changes = thesis.get("config_changes") or {}
+    if isinstance(config_changes, dict):
+        relevant_tokens.extend(str(key).lower() for key in config_changes)
+    requested_primitives = thesis.get("requested_primitives") or []
+    if isinstance(requested_primitives, list):
+        relevant_tokens.extend(str(item).lower() for item in requested_primitives)
+    required_specs = build_required_diagnostic_specs(
+        thesis.get("required_diagnostics") or [],
+        thesis.get("required_diagnostic_specs") or [],
+    )
+    for spec in required_specs:
+        relevant_tokens.append(spec.key.lower())
+        relevant_tokens.extend(alias.lower() for alias in spec.aliases)
+    relevant_tokens.extend(str(key).lower() for key in config)
+    if not any("vwap" in token for token in relevant_tokens):
         return []
     universe = config.get("data_universe")
     if not universe:
@@ -398,9 +469,12 @@ def _verify_tests_cover_behavior(
         text, _failure = _read_source_text(path)
         if text is not None:
             test_texts.append(text)
-    haystack = "\n".join(test_texts)
-    if not haystack:
+    if not test_texts:
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
-    if not any(_active_string_token_present(haystack, token) for token in unique_tokens):
+    if not any(
+        _active_string_token_present(test_text, token)
+        for token in unique_tokens
+        for test_text in test_texts
+    ):
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
     return []
