@@ -172,3 +172,109 @@ where is the report?
   - pytest tests/test_compiler_pipeline_characterization.py tests/test_autoresearch_orchestration.py tests/
     test_autoresearch_research.py tests/test_autoresearch_experiment.py -q
       - 161 passed can you check and confirm and other issues
+
+---
+
+I missed them because I closed the local symptom paths and didn’t re-walk every sibling caller and downstream
+  decision reader in the same pass. That was a review gap, not a tooling gap.
+
+  What I re-verified from code before changing anything:
+
+  - _activate_builder_config() was still dropping required_diagnostic_specs
+      - autoresearch_orchestration.py
+  - _evaluate_against_thesis() still only forced discard on rejected
+      - autoresearch_experiment.py
+  - missing_inputs was present in diagnostics but evaluator treated key presence as success
+      - experiment_evaluator.py
+  - _diagnostic_spec_emitted() still returned success for empty keys
+      - compiler_implementation_verify.py
+  - _verify_data_dependencies() could still under-trigger on undeclared VWAP runtime usage
+      - compiler_implementation_verify.py
+  - _resolve_missing_primitives() plus _validate_missing_primitives_contract() still allowed a legacy
+    requires_code_change shape to limp forward without a hard contract
+      - compiler_builder.py
+
+  What I changed:
+
+  1. Fixed the missed sibling caller
+
+  - _activate_builder_config() now preserves required_diagnostic_specs
+  - file:
+      - autoresearch_orchestration.py
+
+  2. Removed the fail-open resume contract swallow
+
+  - try_resume_halted_thesis() no longer broad-catches contract rebuild failure and continues with divergence
+  - file:
+      - autoresearch_orchestration.py
+
+  3. Tightened verdict routing
+
+  - _evaluate_against_thesis() now discards on inconclusive, not just rejected
+  - experiment-evaluation diagnostics now require a real baseline checkpoint; they no longer silently fall back
+    to results[0] for this class
+  - file:
+      - autoresearch_experiment.py
+
+  4. Made missing_inputs actually count as missing
+
+  - evaluator now treats diagnostics with missing_inputs as unsatisfied required diagnostics
+  - file:
+      - experiment_evaluator.py
+
+  5. Closed the empty-spec loophole
+
+  - _diagnostic_spec_emitted() now fails closed on empty keys
+  - file:
+      - compiler_implementation_verify.py
+
+  6. Closed the dead-branch verifier loophole
+
+  - verifier AST walks now ignore if False: bodies for:
+      - config-key consumption
+      - active string token checks
+      - payload-key checks
+  - file:
+      - compiler_implementation_verify.py
+
+  7. Reduced VWAP under-trigger
+
+  - data dependency check now also inspects runtime code modules for vwap usage, not just declared config/
+    primitives/specs
+  - file:
+      - compiler_implementation_verify.py
+
+  8. Tightened legacy code-change contract handling
+
+  - requires_code_change without resolved primitives now fails the builder primitive contract, even outside the
+    narrow old needs_code case
+  - file:
+      - compiler_builder.py
+
+  Independent repro/verification I added:
+
+  - dead-branch diagnostic emission does not satisfy verifier
+  - dead-branch test coverage does not satisfy verifier
+  - undeclared VWAP runtime usage triggers VWAP dependency failure
+  - empty structured diagnostic key fails verifier
+  - _activate_builder_config() preserves required_diagnostic_specs
+  - evaluator treats missing_inputs as missing
+  - inconclusive verdicts now discard
+  - experiment-evaluation diagnostics require a baseline checkpoint
+  - files:
+      - tests/test_compiler_pipeline_characterization.py
+      - tests/test_autoresearch_orchestration.py
+      - tests/test_autoresearch_experiment.py
+
+  Grounded confirmation:
+
+  - ruff check ...
+      - passed
+  - black --check ...
+      - passed
+  - pytest tests/test_compiler_pipeline_characterization.py tests/test_autoresearch_orchestration.py tests/
+    test_autoresearch_experiment.py tests/test_autoresearch_research.py -q
+      - 170 passed
+
+  So the previously open items are now resolved in code, and I verified them with new negative tests rather
+  than just re-running the old positive suite.
