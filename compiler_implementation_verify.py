@@ -207,12 +207,12 @@ def _runtime_code_modules_with_failures(strategy_dir: Path) -> tuple[list[str], 
     failures: list[str] = []
     if not strategy_dir.exists():
         return chunks, failures
-    for path in sorted(strategy_dir.glob("*.py")):
+    for path in sorted(strategy_dir.rglob("*.py")):
         if path.name in SCHEMA_ONLY_FILES:
             continue
         text, failure = _read_source_text(path)
         if failure:
-            failures.append(failure)
+            failures.append(f"{failure}:{path.relative_to(strategy_dir)}")
         if text is not None:
             chunks.append(text)
     return chunks, failures
@@ -322,8 +322,9 @@ def _reachable_ast_nodes(node: ast.AST) -> list[ast.AST]:
     def walk(current: ast.AST) -> None:
         nodes.append(current)
         if isinstance(current, ast.If):
-            if isinstance(current.test, ast.Constant) and isinstance(current.test.value, bool):
-                branch = current.body if current.test.value else current.orelse
+            resolved = _constant_truthiness(current.test)
+            if resolved is not None:
+                branch = current.body if resolved else current.orelse
                 for child in branch:
                     walk(child)
                 return
@@ -332,6 +333,73 @@ def _reachable_ast_nodes(node: ast.AST) -> list[ast.AST]:
 
     walk(node)
     return nodes
+
+
+def _constant_truthiness(node: ast.AST) -> bool | None:
+    try:
+        literal = ast.literal_eval(node)
+    except (ValueError, SyntaxError):
+        literal = None
+    else:
+        return bool(literal)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        operand = _constant_truthiness(node.operand)
+        return None if operand is None else not operand
+    if isinstance(node, ast.BoolOp):
+        values = [_constant_truthiness(value) for value in node.values]
+        if any(value is None for value in values):
+            return None
+        bool_values = [bool(value) for value in values]
+        if isinstance(node.op, ast.And):
+            return all(bool_values)
+        if isinstance(node.op, ast.Or):
+            return any(bool_values)
+    if isinstance(node, ast.Compare):
+        left = _constant_value(node.left)
+        comparators = [_constant_value(comp) for comp in node.comparators]
+        if left is None or any(comp is None for comp in comparators):
+            return None
+        current = left
+        for op, right in zip(node.ops, comparators):
+            if not _compare_constants(current, op, right):
+                return False
+            current = right
+        return True
+    return None
+
+
+def _constant_value(node: ast.AST) -> Any | None:
+    try:
+        return ast.literal_eval(node)
+    except (ValueError, SyntaxError):
+        return None
+
+
+def _compare_constants(left: Any, op: ast.cmpop, right: Any) -> bool:
+    try:
+        if isinstance(op, ast.Eq):
+            return left == right
+        if isinstance(op, ast.NotEq):
+            return left != right
+        if isinstance(op, ast.Lt):
+            return left < right
+        if isinstance(op, ast.LtE):
+            return left <= right
+        if isinstance(op, ast.Gt):
+            return left > right
+        if isinstance(op, ast.GtE):
+            return left >= right
+        if isinstance(op, ast.Is):
+            return left is right
+        if isinstance(op, ast.IsNot):
+            return left is not right
+        if isinstance(op, ast.In):
+            return left in right
+        if isinstance(op, ast.NotIn):
+            return left not in right
+    except Exception:
+        return False
+    return False
 
 
 def _config_key_consumed_by_runtime(text: str, token: str) -> bool:
@@ -436,7 +504,8 @@ def _verify_data_dependencies(
     runtime_modules, _runtime_failures = _runtime_code_modules_with_failures(
         root / "strategies" / family_name
     )
-    relevant_tokens.extend(text.lower() for text in runtime_modules)
+    if any(_runtime_mentions_vwap(text) for text in runtime_modules):
+        relevant_tokens.append("vwap")
     if not any("vwap" in token for token in relevant_tokens):
         return []
     universe = config.get("data_universe")
@@ -446,6 +515,23 @@ def _verify_data_dependencies(
     if not vwap_path.exists():
         return [f"vwap_data_dependency_missing:{vwap_path}"]
     return []
+
+
+def _runtime_mentions_vwap(text: str) -> bool:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    for node in _reachable_ast_nodes(tree):
+        if isinstance(node, ast.Name) and node.id.lower() == "vwap":
+            return True
+        if isinstance(node, ast.Attribute) and node.attr.lower() == "vwap":
+            return True
+        if isinstance(node, ast.Subscript):
+            key = _subscript_string_key(node)
+            if isinstance(key, str) and key.lower() == "vwap":
+                return True
+    return False
 
 
 def _verify_tests_cover_behavior(

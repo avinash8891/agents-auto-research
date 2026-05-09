@@ -111,6 +111,60 @@ def test_read_thesis_metadata_handles_malformed_sidecar_json(tmp_path) -> None:
         _read_thesis_metadata(controller, config)
 
 
+def test_contract_from_sidecar_preserves_full_thesis_contract_fields(tmp_path: Path) -> None:
+    from autoresearch_experiment import _contract_from_sidecar
+
+    config = "experiments/opening_gate/runtime_config.json"
+    controller = SimpleNamespace(
+        root=tmp_path,
+        family=SimpleNamespace(name="ema", base_config_filename="ema_base.yaml"),
+        ctx=SimpleNamespace(current_contract=None),
+    )
+    thesis_json = controller.root / "experiments" / "opening_gate" / "thesis.json"
+    thesis_json.parent.mkdir(parents=True, exist_ok=True)
+    thesis_json.write_text(
+        json.dumps(
+            {
+                "thesis_id": "opening_gate",
+                "strategy_family": "ema",
+                "hypothesis": "Early setup days are safer.",
+                "mechanism": "Gate later entries on early reversal setup presence.",
+                "config_changes": {"requires_engine_change__opening_gate": True},
+                "expected_effects": [
+                    {
+                        "metric": "profit_factor",
+                        "direction": "increase",
+                        "threshold": 0.05,
+                    }
+                ],
+                "disqualifiers": [
+                    {
+                        "name": "trade_count_collapse",
+                        "condition": "trade_count decreases by more than 30 percent versus baseline",
+                        "severity": "hard_fail",
+                    }
+                ],
+                "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
+                "required_diagnostic_specs": [],
+            }
+        )
+        + "\n"
+    )
+
+    contract = _contract_from_sidecar(controller, config)
+
+    assert contract is not None
+    assert contract.thesis_id == "opening_gate"
+    assert contract.strategy_family == "ema"
+    assert contract.config_changes == {"requires_engine_change__opening_gate": True}
+    assert contract.required_diagnostics == ["Max_drawdown and pct_profitable_windows vs base"]
+    assert contract.required_diagnostic_specs[0].key == (
+        "max_drawdown_and_pct_profitable_windows_vs_base"
+    )
+    assert contract.expected_effects[0].metric == "profit_factor"
+    assert contract.disqualifiers[0].name == "trade_count_collapse"
+
+
 # ── parse_benchmark_details (RESULT_JSON path) ──────────────────
 
 
@@ -1695,15 +1749,15 @@ def test_evaluate_against_thesis_requires_baseline_checkpoint_for_experiment_eva
     None
 ):
     class _Contract:
-        thesis_id = "t1"
+        thesis_id = "opening_setup_gate_by_0940"
         strategy_family = "ema"
-        hypothesis = "h"
-        mechanism = "m"
+        hypothesis = "Early setup days mark a safer short regime."
+        mechanism = "Gate later entries on early raw setup presence."
         expected_effects = []
         disqualifiers = []
         required_diagnostics = ["Max_drawdown and pct_profitable_windows vs base"]
         required_diagnostic_specs = []
-        experiment_id = "exp-1"
+        experiment_id = "opening-gate-experiment"
 
     class _Controller:
         root = Path(".")

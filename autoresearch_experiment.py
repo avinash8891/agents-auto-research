@@ -17,7 +17,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -47,6 +46,7 @@ from experiment_db import (
 )
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic, write_text_atomic
+from research_types import ExperimentContract
 from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
@@ -432,11 +432,12 @@ def _contract_from_sidecar(controller: "AutoresearchController", config: str) ->
             f"| hint=the thesis sidecar exists but cannot be read"
         )
         raise
-    return SimpleNamespace(
+    return ExperimentContract.from_sidecar(
         experiment_id=experiment_slug,
-        thesis_id=payload.get("thesis_id", experiment_slug),
-        hypothesis=payload.get("hypothesis", ""),
-        mechanism=payload.get("mechanism", ""),
+        strategy_family=controller.family.name,
+        baseline_config_path=f"configs/{controller.family.base_config_filename}",
+        runtime_config={},
+        sidecar=payload,
     )
 
 

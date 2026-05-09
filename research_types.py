@@ -142,6 +142,7 @@ class ExperimentContract(BaseModel):
     base_experiment_id: str = ""
     base_config_hash: str = ""
     runtime_config: dict[str, Any]
+    config_changes: dict[str, Any] = Field(default_factory=dict)
 
     hypothesis: str
     mechanism: str
@@ -153,6 +154,40 @@ class ExperimentContract(BaseModel):
     missing_primitives: list[str] = Field(default_factory=list)
 
     status: Literal["ready_to_run", "needs_code", "rejected_at_compile"] = "ready_to_run"
+
+    @classmethod
+    def from_sidecar(
+        cls,
+        *,
+        experiment_id: str,
+        strategy_family: str,
+        baseline_config_path: str,
+        runtime_config: dict[str, Any],
+        sidecar: dict[str, Any],
+        status: Literal["ready_to_run", "needs_code", "rejected_at_compile"] = "ready_to_run",
+        missing_primitives: list[str] | None = None,
+    ) -> "ExperimentContract":
+        from diagnostic_contracts import build_required_diagnostic_specs
+
+        return cls(
+            experiment_id=experiment_id,
+            thesis_id=str(sidecar.get("thesis_id") or experiment_id),
+            strategy_family=str(sidecar.get("strategy_family") or strategy_family),
+            baseline_config_path=baseline_config_path,
+            runtime_config=runtime_config,
+            config_changes=sidecar.get("config_changes") or {},
+            hypothesis=str(sidecar.get("hypothesis") or ""),
+            mechanism=str(sidecar.get("mechanism") or ""),
+            expected_effects=sidecar.get("expected_effects") or [],
+            disqualifiers=sidecar.get("disqualifiers") or [],
+            required_diagnostics=sidecar.get("required_diagnostics") or [],
+            required_diagnostic_specs=build_required_diagnostic_specs(
+                sidecar.get("required_diagnostics") or [],
+                sidecar.get("required_diagnostic_specs") or [],
+            ),
+            missing_primitives=list(missing_primitives or []),
+            status=status,
+        )
 
 
 class ExperimentVerdict(BaseModel):

@@ -191,7 +191,7 @@ def test_try_resume_happy_path_writes_config_and_thesis_files(tmp_path, monkeypa
     assert contract["required_diagnostic_specs"][0]["key"] == (
         "max_drawdown_and_pct_profitable_windows_vs_base"
     )
-    assert ctrl.ctx.current_contract.required_diagnostic_specs[0]["key"] == (
+    assert ctrl.ctx.current_contract.required_diagnostic_specs[0].key == (
         "max_drawdown_and_pct_profitable_windows_vs_base"
     )
 
@@ -244,7 +244,7 @@ def test_activate_builder_config_preserves_required_diagnostic_specs(tmp_path):
     )
 
     assert result["state"] == "running"
-    assert ctrl.ctx.current_contract.required_diagnostic_specs[0]["key"] == (
+    assert ctrl.ctx.current_contract.required_diagnostic_specs[0].key == (
         "max_drawdown_and_pct_profitable_windows_vs_base"
     )
 

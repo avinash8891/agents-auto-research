@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 _log = logging.getLogger(__name__)
@@ -109,17 +108,14 @@ def _activate_builder_config(
             thesis_payload = loaded
         else:
             raise RuntimeError(f"thesis.json is not an object for {thesis_id}")
-    controller.ctx.current_contract = SimpleNamespace(
+    from research_types import ExperimentContract
+
+    controller.ctx.current_contract = ExperimentContract.from_sidecar(
         experiment_id=thesis_id,
         strategy_family=controller.family.name,
-        thesis_id=thesis_payload.get("thesis_id", thesis_id),
-        hypothesis=thesis_payload.get("hypothesis", ""),
-        mechanism=thesis_payload.get("mechanism", ""),
-        config_changes=thesis_payload.get("config_changes", {}),
-        expected_effects=thesis_payload.get("expected_effects", []),
-        disqualifiers=thesis_payload.get("disqualifiers", []),
-        required_diagnostics=thesis_payload.get("required_diagnostics", []),
-        required_diagnostic_specs=thesis_payload.get("required_diagnostic_specs", []),
+        baseline_config_path=f"configs/{controller.family.base_config_filename}",
+        runtime_config={},
+        sidecar=thesis_payload,
     )
     controller.write_state(state)
     return state
@@ -589,43 +585,21 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         exp_dir / "thesis.json",
         json.dumps(thesis_sidecar, indent=2) + "\n",
     )
-    from diagnostic_contracts import build_required_diagnostic_specs
     from research_types import ExperimentContract
 
-    contract = ExperimentContract(
+    contract = ExperimentContract.from_sidecar(
         experiment_id=halted_id,
-        thesis_id=thesis_sidecar["thesis_id"],
         strategy_family=controller.family.name,
         baseline_config_path=f"configs/{controller.family.base_config_filename}",
         runtime_config=runtime,
-        hypothesis=thesis_sidecar["hypothesis"],
-        mechanism=thesis_sidecar["mechanism"],
-        expected_effects=resumed_thesis.get("expected_effects", []),
-        disqualifiers=resumed_thesis.get("disqualifiers", []),
-        required_diagnostics=thesis_sidecar["required_diagnostics"],
-        required_diagnostic_specs=build_required_diagnostic_specs(
-            thesis_sidecar["required_diagnostics"],
-            thesis_sidecar["required_diagnostic_specs"],
-        ),
-        missing_primitives=[],
+        sidecar=thesis_sidecar,
         status="ready_to_run",
     )
     _write_text_atomic(
         exp_dir / "contract.json",
         contract.model_dump_json(indent=2) + "\n",
     )
-    controller.ctx.current_contract = SimpleNamespace(
-        experiment_id=halted_id,
-        strategy_family=controller.family.name,
-        thesis_id=thesis_sidecar["thesis_id"],
-        hypothesis=thesis_sidecar["hypothesis"],
-        mechanism=thesis_sidecar["mechanism"],
-        config_changes=thesis_sidecar["config_changes"],
-        expected_effects=thesis_sidecar["expected_effects"],
-        disqualifiers=thesis_sidecar["disqualifiers"],
-        required_diagnostics=thesis_sidecar["required_diagnostics"],
-        required_diagnostic_specs=thesis_sidecar["required_diagnostic_specs"],
-    )
+    controller.ctx.current_contract = contract
     controller.ctx.parent_experiment_id = ""
     state["state"] = "running"
     controller.clear_terminal_metadata(state)

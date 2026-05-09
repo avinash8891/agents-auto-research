@@ -1574,6 +1574,47 @@ def test_builder_implementation_verifier_rejects_dead_branch_diagnostic_emission
     )
 
 
+def test_builder_implementation_verifier_rejects_non_bool_falsy_dead_branch_diagnostic_emission(
+    tmp_path: Path,
+) -> None:
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "strategy.py").write_text(
+        "config.get('per_symbol_entry_cooldown_minutes')\n"
+        "if 0:\n"
+        "    diag['pf_by_time_since_last_same_symbol_entry_bucket'] = {}\n"
+    )
+    experiment_dir = tmp_path / "experiments" / "cooldown_pf_bucket_falsy_thesis"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(
+        json.dumps({"per_symbol_entry_cooldown_minutes": 15}) + "\n"
+    )
+    thesis = {
+        "config_changes": {"per_symbol_entry_cooldown_minutes": 15},
+        "required_diagnostics": ["pf_by_time_since_last_same_symbol_entry_bucket"],
+        "required_diagnostic_specs": [
+            {
+                "key": "pf_by_time_since_last_same_symbol_entry_bucket",
+                "surface": "metrics",
+                "description": "bucketed PF metric",
+            }
+        ],
+    }
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis=thesis,
+        generated_config_path="experiments/cooldown_pf_bucket_falsy_thesis/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert result.passed is False
+    assert (
+        "required_diagnostic_not_emitted:pf_by_time_since_last_same_symbol_entry_bucket"
+        in result.failures
+    )
+
+
 def test_builder_implementation_verifier_rejects_dead_branch_test_coverage(
     tmp_path: Path,
 ) -> None:
@@ -1599,6 +1640,38 @@ def test_builder_implementation_verifier_rejects_dead_branch_test_coverage(
         },
         contract={"missing_primitives": ["new_builder_key"]},
         generated_config_path="experiments/dead_branch_tests/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert result.passed is False
+    assert "tests_covering_behavior_missing:new_builder_key" in result.failures
+
+
+def test_builder_implementation_verifier_rejects_non_bool_falsy_dead_branch_test_coverage(
+    tmp_path: Path,
+) -> None:
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "strategy.py").write_text("config.get('new_builder_key')\n")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True)
+    (tests_dir / "test_falsy_dead_branch.py").write_text(
+        "def test_falsy_dead_branch_only():\n"
+        "    if None:\n"
+        "        assert {'new_builder_key': 1}['new_builder_key'] == 1\n"
+    )
+    experiment_dir = tmp_path / "experiments" / "falsy_dead_branch_tests"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(json.dumps({"new_builder_key": 1}) + "\n")
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis={
+            "config_changes": {"new_builder_key": 1},
+            "requested_primitives": ["new_builder_key"],
+        },
+        contract={"missing_primitives": ["new_builder_key"]},
+        generated_config_path="experiments/falsy_dead_branch_tests/runtime_config.json",
         family_name="ema",
     )
 
@@ -1735,6 +1808,48 @@ def test_builder_implementation_verifier_detects_vwap_runtime_usage_without_decl
     )
 
     assert any(failure.startswith("vwap_data_dependency_missing:") for failure in result.failures)
+
+
+def test_builder_implementation_verifier_detects_recursive_vwap_runtime_usage(
+    tmp_path: Path,
+) -> None:
+    helpers_dir = tmp_path / "strategies" / "ema" / "helpers"
+    helpers_dir.mkdir(parents=True)
+    (helpers_dir / "vwap_compute.py").write_text("frame['signal'] = frame['vwap']\n")
+    experiment_dir = tmp_path / "experiments" / "nested_vwap_thesis"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(json.dumps({"ema_length": 7}) + "\n")
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis={"config_changes": {"ema_length": 7}},
+        generated_config_path="experiments/nested_vwap_thesis/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert any(failure.startswith("vwap_data_dependency_missing:") for failure in result.failures)
+
+
+def test_builder_implementation_verifier_ignores_comment_only_recursive_vwap_mentions(
+    tmp_path: Path,
+) -> None:
+    helpers_dir = tmp_path / "strategies" / "ema" / "helpers"
+    helpers_dir.mkdir(parents=True)
+    (helpers_dir / "notes.py").write_text("# TODO: add vwap support later\n")
+    experiment_dir = tmp_path / "experiments" / "comment_only_vwap_thesis"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(json.dumps({"ema_length": 7}) + "\n")
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis={"config_changes": {"ema_length": 7}},
+        generated_config_path="experiments/comment_only_vwap_thesis/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert not any(
+        failure.startswith("vwap_data_dependency_missing:") for failure in result.failures
+    )
 
 
 def test_builder_implementation_verifier_rejects_empty_structured_diagnostic_key(
