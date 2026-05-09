@@ -161,6 +161,27 @@ async def run_research_conductor(
             f"Read the source code to understand what the strategy does."
         )
 
+    # Inline structured rejection summary (current-round detail + cross-round
+    # pattern counts). Cheap disk read; small block; high signal.
+    if current_job is not None:
+        try:
+            from rejection_artifact import (
+                compute_escalation_directive,
+                render_rejection_block,
+            )
+
+            rejection_block = render_rejection_block(
+                _ROOT, job=current_job, current_round=research_round
+            )
+            if rejection_block:
+                user_prompt += f"\n\n{rejection_block}\n"
+
+            escalation = compute_escalation_directive(_ROOT, job=current_job)
+            if escalation:
+                user_prompt += f"\n\n{escalation}\n"
+        except Exception as render_exc:  # noqa: BLE001
+            log.warning(f"failed to render rejection block: {render_exc}")
+
     trace(
         "CONDUCTOR",
         f"START round={research_round} trades={'YES' if trades_file else 'NO'}",
@@ -566,6 +587,125 @@ async def run_research_conductor(
             )
             return output
 
+        @function_tool
+        async def list_rejections_tool(
+            round_number: int | None = None,
+            rejection_code: str | None = None,
+            limit: int = 20,
+        ) -> str:
+            """List validator/compile rejections for the current job.
+
+            Optional filters: round_number to scope to one round; rejection_code
+            to scope to one category (e.g. theme_cluster_fixation). Returns up
+            to `limit` records, most-recent rounds first.
+            """
+            from rejection_artifact import list_rejections
+
+            started = monotonic()
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "list_rejections",
+                json.dumps(
+                    {"round_number": round_number, "rejection_code": rejection_code, "limit": limit},
+                    default=str,
+                ),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            if current_job is None:
+                output = json.dumps({"status": "error", "error": "no current job"})
+            else:
+                items = list_rejections(
+                    _ROOT,
+                    job=current_job,
+                    round_number=round_number,
+                    rejection_code=rejection_code,
+                    limit=limit,
+                )
+                output = json.dumps([it.model_dump() for it in items], default=str)
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "list_rejections",
+                output,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
+
+        @function_tool
+        async def get_rejection_tool(round_number: int, thesis_id: str) -> str:
+            """Fetch the full rejection record for one (round, thesis_id)."""
+            from rejection_artifact import get_rejection
+
+            started = monotonic()
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "get_rejection",
+                json.dumps({"round_number": round_number, "thesis_id": thesis_id}),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            if current_job is None:
+                output = json.dumps({"status": "error", "error": "no current job"})
+            else:
+                obj = get_rejection(
+                    _ROOT, job=current_job, round_number=round_number, thesis_id=thesis_id
+                )
+                if obj is None:
+                    output = json.dumps({"status": "not_found"})
+                else:
+                    output = obj.model_dump_json()
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "get_rejection",
+                output,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
+
+        @function_tool
+        async def rejection_pattern_summary_tool(window_rounds: int = 10) -> str:
+            """Group recent rejections by rejection_code and return counts.
+
+            Use this to detect repeating failure modes (e.g. theme_cluster_fixation
+            firing 4+ times). The summary covers the last `window_rounds` rounds.
+            """
+            from rejection_artifact import rejection_pattern_summary
+
+            started = monotonic()
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "rejection_pattern_summary",
+                json.dumps({"window_rounds": window_rounds}),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            if current_job is None:
+                output = json.dumps({"status": "error", "error": "no current job"})
+            else:
+                summary = rejection_pattern_summary(
+                    _ROOT, job=current_job, window_rounds=window_rounds
+                )
+                output = json.dumps(summary)
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "rejection_pattern_summary",
+                output,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
+
         agent = OAIAgent(
             name="research-conductor",
             instructions=system_prompt,
@@ -579,6 +719,9 @@ async def run_research_conductor(
                 get_past_thesis,
                 list_experiment_results,
                 get_experiment_result,
+                list_rejections_tool,
+                get_rejection_tool,
+                rejection_pattern_summary_tool,
             ],
             model=model,
         )

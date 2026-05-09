@@ -36,6 +36,29 @@ class Disqualifier(BaseModel):
     name: str
     condition: str
     severity: Literal["hard_fail", "soft_fail"] = "hard_fail"
+    # `kind` distinguishes pure metric-threshold disqualifiers ("PF must improve
+    # by 5%") from mechanism-evidence disqualifiers ("if up-drive mornings are
+    # NOT a bad regime in the data"). At least one mechanism_evidence
+    # disqualifier may be required by future validator rules (B5).
+    kind: Literal["metric_threshold", "mechanism_evidence"] = "metric_threshold"
+
+
+class PriorLeverOutcome(BaseModel):
+    """Citation that the proposed thesis reuses a config-key concept already tested.
+
+    Required when reusing a lever in a different direction or with a similar
+    descriptor — forces the agent to confront whipsawing instead of silently
+    flipping levers across rounds.
+    """
+
+    prior_thesis_id: str
+    lever: str  # e.g. "min_stop_distance_pct" or "opening_window_end"
+    direction_then: str  # "tightened", "loosened", "filtered_in", etc.
+    outcome: str  # one-line summary of what the prior thesis produced
+    why_retry: str = Field(
+        min_length=40,
+        description="Why the lever is worth re-testing despite the prior outcome.",
+    )
 
 
 class DiagnosticRequirementSpec(BaseModel):
@@ -125,6 +148,15 @@ class ResearchThesis(BaseModel):
 
     why_not_overfit: str = ""
 
+    # Theme keywords: agent-supplied tokens for cluster-fixation detection (B1).
+    # 2-3 short noun phrases that categorize the thesis (e.g. ["opening_session",
+    # "stop_distance"]). Set/list overlap on these drives the cluster-fixation rule.
+    theme_keywords: list[str] = Field(default_factory=list)
+
+    # Citations of prior theses whose config-key concepts overlap with this one.
+    # Required when reusing a lever in a different direction (B2 whipsaw rule).
+    prior_lever_outcomes: list[PriorLeverOutcome] = Field(default_factory=list)
+
 
 class BacktestContract(BaseModel):
     """Connects a research thesis to an executable backtest.
@@ -187,6 +219,24 @@ class BacktestContract(BaseModel):
             missing_primitives=list(missing_primitives or []),
             status=status,
         )
+
+
+class StructuredRejection(BaseModel):
+    """Machine-readable record of a validator/compile rejection for one thesis.
+
+    Persisted to `runtime/jobs/job-N/research/round-M/theses/<thesis_id>/rejection.json`.
+    Read back by the conductor's per-round prompt and by the rejection-pattern tools.
+    """
+
+    rejected_at: str  # ISO-8601 UTC, set by writer
+    round: int
+    thesis_id: str
+    stage: Literal["stage_1", "stage_2", "compile"]
+    rejection_code: str  # short machine-readable category, e.g. "theme_cluster_fixation"
+    rule_violated: str = ""  # one-line summary of the rule
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    remediation_hint: str = ""
+    validator_version: str = ""
 
 
 class BacktestVerdict(BaseModel):

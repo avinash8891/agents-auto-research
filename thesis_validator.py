@@ -70,6 +70,10 @@ def _is_overlap_ignored_key(key: str) -> bool:
     return any(key.startswith(prefix) for prefix in CONFIG_OVERLAP_IGNORED_PREFIXES)
 _MIN_EMERGENT_FIELD_CHARS = 40
 _MIN_NOVEL_CONNECTION_CHARS = 40
+# When falsification_or_alternative is set, it must be substantive — short text
+# is decoration, not a real disconfirmer. The field itself remains optional;
+# this rule only enforces quality when the agent does fill it in.
+_MIN_FALSIFICATION_CHARS = 80
 _EMERGENT_REQUIRED_FIELDS = (
     "why_existing_dimensions_do_not_fit",
     "mechanism_family_definition",
@@ -89,9 +93,60 @@ _PRIOR_BASE_LANGUAGE_PATTERNS = (
 
 
 class ThesisValidationError(ValueError):
-    """Raised when a thesis fails validation."""
+    """Raised when a thesis fails validation.
 
-    pass
+    Optional structured fields support StructuredRejection persistence. New
+    raises should pass `rejection_code` and `evidence`; legacy raises with
+    only a message still work and fall back to `infer_rejection_code` for
+    a best-effort code assignment.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        rejection_code: str = "",
+        evidence: dict[str, Any] | None = None,
+        remediation_hint: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.rejection_code = rejection_code
+        self.evidence = dict(evidence or {})
+        self.remediation_hint = remediation_hint
+
+
+def infer_rejection_code(message: str) -> str:
+    """Best-effort mapping from a legacy ThesisValidationError message → code.
+
+    Used when a raise site has not yet been updated to pass `rejection_code`
+    explicitly. Add new patterns as new rules land.
+    """
+    msg = message.lower()
+    if "config-key overlap" in msg:
+        return "config_key_overlap_real"
+    if "hypothesis-config misalignment" in msg:
+        return "hypothesis_config_misalignment"
+    if "do not construct" in msg or "points into runtime/" in msg:
+        return "base_config_path_runtime_construction"
+    if "legacy experiments/ inheritance" in msg or "must be under configs/" in msg:
+        return "base_config_path_legacy_experiments"
+    if "must point to a json or yaml" in msg or "must be a relative repo path" in msg:
+        return "base_config_path_invalid"
+    if "config_changes contains thesis metadata key" in msg:
+        return "config_changes_metadata_leak"
+    if "must be empty or the family baseline" in msg:
+        return "base_config_path_inheritance_blocked"
+    if "missing thesis_id" in msg:
+        return "missing_thesis_id"
+    if "missing hypothesis" in msg:
+        return "missing_hypothesis"
+    if "missing mechanism" in msg:
+        return "missing_mechanism"
+    if "requested_primitives" in msg:
+        return "missing_requested_primitives"
+    if "mechanism_dimension" in msg:
+        return "mechanism_dimension_invalid"
+    return "unspecified_validation_error"
 
 
 MECHANISM_DIMENSION_ALIASES = {
@@ -126,6 +181,12 @@ def _validate_base_config_path(path: str) -> None:
         )
     is_allowed = normalized.startswith(_ALLOWED_BASE_CONFIG_PREFIXES)
     if not is_allowed:
+        if normalized.startswith("runtime/"):
+            raise ThesisValidationError(
+                f"base_config_path '{path}' points into runtime/. Do not construct "
+                f"paths from runtime artifacts; reference a checked-in config under "
+                f"configs/ instead (for example, the family baseline config)."
+            )
         raise ThesisValidationError(
             f"base_config_path '{path}' must be under configs/ only; "
             "legacy experiments/ inheritance paths are not allowed"
@@ -181,6 +242,171 @@ def _prior_thesis_entry(row: dict[str, Any]) -> dict[str, Any]:
         "mechanism_dimension": row.get("mechanism_dimension", ""),
         "thesis_details": row.get("thesis_details", {}),
     }
+
+
+# ---------------------------------------------------------------------------
+# Stage 1 cross-thesis rules: theme cluster (B1), needs_code starvation (B3).
+# ---------------------------------------------------------------------------
+
+# B1: when 4 or more of the last 7 prior theses (plus the proposed one) share
+# at least one keyword with the proposed theme, the agent has fixated on a
+# single theme cluster. Forces dimension diversification.
+B1_THEME_CLUSTER_THRESHOLD = 4
+B1_THEME_CLUSTER_WINDOW = 7
+
+# B3: 3 consecutive prior theses requiring code change with no completed run
+# in between means the agent is queueing engine work without progress. Force
+# a no-code thesis to break the starvation.
+B3_NEEDS_CODE_STARVATION_LIMIT = 3
+
+
+def _theme_keywords_from_prior(prior: dict[str, Any]) -> set[str]:
+    details = _prior_thesis_details(prior)
+    raw = details.get("theme_keywords") or prior.get("theme_keywords") or []
+    if not isinstance(raw, list):
+        return set()
+    return {str(kw).strip() for kw in raw if str(kw).strip()}
+
+
+def _prior_required_code_change(prior: dict[str, Any]) -> bool:
+    details = _prior_thesis_details(prior)
+    return bool(details.get("requires_code_change") or prior.get("requires_code_change"))
+
+
+def _prior_was_run(prior: dict[str, Any]) -> bool:
+    """Heuristic: any outcome other than 'needs_code' or 'rejected*' counts as ran."""
+    outcome = str(prior.get("outcome") or "").lower()
+    if not outcome:
+        return False
+    if outcome.startswith("rejected"):
+        return False
+    if outcome == "needs_code":
+        return False
+    if outcome == "stopped":
+        return False
+    return True
+
+
+def _check_theme_cluster_fixation(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]],
+) -> None:
+    proposed_keywords = {kw.strip() for kw in thesis.theme_keywords if kw.strip()}
+    if not proposed_keywords:
+        return
+    recent = prior_theses[-(B1_THEME_CLUSTER_WINDOW - 1) :]
+    if not recent:
+        return
+    overlap_count = 1  # the new thesis itself
+    overlapping_priors: list[str] = []
+    for prior in recent:
+        prior_kw = _theme_keywords_from_prior(prior)
+        if prior_kw & proposed_keywords:
+            overlap_count += 1
+            overlapping_priors.append(str(prior.get("thesis_id") or "?"))
+    if overlap_count >= B1_THEME_CLUSTER_THRESHOLD:
+        raise ThesisValidationError(
+            f"Theme-cluster fixation: {overlap_count} of last "
+            f"{B1_THEME_CLUSTER_WINDOW} theses share keywords {sorted(proposed_keywords)} "
+            f"(overlapping priors: {overlapping_priors}). Propose from a different "
+            f"mechanism dimension, or justify novelty in dimension_novelty."
+        )
+
+
+# B2 direction whipsaw: maps lowercase substrings → opposing-direction tag.
+_B2_DIRECTION_TIGHTEN_TOKENS = ("tighten", "narrow", "min_", "floor", "shrink")
+_B2_DIRECTION_WIDEN_TOKENS = ("widen", "loosen", "max_", "cap_removal", "remove_cap", "expand")
+
+
+def _b2_direction_of(text: str) -> str | None:
+    """Return 'tighten', 'widen', or None for the dominant direction in `text`."""
+    lowered = text.lower()
+    has_tighten = any(tok in lowered for tok in _B2_DIRECTION_TIGHTEN_TOKENS)
+    has_widen = any(tok in lowered for tok in _B2_DIRECTION_WIDEN_TOKENS)
+    if has_tighten and not has_widen:
+        return "tighten"
+    if has_widen and not has_tighten:
+        return "widen"
+    return None  # ambiguous or none
+
+
+def _check_direction_whipsaw(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]],
+) -> None:
+    """Reject if the thesis flips the direction of a lever already tested by a prior
+    thesis on the same theme, unless prior_lever_outcomes cites that prior.
+    """
+    proposed_dir = _b2_direction_of(thesis.thesis_id + " " + thesis.hypothesis)
+    if proposed_dir is None:
+        return
+    proposed_kw = {kw.strip() for kw in thesis.theme_keywords if kw.strip()}
+    if not proposed_kw:
+        return
+    cited_prior_ids = {p.prior_thesis_id for p in thesis.prior_lever_outcomes}
+
+    opposing = "widen" if proposed_dir == "tighten" else "tighten"
+    for prior in prior_theses:
+        prior_kw = _theme_keywords_from_prior(prior)
+        if not (prior_kw & proposed_kw):
+            continue
+        prior_dir = _b2_direction_of(str(prior.get("thesis_id") or ""))
+        if prior_dir != opposing:
+            continue
+        prior_id = str(prior.get("thesis_id") or "")
+        if prior_id in cited_prior_ids:
+            continue
+        raise ThesisValidationError(
+            f"Direction whipsaw: prior thesis '{prior_id}' tested the {opposing} "
+            f"direction on lever theme {sorted(proposed_kw)}, and this thesis "
+            f"flips to {proposed_dir} without acknowledgment. Cite '{prior_id}' "
+            f"in prior_lever_outcomes (with direction_then, outcome, and why_retry) "
+            f"or propose from a different mechanism dimension."
+        )
+
+
+def _check_qualitative_disqualifier_present(thesis: ResearchThesis) -> None:
+    """B5: at least one Disqualifier must have kind='mechanism_evidence'.
+
+    Pure metric-threshold disqualifiers ("PF must improve by 5%") are pass/fail
+    criteria, not Popperian disconfirmers. Force one to be qualitative.
+    """
+    if not thesis.disqualifiers:
+        return  # absence is handled by the earlier "no disqualifiers" rule
+    if any(d.kind == "mechanism_evidence" for d in thesis.disqualifiers):
+        return
+    raise ThesisValidationError(
+        "Disqualifiers list contains only metric_threshold entries. "
+        "At least one disqualifier must reference observable mechanism evidence "
+        "(set kind='mechanism_evidence'), describing what data pattern would "
+        "falsify the mechanism — independent of whether metrics improve."
+    )
+
+
+def _check_needs_code_starvation(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]],
+) -> None:
+    if not thesis.requires_code_change:
+        return
+    # Walk priors most-recent-first; count consecutive needs_code + requires_code_change.
+    streak = 0
+    for prior in reversed(prior_theses):
+        if _prior_was_run(prior):
+            break
+        if _prior_required_code_change(prior):
+            streak += 1
+        else:
+            # Non-code prior breaks the streak even if it didn't run.
+            break
+        if streak >= B3_NEEDS_CODE_STARVATION_LIMIT:
+            break
+    if streak >= B3_NEEDS_CODE_STARVATION_LIMIT:
+        raise ThesisValidationError(
+            f"needs_code starvation: {streak} consecutive prior theses required "
+            f"engine changes without running. Propose a non-code thesis to break "
+            f"the queue (set requires_code_change=false and operate on existing config keys)."
+        )
 
 
 def _slugify(text: str, max_words: int = 8) -> str:
@@ -693,6 +919,17 @@ def validate_research_thesis(
             "Thesis has no expected_effects — cannot evaluate without predictions"
         )
 
+    # If falsification_or_alternative is set, require it be substantive. Short
+    # text reads as decoration, not a real disconfirmer. The field is optional
+    # at the schema level but must be quality-controlled when present.
+    falsification_text = (thesis.falsification_or_alternative or "").strip()
+    if falsification_text and len(falsification_text) < _MIN_FALSIFICATION_CHARS:
+        raise ThesisValidationError(
+            f"falsification_or_alternative must be at least "
+            f"{_MIN_FALSIFICATION_CHARS} characters to count as a real disconfirmer; "
+            f"got {len(falsification_text)} characters."
+        )
+
     if not thesis.disqualifiers:
         raise ThesisValidationError(
             "Thesis has no disqualifiers — need at least one falsification condition"
@@ -712,6 +949,16 @@ def validate_research_thesis(
         is_dup, reason = config_key_overlap(thesis.config_changes, prior_theses)
         if is_dup:
             raise ThesisValidationError(f"Config-key overlap: {reason}")
+
+    # B1 + B3 + B2: cross-thesis pattern rules. Run after structural checks,
+    # before the alignment scoring gate.
+    if prior_theses:
+        _check_theme_cluster_fixation(thesis, prior_theses)
+        _check_needs_code_starvation(thesis, prior_theses)
+        _check_direction_whipsaw(thesis, prior_theses)
+
+    # B5: qualitative disqualifier requirement.
+    _check_qualitative_disqualifier_present(thesis)
 
     if prior_theses and thesis.mechanism_dimension:
         same_dim = [
@@ -754,3 +1001,35 @@ def validate_thesis_dict(
     """
     thesis = ResearchThesis.model_validate(normalize_thesis_payload(raw))
     return validate_research_thesis(thesis, prior_theses=prior_theses)
+
+
+# ---------------------------------------------------------------------------
+# Two-stage validation
+# ---------------------------------------------------------------------------
+#
+# Stage 1 runs on the raw thesis BEFORE compile. Catches structural,
+# semantic, and historical-pattern violations that don't need the compiled
+# config. Most rules live here.
+#
+# Stage 2 runs on the compiled BacktestContract. Catches rules that require
+# the canonical resolved config (e.g. that all required diagnostics are
+# actually wired in the compiled output). Currently a no-op; rules added
+# as Stage 2 evolves.
+
+
+def validate_stage_1(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None = None,
+) -> ResearchThesis:
+    """Stage 1: pre-compile validator. Alias for `validate_research_thesis`."""
+    return validate_research_thesis(thesis, prior_theses=prior_theses)
+
+
+def validate_stage_2(contract: Any) -> Any:
+    """Stage 2: post-compile validator. Currently a no-op.
+
+    Rules that need the resolved/normalized config (e.g. required-diagnostics
+    presence in the compiled output) belong here. Returns the contract
+    unchanged, or raises ThesisValidationError on rule violation.
+    """
+    return contract

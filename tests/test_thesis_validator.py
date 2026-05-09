@@ -45,7 +45,17 @@ def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
                 "name": "trade_count_collapse",
                 "condition": "trade_count decreases by more than 50 percent",
                 "severity": "hard_fail",
-            }
+                "kind": "metric_threshold",
+            },
+            {
+                "name": "no_close_confirmation_separation",
+                "condition": (
+                    "If wick-only stop-out rate is no lower for close-confirmed entries, "
+                    "the close-confirmation mechanism does not hold."
+                ),
+                "severity": "hard_fail",
+                "kind": "mechanism_evidence",
+            },
         ],
         "requires_code_change": True,
         "requested_primitives": ["close_confirmed_entry_gate"],
@@ -131,6 +141,30 @@ def test_config_key_overlap_ignores_requires_engine_change_prefix_variants() -> 
         is_duplicate is False
     ), f"requires_engine_change__* prefix is a sentinel; should not overlap; got: {reason}"
     assert reason == ""
+
+
+def test_validate_base_config_path_rejects_runtime_paths_with_clear_hint() -> None:
+    """Production agent constructed paths like `runtime/jobs/job-25/experiments/.../runtime_config.json`.
+
+    The error must explicitly flag runtime/ paths and tell the agent not to
+    construct paths from runtime artifacts.
+    """
+    from thesis_validator import _validate_base_config_path
+
+    bad_path = "runtime/jobs/job-25/experiments/open_subregime/runtime_config.json"
+    with pytest.raises(ThesisValidationError) as excinfo:
+        _validate_base_config_path(bad_path)
+    msg = str(excinfo.value)
+    assert "runtime/" in msg, f"error must mention runtime/ explicitly; got: {msg}"
+    assert "construct" in msg.lower() or "do not" in msg.lower(), (
+        f"error must instruct the agent not to construct paths; got: {msg}"
+    )
+
+
+def test_validate_base_config_path_accepts_configs_path() -> None:
+    from thesis_validator import _validate_base_config_path
+
+    _validate_base_config_path("configs/ema_base.yaml")  # should not raise
 
 
 # NOTE: A historical rejection cited shared keys ['new_config_keys_needed'] as
@@ -286,7 +320,9 @@ def test_validate_thesis_rejects_job_scoped_experiment_base_config_path() -> Non
     thesis["base_contract_id"] = "05287d64f61f"
     thesis["base_config_path"] = "runtime/jobs/job-26/experiments/05287d64f61f/runtime_config.json"
 
-    with pytest.raises(ThesisValidationError, match="legacy experiments/ inheritance paths"):
+    # Runtime/ paths get a more specific error than the legacy experiments/ message
+    # (see test_validate_base_config_path_rejects_runtime_paths_with_clear_hint).
+    with pytest.raises(ThesisValidationError, match="Do not construct"):
         validate_thesis_dict(thesis, prior_theses=[])
 
 
