@@ -1,0 +1,171 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+
+[tool.setuptools.packages.find]
+include = ["backtest*", "strategies*", "trace_adapters*"]
+exclude = ["tests*", "configs*", "data*", "docs*", "experiments*", "logs*"]
+
+[tool.setuptools]
+py-modules = [
+    "agent_formatters",
+    "agent_infra",
+    "agent_memory",
+    "agent_openai_calls",
+    "agent_orchestrator",
+    "agent_orchestrator_helpers",
+    "agent_prompts",
+    "agent_runners",
+    "agent_sdk_token_usage",
+    "agent_token_usage",
+    "artifact_io",
+    "autoresearch_artifacts",
+    "autoresearch_cli",
+    "autoresearch_constants",
+    "autoresearch_controller",
+    "autoresearch_experiment",
+    "autoresearch_logging",
+    "autoresearch_orchestration",
+    "autoresearch_planning",
+    "autoresearch_research",
+    "autoresearch_state",
+    "backtest_5ema",
+    "backtest_orb_v2",
+    "compiler_builder",
+    "compiler_defaults",
+    "compiler_operationalize",
+    "compiler_pipeline",
+    "compiler_research",
+    "compiler_thesis_io",
+    "compiler_validate",
+    "config_hash",
+    "data_loader",
+    "backtest_run_db",
+    "experiment_evaluator",
+    "family_research_spec",
+    "metrics",
+    "numba_kernels",
+    "orb_contract",
+    "orb_experiment_schema",
+    "persistence_utils",
+    "research_conductor",
+    "research_memory",
+    "research_paths",
+    "research_prompts",
+    "research_subagents",
+    "research_tools_mcp",
+    "research_types",
+    "strategy_event_logger",
+    "strategy_family",
+    "thesis_validator",
+    "trace_autonomy_ledger",
+    "trace_improvement_report",
+    "trace_quality_history",
+    "trace_refinement",
+    "trace_rule_proposals",
+    "trace_sdk",
+    "vps_runner",
+]
+
+[tool.setuptools.data-files]
+configs = [
+    "configs/_demo_base.yaml",
+    "configs/ema_base.yaml",
+    "configs/orb_base.yaml",
+]
+"configs/variants" = [
+    "configs/variants/orb_spy_only.yaml",
+    "configs/variants/orb_stocks_in_play.yaml",
+    "configs/variants/orb_trailing_stop.yaml",
+    "configs/variants/orb_trend_filter.yaml",
+]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = [
+    "autoresearch_controller",
+    "autoresearch_state",
+    "autoresearch_artifacts",
+    "autoresearch_planning",
+    "autoresearch_research",
+    "autoresearch_experiment",
+    "autoresearch_cli",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# E402: module-level import not at top — tests intentionally insert sys.path
+#       manipulation before importing the project modules.
+# F401: imported but unused — autoresearch_controller intentionally re-exports
+#       _notify_discord for back-compat with test monkeypatch sites; the
+#       __all__ tuple makes the re-export explicit.
+ignore = ["E402"]
+
+[tool.ruff.lint.per-file-ignores]
+# autoresearch_cli.py is a CLI script; some prints use plain strings.
+"autoresearch_cli.py" = ["F541"]
+
+[tool.coverage.run]
+source = [
+    "agent_orchestrator",
+    "autoresearch_controller",
+    "autoresearch_state",
+    "autoresearch_artifacts",
+    "autoresearch_planning",
+    "autoresearch_research",
+    "autoresearch_experiment",
+    "autoresearch_orchestration",
+    "compiler_pipeline",
+    "research_conductor",
+]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    'if __name__ == "__main__":',
+    "raise NotImplementedError",
+]
+show_missing = true
+skip_covered = false
+fail_under = 80
+
+
+[project]
+name = "agents-auto-research"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "openai-agents==0.14.2",
+    "openai>=2.26.0,<3",
+    "pydantic>=2.12.2,<3",
+    "opentelemetry-api==1.41.1",
+    "opentelemetry-sdk==1.41.1",
+    "opentelemetry-exporter-otlp-proto-http==1.41.1",
+    "openinference-instrumentation==0.1.48",
+    "openinference-instrumentation-openai==0.1.45",
+    "agnost-mcp==0.1.12",
+    "traceloop-sdk==0.60.0",
+    "httpx",
+    "mcp",
+    "mempalace",
+    "numpy<2.3",
+    "numba",
+    "packaging>=24",
+    "pandas",
+    "paramiko",
+    "PyYAML",
+    "pyarrow",
+    "tomli>=2; python_version < '3.11'",
+    "tzdata; platform_system == 'Linux'",
+]

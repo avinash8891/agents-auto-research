@@ -1,0 +1,569 @@
+
+  Problem
+  The current conductor prompt is doing too much. It mixes:
+
+  - role definitions
+  - run state
+  - artifact paths
+  - evidence summaries
+  - history guidance
+  - validation expectations
+
+  That makes the prompt long, repetitive, and biased toward the latest run. It also blurs what belongs in the
+  prompt versus what belongs in the harness, tools, and validator.
+
+  Context
+  The code already has most of the harness:
+
+  - autoresearch_controller.py handles job state and loop control
+  - autoresearch_research.py drives the round and calls the conductor
+  - research_conductor.py builds the prompt and dispatches tools
+  - research_subagents.py provides the analyst and round-level retrieval tools
+  - thesis_validator.py validates proposals
+  - compiler_pipeline.py materializes validated theses
+  - autoresearch_paths.py defines job and round artifact paths
+
+  So the missing piece is not “build a harness from scratch.” The missing piece is a cleaner split of
+  responsibility.
+
+  Proposed Solution
+  Keep the prompt thin and stable. Put changing facts in harness/state. Keep evidence in artifacts. Use tools
+  for retrieval. Keep validation in code.
+
+  Concretely:
+
+  - Prompt should explain the research goal, strategy context, round model, and the current job/round.
+  - Prompt should name the roles: conductor, analyst, web search, validator, compiler/builder.
+  - Prompt should point to baseline and latest round roots, not paste large evidence blobs.
+  - Tools should fetch manifests, metrics, trades, events, diagnostics, prior theses, and round comparisons.
+  - Validator should stay in code, not in prompt text.
+  - Builder/compiler should stay as the post-validation execution path.
+  - Remove current-best framing and keep/discard headline bias from the main prompt.
+
+  Prompt for Claude to review
+
+  Review this proposed harness split for the autoresearch conductor.
+
+  biases the agent toward the latest run and duplicates information that already exists in tools and code.
+
+  Context:
+  The repo already has:
+  - controller/state loop in autoresearch_controller.py
+  - round orchestration in autoresearch_research.py
+  - conductor prompt and tool dispatch in research_conductor.py
+  - analyst subagent and round retrieval tools in research_subagents.py
+  - validator logic in thesis_validator.py
+  - compiler/builder pipeline in compiler_pipeline.py
+  - job/round artifact paths in autoresearch_paths.py
+
+  Proposed solution:
+  - Keep typed run context in the harness, not only in the prompt.
+  - Keep artifact evidence in round folders and fetch it via tools.
+  - Keep the prompt short: goal, strategy context, round model, job context, baseline root, latest round root,
+  role map, and task.
+  - Explicitly name the roles in the prompt:
+    - conductor chooses the next question
+    - analyst analyzes trades and round evidence
+    - web search finds outside evidence
+    - validator checks thesis quality in code
+    - compiler/builder materializes validated theses
+  - Do not put validation logic in the prompt.
+  - Do not center current-best or keep/discard in the prompt.
+  - Use baseline as the anchor and latest run as evidence.
+
+  Please review this split and tell me:
+  1. Is the boundary between prompt, harness, tools, and validator correct?
+  2. Is any role missing or misclassified?
+  3. Would you change the prompt wording or the state/artifact split?
+  4. Is there any risk that this design still causes bias or confusion? I would rewrite the prompt with a small ROLES AND GATES section like this:
+
+  ROLES AND GATES
+  Conductor:
+  - chooses the next research question
+  - may call analyst or web search
+  - proposes one thesis at a time
+
+  Analyst:
+  - does deeper evidence analysis
+  - starts from baseline unless the question clearly asks for latest or cross-round comparison
+  - can fetch round artifacts by tool
+
+  Web researcher:
+  - finds external evidence for the mechanism before the analyst is used
+
+  Validator:
+  - checks whether the thesis is valid and mechanism-based
+  - rejects duplicate or parameter-only ideas
+
+  Builder/compiler:
+  - turns a validated thesis into executable config and artifacts
+  - this happens after validation, not before
+
+  Artifact registry:
+  - result.json is the manifest
+  - metrics.json, trades.csv, strategy_events.parquet, diagnostics.json are the evidence files
+
+  Round history:
+  - all rounds live under runtime/jobs/job-7/research/
+  - use tools to fetch exact round evidence
+
+  Then the rest of the prompt stays short:
+
+  RESEARCH GOAL
+  Find a better version of the baseline strategy by testing one clear mechanism at a time.
+
+  STRATEGY CONTEXT
+  Family name: ema
+  Strategy: 5 EMA pullback/reversal strategy.
+  Source files: strategies/ema/strategy.py, strategies/ema/signals.py, strategies/ema/exits.py
+  Baseline config: configs/ema_base.yaml
+
+  ROUND MODEL
+  Round 0 is the baseline backtest.
+  Latest completed run is evidence, not the anchor.
+
+  JOB CONTEXT
+  Job id: 7
+  Research root: runtime/jobs/job-7/research/
+  Current round: 1
+  Baseline round root: runtime/jobs/job-7/research/round-0-baseline/
+  Latest round root: runtime/jobs/job-7/research/round-1/
+  Latest thesis id: ema5
+
+  TOOLS
+  Use tools to read manifests, metrics, trades, events, diagnostics, selected theses, selected contracts,
+  selected configs, prior thesis records, and prior round summaries.
+
+  TASK
+  Use baseline as the anchor.
+  Compare latest evidence against baseline before proposing a new thesis.
+  Fetch details with tools before making claims.
+  Propose one next mechanism-based thesis to improve the baseline strategy.
+  Explain the mechanism, expected effect, and what would disprove it.
+  Do not rely only on profit factor.
+  Do not merely tune parameters.
+
+  That is the right division:
+
+  - role names in prompt
+  - exact state and files in harness
+  - evidence retrieval in tools
+  - validity checks in validator
+  - execution in builder/compiler
+
+
+---
+
+is role map required
+
+---
+
+RESEARCH GOAL
+  Find a better version of the EMA strategy by testing one clear mechanism at a time.
+  Do not chase only the latest result.
+  Do not rank ideas by one metric alone.
+  Do not just tune numbers.
+
+  STRATEGY CONTEXT
+  Family name: ema
+  Strategy: 5 EMA pullback/reversal strategy.
+  Source files: strategies/ema/strategy.py, strategies/ema/signals.py, strategies/ema/exits.py
+  Baseline config: configs/ema_base.yaml
+
+  ROUND MODEL
+  The EMA baseline stays the anchor for every mechanism claim.
+  The latest completed run is evidence for comparison, not the anchor.
+
+  JOB CONTEXT
+  Job id: 7
+  Research root: runtime/jobs/job-7/research/
+  Current round: 1
+
+  BASELINE ANCHOR
+  Baseline round root: runtime/jobs/job-7/research/round-0-baseline/
+  Use this as the anchor for all mechanism claims.
+  If the baseline is missing, stop and report that clearly.
+
+  EVIDENCE ACCESS
+  Treat result.json as the manifest that points to the other files.
+  Use tools to fetch exact round evidence instead of guessing paths.
+  Use tools to read manifests, metrics, trades, events, diagnostics, selected theses, selected contracts,
+  selected configs, prior thesis records, and prior round summaries.
+  Fetch the latest completed round and any prior round only when needed.
+
+  VALIDATION AND BUILD ORDER
+  The validator runs in code after you propose a thesis.
+  You cannot override it.
+  The builder/compiler runs after validation.
+  Do not pre-format the thesis as executable code.
+
+  TASK
+  Use the EMA baseline as the anchor.
+  Compare the latest evidence against it before proposing a new thesis.
+  Fetch details with tools before making claims.
+  Propose one next mechanism-based thesis to improve the EMA strategy.
+  Explain the mechanism, expected effect, and what would disprove it.
+  Do not rely only on profit factor.
+  Do not merely tune parameters. is ths prompot right? i am not happy with this
+
+---
+
+
+  The current prompt is weak in three ways:
+
+  - It repeats the same anchor rule too many times.
+  - It mixes soft prompt guidance with things that should be enforced in code.
+  - It hides the actual output requirement behind too much setup text.
+
+  The right fix is to make the prompt shorter and let the harness and validator do the hard enforcement. In
+  code, thesis_validator.py already exists and research_conductor.py already validates thesis structure, so the
+  prompt should not keep restating those rules as if text alone will enforce them.
+
+  I would keep only one explicit anchor rule, one explicit evidence rule, and one explicit output rule.
+
+  A tighter version would be:
+
+  GOAL
+  Propose one mechanism-based thesis that improves the EMA strategy baseline.
+  Return the mechanism, the expected effect, and the evidence that would disprove it.
+
+  STRATEGY
+  Family: ema
+  Strategy: 5 EMA pullback/reversal strategy
+  Source: strategies/ema/strategy.py, strategies/ema/signals.py, strategies/ema/exits.py
+  Baseline config: configs/ema_base.yaml
+
+  JOB
+  Job 7, round 1
+  Research root: runtime/jobs/job-7/research/
+  Baseline: runtime/jobs/job-7/research/round-0-baseline/
+  If baseline is missing, stop and report it.
+
+  EVIDENCE
+  Use tools to read manifests, metrics, trades, events, diagnostics, selected theses, selected contracts,
+  selected configs, and prior round summaries.
+  Treat result.json as the manifest pointer. Do not construct paths.
+
+  GATES
+  Validator runs in code after you propose.
+  Builder/compiler runs after validation.
+  Do not turn the thesis into executable code yourself.
+
+  CONSTRAINTS
+  Profit factor alone is not enough.
+  Parameter-only ideas are rejected.
+  Preserve trade_count and expectancy.
+
+  TASK
+  Return exactly one thesis. even this i am not happy
+
+---
+
+ask me qeustions about what i want
+
+---
+
+didnt understand this question
+
+---
+
+visible. also how do we make sure that it has lis tof preivious round summaries as well. we need to persist them some where if we are making it visible
+
+---
+
+let us continue with your quesitons for pormopt first. we diverged, rememebr this we will come back
+
+---
+
+wha t is prev round and latest round in th eprompot. tehy are the same
+
+---
+
+option a
+
+---
+
+i thought this what the conductor will ask the analyst to do and give it outcome.
+
+---
+
+ 1. Process control — best practice for your case
+
+  Outcome-only, with structured output requirements that force the right process.
+
+  The trick: don't tell the agent how to think. Instead, require its output to contain fields it can only fill
+  by doing the right work.
+
+  Examples:
+  - ❌ Prompt: "Call list_past_theses first."
+  - ✅ Output schema requires: "relation_to_prior_theses": [{"thesis_id": "...", "why_different": "..."}] —
+  agent must call the tool to fill this.
+  - ❌ Prompt: "Compare 2-3 candidates before picking one."
+  - ✅ Output schema requires: "alternatives_considered": [{...}, {...}] with at least 2 entries.
+  - ❌ Prompt: "Anchor on baseline."
+  - ✅ Output schema requires: "baseline_comparison": {metric: ..., baseline_value: ..., latest_value: ...,
+  delta: ...}.
+
+  Why this is best practice: modern models are trained to reason and use tools. Heavy process prescription
+  ("step 1: do X, step 2: do Y") fights the model. Output schemas push the same constraints to the boundary
+  where they can actually be checked. did you ipmleknt this  here
+
+---
+
+look at this conversation or session history fromstart we discussed amny things. you missed some of them. read line by line, pick the best ideas and put in prompot. write notes if you are overwhlemd
+
+---
+
+where does research guidelines go? hhow do we define research guidelines. wha tis this user prompt
+
+---
+
+for research guideline can you check the vps theere are atleast 26 jobs and each job has multipole research rounds with thesis. you want to check thesis quality or look at those artifacts adn tell me what researlc guidlienss we need to harcode in validator.
+
+---
+
+these are all to ipmorove validator code i.e. hardcode research rules?
+
+---
+
+currently is research agent getting validator feedback. currently it is one way gate i thitnk. should e change that also
+
+---
+
+
+  CROSS-ROUND
+    controller maintains last-N rejections per job
+    next round's prompt includes summary block
+
+  WITHIN-ROUND
+    retry budget = 3, but per-stage (so 3 retries that all fail Stage 1
+    don't burn budget for compile/Stage 2)
+
+  ESCALATION
+    if same rejection_code fires N times in M rounds, escalate (force
+    different mechanism dimension; or surface to human)
+
+  CHALLENGE CHANNEL
+    conductor can return validator_challenge: "rule X seems wrong because Y"
+    logged for human review; doesn't change behavior automatically
+ explain these. why is controller maintainining? should they be persistend in reseaech round folder? validator rejection are per research round and should be mapped to thesis sid . research round can have mulitple thesis ids because it can be rejected by stage 1 or stge 2 validator. this rjeeection should be tagged with thesis along with which validator and persisted. next round prompot should use tool to fetch them because there might be many rjeection.
+
+---
+
+what is attempot?
+
+---
+
+so use thsis id. why new workd called attempt
+
+---
+
+
+  Empirical findings from 11 jobs / 94 rounds / 102 thesis attempts
+
+  Outcome distribution
+
+  - 27 theses selected for execution
+  - 15 of 84 non-baseline experiments accepted (18%)
+  - Only 2 got verdict_status='accepted'
+  - 70 of 97 experiments not accepted by metric comparison
+
+  Validator rejections (16 total)
+
+  12 of 16 (75%) are 100% Jaccard overlap on sentinel metadata keys — requires_engine_change,
+  requires_new_config_keys, new_config_keys_needed. These aren't real config keys, they're flags. Two
+  completely different theses both setting requires_engine_change=true get falsely flagged as duplicates.
+
+  This is a validator bug, not a thesis quality signal. thesis_validator.py:48 only ignores
+  requires_engine_change; the agent uses three more variant names that aren't ignored.
+
+  The remaining 4 rejections are legitimate (real config-key overlap, hypothesis-config misalignment, bad path
+  construction).
+
+  The big finding — theme fixation
+
+  51 of 102 theses (50%) are variations on the opening session. Job 20 alone has 45 rounds of mostly
+  opening-window and stop-distance variants:
+
+  cap_wide_alert_candle_stop_distance_pct
+  min_stop_distance_floor_to_reduce_microstructure_noise_stops
+  stop_distance_quintile_cap_to_avoid_wide_stop_adverse_selection
+  max_stop_distance_pct_cap_to_exclude_range_expansion_alert_candles
+  min_stop_distance_pct_floor_to_avoid_micro_noise_stopouts
+  tighten_risk_structure_via_min_stop_distance_pct_floor
+  widen_initial_stop_via_max_stop_distance_pct_cap_removal       ← opposite direction of above
+
+  Notice two patterns the validator misses entirely:
+
+  1. Theme clustering — the agent re-clothes the same mechanism with different config keys. Jaccard finds
+  nothing because the keys are technically different.
+  2. Direction whipsawing — when one direction of a lever fails, the agent tries the opposite direction without
+   acknowledging the lever may not be predictive at all.
+
+  Disconfirmer reality
+
+  - Zero of 27 selected theses contain falsification language in the hypothesis prose.
+  - BUT the schema has a disqualifiers field that is populated (~2 entries per thesis on average).
+  - However, every disqualifier I inspected is a metric threshold ("PF doesn't improve by 5%"), not a mechanism
+   falsifier ("if up-drive mornings are NOT a bad regime in the data"). These are pass/fail criteria, not
+  Popperian disconfirmers.
+
+  Other observed failures
+
+  - 56 of 94 rounds end in outcome='needs_code' — agent proposes code-required theses that never get built. Job
+   20 has 31, job 26 has 20.
+  - One rejection example shows alignment score 0.00 making it as far as validation — alignment scoring is
+  diagnostic-only and not a gate.
+  - Path-construction violation: agent built runtime/jobs/job-25/experiments/.../runtime_config.json for
+  base_config_path. Validator caught it but only because of a hard prefix check; doesn't prevent the agent from
+   trying again.
+
+  ---
+  Proposed validator rules — grounded in this evidence
+
+  A. Bugs to FIX (not new rules) — highest impact
+
+  A1. Expand CONFIG_OVERLAP_IGNORED_KEYS.
+  Currently: {"requires_engine_change"}.
+  Add: requires_new_config_keys, new_config_keys_needed, and any key matching requires_engine_change__* regex.
+  Estimated impact: eliminates 12 of 16 historical rejections, all noise.
+
+  A2. Better path enforcement.
+  _ALLOWED_BASE_CONFIG_PREFIXES = ("configs/",) accepts only configs/. The error message says "configs/ or
+  experiments/" — message is wrong. Either expand to experiments/<thesis_id>/ for chaining off accepted
+  experiments, or fix the message and document the contract clearly. Either way, reject runtime/... paths with
+  a clear error pointing at the registry.
+
+  B. NEW rules to ADD — codify the patterns the validator misses
+
+  B1. Theme-cluster fixation detector.
+
+  def check_theme_cluster_fixation(thesis, prior_theses_in_job, threshold=4, window=7):
+      """Reject if 4+ of last 7 theses (including this one) share keywords."""
+      keywords_now = extract_theme_keywords(thesis.thesis_id, thesis.hypothesis)
+      recent = prior_theses_in_job[-(window-1):]
+      overlap_count = 1  # this thesis
+      for prior in recent:
+          prior_kw = extract_theme_keywords(prior.thesis_id, prior.hypothesis)
+          if len(keywords_now & prior_kw) >= 1:
+              overlap_count += 1
+      if overlap_count >= threshold:
+          raise ThesisValidationError(
+              f"Theme-cluster fixation: {overlap_count}/{window} recent theses share "
+              f"keywords with this thesis ({keywords_now}). Propose from a different "
+              f"cluster, or explicitly justify why this iteration tests a materially "
+              f"new mechanism in `relation_to_prior`."
+          )
+
+  Keyword extraction: simple noun-phrase tokenization on thesis_id plus a small EMA-domain stoplist.
+
+  B2. Direction-flip whipsaw detector.
+
+  def check_direction_whipsaw(thesis, prior_theses):
+      """Reject if a prior thesis tuned the same conceptual lever in the opposite direction
+      without explicit acknowledgment."""
+      lever_words = {"tighten", "widen", "increase", "decrease", "raise", "lower",
+                     "min", "max", "floor", "cap", "expand", "shrink"}
+      # Find prior theses touching same logical concept (regex on thesis_id stems)
+      # If found, check thesis.relation_to_prior for an entry mentioning that thesis_id
+      ...
+
+  Forces the agent to confront its own whipsawing.
+
+  B3. needs_code starvation rule.
+
+  def check_code_required_starvation(thesis, prior_theses, max_consecutive=3):
+      """Reject if 3+ consecutive prior theses required code changes and none ran.
+      Forces a no-code thesis to be proposed."""
+
+  Prevents the conductor from queueing infinite engine-change requests.
+
+  B4. Promote hypothesis-config alignment to a hard gate.
+
+  The score is already computed in check_hypothesis_alignment. Currently informational. Reject below 0.4
+  (calibrate from data — score=0.00 cases are clearly bad; need to see distribution to set the right
+  threshold).
+
+  B5. Require ≥1 mechanism-falsification disqualifier.
+
+  Schema-level: at least one disqualifier must reference observable evidence patterns (not metric thresholds).
+  Heuristic: reject if every disqualifier's condition matches the regex
+  (profit_factor|trade_count|expectancy|sharpe|drawdown).*\b(by|than)\b.*\d+. At least one must be
+  qualitatively different.
+
+  C. New schema fields — force the right reasoning
+
+  C1. mechanism_falsification (required, string, ≥80 chars):
+  "What observable pattern in the data would prove the mechanism wrong, independent of whether the backtest
+  improves metrics?"
+
+  This is the disconfirmer the user kept asking for, separate from metric disqualifiers.
+
+  C2. theme_keywords (required, list, 2-3 entries):
+  Agent's own categorization of what cluster this thesis belongs to. Used by B1.
+
+  C3. prior_lever_outcomes (required when applicable):
+  If a config key concept overlaps with prior work, must cite the prior thesis ID and one-sentence outcome.
+
+  D. System prompt additions — only what code can't enforce
+
+  Two short lines:
+
+  ▎ When the analyst's findings could equally support multiple mechanisms, name them in alternatives_considered
+  ▎  and pick the one with the strongest disconfirmer, not the highest expected effect.
+
+  ▎ If the same lever has been tested in both directions (tighten and loosen) without separation in the data,
+  ▎ the lever may not be predictive. Propose from a different mechanism dimension.
+
+  ---
+  What I recommend implementing first
+
+  Priority: P0
+  Item: A1 (sentinel key ignore list)
+  Effort: 1-line code fix
+  Impact: Eliminates 75% of false rejections
+  ────────────────────────────────────────
+  Priority: P0
+  Item: A2 (path enforcement clarity)
+  Effort: 5-line code fix
+  Impact: Eliminates path-construction confusion
+  ────────────────────────────────────────
+  Priority: P1
+  Item: B4 (alignment score → gate)
+  Effort: Calibrate threshold + 5 lines
+  Impact: Catches misaligned theses pre-backtest
+  ────────────────────────────────────────
+  Priority: P1
+  Item: B1 (theme cluster)
+  Effort: New function + keyword extractor
+  Impact: Breaks job 20 / job 26 fixation pattern
+  ────────────────────────────────────────
+  Priority: P2
+  Item: C1 (mechanism_falsification field)
+  Effort: Schema + validator check
+  Impact: Forces real disconfirmers
+  ────────────────────────────────────────
+  Priority: P2
+  Item: B3 (needs_code starvation)
+  Effort: New function
+  Impact: Stops engine-change queueing
+  ────────────────────────────────────────
+  Priority: P3
+  Item: B2 (whipsaw)
+  Effort: More complex pattern matcher
+  Impact: Catches subtle lever flipping
+  ────────────────────────────────────────
+  Priority: P3
+  Item: B5 (qualitative disqualifier)
+  Effort: Heuristic check
+  Impact: Quality polish
+
+  P0 are quick wins from real bugs. P1 addresses the biggest behavioral failure (cluster fixation). P2-P3 are
+  quality-of-output improvements.
+
+  Want me to draft the P0/P1 patches against the actual validator code, or first park this and finish the
+  prompt v3? did you inclide all in your lastest plan
+
+---
+
+locke star timplkeemntnion. create a to do list sothat you can track and implkenment all the tasks. tdd
