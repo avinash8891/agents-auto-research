@@ -38,6 +38,7 @@ from autoresearch_state import (
     write_state,
 )
 from config_hash import _config_hash, _git_sha
+from diagnostic_contracts import build_required_diagnostic_specs, enrich_required_diagnostics
 from experiment_db import (
     BaselineCheckpoint,
     ExperimentResult,
@@ -917,6 +918,11 @@ def _block_with_metric_parse_failed(
 
 
 def _baseline_metrics_from_first_result(controller: "AutoresearchController") -> dict[str, Any]:
+    tracker = getattr(controller, "baseline_tracker", None)
+    latest_checkpoint = tracker.latest() if tracker is not None else None
+    if latest_checkpoint is not None and isinstance(latest_checkpoint.metrics, dict):
+        return dict(latest_checkpoint.metrics)
+
     results = controller.read_results()
     baseline_result = results[0] if results else None
     if not baseline_result:
@@ -939,6 +945,11 @@ def _baseline_metrics_from_first_result(controller: "AutoresearchController") ->
 def _build_thesis_for_eval(contract: Any) -> Any:
     from research_types import ResearchThesis
 
+    required_diagnostic_specs = build_required_diagnostic_specs(
+        getattr(contract, "required_diagnostics", []),
+        getattr(contract, "required_diagnostic_specs", []),
+    )
+
     return ResearchThesis(
         thesis_id=contract.thesis_id,
         strategy_family=contract.strategy_family,
@@ -947,6 +958,7 @@ def _build_thesis_for_eval(contract: Any) -> Any:
         expected_effects=contract.expected_effects,
         disqualifiers=contract.disqualifiers,
         required_diagnostics=contract.required_diagnostics,
+        required_diagnostic_specs=required_diagnostic_specs,
     )
 
 
@@ -980,9 +992,20 @@ def _evaluate_against_thesis(
             else "profit_factor"
         )
         candidate_metrics[primary_metric_name] = metric
+        baseline_metrics = _baseline_metrics_from_first_result(controller)
+        required_diagnostic_specs = build_required_diagnostic_specs(
+            getattr(contract, "required_diagnostics", []),
+            getattr(contract, "required_diagnostic_specs", []),
+        )
+        details["strategy_diagnostics"] = enrich_required_diagnostics(
+            required_diagnostic_specs,
+            baseline_metrics=baseline_metrics,
+            candidate_metrics=candidate_metrics,
+            strategy_diagnostics=details.get("strategy_diagnostics"),
+        )
         verdict = evaluate_experiment(
             thesis=_build_thesis_for_eval(contract),
-            baseline_metrics=_baseline_metrics_from_first_result(controller),
+            baseline_metrics=baseline_metrics,
             candidate_metrics=candidate_metrics,
             experiment_id=contract.experiment_id,
             strategy_diagnostics=details.get("strategy_diagnostics"),

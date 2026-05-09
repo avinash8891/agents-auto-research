@@ -6,7 +6,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +19,7 @@ from improvement_reflexion import build_latest_reflexion_feedback
 from persistence_utils import write_text_atomic
 from strategies import STRATEGIES
 from strategy_family import load_family
-from trace_sdk import record_event, trace
+from trace_sdk import record_event, record_usage_event, trace
 
 log = get_logger(__name__)
 
@@ -27,6 +29,42 @@ BUILDER_CLI_MODEL = "gpt-5.2"
 BUILDER_CLI_REASONING_EFFORT: str | None = None
 LEGACY_NESTED_CONFIG_KEY_REQUEST = "new_config_keys_needed"
 THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change", LEGACY_NESTED_CONFIG_KEY_REQUEST})
+
+
+@dataclass(frozen=True)
+class BuilderTask:
+    thesis_id: str
+    family_name: str
+    proposal_path: str
+    compilation_path: str
+    config_path: str
+    base_config_path: str
+    missing_primitives: list[str]
+    required_diagnostics: list[str]
+    required_diagnostic_specs: list[dict[str, Any]]
+    config_change_keys: list[str]
+    mechanism_contract_kind: str
+    implementation_scope: list[str]
+
+
+@dataclass(frozen=True)
+class BuilderSelfCheck:
+    mechanism_implemented: bool
+    diagnostics_emitted: bool
+    config_surface_valid: bool
+    tests_covering_behavior: bool
+    notes: list[str]
+
+
+@dataclass(frozen=True)
+class BuilderResultEnvelope:
+    status: str
+    generated_config: str | None
+    validation_passed: bool
+    builder_attempts: int
+    phase: str
+    task: dict[str, Any]
+    self_check: dict[str, Any]
 
 
 def _resolved_builder_base_config_path(compilation: dict[str, Any], family_name: str) -> str:
@@ -51,6 +89,165 @@ def _timeout_output(exc: subprocess.TimeoutExpired) -> tuple[str, str]:
     return _coerce_subprocess_output(stdout), _coerce_subprocess_output(getattr(exc, "stderr", ""))
 
 
+def _coerce_builder_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes", "1"}:
+            return True
+        if lowered in {"false", "no", "0"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return False
+
+
+def _normalize_builder_notes(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _builder_self_check_with_note(note: str) -> BuilderSelfCheck:
+    return BuilderSelfCheck(
+        mechanism_implemented=False,
+        diagnostics_emitted=False,
+        config_surface_valid=False,
+        tests_covering_behavior=False,
+        notes=[note],
+    )
+
+
+def _verified_builder_self_check(
+    verification: Any,
+    builder_self_check: BuilderSelfCheck | None,
+) -> BuilderSelfCheck:
+    base = builder_self_check or _builder_self_check_with_note(
+        "builder_final_report_missing_or_malformed"
+    )
+    return BuilderSelfCheck(
+        mechanism_implemented=base.mechanism_implemented,
+        diagnostics_emitted=base.diagnostics_emitted,
+        config_surface_valid=base.config_surface_valid,
+        tests_covering_behavior=bool(getattr(verification, "tests_covering_behavior", False)),
+        notes=list(base.notes),
+    )
+
+
+def _extract_codex_cli_usage(stdout: str) -> tuple[dict[str, int], str] | None:
+    usage_result: tuple[dict[str, int], str] | None = None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
+            raw_usage = event["usage"]
+            input_tokens = int(raw_usage.get("input_tokens") or 0)
+            output_tokens = int(raw_usage.get("output_tokens") or 0)
+            if "total_tokens" in raw_usage and raw_usage["total_tokens"] is not None:
+                total_tokens = int(raw_usage["total_tokens"])
+            else:
+                total_tokens = input_tokens + output_tokens
+            usage_result = (
+                {
+                    "input_tokens": input_tokens,
+                    "cached_input_tokens": int(raw_usage.get("cached_input_tokens") or 0),
+                    "output_tokens": output_tokens,
+                    "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
+                    "total_tokens": total_tokens,
+                },
+                "codex_json_turn_completed",
+            )
+            continue
+        if event.get("type") != "event_msg":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") != "token_count":
+            continue
+        info = payload.get("info")
+        if not isinstance(info, dict):
+            continue
+        raw_usage = info.get("last_token_usage") or info.get("total_token_usage")
+        if not isinstance(raw_usage, dict):
+            continue
+        usage_result = (
+            {
+                "input_tokens": int(raw_usage.get("input_tokens") or 0),
+                "cached_input_tokens": int(raw_usage.get("cached_input_tokens") or 0),
+                "output_tokens": int(raw_usage.get("output_tokens") or 0),
+                "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
+                "total_tokens": int(raw_usage.get("total_tokens") or 0),
+            },
+            "codex_json_last_token_usage",
+        )
+    return usage_result
+
+
+def _extract_builder_self_check(output: str) -> BuilderSelfCheck | None:
+    if not output.strip():
+        return None
+    decoder = json.JSONDecoder()
+    last_match: BuilderSelfCheck | None = None
+    saw_candidate = False
+    for index, char in enumerate(output):
+        if char != "{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(output[index:])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        candidate = payload.get("builder_self_check")
+        if not isinstance(candidate, dict):
+            continue
+        saw_candidate = True
+        last_match = BuilderSelfCheck(
+            mechanism_implemented=_coerce_builder_bool(candidate.get("mechanism_implemented")),
+            diagnostics_emitted=_coerce_builder_bool(candidate.get("diagnostics_emitted")),
+            config_surface_valid=_coerce_builder_bool(candidate.get("config_surface_valid")),
+            tests_covering_behavior=_coerce_builder_bool(candidate.get("tests_covering_behavior")),
+            notes=_normalize_builder_notes(candidate.get("notes")),
+        )
+    if last_match is not None:
+        return last_match
+    if saw_candidate:
+        return _builder_self_check_with_note("builder_self_check_unusable")
+    return None
+
+
+def _emit_builder_usage(
+    *,
+    thesis_id: str,
+    attempt_number: int,
+    usage_result: tuple[dict[str, int], str] | None,
+) -> dict[str, Any] | None:
+    if usage_result is None:
+        return None
+    usage, usage_source = usage_result
+    record_usage_event(
+        "builder",
+        model_provider="codex",
+        model_name=BUILDER_CLI_MODEL,
+        input_tokens=int(usage.get("input_tokens") or 0),
+        output_tokens=int(usage.get("output_tokens") or 0),
+        total_tokens=int(usage.get("total_tokens") or 0),
+        cached_input_tokens=int(usage.get("cached_input_tokens") or 0),
+        reasoning_output_tokens=int(usage.get("reasoning_output_tokens") or 0),
+        usage_source=usage_source,
+        dedupe_key=f"builder:{thesis_id}:attempt:{attempt_number}",
+        thesis_id=thesis_id,
+    )
+    return {**usage, "usage_source": usage_source}
+
+
 def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str, Any]) -> list[str]:
     rp = proposal.get("requested_primitives")
     mp = compilation.get("missing_primitives")
@@ -62,10 +259,7 @@ def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str,
         return rp
     if isinstance(mp, list):
         return mp
-    config_changes = proposal.get("config_changes") or {}
-    if not isinstance(config_changes, dict):
-        return []
-    return sorted(key for key in config_changes if key not in THESIS_METADATA_CONFIG_KEYS)
+    return []
 
 
 def _validate_missing_primitives_contract(
@@ -83,6 +277,170 @@ def _validate_missing_primitives_contract(
             "validation_passed": False,
         }
     return None
+
+
+def _builder_mechanism_contract_kind(
+    proposal: dict[str, Any], compilation: dict[str, Any], missing_primitives: list[str]
+) -> str:
+    config_changes = proposal.get("config_changes") or {}
+    runtime_keys = (
+        [
+            key
+            for key in config_changes
+            if key not in THESIS_METADATA_CONFIG_KEYS and key != "requires_engine_change"
+        ]
+        if isinstance(config_changes, dict)
+        else []
+    )
+    has_runtime_keys = bool(runtime_keys)
+    has_primitives = bool(missing_primitives or compilation.get("missing_primitives"))
+    required_diagnostics = proposal.get("required_diagnostics") or []
+    has_custom_diagnostics = bool(required_diagnostics)
+    if has_primitives and has_runtime_keys and has_custom_diagnostics:
+        return "mixed_code_config_diagnostics"
+    if has_primitives and has_custom_diagnostics:
+        return "code_and_diagnostics"
+    if has_primitives and has_runtime_keys:
+        return "code_and_config"
+    if has_primitives:
+        return "code_only"
+    if has_runtime_keys and has_custom_diagnostics:
+        return "config_and_diagnostics"
+    if has_runtime_keys:
+        return "config_only"
+    if has_custom_diagnostics:
+        return "diagnostics_only"
+    return "unknown"
+
+
+def _builder_implementation_scope(
+    proposal: dict[str, Any], required_diagnostic_specs: list[dict[str, Any]]
+) -> list[str]:
+    surfaces = {"strategy_runtime"}
+    config_changes = proposal.get("config_changes") or {}
+    if isinstance(config_changes, dict) and any(
+        key not in THESIS_METADATA_CONFIG_KEYS and key != "requires_engine_change"
+        for key in config_changes
+    ):
+        surfaces.add("runtime_config")
+    for spec in required_diagnostic_specs:
+        surface = str(spec.get("surface") or "any")
+        if surface == "metrics":
+            surfaces.add("metrics")
+        elif surface == "strategy_diagnostics":
+            surfaces.add("strategy_diagnostics")
+        elif surface == "experiment_evaluation":
+            surfaces.add("experiment_evaluation")
+        else:
+            surfaces.update({"metrics", "strategy_diagnostics", "experiment_evaluation"})
+    return sorted(surfaces)
+
+
+def _build_builder_task(
+    *,
+    thesis_id: str,
+    family_name: str,
+    proposal_path: Path,
+    compilation_path: Path,
+    config_path: str,
+    base_config_path: str,
+    proposal: dict[str, Any],
+    compilation: dict[str, Any],
+    missing_primitives: list[str],
+) -> BuilderTask:
+    required_diagnostics = proposal.get("required_diagnostics") or []
+    if not isinstance(required_diagnostics, list):
+        required_diagnostics = []
+    required_diagnostic_specs = (
+        compilation.get("required_diagnostic_specs")
+        or proposal.get("required_diagnostic_specs")
+        or []
+    )
+    if not isinstance(required_diagnostic_specs, list):
+        required_diagnostic_specs = []
+    config_changes = proposal.get("config_changes") or {}
+    config_change_keys = (
+        sorted(
+            key
+            for key in config_changes
+            if key not in THESIS_METADATA_CONFIG_KEYS and key != "requires_engine_change"
+        )
+        if isinstance(config_changes, dict)
+        else []
+    )
+    return BuilderTask(
+        thesis_id=thesis_id,
+        family_name=family_name,
+        proposal_path=proposal_path.as_posix(),
+        compilation_path=compilation_path.as_posix(),
+        config_path=config_path,
+        base_config_path=base_config_path,
+        missing_primitives=list(missing_primitives),
+        required_diagnostics=list(required_diagnostics),
+        required_diagnostic_specs=[
+            dict(item) for item in required_diagnostic_specs if isinstance(item, dict)
+        ],
+        config_change_keys=config_change_keys,
+        mechanism_contract_kind=_builder_mechanism_contract_kind(
+            proposal, compilation, missing_primitives
+        ),
+        implementation_scope=_builder_implementation_scope(
+            proposal,
+            [dict(item) for item in required_diagnostic_specs if isinstance(item, dict)],
+        ),
+    )
+
+
+def _empty_builder_self_check() -> BuilderSelfCheck:
+    return BuilderSelfCheck(
+        mechanism_implemented=False,
+        diagnostics_emitted=False,
+        config_surface_valid=False,
+        tests_covering_behavior=False,
+        notes=[],
+    )
+
+
+def _result_with_builder_envelope(
+    result: dict[str, Any],
+    *,
+    task: BuilderTask,
+    phase: str,
+    self_check: BuilderSelfCheck | None = None,
+) -> dict[str, Any]:
+    envelope = BuilderResultEnvelope(
+        status=str(result.get("status") or "error"),
+        generated_config=result.get("generated_config"),
+        validation_passed=bool(result.get("validation_passed")),
+        builder_attempts=int(result.get("builder_attempts") or 0),
+        phase=phase,
+        task=asdict(task),
+        self_check=asdict(self_check or _empty_builder_self_check()),
+    )
+    enriched = dict(result)
+    enriched["builder_task"] = envelope.task
+    enriched["builder_phase"] = envelope.phase
+    enriched["builder_self_check"] = envelope.self_check
+    return enriched
+
+
+def _ensure_builder_envelope(
+    result: dict[str, Any],
+    *,
+    task: BuilderTask,
+    phase: str,
+    self_check: BuilderSelfCheck | None = None,
+) -> dict[str, Any]:
+    if "builder_task" in result and "builder_phase" in result and "builder_self_check" in result:
+        return result
+    if self_check is None and phase == "completed":
+        self_check = _builder_self_check_with_note("builder_final_report_missing_or_malformed")
+    return _result_with_builder_envelope(
+        result,
+        task=task,
+        phase=phase,
+        self_check=self_check,
+    )
 
 
 def _normalize_proposal_config_changes(proposal: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -167,6 +525,10 @@ def _builder_artifact_dir(
     return (artifact_root or root) / family.builder_requests_dirname / thesis_id
 
 
+def _builder_attempt_artifact_dir(artifact_dir: Path, attempt_number: int) -> Path:
+    return artifact_dir / f"attempt-{attempt_number}"
+
+
 def _write_builder_attempt_artifacts(
     *,
     artifact_dir: Path,
@@ -228,6 +590,25 @@ def _trace_builder_finish(
             model_provider="codex",
             model_name=BUILDER_CLI_MODEL,
         )
+        notes = result.get("builder_self_check", {}).get("notes", [])
+        if isinstance(notes, list) and any(
+            note in {"builder_final_report_missing_or_malformed", "builder_self_check_unusable"}
+            for note in notes
+        ):
+            record_event(
+                source_module="compiler_builder",
+                category="builder",
+                action="builder_quality_warning",
+                summary=f"builder quality warning thesis={thesis_id}",
+                payload={
+                    "thesis_id": thesis_id,
+                    "notes": notes,
+                    "result": result,
+                },
+                artifact_paths=artifact_paths,
+                model_provider="codex",
+                model_name=BUILDER_CLI_MODEL,
+            )
         if result.get("status") == "error":
             error_code = str(result.get("error_code") or "builder_error")
             record_event(
@@ -284,6 +665,7 @@ def _validate_generated_config_in_fresh_python(
 
 def _build_builder_prompt(
     *,
+    task: BuilderTask,
     thesis_id: str,
     root: Path,
     proposal_path: Path,
@@ -308,11 +690,28 @@ def _build_builder_prompt(
 8. Do not treat runtime config validation as proof that a primitive is implemented.
 9. If a config key is not consumed by strategy runtime code, implement that code path or report failure instead of writing a no-op key.
 10. For missing primitives, add or update tests that prove the key changes strategy behavior or emitted diagnostics.
-11. Return a concise final report with:
+11. Work in explicit phases:
+   - classify contract
+   - map implementation surface
+   - implement mechanism
+   - implement diagnostics
+   - run narrow validation/tests
+   - self-check against the task contract
+12. Return a concise final report with:
    - whether implementation succeeded
    - files changed
    - tests run
    - generated config path
+   - a final JSON object that includes:
+     {{
+       "builder_self_check": {{
+         "mechanism_implemented": true/false,
+         "diagnostics_emitted": true/false,
+         "config_surface_valid": true/false,
+         "tests_covering_behavior": true/false,
+         "notes": ["short notes"]
+       }}
+     }}
 
 Context:
 - Repo root: {root}
@@ -322,6 +721,8 @@ Context:
 - Base config path: {base_config_path}
 - Strategy family: {family_name}
 - Missing primitives: {json.dumps(missing_primitives, indent=2)}{extra_block}
+- Typed builder task:
+{json.dumps(asdict(task), indent=2)}
 
 Goal:
 Implement the missing primitive(s) for thesis `{thesis_id}` and write the resulting config artifact.
@@ -352,11 +753,14 @@ def _implementation_retry_prompt_extras(previous_result: dict[str, Any]) -> list
 
 
 def _should_retry_builder_result(result: dict[str, Any]) -> bool:
-    return bool(result.get("implementation_verification_failures"))
+    return bool(result.get("implementation_verification_failures")) or (
+        result.get("error_code") == "builder_config_validation_failed"
+    )
 
 
 def _builder_retry_prompt(
     *,
+    task: BuilderTask,
     thesis_id: str,
     root: Path,
     proposal_path: Path,
@@ -369,6 +773,7 @@ def _builder_retry_prompt(
 ) -> str:
     prompt_extras = _implementation_retry_prompt_extras(previous_result) if previous_result else []
     return _build_builder_prompt(
+        task=task,
         thesis_id=thesis_id,
         root=root,
         proposal_path=proposal_path,
@@ -383,6 +788,7 @@ def _builder_retry_prompt(
 
 def _validated_generated_config_result(
     *,
+    task: BuilderTask,
     root: Path,
     thesis: dict[str, Any],
     contract: dict[str, Any],
@@ -393,6 +799,7 @@ def _validated_generated_config_result(
     exit_code: int | None,
     timed_out: bool,
     duration_seconds: float,
+    builder_self_check: BuilderSelfCheck | None = None,
 ) -> dict[str, Any] | None:
     if not config_abspath.exists():
         return None
@@ -439,16 +846,21 @@ def _validated_generated_config_result(
             "timed_out": timed_out,
             "duration_seconds": round(duration_seconds, 3),
         }
-    return {
-        "status": "completed",
-        "reason": reason,
-        "generated_config": config_path,
-        "validation_passed": True,
-        "implementation_verification_passed": True,
-        "exit_code": exit_code,
-        "timed_out": timed_out,
-        "duration_seconds": round(duration_seconds, 3),
-    }
+    return _result_with_builder_envelope(
+        {
+            "status": "completed",
+            "reason": reason,
+            "generated_config": config_path,
+            "validation_passed": True,
+            "implementation_verification_passed": True,
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "duration_seconds": round(duration_seconds, 3),
+        },
+        task=task,
+        phase="completed",
+        self_check=_verified_builder_self_check(verification, builder_self_check),
+    )
 
 
 def build_missing_primitives(
@@ -609,6 +1021,18 @@ def build_missing_primitives(
         "model": BUILDER_CLI_MODEL,
         "model_reasoning_effort": BUILDER_CLI_REASONING_EFFORT,
     }
+    builder_task = _build_builder_task(
+        thesis_id=thesis_id,
+        family_name=family_name,
+        proposal_path=proposal_path,
+        compilation_path=compilation_path,
+        config_path=config_path,
+        base_config_path=base_config_path,
+        proposal=proposal,
+        compilation=compilation,
+        missing_primitives=missing_primitives,
+    )
+    request_payload["builder_task"] = asdict(builder_task)
     write_json_artifact(builder_requests_dir / f"{thesis_id}.json", request_payload)
     trace(
         "BUILDER",
@@ -639,6 +1063,7 @@ def build_missing_primitives(
             ]
         )
     prompt = _build_builder_prompt(
+        task=builder_task,
         thesis_id=thesis_id,
         root=root,
         proposal_path=proposal_path,
@@ -651,11 +1076,22 @@ def build_missing_primitives(
     )
     cli = _find_cli()
     if cli:
-        builder_cmd = [cli, "exec", "--model", BUILDER_CLI_MODEL]
+        output_dir = Path(tempfile.mkdtemp(prefix="autoresearch-builder-"))
+        output_path = output_dir / "last_message.txt"
+        builder_cmd = [
+            cli,
+            "exec",
+            "--json",
+            "--output-last-message",
+            str(output_path),
+            "--model",
+            BUILDER_CLI_MODEL,
+        ]
         if _codex_supports_sandbox_flag(cli):
             builder_cmd[2:2] = ["--sandbox", "workspace-write"]
     else:
         builder_cmd = []
+        output_path = None
     if BUILDER_CLI_REASONING_EFFORT:
         builder_cmd.extend(["-c", f'model_reasoning_effort="{BUILDER_CLI_REASONING_EFFORT}"'])
     _write_artifacts = functools.partial(
@@ -676,12 +1112,16 @@ def build_missing_primitives(
             "model_provider": "codex",
             "model": BUILDER_CLI_MODEL,
             "model_reasoning_effort": BUILDER_CLI_REASONING_EFFORT,
+            "builder_task": asdict(builder_task),
+            "builder_phase": "queued",
+            "builder_self_check": asdict(_empty_builder_self_check()),
         },
     )
 
     out: dict[str, Any] | None = None
     if config_abspath.exists():
         existing_result = _validated_generated_config_result(
+            task=builder_task,
             root=root,
             thesis=proposal,
             contract=compilation,
@@ -695,6 +1135,14 @@ def build_missing_primitives(
         )
         assert existing_result is not None
         if existing_result["status"] != "error":
+            existing_result = _ensure_builder_envelope(
+                existing_result,
+                task=builder_task,
+                phase="completed",
+                self_check=_builder_self_check_with_note(
+                    "builder_final_report_missing_or_malformed"
+                ),
+            )
             artifact_paths = _write_artifacts(result=existing_result)
             _trace_builder_finish(
                 thesis_id=thesis_id, result=existing_result, artifact_paths=artifact_paths
@@ -712,6 +1160,11 @@ def build_missing_primitives(
             "generated_config": None,
             "validation_passed": False,
         }
+        result = _result_with_builder_envelope(
+            result,
+            task=builder_task,
+            phase="preflight_failed",
+        )
         artifact_paths = _write_artifacts(result=result)
         _trace_builder_finish(thesis_id=thesis_id, result=result, artifact_paths=artifact_paths)
         return result
@@ -720,9 +1173,12 @@ def build_missing_primitives(
     stderr_log = ""
     last_prompt = prompt
     for attempt_index in range(BUILDER_IMPLEMENTATION_RETRY_LIMIT + 1):
+        if output_path is not None and output_path.exists():
+            output_path.unlink()
         attempt_prompt = prompt
         if out:
             attempt_prompt = _builder_retry_prompt(
+                task=builder_task,
                 thesis_id=thesis_id,
                 root=root,
                 proposal_path=proposal_path,
@@ -745,8 +1201,20 @@ def build_missing_primitives(
             )
         except subprocess.TimeoutExpired as exc:
             stdout_log, stderr_log = _timeout_output(exc)
+            usage_payload = _emit_builder_usage(
+                thesis_id=thesis_id,
+                attempt_number=attempt_index + 1,
+                usage_result=_extract_codex_cli_usage(stdout_log),
+            )
+            output_text = (
+                output_path.read_text() if output_path is not None and output_path.exists() else ""
+            )
+            parsed_self_check = _extract_builder_self_check(
+                "\n".join(part for part in (output_text, stdout_log, stderr_log) if part)
+            )
             duration_seconds = time.monotonic() - started_at
             out = _validated_generated_config_result(
+                task=builder_task,
                 root=root,
                 thesis=proposal,
                 contract=compilation,
@@ -760,7 +1228,10 @@ def build_missing_primitives(
                 exit_code=None,
                 timed_out=True,
                 duration_seconds=duration_seconds,
+                builder_self_check=parsed_self_check,
             )
+            if out is not None and usage_payload is not None:
+                out["usage"] = usage_payload
             if out is None:
                 out = {
                     "status": "error",
@@ -772,13 +1243,40 @@ def build_missing_primitives(
                     "exit_code": None,
                     "duration_seconds": round(duration_seconds, 3),
                 }
+                if usage_payload is not None:
+                    out["usage"] = usage_payload
+                out = _result_with_builder_envelope(
+                    out,
+                    task=builder_task,
+                    phase="builder_timeout",
+                    self_check=parsed_self_check,
+                )
+            else:
+                out = _ensure_builder_envelope(
+                    out,
+                    task=builder_task,
+                    phase="completed" if out.get("status") != "error" else "builder_timeout",
+                    self_check=parsed_self_check,
+                )
         else:
             stdout_log = proc.stdout or ""
             stderr_log = proc.stderr or ""
             proc_output = stdout_log + stderr_log
+            usage_payload = _emit_builder_usage(
+                thesis_id=thesis_id,
+                attempt_number=attempt_index + 1,
+                usage_result=_extract_codex_cli_usage(stdout_log),
+            )
+            output_text = (
+                output_path.read_text() if output_path is not None and output_path.exists() else ""
+            )
+            parsed_self_check = _extract_builder_self_check(
+                "\n".join(part for part in (output_text, stdout_log, stderr_log) if part)
+            )
             generated = config_path if config_abspath.exists() else None
             if generated:
                 out = _validated_generated_config_result(
+                    task=builder_task,
                     root=root,
                     thesis=proposal,
                     contract=compilation,
@@ -789,8 +1287,17 @@ def build_missing_primitives(
                     exit_code=proc.returncode,
                     timed_out=False,
                     duration_seconds=time.monotonic() - started_at,
+                    builder_self_check=parsed_self_check,
                 )
                 assert out is not None
+                if usage_payload is not None:
+                    out["usage"] = usage_payload
+                out = _ensure_builder_envelope(
+                    out,
+                    task=builder_task,
+                    phase="completed" if out.get("status") != "error" else "validation_failed",
+                    self_check=parsed_self_check,
+                )
             else:
                 out = {
                     "status": "error",
@@ -802,7 +1309,26 @@ def build_missing_primitives(
                     "timed_out": False,
                     "duration_seconds": round(time.monotonic() - started_at, 3),
                 }
+                if usage_payload is not None:
+                    out["usage"] = usage_payload
+                out = _result_with_builder_envelope(
+                    out,
+                    task=builder_task,
+                    phase="missing_generated_config",
+                    self_check=parsed_self_check,
+                )
         out["builder_attempts"] = attempt_index + 1
+        out["builder_task"] = asdict(builder_task)
+        _write_builder_attempt_artifacts(
+            artifact_dir=_builder_attempt_artifact_dir(attempt_dir, attempt_index + 1),
+            prompt=attempt_prompt,
+            command=builder_cmd,
+            cwd=root,
+            timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+            result=out,
+            stdout=stdout_log,
+            stderr=stderr_log,
+        )
         if out["status"] != "error" or not _should_retry_builder_result(out):
             break
     assert out is not None

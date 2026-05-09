@@ -38,6 +38,25 @@ class Disqualifier(BaseModel):
     severity: Literal["hard_fail", "soft_fail"] = "hard_fail"
 
 
+class DiagnosticRequirementSpec(BaseModel):
+    """Executable diagnostic contract for builder + verifier.
+
+    `required_diagnostics` remains as human-facing prose/rationale.
+    This structured form is the canonical machine contract.
+    """
+
+    key: str
+    surface: Literal[
+        "any",
+        "metrics",
+        "strategy_diagnostics",
+        "experiment_evaluation",
+    ] = "any"
+    payload_fields: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
 EMERGENT_MECHANISM_DIMENSION = "emergent"
 
 # Stable built-in mechanism dimensions for thesis classification.
@@ -100,6 +119,7 @@ class ResearchThesis(BaseModel):
     expected_effects: list[ExpectedEffect] = Field(default_factory=list)
     disqualifiers: list[Disqualifier] = Field(default_factory=list)
     required_diagnostics: list[str] = Field(default_factory=list)
+    required_diagnostic_specs: list[DiagnosticRequirementSpec] = Field(default_factory=list)
 
     requires_code_change: bool = False
     requested_primitives: list[str] = Field(default_factory=list)
@@ -129,6 +149,7 @@ class ExperimentContract(BaseModel):
     expected_effects: list[ExpectedEffect] = Field(default_factory=list)
     disqualifiers: list[Disqualifier] = Field(default_factory=list)
     required_diagnostics: list[str] = Field(default_factory=list)
+    required_diagnostic_specs: list[DiagnosticRequirementSpec] = Field(default_factory=list)
     missing_primitives: list[str] = Field(default_factory=list)
 
     status: Literal["ready_to_run", "needs_code", "rejected_at_compile"] = "ready_to_run"
@@ -145,5 +166,7 @@ class ExperimentVerdict(BaseModel):
     passed_effects: list[str] = Field(default_factory=list)
     failed_effects: list[str] = Field(default_factory=list)
     triggered_disqualifiers: list[str] = Field(default_factory=list)
+    unparsed_disqualifiers: list[str] = Field(default_factory=list)
+    missing_required_diagnostics: list[str] = Field(default_factory=list)
 
     summary: str = ""

@@ -39,6 +39,26 @@ RESEARCH_RETRY_BUILDER_ERROR_CODES = frozenset(
 )
 
 
+def _builder_result_context(builder_result: dict[str, Any]) -> dict[str, Any]:
+    context: dict[str, Any] = {}
+    for key in (
+        "builder_task",
+        "builder_phase",
+        "builder_self_check",
+        "builder_attempts",
+        "implementation_verification_passed",
+        "implementation_verification_failures",
+        "error_code",
+        "generated_config",
+        "status",
+        "validation_passed",
+        "usage",
+    ):
+        if key in builder_result:
+            context[key] = builder_result[key]
+    return context
+
+
 def _activate_builder_config(
     controller: "AutoresearchController",
     state: dict[str, Any],
@@ -49,9 +69,22 @@ def _activate_builder_config(
 ) -> dict[str, Any]:
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
+    state["activity"] = {
+        "type": "experiment",
+        "phase": "pending_backtest",
+        "round": research_round,
+        "config": generated_config,
+        "thesis_id": thesis_id,
+        "source": "builder",
+    }
     if research_round is not None:
         state["research_round"] = research_round
-    state["current_thesis"] = {"config": generated_config, "status": "ready_to_run"}
+    state["current_thesis"] = {
+        "config": generated_config,
+        "status": "ready_to_run",
+        "thesis_id": thesis_id,
+        "source": "builder",
+    }
     state["next_action"] = {
         "type": "run_experiment",
         "config": generated_config,
@@ -71,10 +104,11 @@ def _activate_builder_config(
         try:
             loaded = json.loads(thesis_path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
-            _log.warning("thesis.json unreadable for %s: %s", thesis_id, exc)
-            loaded = {}
+            raise RuntimeError(f"thesis.json unreadable for {thesis_id}: {exc}") from exc
         if isinstance(loaded, dict):
             thesis_payload = loaded
+        else:
+            raise RuntimeError(f"thesis.json is not an object for {thesis_id}")
     controller.ctx.current_contract = SimpleNamespace(
         experiment_id=thesis_id,
         strategy_family=controller.family.name,
@@ -101,6 +135,17 @@ def _mark_builder_heartbeat_finished(
     heartbeat["builder_finished_at"] = iso8601_utc_now()
 
 
+def _attach_builder_runtime_context(
+    state: dict[str, Any],
+    builder_result: dict[str, Any],
+) -> None:
+    context = _builder_result_context(builder_result)
+    if not context:
+        return
+    heartbeat = state.setdefault("heartbeat", {})
+    heartbeat["builder_result_context"] = context
+
+
 def _mark_builder_manual_review(
     controller: "AutoresearchController",
     state: dict[str, Any],
@@ -113,6 +158,7 @@ def _mark_builder_manual_review(
     error_code = str(builder_result.get("error_code") or "")
     if error_code in RESEARCH_RETRY_BUILDER_ERROR_CODES:
         state["state"] = "blocked"
+        state.pop("activity", None)
         if research_round is not None:
             state["research_round"] = research_round
         controller.clear_terminal_metadata(state)
@@ -129,6 +175,7 @@ def _mark_builder_manual_review(
                 "kind": "research_retry_required",
                 "detail": reason,
                 "error_code": error_code,
+                "builder_context": _builder_result_context(builder_result),
             }
         ]
         state["next_action"] = {
@@ -139,10 +186,12 @@ def _mark_builder_manual_review(
             "artifact_dir": controller.family.research_dirname,
             "failed_thesis_id": thesis_id,
             "error_code": error_code,
+            "builder_context": _builder_result_context(builder_result),
         }
         heartbeat = state.setdefault("heartbeat", {})
         raw_builder_status = str(builder_result.get("status") or "error")
         _mark_builder_heartbeat_finished(state, thesis_id, "research_retry_required")
+        _attach_builder_runtime_context(state, builder_result)
         heartbeat["blocked_thesis"] = thesis_id
         heartbeat["blocked_builder_status"] = "research_retry_required"
         heartbeat["blocked_builder_result_status"] = raw_builder_status
@@ -162,11 +211,13 @@ def _mark_builder_manual_review(
                 ),
                 "thesis": thesis,
                 "builder_result": builder_result,
+                "builder_context": _builder_result_context(builder_result),
                 "timestamp": iso8601_utc_now(),
             }
         )
         state["builder_failed_theses"] = builder_failed
         state["state"] = "blocked"
+        state.pop("activity", None)
         if research_round is not None:
             state["research_round"] = research_round
         controller.clear_terminal_metadata(state)
@@ -176,6 +227,7 @@ def _mark_builder_manual_review(
                 "kind": "builder_failed",
                 "detail": reason,
                 "error_code": error_code,
+                "builder_context": _builder_result_context(builder_result),
             }
         ]
         state["next_action"] = {
@@ -184,10 +236,12 @@ def _mark_builder_manual_review(
             "error_code": error_code,
             "requires_subagent": True,
             "artifact_dir": f"{controller.family.name}-builder-failed",
+            "builder_context": _builder_result_context(builder_result),
         }
         heartbeat = state.setdefault("heartbeat", {})
         raw_builder_status = str(builder_result.get("status") or "error")
         _mark_builder_heartbeat_finished(state, thesis_id, "builder_failed")
+        _attach_builder_runtime_context(state, builder_result)
         heartbeat["blocked_thesis"] = thesis_id
         heartbeat["blocked_builder_status"] = "builder_failed"
         heartbeat["blocked_builder_result_status"] = raw_builder_status
@@ -204,11 +258,13 @@ def _mark_builder_manual_review(
             "round": research_round if research_round is not None else state.get("research_round"),
             "thesis": thesis,
             "builder_result": builder_result,
+            "builder_context": _builder_result_context(builder_result),
             "timestamp": iso8601_utc_now(),
         }
     )
     state["manual_review_theses"] = manual_review
     state["state"] = "blocked"
+    state.pop("activity", None)
     if research_round is not None:
         state["research_round"] = research_round
     controller.clear_terminal_metadata(state)
@@ -216,6 +272,7 @@ def _mark_builder_manual_review(
         {
             "kind": "manual_review",
             "detail": f"Builder failed for {thesis_id}; thesis marked manual_review for operator follow-up.",
+            "builder_context": _builder_result_context(builder_result),
         }
     ]
     state["next_action"] = {
@@ -223,10 +280,12 @@ def _mark_builder_manual_review(
         "reason": f"Builder failed for {thesis_id}; operator review required.",
         "requires_subagent": False,
         "artifact_dir": f"{controller.family.name}-manual-review",
+        "builder_context": _builder_result_context(builder_result),
     }
     heartbeat = state.setdefault("heartbeat", {})
     raw_builder_status = str(builder_result.get("status") or "error")
     _mark_builder_heartbeat_finished(state, thesis_id, "manual_review")
+    _attach_builder_runtime_context(state, builder_result)
     heartbeat["blocked_thesis"] = thesis_id
     heartbeat["blocked_builder_status"] = "manual_review"
     heartbeat["blocked_builder_result_status"] = raw_builder_status
@@ -245,6 +304,12 @@ def _mark_builder_running(
 ) -> dict[str, Any]:
     state["state"] = "building"
     controller.clear_terminal_metadata(state)
+    state["activity"] = {
+        "type": "builder",
+        "phase": "builder_running",
+        "round": research_round,
+        "thesis_id": thesis_id,
+    }
     if research_round is not None:
         state["research_round"] = research_round
     state["current_thesis"] = {"thesis_id": thesis_id, "status": "builder_running"}
@@ -431,13 +496,33 @@ def build_missing_primitives_for_state(
         generated_config = builder_result.get("generated_config")
         if generated_config and (controller.root / generated_config).exists():
             _mark_builder_heartbeat_finished(state, thesis_id, "completed")
-            state = _activate_builder_config(
-                controller,
-                state,
-                thesis_id,
-                generated_config,
-                research_round=research_round,
-            )
+            _attach_builder_runtime_context(state, builder_result)
+            try:
+                state = _activate_builder_config(
+                    controller,
+                    state,
+                    thesis_id,
+                    generated_config,
+                    research_round=research_round,
+                )
+            except Exception as exc:  # noqa: BLE001
+                builder_result = {
+                    **builder_result,
+                    "status": "error",
+                    "error_code": "builder_activation_failed",
+                    "reason": f"failed to activate builder config for {thesis_id}: {exc}",
+                    "validation_passed": False,
+                }
+                state = _mark_builder_manual_review(
+                    controller,
+                    state,
+                    thesis_id,
+                    thesis,
+                    builder_result,
+                    research_round=research_round,
+                )
+                trace("LOOP", f"builder activation failed thesis={thesis_id}: {exc}")
+                return state
             trace("LOOP", f"builder generated thesis={thesis_id} -> {generated_config}")
             return state
     state = _mark_builder_manual_review(
@@ -497,11 +582,40 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         "expected_effects": resumed_thesis.get("expected_effects", []),
         "disqualifiers": resumed_thesis.get("disqualifiers", []),
         "required_diagnostics": resumed_thesis.get("required_diagnostics", []),
+        "required_diagnostic_specs": resumed_thesis.get("required_diagnostic_specs", []),
     }
     _write_text_atomic(
         exp_dir / "thesis.json",
         json.dumps(thesis_sidecar, indent=2) + "\n",
     )
+    try:
+        from diagnostic_contracts import build_required_diagnostic_specs
+        from research_types import ExperimentContract
+
+        contract = ExperimentContract(
+            experiment_id=halted_id,
+            thesis_id=thesis_sidecar["thesis_id"],
+            strategy_family=controller.family.name,
+            baseline_config_path=f"configs/{controller.family.base_config_filename}",
+            runtime_config=runtime,
+            hypothesis=thesis_sidecar["hypothesis"],
+            mechanism=thesis_sidecar["mechanism"],
+            expected_effects=resumed_thesis.get("expected_effects", []),
+            disqualifiers=resumed_thesis.get("disqualifiers", []),
+            required_diagnostics=thesis_sidecar["required_diagnostics"],
+            required_diagnostic_specs=build_required_diagnostic_specs(
+                thesis_sidecar["required_diagnostics"],
+                thesis_sidecar["required_diagnostic_specs"],
+            ),
+            missing_primitives=[],
+            status="ready_to_run",
+        )
+        _write_text_atomic(
+            exp_dir / "contract.json",
+            contract.model_dump_json(indent=2) + "\n",
+        )
+    except Exception as exc:
+        _log.warning("failed to refresh contract.json for resumed thesis %s: %s", halted_id, exc)
     controller.ctx.current_contract = SimpleNamespace(
         experiment_id=halted_id,
         strategy_family=controller.family.name,
@@ -512,6 +626,7 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         expected_effects=thesis_sidecar["expected_effects"],
         disqualifiers=thesis_sidecar["disqualifiers"],
         required_diagnostics=thesis_sidecar["required_diagnostics"],
+        required_diagnostic_specs=thesis_sidecar["required_diagnostic_specs"],
     )
     controller.ctx.parent_experiment_id = ""
     state["state"] = "running"

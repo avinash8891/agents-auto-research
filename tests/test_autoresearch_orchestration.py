@@ -125,6 +125,23 @@ def test_try_resume_happy_path_writes_config_and_thesis_files(tmp_path, monkeypa
         "config_changes": {"entry_cutoff_time": "09:35"},
         "expected_effects": [],
         "disqualifiers": [],
+        "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
+        "required_diagnostic_specs": [
+            {
+                "key": "max_drawdown_and_pct_profitable_windows_vs_base",
+                "surface": "experiment_evaluation",
+                "payload_fields": [
+                    "candidate_max_drawdown",
+                    "base_max_drawdown",
+                    "delta_max_drawdown",
+                    "candidate_pct_profitable_windows",
+                    "base_pct_profitable_windows",
+                    "delta_pct_profitable_windows",
+                ],
+                "aliases": [],
+                "description": "baseline comparison diagnostic",
+            }
+        ],
     }
     state = {
         "halted_thesis_id": "entry_window_test",
@@ -165,6 +182,18 @@ def test_try_resume_happy_path_writes_config_and_thesis_files(tmp_path, monkeypa
     sidecar = json.loads(thesis_path.read_text())
     assert sidecar["thesis_id"] == "entry_window_test"
     assert sidecar["strategy_family"] == "ema"
+
+    contract_path = tmp_path / "experiments" / "entry_window_test" / "contract.json"
+    assert contract_path.exists()
+    contract = json.loads(contract_path.read_text())
+    assert contract["status"] == "ready_to_run"
+    assert contract["runtime_config"] == validated_runtime
+    assert contract["required_diagnostic_specs"][0]["key"] == (
+        "max_drawdown_and_pct_profitable_windows_vs_base"
+    )
+    assert ctrl.ctx.current_contract.required_diagnostic_specs[0]["key"] == (
+        "max_drawdown_and_pct_profitable_windows_vs_base"
+    )
 
     # controller.write_state called
     assert len(written_states) == 1
@@ -224,6 +253,12 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
         assert written_states
         active = written_states[-1]
         assert active["state"] == "building"
+        assert active["activity"] == {
+            "type": "builder",
+            "phase": "builder_running",
+            "round": 36,
+            "thesis_id": thesis_id,
+        }
         assert active["next_action"]["type"] == "builder_running"
         assert active["next_action"]["builder_thesis_id"] == thesis_id
         assert active["heartbeat"]["builder_status"] == "running"
@@ -238,6 +273,10 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
             "status": "completed",
             "generated_config": f"experiments/{thesis_id}/runtime_config.json",
             "validation_passed": True,
+            "builder_phase": "completed",
+            "builder_task": {"thesis_id": thesis_id, "family_name": "ema"},
+            "builder_self_check": {"mechanism_implemented": True},
+            "usage": {"input_tokens": 17, "output_tokens": 5, "total_tokens": 22},
         }
 
     monkeypatch.setattr("compiler_pipeline.build_missing_primitives", fake_build)
@@ -251,8 +290,19 @@ def test_build_missing_primitives_persists_builder_running_state_before_cli(tmp_
     )
 
     assert result["state"] == "running"
+    assert result["activity"] == {
+        "type": "experiment",
+        "phase": "pending_backtest",
+        "round": 36,
+        "config": f"experiments/{thesis_id}/runtime_config.json",
+        "thesis_id": thesis_id,
+        "source": "builder",
+    }
     assert result["next_action"]["type"] == "run_experiment"
     assert result["heartbeat"]["builder_status"] == "completed"
+    assert result["heartbeat"]["builder_result_context"]["builder_phase"] == "completed"
+    assert result["heartbeat"]["builder_result_context"]["builder_task"]["thesis_id"] == thesis_id
+    assert result["heartbeat"]["builder_result_context"]["usage"]["total_tokens"] == 22
     assert "builder_finished_at" in result["heartbeat"]
     assert written_states[0]["state"] == "building"
     assert written_states[-1]["state"] == "running"
@@ -291,9 +341,11 @@ def test_build_missing_primitives_routes_import_failure_to_manual_review(tmp_pat
     assert result["state"] == "blocked"
     assert result["next_action"]["type"] == "manual_review"
     assert result["heartbeat"]["builder_status"] == "manual_review"
+    assert "activity" not in result
     assert "builder_finished_at" in result["heartbeat"]
     assert result["heartbeat"]["blocked_builder_status"] == "manual_review"
     assert result["heartbeat"]["blocked_builder_result_status"] == "error"
+    assert "builder_context" in result["manual_review_theses"][-1]
     assert (
         "ImportError: compiler import boom"
         in result["manual_review_theses"][-1]["builder_result"]["reason"]
@@ -321,6 +373,9 @@ def test_build_missing_primitives_does_not_mark_invalid_completed_builder_as_com
             "status": "completed",
             "generated_config": f"experiments/{thesis_id}/missing_config.json",
             "validation_passed": False,
+            "builder_phase": "completed",
+            "builder_task": {"thesis_id": thesis_id},
+            "builder_self_check": {"mechanism_implemented": False},
         }
 
     monkeypatch.setattr("compiler_pipeline.build_missing_primitives", fake_build)
@@ -338,6 +393,7 @@ def test_build_missing_primitives_does_not_mark_invalid_completed_builder_as_com
     assert result["heartbeat"]["builder_status"] == "manual_review"
     assert result["heartbeat"]["blocked_builder_status"] == "manual_review"
     assert result["heartbeat"]["blocked_builder_result_status"] == "completed"
+    assert result["next_action"]["builder_context"]["builder_phase"] == "completed"
 
 
 def test_build_missing_primitives_routes_missing_primitive_contract_to_research_retry(
@@ -360,6 +416,9 @@ def test_build_missing_primitives_routes_missing_primitive_contract_to_research_
             "status": "error",
             "error_code": "builder_missing_primitive_contract",
             "reason": "Missing primitives: []",
+            "builder_phase": "preflight_failed",
+            "builder_task": {"thesis_id": thesis_id},
+            "builder_self_check": {"mechanism_implemented": False},
         }
 
     monkeypatch.setattr("compiler_pipeline.build_missing_primitives", fake_build)
@@ -378,6 +437,7 @@ def test_build_missing_primitives_routes_missing_primitive_contract_to_research_
     assert result["blockers"][0]["kind"] == "research_retry_required"
     assert result["heartbeat"]["builder_status"] == "research_retry_required"
     assert result["heartbeat"]["blocked_error_code"] == "builder_missing_primitive_contract"
+    assert result["next_action"]["builder_context"]["builder_phase"] == "preflight_failed"
 
 
 def test_refresh_reflexio_export_after_builder_adds_builder_reflection(tmp_path):

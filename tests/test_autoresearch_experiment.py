@@ -390,6 +390,64 @@ def test_evaluate_effect_returns_none_when_metric_is_missing() -> None:
     assert evaluate_effect(effect, {"profit_factor": 1.0}, {}) is None
 
 
+def test_evaluate_experiment_marks_missing_required_diagnostics_inconclusive() -> None:
+    from experiment_evaluator import evaluate_experiment
+    from research_types import ResearchThesis
+
+    thesis = ResearchThesis(
+        thesis_id="diag-gap",
+        strategy_family="ema",
+        hypothesis="Need diagnostic output to validate mechanism",
+        mechanism="Compare baseline-relative behavior",
+        required_diagnostics=["Max_drawdown and pct_profitable_windows vs base"],
+    )
+
+    verdict = evaluate_experiment(
+        thesis=thesis,
+        baseline_metrics={"profit_factor": 1.0},
+        candidate_metrics={"profit_factor": 1.2},
+        experiment_id="exp-1",
+        strategy_diagnostics={},
+    )
+
+    assert verdict.status == "inconclusive"
+    assert verdict.missing_required_diagnostics == [
+        "max_drawdown_and_pct_profitable_windows_vs_base"
+    ]
+    assert "Missing required diagnostics" in verdict.summary
+
+
+def test_evaluate_experiment_marks_unparsed_disqualifier_inconclusive() -> None:
+    from experiment_evaluator import evaluate_experiment
+    from research_types import ResearchThesis
+
+    thesis = ResearchThesis(
+        thesis_id="dq-gap",
+        strategy_family="ema",
+        hypothesis="Reject if PF falls under 1.0",
+        mechanism="guard against weak candidate quality",
+        disqualifiers=[
+            {
+                "name": "profit_factor_under_one",
+                "condition": "profit factor falls under 1.0",
+                "severity": "hard_fail",
+            }
+        ],
+    )
+
+    verdict = evaluate_experiment(
+        thesis=thesis,
+        baseline_metrics={"profit_factor": 1.5},
+        candidate_metrics={"profit_factor": 0.8},
+        experiment_id="exp-2",
+        strategy_diagnostics={},
+    )
+
+    assert verdict.status == "inconclusive"
+    assert verdict.unparsed_disqualifiers == ["profit_factor_under_one"]
+    assert "Unparsed disqualifiers" in verdict.summary
+
+
 def test_evaluate_metric_uses_sqlite_experiment_db(tmp_path: Path) -> None:
     db = ExperimentDB(tmp_path / "experiments.db")
     db.init_session(name="ema", metric_name="median_expectancy", direction="higher")
@@ -1442,6 +1500,240 @@ def test_evaluate_against_thesis_raises_deterministic_evaluator_errors(monkeypat
             "keep",
             {"trade_count": 1},
         )
+
+
+def test_evaluate_against_thesis_enriches_registered_baseline_comparison_diagnostic(
+    monkeypatch,
+) -> None:
+    class _Contract:
+        thesis_id = "t1"
+        strategy_family = "ema"
+        hypothesis = "h"
+        mechanism = "m"
+        expected_effects = []
+        disqualifiers = []
+        required_diagnostics = ["Max_drawdown and pct_profitable_windows vs base"]
+        required_diagnostic_specs = []
+        experiment_id = "exp-1"
+
+    class _Result:
+        def __init__(self) -> None:
+            self.asi = {
+                "trade_analysis": {
+                    "trade_count": 10,
+                    "profit_factor": 2.0,
+                    "max_drawdown": 0.22,
+                    "pct_profitable_windows": 0.55,
+                    "avg_sharpe_across_windows": 0.7,
+                    "median_expectancy": 0.01,
+                }
+            }
+
+    class _Controller:
+        root = Path(".")
+
+        def read_results(self):
+            return [_Result()]
+
+        def primary_metric_name(self):
+            return "profit_factor"
+
+    captured: dict[str, object] = {}
+
+    class _Verdict:
+        status = "accepted"
+        passed_effects: list[str] = []
+        failed_effects: list[str] = []
+        triggered_disqualifiers: list[str] = []
+        summary = "ok"
+
+        def model_dump_json(self, indent=2):
+            return "{}"
+
+    monkeypatch.setattr(
+        experiment_mod,
+        "_persist_verdict",
+        lambda controller, contract, verdict: None,
+    )
+
+    def fake_evaluate_experiment(**kwargs):
+        captured.update(kwargs)
+        return _Verdict()
+
+    monkeypatch.setattr("experiment_evaluator.evaluate_experiment", fake_evaluate_experiment)
+
+    details = {
+        "trade_count": 9,
+        "profit_factor": 2.4,
+        "max_drawdown": 0.18,
+        "pct_profitable_windows": 0.61,
+        "strategy_diagnostics": {},
+    }
+    verdict, decision = _evaluate_against_thesis(_Controller(), _Contract(), 2.4, "keep", details)
+
+    assert verdict.status == "accepted"
+    assert decision == "keep"
+    strategy_diagnostics = captured["strategy_diagnostics"]
+    assert strategy_diagnostics["max_drawdown_and_pct_profitable_windows_vs_base"] == {
+        "candidate_max_drawdown": 0.18,
+        "base_max_drawdown": 0.22,
+        "delta_max_drawdown": -0.04,
+        "candidate_pct_profitable_windows": 0.61,
+        "base_pct_profitable_windows": 0.55,
+        "delta_pct_profitable_windows": 0.06,
+    }
+
+
+def test_evaluate_against_thesis_uses_latest_baseline_checkpoint_metrics(monkeypatch) -> None:
+    class _Checkpoint:
+        metrics = {
+            "trade_count": 12,
+            "profit_factor": 1.7,
+            "max_drawdown": 0.25,
+            "pct_profitable_windows": 0.52,
+        }
+
+    class _Contract:
+        thesis_id = "t1"
+        strategy_family = "ema"
+        hypothesis = "h"
+        mechanism = "m"
+        expected_effects = []
+        disqualifiers = []
+        required_diagnostics = ["Max_drawdown and pct_profitable_windows vs base"]
+        required_diagnostic_specs = []
+        experiment_id = "exp-1"
+
+    class _Controller:
+        root = Path(".")
+        baseline_tracker = SimpleNamespace(latest=lambda: _Checkpoint())
+
+        def read_results(self):
+            raise AssertionError("results fallback should not be used when a checkpoint exists")
+
+        def primary_metric_name(self):
+            return "profit_factor"
+
+    captured: dict[str, object] = {}
+
+    class _Verdict:
+        status = "accepted"
+        passed_effects: list[str] = []
+        failed_effects: list[str] = []
+        triggered_disqualifiers: list[str] = []
+        unparsed_disqualifiers: list[str] = []
+        missing_required_diagnostics: list[str] = []
+        summary = "ok"
+
+        def model_dump_json(self, indent=2):
+            return "{}"
+
+    monkeypatch.setattr(
+        experiment_mod, "_persist_verdict", lambda controller, contract, verdict: None
+    )
+
+    def fake_evaluate_experiment(**kwargs):
+        captured.update(kwargs)
+        return _Verdict()
+
+    monkeypatch.setattr("experiment_evaluator.evaluate_experiment", fake_evaluate_experiment)
+
+    details = {
+        "trade_count": 9,
+        "profit_factor": 2.4,
+        "max_drawdown": 0.18,
+        "pct_profitable_windows": 0.61,
+        "strategy_diagnostics": {},
+    }
+    verdict, decision = _evaluate_against_thesis(_Controller(), _Contract(), 2.4, "keep", details)
+
+    assert verdict.status == "accepted"
+    assert decision == "keep"
+    strategy_diagnostics = captured["strategy_diagnostics"]
+    assert strategy_diagnostics["max_drawdown_and_pct_profitable_windows_vs_base"] == {
+        "candidate_max_drawdown": 0.18,
+        "base_max_drawdown": 0.25,
+        "delta_max_drawdown": -0.07,
+        "candidate_pct_profitable_windows": 0.61,
+        "base_pct_profitable_windows": 0.52,
+        "delta_pct_profitable_windows": 0.09,
+    }
+
+
+def test_evaluate_against_thesis_surfaces_missing_inputs_for_registered_diagnostic(
+    monkeypatch,
+) -> None:
+    class _Contract:
+        thesis_id = "t1"
+        strategy_family = "ema"
+        hypothesis = "h"
+        mechanism = "m"
+        expected_effects = []
+        disqualifiers = []
+        required_diagnostics = ["Max_drawdown and pct_profitable_windows vs base"]
+        required_diagnostic_specs = []
+        experiment_id = "exp-1"
+
+    class _Result:
+        def __init__(self) -> None:
+            self.asi = {
+                "trade_analysis": {
+                    "trade_count": 10,
+                    "profit_factor": 2.0,
+                    "max_drawdown": 0.22,
+                }
+            }
+
+    class _Controller:
+        root = Path(".")
+        baseline_tracker = SimpleNamespace(latest=lambda: None)
+
+        def read_results(self):
+            return [_Result()]
+
+        def primary_metric_name(self):
+            return "profit_factor"
+
+    captured: dict[str, object] = {}
+
+    class _Verdict:
+        status = "accepted"
+        passed_effects: list[str] = []
+        failed_effects: list[str] = []
+        triggered_disqualifiers: list[str] = []
+        unparsed_disqualifiers: list[str] = []
+        missing_required_diagnostics: list[str] = []
+        summary = "ok"
+
+        def model_dump_json(self, indent=2):
+            return "{}"
+
+    monkeypatch.setattr(
+        experiment_mod, "_persist_verdict", lambda controller, contract, verdict: None
+    )
+
+    def fake_evaluate_experiment(**kwargs):
+        captured.update(kwargs)
+        return _Verdict()
+
+    monkeypatch.setattr("experiment_evaluator.evaluate_experiment", fake_evaluate_experiment)
+
+    details = {
+        "trade_count": 9,
+        "profit_factor": 2.4,
+        "max_drawdown": 0.18,
+        "strategy_diagnostics": {},
+    }
+    verdict, _decision = _evaluate_against_thesis(_Controller(), _Contract(), 2.4, "keep", details)
+
+    assert verdict.status == "accepted"
+    strategy_diagnostics = captured["strategy_diagnostics"]
+    assert strategy_diagnostics["max_drawdown_and_pct_profitable_windows_vs_base"] == {
+        "missing_inputs": [
+            "base_pct_profitable_windows",
+            "candidate_pct_profitable_windows",
+        ]
+    }
 
 
 def test_write_run_artifacts_leaves_no_tmp_artifacts(tmp_path: Path) -> None:

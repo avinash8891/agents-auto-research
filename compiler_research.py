@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import yaml
 
 from config_hash import _config_hash
+from diagnostic_contracts import build_required_diagnostic_specs
 from persistence_utils import write_text_atomic
 from research_types import ExperimentContract
 from strategies import STRATEGIES
@@ -71,6 +72,10 @@ def _needs_code_contract(
         expected_effects=thesis.expected_effects,
         disqualifiers=thesis.disqualifiers,
         required_diagnostics=thesis.required_diagnostics,
+        required_diagnostic_specs=build_required_diagnostic_specs(
+            thesis.required_diagnostics,
+            thesis.required_diagnostic_specs,
+        ),
         missing_primitives=thesis.requested_primitives,
         status=status,
     )
@@ -107,6 +112,10 @@ def _compile_runtime_config_contract(
         expected_effects=thesis.expected_effects,
         disqualifiers=thesis.disqualifiers,
         required_diagnostics=thesis.required_diagnostics,
+        required_diagnostic_specs=build_required_diagnostic_specs(
+            thesis.required_diagnostics,
+            thesis.required_diagnostic_specs,
+        ),
         missing_primitives=[],
         status="ready_to_run",
     )
@@ -161,6 +170,10 @@ def compile_research_thesis(
     The experiment_id is a content hash of the runtime config.
     """
     family_name = thesis.strategy_family
+    if not thesis.required_diagnostic_specs:
+        thesis.required_diagnostic_specs = build_required_diagnostic_specs(
+            thesis.required_diagnostics
+        )
 
     if thesis.requires_code_change:
         return _needs_code_contract(thesis, root, artifact_root=artifact_root)

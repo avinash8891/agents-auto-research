@@ -216,6 +216,15 @@ def test_log_research_round_persists_full_thesis_details_to_attempt(tmp_path: Pa
         "why_not_overfit": "market microstructure mechanism",
         "requires_code_change": True,
         "required_diagnostics": ["margin_per_order"],
+        "required_diagnostic_specs": [
+            {
+                "key": "margin_per_order",
+                "surface": "strategy_diagnostics",
+                "payload_fields": [],
+                "aliases": [],
+                "description": "per-order margin diagnostic",
+            }
+        ],
         "new_dimension_name": "liquidity_decay",
         "why_existing_dimensions_do_not_fit": (
             "This studies edge decay after recent activity, not entry timing alone."
