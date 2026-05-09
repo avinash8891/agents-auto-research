@@ -1,0 +1,10 @@
+Read the following files and return their FULL contents. Do not summarize or truncate. Return each file's complete content with its filename as a header.
+
+1. compiler_builder.py
+2. compiler_implementation_verify.py
+3. compiler_research.py
+4. compiler_operationalize.py
+5. autoresearch_orchestration.py
+6. autoresearch_research.py
+7. autoresearch_experiment.py
+8. research_types.py
