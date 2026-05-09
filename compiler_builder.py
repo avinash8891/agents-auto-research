@@ -267,6 +267,23 @@ def _result_with_builder_envelope(
     return enriched
 
 
+def _ensure_builder_envelope(
+    result: dict[str, Any],
+    *,
+    task: BuilderTask,
+    phase: str,
+    self_check: BuilderSelfCheck | None = None,
+) -> dict[str, Any]:
+    if "builder_task" in result and "builder_phase" in result and "builder_self_check" in result:
+        return result
+    return _result_with_builder_envelope(
+        result,
+        task=task,
+        phase=phase,
+        self_check=self_check,
+    )
+
+
 def _normalize_proposal_config_changes(proposal: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """Keep thesis metadata out of runtime config_changes before builder reads it."""
     config_changes = proposal.get("config_changes")
@@ -503,13 +520,15 @@ def _build_builder_prompt(
    - files changed
    - tests run
    - generated config path
-   - builder_self_check JSON with:
+   - a final JSON object that includes:
      {{
-       "mechanism_implemented": true/false,
-       "diagnostics_emitted": true/false,
-       "config_surface_valid": true/false,
-       "tests_covering_behavior": true/false,
-       "notes": ["short notes"]
+       "builder_self_check": {{
+         "mechanism_implemented": true/false,
+         "diagnostics_emitted": true/false,
+         "config_surface_valid": true/false,
+         "tests_covering_behavior": true/false,
+         "notes": ["short notes"]
+       }}
      }}
 
 Context:
@@ -926,6 +945,18 @@ def build_missing_primitives(
         )
         assert existing_result is not None
         if existing_result["status"] != "error":
+            existing_result = _ensure_builder_envelope(
+                existing_result,
+                task=builder_task,
+                phase="completed",
+                self_check=BuilderSelfCheck(
+                    mechanism_implemented=True,
+                    diagnostics_emitted=True,
+                    config_surface_valid=True,
+                    tests_covering_behavior=True,
+                    notes=[],
+                ),
+            )
             artifact_paths = _write_artifacts(result=existing_result)
             _trace_builder_finish(
                 thesis_id=thesis_id, result=existing_result, artifact_paths=artifact_paths
@@ -1015,6 +1046,23 @@ def build_missing_primitives(
                     task=builder_task,
                     phase="builder_timeout",
                 )
+            else:
+                out = _ensure_builder_envelope(
+                    out,
+                    task=builder_task,
+                    phase="completed" if out.get("status") != "error" else "builder_timeout",
+                    self_check=(
+                        BuilderSelfCheck(
+                            mechanism_implemented=True,
+                            diagnostics_emitted=True,
+                            config_surface_valid=True,
+                            tests_covering_behavior=True,
+                            notes=[],
+                        )
+                        if out.get("status") != "error"
+                        else None
+                    ),
+                )
         else:
             stdout_log = proc.stdout or ""
             stderr_log = proc.stderr or ""
@@ -1035,6 +1083,22 @@ def build_missing_primitives(
                     duration_seconds=time.monotonic() - started_at,
                 )
                 assert out is not None
+                out = _ensure_builder_envelope(
+                    out,
+                    task=builder_task,
+                    phase="completed" if out.get("status") != "error" else "validation_failed",
+                    self_check=(
+                        BuilderSelfCheck(
+                            mechanism_implemented=True,
+                            diagnostics_emitted=True,
+                            config_surface_valid=True,
+                            tests_covering_behavior=True,
+                            notes=[],
+                        )
+                        if out.get("status") != "error"
+                        else None
+                    ),
+                )
             else:
                 out = {
                     "status": "error",

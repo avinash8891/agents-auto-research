@@ -70,3 +70,7 @@
   - Do not propose broad rewrites unless necessary.
   - Be skeptical of any logic that treats source-text presence as proof of behavior.
   - Treat builder as codegen under weak contracts and look for ways the system can be fooled.
+
+---
+
+where is the report?

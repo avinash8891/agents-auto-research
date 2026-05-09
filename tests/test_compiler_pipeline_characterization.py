@@ -554,13 +554,14 @@ def test_build_missing_primitives_returns_error_when_no_cli(
 
     result = build_missing_primitives(root, thesis_id)
 
-    assert result == {
-        "status": "error",
-        "error_code": "builder_cli_unavailable",
-        "reason": "No CLI available for builder dispatch",
-        "generated_config": None,
-        "validation_passed": False,
-    }
+    assert result["status"] == "error"
+    assert result["error_code"] == "builder_cli_unavailable"
+    assert result["reason"] == "No CLI available for builder dispatch"
+    assert result["generated_config"] is None
+    assert result["validation_passed"] is False
+    assert result["builder_phase"] == "preflight_failed"
+    assert result["builder_task"]["thesis_id"] == thesis_id
+    assert result["builder_self_check"]["mechanism_implemented"] is False
 
 
 def test_build_missing_primitives_rejects_needs_code_without_primitive_contract(
