@@ -62,6 +62,32 @@ def _builder_result_context(builder_result: dict[str, Any]) -> dict[str, Any]:
     return context
 
 
+def _archive_reactivated_blocker(state: dict[str, Any], *, source: str) -> None:
+    blocker: dict[str, Any] = {}
+    if state.get("halted_reason"):
+        blocker["halted_reason"] = state.get("halted_reason")
+    if state.get("halted_thesis_id"):
+        blocker["halted_thesis_id"] = state.get("halted_thesis_id")
+    if state.get("halted_thesis"):
+        blocker["halted_thesis"] = state.get("halted_thesis")
+    if state.get("manual_review_theses"):
+        blocker["manual_review_theses"] = list(state.get("manual_review_theses") or [])
+    if state.get("builder_failed_theses"):
+        blocker["builder_failed_theses"] = list(state.get("builder_failed_theses") or [])
+    if state.get("next_action"):
+        blocker["next_action"] = state.get("next_action")
+    if state.get("current_thesis"):
+        blocker["current_thesis"] = state.get("current_thesis")
+    if not blocker:
+        return
+    history = state.setdefault("history", {})
+    if not isinstance(history, dict):
+        history = {}
+        state["history"] = history
+    history["last_blocker"] = blocker
+    state["resume_context"] = {"source": source, "blocker": blocker}
+
+
 def _activate_builder_config(
     controller: "AutoresearchController",
     state: dict[str, Any],
@@ -71,6 +97,7 @@ def _activate_builder_config(
     execution_root: str | None = None,
     research_round: int | None = None,
 ) -> dict[str, Any]:
+    _archive_reactivated_blocker(state, source="builder_activation")
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
     state["activity"] = {
@@ -107,6 +134,7 @@ def _activate_builder_config(
     state.pop("halted_thesis_id", None)
     state.pop("halted_reason", None)
     state.pop("halted_thesis", None)
+    state.pop("manual_review_theses", None)
     controller.ctx.parent_experiment_id = ""
     base_root = Path(execution_root) if execution_root else controller.root
     config_path = base_root / generated_config
@@ -619,6 +647,7 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
     )
     controller.ctx.current_contract = contract
     controller.ctx.parent_experiment_id = ""
+    _archive_reactivated_blocker(state, source="resumed_halted_thesis")
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
     state["current_thesis"] = {"config": config_path, "status": "ready_to_run"}
@@ -633,6 +662,7 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
     state.pop("halted_thesis_id", None)
     state.pop("halted_reason", None)
     state.pop("halted_thesis", None)
+    state.pop("manual_review_theses", None)
     controller.write_state(state)
     trace("LOOP", f"resumed halted thesis={halted_id}")
     return state
@@ -642,10 +672,15 @@ def apply_forced_baseline_rerun(
     controller: "AutoresearchController", baseline_action: dict[str, Any]
 ) -> dict[str, Any]:
     state = controller.read_state()
+    _archive_reactivated_blocker(state, source="forced_baseline_rerun")
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
     state["next_action"] = baseline_action
     state["blockers"] = []
+    state.pop("halted_thesis_id", None)
+    state.pop("halted_reason", None)
+    state.pop("halted_thesis", None)
+    state.pop("manual_review_theses", None)
     controller.write_state(state)
     return state
 

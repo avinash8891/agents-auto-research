@@ -274,14 +274,17 @@ def _running_resume_state(
             state[key] = prior_state[key]
 
     if preserve_resume_metadata:
-        if prior_state.get("halted_reason") == "requires_code_change" and prior_state.get(
-            "halted_thesis_id"
-        ):
-            for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
-                if key in prior_state:
-                    state[key] = prior_state[key]
-        if prior_state.get("manual_review_theses"):
-            state["manual_review_theses"] = list(prior_state["manual_review_theses"])
+        blocker_snapshot = _blocker_resume_snapshot(prior_state)
+        if blocker_snapshot:
+            _record_state_history(
+                state,
+                key="last_blocker",
+                value=blocker_snapshot,
+            )
+            state["resume_context"] = {
+                "source": "resume_current_job",
+                "blocker": blocker_snapshot,
+            }
 
     if resume_previous_blocker:
         blocker_kinds = sorted(_blocker_kinds(prior_state))
@@ -291,6 +294,33 @@ def _running_resume_state(
             "current_thesis": prior_state.get("current_thesis"),
         }
     return state
+
+
+def _record_state_history(state: dict[str, Any], *, key: str, value: dict[str, Any]) -> None:
+    history = state.setdefault("history", {})
+    if not isinstance(history, dict):
+        history = {}
+        state["history"] = history
+    history[key] = value
+
+
+def _blocker_resume_snapshot(prior_state: dict[str, Any]) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {
+        "state": prior_state.get("state"),
+        "next_action": prior_state.get("next_action"),
+        "current_thesis": prior_state.get("current_thesis"),
+    }
+    if prior_state.get("halted_reason"):
+        snapshot["halted_reason"] = prior_state.get("halted_reason")
+    if prior_state.get("halted_thesis_id"):
+        snapshot["halted_thesis_id"] = prior_state.get("halted_thesis_id")
+    if prior_state.get("halted_thesis"):
+        snapshot["halted_thesis"] = prior_state.get("halted_thesis")
+    if prior_state.get("manual_review_theses"):
+        snapshot["manual_review_theses"] = list(prior_state.get("manual_review_theses") or [])
+    if prior_state.get("builder_failed_theses"):
+        snapshot["builder_failed_theses"] = list(prior_state.get("builder_failed_theses") or [])
+    return {k: v for k, v in snapshot.items() if v not in (None, [], {})}
 
 
 def _fresh_launch_state(job: int) -> dict[str, Any]:

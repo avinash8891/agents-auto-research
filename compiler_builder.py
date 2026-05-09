@@ -48,6 +48,7 @@ BUILDER_WORKSPACE_EXCLUDED_NAMES = frozenset(
 )
 BUILDER_CAPABILITY_REGISTRY = Path("runtime") / "builder_capability_registry.jsonl"
 BUILDER_PROMOTIONS_DIR = Path("runtime") / "builder-promotions"
+BUILDER_PROMOTION_QUEUE = Path("runtime") / "builder-promotion-queue.jsonl"
 
 
 def _is_builder_artifact_dir_name(name: str) -> bool:
@@ -763,7 +764,7 @@ def _seed_workspace_from_capability(
     return seeded
 
 
-def _record_builder_promotion(
+def _record_builder_promotion_candidate(
     *,
     source_root: Path,
     workspace_root: Path,
@@ -800,10 +801,11 @@ def _record_builder_promotion(
         "execution_root": workspace_root.as_posix(),
         "promotion_dir": promotion_root.relative_to(source_root).as_posix(),
         "artifact_root": artifact_root.as_posix(),
+        "promotion_status": "queued_review",
         "timestamp": timestamp_now(),
     }
     write_json_artifact(promotion_root / "manifest.json", manifest)
-    _append_jsonl(source_root / BUILDER_CAPABILITY_REGISTRY, manifest)
+    _append_jsonl(source_root / BUILDER_PROMOTION_QUEUE, manifest)
     return manifest
 
 
@@ -867,9 +869,11 @@ def _sync_root_promotable_changes_into_workspace(
         shutil.copy2(path, workspace_path)
 
 
-def _write_builder_attempt_artifacts(
+def _persist_builder_attempt_bundle(
     *,
     artifact_dir: Path,
+    source_root: Path,
+    workspace_root: Path,
     prompt: str,
     command: list[str],
     cwd: Path,
@@ -884,6 +888,9 @@ def _write_builder_attempt_artifacts(
     stdout_path = artifact_dir / "stdout.log"
     stderr_path = artifact_dir / "stderr.log"
     result_path = artifact_dir / "result.json"
+    verification_path = artifact_dir / "verification_report.json"
+    failure_trace_path = artifact_dir / "failure_trace.txt"
+    patch_path = artifact_dir / "workspace.patch"
     write_text_atomic(prompt_path, prompt)
     write_json_artifact(
         command_path,
@@ -899,8 +906,49 @@ def _write_builder_attempt_artifacts(
     write_text_atomic(stdout_path, stdout)
     write_text_atomic(stderr_path, stderr)
     write_json_artifact(result_path, result)
+    verification_payload = {
+        "status": result.get("status"),
+        "error_code": result.get("error_code"),
+        "validation_passed": result.get("validation_passed"),
+        "implementation_verification_passed": result.get("implementation_verification_passed"),
+        "implementation_verification_failures": result.get("implementation_verification_failures")
+        or [],
+        "builder_phase": result.get("builder_phase"),
+        "builder_attempts": result.get("builder_attempts"),
+    }
+    write_json_artifact(verification_path, verification_payload)
+    failure_trace = "\n".join(
+        part
+        for part in (
+            str(result.get("reason") or "").strip(),
+            stdout.strip(),
+            stderr.strip(),
+        )
+        if part
+    )
+    write_text_atomic(failure_trace_path, failure_trace + ("\n" if failure_trace else ""))
+    changed_files = _workspace_changed_promotable_files(
+        source_root=source_root,
+        workspace_root=workspace_root,
+    )
+    patch_text = _workspace_unified_diff(
+        source_root=source_root,
+        workspace_root=workspace_root,
+        changed_files=changed_files,
+    )
+    write_text_atomic(patch_path, patch_text)
     return [
-        str(path) for path in (prompt_path, command_path, stdout_path, stderr_path, result_path)
+        str(path)
+        for path in (
+            prompt_path,
+            command_path,
+            stdout_path,
+            stderr_path,
+            result_path,
+            verification_path,
+            failure_trace_path,
+            patch_path,
+        )
     ]
 
 
@@ -1478,7 +1526,7 @@ def build_missing_primitives(
     if BUILDER_CLI_REASONING_EFFORT:
         builder_cmd.extend(["-c", f'model_reasoning_effort="{BUILDER_CLI_REASONING_EFFORT}"'])
     _write_artifacts = functools.partial(
-        _write_builder_attempt_artifacts,
+        _persist_builder_attempt_bundle,
         artifact_dir=attempt_dir,
         prompt=prompt,
         command=builder_cmd,
@@ -1518,7 +1566,7 @@ def build_missing_primitives(
         )
         assert existing_result is not None
         if existing_result["status"] != "error":
-            promotion_manifest = _record_builder_promotion(
+            promotion_manifest = _record_builder_promotion_candidate(
                 source_root=root,
                 workspace_root=workspace_root,
                 artifact_root=artifact_root,
@@ -1740,7 +1788,7 @@ def build_missing_primitives(
                         self_check=parsed_self_check,
                     )
             if out.get("status") == "completed" and out.get("validation_passed"):
-                promotion_manifest = _record_builder_promotion(
+                promotion_manifest = _record_builder_promotion_candidate(
                     source_root=root,
                     workspace_root=workspace_root,
                     artifact_root=artifact_root,
@@ -1753,8 +1801,10 @@ def build_missing_primitives(
                 out["seeded_capability"] = seeded_capability
             out["builder_attempts"] = attempt_index + 1
             out["builder_task"] = asdict(builder_task)
-            _write_builder_attempt_artifacts(
+            _persist_builder_attempt_bundle(
                 artifact_dir=_builder_attempt_artifact_dir(attempt_dir, attempt_index + 1),
+                source_root=root,
+                workspace_root=workspace_root,
                 prompt=attempt_prompt,
                 command=builder_cmd,
                 cwd=workspace_root,
@@ -1766,8 +1816,10 @@ def build_missing_primitives(
             if out["status"] != "error" or not _should_retry_builder_result(out):
                 break
         assert out is not None
-        artifact_paths = _write_builder_attempt_artifacts(
+        artifact_paths = _persist_builder_attempt_bundle(
             artifact_dir=attempt_dir,
+            source_root=root,
+            workspace_root=workspace_root,
             prompt=last_prompt,
             command=builder_cmd,
             cwd=workspace_root,
