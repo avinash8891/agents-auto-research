@@ -83,10 +83,15 @@ def _write_prior_export(
         reasoning=reasoning,
         rejection_reason=rejection_reason,
     )
+    resolved_job = job if job is not None else 1
     trace_root = (
-        root / "runtime" / "jobs" / f"job-{job}" / "trace_exports"
-        if job is not None
-        else root / "trace_exports"
+        root
+        / "runtime"
+        / "jobs"
+        / f"job-{resolved_job}"
+        / "research"
+        / f"round-{research_round}"
+        / "trace_exports"
     )
     target_dir = trace_root / f"round-{research_round:03d}-{thesis_id}" / "reflexio"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -100,19 +105,19 @@ def _write_prior_export(
 
 def test_flag_off_returns_empty(tmp_path):
     _write_prior_export(tmp_path, research_round=1)
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
     assert build_reflexion_feedback(controller, current_round=2) == ""
 
 
 def test_flag_on_round_one_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
     assert build_reflexion_feedback(controller, current_round=1) == ""
 
 
 def test_flag_on_no_export_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
     assert build_reflexion_feedback(controller, current_round=2) == ""
 
 
@@ -166,19 +171,39 @@ def test_flag_on_picks_most_recent_when_multiple_matches(tmp_path, monkeypatch):
 
 def test_malformed_json_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
-    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-1"
+        / "trace_exports"
+        / "round-001-T1"
+        / "reflexio"
+    )
     target_dir.mkdir(parents=True)
     (target_dir / "reflexio-event.json").write_text("not json", encoding="utf-8")
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
     assert build_reflexion_feedback(controller, current_round=2) == ""
 
 
 def test_non_dict_json_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
-    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-1"
+        / "trace_exports"
+        / "round-001-T1"
+        / "reflexio"
+    )
     target_dir.mkdir(parents=True)
     (target_dir / "reflexio-event.json").write_text("[1, 2, 3]", encoding="utf-8")
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
     assert build_reflexion_feedback(controller, current_round=2) == ""
 
 
@@ -192,7 +217,7 @@ def test_missing_optional_fields_yields_minimal_preamble(tmp_path, monkeypatch):
         rejection_reason="",
         outcome="conductor_error",
     )
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
     feedback = build_reflexion_feedback(controller, current_round=2)
     assert "research_outcome: conductor_error" in feedback
     assert "you_reasoned" not in feedback
@@ -214,11 +239,21 @@ def test_feedback_includes_prior_trajectory_when_export_has_it(tmp_path, monkeyp
         {"action": "prompt", "summary": "ask analyst to inspect duplicate config"},
         {"action": "tool_result", "summary": "backtest PF unchanged"},
     ]
-    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-1"
+        / "trace_exports"
+        / "round-001-T1"
+        / "reflexio"
+    )
     target_dir.mkdir(parents=True)
     (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
 
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
     feedback = build_reflexion_feedback(controller, current_round=2)
 
     assert "prior_trajectory" in feedback
@@ -253,11 +288,21 @@ def test_agent_scoped_feedback_uses_only_matching_agent_trajectory(tmp_path, mon
             "summary": "external evidence favored volatility expansion filters",
         },
     ]
-    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-1"
+        / "trace_exports"
+        / "round-001-T1"
+        / "reflexio"
+    )
     target_dir.mkdir(parents=True)
     (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
 
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
 
     builder_feedback = build_reflexion_feedback(controller, current_round=2, agent="builder")
     analyst_feedback = build_reflexion_feedback(controller, current_round=2, agent="analyst")
@@ -300,11 +345,21 @@ def test_agent_scoped_feedback_prefers_agent_reflection_over_round_reasoning(tmp
         {"agent": "analyst", "action": "tool_result", "summary": "analyst trace"},
         {"agent": "builder", "action": "builder_error", "summary": "builder trace"},
     ]
-    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-1"
+        / "trace_exports"
+        / "round-001-T1"
+        / "reflexio"
+    )
     target_dir.mkdir(parents=True)
     (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
 
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
 
     analyst_feedback = build_reflexion_feedback(controller, current_round=2, agent="analyst")
     builder_feedback = build_reflexion_feedback(controller, current_round=2, agent="builder")
@@ -345,11 +400,21 @@ def test_agent_scoped_feedback_derives_reflection_from_legacy_trajectory(tmp_pat
             "summary": "builder_implementation_contract_failed unexpected_config_key",
         },
     ]
-    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-1"
+        / "trace_exports"
+        / "round-001-T1"
+        / "reflexio"
+    )
     target_dir.mkdir(parents=True)
     (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
 
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
 
     analyst_feedback = build_reflexion_feedback(controller, current_round=2, agent="analyst")
 
@@ -371,11 +436,21 @@ def test_agent_scoped_feedback_returns_empty_when_no_matching_agent(tmp_path, mo
     payload["trajectory"] = [
         {"agent": "builder", "action": "response", "summary": "builder lesson only"}
     ]
-    target_dir = tmp_path / "trace_exports" / "round-001-T1" / "reflexio"
+    target_dir = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-1"
+        / "trace_exports"
+        / "round-001-T1"
+        / "reflexio"
+    )
     target_dir.mkdir(parents=True)
     (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
 
-    controller = SimpleNamespace(root=tmp_path)
+    controller = SimpleNamespace(root=tmp_path, job=1)
 
     assert build_reflexion_feedback(controller, current_round=2, agent="web-researcher") == ""
 
@@ -401,7 +476,17 @@ def test_latest_reflexion_feedback_reads_newest_round_for_builder(tmp_path, monk
         {"agent": "builder", "action": "tool_result", "summary": "new builder lesson"}
     ]
     for round_id, thesis_id, payload in ((1, "old", old_payload), (3, "new", new_payload)):
-        target_dir = tmp_path / "trace_exports" / f"round-{round_id:03d}-{thesis_id}" / "reflexio"
+        target_dir = (
+            tmp_path
+            / "runtime"
+            / "jobs"
+            / "job-1"
+            / "research"
+            / f"round-{round_id}"
+            / "trace_exports"
+            / f"round-{round_id:03d}-{thesis_id}"
+            / "reflexio"
+        )
         target_dir.mkdir(parents=True)
         (target_dir / "reflexio-event.json").write_text(json.dumps(payload), encoding="utf-8")
 

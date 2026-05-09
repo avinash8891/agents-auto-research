@@ -529,7 +529,10 @@ def test_research_retry_requires_job_scoped_research_dir(tmp_path, monkeypatch):
 
 def test_refresh_reflexio_export_after_builder_adds_builder_reflection(tmp_path):
     thesis_id = "needs_builder"
-    other_dir = tmp_path / "trace_exports" / "round-004-other_thesis" / "reflexio"
+    job_root = tmp_path / "runtime" / "jobs" / "job-1"
+    other_dir = (
+        job_root / "research" / "round-4" / "trace_exports" / "round-004-other_thesis" / "reflexio"
+    )
     other_dir.mkdir(parents=True)
     (other_dir / "reflexio-event.json").write_text(
         json.dumps(
@@ -549,7 +552,9 @@ def test_refresh_reflexio_export_after_builder_adds_builder_reflection(tmp_path)
         + "\n",
         encoding="utf-8",
     )
-    export_dir = tmp_path / "trace_exports" / f"round-004-{thesis_id}" / "reflexio"
+    export_dir = (
+        job_root / "research" / "round-4" / "trace_exports" / f"round-004-{thesis_id}" / "reflexio"
+    )
     export_dir.mkdir(parents=True)
     (export_dir / "reflexio-event.json").write_text(
         json.dumps(
@@ -595,7 +600,7 @@ def test_refresh_reflexio_export_after_builder_adds_builder_reflection(tmp_path)
     )
 
     orch._refresh_reflexio_export_after_builder(
-        tmp_path,
+        job_root,
         research_round=4,
         thesis_id=thesis_id,
         family="ema",

@@ -33,6 +33,7 @@ from autoresearch_constants import (
 from autoresearch_logging import get_logger
 from autoresearch_paths import path_within_allowed_roots, resolve_config_path
 from autoresearch_planning import build_research_failure_state
+from autoresearch_runtime_paths import job_run_artifact_dir
 from autoresearch_state import (
     read_state,
     write_state,
@@ -447,16 +448,27 @@ def derive_trade_analysis(
 # ── Artifact + entry helpers ─────────────────────────────────────
 
 
-def artifact_dir_for(state_path: Path, runs_dir: Path, config: str) -> Path:
+def artifact_dir_for(
+    state_path: Path,
+    runs_dir: Path,
+    config: str,
+    *,
+    git_commit: str | None = None,
+    config_hash: str | None = None,
+) -> Path:
     state = read_state(state_path)
-    job = state.get("job", 0)
-    config_path = Path(config)
-    slug = (
-        config_path.parent.name
-        if config_path.name == "runtime_config.json" and config_path.parent.name
-        else config_path.stem
+    raw_job = state.get("job")
+    try:
+        job = int(raw_job)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"job id is required for backtest run artifact path; got {raw_job!r}"
+        ) from exc
+    if job < 1:
+        raise ValueError(f"job id is required for backtest run artifact path; got {job!r}")
+    path = job_run_artifact_dir(
+        runs_dir.resolve().parents[3], job, git_commit or "", config_hash or ""
     )
-    path = runs_dir.resolve() / f"job-{job}" / slug
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -483,13 +495,27 @@ def sanitize_duplicate_entries(db: Any, config: str) -> None:
 
 
 def _resolve_artifact_dir(
-    controller: "AutoresearchController", config: str, artifact_dir: Path | None = None
+    controller: "AutoresearchController",
+    config: str,
+    *,
+    details: dict[str, Any],
+    artifact_dir: Path | None = None,
 ) -> Path:
     """Pick the run-output directory: the one set in run_experiment if
     present, otherwise compute a fresh per-job dir."""
     if artifact_dir is not None:
         return artifact_dir
-    return artifact_dir_for(controller.state_path, controller.runs_dir, config)
+    config_hash = details.get("config_hash")
+    if not isinstance(config_hash, str) or not config_hash.strip():
+        computed_dir, _ = _compute_run_output_dir(controller, config)
+        return computed_dir
+    return artifact_dir_for(
+        controller.state_path,
+        controller.runs_dir,
+        config,
+        git_commit=_executed_code_commit(controller, details),
+        config_hash=config_hash,
+    )
 
 
 def _read_thesis_metadata(
@@ -877,8 +903,10 @@ def log_experiment_result(
     artifact_dir: Path | None = None,
 ) -> None:
     controller.sanitize_duplicate_entries(config)
-    artifact_dir = _resolve_artifact_dir(controller, config, artifact_dir=artifact_dir)
     details = parse_benchmark_details(output)
+    artifact_dir = _resolve_artifact_dir(
+        controller, config, details=details, artifact_dir=artifact_dir
+    )
     artifact_dir = _artifact_dir_for_executed_commit(controller, artifact_dir, details)
     _write_run_artifacts(artifact_dir, output, analysis)
 
@@ -946,16 +974,19 @@ def _compute_run_output_dir(controller: "AutoresearchController", config: str) -
     else:
         config_hash = _config_hash({"config_path": config})
     state = controller.read_state()
-    job = state.get("job", 0)
-    runs_dir = (
-        controller.runs_dir
-        if controller.runs_dir.is_absolute()
-        else controller.root / controller.runs_dir
-    )
+    raw_job = state.get("job")
+    try:
+        job = int(raw_job)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"job id is required for backtest run output dir; got {raw_job!r}"
+        ) from exc
+    if job < 1:
+        raise ValueError(f"job id is required for backtest run output dir; got {job!r}")
     current_commit = (
         controller.current_commit() if hasattr(controller, "current_commit") else _git_sha()
     )
-    run_output_dir = runs_dir / f"job-{job}" / current_commit / config_hash
+    run_output_dir = job_run_artifact_dir(controller.root, job, current_commit, config_hash)
     run_output_dir.mkdir(parents=True, exist_ok=True)
     return run_output_dir, config_path_full
 

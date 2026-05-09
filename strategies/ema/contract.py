@@ -39,7 +39,8 @@ def compile_ema_contract(contract: list[dict[str, Any]]) -> CompilationResult:
 
     # Defaults match transcript-grounded baseline (ema_base.yaml).
     # Keep the research window bounded when a raw primitive contract is run
-    # directly from ema-contracts/ instead of a pre-rendered runtime config.
+    # directly from a job-scoped contract artifact instead of a pre-rendered
+    # runtime config.
     from strategies.ema.defaults import _get_ema_defaults
 
     runtime = {

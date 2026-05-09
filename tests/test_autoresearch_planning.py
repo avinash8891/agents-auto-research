@@ -292,8 +292,8 @@ def test_generate_theses_from_ideas_compiles_family_keyed_proposal(
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
     (variants / "orb_novel_thesis.yaml").write_text("opening_range_minutes: 5\n")
-    proposals_dir = tmp_path / orb_family.proposals_dirname
-    run_queue_dir = tmp_path / orb_family.run_queue_dirname
+    proposals_dir = tmp_path / "runtime" / "jobs" / "job-1" / "proposals"
+    run_queue_dir = tmp_path / "runtime" / "jobs" / "job-1" / "run-queue"
 
     from autoresearch_planning import generate_theses_from_ideas
 
@@ -303,7 +303,7 @@ def test_generate_theses_from_ideas_compiles_family_keyed_proposal(
 
     assert generated == ["configs/variants/orb_novel_thesis.yaml"]
     assert (proposals_dir / "novel_thesis.json").exists()
-    assert (tmp_path / orb_family.compilations_dirname / "novel_thesis.json").exists()
+    assert (tmp_path / "runtime" / "jobs" / "job-1" / "compilations" / "novel_thesis.json").exists()
 
 
 def test_generate_theses_from_ideas_leaves_no_tmp_artifacts(tmp_path: Path, orb_family) -> None:
@@ -312,8 +312,8 @@ def test_generate_theses_from_ideas_leaves_no_tmp_artifacts(tmp_path: Path, orb_
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
     (variants / "orb_novel_thesis.yaml").write_text("opening_range_minutes: 5\n")
-    proposals_dir = tmp_path / orb_family.proposals_dirname
-    run_queue_dir = tmp_path / orb_family.run_queue_dirname
+    proposals_dir = tmp_path / "runtime" / "jobs" / "job-1" / "proposals"
+    run_queue_dir = tmp_path / "runtime" / "jobs" / "job-1" / "run-queue"
 
     from autoresearch_planning import generate_theses_from_ideas
 
@@ -483,8 +483,8 @@ def test_should_terminate_false_when_research_status_not_completed(
     tmp_path: Path, ema_family
 ) -> None:
     research_dir = tmp_path / "research"
-    research_dir.mkdir()
-    (research_dir / "r.json").write_text(json.dumps({"status": "pending"}))
+    (research_dir / "round-1").mkdir(parents=True)
+    ((research_dir / "round-1") / "round.json").write_text(json.dumps({"status": "pending"}))
     assert should_terminate(tmp_path, ema_family, tmp_path / "queue", research_dir, []) is False
 
 
@@ -492,8 +492,8 @@ def test_should_terminate_true_only_with_completed_research_and_findings(
     tmp_path: Path, ema_family
 ) -> None:
     research_dir = tmp_path / "research"
-    research_dir.mkdir()
-    (research_dir / "r.json").write_text(
+    (research_dir / "round-1").mkdir(parents=True)
+    ((research_dir / "round-1") / "round.json").write_text(
         json.dumps({"status": "completed", "findings": ["no further structural ideas"]})
     )
     assert should_terminate(tmp_path, ema_family, tmp_path / "queue", research_dir, []) is True
@@ -501,11 +501,12 @@ def test_should_terminate_true_only_with_completed_research_and_findings(
 
 def test_should_terminate_scopes_research_artifacts_by_job(tmp_path: Path, ema_family) -> None:
     research_dir = tmp_path / "research"
-    research_dir.mkdir()
-    (research_dir / "job-1.json").write_text(
+    (research_dir / "round-1").mkdir(parents=True)
+    ((research_dir / "round-1") / "round.json").write_text(
         json.dumps({"status": "completed", "job": 1, "findings": ["x"]})
     )
-    (research_dir / "job-2.json").write_text(
+    (research_dir / "round-2").mkdir(parents=True)
+    ((research_dir / "round-2") / "round.json").write_text(
         json.dumps({"status": "completed", "job": 2, "findings": ["y"]})
     )
     queue_dir = tmp_path / "queue"

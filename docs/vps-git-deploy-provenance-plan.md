@@ -19,7 +19,7 @@
 - Run folders include the resolved SHA.
 
 ```text
-ema_autoresearch-runs/job-12/<commit_sha>/<config_hash>
+runtime/jobs/job-12/runs/<commit_sha>/<config_hash>
 ```
 
 ## 3. Use one VPS checkout folder
@@ -39,16 +39,10 @@ ema_autoresearch-runs/job-12/<commit_sha>/<config_hash>
 - Output folders are new per job, commit, and config.
 - This prevents artifacts from different code versions mixing.
 
-Current:
-
-```text
-ema_autoresearch-runs/job-12/<config_hash>
-```
-
 Target:
 
 ```text
-ema_autoresearch-runs/job-12/<commit_sha>/<config_hash>
+runtime/jobs/job-12/runs/<commit_sha>/<config_hash>
 ```
 
 ## 5. Treat builder primitive flow as a gated workflow

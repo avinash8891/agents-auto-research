@@ -50,7 +50,7 @@ def controller(tmp_path, monkeypatch):
     state_path = tmp_path / "ema_autoresearch.next.json"
     current_md_path = tmp_path / "ema_autoresearch.current.md"
     ideas_md_path = tmp_path / "ema_autoresearch.ideas.md"
-    runs_dir = tmp_path / family.runs_dirname
+    runs_dir = tmp_path / "runtime" / "jobs"
 
     controller = AutoresearchController(
         root=tmp_path,
@@ -102,14 +102,14 @@ def test_controller_anchors_relative_paths_to_root(tmp_path):
         state_path=Path("ema_autoresearch.next.json"),
         current_md_path=Path("ema_autoresearch.current.md"),
         ideas_md_path=Path("ema_autoresearch.ideas.md"),
-        runs_dir=Path(family.runs_dirname),
+        runs_dir=tmp_path / "runtime" / "jobs",
         family=family,
     )
 
     assert controller.state_path == tmp_path / "ema_autoresearch.next.json"
     assert controller.current_md_path == tmp_path / "ema_autoresearch.current.md"
     assert controller.ideas_md_path == tmp_path / "ema_autoresearch.ideas.md"
-    assert controller.runs_dir == tmp_path / family.runs_dirname
+    assert controller.runs_dir == tmp_path / "runtime" / "jobs"
     controller.write_state({"state": "running", "job": 23, "research_round": 0})
     assert controller.job_runtime_root == tmp_path / "runtime" / "jobs" / "job-23"
     assert controller.research_dir == controller.job_runtime_root / "research"
@@ -133,7 +133,7 @@ def test_controller_can_split_code_root_from_runtime_root(tmp_path):
         state_path=Path("ema_autoresearch.next.json"),
         current_md_path=Path("ema_autoresearch.current.md"),
         ideas_md_path=Path("ema_autoresearch.ideas.md"),
-        runs_dir=Path(family.runs_dirname),
+        runs_dir=code_root / "runtime" / "jobs",
         family=family,
     )
 
@@ -142,7 +142,7 @@ def test_controller_can_split_code_root_from_runtime_root(tmp_path):
     assert controller.state_path == runtime_root / "ema_autoresearch.next.json"
     assert controller.current_md_path == runtime_root / "ema_autoresearch.current.md"
     assert controller.ideas_md_path == runtime_root / "ema_autoresearch.ideas.md"
-    assert controller.runs_dir == code_root / family.runs_dirname
+    assert controller.runs_dir == code_root / "runtime" / "jobs"
     controller.write_state({"state": "running", "job": 2, "research_round": 0})
     assert controller.state_path.exists()
     assert controller.job_runtime_root == code_root / "runtime" / "jobs" / "job-2"
@@ -239,7 +239,7 @@ def test_execute_once_anchors_absolute_runs_dir_through_resolved_root(tmp_path, 
         state_path=Path("ema_autoresearch.next.json"),
         current_md_path=Path("ema_autoresearch.current.md"),
         ideas_md_path=Path("ema_autoresearch.ideas.md"),
-        runs_dir=symlink_root / family.runs_dirname,
+        runs_dir=symlink_root / "runtime" / "jobs",
         family=family,
     )
     controller.write_entries(
@@ -266,20 +266,37 @@ def test_execute_once_anchors_absolute_runs_dir_through_resolved_root(tmp_path, 
         e for e in entries if "metric" in e and e.get("type") not in ("config", "research_round")
     ]
     assert len(metric_entries) == 1
-    assert metric_entries[0]["asi"]["artifact_dir"].startswith("ema_autoresearch-runs/job-1/")
+    assert metric_entries[0]["asi"]["artifact_dir"].startswith("runtime/jobs/job-1/runs/")
 
 
 def _success_output(result_path: Path, metric: float = 1.5) -> str:
+    metrics_path = result_path.parent / "metrics.json"
+    diagnostics_path = result_path.parent / "diagnostics.json"
+    trades_path = result_path.parent / "trades.csv"
+    events_path = result_path.parent / "strategy_events.parquet"
+    metrics_path.write_text(
+        json.dumps(
+            {
+                "median_expectancy": metric,
+                "trade_count": 42,
+                "profit_factor": 1.4,
+                "max_drawdown": 0.1,
+                "win_rate": 0.55,
+                "pct_profitable_windows": 0.6,
+                "avg_sharpe_across_windows": 0.8,
+            }
+        )
+    )
+    diagnostics_path.write_text(json.dumps({"strategy_diagnostics": {"exits_at_target": 1}}))
+    trades_path.write_text("entry,exit\n")
+    events_path.write_text("parquet-placeholder")
     payload = {
-        "metrics": {
-            "median_expectancy": metric,
-            "trade_count": 42,
-            "profit_factor": 1.4,
-            "max_drawdown": 0.1,
-            "win_rate": 0.55,
-        },
-        "trades_file": str(result_path.parent / "trades.csv"),
+        "metrics_file": str(metrics_path),
+        "diagnostics_file": str(diagnostics_path),
+        "trades_file": str(trades_path),
+        "strategy_events_file": str(events_path),
         "git_sha": "abc1234",
+        "config_hash": "123456789abc",
     }
     result_path.write_text(json.dumps(payload))
     return f"some preamble\nRESULT_JSON {result_path}\n"
@@ -305,17 +322,15 @@ def _patch_run_command_success(controller, monkeypatch, tmp_path) -> dict[str, A
 
 def _symlink_runtime_repo(source_root: Path, runtime_root: Path) -> None:
     runtime_state_names = {
-        "autoresearch-runs",
-        "ema_autoresearch-runs",
         "ema_autoresearch.current.md",
         "ema_autoresearch.next.json",
         "ema_baseline_checkpoints.json",
         "ema_experiments.db",
-        "orb_autoresearch-runs",
         "orb_autoresearch.current.md",
         "orb_autoresearch.next.json",
         "orb_baseline_checkpoints.json",
         "orb_experiments.db",
+        "runtime",
     }
     for path in source_root.iterdir():
         if path.name in {".git", ".pytest_cache", "__pycache__", "tests"}:
@@ -393,7 +408,7 @@ def test_execute_once_runs_real_backtest_for_forced_tiny_ema_fixture(tmp_path):
     state_path = runtime_root / "ema_autoresearch.next.json"
     current_md_path = runtime_root / "ema_autoresearch.current.md"
     ideas_md_path = runtime_root / "ema_autoresearch.ideas.md"
-    runs_dir = runtime_root / family.runs_dirname
+    runs_dir = runtime_root / "runtime" / "jobs"
     controller = AutoresearchController(
         root=runtime_root,
         state_path=state_path,
@@ -496,7 +511,7 @@ def test_execute_once_ignores_stale_global_queue_for_fresh_job(controller, monke
     stale_path = tmp_path / stale_config
     stale_path.parent.mkdir(parents=True, exist_ok=True)
     stale_path.write_text(json.dumps({"ema_length": 5, "rr_ratio": 3.0}))
-    stale_queue_dir = tmp_path / controller.family.run_queue_dirname
+    stale_queue_dir = tmp_path / "runtime" / "jobs" / "job-1" / "run-queue"
     stale_queue_dir.mkdir(parents=True, exist_ok=True)
     (stale_queue_dir / "stale-runtime.json").write_text(
         json.dumps({"thesis_id": "stale-runtime", "config": stale_config, "status": "pending"})
@@ -825,7 +840,13 @@ def test_execute_once_writes_adapter_export_packages_to_disk(controller, monkeyp
     rc = controller.execute_once()
 
     assert rc == 0
-    export_root = controller.job_runtime_root / "trace_exports" / "round-001-research-thesis-001"
+    export_root = (
+        controller.job_runtime_root
+        / "research"
+        / "round-1"
+        / "trace_exports"
+        / "round-001-research-thesis-001"
+    )
     assert (export_root / "halo" / "halo-event.json").exists()
     assert (export_root / "halo" / "package.json").exists()
     assert (export_root / "recursive_improve" / "recursive-improve-event.json").exists()
@@ -1443,30 +1464,38 @@ def test_execute_once_end_to_end_tiny_ema_fixture(controller, monkeypatch, tmp_p
         parts = command.split()
         output_dir = Path(parts[parts.index("--output-dir") + 1])
         output_dir.mkdir(parents=True, exist_ok=True)
-        config_arg = parts[parts.index("--config") + 1]
+        metrics_path = output_dir / "metrics.json"
+        diagnostics_path = output_dir / "diagnostics.json"
+        strategy_events_path = output_dir / "strategy_events.parquet"
+        metrics_path.write_text(
+            json.dumps(
+                {
+                    "median_expectancy": 0.0,
+                    "trade_count": 0,
+                    "profit_factor": 0.0,
+                    "max_drawdown": 0.0,
+                    "pct_profitable_windows": 0.0,
+                    "avg_sharpe_across_windows": 0.0,
+                }
+            )
+        )
+        diagnostics_path.write_text(
+            json.dumps(
+                {
+                    "trade_count": 0,
+                    "event_counts": {},
+                    "rejection_breakdown": {},
+                }
+            )
+        )
+        strategy_events_path.write_text("parquet-placeholder\n")
         payload = {
-            "family": "ema",
-            "config": config_arg,
-            "config_hash": "tinyfixture12",
-            "git_sha": "3154bec",
-            "timestamp": "2026-04-30T00:00:00Z",
-            "metrics": {
-                "median_expectancy": 0.0,
-                "trade_count": 0,
-                "profit_factor": 0.0,
-                "max_drawdown": 0.0,
-                "pct_profitable_windows": 0.0,
-                "avg_sharpe_across_windows": 0.0,
-            },
-            "diagnostics": {},
-            "strategy_diagnostics": {
-                "trade_count": 0,
-                "event_counts": {},
-                "rejection_breakdown": {},
-            },
+            "metrics_file": str(metrics_path),
+            "diagnostics_file": str(diagnostics_path),
             "trades_file": "",
-            "strategy_events_file": str(output_dir / "strategy_events.parquet"),
-            "diagnostics_file": str(output_dir / "diagnostics.json"),
+            "strategy_events_file": str(strategy_events_path),
+            "git_sha": "3154bec",
+            "config_hash": "tinyfixture12",
         }
         result_path = output_dir / "result.json"
         result_path.write_text(json.dumps(payload) + "\n")
@@ -1532,30 +1561,40 @@ def test_execute_once_queued_runtime_config_uses_thesis_sidecar_metadata(
         parts = command.split()
         output_dir = Path(parts[parts.index("--output-dir") + 1])
         output_dir.mkdir(parents=True, exist_ok=True)
-        config_arg = parts[parts.index("--config") + 1]
+        trades_path = output_dir / "trades.csv"
+        strategy_events_path = output_dir / "strategy_events.parquet"
+        metrics_path = output_dir / "metrics.json"
+        diagnostics_path = output_dir / "diagnostics.json"
+        trades_path.write_text("entry,exit\n")
+        strategy_events_path.write_text("parquet-placeholder\n")
+        metrics_path.write_text(
+            json.dumps(
+                {
+                    "median_expectancy": 1.0,
+                    "trade_count": 1,
+                    "profit_factor": 1.0,
+                    "max_drawdown": 0.0,
+                    "pct_profitable_windows": 1.0,
+                    "avg_sharpe_across_windows": 1.0,
+                }
+            )
+        )
+        diagnostics_path.write_text(
+            json.dumps(
+                {
+                    "trade_count": 1,
+                    "event_counts": {},
+                    "rejection_breakdown": {},
+                }
+            )
+        )
         payload = {
-            "family": "ema",
-            "config": config_arg,
-            "config_hash": "tinyfixture12",
+            "metrics_file": str(metrics_path),
+            "diagnostics_file": str(diagnostics_path),
+            "trades_file": str(trades_path),
+            "strategy_events_file": str(strategy_events_path),
             "git_sha": "3154bec",
-            "timestamp": "2026-04-30T00:00:00Z",
-            "metrics": {
-                "median_expectancy": 1.0,
-                "trade_count": 1,
-                "profit_factor": 1.0,
-                "max_drawdown": 0.0,
-                "pct_profitable_windows": 1.0,
-                "avg_sharpe_across_windows": 1.0,
-            },
-            "diagnostics": {},
-            "strategy_diagnostics": {
-                "trade_count": 1,
-                "event_counts": {},
-                "rejection_breakdown": {},
-            },
-            "trades_file": str(output_dir / "trades.csv"),
-            "strategy_events_file": str(output_dir / "strategy_events.parquet"),
-            "diagnostics_file": str(output_dir / "diagnostics.json"),
+            "config_hash": "tinyfixture12",
         }
         result_path = output_dir / "result.json"
         result_path.write_text(json.dumps(payload) + "\n")
@@ -2050,7 +2089,7 @@ def test_main_exits_on_persisted_blocked_state(monkeypatch, tmp_path):
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -2093,7 +2132,7 @@ def test_main_continues_from_baseline_blocked_research_handoff(monkeypatch, tmp_
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -2147,7 +2186,7 @@ def test_main_resume_current_job_continues_blocked_research_required_state(monke
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -2212,7 +2251,7 @@ def test_main_handles_legacy_string_job_state(monkeypatch, tmp_path):
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -2260,7 +2299,7 @@ def test_main_starts_new_job_when_prior_state_is_halted_without_resume_flag(monk
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -2320,7 +2359,7 @@ def test_main_resume_current_job_accepts_halted_thesis_before_execute_once(monke
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -2392,7 +2431,7 @@ def test_main_resume_current_job_normalizes_command_failed_block_without_new_job
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -2462,7 +2501,7 @@ def test_main_resume_current_job_tolerates_malformed_heartbeat(monkeypatch, tmp_
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -2520,7 +2559,7 @@ def test_main_starts_new_job_when_prior_state_is_manual_review_without_resume_fl
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -2689,7 +2728,7 @@ def test_next_fresh_job_id_uses_checkout_history_to_avoid_collisions(tmp_path, m
         state_path=tmp_path / "ema_autoresearch.next.json",
         current_md_path=tmp_path / "ema_autoresearch.current.md",
         ideas_md_path=tmp_path / "ema_autoresearch.ideas.md",
-        runs_dir=tmp_path / family.runs_dirname,
+        runs_dir=tmp_path / "runtime" / "jobs",
         family=family,
     )
 
@@ -2709,21 +2748,9 @@ def test_next_fresh_job_id_uses_checkout_history_to_avoid_collisions(tmp_path, m
     )
     controller.write_state({"state": "finished", "job": 22, "research_round": 7})
 
-    legacy_queue_dir = tmp_path / family.run_queue_dirname
-    legacy_queue_dir.mkdir(parents=True, exist_ok=True)
-    (legacy_queue_dir / "legacy.json").write_text(
-        json.dumps(
-            {
-                "thesis_id": "legacy-thesis",
-                "config": "experiments/legacy/runtime_config.json",
-                "status": "pending",
-                "job": 25,
-            }
-        )
-    )
     (tmp_path / "runtime" / "jobs" / "job-24" / "run-queue").mkdir(parents=True, exist_ok=True)
 
-    assert controller.next_fresh_job_id(controller.read_state()) == 26
+    assert controller.next_fresh_job_id(controller.read_state()) == 25
 
 
 def test_reconcile_state_uses_new_fresh_job_id_instead_of_historical_job_results(
@@ -2743,7 +2770,7 @@ def test_reconcile_state_uses_new_fresh_job_id_instead_of_historical_job_results
         state_path=tmp_path / "ema_autoresearch.next.json",
         current_md_path=tmp_path / "ema_autoresearch.current.md",
         ideas_md_path=tmp_path / "ema_autoresearch.ideas.md",
-        runs_dir=tmp_path / family.runs_dirname,
+        runs_dir=tmp_path / "runtime" / "jobs",
         family=family,
     )
 
@@ -2812,7 +2839,7 @@ def test_main_resume_current_job_preserves_manual_review_history(monkeypatch, tm
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -2920,7 +2947,7 @@ def test_main_resume_current_job_retries_interrupted_research_failure_without_in
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -3014,7 +3041,7 @@ def test_main_resume_current_job_rejects_non_recoverable_state(monkeypatch, tmp_
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -3052,7 +3079,7 @@ def test_main_resume_current_job_rejects_inconsistent_blocked_research_state(mon
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -3098,7 +3125,7 @@ def test_main_prepare_launch_state_only_writes_clean_fresh_state_without_executi
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -3187,7 +3214,7 @@ def test_main_run_current_state_executes_prepared_running_job_without_renormaliz
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -3245,7 +3272,7 @@ def test_main_run_current_state_rejects_non_running_state(monkeypatch, tmp_path)
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 
@@ -3283,7 +3310,7 @@ def test_main_run_current_state_accepts_prepared_blocked_research_resume(monkeyp
             tmp_path / "ema_autoresearch.next.json",
             tmp_path / "ema_autoresearch.current.md",
             tmp_path / "ema_autoresearch.ideas.md",
-            tmp_path / family.runs_dirname,
+            tmp_path / "runtime" / "jobs",
         ),
     )
 

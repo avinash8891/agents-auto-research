@@ -305,7 +305,8 @@ def test_compute_run_output_dir_for_missing_config_uses_12_char_hash_slug(tmp_pa
 
     assert config_path_full == tmp_path / "configs/missing.yaml"
     assert run_dir.parent.name == "abc123"
-    assert run_dir.parent.parent.name == "job-3"
+    assert run_dir.parent.parent.name == "runs"
+    assert run_dir.parent.parent.parent.name == "job-3"
     assert len(run_dir.name) == 12
 
 
@@ -402,18 +403,42 @@ def test_primary_metric_name_reads_from_config_header() -> None:
 def test_artifact_dir_for_uses_job_number_from_state(tmp_path: Path) -> None:
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps({"job": 7}))
-    runs_dir = tmp_path / "ema_autoresearch-runs"
-    out = artifact_dir_for(state_path, runs_dir, "configs/variants/ema_aggressive.yaml")
-    assert out == runs_dir.resolve() / "job-7" / "ema_aggressive"
+    runs_dir = tmp_path / "runtime" / "jobs" / "job-7" / "runs"
+    out = artifact_dir_for(
+        state_path,
+        runs_dir,
+        "configs/variants/ema_aggressive.yaml",
+        git_commit="abc123",
+        config_hash="0123456789ab",
+    )
+    assert out == runs_dir.resolve() / "abc123" / "0123456789ab"
     assert out.exists()
 
 
-def test_artifact_dir_for_defaults_job_to_zero(tmp_path: Path) -> None:
+def test_artifact_dir_for_raises_without_job(tmp_path: Path) -> None:
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps({}))  # no "job" key
-    runs_dir = tmp_path / "runs"
-    out = artifact_dir_for(state_path, runs_dir, "configs/ema_base.yaml")
-    assert out == runs_dir.resolve() / "job-0" / "ema_base"
+    runs_dir = tmp_path / "runtime" / "jobs" / "job-7" / "runs"
+
+    with pytest.raises(ValueError, match="job id"):
+        artifact_dir_for(
+            state_path,
+            runs_dir,
+            "configs/ema_base.yaml",
+            git_commit="abc123",
+            config_hash="0123456789ab",
+        )
+
+
+def test_artifact_dir_for_raises_without_git_commit_or_config_hash(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({"job": 7}))
+    runs_dir = tmp_path / "runtime" / "jobs" / "job-7" / "runs"
+
+    with pytest.raises(ValueError, match="git commit"):
+        artifact_dir_for(state_path, runs_dir, "configs/ema_base.yaml", config_hash="0123456789ab")
+    with pytest.raises(ValueError, match="config hash"):
+        artifact_dir_for(state_path, runs_dir, "configs/ema_base.yaml", git_commit="abc123")
 
 
 # ── sanitize_duplicate_entries ──────────────────────────────────
@@ -503,7 +528,7 @@ def test_compute_run_output_dir_anchors_relative_runs_dir_to_controller_root(
     class _Controller:
         def __init__(self) -> None:
             self.root = tmp_path
-            self.runs_dir = Path("ema_autoresearch-runs")
+            self.runs_dir = tmp_path / "runtime" / "jobs" / "job-7" / "runs"
 
         def read_state(self) -> dict[str, object]:
             return {"job": 7}
@@ -518,8 +543,9 @@ def test_compute_run_output_dir_anchors_relative_runs_dir_to_controller_root(
 
     expected_hash = _config_hash({"config_path": "configs/variants/missing.yaml"})
     assert config_path_full == tmp_path / "configs/variants/missing.yaml"
-    assert run_output_dir == (
-        tmp_path / "ema_autoresearch-runs" / "job-7" / "abc123" / expected_hash
+    assert (
+        run_output_dir
+        == tmp_path / "runtime" / "jobs" / "job-7" / "runs" / "abc123" / expected_hash
     )
 
 
@@ -1154,7 +1180,7 @@ def test_log_experiment_result_uses_legacy_runtime_config_fallback(tmp_path: Pat
         def __init__(self) -> None:
             self.root = tmp_path
             self.state_path = tmp_path / "ema_autoresearch.next.json"
-            self.runs_dir = tmp_path / "ema-runs"
+            self.runs_dir = tmp_path / "runtime" / "jobs" / "job-1" / "runs"
             self.family = SimpleNamespace(name="ema")
             self.experiment_db = ExperimentDB(tmp_path / "ema_experiments.db")
             self.ctx = SimpleNamespace(
@@ -1215,7 +1241,7 @@ def test_log_experiment_result_moves_artifacts_to_executed_vps_commit(
         def __init__(self) -> None:
             self.root = tmp_path
             self.state_path = tmp_path / "ema_autoresearch.next.json"
-            self.runs_dir = tmp_path / "ema_autoresearch-runs"
+            self.runs_dir = tmp_path / "runtime" / "jobs"
             self.family = SimpleNamespace(name="ema")
             self.experiment_db = ExperimentDB(tmp_path / "ema_experiments.db")
             self.ctx = SimpleNamespace(
@@ -1235,7 +1261,9 @@ def test_log_experiment_result_moves_artifacts_to_executed_vps_commit(
 
     controller = _Controller()
     controller.state_path.write_text(json.dumps({"state": "running", "job": 1}))
-    source_artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-1" / launcher_sha / "configabc"
+    source_artifact_dir = (
+        tmp_path / "runtime" / "jobs" / "job-1" / "runs" / launcher_sha / "configabc"
+    )
     source_artifact_dir.mkdir(parents=True)
     (source_artifact_dir / "config.json").write_text("{}\n")
     result_path = tmp_path / "result.json"
@@ -1263,14 +1291,16 @@ def test_log_experiment_result_moves_artifacts_to_executed_vps_commit(
         artifact_dir=source_artifact_dir,
     )
 
-    target_artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-1" / executed_sha / "configabc"
+    target_artifact_dir = (
+        tmp_path / "runtime" / "jobs" / "job-1" / "runs" / executed_sha / "configabc"
+    )
     assert not source_artifact_dir.exists()
     assert (target_artifact_dir / "config.json").exists()
     assert (target_artifact_dir / "benchmark_output.txt").exists()
 
     entry = controller.experiment_db.export_entries()[-1]
     assert entry["commit"] == executed_sha
-    assert entry["asi"]["artifact_dir"] == (f"ema_autoresearch-runs/job-1/{executed_sha}/configabc")
+    assert entry["asi"]["artifact_dir"] == (f"runtime/jobs/job-1/runs/{executed_sha}/configabc")
 
 
 def test_run_experiment_uses_runtime_config_fallback_for_baseline_checkpoint(
@@ -1281,7 +1311,7 @@ def test_run_experiment_uses_runtime_config_fallback_for_baseline_checkpoint(
     class _Controller:
         def __init__(self) -> None:
             self.root = tmp_path
-            self.runs_dir = tmp_path / "ema-runs"
+            self.runs_dir = tmp_path / "runtime" / "jobs" / "job-1" / "runs"
             self.research_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research"
             self.state_path = tmp_path / "ema_autoresearch.next.json"
             self.family = SimpleNamespace(
@@ -1480,7 +1510,7 @@ def test_build_asi_and_entry_use_contract_identity_over_runtime_config_stem(tmp_
         },
     )()
 
-    artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-1" / "c2821b0a43ba"
+    artifact_dir = tmp_path / "runtime" / "jobs" / "job-1" / "runs" / "abc1234" / "c2821b0a43ba"
     artifact_dir.mkdir(parents=True, exist_ok=True)
     analysis = {
         "trade_analysis": {},
@@ -1512,7 +1542,7 @@ def test_build_asi_and_entry_use_contract_identity_over_runtime_config_stem(tmp_
     )
 
     assert asi["hypothesis"] == "ema5"
-    assert asi["artifact_dir"] == "ema_autoresearch-runs/job-1/c2821b0a43ba"
+    assert asi["artifact_dir"] == "runtime/jobs/job-1/runs/abc1234/c2821b0a43ba"
     assert entry["description"] == "strict-native loop: ema5"
     assert entry["commit"] == "0123456789abcdef0123456789abcdef01234567"
 
@@ -1536,7 +1566,7 @@ def test_build_asi_uses_real_artifact_hash_directory_for_contract_run(tmp_path: 
             "experiment_id": "ema5",
         },
     )()
-    artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-1" / "c2821b0a43ba"
+    artifact_dir = tmp_path / "runtime" / "jobs" / "job-1" / "runs" / "abc1234" / "c2821b0a43ba"
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     asi = _build_asi_dict(
@@ -1548,7 +1578,7 @@ def test_build_asi_uses_real_artifact_hash_directory_for_contract_run(tmp_path: 
         config_changes={},
     )
 
-    assert asi["artifact_dir"] == "ema_autoresearch-runs/job-1/c2821b0a43ba"
+    assert asi["artifact_dir"] == "runtime/jobs/job-1/runs/abc1234/c2821b0a43ba"
 
 
 def test_build_asi_and_entry_use_deterministic_ids_without_trace_context(tmp_path: Path) -> None:
@@ -1573,7 +1603,7 @@ def test_build_asi_and_entry_use_deterministic_ids_without_trace_context(tmp_pat
             "experiment_id": "ema5",
         },
     )()
-    artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-7" / "ema5"
+    artifact_dir = tmp_path / "runtime" / "jobs" / "job-7" / "runs" / "abc1234" / "ema5hash"
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     asi = _build_asi_dict(
@@ -1606,11 +1636,17 @@ def test_artifact_dir_for_uses_contract_identity_for_runtime_config_paths(tmp_pa
 
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps({"job": 1}))
-    runs_dir = tmp_path / "ema_autoresearch-runs"
+    runs_dir = tmp_path / "runtime" / "jobs" / "job-1" / "runs"
 
-    out = artifact_dir_for(state_path, runs_dir, "experiments/ema5/runtime_config.json")
+    out = artifact_dir_for(
+        state_path,
+        runs_dir,
+        "experiments/ema5/runtime_config.json",
+        git_commit="abc123",
+        config_hash="configabc1234",
+    )
 
-    assert out == runs_dir.resolve() / "job-1" / "ema5"
+    assert out == runs_dir.resolve() / "abc123" / "configabc1234"
 
 
 def test_build_db_record_populates_train_metrics_and_keep_verdict_defaults(tmp_path: Path) -> None:

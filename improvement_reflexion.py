@@ -14,15 +14,15 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_logging import get_logger
-from autoresearch_runtime_paths import job_trace_exports_root
+from autoresearch_runtime_paths import research_round_trace_exports_root
 from improvement_flags import reflexion_enabled
 from reflexio_agent_reflections import build_agent_reflections
 
 log = get_logger(__name__)
 
 # Glob shape matches what `_write_adapter_exports` writes under the current
-# job runtime root:
-#   runtime/jobs/job-N/trace_exports/round-{N:03d}-{thesis_id}/reflexio/reflexio-event.json
+# round root:
+#   runtime/jobs/job-N/research/round-N/trace_exports/round-{N:03d}-{thesis_id}/reflexio/reflexio-event.json
 EXPORT_GLOB = "round-{round_str}-*/reflexio/reflexio-event.json"
 LATEST_EXPORT_GLOB = "round-*-*/reflexio/reflexio-event.json"
 
@@ -164,7 +164,16 @@ def build_reflexion_feedback(controller, current_round: int, *, agent: str | Non
             "Action: pass an AutoresearchController-shaped object."
         )
         return ""
-    export_root = _current_job_trace_exports_root(controller, controller_root)
+    raw_job = getattr(controller, "job", None)
+    try:
+        controller_job = int(raw_job) if raw_job is not None else None
+    except (TypeError, ValueError):
+        controller_job = None
+    export_root = (
+        research_round_trace_exports_root(controller_root, controller_job, current_round - 1)
+        if controller_job is not None
+        else _current_job_trace_exports_root(controller, controller_root)
+    )
     prev_round_str = f"{current_round - 1:03d}"
     pattern = EXPORT_GLOB.format(round_str=prev_round_str)
     matches = sorted(export_root.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -202,9 +211,13 @@ def build_latest_reflexion_feedback(root: str | Path, *, agent: str | None = Non
     if not reflexion_enabled():
         return ""
     controller_root = Path(root)
-    export_root = _latest_trace_exports_root(controller_root)
     matches = sorted(
-        export_root.glob(LATEST_EXPORT_GLOB),
+        (
+            path
+            for job_path in (controller_root / "runtime" / "jobs").glob("job-*")
+            for round_path in (job_path / "research").glob("round-*")
+            for path in (round_path / "trace_exports").glob(LATEST_EXPORT_GLOB)
+        ),
         key=lambda p: (_round_from_export_path(p), p.stat().st_mtime),
         reverse=True,
     )
@@ -237,28 +250,30 @@ def _round_from_export_path(path: Path) -> int:
 def _current_job_trace_exports_root(controller: Any, controller_root: Path) -> Path:
     job_runtime = getattr(controller, "job_runtime_root", None)
     if job_runtime is not None:
-        return Path(job_runtime) / "trace_exports"
+        current_round = getattr(controller, "research_round", None)
+        if current_round is not None:
+            return Path(job_runtime) / "research" / f"round-{int(current_round)}" / "trace_exports"
     raw_job = getattr(controller, "job", None)
+    current_round = getattr(controller, "research_round", None)
     try:
         job = int(raw_job) if raw_job is not None else None
     except (TypeError, ValueError):
         job = None
     if job is None:
-        return controller_root / "trace_exports"
-    return job_trace_exports_root(controller_root, job)
-
-
-def _latest_trace_exports_root(root: Path) -> Path:
-    runtime_jobs = root / "runtime" / "jobs"
-    candidates = sorted(
-        (
-            path / "trace_exports"
-            for path in runtime_jobs.glob("job-*")
-            if (path / "trace_exports").exists()
-        ),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    if candidates:
-        return candidates[0]
-    return root / "trace_exports"
+        if current_round is not None:
+            candidates = sorted(
+                (
+                    path / "research" / f"round-{int(current_round)}" / "trace_exports"
+                    for path in (controller_root / "runtime" / "jobs").glob("job-*")
+                    if (
+                        path / "research" / f"round-{int(current_round)}" / "trace_exports"
+                    ).exists()
+                ),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+            if candidates:
+                return candidates[0]
+        raise ValueError("job id is required for reflexion trace discovery")
+    round_number = int(current_round) if current_round is not None else 1
+    return research_round_trace_exports_root(controller_root, job, round_number)

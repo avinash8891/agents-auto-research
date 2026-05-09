@@ -46,20 +46,31 @@ def read_research_artifacts(
     root: Path,
     job: int | None = None,
 ) -> list[dict[str, Any]]:
-    artifacts = read_artifacts_relative_to_root(research_dir, root)
+    artifacts: list[dict[str, Any]] = []
+    if research_dir.exists():
+        for path in sorted(research_dir.glob("round-*/round.json")):
+            try:
+                payload = json.loads(path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            payload["artifact_path"] = _serialize_artifact_path(path, root)
+            artifacts.append(payload)
     if job is None:
         return artifacts
     matched: list[dict[str, Any]] = []
     for artifact in artifacts:
-        if artifact.get("job") is None:
+        raw_job = artifact.get("job")
+        if raw_job is None:
+            raw_job = artifact.get("job_id")
+        if raw_job is None:
             continue
         try:
-            artifact_job = int(artifact["job"])
+            artifact_job = int(raw_job)
         except (TypeError, ValueError) as exc:
             _log.warning(
                 "Skipping artifact with malformed job field (path=%s, job=%r): %s",
                 artifact.get("artifact_path", "<unknown>"),
-                artifact.get("job"),
+                raw_job,
                 exc,
             )
             continue

@@ -473,7 +473,7 @@ def _find_reflexio_export_for_thesis(
 ) -> Path | None:
     search_root = artifact_root or root_path
     matches = sorted(
-        (search_root / "trace_exports").glob(
+        (search_root / "research" / f"round-{research_round}" / "trace_exports").glob(
             f"round-{research_round:03d}-*/reflexio/reflexio-event.json"
         ),
         key=lambda path: path.stat().st_mtime,

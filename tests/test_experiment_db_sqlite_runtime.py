@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -723,7 +722,7 @@ def test_sqlite_experiment_required_fields_are_meaningfully_populated_in_real_em
         state_path=runtime_root / "ema_autoresearch.next.json",
         current_md_path=runtime_root / "ema_autoresearch.current.md",
         ideas_md_path=runtime_root / "ema_autoresearch.ideas.md",
-        runs_dir=runtime_root / family.runs_dirname,
+        runs_dir=runtime_root / "runtime" / "jobs",
         family=family,
     )
     controller.experiment_db = ExperimentDB(runtime_root / "ema_experiments.db")
@@ -760,21 +759,42 @@ def test_sqlite_experiment_required_fields_are_meaningfully_populated_in_real_em
             "_last_round_usage": {"prompt_tokens": 10},
         }
     )
-    run_output_dir = runtime_root / family.runs_dirname / "job-1" / "c2821b0a43ba"
-    run_output_dir.mkdir(parents=True, exist_ok=True)
-    command = family.benchmark_command(str(config_path), run_output_dir)
-    original_pythonpath = os.environ.get("PYTHONPATH", "")
-    os.environ["PYTHONPATH"] = (
-        f"{repo_root}{os.pathsep}{original_pythonpath}" if original_pythonpath else str(repo_root)
+    run_output_dir = (
+        runtime_root / "runtime" / "jobs" / "job-1" / "runs" / "abc1234" / "c2821b0a43ba"
     )
-    try:
-        code, output = controller.run_command(command)
-    finally:
-        if original_pythonpath:
-            os.environ["PYTHONPATH"] = original_pythonpath
-        else:
-            os.environ.pop("PYTHONPATH", None)
-    assert code == 0
+    run_output_dir.mkdir(parents=True, exist_ok=True)
+
+    trades_path = run_output_dir / "trades.csv"
+    strategy_events_path = run_output_dir / "strategy_events.parquet"
+    metrics_path = run_output_dir / "metrics.json"
+    diagnostics_path = run_output_dir / "diagnostics.json"
+    result_path = run_output_dir / "result.json"
+    trades_path.write_text("entry_time,exit_time,pnl\n")
+    strategy_events_path.write_text("placeholder\n")
+    metrics_path.write_text(
+        json.dumps(
+            {
+                "median_expectancy": 1.25,
+                "trade_count": 10,
+                "profit_factor": 1.1,
+                "max_drawdown": 0.05,
+            }
+        )
+    )
+    diagnostics_path.write_text(json.dumps({"event_counts": {"raw_setup": 1}}))
+    result_path.write_text(
+        json.dumps(
+            {
+                "trades_file": "trades.csv",
+                "strategy_events_file": "strategy_events.parquet",
+                "metrics_file": "metrics.json",
+                "diagnostics_file": "diagnostics.json",
+                "git_sha": "abc1234",
+                "config_hash": "c2821b0a43ba",
+            }
+        )
+    )
+    output = f"RESULT_JSON {result_path}\n"
     metric = controller.parse_metric(output, controller.primary_metric_name())
     decision = controller.evaluate_metric(metric)
     analysis = controller.derive_trade_analysis(config_rel, metric, decision, output=output)
@@ -826,7 +846,7 @@ def test_sqlite_experiment_required_fields_are_meaningfully_populated_in_real_em
     asi = json.loads(row[24])
     assert asi["run_id"] == "job-1-run-1-ema5"
     assert asi["hypothesis_id"] == "ema5"
-    assert asi["artifact_dir"] == "ema_autoresearch-runs/job-1/ema5"
+    assert asi["artifact_dir"] == "runtime/jobs/job-1/runs/abc1234/c2821b0a43ba"
     assert row[25] == "strict-native loop: ema5"
 
 
@@ -842,7 +862,7 @@ def test_log_experiment_result_does_not_rewrite_entire_export_table(
         state_path=runtime_root / "ema_autoresearch.next.json",
         current_md_path=runtime_root / "ema_autoresearch.current.md",
         ideas_md_path=runtime_root / "ema_autoresearch.ideas.md",
-        runs_dir=runtime_root / family.runs_dirname,
+        runs_dir=runtime_root / "runtime" / "jobs",
         family=family,
     )
     controller.experiment_db = ExperimentDB(runtime_root / "ema_experiments.db")
@@ -879,21 +899,42 @@ def test_log_experiment_result_does_not_rewrite_entire_export_table(
             "_last_round_usage": {"prompt_tokens": 10},
         }
     )
-    run_output_dir = runtime_root / family.runs_dirname / "job-1" / "c2821b0a43ba"
-    run_output_dir.mkdir(parents=True, exist_ok=True)
-    command = family.benchmark_command(str(config_path), run_output_dir)
-    original_pythonpath = os.environ.get("PYTHONPATH", "")
-    os.environ["PYTHONPATH"] = (
-        f"{repo_root}{os.pathsep}{original_pythonpath}" if original_pythonpath else str(repo_root)
+    run_output_dir = (
+        runtime_root / "runtime" / "jobs" / "job-1" / "runs" / "abc1234" / "c2821b0a43ba"
     )
-    try:
-        code, output = controller.run_command(command)
-    finally:
-        if original_pythonpath:
-            os.environ["PYTHONPATH"] = original_pythonpath
-        else:
-            os.environ.pop("PYTHONPATH", None)
-    assert code == 0
+    run_output_dir.mkdir(parents=True, exist_ok=True)
+
+    trades_path = run_output_dir / "trades.csv"
+    strategy_events_path = run_output_dir / "strategy_events.parquet"
+    metrics_path = run_output_dir / "metrics.json"
+    diagnostics_path = run_output_dir / "diagnostics.json"
+    result_path = run_output_dir / "result.json"
+    trades_path.write_text("entry_time,exit_time,pnl\n")
+    strategy_events_path.write_text("placeholder\n")
+    metrics_path.write_text(
+        json.dumps(
+            {
+                "median_expectancy": 1.25,
+                "trade_count": 10,
+                "profit_factor": 1.1,
+                "max_drawdown": 0.05,
+            }
+        )
+    )
+    diagnostics_path.write_text(json.dumps({"event_counts": {"raw_setup": 1}}))
+    result_path.write_text(
+        json.dumps(
+            {
+                "trades_file": "trades.csv",
+                "strategy_events_file": "strategy_events.parquet",
+                "metrics_file": "metrics.json",
+                "diagnostics_file": "diagnostics.json",
+                "git_sha": "abc1234",
+                "config_hash": "c2821b0a43ba",
+            }
+        )
+    )
+    output = f"RESULT_JSON {result_path}\n"
     metric = controller.parse_metric(output, controller.primary_metric_name())
     decision = controller.evaluate_metric(metric)
     analysis = controller.derive_trade_analysis(config_rel, metric, decision, output=output)

@@ -443,7 +443,7 @@ def default_controller_paths(
         runtime_root / f"{prefix}_autoresearch.next.json",
         runtime_root / f"{prefix}_autoresearch.current.md",
         runtime_root / f"{prefix}_autoresearch.ideas.md",
-        runtime_root / family.runs_dirname,
+        runtime_root / "runtime" / "jobs",
     )
 
 
@@ -611,11 +611,7 @@ class AutoresearchController:
         if family is None:
             raise ValueError("AutoresearchController requires an explicit strategy family")
         self.family = family
-        raw_runs_dir = runs_dir or Path(self.family.runs_dirname)
-        self.runs_dir = (
-            raw_runs_dir.resolve() if raw_runs_dir.is_absolute() else self.root / raw_runs_dir
-        )
-        self._set_runtime_paths_for_job(0)
+        self._clear_runtime_paths()
         self.experiment_db = ExperimentDB(self.runtime_root / f"{self.family.name}_experiments.db")
         self.baseline_tracker = BaselineTracker(
             self.runtime_root / f"{self.family.name}_baseline_checkpoints.json"
@@ -623,8 +619,23 @@ class AutoresearchController:
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()
 
+    def _clear_runtime_paths(self) -> None:
+        jobs_root = self.root / "runtime" / "jobs"
+        self.job_runtime_root = jobs_root
+        self.runs_dir = jobs_root
+        self.research_dir = jobs_root
+        self.proposals_dir = jobs_root
+        self.compilations_dir = jobs_root
+        self.contracts_dir = jobs_root
+        self.experiments_dir = jobs_root
+        self.run_queue_dir = jobs_root
+        self.builder_requests_dir = jobs_root
+
     def _set_runtime_paths_for_job(self, job: int) -> None:
+        if job < 1:
+            raise ValueError(f"job id is required for job-scoped runtime paths; got {job!r}")
         self.job_runtime_root = _job_runtime_root(self.root, job)
+        self.runs_dir = self.job_runtime_root / "runs"
         self.research_dir = self.job_runtime_root / "research"
         self.proposals_dir = self.job_runtime_root / "proposals"
         self.compilations_dir = self.job_runtime_root / "compilations"
@@ -654,34 +665,18 @@ class AutoresearchController:
                 continue
         return max_job
 
-    def _max_job_in_legacy_queue_dir(self) -> int:
-        legacy_queue_dir = self.root / self.family.run_queue_dirname
-        if not legacy_queue_dir.exists():
-            return 0
-        max_job = 0
-        for path in legacy_queue_dir.glob("*.json"):
-            try:
-                payload = json.loads(path.read_text())
-            except (OSError, ValueError, TypeError):
-                continue
-            if not isinstance(payload, dict):
-                continue
-            max_job = max(max_job, _state_coerce_job_to_int(payload.get("job")))
-        return max_job
-
     def next_fresh_job_id(self, prior_state: dict[str, Any] | None = None) -> int:
         """Pick a fresh job id that cannot collide with checkout history.
 
         Fresh launches must not reuse a historical job id from the local
-        state file, experiment DB, runtime job tree, or legacy queue artifacts.
-        Reusing one of those ids makes a "fresh" job inherit stale baseline
-        decisions, queued theses, or old results.
+        state file, experiment DB, or runtime job tree. Reusing one of those
+        ids makes a "fresh" job inherit stale baseline decisions, queued
+        theses, or old results.
         """
         prior = prior_state if prior_state is not None else self.read_state()
         max_seen = _state_coerce_job_to_int(prior.get("job"))
         max_seen = max(max_seen, self.experiment_db.max_job_id())
         max_seen = max(max_seen, self._max_runtime_job_id())
-        max_seen = max(max_seen, self._max_job_in_legacy_queue_dir())
         return max_seen + 1 if max_seen > 0 else 1
 
     def clear_transient_context(self) -> None:
@@ -700,12 +695,13 @@ class AutoresearchController:
         state.pop("research_stop_reasoning", None)
 
     def _ensure_job_metadata(self) -> None:
-        """Stamp job-scoped defaults into state for direct loop entrypoints."""
+        """Validate job-scoped state before direct loop entrypoints."""
         state = self.read_state()
+        raw_job = state.get("job")
+        job = _state_coerce_job_to_int(raw_job)
+        if job < 1:
+            raise ValueError(f"job id is required for controller execution; got {raw_job!r}")
         changed = False
-        if not state.get("job"):
-            state["job"] = 1
-            changed = True
         if "research_round" not in state:
             state["research_round"] = 0
             changed = True
@@ -715,9 +711,7 @@ class AutoresearchController:
         if changed:
             self.write_state(state)
         else:
-            job = _state_coerce_job_to_int(state.get("job"))
-            if job > 0:
-                self._set_runtime_paths_for_job(job)
+            self._set_runtime_paths_for_job(job)
 
     def read_state(self) -> dict[str, Any]:
         return _state_read_state(self.state_path)
@@ -729,6 +723,8 @@ class AutoresearchController:
         job = _state_coerce_job_to_int(state.get("job"))
         if job > 0:
             self._set_runtime_paths_for_job(job)
+        else:
+            self._clear_runtime_paths()
         next_state = state.get("state", "unknown")
         if previous_state != next_state:
             trace_state_change(previous_state, next_state, state.get("finished_reason", ""))

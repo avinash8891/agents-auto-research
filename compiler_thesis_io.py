@@ -16,6 +16,12 @@ from strategies import STRATEGIES
 from strategy_family import load_family
 
 
+def _default_runtime_root(root: Path, artifact_root: Path | None) -> Path:
+    if artifact_root is None:
+        raise ValueError("job-scoped artifact_root is required for thesis artifact compilation")
+    return artifact_root
+
+
 def compile_config_thesis(
     family_name: str,
     thesis_id: str,
@@ -38,7 +44,7 @@ def compile_config_thesis(
 
     Returns {"status": ..., "config_path": ..., "runtime_config": ..., "config_hash": ...}
     """
-    family = load_family(family_name)
+    load_family(family_name)
     strategy = STRATEGIES[family_name]
     defaults = strategy.get_defaults()
     allowed = set(defaults.keys())
@@ -73,15 +79,15 @@ def compile_config_thesis(
 
     config_hash = _config_hash(runtime_config)
 
-    runtime_root = artifact_root or root
-    contracts_dir = runtime_root / family.contracts_dirname
+    runtime_root = _default_runtime_root(root, artifact_root)
+    contracts_dir = runtime_root / "contracts"
     contracts_dir.mkdir(parents=True, exist_ok=True)
     config_path = contracts_dir / f"{config_hash}.json"
 
     if not config_path.exists():
         write_text_atomic(config_path, json.dumps(runtime_config, indent=2) + "\n")
 
-    run_queue_dir = runtime_root / family.run_queue_dirname
+    run_queue_dir = runtime_root / "run-queue"
     run_queue_dir.mkdir(parents=True, exist_ok=True)
     write_json_artifact(
         run_queue_dir / f"{config_hash}.json",
@@ -114,14 +120,15 @@ def compile_proposal_artifact(
     """Compile a thesis proposal into a family-specific runtime artifact."""
     thesis_id = proposal["thesis_id"]
     family_name = proposal["strategy_family"]
-    family = load_family(family_name)
+    load_family(family_name)
     contract = proposal.get("primitive_contract", [])
     result = STRATEGIES[family_name].compile_contract(contract)
 
-    runtime_root = artifact_root or root
-    compilations_dir = runtime_root / family.compilations_dirname
-    run_queue_dir = runtime_root / family.run_queue_dirname
-    contracts_dir = runtime_root / family.contracts_dirname
+    runtime_root = _default_runtime_root(root, artifact_root)
+    compilations_dir = runtime_root / "compilations"
+    run_queue_dir = runtime_root / "run-queue"
+    contracts_dir = runtime_root / "contracts"
+    compilations_dir.mkdir(parents=True, exist_ok=True)
     contracts_dir.mkdir(parents=True, exist_ok=True)
     run_queue_dir.mkdir(parents=True, exist_ok=True)
 
@@ -203,11 +210,11 @@ def create_executable_artifact(
     thesis_id = thesis.get("thesis_id", "")
     family_name = thesis["strategy_family"]
 
-    family = load_family(family_name)
-    runtime_root = artifact_root or root
+    load_family(family_name)
+    runtime_root = _default_runtime_root(root, artifact_root)
 
     if thesis.get("requires_code_change"):
-        proposals_dir = runtime_root / family.proposals_dirname
+        proposals_dir = runtime_root / "proposals"
         write_json_artifact(
             proposals_dir / f"{thesis_id}.json",
             {
@@ -247,7 +254,7 @@ def create_executable_artifact(
                 "generated_thesis_id": thesis_id,
             }
         config_hash = result["config_hash"]
-        proposals_dir = runtime_root / family.proposals_dirname
+        proposals_dir = runtime_root / "proposals"
         write_json_artifact(
             proposals_dir / f"{config_hash}.json",
             {
@@ -295,7 +302,7 @@ def create_executable_artifact(
             "generated_thesis_id": thesis_id,
         }
     return {
-        "generated_config": (runtime_root / family.contracts_dirname / f"{thesis_id}.json")
+        "generated_config": (runtime_root / "contracts" / f"{thesis_id}.json")
         .relative_to(root)
         .as_posix(),
         "generated_config_needs_build": False,

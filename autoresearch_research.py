@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from pydantic import ValidationError
 
+from artifact_io import write_json_artifact
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
     DISCORD_COLOR_DISCARD,
@@ -32,6 +33,7 @@ from autoresearch_orchestration import (
 )
 from autoresearch_paths import resolve_config_path
 from autoresearch_planning import build_research_failure_state
+from autoresearch_runtime_paths import research_round_root
 from autoresearch_state import (
     ExperimentRecord,
     read_state,
@@ -1115,7 +1117,9 @@ def _record_round_quality_and_bridges(
         summary=f"reflexio round {research_round}",
         payload=reflexio_package["files"]["reflexio-event.json"],
     )
-    _write_adapter_exports(controller.job_runtime_root, **payload_kwargs)
+    state = controller.read_state()
+    round_root = research_round_root(controller.root, int(state.get("job")), research_round)
+    _write_adapter_exports(round_root, **payload_kwargs)
 
 
 def _write_export_package(export_root: Path, directory_name: str, package: dict[str, Any]) -> None:
@@ -1164,6 +1168,61 @@ def _write_adapter_exports(
         if dir_name in {"recursive_improve", "reflexio"}:
             adapter_kwargs["canonical_trace_path"] = get_event_file()
         _write_export_package(export_root, dir_name, build_fn(**adapter_kwargs))
+
+
+def _write_research_round_artifacts(
+    controller: "AutoresearchController",
+    *,
+    research_round: int,
+    result: dict[str, Any],
+    round_usage: dict[str, Any],
+) -> Path:
+    state = controller.read_state()
+    raw_job = state.get("job")
+    try:
+        job = int(raw_job)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"job id is required for research round artifact path; got {raw_job!r}"
+        ) from exc
+    round_root = research_round_root(controller.root, job, research_round)
+    round_root.mkdir(parents=True, exist_ok=True)
+    for dirname in ("conductor", "analyst", "validator", "compiler"):
+        (round_root / dirname).mkdir(parents=True, exist_ok=True)
+    (round_root / "attempts" / "attempt-1").mkdir(parents=True, exist_ok=True)
+    thesis_id = result.get("generated_thesis_id") or result.get("thesis_id")
+    write_json_artifact(
+        round_root / "round.json",
+        {
+            "job_id": job,
+            "round_number": research_round,
+            "strategy_family": controller.family.name,
+            "selected_thesis_id": thesis_id,
+            "outcome": _classify_round_outcome(result),
+            "run_id": result.get("run_id"),
+            "created_at": iso8601_utc_now(),
+            "usage": round_usage if round_usage else None,
+        },
+    )
+    write_json_artifact(
+        round_root / "links.json",
+        {
+            "generated_config_path": result.get("generated_config"),
+            "experiment_sidecar_path": (
+                f"runtime/jobs/job-{job}/experiments/{thesis_id}/thesis.json" if thesis_id else None
+            ),
+            "related_backtest_run_artifact_path": result.get("related_backtest_run_artifact_path"),
+            "related_trace_export_path": (
+                f"runtime/jobs/job-{job}/research/round-{research_round}/trace_exports"
+            ),
+            "related_builder_request_path": (
+                f"runtime/jobs/job-{job}/builder-requests/{thesis_id}"
+                if thesis_id and result.get("generated_config_needs_build")
+                else None
+            ),
+        },
+    )
+    return round_root
 
 
 def _safe_hook(name: str, fn, *args, **kwargs):
@@ -1493,6 +1552,12 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
     result, round_usage = _invoke_conductor_round(controller, research_round)
     result["research_round"] = research_round
     state = controller.read_state()  # refresh after _invoke_conductor_round mutated state
+    _write_research_round_artifacts(
+        controller,
+        research_round=research_round,
+        result=result,
+        round_usage=round_usage,
+    )
 
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
     thesis_meta = _thesis_meta_from_result(result, controller.family.name)

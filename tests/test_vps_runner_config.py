@@ -221,7 +221,7 @@ def test_remote_command_runs_controller_for_family() -> None:
     release_dir = str(PurePosixPath(config.remote_dir) / "releases" / resolved_sha)
     assert f"cd {shlex.quote(release_dir)}" in command
     assert "os.symlink(target, link)" in command
-    assert f"{family.runs_dirname}" in command
+    assert "runtime" in command
     assert f"export AUTORESEARCH_RUNTIME_ROOT={shlex.quote(config.remote_dir)}" in command
     assert "deps_fingerprint=$(python3 -c" in command
     assert ".venv/.autoresearch-deps.sha256" in command
@@ -260,7 +260,7 @@ def test_release_symlink_bootstrap_only_links_shared_dirs(tmp_path: Path) -> Non
 
     subprocess.run(["bash", "-lc", command], check=True, cwd=tmp_path)
 
-    assert (release_dir / family.runs_dirname).is_symlink()
+    assert (release_dir / "runtime").is_symlink()
     assert (release_dir / "logs").is_symlink()
     assert not (release_dir / f"{family.name}_autoresearch.next.json").exists()
 

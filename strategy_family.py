@@ -20,7 +20,6 @@ class StrategyFamily:
     run_queue_dirname: str = "run-queue"
     builder_requests_dirname: str = "builder-requests"
     base_config_filename: str = "base.yaml"
-    runs_dirname: str = "autoresearch-runs"
     discord_webhook: str = ""
     # Family-aware variant config conventions. Variant config files live
     # at `configs/variants/{variant_prefix}{slug}.yaml`. Default variants
@@ -90,7 +89,6 @@ def _families() -> dict[str, StrategyFamily]:
             run_queue_dirname=strategy.family_dirnames.run_queue,
             builder_requests_dirname=strategy.family_dirnames.builder_requests,
             base_config_filename=strategy.family_dirnames.base_config_filename,
-            runs_dirname=strategy.family_dirnames.runs,
             discord_webhook=_discord_webhook_for(name),
             variant_prefix=strategy.family_dirnames.variant_prefix,
             default_variants=strategy.default_variants,

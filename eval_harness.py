@@ -168,9 +168,15 @@ def run_one_suite(
     """
     runner = task_runner or _default_task_runner
     if max_workers > 1:
-        with ProcessPoolExecutor(max_workers=max_workers) as pool:
-            futures = [pool.submit(_run_one_task_with_runner, runner, t) for t in tasks]
-            return summarize_suite([f.result() for f in futures])
+        try:
+            with ProcessPoolExecutor(max_workers=max_workers) as pool:
+                futures = [pool.submit(_run_one_task_with_runner, runner, t) for t in tasks]
+                return summarize_suite([f.result() for f in futures])
+        except (PermissionError, NotImplementedError, OSError) as exc:
+            log.warning(
+                "EVAL_HARNESS process pool unavailable; falling back to serial execution: %s",
+                exc,
+            )
 
     return summarize_suite([_run_one_task_with_runner(runner, t) for t in tasks])
 

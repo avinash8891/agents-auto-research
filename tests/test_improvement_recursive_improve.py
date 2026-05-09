@@ -10,7 +10,17 @@ from autoresearch_constants import ENV_IMPROVEMENT_RECURSIVE_IMPROVE
 
 
 def _write_trace(root: Path, round_id: int, thesis_id: str = "T1") -> Path:
-    trace_dir = root / "trace_exports" / f"round-{round_id:03d}-{thesis_id}" / "recursive_improve"
+    trace_dir = (
+        root
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / f"round-{round_id}"
+        / "trace_exports"
+        / f"round-{round_id:03d}-{thesis_id}"
+        / "recursive_improve"
+    )
     trace_dir.mkdir(parents=True)
     trace = {
         "session_id": f"round-{round_id}",
@@ -54,6 +64,8 @@ def _write_job_trace(root: Path, job: int, round_id: int, thesis_id: str = "T1")
         / "runtime"
         / "jobs"
         / f"job-{job}"
+        / "research"
+        / f"round-{round_id}"
         / "trace_exports"
         / f"round-{round_id:03d}-{thesis_id}"
         / "recursive_improve"
@@ -225,6 +237,7 @@ def test_prepare_report_batch_uses_job_scoped_recursive_improve_exports(tmp_path
     assert result.status == "prepared"
     manifest = json.loads((result.output_dir / "manifest.json").read_text(encoding="utf-8"))
     assert any(
-        "job-22/trace_exports/round-001-job-trace" in path for path in manifest["source_traces"]
+        "job-22/research/round-1/trace_exports/round-001-job-trace" in path
+        for path in manifest["source_traces"]
     )
     assert all("stale-global" not in path for path in manifest["source_traces"])

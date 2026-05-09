@@ -31,17 +31,17 @@ def _write_artifact(directory: Path, name: str, payload: dict) -> Path:
 
 
 def test_read_artifacts_relativizes_artifact_path_to_root(tmp_path: Path) -> None:
-    artifacts_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research"
+    artifacts_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-1"
     _write_artifact(
         artifacts_dir,
-        "research-2026-04-29.json",
+        "round.json",
         {"status": "completed", "findings": ["thesis on regime filters"]},
     )
 
     out = read_artifacts_relative_to_root(artifacts_dir, tmp_path)
     assert len(out) == 1
     # artifact_path is rewritten relative to root, in POSIX form.
-    assert out[0]["artifact_path"] == "runtime/jobs/job-1/research/research-2026-04-29.json"
+    assert out[0]["artifact_path"] == "runtime/jobs/job-1/research/round-1/round.json"
     assert out[0]["status"] == "completed"
 
 
@@ -50,8 +50,8 @@ def test_read_artifacts_returns_empty_for_missing_dir(tmp_path: Path) -> None:
 
 
 def test_read_artifacts_skips_malformed_json(tmp_path: Path) -> None:
-    artifacts_dir = tmp_path / "ema-run-queue"
-    artifacts_dir.mkdir()
+    artifacts_dir = tmp_path / "runtime" / "jobs" / "job-1" / "run-queue"
+    artifacts_dir.mkdir(parents=True)
     (artifacts_dir / "good.json").write_text(
         json.dumps({"thesis_id": "g", "status": "pending", "config": "x.json"})
     )
@@ -63,8 +63,8 @@ def test_read_artifacts_skips_malformed_json(tmp_path: Path) -> None:
 
 
 def test_read_artifacts_skips_unreadable_json_file(tmp_path: Path, monkeypatch) -> None:
-    artifacts_dir = tmp_path / "ema-run-queue"
-    artifacts_dir.mkdir()
+    artifacts_dir = tmp_path / "runtime" / "jobs" / "job-1" / "run-queue"
+    artifacts_dir.mkdir(parents=True)
     good = artifacts_dir / "good.json"
     bad = artifacts_dir / "bad.json"
     good.write_text(json.dumps({"thesis_id": "g", "status": "pending", "config": "x.json"}))
@@ -109,13 +109,13 @@ def test_read_artifacts_returns_sorted_by_filename(tmp_path: Path) -> None:
 
 def test_read_research_artifacts_uses_research_dir(tmp_path: Path) -> None:
     research_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research"
-    _write_artifact(research_dir, "round-1.json", {"status": "completed", "job": 1})
-    _write_artifact(research_dir, "round-2.json", {"status": "completed", "job": 2})
+    _write_artifact(research_dir / "round-1", "round.json", {"status": "completed", "job_id": 1})
+    _write_artifact(research_dir / "round-2", "round.json", {"status": "completed", "job_id": 2})
     out = read_research_artifacts(research_dir, tmp_path)
     assert len(out) == 2
-    assert out[0]["artifact_path"] == "runtime/jobs/job-1/research/round-1.json"
+    assert out[0]["artifact_path"] == "runtime/jobs/job-1/research/round-1/round.json"
     assert read_research_artifacts(research_dir, tmp_path, job=2)[0]["artifact_path"] == (
-        "runtime/jobs/job-1/research/round-2.json"
+        "runtime/jobs/job-1/research/round-2/round.json"
     )
 
 
@@ -132,7 +132,7 @@ def test_read_thesis_artifacts_uses_proposals_dir(tmp_path: Path) -> None:
 
 
 def test_read_run_queue_returns_relative_paths(tmp_path: Path) -> None:
-    run_queue_dir = tmp_path / "ema-run-queue"
+    run_queue_dir = tmp_path / "runtime" / "jobs" / "job-1" / "run-queue"
     _write_artifact(
         run_queue_dir,
         "thesis-001.json",
@@ -143,7 +143,7 @@ def test_read_run_queue_returns_relative_paths(tmp_path: Path) -> None:
         },
     )
     out = read_run_queue(run_queue_dir, tmp_path)
-    assert out[0]["artifact_path"] == "ema-run-queue/thesis-001.json"
+    assert out[0]["artifact_path"] == "runtime/jobs/job-1/run-queue/thesis-001.json"
 
 
 # ── queue_from_thesis_artifacts ──────────────────────────────────
@@ -269,7 +269,7 @@ def test_queue_dedupes_within_a_single_pass(tmp_path: Path) -> None:
 
 
 def test_queue_skips_malformed_runtime_config_even_if_path_exists(tmp_path: Path) -> None:
-    run_queue_dir = tmp_path / "ema-run-queue"
+    run_queue_dir = tmp_path / "runtime" / "jobs" / "job-1" / "run-queue"
     config = "experiments/runtime_config.json"
     (tmp_path / config).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / config).write_text("{not valid json")

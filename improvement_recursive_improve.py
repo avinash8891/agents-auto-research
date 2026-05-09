@@ -24,7 +24,7 @@ from autoresearch_constants import (
     ENV_RECURSIVE_IMPROVE_TIMEOUT_SECONDS,
 )
 from autoresearch_logging import get_logger
-from autoresearch_runtime_paths import job_trace_exports_root
+from autoresearch_runtime_paths import research_round_trace_exports_root
 from improvement_flags import recursive_improve_enabled
 
 log = get_logger(__name__)
@@ -250,8 +250,10 @@ def _find_recursive_improve_traces(
     job: int | None,
 ) -> list[Path]:
     traces: list[Path] = []
-    trace_root = job_trace_exports_root(root, job) if job is not None else root / "trace_exports"
     for round_id in range(start_round, end_round + 1):
+        if job is None:
+            raise ValueError("job id is required for recursive-improve trace discovery")
+        trace_root = research_round_trace_exports_root(root, job, round_id)
         traces.extend(
             sorted(
                 trace_root.glob(

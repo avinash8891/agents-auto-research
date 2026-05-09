@@ -15,7 +15,7 @@ from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from autoresearch_constants import DEFAULT_AGENT_MODEL
 from autoresearch_logging import get_logger
 from research_paths import _OAUTH_PROXY_URL, _extract_runner_output_text
-from thesis_validator import ThesisValidationError, validate_thesis_dict
+from thesis_validator import normalize_thesis_payload
 
 log = get_logger(__name__)
 
@@ -56,12 +56,46 @@ def _validate_output(agent_name: str, parsed: dict[str, Any]) -> bool:
         t = theses[0]
         if not isinstance(t, dict):
             return False
-        candidate = dict(t)
-        candidate.setdefault("strategy_family", "unknown")
-        try:
-            validate_thesis_dict(candidate)
-        except (ThesisValidationError, ValueError):
+        candidate = normalize_thesis_payload(dict(t))
+        required_scalar_fields = (
+            "thesis_id",
+            "hypothesis",
+            "mechanism",
+            "mechanism_dimension",
+            "dimension_novelty",
+        )
+        if any(not str(candidate.get(field) or "").strip() for field in required_scalar_fields):
             return False
+        config_changes = candidate.get("config_changes")
+        requires_code_change = bool(candidate.get("requires_code_change"))
+        if not isinstance(config_changes, dict):
+            return False
+        if not config_changes and not requires_code_change:
+            return False
+        expected_effects = candidate.get("expected_effects")
+        if not isinstance(expected_effects, list) or not expected_effects:
+            return False
+        for effect in expected_effects:
+            if not isinstance(effect, dict):
+                return False
+            if not str(effect.get("metric") or "").strip():
+                return False
+            if not str(effect.get("direction") or "").strip():
+                return False
+        disqualifiers = candidate.get("disqualifiers")
+        if not isinstance(disqualifiers, list) or not disqualifiers:
+            return False
+        for disqualifier in disqualifiers:
+            if not isinstance(disqualifier, dict):
+                return False
+            if not str(disqualifier.get("name") or "").strip():
+                return False
+            if not str(disqualifier.get("condition") or "").strip():
+                return False
+        if requires_code_change:
+            requested_primitives = candidate.get("requested_primitives")
+            if not isinstance(requested_primitives, list) or not requested_primitives:
+                return False
         return True
 
     return True

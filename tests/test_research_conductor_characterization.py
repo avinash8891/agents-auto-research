@@ -1302,7 +1302,7 @@ def test_analyst_prompt_includes_agent_reflexion_feedback(monkeypatch, tmp_path)
 
 def test_analysis_manifest_discovers_strategy_sources_by_family() -> None:
     manifest = subagents._analysis_manifest(
-        trades_file="/tmp/ema_autoresearch-runs/job-1/commit/hash/trades.csv",
+        trades_file="/tmp/runtime/jobs/job-1/runs/commit/hash/trades.csv",
         strategy_events_file="/tmp/events.parquet",
         diagnostics_file="/tmp/diagnostics.json",
         family_name="ema",
@@ -1344,8 +1344,8 @@ def test_analysis_manifest_defaults_to_baseline_artifacts_when_job_history_exist
     db = ExperimentDB(runtime_root / "ema_experiments.db")
     db.init_session(name="ema", metric_name="profit_factor", direction="higher")
 
-    baseline_dir = tmp_path / "ema_autoresearch-runs" / "job-7" / "commit" / "baseline-hash"
-    latest_dir = tmp_path / "ema_autoresearch-runs" / "job-7" / "commit" / "latest-hash"
+    baseline_dir = tmp_path / "runtime" / "jobs" / "job-7" / "runs" / "commit" / "baseline-hash"
+    latest_dir = tmp_path / "runtime" / "jobs" / "job-7" / "runs" / "commit" / "latest-hash"
     baseline_dir.mkdir(parents=True)
     latest_dir.mkdir(parents=True)
     for directory in (baseline_dir, latest_dir):
@@ -1513,7 +1513,7 @@ def test_analyst_prompt_includes_market_data_manifest_from_runtime_config(monkey
     (experiment_dir / "runtime_config.json").write_text(
         json.dumps({"runtime_config": {"data_universe": "nasdaq8"}})
     )
-    artifact_dir = tmp_path / "ema_autoresearch-runs" / "job-20" / "commitsha" / config_hash
+    artifact_dir = tmp_path / "runtime" / "jobs" / "job-20" / "runs" / "commitsha" / config_hash
     artifact_dir.mkdir(parents=True)
     trades_file = artifact_dir / "trades.csv"
     events_file = artifact_dir / "strategy_events.parquet"

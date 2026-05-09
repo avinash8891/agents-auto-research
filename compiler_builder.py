@@ -586,8 +586,9 @@ def _load_structured_thesis_artifacts(
 def _builder_artifact_dir(
     root: Path, family_name: str, thesis_id: str, *, artifact_root: Path | None = None
 ) -> Path:
-    family = load_family(family_name)
-    return (artifact_root or root) / family.builder_requests_dirname / thesis_id
+    if artifact_root is None:
+        raise ValueError("job-scoped artifact_root is required for builder artifacts")
+    return artifact_root / "builder-requests" / thesis_id
 
 
 def _builder_attempt_artifact_dir(artifact_dir: Path, attempt_number: int) -> Path:
@@ -1297,7 +1298,8 @@ def build_missing_primitives(
 ) -> dict[str, Any]:
     """Dispatch CLI builder to implement missing primitives for a thesis."""
     started_at = time.monotonic()
-    artifact_root = artifact_root or root
+    if artifact_root is None:
+        raise ValueError("job-scoped artifact_root is required for builder dispatch")
     structured = _load_structured_thesis_artifacts(root, thesis_id, artifact_root=artifact_root)
     if structured is not None:
         proposal, compilation, proposal_path, compilation_path = structured
@@ -1314,7 +1316,7 @@ def build_missing_primitives(
                 "validation_passed": False,
             }
         try:
-            family = load_family(family_name)
+            load_family(family_name)
         except (KeyError, ValueError) as exc:
             return {
                 "status": "error",
@@ -1337,19 +1339,15 @@ def build_missing_primitives(
             artifact_root / "experiments" / thesis_id / "runtime_config.json"
         ).resolve()
         config_path = serialize_config_path(generated_name, code_root=root)
-        builder_requests_dir = artifact_root / family.builder_requests_dirname
+        builder_requests_dir = artifact_root / "builder-requests"
         attempt_dir = _builder_artifact_dir(
             root, family_name, thesis_id, artifact_root=artifact_root
         )
     else:
         compilation_family_name = None
         for candidate_family in sorted(STRATEGIES):
-            candidate_proposal_path = (
-                artifact_root
-                / load_family(candidate_family).proposals_dirname
-                / f"{thesis_id}.json"
-            )
-            if candidate_proposal_path.exists():
+            proposal_path = artifact_root / "proposals" / f"{thesis_id}.json"
+            if proposal_path.exists():
                 compilation_family_name = candidate_family
                 break
 
@@ -1361,10 +1359,9 @@ def build_missing_primitives(
                 "generated_config": None,
                 "validation_passed": False,
             }
-
-        family = load_family(compilation_family_name)
-        proposal_path = artifact_root / family.proposals_dirname / f"{thesis_id}.json"
-        compilation_path = artifact_root / family.compilations_dirname / f"{thesis_id}.json"
+        load_family(compilation_family_name)
+        proposal_path = artifact_root / "proposals" / f"{thesis_id}.json"
+        compilation_path = artifact_root / "compilations" / f"{thesis_id}.json"
         if not proposal_path.exists():
             return {
                 "status": "error",
@@ -1425,12 +1422,10 @@ def build_missing_primitives(
         if invalid_contract is not None:
             return invalid_contract
         generated_name = (
-            f"{family.name}_{thesis_id}.yaml"
-            if not thesis_id.startswith(f"{family.name}_")
-            else f"{thesis_id}.yaml"
-        )
-        config_path = f"configs/variants/{generated_name}"
-        builder_requests_dir = artifact_root / family.builder_requests_dirname
+            artifact_root / "experiments" / thesis_id / "runtime_config.json"
+        ).resolve()
+        config_path = serialize_config_path(generated_name, code_root=root)
+        builder_requests_dir = artifact_root / "builder-requests"
         attempt_dir = _builder_artifact_dir(
             root, family_name, thesis_id, artifact_root=artifact_root
         )
@@ -1507,7 +1502,7 @@ def build_missing_primitives(
         source_snapshot=_snapshot_promotable_source_state(root),
     )
     prompt_extras = []
-    builder_reflexion = build_latest_reflexion_feedback(artifact_root or root, agent="builder")
+    builder_reflexion = build_latest_reflexion_feedback(root, agent="builder")
     if builder_reflexion:
         prompt_extras.extend(
             [

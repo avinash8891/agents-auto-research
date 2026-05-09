@@ -288,7 +288,6 @@ def _render_release_symlink_bootstrap(
         ".venv",
         "runtime",
         "logs",
-        family.runs_dirname,
     ]
     payload = {
         "release_dir": release_dir,

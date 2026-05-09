@@ -46,7 +46,7 @@ Expected behavior: Experiment logging should accept an absolute `runs_dir` and s
 Reproduction steps: 1. Instantiate `AutoresearchController` with an absolute temp `runs_dir`. 2. Seed a running baseline experiment. 3. Call `execute_once()`. 4. Observe whether result logging crashes on `artifact_dir.relative_to(controller.root)`.
 Reproduction status: reproduced
 Reproduction command: `python3` direct controller repro with temp absolute `runs_dir` and `job=1`
-Observed failure: `ValueError: '/private/.../runs/job-0/...'' is not in the subpath of '/Users/.../agents-auto-research'`
+Observed failure: `ValueError: '/private/.../runs/...'' is not in the subpath of '/Users/.../agents-auto-research'`
 Evidence / error message: `artifact_dir.relative_to(controller.root)` raised `ValueError` during `_build_asi_dict`.
 Suspected files: `autoresearch_experiment.py`, `autoresearch_controller.py`
 Verification command: direct `python3` controller repro with absolute `runs_dir` completed without crashing after serialization fix
