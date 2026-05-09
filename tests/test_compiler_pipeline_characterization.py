@@ -701,7 +701,12 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
                 "HelpProc",
                 (),
                 {
-                    "stdout": "usage: codex exec [OPTIONS]\n  --sandbox <SANDBOX_MODE>\n",
+                    "stdout": (
+                        "usage: codex exec [OPTIONS]\n"
+                        "  --sandbox <SANDBOX_MODE>\n"
+                        "  --json\n"
+                        "  --output-last-message <PATH>\n"
+                    ),
                     "stderr": "",
                     "returncode": 0,
                 },
@@ -814,9 +819,6 @@ def test_build_missing_primitives_trace_links_builder_attempt_artifacts(
 
     events: list[dict[str, object]] = []
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
-    monkeypatch.setattr(
-        "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
-    )
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
     monkeypatch.setattr(
         "compiler_builder._validated_generated_config_result",
@@ -902,6 +904,9 @@ def test_build_missing_primitives_emits_builder_usage_trace_and_persists_usage(
     monkeypatch.setattr(
         "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
     )
+    monkeypatch.setattr(
+        "compiler_builder._codex_supports_exec_flag", lambda *args, **kwargs: False
+    )
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
     monkeypatch.setattr(
         "compiler_builder.record_usage_event", lambda *args, **kwargs: emitted_usage.append(kwargs)
@@ -971,6 +976,9 @@ def test_build_missing_primitives_reports_timeout_explicitly(
     monkeypatch.setattr(
         "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
     )
+    monkeypatch.setattr(
+        "compiler_builder._codex_supports_exec_flag", lambda *args, **kwargs: False
+    )
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
 
     result = build_missing_primitives(tmp_path, thesis_id)
@@ -1021,20 +1029,25 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
     )
 
     def fake_run(cmd, *args, **kwargs):
+        if cmd[:2] == ["codex", "exec"]:
+            target = experiment_dir / "runtime_config.json"
+            target.write_text(json.dumps(_ema_runtime_config()) + "\n")
+            raise subprocess.TimeoutExpired(
+                cmd=cmd,
+                timeout=kwargs["timeout"],
+                output="generated config but kept inspecting diff",
+                stderr="still reviewing unrelated dirty worktree",
+            )
         if "-c" in cmd:
             return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
-        target = experiment_dir / "runtime_config.json"
-        target.write_text(json.dumps(_ema_runtime_config()) + "\n")
-        raise subprocess.TimeoutExpired(
-            cmd=cmd,
-            timeout=kwargs["timeout"],
-            output="generated config but kept inspecting diff",
-            stderr="still reviewing unrelated dirty worktree",
-        )
+        raise AssertionError(f"unexpected subprocess command: {cmd!r}")
 
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
     monkeypatch.setattr(
         "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
+    )
+    monkeypatch.setattr(
+        "compiler_builder._codex_supports_exec_flag", lambda *args, **kwargs: False
     )
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
     monkeypatch.setattr(
@@ -1358,10 +1371,7 @@ def test_builder_normalizes_legacy_new_config_keys_needed_before_missing_primiti
         "open_execution_delay_enabled": True,
         "open_execution_delay_minutes": 3,
     }
-    assert compiler_builder._resolve_missing_primitives(normalized, {}) == [
-        "open_execution_delay_enabled",
-        "open_execution_delay_minutes",
-    ]
+    assert compiler_builder._resolve_missing_primitives(normalized, {}) == []
 
 
 def test_builder_missing_primitives_falls_back_to_contract_when_requested_is_empty() -> None:
@@ -1456,6 +1466,13 @@ def test_builder_implementation_verifier_accepts_custom_pf_diagnostic_from_metri
     thesis = {
         "config_changes": {"per_symbol_entry_cooldown_minutes": 15},
         "required_diagnostics": ["pf_by_time_since_last_same_symbol_entry_bucket"],
+        "required_diagnostic_specs": [
+            {
+                "key": "pf_by_time_since_last_same_symbol_entry_bucket",
+                "surface": "metrics",
+                "description": "bucketed PF metric",
+            }
+        ],
     }
 
     result = verify_builder_implementation_contract(
@@ -1469,6 +1486,46 @@ def test_builder_implementation_verifier_accepts_custom_pf_diagnostic_from_metri
     assert result.failures == []
 
 
+def test_builder_implementation_verifier_rejects_logger_only_diagnostic_emission(
+    tmp_path: Path,
+) -> None:
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "strategy.py").write_text(
+        "config.get('per_symbol_entry_cooldown_minutes')\n"
+        "logger.info('pf_by_time_since_last_same_symbol_entry_bucket')\n"
+    )
+    experiment_dir = tmp_path / "experiments" / "cooldown_pf_bucket_thesis"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(
+        json.dumps({"per_symbol_entry_cooldown_minutes": 15}) + "\n"
+    )
+    thesis = {
+        "config_changes": {"per_symbol_entry_cooldown_minutes": 15},
+        "required_diagnostics": ["pf_by_time_since_last_same_symbol_entry_bucket"],
+        "required_diagnostic_specs": [
+            {
+                "key": "pf_by_time_since_last_same_symbol_entry_bucket",
+                "surface": "metrics",
+                "description": "bucketed PF metric",
+            }
+        ],
+    }
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis=thesis,
+        generated_config_path="experiments/cooldown_pf_bucket_thesis/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert result.passed is False
+    assert (
+        "required_diagnostic_not_emitted:pf_by_time_since_last_same_symbol_entry_bucket"
+        in result.failures
+    )
+
+
 def test_builder_implementation_verifier_accepts_registered_experiment_evaluation_diagnostic_from_registry(
     tmp_path: Path,
 ) -> None:
@@ -1479,7 +1536,10 @@ def test_builder_implementation_verifier_accepts_registered_experiment_evaluatio
     experiment_dir.mkdir(parents=True)
     (experiment_dir / "runtime_config.json").write_text(json.dumps({}) + "\n")
     (tmp_path / "diagnostic_contracts.py").write_text(
-        'enriched["max_drawdown_and_pct_profitable_windows_vs_base"] = {}\n'
+        "from research_types import DiagnosticRequirementSpec\n"
+        "_REGISTERED = DiagnosticRequirementSpec("
+        "key='max_drawdown_and_pct_profitable_windows_vs_base', "
+        "surface='experiment_evaluation', description='baseline diag')\n"
     )
     thesis = {
         "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
@@ -1495,6 +1555,54 @@ def test_builder_implementation_verifier_accepts_registered_experiment_evaluatio
 
     assert result.passed is True
     assert result.failures == []
+
+
+def test_builder_implementation_verifier_skips_analysis_only_diagnostics(tmp_path: Path) -> None:
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "strategy.py").write_text("config.get('ema_length')\n")
+    experiment_dir = tmp_path / "experiments" / "analysis_only_diag"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(json.dumps({"ema_length": 7}) + "\n")
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis={
+            "config_changes": {"ema_length": 7},
+            "required_diagnostics": ["definition_check: VWAP semantics"],
+        },
+        generated_config_path="experiments/analysis_only_diag/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert result.passed is True
+    assert result.failures == []
+
+
+def test_builder_implementation_verifier_ignores_anti_vwap_prose_for_data_dependency(
+    tmp_path: Path,
+) -> None:
+    strategy_dir = tmp_path / "strategies" / "ema"
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "strategy.py").write_text("config.get('ema_length')\n")
+    experiment_dir = tmp_path / "experiments" / "anti_vwap_thesis"
+    experiment_dir.mkdir(parents=True)
+    (experiment_dir / "runtime_config.json").write_text(json.dumps({"ema_length": 7}) + "\n")
+
+    result = verify_builder_implementation_contract(
+        root=tmp_path,
+        thesis={
+            "config_changes": {"ema_length": 7},
+            "hypothesis": "Do not use VWAP for this thesis",
+            "mechanism": "anti-vwap reasoning only",
+        },
+        generated_config_path="experiments/anti_vwap_thesis/runtime_config.json",
+        family_name="ema",
+    )
+
+    assert not any(
+        failure.startswith("vwap_data_dependency_missing:") for failure in result.failures
+    )
 
 
 def test_builder_implementation_verifier_reports_non_utf8_diagnostic_sources(
@@ -1573,7 +1681,11 @@ def test_build_missing_primitives_validates_generated_config_in_fresh_python(
             (strategy_dir / "strategy.py").write_text("config.get('new_builder_key')\n")
             tests_dir = tmp_path / "tests"
             tests_dir.mkdir(parents=True, exist_ok=True)
-            (tests_dir / "test_builder_new_builder_key.py").write_text("assert 'new_builder_key'\n")
+            (tests_dir / "test_builder_new_builder_key.py").write_text(
+                "def test_builder_key_is_wired():\n"
+                "    cfg = {'new_builder_key': 1}\n"
+                "    assert cfg['new_builder_key'] == 1\n"
+            )
             (experiment_dir / "runtime_config.json").write_text(
                 json.dumps(_ema_runtime_config(new_builder_key=1)) + "\n"
             )
@@ -1610,6 +1722,13 @@ def test_build_missing_primitives_retries_once_with_verifier_feedback(
                 "config_changes": {"new_builder_key": 1},
                 "requested_primitives": ["new_builder_key"],
                 "required_diagnostics": ["new_builder_metric"],
+                "required_diagnostic_specs": [
+                    {
+                        "key": "new_builder_metric",
+                        "surface": "metrics",
+                        "description": "new builder metric",
+                    }
+                ],
             }
         )
         + "\n"
@@ -1644,13 +1763,17 @@ def test_build_missing_primitives_retries_once_with_verifier_feedback(
             tests_dir.mkdir(parents=True, exist_ok=True)
             if len(codex_prompts) == 2:
                 assert "required_diagnostic_not_emitted:new_builder_metric" in kwargs["input"]
-                strategy_text += "logger.info('new_builder_metric')\n"
+                (tmp_path / "metrics.py").write_text("diag['new_builder_metric'] = 1\n")
                 (tests_dir / "test_builder_new_builder_metric.py").write_text(
-                    "assert 'new_builder_metric'\n"
+                    "def test_builder_metric_is_emitted():\n"
+                    "    diag = {'new_builder_metric': 1}\n"
+                    "    assert diag['new_builder_metric'] == 1\n"
                 )
             else:
                 (tests_dir / "test_builder_new_builder_key.py").write_text(
-                    "assert 'new_builder_key'\n"
+                    "def test_builder_key_is_wired():\n"
+                    "    cfg = {'new_builder_key': 1}\n"
+                    "    assert cfg['new_builder_key'] == 1\n"
                 )
             (strategy_dir / "strategy.py").write_text(strategy_text)
             (experiment_dir / "runtime_config.json").write_text(
@@ -1734,7 +1857,11 @@ def test_build_missing_primitives_retries_fresh_validation_failures_once(
             (strategy_dir / "strategy.py").write_text("config.get('new_builder_key')\n")
             tests_dir = tmp_path / "tests"
             tests_dir.mkdir(parents=True, exist_ok=True)
-            (tests_dir / "test_builder_new_builder_key.py").write_text("assert 'new_builder_key'\n")
+            (tests_dir / "test_builder_new_builder_key.py").write_text(
+                "def test_builder_key_is_wired():\n"
+                "    cfg = {'new_builder_key': 1}\n"
+                "    assert cfg['new_builder_key'] == 1\n"
+            )
             if codex_call_count == 1:
                 (experiment_dir / "runtime_config.json").write_text(json.dumps({"family": "ema"}))
             else:
@@ -1819,7 +1946,11 @@ def test_build_missing_primitives_rebuilds_existing_invalid_generated_config(
             (strategy_dir / "strategy.py").write_text("config.get('new_builder_key')\n")
             tests_dir = tmp_path / "tests"
             tests_dir.mkdir(parents=True, exist_ok=True)
-            (tests_dir / "test_builder_new_builder_key.py").write_text("assert 'new_builder_key'\n")
+            (tests_dir / "test_builder_new_builder_key.py").write_text(
+                "def test_builder_key_is_wired():\n"
+                "    cfg = {'new_builder_key': 1}\n"
+                "    assert cfg['new_builder_key'] == 1\n"
+            )
             config_path.write_text(json.dumps(_ema_runtime_config(new_builder_key=1)) + "\n")
             return type("Proc", (), {"stdout": "rebuilt", "stderr": "", "returncode": 0})()
         raise AssertionError(f"unexpected subprocess command: {cmd!r}")
@@ -2208,6 +2339,12 @@ config = re.search(r"- Expected config path: (.+)", prompt).group(1)
 target = root / config
 target.parent.mkdir(parents=True, exist_ok=True)
 target.write_text('''{generated_config}''')
+(root / "tests").mkdir(parents=True, exist_ok=True)
+(root / "tests" / "test_halted_thesis_builder.py").write_text(
+    "def test_halted_thesis_config_key_is_wired():\\n"
+    "    cfg = {{'ema_length': 7}}\\n"
+    "    assert cfg['ema_length'] == 7\\n"
+)
 print(f"generated {{config}}")
 """)
     codex.chmod(0o755)
