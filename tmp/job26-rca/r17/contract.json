@@ -1,0 +1,71 @@
+{
+  "experiment_id": "require_bearish_alert_candle_for_post0930_shorts",
+  "thesis_id": "require_bearish_alert_candle_for_post0930_shorts",
+  "strategy_family": "ema",
+  "baseline_config_path": "runtime/jobs/job-26/experiments/require_alert_close_below_ema_for_non0930_shorts/runtime_config.json",
+  "base_experiment_id": "require_alert_close_below_ema_for_non0930_shorts",
+  "base_config_hash": "6e49c4586a58",
+  "runtime_config": {},
+  "hypothesis": "Post-09:30 EMA pullback shorts are dominated by false reversals caused by ongoing price discovery and microstructure bounce; requiring the alert candle to be bearish (alert_close < alert_open) will filter out continuation-type alerts and improve profit_factor while admitting some post-09:30 trades (i.e., not collapsing the strategy into 09:30-only).",
+  "mechanism": "Add a new post-signal filter in strategies/ema/strategy.py (adjacent to _maybe_apply_require_alert_close_vs_ema_confirmation) that, for SHORT signals outside the 09:30 bucket, rejects the alert unless alert_bar_close < alert_bar_open, logging a dedicated reason (e.g., alert_candle_not_bearish). This uses existing alert-bar extras already present in strategy_events and targets a structural market feature: a bearish close indicates sellers controlled the auction of that bar, reducing the likelihood that the setup is just a pullback within an up-impulse.",
+  "expected_effects": [
+    {
+      "metric": "profit_factor",
+      "direction": "increase",
+      "threshold": 0.05,
+      "unit": null,
+      "rationale": "If many post-09:30 losses are false reversals, filtering to bearish alert candles should reduce gross losses (fewer stop-loss exits) more than gross profits, raising PF."
+    },
+    {
+      "metric": "trade_count",
+      "direction": "increase_or_same",
+      "threshold": null,
+      "unit": null,
+      "rationale": "Compared to the current base run that is effectively 09:30-only, this filter should allow at least some post-09:30 trades (since bearish candidates exist at large N in events), preventing over-concentration in one bucket."
+    }
+  ],
+  "disqualifiers": [
+    {
+      "name": "trade_count_collapse",
+      "condition": "trade_count decreases by more than 30 percent versus baseline",
+      "severity": "hard_fail"
+    },
+    {
+      "name": "no_post_open_quality_gain",
+      "condition": "With N>=500 non-09:30 trades, non-09:30 median_expectancy does not improve by at least 0.001 versus a comparable run that allows non-09:30 trades (or, if non-09:30 trades remain near-zero, the mechanism is not testable and should be rejected).",
+      "severity": "hard_fail"
+    }
+  ],
+  "required_diagnostics": [
+    "In strategy_events: counts of newly rejected signals by reason (alert_candle_not_bearish) by entry_bucket.",
+    "Post-change cohort stats for executed trades by entry_bucket (09:30 vs non-09:30): profit_factor, median_expectancy, stop_loss_share.",
+    "Trade_count impact overall and by entry_bucket; specifically quantify restoration (if any) of 09:35–10:00 trades."
+  ],
+  "required_diagnostic_specs": [
+    {
+      "key": "in_strategy_events_counts_of_newly_rejected_signals_by_reason",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "In strategy_events: counts of newly rejected signals by reason (alert_candle_not_bearish) by entry_bucket."
+    },
+    {
+      "key": "post_change_cohort_stats_for_executed_trades_by_entry_bucket",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Post-change cohort stats for executed trades by entry_bucket (09:30 vs non-09:30): profit_factor, median_expectancy, stop_loss_share."
+    },
+    {
+      "key": "trade_count_impact_overall_and_by_entry_bucket_specifically_quantify_restoration",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Trade_count impact overall and by entry_bucket; specifically quantify restoration (if any) of 09:35–10:00 trades."
+    }
+  ],
+  "missing_primitives": [
+    "New engine filter primitive in strategies/ema/strategy.py: require_bearish_alert_candle_confirmation using existing alert_bar_open/alert_bar_close extras, with per-bucket inclusion/exclusion and a logged rejection reason."
+  ],
+  "status": "needs_code"
+}

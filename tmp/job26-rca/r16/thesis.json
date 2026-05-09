@@ -1,0 +1,107 @@
+{
+  "thesis_id": "require_alert_close_below_ema_for_non0930_shorts",
+  "strategy_family": "ema",
+  "hypothesis": "Post-09:30 shorts are often false reversals during continued opening price discovery; when the alert candle closes above the EMA, it indicates buyers still control the close (weak reversal), leading to adverse selection and negative expectancy. Requiring (for shorts) alert_close <= alert_ema for entries after 09:30 will remove a structurally weak subpopulation and increase overall profit_factor without collapsing trade_count by more than 30%.",
+  "mechanism": "In strategies/ema/signals.py, a SHORT alert is armed when the prior bar’s low is above its EMA, and entry triggers on a later break of the alert low. This can arm alerts even when the alert bar closes strong/up (above EMA), which is more consistent with continuation than reversal. Add a signal-quality confirmation at alert-arming time: for SHORT setups with entry_bucket != '09:30', only arm/keep the alert if alert_close <= alert_ema (optionally also requiring alert_close < alert_open as a bearish reversal; but start with close-vs-EMA). This uses same-timeframe, in-bar information available inside the signal loop and does not rely on changing entry time windows.",
+  "mechanism_dimension": "signal_quality",
+  "dimension_novelty": "Prior signal-quality work in this job focused on time-bucket-specific 09:35/09:40 confirmation using 09:30-bar exhaustion features (and day-level setup gates). This thesis introduces a different quality discriminator tied to the signal’s own construction: enforcing that the alert candle’s *close relative to the EMA* confirms bearish control (for shorts), which is orthogonal to bucket gating and not a nearby cutoff tweak.",
+  "causal_cluster": "post_open_false_reversal_filtering",
+  "dominant_cluster_overlap": "medium",
+  "underexplored_dimensions_considered": [
+    "exit_mechanism (e.g., different trailing/timeout behavior for post-09:30 trades)",
+    "regime_conditioning (e.g., symbol-day gate based on early raw_setup presence by 09:40)"
+  ],
+  "novel_connection": "The latest run shows post-09:30 buckets have negative median expectancy at large N even after stop-distance filtering (09:35 pass cohort still negative), pointing to false reversals rather than risk sizing. Microstructure literature warns that apparent reversals can be microstructure/bounce; requiring alert-close below EMA is a structure-level confirmation that the pullback is failing (bearish control) instead of being a transient wick above EMA that later continues upward.",
+  "closest_prior_theses_considered": [
+    "extend_opening_exhaustion_confirmation_to_0940_entries",
+    "make_0935_confirmation_stricter_via_0930_close_location_and_ema_side",
+    "bucket_stop_distance_cap_0935_0940_to_cut_adverse_selection"
+  ],
+  "orthogonality_defense": "Unlike the prior 09:30-bar exhaustion confirmations, this filter is computed on the alert candle itself (close-vs-EMA at the moment the alert is armed), so it targets a different failure mode: alerts armed by a bar that is mostly above EMA (close above EMA) are likely not true bearish reversals. Unlike stop-distance caps, it rejects based on directional/structure confirmation rather than volatility magnitude.",
+  "evidence_strength": "mixed",
+  "thesis_role": "orthogonal_discovery",
+  "falsification_or_alternative": "If post-09:30 trades with alert_close<=EMA do not materially outperform alert_close>EMA trades (PF/median_expectancy separation with N>=200), then alert-close-vs-EMA is not the discriminator; the alternative is a regime-conditioning gate (e.g., only trade later buckets on symbol-days with early raw_setups) or an exit-mechanism change for post-09:30 entries.",
+  "new_dimension_name": "",
+  "why_existing_dimensions_do_not_fit": "",
+  "mechanism_family_definition": "",
+  "expected_reuse_across_future_theses": "",
+  "evidence": [
+    "Data (latest run bucket_stop_distance_cap_0935_0940_to_cut_adverse_selection): 09:30 is strong (PF=33.45, median_expectancy=+0.01698 on N=1147) while 09:35/09:40/09:45 have negative median expectancy at meaningful N (09:35=-0.00355 on N=1475; 09:40=-0.00257 on N=361; 09:45=-0.00160 on N=115), so the improvement target is post-09:30 signal quality rather than stop sizing.",
+    "Data (latest run diagnostics): stop-distance caps did not fix 09:35 (pass cohort median_expectancy=-0.00356 on N=1345), implying the dominant issue is not merely wide-stop adverse selection.",
+    "Web: Heston, Korajczyk & Sadka report short-term reversal is driven by temporary liquidity imbalances lasting <1 hour, but also note measured reversal can disappear when using midpoint prices (microstructure/bid-ask bounce confound), motivating structure/confirmation filters rather than assuming every pullback is a true reversal (https://www.bauer.uh.edu/departments/finance/documents/Heston_Korajczyk_Sadka_paper_UH.pdf).",
+    "Web: Grossman et al. show opening-procedure price discovery can largely complete quickly (~10 minutes in many cases), implying that later ‘reversal’ signals can be lower quality unless confirmed by strong bearish structure (https://leeds-faculty.colorado.edu/grossd/Research/Price%20Discovery%20in%20Opening%20Procedures%202003-11.pdf)."
+  ],
+  "base_experiment_id": "extend_opening_exhaustion_confirmation_to_0940_entries",
+  "base_config_path": "runtime/jobs/job-26/experiments/extend_opening_exhaustion_confirmation_to_0940_entries/runtime_config.json",
+  "config_changes": {
+    "requires_engine_change__require_alert_close_vs_ema_confirmation": {
+      "enabled": true,
+      "direction": "short",
+      "apply_to_entry_buckets_excluding": [
+        "09:30"
+      ],
+      "require_alert_close_leq_ema": true
+    }
+  },
+  "expected_effects": [
+    {
+      "metric": "profit_factor",
+      "direction": "increase",
+      "threshold": 0.05,
+      "unit": null,
+      "rationale": "Post-09:30 trades are currently negative expectancy at large N; filtering out alerts lacking EMA-side close confirmation should remove false reversals and reduce gross losses."
+    },
+    {
+      "metric": "trade_count",
+      "direction": "decrease_or_same",
+      "threshold": null,
+      "unit": null,
+      "rationale": "Filter applies only outside 09:30; the core 09:30 edge (N~1147 in the latest run) remains available, so total trades should not collapse unless most post-09:30 alerts fail the confirmation."
+    }
+  ],
+  "disqualifiers": [
+    {
+      "name": "trade_count_collapse",
+      "condition": "trade_count decreases by more than 30 percent versus base experiment",
+      "severity": "hard_fail"
+    },
+    {
+      "name": "no_post0930_improvement",
+      "condition": "For post-09:30 trades with N>=500, median_expectancy does not improve by at least 0.0015 versus base experiment",
+      "severity": "hard_fail"
+    }
+  ],
+  "required_diagnostics": [
+    "Cohort stats (N, PF, median_expectancy) for executed trades split by entry_bucket and new rule pass/fail (especially 09:35 and 09:40).",
+    "In strategy_events: counts of newly rejected signals by reason (e.g., alert_close_above_ema_reject) by entry_bucket.",
+    "Pass/fail cohort comparison for post-09:30 trades: profit_factor, median_expectancy, pct_profitable_windows, max_drawdown."
+  ],
+  "required_diagnostic_specs": [
+    {
+      "key": "cohort_stats",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Cohort stats (N, PF, median_expectancy) for executed trades split by entry_bucket and new rule pass/fail (especially 09:35 and 09:40)."
+    },
+    {
+      "key": "in_strategy_events_counts_of_newly_rejected_signals_by_reason",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "In strategy_events: counts of newly rejected signals by reason (e.g., alert_close_above_ema_reject) by entry_bucket."
+    },
+    {
+      "key": "pass_fail_cohort_comparison_for_post_09_30_trades_profit_factor_median_expectancy_pct_profitable_windows_max_drawdown",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Pass/fail cohort comparison for post-09:30 trades: profit_factor, median_expectancy, pct_profitable_windows, max_drawdown."
+    }
+  ],
+  "requires_code_change": true,
+  "requested_primitives": [
+    "Signal/event feature logging: alert_bar_close, alert_bar_open, alert_bar_ema (or alert_close_minus_ema) and the alert_bar_timestamp, so the filter and its cohorts can be audited in strategy_events."
+  ],
+  "why_not_overfit": "This is a structural confirmation (close relative to EMA) tied to the strategy’s own conceptual premise (pullback then reversal back under EMA for shorts), not a tuned numeric threshold. It is also falsifiable via a clean cohort split (alert_close<=EMA vs >EMA) across thousands of events, and should generalize because EMA-side confirmation is a common microstructure sanity check for intraday fade setups."
+}

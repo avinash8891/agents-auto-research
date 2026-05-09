@@ -1,0 +1,71 @@
+{
+  "experiment_id": "require_alert_candle_body_dominance_for_non0930_shorts",
+  "thesis_id": "require_alert_candle_body_dominance_for_non0930_shorts",
+  "strategy_family": "ema",
+  "baseline_config_path": "runtime/jobs/job-26/experiments/require_alert_close_below_ema_for_non0930_shorts/runtime_config.json",
+  "base_experiment_id": "require_alert_close_below_ema_for_non0930_shorts",
+  "base_config_hash": "6e49c4586a58",
+  "runtime_config": {},
+  "hypothesis": "Post-09:30 EMA pullback shorts are dominated by false reversals driven by microstructure noise (transaction-price bounce/indecision) rather than genuine supply-driven reversal. Requiring that the alert candle be a decisive reversal bar—operationalized as real-body dominance (high body_pct) and/or low wick share—will restore a tradable subset of post-09:30 entries (trade_count_non0930 > 0) and improve their median_expectancy versus an unfiltered post-09:30 cohort, while keeping the strong 09:30 edge intact.",
+  "mechanism": "Microstructure research shows observed short-horizon reversals can be mechanically induced by bid–ask effects even when efficient value is unchanged. A candle with large wicks and small body near the EMA is consistent with two-sided probing/noise and is more likely to be adversely selected for a break-of-extreme entry. Implement an alert-candle geometry confirmation for shorts in entry buckets excluding 09:30: only arm/keep the alert if the alert candle’s body is sufficiently large relative to its range (or equivalently wick share is sufficiently small). This confirmation is computed at alert-arming time from the alert bar’s OHLC (already produced in strategy feature arrays) and does not merge timeframes.",
+  "expected_effects": [
+    {
+      "metric": "profit_factor",
+      "direction": "increase",
+      "threshold": 0.05,
+      "unit": null,
+      "rationale": "Filtering out indecisive/bounce-like alert candles should reduce stop-outs/adverse selection in post-09:30 entries, improving aggregate PF without sacrificing the core 09:30 cohort."
+    },
+    {
+      "metric": "trade_count",
+      "direction": "increase_or_same",
+      "threshold": null,
+      "unit": null,
+      "rationale": "Relative to the current best (which yields 0 post-09:30 trades), this geometry filter should be permissive enough to restore some post-09:30 trades while leaving 09:30 excluded from filtering."
+    }
+  ],
+  "disqualifiers": [
+    {
+      "name": "post0930_still_zero",
+      "condition": "post-09:30 trade_count remains 0 (no restoration of opportunities)",
+      "severity": "hard_fail"
+    },
+    {
+      "name": "trade_count_collapse",
+      "condition": "total trade_count decreases by more than 30 percent versus base",
+      "severity": "hard_fail"
+    }
+  ],
+  "required_diagnostics": [
+    "Cohort stats for post-09:30 executed trades split by geometry-pass vs geometry-fail (trade_count, profit_factor, median_expectancy, stop_loss_share) with N>=200 if possible",
+    "New rejection reason counts by entry_bucket for alert_body_dominance_reject (or equivalent), to ensure the filter is not inadvertently eliminating all post-09:30 trades",
+    "Trade_count impact overall and by entry bucket (09:30, 09:35, 09:40, 09:45, 09:50, other)"
+  ],
+  "required_diagnostic_specs": [
+    {
+      "key": "cohort_stats_for_post_09_30_executed_trades_split_by_geometry_pass_vs_geometry_fail",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Cohort stats for post-09:30 executed trades split by geometry-pass vs geometry-fail (trade_count, profit_factor, median_expectancy, stop_loss_share) with N>=200 if possible"
+    },
+    {
+      "key": "new_rejection_reason_counts_by_entry_bucket_for_alert_body_dominance_reject",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "New rejection reason counts by entry_bucket for alert_body_dominance_reject (or equivalent), to ensure the filter is not inadvertently eliminating all post-09:30 trades"
+    },
+    {
+      "key": "trade_count_impact_overall_and_by_entry_bucket",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Trade_count impact overall and by entry bucket (09:30, 09:35, 09:40, 09:45, 09:50, other)"
+    }
+  ],
+  "missing_primitives": [
+    "engine primitive to compute alert candle body_pct (abs(close-open)/(high-low)) and apply as a rejection rule at alert-arming time, bucket-scoped via apply_to_entry_buckets_excluding"
+  ],
+  "status": "needs_code"
+}

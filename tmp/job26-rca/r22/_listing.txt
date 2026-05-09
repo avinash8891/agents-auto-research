@@ -1,0 +1,3 @@
+contract.json
+runtime_config.json
+thesis.json

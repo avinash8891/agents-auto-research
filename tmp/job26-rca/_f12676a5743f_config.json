@@ -1,0 +1,42 @@
+{
+  "family": "ema",
+  "data_universe": "nasdaq8",
+  "symbols": null,
+  "validation_start": "2020-01-01",
+  "validation_end": "2023-12-31",
+  "ema_length": 5,
+  "timeframe_short": 5,
+  "timeframe_long": 15,
+  "rr_ratio": 3.0,
+  "direction_bias": "short_only",
+  "entry_cutoff_time": "10:00",
+  "max_trades_per_day": 3,
+  "min_stop_distance_pct": null,
+  "max_stop_distance_pct": null,
+  "gap_filter": false,
+  "gap_pct": 0.01,
+  "gap_exclude": false,
+  "gap_exclude_pct": 0.005,
+  "trail_after_r": 1.0,
+  "max_hold_bars": 78,
+  "use_range_shift": false,
+  "range_shift_lookback": 20,
+  "requires_engine_change__apply_0930_exhaustion_confirmation_to_0940": true,
+  "requires_engine_change__require_alert_close_vs_ema_confirmation": {
+    "enabled": true,
+    "direction": "short",
+    "apply_to_entry_buckets_excluding": [
+      "09:30"
+    ],
+    "require_alert_close_leq_ema": true
+  },
+  "requires_engine_change__require_alert_candle_body_dominance_confirmation": {
+    "enabled": true,
+    "direction": "short",
+    "apply_to_entry_buckets_excluding": [
+      "09:30"
+    ],
+    "min_body_pct": 0.6
+  }
+}
+

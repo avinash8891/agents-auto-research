@@ -1,0 +1,72 @@
+{
+  "experiment_id": "fix_diagnostics_geometry_feature_aggregation_and_add_event_trade_join_key",
+  "thesis_id": "fix_diagnostics_geometry_feature_aggregation_and_add_event_trade_join_key",
+  "strategy_family": "ema",
+  "baseline_config_path": "runtime/jobs/job-26/experiments/require_alert_close_below_ema_for_non0930_shorts/runtime_config.json",
+  "base_experiment_id": "require_alert_close_below_ema_for_non0930_shorts",
+  "base_config_hash": "6e49c4586a58",
+  "runtime_config": {},
+  "hypothesis": "The current research loop is being distorted by (1) diagnostics distributions not reflecting persisted event features (e.g., close_location_in_range, upper_wick_share) and (2) inability to join executed_trade events to realized trades for post-filter cohort analysis; fixing these will enable accurate falsification of future post-09:30 signal-quality mechanisms (including geometry and bearish-body confirmations).",
+  "mechanism": "Implement two observability fixes: (A) Diagnostics generation should compute feature distributions directly from strategy_events.parquet columns (e.g., close_location_in_range, upper_wick_share) using finite-value counts, so distributions cannot show count=0 when the filter clearly used those features to reject 35,769 signals. (B) Persist a stable identifier (trade_id/event_id) into both strategy_events (for executed_trade rows) and trades.csv (and/or persist the realized entry timestamp used in trades.csv into executed_trade events) so we can join and compute PF/median_expectancy for pass/fail cohorts (especially post-09:30 where prior hypotheses focus).",
+  "expected_effects": [
+    {
+      "metric": "pct_profitable_windows",
+      "direction": "not_worse_than",
+      "threshold": 0.0,
+      "unit": null,
+      "rationale": "Observability changes should not alter trading logic; windowed profitability should remain unchanged aside from negligible logging effects."
+    },
+    {
+      "metric": "profit_factor",
+      "direction": "not_worse_than",
+      "threshold": 0.0,
+      "unit": null,
+      "rationale": "This is a measurement-only change; PF should remain the same, validating that we didn’t inadvertently change signal/exit behavior."
+    }
+  ],
+  "disqualifiers": [
+    {
+      "name": "behavior_change",
+      "condition": "profit_factor decreases by more than 1% versus the base experiment (measurement-only change should not move PF materially)",
+      "severity": "hard_fail"
+    },
+    {
+      "name": "diagnostics_mismatch_persists",
+      "condition": "After change, any feature used in a rejection reason (e.g., alert_close_location_reject) still has diagnostics distribution count < 90% of strategy_events finite count",
+      "severity": "hard_fail"
+    }
+  ],
+  "required_diagnostics": [
+    "diagnostics_feature_distribution_counts_vs_event_non_null_counts: for each distributed feature (close_location_in_range, upper_wick_share), report (diagnostics_count, strategy_events_non_null_count, strategy_events_finite_count) to catch future mismatches",
+    "event_trade_join_coverage: fraction of executed_trade events that can be linked to trades.csv (overall and by entry_bucket) after adding join key",
+    "post_filter_cohort_report: for any new rejection reason, report executed-trade PF/median_expectancy for pass vs fail cohorts when N>=50"
+  ],
+  "required_diagnostic_specs": [
+    {
+      "key": "diagnostics_feature_distribution_counts_vs_event_non_null_counts_for_each_distributed_feature",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "diagnostics_feature_distribution_counts_vs_event_non_null_counts: for each distributed feature (close_location_in_range, upper_wick_share), report (diagnostics_count, strategy_events_non_null_count, strategy_events_finite_count) to catch future mismatches"
+    },
+    {
+      "key": "event_trade_join_coverage_fraction_of_executed_trade_events_that_can_be_linked_to_trades_csv",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "event_trade_join_coverage: fraction of executed_trade events that can be linked to trades.csv (overall and by entry_bucket) after adding join key"
+    },
+    {
+      "key": "post_filter_cohort_report_for_any_new_rejection_reason_report_executed_trade_pf_median_expectancy_for_pass_vs_fail_cohorts_when_n_50",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "post_filter_cohort_report: for any new rejection reason, report executed-trade PF/median_expectancy for pass vs fail cohorts when N>=50"
+    }
+  ],
+  "missing_primitives": [
+    "diagnostics pipeline: read feature distributions directly from strategy_events.parquet (not a reduced in-memory view) and count finite values",
+    "schema: add a stable event_id/trade_id written into both strategy_events (executed_trade rows) and trades.csv, or persist entry_timestamp in both for reliable joining"
+  ],
+  "status": "needs_code"
+}

@@ -1,0 +1,107 @@
+{
+  "thesis_id": "require_bearish_alert_candle_for_post0930_shorts",
+  "strategy_family": "ema",
+  "hypothesis": "Post-09:30 EMA pullback shorts are dominated by false reversals caused by ongoing price discovery and microstructure bounce; requiring the alert candle to be bearish (alert_close < alert_open) will filter out continuation-type alerts and improve profit_factor while admitting some post-09:30 trades (i.e., not collapsing the strategy into 09:30-only).",
+  "mechanism": "Add a new post-signal filter in strategies/ema/strategy.py (adjacent to _maybe_apply_require_alert_close_vs_ema_confirmation) that, for SHORT signals outside the 09:30 bucket, rejects the alert unless alert_bar_close < alert_bar_open, logging a dedicated reason (e.g., alert_candle_not_bearish). This uses existing alert-bar extras already present in strategy_events and targets a structural market feature: a bearish close indicates sellers controlled the auction of that bar, reducing the likelihood that the setup is just a pullback within an up-impulse.",
+  "mechanism_dimension": "signal_quality",
+  "dimension_novelty": "This does not modify or reuse the existing close-vs-EMA confirmation mechanism key (requires_engine_change__require_alert_close_vs_ema_confirmation) that caused 100% post-09:30 rejection. Instead it introduces a new, independent structural discriminator on alert-candle directionality (close < open) using already-available alert_bar_open/close extras, which is a different causal lever than EMA-side sign tests or stop-distance caps.",
+  "causal_cluster": "post_open_false_reversal_filters",
+  "dominant_cluster_overlap": "medium",
+  "underexplored_dimensions_considered": [
+    "exit_mechanism",
+    "regime_conditioning",
+    "market_microstructure"
+  ],
+  "novel_connection": "The current winner’s degeneration (all post-09:30 alerts have close>EMA) suggests EMA-side confirmation is not a usable post-open discriminator in this engine/data alignment. A bearish alert-candle requirement targets the same underlying microstructure problem (false reversals / bid-ask bounce) but via price action (seller control into the close of the alert bar), and can be implemented without touching the rejected-overlap keys.",
+  "closest_prior_theses_considered": [
+    "require_alert_close_below_ema_for_non0930_shorts",
+    "bucket_stop_distance_cap_0935_0940_to_cut_adverse_selection",
+    "opening_impulse_regime_gate_using_0930_0940_setup_presence"
+  ],
+  "orthogonality_defense": "Unlike the close-vs-EMA confirmation thesis, this does not use the EMA-side inequality that empirically rejects 100% of post-09:30 signals. Unlike stop-distance caps, it does not proxy microstructure instability via bar range; it directly gates on whether the alert bar itself shows bearish control (close below open), which is a distinct signal-quality mechanism.",
+  "evidence_strength": "mixed",
+  "thesis_role": "orthogonal_discovery",
+  "falsification_or_alternative": "If bearish alert-candle post-09:30 cohorts (N>=500) do not show improved median_expectancy / stop_loss_share versus all post-09:30 alerts (in a run where post-09:30 trades exist), then candle-direction is not the right discriminator; an alternative is an EMA-proximity band filter (abs(close-ema)/ema) or a wick/close-location filter, but those would require separate primitives.",
+  "new_dimension_name": "",
+  "why_existing_dimensions_do_not_fit": "",
+  "mechanism_family_definition": "",
+  "expected_reuse_across_future_theses": "",
+  "evidence": [
+    "Web (Grossman et al., Price Discovery in Opening Procedures): quoted spreads are largest in the first 10 minutes after the open and decline over the first hour, supporting that post-open signals are more prone to microstructure noise and adverse selection and motivating stronger structural confirmation (https://leeds-faculty.colorado.edu/grossd/Research/Price%20Discovery%20in%20Opening%20Procedures%202003-11.pdf).",
+    "Web (Heston, Korajczyk & Sadka): short-horizon reversals are strongly affected by temporary liquidity imbalances and bid–ask bounce; measured reversal often disappears with quote-based returns, implying reversal strategies need confirmation filters to avoid trading on microstructure artifacts (https://ar5iv.labs.arxiv.org/html/1005.3535).",
+    "Analyst (job-26 round 17): in require_alert_close_below_ema_for_non0930_shorts, all post-09:30 raw_setups have alert_close > alert_ema (0% pass), causing alert_close_above_ema_reject=35,887 and 0 post-09:30 trades; however bearish alert-candle candidates exist in large count post-09:30 (alert_close < alert_open N=20,554), so a bearish-candle discriminator can operate without the EMA-side degeneracy."
+  ],
+  "base_experiment_id": "require_alert_close_below_ema_for_non0930_shorts",
+  "base_config_path": "runtime/jobs/job-26/experiments/require_alert_close_below_ema_for_non0930_shorts/runtime_config.json",
+  "config_changes": {
+    "requires_engine_change__require_bearish_alert_candle_confirmation": {
+      "enabled": true,
+      "direction": "short",
+      "apply_to_entry_buckets_excluding": [
+        "09:30"
+      ],
+      "require_alert_close_lt_open": true
+    }
+  },
+  "expected_effects": [
+    {
+      "metric": "profit_factor",
+      "direction": "increase",
+      "threshold": 0.05,
+      "unit": null,
+      "rationale": "If many post-09:30 losses are false reversals, filtering to bearish alert candles should reduce gross losses (fewer stop-loss exits) more than gross profits, raising PF."
+    },
+    {
+      "metric": "trade_count",
+      "direction": "increase_or_same",
+      "threshold": null,
+      "unit": null,
+      "rationale": "Compared to the current base run that is effectively 09:30-only, this filter should allow at least some post-09:30 trades (since bearish candidates exist at large N in events), preventing over-concentration in one bucket."
+    }
+  ],
+  "disqualifiers": [
+    {
+      "name": "trade_count_collapse",
+      "condition": "trade_count decreases by more than 30 percent versus baseline",
+      "severity": "hard_fail"
+    },
+    {
+      "name": "no_post_open_quality_gain",
+      "condition": "With N>=500 non-09:30 trades, non-09:30 median_expectancy does not improve by at least 0.001 versus a comparable run that allows non-09:30 trades (or, if non-09:30 trades remain near-zero, the mechanism is not testable and should be rejected).",
+      "severity": "hard_fail"
+    }
+  ],
+  "required_diagnostics": [
+    "In strategy_events: counts of newly rejected signals by reason (alert_candle_not_bearish) by entry_bucket.",
+    "Post-change cohort stats for executed trades by entry_bucket (09:30 vs non-09:30): profit_factor, median_expectancy, stop_loss_share.",
+    "Trade_count impact overall and by entry_bucket; specifically quantify restoration (if any) of 09:35–10:00 trades."
+  ],
+  "required_diagnostic_specs": [
+    {
+      "key": "in_strategy_events_counts_of_newly_rejected_signals_by_reason",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "In strategy_events: counts of newly rejected signals by reason (alert_candle_not_bearish) by entry_bucket."
+    },
+    {
+      "key": "post_change_cohort_stats_for_executed_trades_by_entry_bucket",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Post-change cohort stats for executed trades by entry_bucket (09:30 vs non-09:30): profit_factor, median_expectancy, stop_loss_share."
+    },
+    {
+      "key": "trade_count_impact_overall_and_by_entry_bucket_specifically_quantify_restoration",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Trade_count impact overall and by entry_bucket; specifically quantify restoration (if any) of 09:35–10:00 trades."
+    }
+  ],
+  "requires_code_change": true,
+  "requested_primitives": [
+    "New engine filter primitive in strategies/ema/strategy.py: require_bearish_alert_candle_confirmation using existing alert_bar_open/alert_bar_close extras, with per-bucket inclusion/exclusion and a logged rejection reason."
+  ],
+  "why_not_overfit": "This is a qualitative price-action confirmation (bar closes down vs up) rather than a tuned numeric threshold. It should generalize because it encodes a stable microstructure idea (seller control into bar close) and can be evaluated on large-N cohorts by time bucket without optimizing a fine cutoff."
+}

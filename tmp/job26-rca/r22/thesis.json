@@ -1,0 +1,106 @@
+{
+  "thesis_id": "post0930_stop_loss_risk_unit_cap_using_stop_distance_pct",
+  "strategy_family": "ema",
+  "hypothesis": "Post-09:30 EMA pullback/reversal shorts underperform because a large subset are triggered during unstable post-open price discovery where the alert candle’s high-low range (and thus stop_distance_pct, since stop is the alert opposite extreme) is large, indicating poor liquidity/resiliency and higher adverse selection. Imposing a max_stop_distance_pct gate for non-09:30 entries will disproportionately remove stop_loss exits and lift profit_factor and median_expectancy of the remaining non-09:30 trades.",
+  "mechanism": "Microstructure research (temporary liquidity imbalance and bid–ask bounce) implies the tradable reversal component is short-lived and sensitive to liquidity/resiliency; in our strategy, the entire risk unit is defined mechanically by the alert candle’s range (entry at alert extreme; stop at opposite extreme). Large stop_distance_pct post-09:30 is therefore a direct proxy for unstable/noisy conditions where reversal-followthrough is less reliable and stop-outs dominate. Implement a post-09:30-only max_stop_distance_pct filter inside strategy.py (the same stage that applies other entry filters) so that signals with excessive alert-bar range are rejected with a dedicated reason; keep 09:30 untouched to preserve the core edge.",
+  "mechanism_dimension": "risk_structure",
+  "dimension_novelty": "Prior risk-structure work proposed bucket-specific max stop-distance caps (e.g., 09:35/09:40) as a needs-code idea but was never executed in the current best (09:30-only) configuration family. This thesis is not a nearby threshold tweak of an existing cap because the current best config has no stop-distance gating at all; it introduces a new structural constraint that explicitly limits the bar-defined risk unit (alert-candle extreme-to-extreme distance) only for post-09:30 trades, targeting the documented post-09:30 stop-loss-heavy failure mode.",
+  "causal_cluster": "post_open_adverse_selection_control",
+  "dominant_cluster_overlap": "medium",
+  "underexplored_dimensions_considered": [
+    "regime_conditioning (information-day vs liquidity-shock day gating using news/earnings proxies)",
+    "exit_mechanism (post-09:30 tighter time-stop / faster bailout to match <1h reversal horizon)"
+  ],
+  "novel_connection": "Web evidence indicates short-horizon reversal is largely a temporary-liquidity-imbalance phenomenon (<1h) and is confounded by microstructure noise; our diagnostics show post-09:30 trades are disproportionately stop-loss exits (stop_loss_share 0.4518) with negative median expectancy. A post-09:30 cap on stop_distance_pct is a direct, engine-native proxy for excluding unstable/low-resiliency bars where fades are most adversely selected, without needing new geometry features or a complex override path.",
+  "closest_prior_theses_considered": [
+    "bucket_stop_distance_cap_0935_0940_to_cut_adverse_selection",
+    "require_alert_close_below_ema_for_non0930_shorts",
+    "add_secondary_pass_geometry_override_for_post0930_alert_close_vs_ema_filter",
+    "opening_impulse_regime_gate_using_0930_0940_setup_presence"
+  ],
+  "orthogonality_defense": "Unlike the signal-quality cluster that uses EMA-close confirmation/overrides to decide whether a reversal is real, this rule controls the trade’s risk unit (alert-extreme stop distance) only after 09:30 to reduce adverse selection and stop-outs. Unlike the earlier bucket-specific stop-cap idea, this is a simpler, more general post-09:30 risk constraint (applies to all post-09:30 buckets) that directly targets the observed stop-loss skew and does not depend on identifying the single worst bucket.",
+  "evidence_strength": "mixed",
+  "thesis_role": "orthogonal_discovery",
+  "falsification_or_alternative": "If conditioning on stop_distance_pct does not improve post-09:30 median_expectancy (with N>=300 post-09:30 trades remaining) and does not materially reduce stop_loss_share, then the main failure mode is not wide-bar/unstable-risk adverse selection; the alternative is that post-09:30 failures are primarily signal-directional (needs stronger reversal confirmation) or regime-driven (information days where fading is structurally wrong).",
+  "new_dimension_name": "",
+  "why_existing_dimensions_do_not_fit": "",
+  "mechanism_family_definition": "",
+  "expected_reuse_across_future_theses": "",
+  "evidence": [
+    "Web: Heston, Korajczyk & Sadka (2010) show short-term intraday reversal is driven by temporary liquidity imbalances lasting less than an hour and is confounded by bid–ask bounce, supporting the idea that reversal trades are fragile and should be conditioned on liquidity/resiliency proxies (https://arxiv.org/abs/1005.3535).",
+    "Data (job-26 round 22, diagnostics.json for add_secondary_pass_geometry_override_for_post0930_alert_close_vs_ema_filter): non-09:30 executed trades have stop_loss_share=0.4518 and median_expectancy=-0.000964 on N=529, while 09:30 has stop_loss_share=0.1090 and median_expectancy=0.017245 on N=1147; bucket medians are negative at 09:35 (-0.002933), 09:40 (-0.001675), 09:45 (-0.004255).",
+    "Data (job-26 best experiment require_alert_close_below_ema_for_non0930_shorts): post-09:30 candidates are overwhelmingly rejected by alert_close_above_ema_reject (35,887), showing post-09:30 is a structurally problematic region where any restored trades must be tightly controlled."
+  ],
+  "base_experiment_id": "require_alert_close_below_ema_for_non0930_shorts",
+  "base_config_path": "runtime/jobs/job-26/experiments/require_alert_close_below_ema_for_non0930_shorts/runtime_config.json",
+  "config_changes": {
+    "requires_engine_change__post0930_max_stop_distance_filter": {
+      "enabled": true,
+      "apply_to_entry_buckets_excluding": [
+        "09:30"
+      ],
+      "max_stop_distance_pct": 0.6
+    }
+  },
+  "expected_effects": [
+    {
+      "metric": "profit_factor",
+      "direction": "increase",
+      "threshold": 0.05,
+      "unit": null,
+      "rationale": "Removing the widest-risk, most stop-out-prone post-09:30 trades should reduce gross losses more than gross profits, improving PF while keeping the 09:30 edge intact."
+    },
+    {
+      "metric": "median_expectancy",
+      "direction": "increase",
+      "threshold": 0.001,
+      "unit": null,
+      "rationale": "If wide-risk trades are adversely selected, filtering them should shift the remaining post-09:30 trade distribution upward, raising median expectancy."
+    }
+  ],
+  "disqualifiers": [
+    {
+      "name": "trade_count_collapse",
+      "condition": "trade_count decreases by more than 30 percent versus require_alert_close_below_ema_for_non0930_shorts (N=1147)",
+      "severity": "hard_fail"
+    },
+    {
+      "name": "no_post0930_quality_gain",
+      "condition": "For post-09:30 trades with N>=300 after filtering, median_expectancy does not improve by at least 0.001 versus the latest restoration run’s non-09:30 median_expectancy (-0.000964)",
+      "severity": "hard_fail"
+    }
+  ],
+  "required_diagnostics": [
+    "post-09:30 cohort stats (trade_count, profit_factor, median_expectancy, stop_loss_share) before vs after the filter",
+    "rejection counts for the new reason by entry_bucket (09:35/09:40/09:45/09:50/other)",
+    "stop_distance_pct distribution for rejected vs accepted post-09:30 signals"
+  ],
+  "required_diagnostic_specs": [
+    {
+      "key": "post_09_30_cohort_stats",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "post-09:30 cohort stats (trade_count, profit_factor, median_expectancy, stop_loss_share) before vs after the filter"
+    },
+    {
+      "key": "rejection_counts_for_the_new_reason_by_entry_bucket",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "rejection counts for the new reason by entry_bucket (09:35/09:40/09:45/09:50/other)"
+    },
+    {
+      "key": "stop_distance_pct_distribution_for_rejected_vs_accepted_post_09_30_signals",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "stop_distance_pct distribution for rejected vs accepted post-09:30 signals"
+    }
+  ],
+  "requires_code_change": true,
+  "requested_primitives": [
+    "Engine primitive to reject signals based on stop_distance_pct conditional on entry_bucket membership (post-09:30), with rejection reason logging into strategy_events/diagnostics."
+  ],
+  "why_not_overfit": "This is a coarse, causal risk proxy rooted in the strategy’s own mechanics (stop is defined by alert extremes), not a fine-grained time tweak. If wide-bar adverse selection is real, it should generalize across symbols/years because it reflects liquidity/resiliency rather than a sample-specific pattern."
+}

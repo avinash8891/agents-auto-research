@@ -1,0 +1,651 @@
+{
+  "family": "ema",
+  "config": "runtime/jobs/job-26/experiments/require_bearish_alert_candle_for_post0930_shorts/runtime_config.json",
+  "config_hash": "7b45dfa515de",
+  "git_sha": "7c3f255b095d28112b128430bc020c13a449ae56",
+  "timestamp": "2026-05-09T07:31:40.184814+00:00",
+  "metrics": {
+    "median_expectancy": 0.0171,
+    "trade_count": 1147,
+    "profit_factor": 34.1115,
+    "max_drawdown": 0.0217,
+    "pct_profitable_windows": 0.8649,
+    "avg_sharpe_across_windows": 32.9415
+  },
+  "diagnostics": {
+    "pf_by_entry_hour": {
+      "09:00": {
+        "pf": 34.111,
+        "trades": 1147,
+        "win_rate": 0.865
+      }
+    },
+    "trade_count_impact_by_entry_bucket": {
+      "09:30": 1147,
+      "09:40": 0,
+      "09:45": 0,
+      "09:50": 0,
+      "other": 0
+    },
+    "trade_count_impact_overall_and_by_entry_bucket": {
+      "trade_count": 1147,
+      "by_entry_bucket": {
+        "09:30": 1147,
+        "09:40": 0,
+        "09:45": 0,
+        "09:50": 0,
+        "other": 0
+      }
+    },
+    "pf_by_direction": {
+      "short": {
+        "pf": 34.111,
+        "trades": 1147,
+        "win_rate": 0.865
+      }
+    },
+    "pf_by_exit_reason": {
+      "stop_loss": {
+        "pf": 0.0,
+        "trades": 124,
+        "mean_pnl": -0.00574
+      },
+      "trail_stop": {
+        "pf": 460.771,
+        "trades": 1023,
+        "mean_pnl": 0.02559
+      }
+    },
+    "pf_by_day_of_week": {
+      "Friday": {
+        "pf": 27.977,
+        "trades": 235
+      },
+      "Monday": {
+        "pf": 41.3,
+        "trades": 238
+      },
+      "Thursday": {
+        "pf": 30.706,
+        "trades": 224
+      },
+      "Tuesday": {
+        "pf": 37.992,
+        "trades": 237
+      },
+      "Wednesday": {
+        "pf": 35.211,
+        "trades": 213
+      }
+    },
+    "pf_by_year": {
+      "2020": {
+        "pf": 54.819,
+        "trades": 267
+      },
+      "2021": {
+        "pf": 25.082,
+        "trades": 300
+      },
+      "2022": {
+        "pf": 36.355,
+        "trades": 296
+      },
+      "2023": {
+        "pf": 31.401,
+        "trades": 284
+      }
+    },
+    "avg_duration_minutes": {
+      "all": 17.1,
+      "winners": 17.8,
+      "losers": 13.1
+    },
+    "risk_reward_realized": {
+      "planned_rr": 1.0,
+      "avg_win_pct": 0.0264,
+      "avg_loss_pct": 0.005,
+      "realized_rr": 5.33
+    },
+    "max_consecutive_losses": 3,
+    "pf_by_symbol_worst10": [
+      {
+        "symbol": "TSLA",
+        "pf": 24.558,
+        "trades": 137,
+        "win_rate": 0.825
+      },
+      {
+        "symbol": "GOOGL",
+        "pf": 27.795,
+        "trades": 146,
+        "win_rate": 0.856
+      },
+      {
+        "symbol": "AAPL",
+        "pf": 30.198,
+        "trades": 137,
+        "win_rate": 0.854
+      },
+      {
+        "symbol": "META",
+        "pf": 32.457,
+        "trades": 151,
+        "win_rate": 0.861
+      },
+      {
+        "symbol": "NVDA",
+        "pf": 35.675,
+        "trades": 137,
+        "win_rate": 0.847
+      },
+      {
+        "symbol": "MSFT",
+        "pf": 38.28,
+        "trades": 152,
+        "win_rate": 0.875
+      },
+      {
+        "symbol": "AMZN",
+        "pf": 41.13,
+        "trades": 132,
+        "win_rate": 0.902
+      },
+      {
+        "symbol": "SPY",
+        "pf": 56.085,
+        "trades": 155,
+        "win_rate": 0.897
+      }
+    ],
+    "pf_by_symbol_best10": [
+      {
+        "symbol": "SPY",
+        "pf": 56.085,
+        "trades": 155,
+        "win_rate": 0.897
+      },
+      {
+        "symbol": "AMZN",
+        "pf": 41.13,
+        "trades": 132,
+        "win_rate": 0.902
+      },
+      {
+        "symbol": "MSFT",
+        "pf": 38.28,
+        "trades": 152,
+        "win_rate": 0.875
+      },
+      {
+        "symbol": "NVDA",
+        "pf": 35.675,
+        "trades": 137,
+        "win_rate": 0.847
+      },
+      {
+        "symbol": "META",
+        "pf": 32.457,
+        "trades": 151,
+        "win_rate": 0.861
+      },
+      {
+        "symbol": "AAPL",
+        "pf": 30.198,
+        "trades": 137,
+        "win_rate": 0.854
+      },
+      {
+        "symbol": "GOOGL",
+        "pf": 27.795,
+        "trades": 146,
+        "win_rate": 0.856
+      },
+      {
+        "symbol": "TSLA",
+        "pf": 24.558,
+        "trades": 137,
+        "win_rate": 0.825
+      }
+    ],
+    "losing_symbols_count": 0,
+    "losing_symbols_trades": 0,
+    "pf_by_stop_distance_quintile": {
+      "Q1_tight": {
+        "pf": 46.31,
+        "trades": 230,
+        "win_rate": 0.848,
+        "mean_stop_dist_pct": 0.3364
+      },
+      "Q2": {
+        "pf": 55.974,
+        "trades": 229,
+        "win_rate": 0.886,
+        "mean_stop_dist_pct": 0.4233
+      },
+      "Q3": {
+        "pf": 32.985,
+        "trades": 229,
+        "win_rate": 0.86,
+        "mean_stop_dist_pct": 0.5061
+      },
+      "Q4": {
+        "pf": 33.706,
+        "trades": 229,
+        "win_rate": 0.878,
+        "mean_stop_dist_pct": 0.5939
+      },
+      "Q5_wide": {
+        "pf": 19.901,
+        "trades": 230,
+        "win_rate": 0.852,
+        "mean_stop_dist_pct": 0.7012
+      }
+    },
+    "losing_streaks_gte5": [],
+    "losing_streak_count_gte5": 0,
+    "pf_by_month": {
+      "April": {
+        "pf": 24.274,
+        "trades": 101,
+        "win_rate": 0.832
+      },
+      "August": {
+        "pf": 32.935,
+        "trades": 91,
+        "win_rate": 0.857
+      },
+      "December": {
+        "pf": 57.882,
+        "trades": 92,
+        "win_rate": 0.924
+      },
+      "February": {
+        "pf": 30.633,
+        "trades": 90,
+        "win_rate": 0.833
+      },
+      "January": {
+        "pf": 75.673,
+        "trades": 116,
+        "win_rate": 0.922
+      },
+      "July": {
+        "pf": 24.357,
+        "trades": 95,
+        "win_rate": 0.832
+      },
+      "June": {
+        "pf": 67.16,
+        "trades": 103,
+        "win_rate": 0.913
+      },
+      "March": {
+        "pf": 18.075,
+        "trades": 95,
+        "win_rate": 0.779
+      },
+      "May": {
+        "pf": 19.979,
+        "trades": 101,
+        "win_rate": 0.812
+      },
+      "November": {
+        "pf": 51.03,
+        "trades": 92,
+        "win_rate": 0.902
+      },
+      "October": {
+        "pf": 34.911,
+        "trades": 81,
+        "win_rate": 0.877
+      },
+      "September": {
+        "pf": 44.647,
+        "trades": 90,
+        "win_rate": 0.889
+      }
+    },
+    "pf_by_year_quarter": {
+      "2020-Q1": {
+        "pf": 62.857,
+        "trades": 71
+      },
+      "2020-Q2": {
+        "pf": 39.087,
+        "trades": 75
+      },
+      "2020-Q3": {
+        "pf": 48.402,
+        "trades": 68
+      },
+      "2020-Q4": {
+        "pf": 91.237,
+        "trades": 53
+      },
+      "2021-Q1": {
+        "pf": 18.814,
+        "trades": 80
+      },
+      "2021-Q2": {
+        "pf": 18.799,
+        "trades": 78
+      },
+      "2021-Q3": {
+        "pf": 34.691,
+        "trades": 66
+      },
+      "2021-Q4": {
+        "pf": 45.102,
+        "trades": 76
+      },
+      "2022-Q1": {
+        "pf": 50.804,
+        "trades": 70
+      },
+      "2022-Q2": {
+        "pf": 42.213,
+        "trades": 78
+      },
+      "2022-Q3": {
+        "pf": 29.892,
+        "trades": 83
+      },
+      "2022-Q4": {
+        "pf": 29.958,
+        "trades": 65
+      },
+      "2023-Q1": {
+        "pf": 29.891,
+        "trades": 80
+      },
+      "2023-Q2": {
+        "pf": 32.027,
+        "trades": 74
+      },
+      "2023-Q3": {
+        "pf": 23.086,
+        "trades": 59
+      },
+      "2023-Q4": {
+        "pf": 50.238,
+        "trades": 71
+      }
+    }
+  },
+  "strategy_diagnostics": {
+    "trade_count": 1147,
+    "event_counts": {
+      "raw_setup": 37055,
+      "rejected_signal": 35908,
+      "accepted_signal": 1168,
+      "executed_trade": 1168
+    },
+    "rejection_breakdown": {
+      "alert_close_above_ema_reject": 35887,
+      "max_trades_per_day": 21
+    },
+    "rejection_reason_counts_for_opening_setup_gate_failed_0940_in_strategy_events": 0,
+    "rejected_signal_counts_for_new_reason": {
+      "counts": {}
+    },
+    "rejected_signal_counts_and_stop_distance_pct_distribution_for_new_reasons": {
+      "counts": {},
+      "by_entry_bucket": {
+        "09:30": {
+          "accepted": {
+            "count": 1168,
+            "median": 0.455282,
+            "p10": 0.289481,
+            "p90": 0.631761,
+            "mean": 0.460975
+          },
+          "rejected": {
+            "count": 0
+          }
+        }
+      }
+    },
+    "in_strategy_events_counts_of_newly_rejected_signals_by_reason": {
+      "total_by_reason": {
+        "alert_close_above_ema_reject": 35887
+      },
+      "by_entry_bucket": {
+        "09:35": {
+          "alert_close_above_ema_reject": 2263
+        },
+        "09:40": {
+          "alert_close_above_ema_reject": 2220
+        },
+        "09:45": {
+          "alert_close_above_ema_reject": 2106
+        },
+        "09:50": {
+          "alert_close_above_ema_reject": 1948
+        },
+        "09:55": {
+          "alert_close_above_ema_reject": 1757
+        },
+        "10:00": {
+          "alert_close_above_ema_reject": 1576
+        },
+        "10:05": {
+          "alert_close_above_ema_reject": 1378
+        },
+        "10:10": {
+          "alert_close_above_ema_reject": 1418
+        },
+        "10:15": {
+          "alert_close_above_ema_reject": 1275
+        },
+        "10:20": {
+          "alert_close_above_ema_reject": 1238
+        },
+        "10:25": {
+          "alert_close_above_ema_reject": 1277
+        },
+        "10:30": {
+          "alert_close_above_ema_reject": 1199
+        },
+        "10:35": {
+          "alert_close_above_ema_reject": 1156
+        },
+        "10:40": {
+          "alert_close_above_ema_reject": 1230
+        },
+        "10:45": {
+          "alert_close_above_ema_reject": 1263
+        },
+        "10:50": {
+          "alert_close_above_ema_reject": 1264
+        },
+        "10:55": {
+          "alert_close_above_ema_reject": 1279
+        },
+        "11:00": {
+          "alert_close_above_ema_reject": 770
+        },
+        "11:05": {
+          "alert_close_above_ema_reject": 815
+        },
+        "11:10": {
+          "alert_close_above_ema_reject": 779
+        },
+        "11:15": {
+          "alert_close_above_ema_reject": 776
+        },
+        "11:20": {
+          "alert_close_above_ema_reject": 804
+        },
+        "11:25": {
+          "alert_close_above_ema_reject": 790
+        },
+        "11:30": {
+          "alert_close_above_ema_reject": 783
+        },
+        "11:35": {
+          "alert_close_above_ema_reject": 792
+        },
+        "11:40": {
+          "alert_close_above_ema_reject": 885
+        },
+        "11:45": {
+          "alert_close_above_ema_reject": 932
+        },
+        "11:50": {
+          "alert_close_above_ema_reject": 946
+        },
+        "11:55": {
+          "alert_close_above_ema_reject": 968
+        }
+      }
+    },
+    "median_expectancy_overall_and_for_non_09_30_bucket": {
+      "overall": 0.017114,
+      "non_09_30": 0.0,
+      "trade_count_overall": 1147,
+      "trade_count_non_09_30": 0
+    },
+    "pf_median_expectancy_trade_count_segmented_by_entry_bucket": {
+      "09:30": {
+        "profit_factor": 34.11148,
+        "median_expectancy": 0.017114,
+        "trade_count": 1147
+      },
+      "09:35": {
+        "profit_factor": 0.0,
+        "median_expectancy": 0.0,
+        "trade_count": 0
+      },
+      "09:40": {
+        "profit_factor": 0.0,
+        "median_expectancy": 0.0,
+        "trade_count": 0
+      },
+      "09:45": {
+        "profit_factor": 0.0,
+        "median_expectancy": 0.0,
+        "trade_count": 0
+      },
+      "09:50": {
+        "profit_factor": 0.0,
+        "median_expectancy": 0.0,
+        "trade_count": 0
+      },
+      "other": {
+        "profit_factor": 0.0,
+        "median_expectancy": 0.0,
+        "trade_count": 0
+      }
+    },
+    "post_change_cohort_stats_for_executed_trades_by_entry_bucket": {
+      "09:30": {
+        "profit_factor": 34.11148,
+        "median_expectancy": 0.017114,
+        "trade_count": 1147,
+        "stop_loss_share": 0.108108
+      },
+      "non_09_30": {
+        "profit_factor": 0.0,
+        "median_expectancy": 0.0,
+        "trade_count": 0,
+        "stop_loss_share": null
+      }
+    },
+    "trade_count_impact_overall_and_by_entry_bucket_specifically_quantify_restoration": {
+      "trade_count": 1147,
+      "by_entry_bucket": {
+        "09:30": 1147,
+        "09:35": 0,
+        "09:40": 0,
+        "09:45": 0,
+        "09:50": 0,
+        "other": 0
+      },
+      "restoration_0935_1000": {
+        "trade_count": 0,
+        "share_of_all": 0.0,
+        "by_entry_bucket": {
+          "09:30": 0,
+          "09:35": 0,
+          "09:40": 0,
+          "09:45": 0,
+          "09:50": 0,
+          "other": 0
+        }
+      }
+    },
+    "cohort_stats": {
+      "by_entry_bucket": {
+        "09:30": {
+          "pass": {
+            "profit_factor": 0.0,
+            "median_expectancy": 0.0,
+            "trade_count": 0
+          },
+          "fail": {
+            "profit_factor": 34.11148,
+            "median_expectancy": 0.017114,
+            "trade_count": 1147
+          }
+        },
+        "09:35": {
+          "pass": {
+            "trade_count": 0,
+            "profit_factor": 0.0,
+            "median_expectancy": 0.0
+          },
+          "fail": {
+            "trade_count": 0,
+            "profit_factor": 0.0,
+            "median_expectancy": 0.0
+          }
+        },
+        "09:40": {
+          "pass": {
+            "trade_count": 0,
+            "profit_factor": 0.0,
+            "median_expectancy": 0.0
+          },
+          "fail": {
+            "trade_count": 0,
+            "profit_factor": 0.0,
+            "median_expectancy": 0.0
+          }
+        }
+      }
+    },
+    "pass_fail_cohort_comparison_for_post_09_30_trades_profit_factor_median_expectancy_pct_profitable_windows_max_drawdown": {
+      "pass": {
+        "trade_count": 0,
+        "profit_factor": 0.0,
+        "median_expectancy": 0.0,
+        "pct_profitable_windows": 0.0,
+        "max_drawdown": 0.0
+      },
+      "fail": {
+        "trade_count": 0,
+        "profit_factor": 0.0,
+        "median_expectancy": 0.0,
+        "pct_profitable_windows": 0.0,
+        "max_drawdown": 0.0
+      }
+    }
+  },
+  "trades_file": "/root/autoresearch-2026-05-02/ema_autoresearch-runs/job-26/7c3f255b095d28112b128430bc020c13a449ae56/ec380de0f546/trades.csv",
+  "strategy_events_file": "/root/autoresearch-2026-05-02/ema_autoresearch-runs/job-26/7c3f255b095d28112b128430bc020c13a449ae56/ec380de0f546/strategy_events.parquet",
+  "diagnostics_file": "/root/autoresearch-2026-05-02/ema_autoresearch-runs/job-26/7c3f255b095d28112b128430bc020c13a449ae56/ec380de0f546/diagnostics.json",
+  "data_provenance": {
+    "data_universe": "nasdaq8",
+    "universe_path": "/root/autoresearch-data/universes/nasdaq8",
+    "symbol_count": 8,
+    "symbols_hash": "58d0e0394419",
+    "start": "2020-01-02 09:30:00",
+    "end": "2024-12-31 15:55:00",
+    "manifest_path": "/root/autoresearch-data/universes/nasdaq8/manifest.json"
+  },
+  "exit_reason_counts": {
+    "stop_loss": 124,
+    "trail_stop": 1023
+  }
+}

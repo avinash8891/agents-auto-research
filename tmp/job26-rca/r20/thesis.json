@@ -1,0 +1,106 @@
+{
+  "thesis_id": "require_alert_candle_body_dominance_for_non0930_shorts",
+  "strategy_family": "ema",
+  "hypothesis": "Post-09:30 EMA pullback shorts are dominated by false reversals driven by microstructure noise (transaction-price bounce/indecision) rather than genuine supply-driven reversal. Requiring that the alert candle be a decisive reversal bar—operationalized as real-body dominance (high body_pct) and/or low wick share—will restore a tradable subset of post-09:30 entries (trade_count_non0930 > 0) and improve their median_expectancy versus an unfiltered post-09:30 cohort, while keeping the strong 09:30 edge intact.",
+  "mechanism": "Microstructure research shows observed short-horizon reversals can be mechanically induced by bid–ask effects even when efficient value is unchanged. A candle with large wicks and small body near the EMA is consistent with two-sided probing/noise and is more likely to be adversely selected for a break-of-extreme entry. Implement an alert-candle geometry confirmation for shorts in entry buckets excluding 09:30: only arm/keep the alert if the alert candle’s body is sufficiently large relative to its range (or equivalently wick share is sufficiently small). This confirmation is computed at alert-arming time from the alert bar’s OHLC (already produced in strategy feature arrays) and does not merge timeframes.",
+  "mechanism_dimension": "signal_quality",
+  "dimension_novelty": "Prior signal-quality work in this job focused on alert_close vs EMA confirmation (which currently rejects essentially all post-09:30 candidates) and attempted close-location filters that were blocked/obscured by diagnostics aggregation issues. This thesis tests a distinct mechanism family: filtering microstructure-noise/bid–ask-bounce-like reversals by requiring the alert candle to be a decisive reversal bar (large real body relative to range, or equivalently low combined wick share), which is not a nearby threshold tweak of the EMA-side rule and can pass a meaningful subset of post-09:30 setups.",
+  "causal_cluster": "post_open_false_reversal_filtering",
+  "dominant_cluster_overlap": "medium",
+  "underexplored_dimensions_considered": [
+    "regime_conditioning (symbol-day early raw_setup gate as a day-type classifier)",
+    "exit_mechanism (adjust trailing activation/timeout to better match early right-tail behavior)"
+  ],
+  "novel_connection": "Connects microstructure literature on transaction-price reversal artifacts (bid–ask bounce / return-computation bias) to a directly testable bar-structure discriminator (body dominance / wick share) that should preferentially reject ‘noisy’ EMA touches while keeping true rejection/acceptance independent from the close-vs-EMA sign test that currently collapses trade_count after 09:30.",
+  "closest_prior_theses_considered": [
+    "require_alert_close_below_ema_for_non0930_shorts",
+    "alert_candle_close_location_filter_for_post0930_shorts",
+    "fix_diagnostics_geometry_feature_aggregation_and_add_event_trade_join_key"
+  ],
+  "orthogonality_defense": "Unlike require_alert_close_below_ema_for_non0930_shorts, this does not gate on EMA-side at the close (which has been shown to reject 35,887 post-09:30 candidates and produce 0 post-09:30 trades). Unlike the prior close-location attempt, this uses a different candle-geometry definition tied to microstructure bounce/indecision (body vs wick dominance) and is intended to be permissive enough to restore some post-09:30 trading while still filtering low-quality signals.",
+  "evidence_strength": "mixed",
+  "thesis_role": "orthogonal_discovery",
+  "falsification_or_alternative": "If post-09:30 trades remain unprofitable even when restricted to high-body/low-wick alert candles (N>=200), then the failure mode is likely not microstructure bounce but a broader regime shift (information-driven continuation). In that case, a regime_conditioning gate (e.g., symbol-day early raw_setup presence) would be a more plausible next lever than any candle-geometry filter.",
+  "new_dimension_name": "",
+  "why_existing_dimensions_do_not_fit": "",
+  "mechanism_family_definition": "",
+  "expected_reuse_across_future_theses": "",
+  "evidence": [
+    "Web: Roll (1984) demonstrates bid–ask bounce induces negative serial dependence in transaction-price changes (mechanical ‘reversal’), motivating filters that avoid indecisive/bounce-like bars. https://www.acsu.buffalo.edu/~keechung/MGF743/Readings/Roll%201984.pdf",
+    "Web: Blume & Stambaugh (1983) show transaction-price-based returns can be biased by bid–ask effects, implying that naive reversal signals can be spurious without structure confirmation. https://www-2.rotman.utoronto.ca/~kan/3032/pdf/BiasInReturns/Blume_Stambaugh_JFE_1983.pdf",
+    "Data (job-26 best run): alert_close_above_ema_reject accounts for 35,887 of 35,908 rejected_signal events and occurs entirely on/after 09:35, causing post-09:30 trade_count=0; we need a less binary confirmation that can preserve some post-09:30 flow while still targeting low-quality reversals."
+  ],
+  "base_experiment_id": "require_alert_close_below_ema_for_non0930_shorts",
+  "base_config_path": "runtime/jobs/job-26/experiments/require_alert_close_below_ema_for_non0930_shorts/runtime_config.json",
+  "config_changes": {
+    "requires_engine_change__require_alert_candle_body_dominance_confirmation": {
+      "enabled": true,
+      "direction": "short",
+      "apply_to_entry_buckets_excluding": [
+        "09:30"
+      ],
+      "min_body_pct": 0.6
+    }
+  },
+  "expected_effects": [
+    {
+      "metric": "profit_factor",
+      "direction": "increase",
+      "threshold": 0.05,
+      "unit": null,
+      "rationale": "Filtering out indecisive/bounce-like alert candles should reduce stop-outs/adverse selection in post-09:30 entries, improving aggregate PF without sacrificing the core 09:30 cohort."
+    },
+    {
+      "metric": "trade_count",
+      "direction": "increase_or_same",
+      "threshold": null,
+      "unit": null,
+      "rationale": "Relative to the current best (which yields 0 post-09:30 trades), this geometry filter should be permissive enough to restore some post-09:30 trades while leaving 09:30 excluded from filtering."
+    }
+  ],
+  "disqualifiers": [
+    {
+      "name": "post0930_still_zero",
+      "condition": "post-09:30 trade_count remains 0 (no restoration of opportunities)",
+      "severity": "hard_fail"
+    },
+    {
+      "name": "trade_count_collapse",
+      "condition": "total trade_count decreases by more than 30 percent versus base",
+      "severity": "hard_fail"
+    }
+  ],
+  "required_diagnostics": [
+    "Cohort stats for post-09:30 executed trades split by geometry-pass vs geometry-fail (trade_count, profit_factor, median_expectancy, stop_loss_share) with N>=200 if possible",
+    "New rejection reason counts by entry_bucket for alert_body_dominance_reject (or equivalent), to ensure the filter is not inadvertently eliminating all post-09:30 trades",
+    "Trade_count impact overall and by entry bucket (09:30, 09:35, 09:40, 09:45, 09:50, other)"
+  ],
+  "required_diagnostic_specs": [
+    {
+      "key": "cohort_stats_for_post_09_30_executed_trades_split_by_geometry_pass_vs_geometry_fail",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Cohort stats for post-09:30 executed trades split by geometry-pass vs geometry-fail (trade_count, profit_factor, median_expectancy, stop_loss_share) with N>=200 if possible"
+    },
+    {
+      "key": "new_rejection_reason_counts_by_entry_bucket_for_alert_body_dominance_reject",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "New rejection reason counts by entry_bucket for alert_body_dominance_reject (or equivalent), to ensure the filter is not inadvertently eliminating all post-09:30 trades"
+    },
+    {
+      "key": "trade_count_impact_overall_and_by_entry_bucket",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Trade_count impact overall and by entry bucket (09:30, 09:35, 09:40, 09:45, 09:50, other)"
+    }
+  ],
+  "requires_code_change": true,
+  "requested_primitives": [
+    "engine primitive to compute alert candle body_pct (abs(close-open)/(high-low)) and apply as a rejection rule at alert-arming time, bucket-scoped via apply_to_entry_buckets_excluding"
+  ],
+  "why_not_overfit": "This is not a tuned cutoff on time or stop distance; it is a structural filter derived from a known microstructure artifact (bounce/indecision). The prediction is falsifiable on large event counts by comparing pass/fail cohorts (geometry-pass vs geometry-fail) within the same entry buckets, and it should generalize because wick/body dominance is a stable descriptor of auction-to-continuous noise vs decisive reversal behavior."
+}

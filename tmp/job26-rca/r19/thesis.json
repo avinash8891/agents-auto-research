@@ -1,0 +1,100 @@
+{
+  "thesis_id": "fix_diagnostics_geometry_feature_aggregation_and_add_event_trade_join_key",
+  "strategy_family": "ema",
+  "hypothesis": "The current research loop is being distorted by (1) diagnostics distributions not reflecting persisted event features (e.g., close_location_in_range, upper_wick_share) and (2) inability to join executed_trade events to realized trades for post-filter cohort analysis; fixing these will enable accurate falsification of future post-09:30 signal-quality mechanisms (including geometry and bearish-body confirmations).",
+  "mechanism": "Implement two observability fixes: (A) Diagnostics generation should compute feature distributions directly from strategy_events.parquet columns (e.g., close_location_in_range, upper_wick_share) using finite-value counts, so distributions cannot show count=0 when the filter clearly used those features to reject 35,769 signals. (B) Persist a stable identifier (trade_id/event_id) into both strategy_events (for executed_trade rows) and trades.csv (and/or persist the realized entry timestamp used in trades.csv into executed_trade events) so we can join and compute PF/median_expectancy for pass/fail cohorts (especially post-09:30 where prior hypotheses focus).",
+  "mechanism_dimension": "emergent",
+  "dimension_novelty": "Prior rounds attempted new post-09:30 signal-quality confirmations (close-vs-EMA, candle geometry) but were blocked by feature-scale anomalies and now a verified diagnostics aggregation bug + inability to join executed_trade events to trades for cohort testing. This thesis is not a parameter tweak; it is an observability/measurement primitive enabling falsifiable mechanism tests.",
+  "causal_cluster": "observability_and_measurement_primitives",
+  "dominant_cluster_overlap": "low",
+  "underexplored_dimensions_considered": [
+    "exit_mechanism",
+    "regime_conditioning",
+    "risk_structure"
+  ],
+  "novel_connection": "We now have direct evidence (round_19 analyst) that the candle-geometry features are computed and persisted correctly in strategy_events, but diagnostics distributions report zero counts, which can cause us to wrongly conclude features are missing/miscomputed and to iterate blindly. Fixing the measurement layer is a prerequisite to safely exploring signal-quality mechanisms without repeating the round-18 failure mode.",
+  "closest_prior_theses_considered": [
+    "alert_candle_close_location_filter_for_post0930_shorts",
+    "require_alert_close_below_ema_for_non0930_shorts"
+  ],
+  "orthogonality_defense": "Those theses change entry filtering rules; this thesis changes the strategy’s instrumentation so we can (a) correctly measure geometry feature distributions and (b) reliably join executed_trade events to realized trades for post-filter cohort evaluation. It enables future hypotheses across multiple dimensions rather than adjusting the existing gate.",
+  "evidence_strength": "direct",
+  "thesis_role": "implementation_unlock",
+  "falsification_or_alternative": "If, after fixing diagnostics aggregation to read from strategy_events.parquet, geometry feature distributions still show count=0 or non-finite across large-N rejected cohorts, then the feature computation/persistence itself (not aggregation) is broken. If adding a stable join key still does not allow mapping executed_trade events to trades, then the issue is in event schema (missing entry timestamp/IDs) and needs a different linkage primitive.",
+  "new_dimension_name": "observability_primitives",
+  "why_existing_dimensions_do_not_fit": "This is not about improving edge via entry/exit/regime/risk; it is about adding/fixing measurement primitives (diagnostics correctness + joinability) required to test those mechanisms without artifacts-driven false conclusions.",
+  "mechanism_family_definition": "Changes that improve the correctness and granularity of strategy_events/diagnostics so that structural hypotheses (e.g., candle-geometry confirmation) can be validated with reliable pass/fail cohorts and without feature-reporting mismatches.",
+  "expected_reuse_across_future_theses": "High: any future signal-quality/regime/risk hypothesis that depends on event-level features or rejection reasons will require trustworthy distributions and stable cohort linkage between events and executed trades.",
+  "evidence": [
+    "Web (microstructure noise rationale for needing correct measurement): Roll (1984) shows bid–ask bounce can create mechanical negative serial dependence; to test reversal-vs-noise filters we need accurate feature measurement and cohort evaluation. https://www.acsu.buffalo.edu/~keechung/MGF743/Readings/Roll%201984.pdf",
+    "Data/code (round_19 analyst): diagnostics.json reports close_location_in_range.count=0 and upper_wick_share.count=0 while strategy_events.parquet has these columns populated for alert_close_location_reject rejected_signal rows (N=35,769); strategy.py::_compute_alert_bar_feature_arrays contains the correct formulas, so mismatch is diagnostics aggregation, not missing features."
+  ],
+  "base_experiment_id": "require_alert_close_below_ema_for_non0930_shorts",
+  "base_config_path": "runtime/jobs/job-26/experiments/require_alert_close_below_ema_for_non0930_shorts/runtime_config.json",
+  "config_changes": {
+    "requires_engine_change__diagnostics_aggregate_distributions_from_strategy_events": true,
+    "requires_engine_change__persist_event_trade_join_key": true
+  },
+  "expected_effects": [
+    {
+      "metric": "pct_profitable_windows",
+      "direction": "not_worse_than",
+      "threshold": 0.0,
+      "unit": null,
+      "rationale": "Observability changes should not alter trading logic; windowed profitability should remain unchanged aside from negligible logging effects."
+    },
+    {
+      "metric": "profit_factor",
+      "direction": "not_worse_than",
+      "threshold": 0.0,
+      "unit": null,
+      "rationale": "This is a measurement-only change; PF should remain the same, validating that we didn’t inadvertently change signal/exit behavior."
+    }
+  ],
+  "disqualifiers": [
+    {
+      "name": "behavior_change",
+      "condition": "profit_factor decreases by more than 1% versus the base experiment (measurement-only change should not move PF materially)",
+      "severity": "hard_fail"
+    },
+    {
+      "name": "diagnostics_mismatch_persists",
+      "condition": "After change, any feature used in a rejection reason (e.g., alert_close_location_reject) still has diagnostics distribution count < 90% of strategy_events finite count",
+      "severity": "hard_fail"
+    }
+  ],
+  "required_diagnostics": [
+    "diagnostics_feature_distribution_counts_vs_event_non_null_counts: for each distributed feature (close_location_in_range, upper_wick_share), report (diagnostics_count, strategy_events_non_null_count, strategy_events_finite_count) to catch future mismatches",
+    "event_trade_join_coverage: fraction of executed_trade events that can be linked to trades.csv (overall and by entry_bucket) after adding join key",
+    "post_filter_cohort_report: for any new rejection reason, report executed-trade PF/median_expectancy for pass vs fail cohorts when N>=50"
+  ],
+  "required_diagnostic_specs": [
+    {
+      "key": "diagnostics_feature_distribution_counts_vs_event_non_null_counts_for_each_distributed_feature",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "diagnostics_feature_distribution_counts_vs_event_non_null_counts: for each distributed feature (close_location_in_range, upper_wick_share), report (diagnostics_count, strategy_events_non_null_count, strategy_events_finite_count) to catch future mismatches"
+    },
+    {
+      "key": "event_trade_join_coverage_fraction_of_executed_trade_events_that_can_be_linked_to_trades_csv",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "event_trade_join_coverage: fraction of executed_trade events that can be linked to trades.csv (overall and by entry_bucket) after adding join key"
+    },
+    {
+      "key": "post_filter_cohort_report_for_any_new_rejection_reason_report_executed_trade_pf_median_expectancy_for_pass_vs_fail_cohorts_when_n_50",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "post_filter_cohort_report: for any new rejection reason, report executed-trade PF/median_expectancy for pass vs fail cohorts when N>=50"
+    }
+  ],
+  "requires_code_change": true,
+  "requested_primitives": [
+    "diagnostics pipeline: read feature distributions directly from strategy_events.parquet (not a reduced in-memory view) and count finite values",
+    "schema: add a stable event_id/trade_id written into both strategy_events (executed_trade rows) and trades.csv, or persist entry_timestamp in both for reliable joining"
+  ],
+  "why_not_overfit": "This is not an in-sample optimization; it is a correctness/traceability change. A diagnostics aggregation fix and a stable join key should generalize across datasets and is necessary for any subsequent mechanism testing to be scientifically falsifiable."
+}

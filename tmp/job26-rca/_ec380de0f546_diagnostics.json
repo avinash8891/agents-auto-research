@@ -1,0 +1,259 @@
+{
+  "trade_count": 1147,
+  "event_counts": {
+    "raw_setup": 37055,
+    "rejected_signal": 35908,
+    "accepted_signal": 1168,
+    "executed_trade": 1168
+  },
+  "rejection_breakdown": {
+    "alert_close_above_ema_reject": 35887,
+    "max_trades_per_day": 21
+  },
+  "rejection_reason_counts_for_opening_setup_gate_failed_0940_in_strategy_events": 0,
+  "rejected_signal_counts_for_new_reason": {
+    "counts": {}
+  },
+  "rejected_signal_counts_and_stop_distance_pct_distribution_for_new_reasons": {
+    "counts": {},
+    "by_entry_bucket": {
+      "09:30": {
+        "accepted": {
+          "count": 1168,
+          "median": 0.455282,
+          "p10": 0.289481,
+          "p90": 0.631761,
+          "mean": 0.460975
+        },
+        "rejected": {
+          "count": 0
+        }
+      }
+    }
+  },
+  "in_strategy_events_counts_of_newly_rejected_signals_by_reason": {
+    "total_by_reason": {
+      "alert_close_above_ema_reject": 35887
+    },
+    "by_entry_bucket": {
+      "09:35": {
+        "alert_close_above_ema_reject": 2263
+      },
+      "09:40": {
+        "alert_close_above_ema_reject": 2220
+      },
+      "09:45": {
+        "alert_close_above_ema_reject": 2106
+      },
+      "09:50": {
+        "alert_close_above_ema_reject": 1948
+      },
+      "09:55": {
+        "alert_close_above_ema_reject": 1757
+      },
+      "10:00": {
+        "alert_close_above_ema_reject": 1576
+      },
+      "10:05": {
+        "alert_close_above_ema_reject": 1378
+      },
+      "10:10": {
+        "alert_close_above_ema_reject": 1418
+      },
+      "10:15": {
+        "alert_close_above_ema_reject": 1275
+      },
+      "10:20": {
+        "alert_close_above_ema_reject": 1238
+      },
+      "10:25": {
+        "alert_close_above_ema_reject": 1277
+      },
+      "10:30": {
+        "alert_close_above_ema_reject": 1199
+      },
+      "10:35": {
+        "alert_close_above_ema_reject": 1156
+      },
+      "10:40": {
+        "alert_close_above_ema_reject": 1230
+      },
+      "10:45": {
+        "alert_close_above_ema_reject": 1263
+      },
+      "10:50": {
+        "alert_close_above_ema_reject": 1264
+      },
+      "10:55": {
+        "alert_close_above_ema_reject": 1279
+      },
+      "11:00": {
+        "alert_close_above_ema_reject": 770
+      },
+      "11:05": {
+        "alert_close_above_ema_reject": 815
+      },
+      "11:10": {
+        "alert_close_above_ema_reject": 779
+      },
+      "11:15": {
+        "alert_close_above_ema_reject": 776
+      },
+      "11:20": {
+        "alert_close_above_ema_reject": 804
+      },
+      "11:25": {
+        "alert_close_above_ema_reject": 790
+      },
+      "11:30": {
+        "alert_close_above_ema_reject": 783
+      },
+      "11:35": {
+        "alert_close_above_ema_reject": 792
+      },
+      "11:40": {
+        "alert_close_above_ema_reject": 885
+      },
+      "11:45": {
+        "alert_close_above_ema_reject": 932
+      },
+      "11:50": {
+        "alert_close_above_ema_reject": 946
+      },
+      "11:55": {
+        "alert_close_above_ema_reject": 968
+      }
+    }
+  },
+  "median_expectancy_overall_and_for_non_09_30_bucket": {
+    "overall": 0.017114,
+    "non_09_30": 0.0,
+    "trade_count_overall": 1147,
+    "trade_count_non_09_30": 0
+  },
+  "pf_median_expectancy_trade_count_segmented_by_entry_bucket": {
+    "09:30": {
+      "profit_factor": 34.11148,
+      "median_expectancy": 0.017114,
+      "trade_count": 1147
+    },
+    "09:35": {
+      "profit_factor": 0.0,
+      "median_expectancy": 0.0,
+      "trade_count": 0
+    },
+    "09:40": {
+      "profit_factor": 0.0,
+      "median_expectancy": 0.0,
+      "trade_count": 0
+    },
+    "09:45": {
+      "profit_factor": 0.0,
+      "median_expectancy": 0.0,
+      "trade_count": 0
+    },
+    "09:50": {
+      "profit_factor": 0.0,
+      "median_expectancy": 0.0,
+      "trade_count": 0
+    },
+    "other": {
+      "profit_factor": 0.0,
+      "median_expectancy": 0.0,
+      "trade_count": 0
+    }
+  },
+  "post_change_cohort_stats_for_executed_trades_by_entry_bucket": {
+    "09:30": {
+      "profit_factor": 34.11148,
+      "median_expectancy": 0.017114,
+      "trade_count": 1147,
+      "stop_loss_share": 0.108108
+    },
+    "non_09_30": {
+      "profit_factor": 0.0,
+      "median_expectancy": 0.0,
+      "trade_count": 0,
+      "stop_loss_share": null
+    }
+  },
+  "trade_count_impact_overall_and_by_entry_bucket_specifically_quantify_restoration": {
+    "trade_count": 1147,
+    "by_entry_bucket": {
+      "09:30": 1147,
+      "09:35": 0,
+      "09:40": 0,
+      "09:45": 0,
+      "09:50": 0,
+      "other": 0
+    },
+    "restoration_0935_1000": {
+      "trade_count": 0,
+      "share_of_all": 0.0,
+      "by_entry_bucket": {
+        "09:30": 0,
+        "09:35": 0,
+        "09:40": 0,
+        "09:45": 0,
+        "09:50": 0,
+        "other": 0
+      }
+    }
+  },
+  "cohort_stats": {
+    "by_entry_bucket": {
+      "09:30": {
+        "pass": {
+          "profit_factor": 0.0,
+          "median_expectancy": 0.0,
+          "trade_count": 0
+        },
+        "fail": {
+          "profit_factor": 34.11148,
+          "median_expectancy": 0.017114,
+          "trade_count": 1147
+        }
+      },
+      "09:35": {
+        "pass": {
+          "trade_count": 0,
+          "profit_factor": 0.0,
+          "median_expectancy": 0.0
+        },
+        "fail": {
+          "trade_count": 0,
+          "profit_factor": 0.0,
+          "median_expectancy": 0.0
+        }
+      },
+      "09:40": {
+        "pass": {
+          "trade_count": 0,
+          "profit_factor": 0.0,
+          "median_expectancy": 0.0
+        },
+        "fail": {
+          "trade_count": 0,
+          "profit_factor": 0.0,
+          "median_expectancy": 0.0
+        }
+      }
+    }
+  },
+  "pass_fail_cohort_comparison_for_post_09_30_trades_profit_factor_median_expectancy_pct_profitable_windows_max_drawdown": {
+    "pass": {
+      "trade_count": 0,
+      "profit_factor": 0.0,
+      "median_expectancy": 0.0,
+      "pct_profitable_windows": 0.0,
+      "max_drawdown": 0.0
+    },
+    "fail": {
+      "trade_count": 0,
+      "profit_factor": 0.0,
+      "median_expectancy": 0.0,
+      "pct_profitable_windows": 0.0,
+      "max_drawdown": 0.0
+    }
+  }
+}

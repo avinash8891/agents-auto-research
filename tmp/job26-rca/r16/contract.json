@@ -1,0 +1,71 @@
+{
+  "experiment_id": "require_alert_close_below_ema_for_non0930_shorts",
+  "thesis_id": "require_alert_close_below_ema_for_non0930_shorts",
+  "strategy_family": "ema",
+  "baseline_config_path": "runtime/jobs/job-26/experiments/extend_opening_exhaustion_confirmation_to_0940_entries/runtime_config.json",
+  "base_experiment_id": "extend_opening_exhaustion_confirmation_to_0940_entries",
+  "base_config_hash": "32374bd2a898",
+  "runtime_config": {},
+  "hypothesis": "Post-09:30 shorts are often false reversals during continued opening price discovery; when the alert candle closes above the EMA, it indicates buyers still control the close (weak reversal), leading to adverse selection and negative expectancy. Requiring (for shorts) alert_close <= alert_ema for entries after 09:30 will remove a structurally weak subpopulation and increase overall profit_factor without collapsing trade_count by more than 30%.",
+  "mechanism": "In strategies/ema/signals.py, a SHORT alert is armed when the prior bar’s low is above its EMA, and entry triggers on a later break of the alert low. This can arm alerts even when the alert bar closes strong/up (above EMA), which is more consistent with continuation than reversal. Add a signal-quality confirmation at alert-arming time: for SHORT setups with entry_bucket != '09:30', only arm/keep the alert if alert_close <= alert_ema (optionally also requiring alert_close < alert_open as a bearish reversal; but start with close-vs-EMA). This uses same-timeframe, in-bar information available inside the signal loop and does not rely on changing entry time windows.",
+  "expected_effects": [
+    {
+      "metric": "profit_factor",
+      "direction": "increase",
+      "threshold": 0.05,
+      "unit": null,
+      "rationale": "Post-09:30 trades are currently negative expectancy at large N; filtering out alerts lacking EMA-side close confirmation should remove false reversals and reduce gross losses."
+    },
+    {
+      "metric": "trade_count",
+      "direction": "decrease_or_same",
+      "threshold": null,
+      "unit": null,
+      "rationale": "Filter applies only outside 09:30; the core 09:30 edge (N~1147 in the latest run) remains available, so total trades should not collapse unless most post-09:30 alerts fail the confirmation."
+    }
+  ],
+  "disqualifiers": [
+    {
+      "name": "trade_count_collapse",
+      "condition": "trade_count decreases by more than 30 percent versus base experiment",
+      "severity": "hard_fail"
+    },
+    {
+      "name": "no_post0930_improvement",
+      "condition": "For post-09:30 trades with N>=500, median_expectancy does not improve by at least 0.0015 versus base experiment",
+      "severity": "hard_fail"
+    }
+  ],
+  "required_diagnostics": [
+    "Cohort stats (N, PF, median_expectancy) for executed trades split by entry_bucket and new rule pass/fail (especially 09:35 and 09:40).",
+    "In strategy_events: counts of newly rejected signals by reason (e.g., alert_close_above_ema_reject) by entry_bucket.",
+    "Pass/fail cohort comparison for post-09:30 trades: profit_factor, median_expectancy, pct_profitable_windows, max_drawdown."
+  ],
+  "required_diagnostic_specs": [
+    {
+      "key": "cohort_stats",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Cohort stats (N, PF, median_expectancy) for executed trades split by entry_bucket and new rule pass/fail (especially 09:35 and 09:40)."
+    },
+    {
+      "key": "in_strategy_events_counts_of_newly_rejected_signals_by_reason",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "In strategy_events: counts of newly rejected signals by reason (e.g., alert_close_above_ema_reject) by entry_bucket."
+    },
+    {
+      "key": "pass_fail_cohort_comparison_for_post_09_30_trades_profit_factor_median_expectancy_pct_profitable_windows_max_drawdown",
+      "surface": "strategy_diagnostics",
+      "payload_fields": [],
+      "aliases": [],
+      "description": "Pass/fail cohort comparison for post-09:30 trades: profit_factor, median_expectancy, pct_profitable_windows, max_drawdown."
+    }
+  ],
+  "missing_primitives": [
+    "Signal/event feature logging: alert_bar_close, alert_bar_open, alert_bar_ema (or alert_close_minus_ema) and the alert_bar_timestamp, so the filter and its cohorts can be audited in strategy_events."
+  ],
+  "status": "needs_code"
+}
