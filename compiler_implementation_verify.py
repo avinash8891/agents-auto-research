@@ -170,11 +170,14 @@ def _verify_config_key_consumption(
     if not isinstance(config_changes, dict) or not config_changes:
         return failures
     default_keys = _default_runtime_keys(family_name)
-    runtime_text = _runtime_code_text(strategy_dir)
+    runtime_modules, runtime_failures = _runtime_code_modules_with_failures(strategy_dir)
+    failures.extend(runtime_failures)
     for key in sorted(_runtime_config_changes(config_changes)):
         if key in default_keys:
             continue
-        if not _config_key_consumed_by_runtime(runtime_text, key):
+        if not any(
+            _config_key_consumed_by_runtime(module_text, key) for module_text in runtime_modules
+        ):
             failures.append(f"config_key_not_consumed_by_runtime:{key}")
     return failures
 
@@ -199,11 +202,11 @@ def _runtime_code_text(strategy_dir: Path) -> str:
     return text
 
 
-def _runtime_code_text_with_failures(strategy_dir: Path) -> tuple[str, list[str]]:
+def _runtime_code_modules_with_failures(strategy_dir: Path) -> tuple[list[str], list[str]]:
     chunks: list[str] = []
     failures: list[str] = []
     if not strategy_dir.exists():
-        return "", failures
+        return chunks, failures
     for path in sorted(strategy_dir.glob("*.py")):
         if path.name in SCHEMA_ONLY_FILES:
             continue
@@ -212,6 +215,11 @@ def _runtime_code_text_with_failures(strategy_dir: Path) -> tuple[str, list[str]
             failures.append(failure)
         if text is not None:
             chunks.append(text)
+    return chunks, failures
+
+
+def _runtime_code_text_with_failures(strategy_dir: Path) -> tuple[str, list[str]]:
+    chunks, failures = _runtime_code_modules_with_failures(strategy_dir)
     return "\n".join(chunks), failures
 
 
@@ -236,15 +244,19 @@ def _verify_required_diagnostics(root: Path, family_name: str, thesis: dict[str,
     return failures
 
 
-def _diagnostic_emission_texts(root: Path, family_name: str) -> tuple[dict[str, str], list[str]]:
+def _diagnostic_emission_texts(
+    root: Path, family_name: str
+) -> tuple[dict[str, list[str]], list[str]]:
     """Code surfaces allowed to emit required diagnostics.
 
     Some diagnostics are emitted by the family runtime/event logger, while
     aggregate PF buckets are emitted by the post-backtest metrics layer.
     """
-    strategy_text, failures = _runtime_code_text_with_failures(root / "strategies" / family_name)
-    texts: dict[str, str] = {
-        "strategy_runtime": strategy_text,
+    strategy_modules, failures = _runtime_code_modules_with_failures(
+        root / "strategies" / family_name
+    )
+    texts: dict[str, list[str]] = {
+        "strategy_runtime": strategy_modules,
     }
     for surface, rel in (
         ("metrics", "metrics.py"),
@@ -260,11 +272,11 @@ def _diagnostic_emission_texts(root: Path, family_name: str) -> tuple[dict[str, 
             if failure:
                 failures.append(failure)
             if text is not None:
-                texts[surface] = text
+                texts[surface] = [text]
     return texts, failures
 
 
-def _diagnostic_spec_emitted(texts: dict[str, str], spec: dict[str, Any]) -> bool:
+def _diagnostic_spec_emitted(texts: dict[str, list[str]], spec: dict[str, Any]) -> bool:
     key = str(spec.get("key") or "").strip()
     if not key:
         return True
@@ -292,11 +304,13 @@ def _diagnostic_spec_emitted(texts: dict[str, str], spec: dict[str, Any]) -> boo
 
     for token in tokens:
         if any(
-            _payload_key_token_present(texts.get(name, ""), token) for name in emission_surfaces
+            _payload_key_token_present(text, token)
+            for name in emission_surfaces
+            for text in texts.get(name, [])
         ):
             return True
         if allow_registry and _registered_spec_key_present(
-            texts.get("experiment_evaluation_registry", ""), token
+            "\n".join(texts.get("experiment_evaluation_registry", [])), token
         ):
             return True
     return False
@@ -455,9 +469,12 @@ def _verify_tests_cover_behavior(
         text, _failure = _read_source_text(path)
         if text is not None:
             test_texts.append(text)
-    haystack = "\n".join(test_texts)
-    if not haystack:
+    if not test_texts:
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
-    if not any(_active_string_token_present(haystack, token) for token in unique_tokens):
+    if not any(
+        _active_string_token_present(test_text, token)
+        for token in unique_tokens
+        for test_text in test_texts
+    ):
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
     return []

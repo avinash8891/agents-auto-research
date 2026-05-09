@@ -701,7 +701,12 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
                 "HelpProc",
                 (),
                 {
-                    "stdout": "usage: codex exec [OPTIONS]\n  --sandbox <SANDBOX_MODE>\n",
+                    "stdout": (
+                        "usage: codex exec [OPTIONS]\n"
+                        "  --sandbox <SANDBOX_MODE>\n"
+                        "  --json\n"
+                        "  --output-last-message <PATH>\n"
+                    ),
                     "stderr": "",
                     "returncode": 0,
                 },
@@ -814,9 +819,6 @@ def test_build_missing_primitives_trace_links_builder_attempt_artifacts(
 
     events: list[dict[str, object]] = []
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
-    monkeypatch.setattr(
-        "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
-    )
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
     monkeypatch.setattr(
         "compiler_builder._validated_generated_config_result",
@@ -902,6 +904,7 @@ def test_build_missing_primitives_emits_builder_usage_trace_and_persists_usage(
     monkeypatch.setattr(
         "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
     )
+    monkeypatch.setattr("compiler_builder._codex_supports_exec_flag", lambda *args, **kwargs: False)
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
     monkeypatch.setattr(
         "compiler_builder.record_usage_event", lambda *args, **kwargs: emitted_usage.append(kwargs)
@@ -971,6 +974,7 @@ def test_build_missing_primitives_reports_timeout_explicitly(
     monkeypatch.setattr(
         "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
     )
+    monkeypatch.setattr("compiler_builder._codex_supports_exec_flag", lambda *args, **kwargs: False)
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
 
     result = build_missing_primitives(tmp_path, thesis_id)
@@ -1021,21 +1025,24 @@ def test_build_missing_primitives_accepts_valid_config_written_before_timeout(
     )
 
     def fake_run(cmd, *args, **kwargs):
+        if cmd[:2] == ["codex", "exec"]:
+            target = experiment_dir / "runtime_config.json"
+            target.write_text(json.dumps(_ema_runtime_config()) + "\n")
+            raise subprocess.TimeoutExpired(
+                cmd=cmd,
+                timeout=kwargs["timeout"],
+                output="generated config but kept inspecting diff",
+                stderr="still reviewing unrelated dirty worktree",
+            )
         if "-c" in cmd:
             return type("Proc", (), {"stdout": "", "stderr": "", "returncode": 0})()
-        target = experiment_dir / "runtime_config.json"
-        target.write_text(json.dumps(_ema_runtime_config()) + "\n")
-        raise subprocess.TimeoutExpired(
-            cmd=cmd,
-            timeout=kwargs["timeout"],
-            output="generated config but kept inspecting diff",
-            stderr="still reviewing unrelated dirty worktree",
-        )
+        raise AssertionError(f"unexpected subprocess command: {cmd!r}")
 
     monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
     monkeypatch.setattr(
         "compiler_builder._codex_supports_sandbox_flag", lambda *args, **kwargs: False
     )
+    monkeypatch.setattr("compiler_builder._codex_supports_exec_flag", lambda *args, **kwargs: False)
     monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
     monkeypatch.setattr(
         "compiler_builder._validated_generated_config_result",

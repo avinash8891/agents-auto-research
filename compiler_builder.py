@@ -470,7 +470,7 @@ def _find_cli() -> str | None:
     return None
 
 
-def _codex_supports_sandbox_flag(cli: str) -> bool:
+def _codex_exec_help_text(cli: str) -> str:
     try:
         help_result = subprocess.run(
             [cli, "exec", "--help"],
@@ -480,9 +480,16 @@ def _codex_supports_sandbox_flag(cli: str) -> bool:
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return False
-    help_text = f"{help_result.stdout}\n{help_result.stderr}"
-    return "--sandbox" in help_text
+        return ""
+    return f"{help_result.stdout}\n{help_result.stderr}"
+
+
+def _codex_supports_exec_flag(cli: str, flag: str) -> bool:
+    return flag in _codex_exec_help_text(cli)
+
+
+def _codex_supports_sandbox_flag(cli: str) -> bool:
+    return _codex_supports_exec_flag(cli, "--sandbox")
 
 
 def _read_json_artifact(path: Path) -> dict[str, Any] | None:
@@ -1075,18 +1082,21 @@ def build_missing_primitives(
         prompt_extras=prompt_extras,
     )
     cli = _find_cli()
+    output_dir_ctx: tempfile.TemporaryDirectory[str] | None = None
     if cli:
-        output_dir = Path(tempfile.mkdtemp(prefix="autoresearch-builder-"))
-        output_path = output_dir / "last_message.txt"
+        output_path = None
         builder_cmd = [
             cli,
             "exec",
-            "--json",
-            "--output-last-message",
-            str(output_path),
             "--model",
             BUILDER_CLI_MODEL,
         ]
+        if _codex_supports_exec_flag(cli, "--json"):
+            builder_cmd[2:2] = ["--json"]
+        if _codex_supports_exec_flag(cli, "--output-last-message"):
+            output_dir_ctx = tempfile.TemporaryDirectory(prefix="autoresearch-builder-")
+            output_path = Path(output_dir_ctx.name) / "last_message.txt"
+            builder_cmd[2:2] = ["--output-last-message", str(output_path)]
         if _codex_supports_sandbox_flag(cli):
             builder_cmd[2:2] = ["--sandbox", "workspace-write"]
     else:
@@ -1169,112 +1179,53 @@ def build_missing_primitives(
         _trace_builder_finish(thesis_id=thesis_id, result=result, artifact_paths=artifact_paths)
         return result
 
-    stdout_log = ""
-    stderr_log = ""
-    last_prompt = prompt
-    for attempt_index in range(BUILDER_IMPLEMENTATION_RETRY_LIMIT + 1):
-        if output_path is not None and output_path.exists():
-            output_path.unlink()
-        attempt_prompt = prompt
-        if out:
-            attempt_prompt = _builder_retry_prompt(
-                task=builder_task,
-                thesis_id=thesis_id,
-                root=root,
-                proposal_path=proposal_path,
-                compilation_path=compilation_path,
-                config_path=config_path,
-                family_name=family_name,
-                base_config_path=base_config_path,
-                missing_primitives=missing_primitives,
-                previous_result=out,
-            )
-        last_prompt = attempt_prompt
-        try:
-            proc = subprocess.run(
-                builder_cmd,
-                capture_output=True,
-                text=True,
-                cwd=str(root),
-                input=attempt_prompt,
-                timeout=BUILDER_CLI_TIMEOUT_SECONDS,
-            )
-        except subprocess.TimeoutExpired as exc:
-            stdout_log, stderr_log = _timeout_output(exc)
-            usage_payload = _emit_builder_usage(
-                thesis_id=thesis_id,
-                attempt_number=attempt_index + 1,
-                usage_result=_extract_codex_cli_usage(stdout_log),
-            )
-            output_text = (
-                output_path.read_text() if output_path is not None and output_path.exists() else ""
-            )
-            parsed_self_check = _extract_builder_self_check(
-                "\n".join(part for part in (output_text, stdout_log, stderr_log) if part)
-            )
-            duration_seconds = time.monotonic() - started_at
-            out = _validated_generated_config_result(
-                task=builder_task,
-                root=root,
-                thesis=proposal,
-                contract=compilation,
-                config_abspath=config_abspath,
-                config_path=config_path,
-                family_name=family_name,
-                reason=(
-                    f"builder timed out after writing a valid config: "
-                    f"{BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}"
-                ),
-                exit_code=None,
-                timed_out=True,
-                duration_seconds=duration_seconds,
-                builder_self_check=parsed_self_check,
-            )
-            if out is not None and usage_payload is not None:
-                out["usage"] = usage_payload
-            if out is None:
-                out = {
-                    "status": "error",
-                    "error_code": "builder_timeout",
-                    "reason": f"builder timed out after {BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}",
-                    "generated_config": None,
-                    "validation_passed": False,
-                    "timed_out": True,
-                    "exit_code": None,
-                    "duration_seconds": round(duration_seconds, 3),
-                }
-                if usage_payload is not None:
-                    out["usage"] = usage_payload
-                out = _result_with_builder_envelope(
-                    out,
+    try:
+        stdout_log = ""
+        stderr_log = ""
+        last_prompt = prompt
+        for attempt_index in range(BUILDER_IMPLEMENTATION_RETRY_LIMIT + 1):
+            if output_path is not None and output_path.exists():
+                output_path.unlink()
+            attempt_prompt = prompt
+            if out:
+                attempt_prompt = _builder_retry_prompt(
                     task=builder_task,
-                    phase="builder_timeout",
-                    self_check=parsed_self_check,
+                    thesis_id=thesis_id,
+                    root=root,
+                    proposal_path=proposal_path,
+                    compilation_path=compilation_path,
+                    config_path=config_path,
+                    family_name=family_name,
+                    base_config_path=base_config_path,
+                    missing_primitives=missing_primitives,
+                    previous_result=out,
                 )
-            else:
-                out = _ensure_builder_envelope(
-                    out,
-                    task=builder_task,
-                    phase="completed" if out.get("status") != "error" else "builder_timeout",
-                    self_check=parsed_self_check,
+            last_prompt = attempt_prompt
+            try:
+                proc = subprocess.run(
+                    builder_cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=str(root),
+                    input=attempt_prompt,
+                    timeout=BUILDER_CLI_TIMEOUT_SECONDS,
                 )
-        else:
-            stdout_log = proc.stdout or ""
-            stderr_log = proc.stderr or ""
-            proc_output = stdout_log + stderr_log
-            usage_payload = _emit_builder_usage(
-                thesis_id=thesis_id,
-                attempt_number=attempt_index + 1,
-                usage_result=_extract_codex_cli_usage(stdout_log),
-            )
-            output_text = (
-                output_path.read_text() if output_path is not None and output_path.exists() else ""
-            )
-            parsed_self_check = _extract_builder_self_check(
-                "\n".join(part for part in (output_text, stdout_log, stderr_log) if part)
-            )
-            generated = config_path if config_abspath.exists() else None
-            if generated:
+            except subprocess.TimeoutExpired as exc:
+                stdout_log, stderr_log = _timeout_output(exc)
+                usage_payload = _emit_builder_usage(
+                    thesis_id=thesis_id,
+                    attempt_number=attempt_index + 1,
+                    usage_result=_extract_codex_cli_usage(stdout_log),
+                )
+                output_text = (
+                    output_path.read_text()
+                    if output_path is not None and output_path.exists()
+                    else ""
+                )
+                parsed_self_check = _extract_builder_self_check(
+                    "\n".join(part for part in (output_text, stdout_log, stderr_log) if part)
+                )
+                duration_seconds = time.monotonic() - started_at
                 out = _validated_generated_config_result(
                     task=builder_task,
                     root=root,
@@ -1283,45 +1234,122 @@ def build_missing_primitives(
                     config_abspath=config_abspath,
                     config_path=config_path,
                     family_name=family_name,
-                    reason=proc_output,
-                    exit_code=proc.returncode,
-                    timed_out=False,
-                    duration_seconds=time.monotonic() - started_at,
+                    reason=(
+                        f"builder timed out after writing a valid config: "
+                        f"{BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}"
+                    ),
+                    exit_code=None,
+                    timed_out=True,
+                    duration_seconds=duration_seconds,
                     builder_self_check=parsed_self_check,
                 )
-                assert out is not None
-                if usage_payload is not None:
+                if out is not None and usage_payload is not None:
                     out["usage"] = usage_payload
-                out = _ensure_builder_envelope(
-                    out,
-                    task=builder_task,
-                    phase="completed" if out.get("status") != "error" else "validation_failed",
-                    self_check=parsed_self_check,
-                )
+                if out is None:
+                    out = {
+                        "status": "error",
+                        "error_code": "builder_timeout",
+                        "reason": f"builder timed out after {BUILDER_CLI_TIMEOUT_SECONDS}s: {exc}",
+                        "generated_config": None,
+                        "validation_passed": False,
+                        "timed_out": True,
+                        "exit_code": None,
+                        "duration_seconds": round(duration_seconds, 3),
+                    }
+                    if usage_payload is not None:
+                        out["usage"] = usage_payload
+                    out = _result_with_builder_envelope(
+                        out,
+                        task=builder_task,
+                        phase="builder_timeout",
+                        self_check=parsed_self_check,
+                    )
+                else:
+                    out = _ensure_builder_envelope(
+                        out,
+                        task=builder_task,
+                        phase="completed" if out.get("status") != "error" else "builder_timeout",
+                        self_check=parsed_self_check,
+                    )
             else:
-                out = {
-                    "status": "error",
-                    "error_code": "builder_missing_generated_config",
-                    "reason": proc_output,
-                    "generated_config": None,
-                    "validation_passed": False,
-                    "exit_code": proc.returncode,
-                    "timed_out": False,
-                    "duration_seconds": round(time.monotonic() - started_at, 3),
-                }
-                if usage_payload is not None:
-                    out["usage"] = usage_payload
-                out = _result_with_builder_envelope(
-                    out,
-                    task=builder_task,
-                    phase="missing_generated_config",
-                    self_check=parsed_self_check,
+                stdout_log = proc.stdout or ""
+                stderr_log = proc.stderr or ""
+                proc_output = stdout_log + stderr_log
+                usage_payload = _emit_builder_usage(
+                    thesis_id=thesis_id,
+                    attempt_number=attempt_index + 1,
+                    usage_result=_extract_codex_cli_usage(stdout_log),
                 )
-        out["builder_attempts"] = attempt_index + 1
-        out["builder_task"] = asdict(builder_task)
-        _write_builder_attempt_artifacts(
-            artifact_dir=_builder_attempt_artifact_dir(attempt_dir, attempt_index + 1),
-            prompt=attempt_prompt,
+                output_text = (
+                    output_path.read_text()
+                    if output_path is not None and output_path.exists()
+                    else ""
+                )
+                parsed_self_check = _extract_builder_self_check(
+                    "\n".join(part for part in (output_text, stdout_log, stderr_log) if part)
+                )
+                generated = config_path if config_abspath.exists() else None
+                if generated:
+                    out = _validated_generated_config_result(
+                        task=builder_task,
+                        root=root,
+                        thesis=proposal,
+                        contract=compilation,
+                        config_abspath=config_abspath,
+                        config_path=config_path,
+                        family_name=family_name,
+                        reason=proc_output,
+                        exit_code=proc.returncode,
+                        timed_out=False,
+                        duration_seconds=time.monotonic() - started_at,
+                        builder_self_check=parsed_self_check,
+                    )
+                    assert out is not None
+                    if usage_payload is not None:
+                        out["usage"] = usage_payload
+                    out = _ensure_builder_envelope(
+                        out,
+                        task=builder_task,
+                        phase="completed" if out.get("status") != "error" else "validation_failed",
+                        self_check=parsed_self_check,
+                    )
+                else:
+                    out = {
+                        "status": "error",
+                        "error_code": "builder_missing_generated_config",
+                        "reason": proc_output,
+                        "generated_config": None,
+                        "validation_passed": False,
+                        "exit_code": proc.returncode,
+                        "timed_out": False,
+                        "duration_seconds": round(time.monotonic() - started_at, 3),
+                    }
+                    if usage_payload is not None:
+                        out["usage"] = usage_payload
+                    out = _result_with_builder_envelope(
+                        out,
+                        task=builder_task,
+                        phase="missing_generated_config",
+                        self_check=parsed_self_check,
+                    )
+            out["builder_attempts"] = attempt_index + 1
+            out["builder_task"] = asdict(builder_task)
+            _write_builder_attempt_artifacts(
+                artifact_dir=_builder_attempt_artifact_dir(attempt_dir, attempt_index + 1),
+                prompt=attempt_prompt,
+                command=builder_cmd,
+                cwd=root,
+                timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
+                result=out,
+                stdout=stdout_log,
+                stderr=stderr_log,
+            )
+            if out["status"] != "error" or not _should_retry_builder_result(out):
+                break
+        assert out is not None
+        artifact_paths = _write_builder_attempt_artifacts(
+            artifact_dir=attempt_dir,
+            prompt=last_prompt,
             command=builder_cmd,
             cwd=root,
             timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
@@ -1329,18 +1357,8 @@ def build_missing_primitives(
             stdout=stdout_log,
             stderr=stderr_log,
         )
-        if out["status"] != "error" or not _should_retry_builder_result(out):
-            break
-    assert out is not None
-    artifact_paths = _write_builder_attempt_artifacts(
-        artifact_dir=attempt_dir,
-        prompt=last_prompt,
-        command=builder_cmd,
-        cwd=root,
-        timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
-        result=out,
-        stdout=stdout_log,
-        stderr=stderr_log,
-    )
-    _trace_builder_finish(thesis_id=thesis_id, result=out, artifact_paths=artifact_paths)
-    return out
+        _trace_builder_finish(thesis_id=thesis_id, result=out, artifact_paths=artifact_paths)
+        return out
+    finally:
+        if output_dir_ctx is not None:
+            output_dir_ctx.cleanup()
