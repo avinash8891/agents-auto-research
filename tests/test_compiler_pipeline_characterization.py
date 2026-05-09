@@ -1598,7 +1598,22 @@ def test_build_missing_primitives_rebuilds_existing_invalid_generated_config(
 def test_builder_prompt_requires_code_consumption_proof_for_missing_primitives(
     tmp_path: Path,
 ) -> None:
+    task = compiler_builder.BuilderTask(
+        thesis_id="vwap_gate",
+        family_name="ema",
+        proposal_path=(tmp_path / "experiments" / "vwap_gate" / "thesis.json").as_posix(),
+        compilation_path=(tmp_path / "experiments" / "vwap_gate" / "contract.json").as_posix(),
+        config_path="experiments/vwap_gate/runtime_config.json",
+        base_config_path="configs/ema_base.yaml",
+        missing_primitives=["vwap_side_gate_enabled"],
+        required_diagnostics=[],
+        required_diagnostic_specs=[],
+        config_change_keys=[],
+        mechanism_contract_kind="code_only",
+        implementation_scope=["strategy_runtime"],
+    )
     prompt = compiler_builder._build_builder_prompt(
+        task=task,
         thesis_id="vwap_gate",
         root=tmp_path,
         proposal_path=tmp_path / "experiments" / "vwap_gate" / "thesis.json",
@@ -1612,6 +1627,10 @@ def test_builder_prompt_requires_code_consumption_proof_for_missing_primitives(
     assert (
         "Do not treat runtime config validation as proof that a primitive is implemented" in prompt
     )
+    assert "Work in explicit phases" in prompt
+    assert '"mechanism_contract_kind": "code_only"' in prompt
+    assert '"implementation_scope": [' in prompt
+    assert '"builder_self_check"' in prompt
     assert "If a config key is not consumed by strategy runtime code" in prompt
     assert "add or update tests that prove the key changes strategy behavior" in prompt
 
@@ -1747,6 +1766,10 @@ print(f"generated {{config}}")
 
     assert result["status"] == "completed"
     assert result["generated_config"] == f"configs/variants/{thesis_id}.yaml"
+    assert result["builder_phase"] == "completed"
+    assert result["builder_task"]["family_name"] == family_name
+    assert result["builder_task"]["missing_primitives"] == ["missing_probe"]
+    assert result["builder_self_check"]["mechanism_implemented"] is True
     written = (tmp_path / result["generated_config"]).read_text()
     if family_name == "ema":
         assert '"ema_length": 5' in written
