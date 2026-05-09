@@ -1,0 +1,6 @@
+Read the following test files and return their FULL contents. Do not summarize or truncate. Return each file's complete content with its filename as a header.
+
+1. tests/test_compiler_pipeline_characterization.py
+2. tests/test_autoresearch_research.py
+3. tests/test_autoresearch_experiment.py
+4. tests/test_autoresearch_orchestration.py

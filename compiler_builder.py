@@ -926,15 +926,17 @@ def build_missing_primitives(
         out = existing_result
 
     if not cli:
-            result = {
-                "status": "error",
-                "error_code": (out.get("error_code") if out is not None else "builder_cli_unavailable"),
+        result = {
+            "status": "error",
+            "error_code": (
+                out.get("error_code") if out is not None else "builder_cli_unavailable"
+            ),
             "reason": (
                 out["reason"] if out is not None else "No CLI available for builder dispatch"
             ),
-                "generated_config": None,
-                "validation_passed": False,
-            }
+            "generated_config": None,
+            "validation_passed": False,
+        }
         result = _result_with_builder_envelope(
             result,
             task=builder_task,
