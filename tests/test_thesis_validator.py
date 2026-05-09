@@ -198,11 +198,11 @@ def test_validate_thesis_rejects_prior_best_language_without_base_config_path() 
         "Preserve the current best trailing-stop edge while adding a new execution filter."
     )
 
-    with pytest.raises(ThesisValidationError, match="base_config_path is required"):
+    with pytest.raises(ThesisValidationError, match="inheritance|family baseline"):
         validate_thesis_dict(thesis, prior_theses=[])
 
 
-def test_validate_thesis_accepts_prior_best_language_with_base_config_path() -> None:
+def test_validate_thesis_rejects_prior_best_language_with_base_config_path() -> None:
     thesis = _base_engine_change_thesis("preserve_best_with_base", "market_microstructure")
     thesis["mechanism"] = (
         "Preserve the current best trailing-stop edge while adding a new execution filter."
@@ -210,12 +210,11 @@ def test_validate_thesis_accepts_prior_best_language_with_base_config_path() -> 
     thesis["base_experiment_id"] = "05287d64f61f"
     thesis["base_config_path"] = "experiments/05287d64f61f/runtime_config.json"
 
-    validated = validate_thesis_dict(thesis, prior_theses=[])
+    with pytest.raises(ThesisValidationError, match="base_experiment_id is not allowed"):
+        validate_thesis_dict(thesis, prior_theses=[])
 
-    assert validated.base_config_path == "experiments/05287d64f61f/runtime_config.json"
 
-
-def test_validate_thesis_accepts_job_scoped_experiment_base_config_path() -> None:
+def test_validate_thesis_rejects_job_scoped_experiment_base_config_path() -> None:
     thesis = _base_engine_change_thesis("preserve_job_scoped_best", "market_microstructure")
     thesis["mechanism"] = (
         "Preserve the current best trailing-stop edge while adding a new execution filter."
@@ -223,12 +222,8 @@ def test_validate_thesis_accepts_job_scoped_experiment_base_config_path() -> Non
     thesis["base_experiment_id"] = "05287d64f61f"
     thesis["base_config_path"] = "runtime/jobs/job-26/experiments/05287d64f61f/runtime_config.json"
 
-    validated = validate_thesis_dict(thesis, prior_theses=[])
-
-    assert (
-        validated.base_config_path
-        == "runtime/jobs/job-26/experiments/05287d64f61f/runtime_config.json"
-    )
+    with pytest.raises(ThesisValidationError, match="base_experiment_id is not allowed"):
+        validate_thesis_dict(thesis, prior_theses=[])
 
 
 def test_validate_thesis_accepts_quality_accounting_fields() -> None:
@@ -270,6 +265,14 @@ def test_validate_thesis_does_not_require_base_config_for_unrelated_best_or_pres
     validated = validate_thesis_dict(thesis, prior_theses=[])
 
     assert validated.base_config_path == ""
+
+
+def test_validate_thesis_wraps_unknown_strategy_family_as_validation_error() -> None:
+    thesis = _base_engine_change_thesis("unknown_family", "market_microstructure")
+    thesis["strategy_family"] = "does_not_exist"
+
+    with pytest.raises(ThesisValidationError, match="Unknown strategy family"):
+        validate_thesis_dict(thesis, prior_theses=[])
 
 
 def test_validate_real_config_overlap_still_rejected_with_sentinel() -> None:

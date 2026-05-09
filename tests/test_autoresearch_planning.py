@@ -8,7 +8,6 @@ strings ("keep", "discard", "pending", "completed").
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -366,7 +365,7 @@ def test_generate_combination_candidates_requires_at_least_two_keeps(
 
 
 def test_generate_combination_candidates_skips_disallowed_pairs(tmp_path: Path, orb_family) -> None:
-    """Two universe-family configs cannot combine (rule = disallowed)."""
+    """Winner-combination exploitation is disabled globally."""
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
     (variants / "orb_spy_only.yaml").write_text("symbols: SPY\n")
@@ -381,10 +380,10 @@ def test_generate_combination_candidates_skips_disallowed_pairs(tmp_path: Path, 
     assert out == []
 
 
-def test_generate_combination_candidates_creates_yaml_for_allowed_pair(
+def test_generate_combination_candidates_does_not_create_yaml_for_allowed_pair(
     tmp_path: Path, orb_family
 ) -> None:
-    """Allowed pair (universe + exit) produces a merged YAML and a proposal JSON."""
+    """Even previously allowed winner pairs are no longer combined."""
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
     (variants / "orb_spy_only.yaml").write_text("symbols: SPY\n")
@@ -396,13 +395,9 @@ def test_generate_combination_candidates_creates_yaml_for_allowed_pair(
         ExperimentRecord("configs/variants/orb_trailing_stop.yaml", 1.2, "keep", "", 2, {}),
     ]
     out = generate_combination_candidates(tmp_path, orb_family, proposals_dir, results)
-    assert out == ["configs/variants/orb_spy_only_x_trailing_stop.yaml"]
-    combo_path = tmp_path / out[0]
-    assert combo_path.exists()
-    proposal_path = proposals_dir / "spy_only_x_trailing_stop.json"
-    assert proposal_path.exists()
-    proposal = json.loads(proposal_path.read_text())
-    assert proposal["family"] == "combination"
+    assert out == []
+    assert not list(tmp_path.rglob("orb_spy_only_x_trailing_stop.yaml"))
+    assert not list(proposals_dir.rglob("spy_only_x_trailing_stop.json"))
 
 
 def test_generate_combination_candidates_does_not_publish_invalid_yaml_combo(
@@ -424,8 +419,8 @@ def test_generate_combination_candidates_does_not_publish_invalid_yaml_combo(
     assert not (tmp_path / "configs" / "variants" / "orb_spy_only_x_trailing_stop.yaml").exists()
 
 
-def test_generate_combination_candidates_leaves_no_tmp_or_partial_yaml_on_failed_publish(
-    tmp_path: Path, orb_family, monkeypatch: pytest.MonkeyPatch
+def test_generate_combination_candidates_leaves_no_artifacts_when_disabled(
+    tmp_path: Path, orb_family
 ) -> None:
     variants = tmp_path / "configs" / "variants"
     variants.mkdir(parents=True)
@@ -448,18 +443,7 @@ def test_generate_combination_candidates_leaves_no_tmp_or_partial_yaml_on_failed
         ExperimentRecord("configs/variants/orb_trend_filter.json", 1.2, "keep", "", 2, {}),
     ]
 
-    original_replace = os.replace
-
-    def _crash_on_combo_publish(src, dst):
-        if str(dst).endswith("contracts/spy_only_x_trend_filter.json"):
-            raise RuntimeError("combo publish failed")
-        return original_replace(src, dst)
-
-    monkeypatch.setattr("persistence_utils.os.replace", _crash_on_combo_publish)
-
-    with pytest.raises(RuntimeError, match="combo publish failed"):
-        generate_combination_candidates(tmp_path, orb_family, proposals_dir, results)
-
+    assert generate_combination_candidates(tmp_path, orb_family, proposals_dir, results) == []
     assert not (tmp_path / "contracts" / "spy_only_x_trend_filter.json").exists()
     assert not list(tmp_path.rglob("*.tmp"))
 

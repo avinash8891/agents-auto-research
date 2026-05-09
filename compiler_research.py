@@ -22,18 +22,36 @@ def _baseline_config_path_for_family(family_name: str) -> str:
 
 
 def _resolved_base_config_path(thesis: "ResearchThesis") -> str:
-    return thesis.base_config_path or _baseline_config_path_for_family(thesis.strategy_family)
+    baseline_path = _baseline_config_path_for_family(thesis.strategy_family)
+    if thesis.base_experiment_id:
+        raise ValueError(
+            f"Thesis '{thesis.thesis_id}' cannot set base_experiment_id; "
+            "research theses must start from the family baseline."
+        )
+    if thesis.base_config_path and thesis.base_config_path != baseline_path:
+        raise ValueError(
+            f"Thesis '{thesis.thesis_id}' cannot inherit non-baseline base_config_path "
+            f"'{thesis.base_config_path}'; research theses must start from '{baseline_path}'."
+        )
+    return baseline_path
 
 
 def _load_base_runtime_config(root: Path, thesis: "ResearchThesis") -> dict:
     base_path = _resolved_base_config_path(thesis)
     path = root / base_path
+    if thesis.base_config_path and thesis.base_config_path != base_path:
+        raise ValueError(
+            f"Base config path does not match family baseline for thesis "
+            f"'{thesis.thesis_id}': {thesis.base_config_path}"
+        )
     if thesis.base_config_path and not path.exists():
         raise ValueError(
             f"Base config path does not exist for thesis '{thesis.thesis_id}': {base_path}"
         )
     if not path.exists():
-        return STRATEGIES[thesis.strategy_family].get_defaults()
+        raise ValueError(
+            f"Family baseline config is missing for thesis '{thesis.thesis_id}': {base_path}"
+        )
     payload = yaml.safe_load(path.read_text()) or {}
     if not isinstance(payload, dict):
         raise ValueError(

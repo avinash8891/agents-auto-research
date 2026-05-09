@@ -448,21 +448,12 @@ def generate_combination_candidates(
     results: list[ExperimentRecord],
     job: int | None = None,
 ) -> list[str]:
-    """Generate combination configs from 2+ independent winners.
-    Excludes the family's baseline config from the kept set so that
-    the baseline is not treated as one of the two thesis winners."""
-    baseline = family.baseline_config_path
-    kept = [r for r in results if r.status == "keep" and r.config != baseline]
-    if len(kept) < 2:
-        return []
-    attempted = {r.config for r in results if r.config}
-    generated: list[str] = []
-    for i, a in enumerate(kept):
-        for b in kept[i + 1 :]:
-            combo = _try_combine_pair(root, family, proposals_dir, a, b, attempted, job=job)
-            if combo is not None:
-                generated.append(combo)
-    return generated
+    """Winner-combination exploitation is disabled.
+
+    Research must test isolated mechanisms from the family baseline instead of
+    stacking previously kept configs.
+    """
+    return []
 
 
 # ── Termination + finish summary ─────────────────────────────────
@@ -591,15 +582,13 @@ def select_research_next_action(
 
     1. Baseline if no results yet.
     2. Pending thesis-queue artifact.
-    3. Combination of independent winners.
-    4. Ideas-backlog candidate.
-    5. Termination if research has confirmed nothing more to try.
-    6. Block for research otherwise.
+    3. Ideas-backlog candidate.
+    4. Termination if research has confirmed nothing more to try.
+    5. Block for research otherwise.
     """
     for branch in (
         _baseline_branch(root, family, results),
         _thesis_queue_branch(root, family, run_queue_dir, results, job=job),
-        _combination_branch(root, family, proposals_dir, results, job=job),
         _ideas_branch(root, family, ideas_md_path, run_queue_dir, proposals_dir, results, job=job),
     ):
         if branch is not None:

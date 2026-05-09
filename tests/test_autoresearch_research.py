@@ -478,7 +478,7 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
                 ],
                 "orthogonality_defense": "uses acceptance provenance rather than price impulse",
                 "evidence_strength": "mixed",
-                "thesis_role": "winning_cluster_follow_up",
+                "thesis_role": "orthogonal_discovery",
                 "falsification_or_alternative": "if 09:30 setup days still fail, trend-open narrative is weak",
                 "config_changes": {"symbol_day_opening_setup_gate_enabled": True},
                 "expected_effects": [],

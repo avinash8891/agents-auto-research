@@ -25,6 +25,7 @@ from research_types import (
     MECHANISM_DIMENSIONS,
     ResearchThesis,
 )
+from strategy_family import load_family
 
 log = get_logger(__name__)
 
@@ -123,6 +124,13 @@ def _requires_explicit_base_config(thesis: ResearchThesis) -> bool:
         ]
     ).lower()
     return any(re.search(pattern, text) for pattern in _PRIOR_BASE_LANGUAGE_PATTERNS)
+
+
+def _family_baseline_path(thesis: ResearchThesis) -> str:
+    try:
+        return load_family(thesis.strategy_family).baseline_config_path
+    except ValueError as exc:
+        raise ThesisValidationError(str(exc)) from exc
 
 
 def _prior_thesis_details(prior: dict[str, Any]) -> dict[str, Any]:
@@ -640,10 +648,21 @@ def validate_research_thesis(
     if thesis.requires_code_change and not thesis.requested_primitives:
         raise ThesisValidationError("requires_code_change theses must declare requested_primitives")
     _validate_base_config_path(thesis.base_config_path)
-    if _requires_explicit_base_config(thesis) and not thesis.base_config_path:
+    if thesis.base_experiment_id:
         raise ThesisValidationError(
-            "base_config_path is required when a thesis builds on, preserves, "
-            "or compounds a prior/best configuration"
+            "base_experiment_id is not allowed; research theses must start from the family "
+            "baseline instead of inheriting a prior winner."
+        )
+    baseline_path = _family_baseline_path(thesis)
+    if thesis.base_config_path and thesis.base_config_path != baseline_path:
+        raise ThesisValidationError(
+            f"base_config_path must be empty or the family baseline '{baseline_path}'; "
+            "prior/winning config inheritance is not allowed."
+        )
+    if _requires_explicit_base_config(thesis):
+        raise ThesisValidationError(
+            "Thesis references current-best/prior-winner inheritance. "
+            "That exploitation path is disabled; start from the family baseline."
         )
     for key in sorted(CONFIG_CHANGES_METADATA_KEYS & set(thesis.config_changes)):
         raise ThesisValidationError(

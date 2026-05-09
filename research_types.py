@@ -97,7 +97,6 @@ class ResearchThesis(BaseModel):
     thesis_role: Literal[
         "",
         "orthogonal_discovery",
-        "winning_cluster_follow_up",
         "implementation_unlock",
         "cleanup_validation_follow_up",
     ] = ""
@@ -109,8 +108,8 @@ class ResearchThesis(BaseModel):
 
     evidence: list[str] = Field(default_factory=list)
 
-    # Optional explicit starting point for thesis deltas. When omitted, the
-    # family baseline config is the base.
+    # Research theses are baseline-first. These fields remain for compatibility
+    # but must stay empty (or explicitly reference the family baseline path).
     base_experiment_id: str = ""
     base_config_path: str = ""
 

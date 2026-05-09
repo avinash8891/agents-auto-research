@@ -343,7 +343,7 @@ OUTPUT FORMAT (final response after all tool calls):
       "closest_prior_theses_considered": ["thesis_ids explicitly compared against before proposing"],
       "orthogonality_defense": "why this is orthogonal rather than merely adjacent to the closest prior theses",
       "evidence_strength": "direct|proxy|mixed|speculative",
-      "thesis_role": "orthogonal_discovery|winning_cluster_follow_up|implementation_unlock|cleanup_validation_follow_up",
+      "thesis_role": "orthogonal_discovery|implementation_unlock|cleanup_validation_follow_up",
       "falsification_or_alternative": "what evidence would weaken this mechanism or make an alternative more plausible",
       "new_dimension_name": "required only when mechanism_dimension is emergent; otherwise empty string",
       "why_existing_dimensions_do_not_fit": "required only when mechanism_dimension is emergent; otherwise empty string",
@@ -353,8 +353,6 @@ OUTPUT FORMAT (final response after all tool calls):
       "mechanism": "structural change and WHY it should produce the expected effects",
       "evidence": ["data points from analyst or web research that support this"],
       "why_not_overfit": "why this generalizes beyond the sample",
-      "base_experiment_id": "experiment_id to build on; empty string means family baseline",
-      "base_config_path": "runtime config path to build on; empty string means family baseline",
       "config_changes": {{"key": "value"}},
       "required_diagnostics": [],
       "expected_effects": [
@@ -416,11 +414,13 @@ THESIS REQUIREMENTS:
   when novel_connection explains the materially new mechanism or evidence link.
 
 RULES:
-- Choose the base config explicitly. If the thesis builds on or preserves a prior
-  winner, set base_experiment_id and base_config_path from get_experiment_result.
-  If it is independent, leave both empty to use the family baseline.
-- config_changes is a DELTA against that base config. Keys you omit must stay at
-  base config values.
+- All research theses must start from the family baseline config.
+- Leave base_experiment_id empty.
+- Leave base_config_path empty. The compiler will use the family baseline.
+- config_changes is a DELTA against the family baseline config. Keys you omit
+  must stay at baseline values.
+- Do not build on, preserve, compound, or inherit a prior winner/current best
+  config. That is exploitation, not mechanism discovery.
 - Do NOT repeat a thesis_id from the experiment results table.
 - Every thesis must have config_changes (to test the mechanism) or requires_code_change=true.
 - If requires_code_change=true, describe what the engine needs in "mechanism".
@@ -430,10 +430,7 @@ RULES:
   evidence will be REJECTED. "I think X might work" is not a thesis.
 - Treat thesis_role honestly:
   - orthogonal_discovery = a genuinely different mechanism family
-  - winning_cluster_follow_up = exploit a strong local winner on purpose
   - implementation_unlock = code change needed to test a mechanism
   - cleanup_validation_follow_up = validation or observability follow-up
-  If you pick a local follow-up instead of an orthogonal discovery, explain why
-  exploitation beats exploration now.
 
 Return ONLY the JSON object as your final response."""

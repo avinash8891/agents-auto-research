@@ -89,6 +89,10 @@ def test_validate_orb_runtime_config_rejects_or_minutes_out_of_range() -> None:
 
 
 def test_compile_research_thesis_writes_three_files_for_ready_to_run(tmp_path: Path) -> None:
+    (tmp_path / "configs").mkdir(parents=True)
+    (tmp_path / "configs" / "ema_base.yaml").write_text(
+        json.dumps(STRATEGIES["ema"].get_defaults()) + "\n"
+    )
     thesis = ResearchThesis(
         thesis_id="thesis-ready",
         strategy_family="ema",
@@ -106,7 +110,7 @@ def test_compile_research_thesis_writes_three_files_for_ready_to_run(tmp_path: P
     assert (experiment_dir / "runtime_config.json").exists()
 
 
-def test_compile_research_thesis_applies_changes_to_declared_base_config(
+def test_compile_research_thesis_rejects_nonbaseline_declared_base_config(
     tmp_path: Path,
 ) -> None:
     base_dir = tmp_path / "experiments" / "best_trailing"
@@ -133,25 +137,18 @@ def test_compile_research_thesis_applies_changes_to_declared_base_config(
         },
     )
 
-    contract = compile_research_thesis(thesis, tmp_path)
-
-    experiment_dir = tmp_path / "experiments" / contract.experiment_id
-    runtime_config = json.loads((experiment_dir / "runtime_config.json").read_text())
-    contract_payload = json.loads((experiment_dir / "contract.json").read_text())
-    assert (
-        contract_payload["baseline_config_path"] == "experiments/best_trailing/runtime_config.json"
-    )
-    assert contract_payload["base_experiment_id"] == "best_trailing"
-    assert runtime_config["trail_after_r"] == 1.0
-    assert runtime_config["max_trades_per_day"] == 2
+    with pytest.raises(
+        ValueError, match="cannot set base_experiment_id|cannot inherit non-baseline"
+    ):
+        compile_research_thesis(thesis, tmp_path)
 
 
 def test_compile_research_thesis_rejects_noop_config_change_against_base(
     tmp_path: Path,
 ) -> None:
-    base_dir = tmp_path / "experiments" / "best_opening_drive"
+    base_dir = tmp_path / "configs"
     base_dir.mkdir(parents=True)
-    base_path = base_dir / "runtime_config.json"
+    base_path = base_dir / "ema_base.yaml"
     base_path.write_text(
         json.dumps(
             {
@@ -166,8 +163,6 @@ def test_compile_research_thesis_rejects_noop_config_change_against_base(
         strategy_family="ema",
         hypothesis="Remove the max stop cap on the current best configuration.",
         mechanism="The stop cap may cause premature exits.",
-        base_experiment_id="best_opening_drive",
-        base_config_path="experiments/best_opening_drive/runtime_config.json",
         config_changes={"max_stop_distance_pct": None},
     )
 
@@ -178,7 +173,24 @@ def test_compile_research_thesis_rejects_noop_config_change_against_base(
     assert not (tmp_path / "experiments" / "widen-stop-noop" / "runtime_config.json").exists()
 
 
+def test_compile_research_thesis_requires_family_baseline_file(tmp_path: Path) -> None:
+    thesis = ResearchThesis(
+        thesis_id="missing-family-baseline",
+        strategy_family="ema",
+        hypothesis="Test a baseline-based EMA mechanism.",
+        mechanism="Use the baseline config as the clean comparison point.",
+        config_changes={"max_trades_per_day": 2},
+    )
+
+    with pytest.raises(ValueError, match="Family baseline config is missing"):
+        compile_research_thesis(thesis, tmp_path)
+
+
 def test_compile_research_thesis_leaves_no_tmp_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "configs").mkdir(parents=True)
+    (tmp_path / "configs" / "ema_base.yaml").write_text(
+        json.dumps(STRATEGIES["ema"].get_defaults()) + "\n"
+    )
     thesis = ResearchThesis(
         thesis_id="thesis-ready",
         strategy_family="ema",
@@ -355,6 +367,10 @@ def test_orb_strategy_compile_contract_matches_legacy_compiler() -> None:
 
 
 def test_compile_research_thesis_status_needs_code_when_invalid_keys(tmp_path: Path) -> None:
+    (tmp_path / "configs").mkdir(parents=True)
+    (tmp_path / "configs" / "ema_base.yaml").write_text(
+        json.dumps(STRATEGIES["ema"].get_defaults()) + "\n"
+    )
     thesis = ResearchThesis(
         thesis_id="thesis-needs-code",
         strategy_family="ema",

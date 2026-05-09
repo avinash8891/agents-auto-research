@@ -438,12 +438,12 @@ def test_conductor_system_prompt_includes_thesis_quality_accounting_fields():
     assert '"orthogonality_defense":' in prompt
     assert '"evidence_strength": "direct|proxy|mixed|speculative"' in prompt
     assert (
-        '"thesis_role": "orthogonal_discovery|winning_cluster_follow_up|implementation_unlock|cleanup_validation_follow_up"'
+        '"thesis_role": "orthogonal_discovery|implementation_unlock|cleanup_validation_follow_up"'
         in prompt
     )
     assert '"falsification_or_alternative":' in prompt
     assert '"requested_primitives": ["required when requires_code_change=true;' in prompt
-    assert "If you pick a local follow-up instead of an orthogonal discovery" in prompt
+    assert "Do not build on, preserve, compound, or inherit a prior winner" in prompt
 
 
 def test_conductor_system_prompt_does_not_claim_raw_data_directory_is_always_available():
