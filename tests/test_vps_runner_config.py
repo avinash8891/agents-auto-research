@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
@@ -216,7 +216,11 @@ def test_remote_command_runs_controller_for_family() -> None:
     resolved_sha = "0123456789abcdef0123456789abcdef01234567"
     command = build_remote_command(config, family, resolved_sha)
 
-    assert f"cd {shlex.quote(config.remote_dir)}" in command
+    release_dir = str(PurePosixPath(config.remote_dir) / "releases" / resolved_sha)
+    assert f"cd {shlex.quote(release_dir)}" in command
+    assert "os.symlink(target, link)" in command
+    assert f"{family.runs_dirname}" in command
+    assert f"{family.name}_experiments.db" in command
     assert "deps_fingerprint=$(python3 -c" in command
     assert ".venv/.autoresearch-deps.sha256" in command
     assert 'if [ -f ".venv/.autoresearch-deps.sha256" ] && ' in command
@@ -417,6 +421,7 @@ def test_activity_probe_command_targets_family_state_and_process() -> None:
     command = build_activity_probe_command(config, family)
 
     assert f"cd {shlex.quote(config.remote_dir)}" in command
+    assert f"if [ ! -d {shlex.quote(config.remote_dir + '/repo-cache')}/.git ]; then " in command
     assert "state_path = pathlib.Path('ema' + '_autoresearch.next.json')" in command
     assert "ps', '-eo', 'command='" in command
     assert "autoresearch_controller.py --family ema" in command
@@ -534,8 +539,9 @@ def test_remote_command_sources_runtime_env_file() -> None:
     command = build_remote_command(config, family, "0" * 40)
 
     assert (
-        'if [ -f ".env.autoresearch" ]; then set -a; . ./.env.autoresearch; set +a; fi' in command
-    )
+        "if [ -f /srv/autoresearch/.env.autoresearch ]; then "
+        "set -a; . /srv/autoresearch/.env.autoresearch; set +a; fi"
+    ) in command
 
 
 def test_git_status_command_reports_current_and_resolved_sha_without_checkout() -> None:
@@ -760,27 +766,17 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     command = build_git_prepare_command(config)
 
     assert "git clone --no-checkout" in command
+    assert f"{shlex.quote(config.remote_dir + '/repo-cache')}" in command
+    assert f"{shlex.quote(config.remote_dir + '/releases')}" in command
     assert f"git fetch --prune origin {shlex.quote(config.git_ref)}" in command
     assert "resolved=$(git rev-parse --verify FETCH_HEAD^{commit})" in command
-    assert 'git checkout --detach "$resolved"' in command
-    assert 'git reset --hard "$resolved"' in command
-    assert "git clean -ffdx" in command
-    assert command.index('git checkout --detach "$resolved"') < command.index(
-        'git reset --hard "$resolved"'
-    )
-    assert command.index('git reset --hard "$resolved"') < command.index("git clean -ffdx")
-    assert "-e '*_autoresearch-runs'" in command
-    assert "-e '.venv'" in command
-    assert "-e '.venv/**'" in command
-    assert "-e 'data'" in command
-    assert "-e 'experiments'" in command
-    assert "-e 'proposals'" in command
-    assert "-e '*-proposals'" in command
-    assert "-e 'run-queue'" in command
-    assert "-e '*-run-queue'" in command
-    assert "-e '*-contracts'" in command
-    assert "-e '*-builder-requests'" in command
-    assert "-e '*_experiments.db'" in command
+    assert 'release_dir="' in command
+    assert 'git archive "$resolved" | tar -x -C "$tmp_release"' in command
+    assert 'mv "$tmp_release" "$release_dir"' in command
+    assert 'ln -sfn "$release_dir"' in command
+    assert 'git checkout --detach "$resolved"' not in command
+    assert 'git reset --hard "$resolved"' not in command
+    assert "git clean -ffdx" not in command
     assert "AUTORESEARCH_RESOLVED_SHA %s" in command
     assert "scp" not in command.lower()
 

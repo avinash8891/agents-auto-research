@@ -165,6 +165,50 @@ def test_contract_from_sidecar_preserves_full_thesis_contract_fields(tmp_path: P
     assert contract.disqualifiers[0].name == "trade_count_collapse"
 
 
+def test_contract_from_sidecar_prefers_execution_root_sibling_thesis_json(tmp_path: Path) -> None:
+    from autoresearch_experiment import _contract_from_sidecar
+
+    execution_root = tmp_path / "builder-workspace"
+    thesis_json = (
+        execution_root
+        / "runtime"
+        / "jobs"
+        / "job-26"
+        / "experiments"
+        / "opening_gate"
+        / "thesis.json"
+    )
+    thesis_json.parent.mkdir(parents=True, exist_ok=True)
+    thesis_json.write_text(
+        json.dumps(
+            {
+                "thesis_id": "opening_gate",
+                "strategy_family": "ema",
+                "hypothesis": "Execution root sidecar wins.",
+                "mechanism": "Use workspace-local experiment contract metadata.",
+                "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
+            }
+        )
+        + "\n"
+    )
+    controller = SimpleNamespace(
+        root=tmp_path,
+        family=SimpleNamespace(name="ema", base_config_filename="ema_base.yaml"),
+        ctx=SimpleNamespace(current_contract=None, execution_root=execution_root),
+    )
+
+    contract = _contract_from_sidecar(
+        controller,
+        "runtime/jobs/job-26/experiments/opening_gate/runtime_config.json",
+    )
+
+    assert contract is not None
+    assert contract.hypothesis == "Execution root sidecar wins."
+    assert contract.required_diagnostic_specs[0].key == (
+        "max_drawdown_and_pct_profitable_windows_vs_base"
+    )
+
+
 # ── parse_benchmark_details (RESULT_JSON path) ──────────────────
 
 
@@ -1580,6 +1624,7 @@ def test_evaluate_against_thesis_raises_deterministic_evaluator_errors(monkeypat
         _evaluate_against_thesis(
             _Controller(),
             _Contract(),
+            "experiments/eval_error/runtime_config.json",
             1.0,
             "keep",
             {"trade_count": 1},
@@ -1649,7 +1694,7 @@ def test_evaluate_against_thesis_enriches_registered_baseline_comparison_diagnos
     monkeypatch.setattr(
         experiment_mod,
         "_persist_verdict",
-        lambda controller, contract, verdict: None,
+        lambda controller, contract, verdict, config: None,
     )
 
     def fake_evaluate_experiment(**kwargs):
@@ -1665,7 +1710,14 @@ def test_evaluate_against_thesis_enriches_registered_baseline_comparison_diagnos
         "pct_profitable_windows": 0.61,
         "strategy_diagnostics": {},
     }
-    verdict, decision = _evaluate_against_thesis(_Controller(), _Contract(), 2.4, "keep", details)
+    verdict, decision = _evaluate_against_thesis(
+        _Controller(),
+        _Contract(),
+        "experiments/opening_setup_gate/runtime_config.json",
+        2.4,
+        "keep",
+        details,
+    )
 
     assert verdict.status == "accepted"
     assert decision == "keep"
@@ -1723,13 +1775,14 @@ def test_evaluate_against_thesis_discards_inconclusive_verdict(monkeypatch) -> N
             return "{}"
 
     monkeypatch.setattr(
-        experiment_mod, "_persist_verdict", lambda controller, contract, verdict: None
+        experiment_mod, "_persist_verdict", lambda controller, contract, verdict, config: None
     )
     monkeypatch.setattr("experiment_evaluator.evaluate_experiment", lambda **kwargs: _Verdict())
 
     verdict, decision = _evaluate_against_thesis(
         _Controller(),
         _Contract(),
+        "experiments/opening_setup_gate/runtime_config.json",
         2.4,
         "keep",
         {
@@ -1773,6 +1826,7 @@ def test_evaluate_against_thesis_requires_baseline_checkpoint_for_experiment_eva
         _evaluate_against_thesis(
             _Controller(),
             _Contract(),
+            "experiments/opening_setup_gate/runtime_config.json",
             1.0,
             "keep",
             {"trade_count": 1, "profit_factor": 1.0, "strategy_diagnostics": {}},
@@ -1824,7 +1878,7 @@ def test_evaluate_against_thesis_uses_latest_baseline_checkpoint_metrics(monkeyp
             return "{}"
 
     monkeypatch.setattr(
-        experiment_mod, "_persist_verdict", lambda controller, contract, verdict: None
+        experiment_mod, "_persist_verdict", lambda controller, contract, verdict, config: None
     )
 
     def fake_evaluate_experiment(**kwargs):
@@ -1840,7 +1894,14 @@ def test_evaluate_against_thesis_uses_latest_baseline_checkpoint_metrics(monkeyp
         "pct_profitable_windows": 0.61,
         "strategy_diagnostics": {},
     }
-    verdict, decision = _evaluate_against_thesis(_Controller(), _Contract(), 2.4, "keep", details)
+    verdict, decision = _evaluate_against_thesis(
+        _Controller(),
+        _Contract(),
+        "experiments/opening_setup_gate/runtime_config.json",
+        2.4,
+        "keep",
+        details,
+    )
 
     assert verdict.status == "accepted"
     assert decision == "keep"
@@ -1912,7 +1973,7 @@ def test_evaluate_against_thesis_surfaces_missing_inputs_for_registered_diagnost
             return "{}"
 
     monkeypatch.setattr(
-        experiment_mod, "_persist_verdict", lambda controller, contract, verdict: None
+        experiment_mod, "_persist_verdict", lambda controller, contract, verdict, config: None
     )
 
     def fake_evaluate_experiment(**kwargs):
@@ -1927,7 +1988,14 @@ def test_evaluate_against_thesis_surfaces_missing_inputs_for_registered_diagnost
         "max_drawdown": 0.18,
         "strategy_diagnostics": {},
     }
-    verdict, _decision = _evaluate_against_thesis(_Controller(), _Contract(), 2.4, "keep", details)
+    verdict, _decision = _evaluate_against_thesis(
+        _Controller(),
+        _Contract(),
+        "experiments/opening_setup_gate/runtime_config.json",
+        2.4,
+        "keep",
+        details,
+    )
 
     assert verdict.status == "accepted"
     strategy_diagnostics = captured["strategy_diagnostics"]

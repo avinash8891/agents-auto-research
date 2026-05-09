@@ -1016,7 +1016,7 @@ def test_execute_once_success_persists_verdict_without_tmp_artifacts(
     from autoresearch_experiment import _persist_verdict
 
     verdict, _ = fake_eval()
-    _persist_verdict(controller, _Contract(), verdict)
+    _persist_verdict(controller, _Contract(), verdict, "experiments/exp-1/runtime_config.json")
 
     assert (exp_dir / "verdict.json").exists()
     assert not list(exp_dir.rglob("*.tmp"))
@@ -2341,8 +2341,11 @@ def test_main_resume_current_job_accepts_halted_thesis_before_execute_once(monke
     assert captured["executed_state"]["state"] == "running"
     assert captured["executed_state"]["job"] == 20
     assert captured["executed_state"]["research_round"] == 21
-    assert captured["executed_state"]["halted_reason"] == "requires_code_change"
-    assert captured["executed_state"]["halted_thesis_id"] == "needs-builder"
+    assert "halted_reason" not in captured["executed_state"]
+    assert "halted_thesis_id" not in captured["executed_state"]
+    assert (
+        captured["executed_state"]["history"]["last_blocker"]["halted_thesis_id"] == "needs-builder"
+    )
     assert "next_action" not in captured["executed_state"]
     assert "blockers" not in captured["executed_state"]
 
@@ -2834,9 +2837,12 @@ def test_main_resume_current_job_preserves_manual_review_history(monkeypatch, tm
     assert written["job"] == 9
     assert written["research_round"] == 2
     assert written["job_usage"] == {"input_tokens": 123, "output_tokens": 456, "total_tokens": 579}
-    assert written["halted_reason"] == "requires_code_change"
-    assert written["halted_thesis_id"] == "thesis-456"
-    assert written["manual_review_theses"][-1]["thesis_id"] == "thesis-456"
+    assert "halted_reason" not in written
+    assert "halted_thesis_id" not in written
+    assert "manual_review_theses" not in written
+    assert written["history"]["last_blocker"]["halted_reason"] == "requires_code_change"
+    assert written["history"]["last_blocker"]["halted_thesis_id"] == "thesis-456"
+    assert written["resume_context"]["source"] == "resume_current_job"
     assert "next_action" not in written
 
 
@@ -2865,9 +2871,10 @@ def test_resume_current_job_recovers_interrupted_builder_running_state() -> None
     assert state["state"] == "running"
     assert state["job"] == 20
     assert state["research_round"] == 36
-    assert state["halted_reason"] == "requires_code_change"
-    assert state["halted_thesis_id"] == "thesis-456"
-    assert state["halted_thesis"]["thesis_id"] == "thesis-456"
+    assert "halted_reason" not in state
+    assert "halted_thesis_id" not in state
+    assert state["history"]["last_blocker"]["halted_thesis"]["thesis_id"] == "thesis-456"
+    assert state["resume_context"]["blocker"]["halted_reason"] == "requires_code_change"
     assert state["heartbeat"]["builder_status"] == "running"
 
 

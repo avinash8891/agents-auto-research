@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 from dataclasses import asdict, dataclass
+from difflib import unified_diff
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,49 @@ BUILDER_CLI_MODEL = "gpt-5.2"
 BUILDER_CLI_REASONING_EFFORT: str | None = None
 LEGACY_NESTED_CONFIG_KEY_REQUEST = "new_config_keys_needed"
 THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change", LEGACY_NESTED_CONFIG_KEY_REQUEST})
+BUILDER_WORKSPACE_EXCLUDED_NAMES = frozenset(
+    {
+        ".git",
+        ".venv",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "__pycache__",
+        "build",
+        "dist",
+        "logs",
+        "runtime",
+        "data",
+        ".entire",
+    }
+)
+BUILDER_CAPABILITY_REGISTRY = Path("runtime") / "builder_capability_registry.jsonl"
+BUILDER_PROMOTIONS_DIR = Path("runtime") / "builder-promotions"
+BUILDER_PROMOTION_QUEUE = Path("runtime") / "builder-promotion-queue.jsonl"
+
+
+def _is_builder_artifact_dir_name(name: str) -> bool:
+    if name in {
+        "proposals",
+        "compilations",
+        "contracts",
+        "run-queue",
+        "research",
+        "builder-requests",
+        "experiments",
+    }:
+        return True
+    return name.endswith(
+        (
+            "-proposals",
+            "-compilations",
+            "-contracts",
+            "-run-queue",
+            "-research",
+            "-builder-requests",
+            "-experiments",
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -539,9 +583,297 @@ def _builder_attempt_artifact_dir(artifact_dir: Path, attempt_number: int) -> Pa
     return artifact_dir / f"attempt-{attempt_number}"
 
 
-def _write_builder_attempt_artifacts(
+def _builder_workspace_dir(artifact_dir: Path) -> Path:
+    return artifact_dir / "workspace"
+
+
+def _builder_source_ignore(_dir: str, names: list[str]) -> set[str]:
+    ignored: set[str] = set()
+    for name in names:
+        if name in BUILDER_WORKSPACE_EXCLUDED_NAMES:
+            ignored.add(name)
+            continue
+        if _is_builder_artifact_dir_name(name):
+            ignored.add(name)
+            continue
+        if name.endswith((".pyc", ".pyo", ".db")):
+            ignored.add(name)
+    return ignored
+
+
+def _copy_builder_source_tree(root: Path, workspace_root: Path) -> None:
+    if workspace_root.exists():
+        shutil.rmtree(workspace_root)
+    shutil.copytree(root, workspace_root, ignore=_builder_source_ignore)
+
+
+def _copy_file_into_workspace(*, source: Path, source_root: Path, workspace_root: Path) -> Path:
+    relative = source.relative_to(source_root)
+    destination = workspace_root / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    return destination
+
+
+def _append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = path.read_text() if path.exists() else ""
+    line = json.dumps(payload, sort_keys=True)
+    write_text_atomic(path, existing + line + "\n")
+
+
+def _promotable_builder_path(relative_path: str) -> bool:
+    rel = Path(relative_path)
+    if not rel.parts:
+        return False
+    if rel.parts[0] in {"runtime", "logs", "data", "build", "dist"}:
+        return False
+    if any(_is_builder_artifact_dir_name(part) for part in rel.parts):
+        return False
+    if "__pycache__" in rel.parts:
+        return False
+    return rel.suffix in {".py", ".json", ".yaml", ".yml"}
+
+
+def _workspace_changed_promotable_files(*, source_root: Path, workspace_root: Path) -> list[str]:
+    changed: list[str] = []
+    for path in sorted(workspace_root.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(workspace_root).as_posix()
+        if not _promotable_builder_path(rel):
+            continue
+        source_path = source_root / rel
+        if not source_path.exists():
+            changed.append(rel)
+            continue
+        try:
+            if path.read_bytes() != source_path.read_bytes():
+                changed.append(rel)
+        except OSError:
+            changed.append(rel)
+    return changed
+
+
+def _snapshot_promotable_source_state(source_root: Path) -> dict[str, tuple[int, int]]:
+    snapshot: dict[str, tuple[int, int]] = {}
+    for path in source_root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(source_root).as_posix()
+        if not _promotable_builder_path(rel):
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        snapshot[rel] = (stat.st_size, stat.st_mtime_ns)
+    return snapshot
+
+
+def _workspace_unified_diff(
+    *,
+    source_root: Path,
+    workspace_root: Path,
+    changed_files: list[str],
+) -> str:
+    chunks: list[str] = []
+    for rel in changed_files:
+        source_path = source_root / rel
+        workspace_path = workspace_root / rel
+        before = source_path.read_text().splitlines(keepends=True) if source_path.exists() else []
+        after = workspace_path.read_text().splitlines(keepends=True)
+        chunks.extend(
+            unified_diff(
+                before,
+                after,
+                fromfile=rel,
+                tofile=rel,
+            )
+        )
+    return "".join(chunks)
+
+
+def _load_builder_capability_registry(root: Path) -> list[dict[str, Any]]:
+    path = root / BUILDER_CAPABILITY_REGISTRY
+    if not path.exists():
+        return []
+    entries: list[dict[str, Any]] = []
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            entries.append(payload)
+    return entries
+
+
+def _builder_seed_score(entry: dict[str, Any], task: BuilderTask) -> int:
+    if entry.get("family_name") != task.family_name:
+        return -1
+    score = 0
+    score += len(set(entry.get("missing_primitives") or []) & set(task.missing_primitives)) * 5
+    score += len(set(entry.get("config_change_keys") or []) & set(task.config_change_keys)) * 3
+    score += (
+        len(
+            set(entry.get("diagnostic_keys") or [])
+            & {spec.get("key", "") for spec in task.required_diagnostic_specs}
+        )
+        * 2
+    )
+    return score
+
+
+def _best_seeded_capability(root: Path, task: BuilderTask) -> dict[str, Any] | None:
+    best: dict[str, Any] | None = None
+    best_score = 0
+    for entry in _load_builder_capability_registry(root):
+        score = _builder_seed_score(entry, task)
+        if score > best_score:
+            best = entry
+            best_score = score
+    return best
+
+
+def _seed_workspace_from_capability(
+    *,
+    source_root: Path,
+    workspace_root: Path,
+    seed_entry: dict[str, Any] | None,
+) -> list[str]:
+    if not seed_entry:
+        return []
+    promotion_root = source_root / str(seed_entry.get("promotion_dir") or "")
+    changed_files = [
+        str(item) for item in seed_entry.get("promoted_files") or [] if str(item).strip()
+    ]
+    if not promotion_root.exists():
+        return []
+    seeded: list[str] = []
+    for rel in changed_files:
+        source = promotion_root / "files" / rel
+        if not source.exists():
+            continue
+        destination = workspace_root / rel
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        seeded.append(rel)
+    return seeded
+
+
+def _record_builder_promotion_candidate(
+    *,
+    source_root: Path,
+    workspace_root: Path,
+    artifact_root: Path,
+    task: BuilderTask,
+    thesis_id: str,
+) -> dict[str, Any]:
+    changed_files = _workspace_changed_promotable_files(
+        source_root=source_root,
+        workspace_root=workspace_root,
+    )
+    promotion_root = source_root / BUILDER_PROMOTIONS_DIR / task.family_name / thesis_id
+    if promotion_root.exists():
+        shutil.rmtree(promotion_root)
+    (promotion_root / "files").mkdir(parents=True, exist_ok=True)
+    for rel in changed_files:
+        source = workspace_root / rel
+        destination = promotion_root / "files" / rel
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+    diff_text = _workspace_unified_diff(
+        source_root=source_root,
+        workspace_root=workspace_root,
+        changed_files=changed_files,
+    )
+    write_text_atomic(promotion_root / "workspace.patch", diff_text)
+    manifest = {
+        "thesis_id": thesis_id,
+        "family_name": task.family_name,
+        "missing_primitives": task.missing_primitives,
+        "config_change_keys": task.config_change_keys,
+        "diagnostic_keys": [spec.get("key", "") for spec in task.required_diagnostic_specs],
+        "promoted_files": changed_files,
+        "execution_root": workspace_root.as_posix(),
+        "promotion_dir": promotion_root.relative_to(source_root).as_posix(),
+        "artifact_root": artifact_root.as_posix(),
+        "promotion_status": "queued_review",
+        "timestamp": timestamp_now(),
+    }
+    write_json_artifact(promotion_root / "manifest.json", manifest)
+    _append_jsonl(source_root / BUILDER_PROMOTION_QUEUE, manifest)
+    return manifest
+
+
+def _ensure_workspace_generated_config(
+    *,
+    source_root: Path,
+    workspace_root: Path,
+    config_path: str,
+    source_snapshot: dict[str, tuple[int, int]],
+) -> Path:
+    workspace_config = workspace_root / config_path
+    source_config = source_root / config_path
+    if source_config.exists():
+        copy_required = not workspace_config.exists()
+        try:
+            stat = source_config.stat()
+        except OSError:
+            stat = None
+        if stat is not None:
+            source_signature = (stat.st_size, stat.st_mtime_ns)
+            if source_snapshot.get(config_path) != source_signature:
+                copy_required = True
+        if copy_required:
+            workspace_config.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_config, workspace_config)
+    if workspace_config.exists():
+        return workspace_config
+    if source_config.exists():
+        workspace_config.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_config, workspace_config)
+    return workspace_config
+
+
+def _sync_root_promotable_changes_into_workspace(
+    *,
+    source_root: Path,
+    workspace_root: Path,
+    source_snapshot: dict[str, tuple[int, int]],
+) -> None:
+    for path in source_root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(source_root).as_posix()
+        if not _promotable_builder_path(rel):
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        signature = (stat.st_size, stat.st_mtime_ns)
+        if source_snapshot.get(rel) == signature:
+            continue
+        workspace_path = workspace_root / rel
+        if workspace_path.exists():
+            try:
+                if workspace_path.read_bytes() == path.read_bytes():
+                    continue
+            except OSError:
+                pass
+        workspace_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, workspace_path)
+
+
+def _persist_builder_attempt_bundle(
     *,
     artifact_dir: Path,
+    source_root: Path,
+    workspace_root: Path,
     prompt: str,
     command: list[str],
     cwd: Path,
@@ -556,6 +888,9 @@ def _write_builder_attempt_artifacts(
     stdout_path = artifact_dir / "stdout.log"
     stderr_path = artifact_dir / "stderr.log"
     result_path = artifact_dir / "result.json"
+    verification_path = artifact_dir / "verification_report.json"
+    failure_trace_path = artifact_dir / "failure_trace.txt"
+    patch_path = artifact_dir / "workspace.patch"
     write_text_atomic(prompt_path, prompt)
     write_json_artifact(
         command_path,
@@ -571,8 +906,49 @@ def _write_builder_attempt_artifacts(
     write_text_atomic(stdout_path, stdout)
     write_text_atomic(stderr_path, stderr)
     write_json_artifact(result_path, result)
+    verification_payload = {
+        "status": result.get("status"),
+        "error_code": result.get("error_code"),
+        "validation_passed": result.get("validation_passed"),
+        "implementation_verification_passed": result.get("implementation_verification_passed"),
+        "implementation_verification_failures": result.get("implementation_verification_failures")
+        or [],
+        "builder_phase": result.get("builder_phase"),
+        "builder_attempts": result.get("builder_attempts"),
+    }
+    write_json_artifact(verification_path, verification_payload)
+    failure_trace = "\n".join(
+        part
+        for part in (
+            str(result.get("reason") or "").strip(),
+            stdout.strip(),
+            stderr.strip(),
+        )
+        if part
+    )
+    write_text_atomic(failure_trace_path, failure_trace + ("\n" if failure_trace else ""))
+    changed_files = _workspace_changed_promotable_files(
+        source_root=source_root,
+        workspace_root=workspace_root,
+    )
+    patch_text = _workspace_unified_diff(
+        source_root=source_root,
+        workspace_root=workspace_root,
+        changed_files=changed_files,
+    )
+    write_text_atomic(patch_path, patch_text)
     return [
-        str(path) for path in (prompt_path, command_path, stdout_path, stderr_path, result_path)
+        str(path)
+        for path in (
+            prompt_path,
+            command_path,
+            stdout_path,
+            stderr_path,
+            result_path,
+            verification_path,
+            failure_trace_path,
+            patch_path,
+        )
     ]
 
 
@@ -1017,6 +1393,36 @@ def build_missing_primitives(
         attempt_dir = _builder_artifact_dir(
             root, family_name, thesis_id, artifact_root=artifact_root
         )
+    workspace_root = _builder_workspace_dir(attempt_dir)
+    _copy_builder_source_tree(root, workspace_root)
+    workspace_proposal_path = _copy_file_into_workspace(
+        source=proposal_path,
+        source_root=root,
+        workspace_root=workspace_root,
+    )
+    workspace_compilation_path = _copy_file_into_workspace(
+        source=compilation_path,
+        source_root=root,
+        workspace_root=workspace_root,
+    )
+    (workspace_root / Path(config_path).parent).mkdir(parents=True, exist_ok=True)
+    builder_task = _build_builder_task(
+        thesis_id=thesis_id,
+        family_name=family_name,
+        proposal_path=workspace_proposal_path,
+        compilation_path=workspace_compilation_path,
+        config_path=config_path,
+        base_config_path=base_config_path,
+        proposal=proposal,
+        compilation=compilation,
+        missing_primitives=missing_primitives,
+    )
+    seeded_capability = _best_seeded_capability(root, builder_task)
+    seeded_files = _seed_workspace_from_capability(
+        source_root=root,
+        workspace_root=workspace_root,
+        seed_entry=seeded_capability,
+    )
     request_payload = {
         "thesis_id": thesis_id,
         "family": family_name,
@@ -1030,19 +1436,11 @@ def build_missing_primitives(
         "model_provider": "codex",
         "model": BUILDER_CLI_MODEL,
         "model_reasoning_effort": BUILDER_CLI_REASONING_EFFORT,
+        "builder_workspace_root": workspace_root.as_posix(),
+        "seeded_capability": seeded_capability,
+        "seeded_files": seeded_files,
+        "builder_task": asdict(builder_task),
     }
-    builder_task = _build_builder_task(
-        thesis_id=thesis_id,
-        family_name=family_name,
-        proposal_path=proposal_path,
-        compilation_path=compilation_path,
-        config_path=config_path,
-        base_config_path=base_config_path,
-        proposal=proposal,
-        compilation=compilation,
-        missing_primitives=missing_primitives,
-    )
-    request_payload["builder_task"] = asdict(builder_task)
     write_json_artifact(builder_requests_dir / f"{thesis_id}.json", request_payload)
     trace(
         "BUILDER",
@@ -1061,7 +1459,12 @@ def build_missing_primitives(
         model_name=BUILDER_CLI_MODEL,
     )
 
-    config_abspath = root / config_path
+    config_abspath = _ensure_workspace_generated_config(
+        source_root=root,
+        workspace_root=workspace_root,
+        config_path=config_path,
+        source_snapshot=_snapshot_promotable_source_state(root),
+    )
     prompt_extras = []
     builder_reflexion = build_latest_reflexion_feedback(artifact_root or root, agent="builder")
     if builder_reflexion:
@@ -1072,12 +1475,27 @@ def build_missing_primitives(
                 "Apply this only to avoid repeated builder failure modes; the thesis artifacts remain the source of truth.",
             ]
         )
+    if seeded_capability and seeded_files:
+        prompt_extras.extend(
+            [
+                "PRESEEDED REUSABLE BUILDER CAPABILITY:",
+                json.dumps(
+                    {
+                        "thesis_id": seeded_capability.get("thesis_id"),
+                        "promotion_dir": seeded_capability.get("promotion_dir"),
+                        "seeded_files": seeded_files,
+                    },
+                    indent=2,
+                ),
+                "Reuse these promoted files if they satisfy the current primitive contract; do not rewrite them unnecessarily.",
+            ]
+        )
     prompt = _build_builder_prompt(
         task=builder_task,
         thesis_id=thesis_id,
-        root=root,
-        proposal_path=proposal_path,
-        compilation_path=compilation_path,
+        root=workspace_root,
+        proposal_path=workspace_proposal_path,
+        compilation_path=workspace_compilation_path,
         config_path=config_path,
         family_name=family_name,
         base_config_path=base_config_path,
@@ -1108,11 +1526,13 @@ def build_missing_primitives(
     if BUILDER_CLI_REASONING_EFFORT:
         builder_cmd.extend(["-c", f'model_reasoning_effort="{BUILDER_CLI_REASONING_EFFORT}"'])
     _write_artifacts = functools.partial(
-        _write_builder_attempt_artifacts,
+        _persist_builder_attempt_bundle,
         artifact_dir=attempt_dir,
+        source_root=root,
+        workspace_root=workspace_root,
         prompt=prompt,
         command=builder_cmd,
-        cwd=root,
+        cwd=workspace_root,
         timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
     )
 
@@ -1135,7 +1555,7 @@ def build_missing_primitives(
     if config_abspath.exists():
         existing_result = _validated_generated_config_result(
             task=builder_task,
-            root=root,
+            root=workspace_root,
             thesis=proposal,
             contract=compilation,
             config_abspath=config_abspath,
@@ -1148,6 +1568,17 @@ def build_missing_primitives(
         )
         assert existing_result is not None
         if existing_result["status"] != "error":
+            promotion_manifest = _record_builder_promotion_candidate(
+                source_root=root,
+                workspace_root=workspace_root,
+                artifact_root=artifact_root,
+                task=builder_task,
+                thesis_id=thesis_id,
+            )
+            existing_result["execution_root"] = workspace_root.as_posix()
+            existing_result["promotion_manifest"] = promotion_manifest
+            existing_result["promoted_files"] = promotion_manifest.get("promoted_files", [])
+            existing_result["seeded_capability"] = seeded_capability
             existing_result = _ensure_builder_envelope(
                 existing_result,
                 task=builder_task,
@@ -1204,12 +1635,13 @@ def build_missing_primitives(
                     previous_result=out,
                 )
             last_prompt = attempt_prompt
+            source_snapshot = _snapshot_promotable_source_state(root)
             try:
                 proc = subprocess.run(
                     builder_cmd,
                     capture_output=True,
                     text=True,
-                    cwd=str(root),
+                    cwd=str(workspace_root),
                     input=attempt_prompt,
                     timeout=BUILDER_CLI_TIMEOUT_SECONDS,
                 )
@@ -1225,13 +1657,24 @@ def build_missing_primitives(
                     if output_path is not None and output_path.exists()
                     else ""
                 )
+                _sync_root_promotable_changes_into_workspace(
+                    source_root=root,
+                    workspace_root=workspace_root,
+                    source_snapshot=source_snapshot,
+                )
+                config_abspath = _ensure_workspace_generated_config(
+                    source_root=root,
+                    workspace_root=workspace_root,
+                    config_path=config_path,
+                    source_snapshot=source_snapshot,
+                )
                 parsed_self_check = _extract_builder_self_check(
                     "\n".join(part for part in (output_text, stdout_log, stderr_log) if part)
                 )
                 duration_seconds = time.monotonic() - started_at
                 out = _validated_generated_config_result(
                     task=builder_task,
-                    root=root,
+                    root=workspace_root,
                     thesis=proposal,
                     contract=compilation,
                     config_abspath=config_abspath,
@@ -1288,6 +1731,17 @@ def build_missing_primitives(
                     if output_path is not None and output_path.exists()
                     else ""
                 )
+                _sync_root_promotable_changes_into_workspace(
+                    source_root=root,
+                    workspace_root=workspace_root,
+                    source_snapshot=source_snapshot,
+                )
+                config_abspath = _ensure_workspace_generated_config(
+                    source_root=root,
+                    workspace_root=workspace_root,
+                    config_path=config_path,
+                    source_snapshot=source_snapshot,
+                )
                 parsed_self_check = _extract_builder_self_check(
                     "\n".join(part for part in (output_text, stdout_log, stderr_log) if part)
                 )
@@ -1295,7 +1749,7 @@ def build_missing_primitives(
                 if generated:
                     out = _validated_generated_config_result(
                         task=builder_task,
-                        root=root,
+                        root=workspace_root,
                         thesis=proposal,
                         contract=compilation,
                         config_abspath=config_abspath,
@@ -1335,13 +1789,27 @@ def build_missing_primitives(
                         phase="missing_generated_config",
                         self_check=parsed_self_check,
                     )
+            if out.get("status") == "completed" and out.get("validation_passed"):
+                promotion_manifest = _record_builder_promotion_candidate(
+                    source_root=root,
+                    workspace_root=workspace_root,
+                    artifact_root=artifact_root,
+                    task=builder_task,
+                    thesis_id=thesis_id,
+                )
+                out["execution_root"] = workspace_root.as_posix()
+                out["promotion_manifest"] = promotion_manifest
+                out["promoted_files"] = promotion_manifest.get("promoted_files", [])
+                out["seeded_capability"] = seeded_capability
             out["builder_attempts"] = attempt_index + 1
             out["builder_task"] = asdict(builder_task)
-            _write_builder_attempt_artifacts(
+            _persist_builder_attempt_bundle(
                 artifact_dir=_builder_attempt_artifact_dir(attempt_dir, attempt_index + 1),
+                source_root=root,
+                workspace_root=workspace_root,
                 prompt=attempt_prompt,
                 command=builder_cmd,
-                cwd=root,
+                cwd=workspace_root,
                 timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
                 result=out,
                 stdout=stdout_log,
@@ -1350,11 +1818,13 @@ def build_missing_primitives(
             if out["status"] != "error" or not _should_retry_builder_result(out):
                 break
         assert out is not None
-        artifact_paths = _write_builder_attempt_artifacts(
+        artifact_paths = _persist_builder_attempt_bundle(
             artifact_dir=attempt_dir,
+            source_root=root,
+            workspace_root=workspace_root,
             prompt=last_prompt,
             command=builder_cmd,
-            cwd=root,
+            cwd=workspace_root,
             timeout_seconds=BUILDER_CLI_TIMEOUT_SECONDS,
             result=out,
             stdout=stdout_log,

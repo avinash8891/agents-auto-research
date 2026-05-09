@@ -791,6 +791,74 @@ def test_build_missing_primitives_uses_short_timeout_for_codex_dispatch(
         (tmp_path / family.builder_requests_dirname / f"{thesis_id}.json").read_text()
     )
     assert request["base_config_path"] == "configs/ema_base.yaml"
+    assert Path(result["execution_root"]).name == "workspace"
+
+
+def test_build_missing_primitives_uses_isolated_workspace_and_records_promotion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    family = load_family("ema")
+    thesis_id = "ema_workspace_promotion"
+    proposal_dir = tmp_path / family.proposals_dirname
+    compilation_dir = tmp_path / family.compilations_dirname
+    strategy_dir = tmp_path / "strategies" / "ema"
+    proposal_dir.mkdir(parents=True)
+    compilation_dir.mkdir(parents=True)
+    strategy_dir.mkdir(parents=True)
+    (strategy_dir / "strategy.py").write_text("ORIGINAL = True\n")
+    (proposal_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"thesis_id": thesis_id, "strategy_family": "ema"}) + "\n"
+    )
+    (compilation_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"normalized_contract": [], "missing_primitives": ["missing_probe"]}) + "\n"
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, capture_output, text, cwd=None, timeout=None, input=None, **kwargs):
+        if cmd == ["codex", "exec", "--help"]:
+            return type(
+                "HelpProc", (), {"stdout": "usage: codex exec\n", "stderr": "", "returncode": 0}
+            )()
+        captured["cwd"] = cwd
+        workspace_root = Path(cwd)
+        (workspace_root / "strategies" / "ema" / "strategy.py").write_text("PROMOTED = True\n")
+        target = workspace_root / "configs" / "variants" / f"{thesis_id}.yaml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(_ema_runtime_config()) + "\n")
+        return type("Proc", (), {"stdout": "builder stdout", "stderr": "", "returncode": 0})()
+
+    monkeypatch.setattr("compiler_builder.shutil.which", lambda _: "codex")
+    monkeypatch.setattr("compiler_builder.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "compiler_builder._validated_generated_config_result",
+        lambda **kwargs: {
+            "status": "completed",
+            "generated_config": kwargs["config_path"],
+            "validation_passed": True,
+            "implementation_verification_passed": True,
+            "timed_out": False,
+            "exit_code": 0,
+            "duration_seconds": 0.1,
+            "reason": "",
+        },
+    )
+
+    result = build_missing_primitives(tmp_path, thesis_id)
+
+    assert result["status"] == "completed"
+    assert Path(captured["cwd"]).name == "workspace"
+    assert (tmp_path / "strategies" / "ema" / "strategy.py").read_text() == "ORIGINAL = True\n"
+    assert result["execution_root"] == Path(captured["cwd"]).as_posix()
+    assert "strategies/ema/strategy.py" in result["promoted_files"]
+    assert (
+        Path(result["execution_root"]) / "strategies" / "ema" / "strategy.py"
+    ).read_text() == "PROMOTED = True\n"
+    manifest = result["promotion_manifest"]
+    assert manifest["promotion_dir"].startswith("runtime/builder-promotions/ema/")
+    assert manifest["promotion_status"] == "queued_review"
+    queue_lines = (tmp_path / "runtime" / "builder-promotion-queue.jsonl").read_text().splitlines()
+    assert queue_lines
 
 
 def test_build_missing_primitives_trace_links_builder_attempt_artifacts(
@@ -855,6 +923,9 @@ def test_build_missing_primitives_trace_links_builder_attempt_artifacts(
         "stdout.log",
         "stderr.log",
         "result.json",
+        "verification_report.json",
+        "failure_trace.txt",
+        "workspace.patch",
     } <= artifact_names
 
 
@@ -2429,7 +2500,7 @@ print({report_json!r})
     assert result["builder_self_check"]["config_surface_valid"] is True
     assert result["builder_self_check"]["tests_covering_behavior"] is True
     assert result["builder_self_check"]["notes"] == ["used smoke verification only"]
-    written = (tmp_path / result["generated_config"]).read_text()
+    written = (Path(result["execution_root"]) / result["generated_config"]).read_text()
     if family_name == "ema":
         assert '"ema_length": 5' in written
     else:
@@ -2625,7 +2696,7 @@ print(f"generated {{config}}")
 
     assert result["status"] == "completed"
     assert result["generated_config"] == f"experiments/{thesis_id}/runtime_config.json"
-    assert (experiment_dir / "runtime_config.json").exists()
+    assert (Path(result["execution_root"]) / result["generated_config"]).exists()
     request = json.loads((tmp_path / "ema-builder-requests" / f"{thesis_id}.json").read_text())
     assert request["family"] == "ema"
     assert request["missing_primitives"] == ["ema_length"]

@@ -97,6 +97,7 @@ class RunContext:
     current_contract: Any = None
     parent_experiment_id: str = ""
     current_artifact_dir: Path | None = None
+    execution_root: Path | None = None
     latest_trades_file: str = ""
     latest_strategy_events_file: str = ""
     latest_diagnostics_file: str = ""

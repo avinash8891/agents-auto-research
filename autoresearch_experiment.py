@@ -65,6 +65,21 @@ class ResultJsonError(RuntimeError):
     """Raised when a RESULT_JSON marker exists but the referenced payload is invalid."""
 
 
+def _execution_root(controller: "AutoresearchController") -> Path:
+    ctx = getattr(controller, "ctx", None)
+    return getattr(ctx, "execution_root", None) or controller.root
+
+
+def _thesis_sidecar_path(
+    controller: "AutoresearchController", config: str, experiment_slug: str
+) -> Path:
+    config_path = _execution_root(controller) / config
+    sibling = config_path.parent / "thesis.json"
+    if sibling.exists():
+        return sibling
+    return _execution_root(controller) / "experiments" / experiment_slug / "thesis.json"
+
+
 # ── Shell out ─────────────────────────────────────────────────────
 
 
@@ -291,7 +306,7 @@ def derive_trade_analysis(
     details = parse_benchmark_details(output)
 
     config_contents: dict[str, Any] = {}
-    config_path = controller.root / config
+    config_path = _execution_root(controller) / config
     if config_path.exists():
         try:
             if config_path.suffix in (".yaml", ".yml"):
@@ -389,7 +404,7 @@ def _read_thesis_metadata(
     thesis_id = contract.thesis_id if contract else Path(config).stem
     config_changes: dict[str, Any] = {}
     experiment_slug = contract.experiment_id if contract else Path(config).parent.name
-    thesis_json_path = controller.root / "experiments" / experiment_slug / "thesis.json"
+    thesis_json_path = _thesis_sidecar_path(controller, config, experiment_slug)
     if thesis_json_path.exists():
         try:
             tj = json.loads(thesis_json_path.read_text())
@@ -415,7 +430,7 @@ def _contract_from_sidecar(controller: "AutoresearchController", config: str) ->
     if contract is not None:
         return contract
     experiment_slug = Path(config).parent.name
-    thesis_json_path = controller.root / "experiments" / experiment_slug / "thesis.json"
+    thesis_json_path = _thesis_sidecar_path(controller, config, experiment_slug)
     if not thesis_json_path.exists():
         return None
     try:
@@ -817,7 +832,7 @@ def log_experiment_result(
 def _compute_run_output_dir(controller: "AutoresearchController", config: str) -> tuple[Path, Path]:
     """Compute the per-job output directory using a config-content hash.
     Returns (run_output_dir, config_path_full)."""
-    config_path_full = controller.root / config
+    config_path_full = _execution_root(controller) / config
     if config_path_full.exists():
         if config_path_full.suffix in (".yaml", ".yml"):
             _cfg = yaml.safe_load(config_path_full.read_text())
@@ -963,8 +978,10 @@ def _build_thesis_for_eval(contract: Any) -> Any:
     )
 
 
-def _persist_verdict(controller: "AutoresearchController", contract: Any, verdict: Any) -> None:
-    experiment_dir = controller.root / "experiments" / contract.experiment_id
+def _persist_verdict(
+    controller: "AutoresearchController", contract: Any, verdict: Any, config: str
+) -> None:
+    experiment_dir = (_execution_root(controller) / config).parent
     if experiment_dir.exists():
         write_text_atomic(
             experiment_dir / "verdict.json",
@@ -975,6 +992,7 @@ def _persist_verdict(controller: "AutoresearchController", contract: Any, verdic
 def _evaluate_against_thesis(
     controller: "AutoresearchController",
     contract: Any,
+    config: str,
     metric: float,
     decision: str,
     details: dict[str, Any],
@@ -1022,7 +1040,7 @@ def _evaluate_against_thesis(
             f"failed={verdict.failed_effects} dq={verdict.triggered_disqualifiers}",
         )
         log.info(f"VERDICT {verdict.status}: {verdict.summary}")
-        _persist_verdict(controller, contract, verdict)
+        _persist_verdict(controller, contract, verdict, config)
         if verdict.status == "rejected":
             return verdict, "discard"
         if verdict.status == "inconclusive":
@@ -1150,12 +1168,18 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     """Run a single experiment (backtest + evaluate + log). Returns exit code."""
     next_action = state["next_action"]
     config = next_action["config"]
+    execution_root_value = next_action.get("execution_root")
+    controller.ctx.execution_root = (
+        Path(execution_root_value).resolve() if isinstance(execution_root_value, str) else None
+    )
     state["activity"] = {
         "type": "experiment",
         "phase": "backtest_running",
         "config": config,
         "source": next_action.get("source"),
     }
+    if execution_root_value:
+        state["activity"]["execution_root"] = execution_root_value
     controller.write_state(state)
 
     try:
@@ -1211,7 +1235,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         contract = controller.ctx.current_contract
         if contract and contract.expected_effects:
             verdict, decision = _evaluate_against_thesis(
-                controller, contract, metric, decision, details
+                controller, contract, config, metric, decision, details
             )
 
         analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
@@ -1219,6 +1243,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             analysis["trade_analysis"]["verdict"] = verdict.model_dump()
         if controller.ctx.current_contract is None:
             controller.ctx.parent_experiment_id = ""
+            controller.ctx.execution_root = None
             current_state = controller.read_state()
             if current_state.pop("_last_round_usage", None) is not None:
                 controller.write_state(current_state)

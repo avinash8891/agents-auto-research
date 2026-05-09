@@ -170,6 +170,8 @@ def test_try_resume_happy_path_writes_config_and_thesis_files(tmp_path, monkeypa
     assert "halted_thesis_id" not in result
     assert "halted_reason" not in result
     assert "halted_thesis" not in result
+    assert result["history"]["last_blocker"]["halted_thesis_id"] == "entry_window_test"
+    assert result["resume_context"]["source"] == "resumed_halted_thesis"
 
     # runtime_config.json written
     config_path = tmp_path / "experiments" / "entry_window_test" / "runtime_config.json"

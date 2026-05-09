@@ -49,6 +49,10 @@ def _builder_result_context(builder_result: dict[str, Any]) -> dict[str, Any]:
         "implementation_verification_failures",
         "error_code",
         "generated_config",
+        "execution_root",
+        "promotion_manifest",
+        "promoted_files",
+        "seeded_capability",
         "status",
         "validation_passed",
         "usage",
@@ -58,14 +62,42 @@ def _builder_result_context(builder_result: dict[str, Any]) -> dict[str, Any]:
     return context
 
 
+def _archive_reactivated_blocker(state: dict[str, Any], *, source: str) -> None:
+    blocker: dict[str, Any] = {}
+    if state.get("halted_reason"):
+        blocker["halted_reason"] = state.get("halted_reason")
+    if state.get("halted_thesis_id"):
+        blocker["halted_thesis_id"] = state.get("halted_thesis_id")
+    if state.get("halted_thesis"):
+        blocker["halted_thesis"] = state.get("halted_thesis")
+    if state.get("manual_review_theses"):
+        blocker["manual_review_theses"] = list(state.get("manual_review_theses") or [])
+    if state.get("builder_failed_theses"):
+        blocker["builder_failed_theses"] = list(state.get("builder_failed_theses") or [])
+    if state.get("next_action"):
+        blocker["next_action"] = state.get("next_action")
+    if state.get("current_thesis"):
+        blocker["current_thesis"] = state.get("current_thesis")
+    if not blocker:
+        return
+    history = state.setdefault("history", {})
+    if not isinstance(history, dict):
+        history = {}
+        state["history"] = history
+    history["last_blocker"] = blocker
+    state["resume_context"] = {"source": source, "blocker": blocker}
+
+
 def _activate_builder_config(
     controller: "AutoresearchController",
     state: dict[str, Any],
     thesis_id: str,
     generated_config: str,
     *,
+    execution_root: str | None = None,
     research_round: int | None = None,
 ) -> dict[str, Any]:
+    _archive_reactivated_blocker(state, source="builder_activation")
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
     state["activity"] = {
@@ -76,6 +108,8 @@ def _activate_builder_config(
         "thesis_id": thesis_id,
         "source": "builder",
     }
+    if execution_root:
+        state["activity"]["execution_root"] = execution_root
     if research_round is not None:
         state["research_round"] = research_round
     state["current_thesis"] = {
@@ -84,6 +118,8 @@ def _activate_builder_config(
         "thesis_id": thesis_id,
         "source": "builder",
     }
+    if execution_root:
+        state["current_thesis"]["execution_root"] = execution_root
     state["next_action"] = {
         "type": "run_experiment",
         "config": generated_config,
@@ -92,12 +128,20 @@ def _activate_builder_config(
         "source": "builder",
         "builder_thesis_id": thesis_id,
     }
+    if execution_root:
+        state["next_action"]["execution_root"] = execution_root
     state["blockers"] = []
     state.pop("halted_thesis_id", None)
     state.pop("halted_reason", None)
     state.pop("halted_thesis", None)
+    state.pop("manual_review_theses", None)
+    state.pop("builder_failed_theses", None)
     controller.ctx.parent_experiment_id = ""
-    thesis_path = controller.root / "experiments" / thesis_id / "thesis.json"
+    base_root = Path(execution_root) if execution_root else controller.root
+    config_path = base_root / generated_config
+    thesis_path = config_path.parent / "thesis.json"
+    if not thesis_path.exists():
+        thesis_path = base_root / "experiments" / thesis_id / "thesis.json"
     thesis_payload: dict[str, Any] = {"thesis_id": thesis_id}
     if thesis_path.exists():
         try:
@@ -491,7 +535,9 @@ def build_missing_primitives_for_state(
         _log.warning("refreshing reflexio export after builder failed: %s", exc)
     if builder_result.get("status") == "completed" and builder_result.get("validation_passed"):
         generated_config = builder_result.get("generated_config")
-        if generated_config and (controller.root / generated_config).exists():
+        execution_root = builder_result.get("execution_root")
+        base_root = Path(execution_root) if isinstance(execution_root, str) else controller.root
+        if generated_config and (base_root / generated_config).exists():
             _mark_builder_heartbeat_finished(state, thesis_id, "completed")
             _attach_builder_runtime_context(state, builder_result)
             try:
@@ -500,6 +546,7 @@ def build_missing_primitives_for_state(
                     state,
                     thesis_id,
                     generated_config,
+                    execution_root=execution_root if isinstance(execution_root, str) else None,
                     research_round=research_round,
                 )
             except Exception as exc:  # noqa: BLE001
@@ -601,6 +648,7 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
     )
     controller.ctx.current_contract = contract
     controller.ctx.parent_experiment_id = ""
+    _archive_reactivated_blocker(state, source="resumed_halted_thesis")
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
     state["current_thesis"] = {"config": config_path, "status": "ready_to_run"}
@@ -615,6 +663,8 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
     state.pop("halted_thesis_id", None)
     state.pop("halted_reason", None)
     state.pop("halted_thesis", None)
+    state.pop("manual_review_theses", None)
+    state.pop("builder_failed_theses", None)
     controller.write_state(state)
     trace("LOOP", f"resumed halted thesis={halted_id}")
     return state
@@ -624,10 +674,16 @@ def apply_forced_baseline_rerun(
     controller: "AutoresearchController", baseline_action: dict[str, Any]
 ) -> dict[str, Any]:
     state = controller.read_state()
+    _archive_reactivated_blocker(state, source="forced_baseline_rerun")
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
     state["next_action"] = baseline_action
     state["blockers"] = []
+    state.pop("halted_thesis_id", None)
+    state.pop("halted_reason", None)
+    state.pop("halted_thesis", None)
+    state.pop("manual_review_theses", None)
+    state.pop("builder_failed_theses", None)
     controller.write_state(state)
     return state
 
