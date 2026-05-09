@@ -374,7 +374,8 @@ def build_git_prepare_command(config: VPSConfig) -> str:
         f"cd {repo_cache_dir} && "
         f"git remote set-url origin {git_repo} && "
         f"{fetch_and_resolve}"
-        'release_dir="' + shlex.quote(_remote_releases_dir(config)) + '/$resolved" && '
+        f"release_dir={releases_dir}"
+        '"/$resolved" && '
         'if [ ! -d "$release_dir" ]; then '
         'tmp_release="${release_dir}.tmp.$$" && '
         'rm -rf "$tmp_release" && mkdir -p "$tmp_release" && '

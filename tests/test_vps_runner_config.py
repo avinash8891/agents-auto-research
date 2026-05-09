@@ -779,7 +779,8 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     assert f"{shlex.quote(config.remote_dir + '/releases')}" in command
     assert f"git fetch --prune origin {shlex.quote(config.git_ref)}" in command
     assert "resolved=$(git rev-parse --verify FETCH_HEAD^{commit})" in command
-    assert 'release_dir="' in command
+    assert f"release_dir={shlex.quote(config.remote_dir + '/releases')}\"/$resolved\"" in command
+    assert "release_dir=\"'" not in command
     assert 'git archive "$resolved" | tar -x -C "$tmp_release"' in command
     assert 'mv "$tmp_release" "$release_dir"' in command
     assert 'ln -sfn "$release_dir"' in command

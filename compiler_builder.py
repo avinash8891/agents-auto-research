@@ -46,6 +46,16 @@ BUILDER_WORKSPACE_EXCLUDED_NAMES = frozenset(
         ".entire",
     }
 )
+BUILDER_WORKSPACE_EXCLUDED_SUFFIXES = (".pyc", ".pyo", ".db", ".pem", ".key", ".p12", ".pfx")
+BUILDER_WORKSPACE_EXCLUDED_SECRET_NAMES = frozenset(
+    {
+        ".env",
+        "id_rsa",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+    }
+)
 BUILDER_CAPABILITY_REGISTRY = Path("runtime") / "builder_capability_registry.jsonl"
 BUILDER_PROMOTIONS_DIR = Path("runtime") / "builder-promotions"
 BUILDER_PROMOTION_QUEUE = Path("runtime") / "builder-promotion-queue.jsonl"
@@ -590,13 +600,18 @@ def _builder_workspace_dir(artifact_dir: Path) -> Path:
 def _builder_source_ignore(_dir: str, names: list[str]) -> set[str]:
     ignored: set[str] = set()
     for name in names:
+        normalized_name = name.lower()
         if name in BUILDER_WORKSPACE_EXCLUDED_NAMES:
             ignored.add(name)
             continue
         if _is_builder_artifact_dir_name(name):
             ignored.add(name)
             continue
-        if name.endswith((".pyc", ".pyo", ".db")):
+        if (
+            normalized_name in BUILDER_WORKSPACE_EXCLUDED_SECRET_NAMES
+            or normalized_name.startswith(".env.")
+            or normalized_name.endswith(BUILDER_WORKSPACE_EXCLUDED_SUFFIXES)
+        ):
             ignored.add(name)
     return ignored
 
@@ -604,7 +619,7 @@ def _builder_source_ignore(_dir: str, names: list[str]) -> set[str]:
 def _copy_builder_source_tree(root: Path, workspace_root: Path) -> None:
     if workspace_root.exists():
         shutil.rmtree(workspace_root)
-    shutil.copytree(root, workspace_root, ignore=_builder_source_ignore)
+    shutil.copytree(root, workspace_root, symlinks=True, ignore=_builder_source_ignore)
 
 
 def _copy_file_into_workspace(*, source: Path, source_root: Path, workspace_root: Path) -> Path:

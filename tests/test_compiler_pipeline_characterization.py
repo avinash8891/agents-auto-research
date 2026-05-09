@@ -958,6 +958,37 @@ def test_record_builder_promotion_candidate_rejects_traversal_thesis_id(tmp_path
         )
 
 
+def test_builder_source_ignore_excludes_secret_like_files() -> None:
+    ignored = compiler_builder._builder_source_ignore(
+        "",
+        [
+            ".env",
+            ".env.local",
+            "dev.pem",
+            "deploy.key",
+            "id_ed25519",
+            "keep.py",
+        ],
+    )
+
+    assert ignored == {".env", ".env.local", "dev.pem", "deploy.key", "id_ed25519"}
+
+
+def test_copy_builder_source_tree_preserves_symlinks_without_dereferencing(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    workspace_root = tmp_path / "workspace"
+    external_target = tmp_path / "external.txt"
+    external_target.write_text("SECRET = True\n")
+    source_root.mkdir()
+    (source_root / "linked.txt").symlink_to(external_target)
+
+    compiler_builder._copy_builder_source_tree(source_root, workspace_root)
+
+    copied_link = workspace_root / "linked.txt"
+    assert copied_link.is_symlink()
+    assert copied_link.readlink() == external_target
+
+
 def test_compare_constants_returns_none_for_invalid_comparison() -> None:
     node = ast.parse("1 < 'a'", mode="eval").body
 
