@@ -430,7 +430,10 @@ def test_activity_probe_command_targets_family_state_and_process() -> None:
     command = build_activity_probe_command(config, family)
 
     assert f"cd {shlex.quote(config.remote_dir)}" in command
-    assert f"if [ ! -d {shlex.quote(config.remote_dir + '/repo-cache')}/.git ]; then " in command
+    assert (
+        f"if [ ! -d {shlex.quote(config.remote_dir + '/repo-cache')}/.git ]"
+        f" && [ ! -d {shlex.quote(config.remote_dir)}/.git ]; then "
+    ) in command
     assert "state_path = pathlib.Path('ema' + '_autoresearch.next.json')" in command
     assert "ps', '-eo', 'command='" in command
     assert "autoresearch_controller.py --family ema" in command
@@ -569,6 +572,8 @@ def test_git_status_command_reports_current_and_resolved_sha_without_checkout() 
     assert "git reset --hard" not in command
     assert "git clean" not in command
     assert "git remote set-url" not in command
+    assert f"elif [ -d {shlex.quote(config.remote_dir)}/.git ]; then " in command
+    assert 'current=$(git -C "$repo_dir" rev-parse --verify HEAD^{commit})' in command
     assert "git -c remote.origin.url=https://github.com/example/repo.git fetch" in command
     assert "AUTORESEARCH_CURRENT_SHA" in command
     assert "AUTORESEARCH_RESOLVED_SHA" in command

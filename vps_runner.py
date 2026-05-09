@@ -389,6 +389,7 @@ def build_git_prepare_command(config: VPSConfig) -> str:
 
 def build_git_status_command(config: VPSConfig) -> str:
     """Report the existing VPS checkout SHA and requested Git ref without changing files."""
+    remote_dir = shlex.quote(config.remote_dir)
     repo_cache_dir = shlex.quote(_remote_repo_cache_dir(config))
     current_link = shlex.quote(_remote_current_release_link(config))
     git_repo = shlex.quote(config.git_repo)
@@ -406,13 +407,19 @@ def build_git_status_command(config: VPSConfig) -> str:
         )
     return (
         "set -e && "
-        f"if [ ! -d {repo_cache_dir}/.git ]; then "
+        'repo_dir="" && current="missing" && '
+        f"if [ -d {repo_cache_dir}/.git ]; then "
+        f"repo_dir={repo_cache_dir} && "
+        f'if [ -L {current_link} ]; then current=$(basename "$(readlink {current_link})"); fi; '
+        f"elif [ -d {remote_dir}/.git ]; then "
+        f"repo_dir={remote_dir} && "
+        'current=$(git -C "$repo_dir" rev-parse --verify HEAD^{commit}); '
+        "else "
         f"printf '{CURRENT_SHA_MARKER} missing\\n'; "
         "exit 0; "
         "fi && "
-        f"cd {repo_cache_dir} && "
+        'cd "$repo_dir" && '
         f"{fetch_and_resolve}"
-        f'current="missing" && if [ -L {current_link} ]; then current=$(basename "$(readlink {current_link})"); fi && '
         f"printf '{CURRENT_SHA_MARKER} %s\\n' \"$current\" && "
         f"printf '{RESOLVED_SHA_MARKER} %s\\n' \"$resolved\""
     )
@@ -423,7 +430,7 @@ def build_activity_probe_command(config: VPSConfig, family: StrategyFamily) -> s
     repo_cache_dir = shlex.quote(_remote_repo_cache_dir(config))
     return (
         "set -e && "
-        f"if [ ! -d {repo_cache_dir}/.git ]; then "
+        f"if [ ! -d {repo_cache_dir}/.git ] && [ ! -d {remote_dir}/.git ]; then "
         f"printf '{ACTIVE_RUN_MARKER} %s\\n' "
         + shlex.quote(json.dumps({"active": False, "reason": "missing_checkout"}))
         + "; exit 0; fi && "
