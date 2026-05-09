@@ -1,0 +1,16 @@
+Thoroughly explore the codebase at /Users/avinashvankadaru/.superset/projects/agents-auto-research.
+
+I need to understand the full pipeline for EMA strategy research. Specifically find:
+
+1. Where EMA strategy families and their theses are defined (strategies/ema/ directory)
+2. The compiler pipeline: compiler_pipeline.py, compiler_builder.py, compiler_operationalize.py, compiler_thesis_io.py
+3. The controller: autoresearch_controller.py
+4. Research planning: autoresearch_planning.py
+5. Research execution: autoresearch_research.py
+6. Experiment evaluation: autoresearch_experiment.py
+7. Experiment DB: experiment_db.py
+8. Research conductor: research_conductor.py
+9. How the backtest runner works and where it's invoked
+10. Any files related to "compile_research_thesis" or "create_executable_artifact"
+
+Return the full file paths of every relevant file with brief descriptions of what each does in the pipeline.
