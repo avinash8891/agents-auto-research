@@ -126,9 +126,15 @@ def _builder_mechanism_contract_kind(
     proposal: dict[str, Any], compilation: dict[str, Any], missing_primitives: list[str]
 ) -> str:
     config_changes = proposal.get("config_changes") or {}
-    runtime_keys = [
-        key for key in config_changes if key not in THESIS_METADATA_CONFIG_KEYS and key != "requires_engine_change"
-    ] if isinstance(config_changes, dict) else []
+    runtime_keys = (
+        [
+            key
+            for key in config_changes
+            if key not in THESIS_METADATA_CONFIG_KEYS and key != "requires_engine_change"
+        ]
+        if isinstance(config_changes, dict)
+        else []
+    )
     has_runtime_keys = bool(runtime_keys)
     has_primitives = bool(missing_primitives or compilation.get("missing_primitives"))
     required_diagnostics = proposal.get("required_diagnostics") or []
@@ -188,9 +194,11 @@ def _build_builder_task(
     required_diagnostics = proposal.get("required_diagnostics") or []
     if not isinstance(required_diagnostics, list):
         required_diagnostics = []
-    required_diagnostic_specs = compilation.get("required_diagnostic_specs") or proposal.get(
-        "required_diagnostic_specs"
-    ) or []
+    required_diagnostic_specs = (
+        compilation.get("required_diagnostic_specs")
+        or proposal.get("required_diagnostic_specs")
+        or []
+    )
     if not isinstance(required_diagnostic_specs, list):
         required_diagnostic_specs = []
     config_changes = proposal.get("config_changes") or {}
@@ -636,14 +644,14 @@ def _validated_generated_config_result(
         }
     return _result_with_builder_envelope(
         {
-        "status": "completed",
-        "reason": reason,
-        "generated_config": config_path,
-        "validation_passed": True,
-        "implementation_verification_passed": True,
-        "exit_code": exit_code,
-        "timed_out": timed_out,
-        "duration_seconds": round(duration_seconds, 3),
+            "status": "completed",
+            "reason": reason,
+            "generated_config": config_path,
+            "validation_passed": True,
+            "implementation_verification_passed": True,
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "duration_seconds": round(duration_seconds, 3),
         },
         task=task,
         phase="completed",
@@ -928,9 +936,7 @@ def build_missing_primitives(
     if not cli:
         result = {
             "status": "error",
-            "error_code": (
-                out.get("error_code") if out is not None else "builder_cli_unavailable"
-            ),
+            "error_code": (out.get("error_code") if out is not None else "builder_cli_unavailable"),
             "reason": (
                 out["reason"] if out is not None else "No CLI available for builder dispatch"
             ),
