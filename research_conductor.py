@@ -127,6 +127,11 @@ async def run_research_conductor(
                 f"\nDiagnostics file: {diagnostics_file}"
                 "\n  (Quick summary of event counts and rejection breakdown. Read this FIRST.)"
             )
+        evidence_lines += (
+            "\nAnalyst capabilities:"
+            "\n  - default anchor: baseline artifacts for mechanism discovery when available"
+            "\n  - can fetch latest/current/best or specific round artifacts for comparison"
+        )
         user_prompt = (
             base_prompt + f"{evidence_lines}\n\n"
             f"Analyze the trades, check your data-fact memory, and propose your next thesis."
@@ -188,6 +193,13 @@ async def run_research_conductor(
 
         @function_tool
         async def analyze_trades(focus_question: str) -> str:
+            """Ask the analyst for baseline-first or cross-round quantitative analysis.
+
+            The analyst defaults to baseline-anchored mechanism analysis when
+            baseline artifacts exist. It can also retrieve latest/current/best
+            or specific round artifacts via its own tools when the question
+            calls for longitudinal comparison or latest-run forensics.
+            """
             started = monotonic()
             trace_agent_tool_call(
                 "research-conductor",
@@ -206,6 +218,7 @@ async def run_research_conductor(
                     strategy_events_file=strategy_events_file,
                     diagnostics_file=diagnostics_file,
                     family_name=family_name,
+                    latest_outcome=latest_outcome,
                     resolution_context=resolution_context,
                     reflexion_feedback=(agent_reflexions or {}).get("analyst", ""),
                 )

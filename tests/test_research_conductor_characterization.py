@@ -21,6 +21,7 @@ import research_memory as memory
 import research_paths as infra
 import research_subagents as subagents
 import research_tools_mcp as tools_mcp
+from experiment_db import ExperimentDB, ExperimentResult
 from family_research_spec import get_family_research_spec
 from strategies import STRATEGIES
 
@@ -1103,6 +1104,10 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
 ):
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/root/autoresearch-data")
     captured: dict[str, object] = {}
+    (tmp_path / "metrics.json").write_text(json.dumps({"profit_factor": 1.8}))
+    (tmp_path / "result.json").write_text(
+        json.dumps({"metrics_file": str(tmp_path / "metrics.json")})
+    )
 
     def fake_trace_agent_prompt(agent_name, prompt, system_prompt="", **kwargs):
         captured["agent_name"] = agent_name
@@ -1160,6 +1165,7 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
             strategy_events_file=str(tmp_path / "events.parquet"),
             diagnostics_file=str(tmp_path / "diagnostics.json"),
             family_name="ema",
+            latest_outcome={"profit_factor": 1.8, "trade_count": 125},
             resolution_context={
                 "resolution_config_keys": ["timeframe_short", "timeframe_long"],
                 "resolved_minutes_by_key": {"timeframe_short": 5, "timeframe_long": 15},
@@ -1173,6 +1179,13 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     assert "AUTORESEARCH_DATA_ROOT=/root/autoresearch-data" in captured["system_prompt"]
     assert "/root/autoresearch-data/universes/" in captured["system_prompt"]
     assert "ANALYSIS MANIFEST:" in captured["system_prompt"]
+    assert '"result_json"' in captured["system_prompt"]
+    assert "CANONICAL LATEST OUTCOME SUMMARY:" in captured["system_prompt"]
+    assert '"profit_factor": 1.8' in captured["system_prompt"]
+    assert '"trade_count": 125' in captured["system_prompt"]
+    assert "default preloaded artifact bundle is the baseline anchor" in captured["system_prompt"]
+    assert "list_job_experiments and" in captured["system_prompt"]
+    assert "read_experiment_artifact" in captured["system_prompt"]
     assert "EXECUTION RESOLUTION CONTEXT:" in captured["system_prompt"]
     assert "timeframe_short: 5 minute bars" in captured["system_prompt"]
     assert "minimum_supported_time_bucket_minutes: 5" in captured["system_prompt"]
@@ -1182,6 +1195,24 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     assert "data unless AUTORESEARCH_DATA_ROOT is unset" in captured["system_prompt"]
     assert "Each run_python call is stateless" in captured["system_prompt"]
     assert "Do NOT guess source paths" in captured["system_prompt"]
+    assert 'read_artifact("result_json") first if present' in captured["system_prompt"]
+    assert 'read_artifact("metrics_json")' in captured["system_prompt"]
+    assert 'read_artifact("diagnostics_json")' in captured["system_prompt"]
+    assert (
+        "For headline backtest metrics, metrics.json produced by the shared metrics"
+        in captured["system_prompt"]
+    )
+    assert (
+        "If you recompute PF/expectancy/trade_count from raw trades, mark"
+        in captured["system_prompt"]
+    )
+    assert "artifact you explicitly read as the authoritative source" in captured["system_prompt"]
+    assert "RESULT_FILE" in captured["system_prompt"]
+    assert "METRICS_FILE" in captured["system_prompt"]
+    assert (
+        "default baseline anchor unless the question is explicitly about latest/current/best"
+        in captured["prompt"]
+    )
     assert (
         "Start the JSON response with audit fields before long tables" in captured["system_prompt"]
     )
@@ -1200,7 +1231,9 @@ def test_analyst_prompt_uses_configured_data_root_and_warns_tools_are_stateless(
     assert "Never present an unsupported claim as if it were measured" in captured["system_prompt"]
     assert captured["tool_names"] == [
         "list_analysis_artifacts",
+        "list_job_experiments",
         "read_artifact",
+        "read_experiment_artifact",
         "read_strategy_source",
         "run_python",
     ]
@@ -1281,6 +1314,123 @@ def test_analysis_manifest_discovers_strategy_sources_by_family() -> None:
     assert "strategy.py" in sources
     assert "signals.py" in sources
     assert "__init__.py" not in sources
+
+
+def test_analysis_manifest_exposes_result_json_when_present(tmp_path) -> None:
+    trades = tmp_path / "trades.csv"
+    trades.write_text("entry_date,exit_date\n")
+    result_json = tmp_path / "result.json"
+    metrics_json = tmp_path / "metrics.json"
+    metrics_json.write_text(json.dumps({"profit_factor": 1.2}))
+    result_json.write_text(json.dumps({"metrics_file": str(metrics_json)}))
+
+    manifest = subagents._analysis_manifest(
+        trades_file=str(trades),
+        strategy_events_file="",
+        diagnostics_file="",
+        family_name="ema",
+    )
+
+    assert manifest["artifacts"]["result_json"] == str(result_json)
+    assert manifest["artifacts"]["metrics_json"] == str(metrics_json)
+
+
+def test_analysis_manifest_defaults_to_baseline_artifacts_when_job_history_exists(
+    monkeypatch, tmp_path
+) -> None:
+    runtime_root = tmp_path / "runtime-root"
+    runtime_root.mkdir()
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+    db = ExperimentDB(runtime_root / "ema_experiments.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    baseline_dir = tmp_path / "ema_autoresearch-runs" / "job-7" / "commit" / "baseline-hash"
+    latest_dir = tmp_path / "ema_autoresearch-runs" / "job-7" / "commit" / "latest-hash"
+    baseline_dir.mkdir(parents=True)
+    latest_dir.mkdir(parents=True)
+    for directory in (baseline_dir, latest_dir):
+        (directory / "strategy_events.parquet").write_text("events")
+        (directory / "diagnostics.json").write_text("{}")
+        (directory / "metrics.json").write_text(json.dumps({"profit_factor": 1.0}))
+        (directory / "result.json").write_text(
+            json.dumps({"metrics_file": str(directory / "metrics.json")})
+        )
+    baseline_trades = baseline_dir / "trades.csv"
+    latest_trades = latest_dir / "trades.csv"
+    baseline_trades.write_text("entry_date,exit_date\n")
+    latest_trades.write_text("entry_date,exit_date\n")
+
+    db.add(
+        ExperimentResult(
+            experiment_id="exp-baseline",
+            thesis_id="ema_base",
+            config_path="configs/ema_base.yaml",
+            runtime_config={"strategy_family": "ema"},
+            code_commit="abc",
+            data_hash="d1",
+            train_metrics={},
+            validation_metrics={"profit_factor": 1.1, "trade_count": 100},
+            trade_count=100,
+            trades_file=str(baseline_trades),
+            strategy_events_file=str(baseline_dir / "strategy_events.parquet"),
+            diagnostics_file=str(baseline_dir / "diagnostics.json"),
+            strategy_diagnostics={},
+            accepted=True,
+            rejection_reason="",
+            verdict_status="accepted",
+            verdict_summary="baseline",
+            timestamp="2026-05-09T00:00:00+00:00",
+            family="ema",
+            job=7,
+        )
+    )
+    db.add(
+        ExperimentResult(
+            experiment_id="exp-round-1",
+            thesis_id="skip_opening_auction_noise",
+            config_path="runtime/jobs/job-7/experiments/latest/runtime_config.json",
+            runtime_config={"strategy_family": "ema"},
+            code_commit="abc",
+            data_hash="d1",
+            train_metrics={},
+            validation_metrics={"profit_factor": 1.8, "trade_count": 90},
+            trade_count=90,
+            trades_file=str(latest_trades),
+            strategy_events_file=str(latest_dir / "strategy_events.parquet"),
+            diagnostics_file=str(latest_dir / "diagnostics.json"),
+            strategy_diagnostics={},
+            accepted=True,
+            rejection_reason="",
+            verdict_status="accepted",
+            verdict_summary="latest",
+            timestamp="2026-05-09T01:00:00+00:00",
+            family="ema",
+            job=7,
+        )
+    )
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({"job": 7}))
+    db.log_research_round(
+        state_path,
+        round_number=1,
+        thesis_id="skip_opening_auction_noise",
+        outcome="compiled",
+    )
+
+    manifest = subagents._analysis_manifest(
+        trades_file=str(latest_trades),
+        strategy_events_file=str(latest_dir / "strategy_events.parquet"),
+        diagnostics_file=str(latest_dir / "diagnostics.json"),
+        family_name="ema",
+    )
+
+    assert manifest["default_scope"] == "baseline"
+    assert manifest["default_experiment_ref"] == "baseline"
+    assert manifest["artifacts"]["trades_csv"] == str(baseline_trades.resolve())
+    assert manifest["artifacts"]["result_json"] == str((baseline_dir / "result.json").resolve())
+    assert manifest["job_experiment_index"]["round_refs"] == {
+        "round:1": "skip_opening_auction_noise"
+    }
 
 
 def test_analyst_prompt_does_not_probe_repo_data_when_market_data_unresolved(monkeypatch, tmp_path):

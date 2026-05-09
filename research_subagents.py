@@ -6,12 +6,16 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from typing import Any
 
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import _accumulate_usage
+from autoresearch_paths import resolve_runtime_root
+from autoresearch_state import coerce_timestamp_to_epoch_ms
+from experiment_db import ExperimentDB
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,
@@ -21,6 +25,7 @@ from research_paths import (
     _get_openai_client,
     _parse_json,
 )
+from strategy_family import load_family
 from trace_sdk import (
     trace,
     trace_agent_prompt,
@@ -41,6 +46,18 @@ ANALYST_SOURCE_EXCLUDED_FILES = {
     "research.py",
     "validate.py",
 }
+
+
+@dataclass
+class AnalystExperimentIndex:
+    family_name: str
+    db_path: str
+    job_id: int | None
+    current_ref: str
+    default_ref: str
+    manifests_by_ref: dict[str, dict[str, object]]
+    ordered_refs: list[str]
+    round_ref_map: dict[str, str]
 
 
 def _resolve_tool_max_chars(value: object, *, default: int) -> int:
@@ -210,6 +227,245 @@ def _family_name_from_artifact_path(path: str) -> str:
     return ""
 
 
+def _normalized_existing_path(raw_path: str) -> str:
+    if not raw_path:
+        return ""
+    candidate = Path(raw_path).expanduser()
+    try:
+        if candidate.exists():
+            return str(candidate.resolve())
+    except OSError:
+        return str(candidate)
+    return str(candidate)
+
+
+def _infer_job_id_from_artifact_path(path: str) -> int | None:
+    for part in Path(path).expanduser().parts:
+        if not part.startswith("job-"):
+            continue
+        try:
+            return int(part.removeprefix("job-"))
+        except ValueError:
+            continue
+    return None
+
+
+def _resolve_experiment_db_path(trades_file: str, family_name: str) -> Path | None:
+    if not family_name:
+        return None
+    artifact_path = Path(trades_file).expanduser()
+    candidates: list[Path] = []
+    runtime_root = resolve_runtime_root(_ROOT)
+    candidates.append(runtime_root / f"{family_name}_experiments.db")
+    for parent in artifact_path.parents:
+        candidates.append(parent / f"{family_name}_experiments.db")
+        candidates.append(parent / "runtime" / f"{family_name}_experiments.db")
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists():
+            return resolved
+    return None
+
+
+def _record_artifacts(record: Any) -> dict[str, str]:
+    artifacts: dict[str, str] = {}
+    trades_file = _normalized_existing_path(getattr(record, "trades_file", ""))
+    if trades_file:
+        artifacts["trades_csv"] = trades_file
+        metrics_path = Path(trades_file).with_name("metrics.json")
+        if metrics_path.exists():
+            artifacts["metrics_json"] = str(metrics_path.resolve())
+        result_path = Path(trades_file).with_name("result.json")
+        if result_path.exists():
+            artifacts["result_json"] = str(result_path.resolve())
+    strategy_events_file = _normalized_existing_path(getattr(record, "strategy_events_file", ""))
+    if strategy_events_file:
+        artifacts["strategy_events_parquet"] = strategy_events_file
+    diagnostics_file = _normalized_existing_path(getattr(record, "diagnostics_file", ""))
+    if diagnostics_file:
+        artifacts["diagnostics_json"] = diagnostics_file
+    config_file, _ = _load_runtime_config_for_artifact(trades_file) if trades_file else (None, {})
+    config_path = str(getattr(record, "config_path", "") or "")
+    if config_file is not None:
+        artifacts["runtime_config_json"] = str(config_file)
+    elif config_path:
+        artifacts["runtime_config_json"] = config_path
+    return artifacts
+
+
+def _record_metric(record: Any, primary_metric_name: str) -> float | None:
+    metrics = getattr(record, "validation_metrics", {}) or {}
+    if primary_metric_name in metrics:
+        try:
+            return float(metrics[primary_metric_name])
+        except (TypeError, ValueError):
+            return None
+    metrics = getattr(record, "train_metrics", {}) or {}
+    if primary_metric_name in metrics:
+        try:
+            return float(metrics[primary_metric_name])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _record_summary(record: Any, primary_metric_name: str) -> dict[str, Any]:
+    metric = _record_metric(record, primary_metric_name)
+    return {
+        "experiment_id": getattr(record, "experiment_id", ""),
+        "thesis_id": getattr(record, "thesis_id", ""),
+        "config_path": getattr(record, "config_path", ""),
+        "metric": metric,
+        "status": "keep" if getattr(record, "accepted", False) else "discard",
+        "timestamp": getattr(record, "timestamp", ""),
+        "job": getattr(record, "job", 0),
+        "artifacts_available": sorted(_record_artifacts(record).keys()),
+    }
+
+
+def _build_experiment_index(
+    *,
+    trades_file: str,
+    strategy_events_file: str = "",
+    diagnostics_file: str = "",
+    family_name: str = "",
+) -> AnalystExperimentIndex | None:
+    config_path, runtime_config = _load_runtime_config_for_artifact(trades_file)
+    resolved_family = (
+        family_name
+        or str(runtime_config.get("strategy_family") or "")
+        or str(runtime_config.get("family") or "")
+        or _family_name_from_artifact_path(trades_file)
+    )
+    db_path = _resolve_experiment_db_path(trades_file, resolved_family)
+    if db_path is None:
+        return None
+    db = ExperimentDB(db_path)
+    primary_metric_name = db.primary_metric_name()
+    records = db.all()
+    target_trades = _normalized_existing_path(trades_file)
+    current_record = next(
+        (
+            record
+            for record in records
+            if _normalized_existing_path(record.trades_file) == target_trades
+        ),
+        None,
+    )
+    job_id = getattr(current_record, "job", None)
+    if job_id is None:
+        job_id = _infer_job_id_from_artifact_path(trades_file)
+    job_records = [record for record in records if getattr(record, "job", None) == job_id]
+    if not job_records:
+        return None
+    ordered = sorted(job_records, key=lambda record: coerce_timestamp_to_epoch_ms(record.timestamp))
+    latest_record = ordered[-1]
+    if current_record is None:
+        current_record = latest_record
+    best_record = None
+    kept_records = [record for record in ordered if getattr(record, "accepted", False)]
+    if kept_records:
+        best_record = max(
+            kept_records,
+            key=lambda record: (_record_metric(record, primary_metric_name) or float("-inf")),
+        )
+    base_config_filename = (
+        load_family(resolved_family).base_config_filename if resolved_family else ""
+    )
+    baseline_config_path = f"configs/{base_config_filename}" if base_config_filename else ""
+    baseline_candidates = [
+        record for record in ordered if getattr(record, "config_path", "") == baseline_config_path
+    ]
+    baseline_record = baseline_candidates[-1] if baseline_candidates else None
+    manifests_by_ref: dict[str, dict[str, object]] = {}
+    ordered_refs: list[str] = []
+    round_ref_map: dict[str, str] = {}
+    for idx, record in enumerate(ordered, start=1):
+        ref = f"sequence:{idx}"
+        ordered_refs.append(ref)
+        manifests_by_ref[ref] = {
+            "summary": _record_summary(record, primary_metric_name),
+            "artifacts": _record_artifacts(record),
+        }
+        thesis_id = getattr(record, "thesis_id", "") or ""
+        if thesis_id and thesis_id not in manifests_by_ref:
+            manifests_by_ref[thesis_id] = manifests_by_ref[ref]
+    aliases = {
+        "current": current_record,
+        "latest": latest_record,
+        "best": best_record,
+        "baseline": baseline_record,
+    }
+    for alias, record in aliases.items():
+        if record is None:
+            continue
+        manifests_by_ref[alias] = {
+            "summary": _record_summary(record, primary_metric_name),
+            "artifacts": _record_artifacts(record),
+        }
+    for row in db.list_research_rounds():
+        if row.get("job_id") != job_id:
+            continue
+        round_number = row.get("round_number")
+        thesis_id = str(row.get("selected_thesis_id") or "")
+        if not thesis_id:
+            continue
+        ref = f"round:{round_number}"
+        round_ref_map[ref] = thesis_id
+    default_ref = "baseline" if "baseline" in manifests_by_ref else "current"
+    return AnalystExperimentIndex(
+        family_name=resolved_family,
+        db_path=str(db_path),
+        job_id=job_id,
+        current_ref="current",
+        default_ref=default_ref,
+        manifests_by_ref=manifests_by_ref,
+        ordered_refs=ordered_refs,
+        round_ref_map=round_ref_map,
+    )
+
+
+def _resolve_experiment_ref(
+    index: AnalystExperimentIndex | None, experiment_ref: str
+) -> str | None:
+    if index is None:
+        return None
+    ref = (experiment_ref or "").strip() or index.default_ref
+    if ref in index.round_ref_map:
+        thesis_ref = index.round_ref_map[ref]
+        if thesis_ref in index.manifests_by_ref:
+            return thesis_ref
+    if ref in index.manifests_by_ref:
+        return ref
+    if ref.startswith("round:"):
+        thesis_ref = index.round_ref_map.get(ref)
+        if thesis_ref and thesis_ref in index.manifests_by_ref:
+            return thesis_ref
+    return None
+
+
+def _resolve_artifacts_for_ref(
+    index: AnalystExperimentIndex | None, experiment_ref: str
+) -> tuple[str, dict[str, str], dict[str, Any]]:
+    if index is None:
+        return "", {}, {}
+    resolved_ref = _resolve_experiment_ref(index, experiment_ref)
+    if resolved_ref is None:
+        return "", {}, {}
+    manifest = index.manifests_by_ref.get(resolved_ref) or {}
+    summary = manifest.get("summary") if isinstance(manifest, dict) else {}
+    artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else {}
+    return (
+        resolved_ref,
+        dict(artifacts) if isinstance(artifacts, dict) else {},
+        dict(summary) if isinstance(summary, dict) else {},
+    )
+
+
 def _discover_strategy_source_files(family_name: str) -> dict[str, str]:
     if not family_name:
         return {}
@@ -243,17 +499,40 @@ def _analysis_manifest(
         or str(runtime_config.get("family") or "")
         or _family_name_from_artifact_path(trades_file)
     )
-    artifacts = {
-        "trades_csv": trades_file,
-    }
-    if strategy_events_file:
-        artifacts["strategy_events_parquet"] = strategy_events_file
-    if diagnostics_file:
-        artifacts["diagnostics_json"] = diagnostics_file
-    if config_path is not None:
-        artifacts["runtime_config_json"] = str(config_path)
+    index = _build_experiment_index(
+        trades_file=trades_file,
+        strategy_events_file=strategy_events_file,
+        diagnostics_file=diagnostics_file,
+        family_name=resolved_family,
+    )
+    resolved_ref, artifacts, default_summary = _resolve_artifacts_for_ref(
+        index, index.default_ref if index is not None else ""
+    )
+    if not artifacts:
+        artifacts = {
+            "trades_csv": trades_file,
+        }
+        metrics_path = Path(trades_file).with_name("metrics.json")
+        if metrics_path.exists():
+            artifacts["metrics_json"] = str(metrics_path.resolve())
+        result_path = Path(trades_file).with_name("result.json")
+        if result_path.exists():
+            artifacts["result_json"] = str(result_path.resolve())
+        if strategy_events_file:
+            artifacts["strategy_events_parquet"] = strategy_events_file
+        if diagnostics_file:
+            artifacts["diagnostics_json"] = diagnostics_file
+        if config_path is not None:
+            artifacts["runtime_config_json"] = str(config_path)
+        resolved_ref = "current"
+        default_summary = {
+            "thesis_id": Path(trades_file).parent.name,
+            "config_path": str(config_path) if config_path is not None else "",
+        }
 
     data_files: dict[str, str] = {}
+    runtime_config_source = artifacts.get("trades_csv", trades_file)
+    _, runtime_config = _load_runtime_config_for_artifact(runtime_config_source)
     data_universe = runtime_config.get("data_universe")
     provenance = runtime_config.get("data_provenance")
     universe_path = ""
@@ -270,7 +549,21 @@ def _analysis_manifest(
 
     return {
         "family_name": resolved_family,
+        "default_experiment_ref": resolved_ref,
+        "default_scope": "baseline" if resolved_ref == "baseline" else "current",
+        "default_experiment_summary": default_summary,
         "artifacts": artifacts,
+        "job_experiment_index": (
+            {
+                "db_path": index.db_path,
+                "job_id": index.job_id,
+                "default_ref": index.default_ref,
+                "available_refs": sorted(index.manifests_by_ref.keys()),
+                "round_refs": index.round_ref_map,
+            }
+            if index is not None
+            else {}
+        ),
         "strategy_sources": _discover_strategy_source_files(resolved_family),
         "market_data_files": data_files,
     }
@@ -284,6 +577,9 @@ def _analysis_python_prelude(manifest: dict[str, object]) -> str:
     artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else {}
     strategy_sources = manifest.get("strategy_sources") if isinstance(manifest, dict) else {}
     market_data_files = manifest.get("market_data_files") if isinstance(manifest, dict) else {}
+    default_experiment_ref = (
+        manifest.get("default_experiment_ref") if isinstance(manifest, dict) else None
+    )
     return "\n".join(
         [
             "from pathlib import Path",
@@ -295,7 +591,12 @@ def _analysis_python_prelude(manifest: dict[str, object]) -> str:
             f"ANALYSIS_ARTIFACTS = {artifacts!r}",
             f"STRATEGY_SOURCE_FILES = {strategy_sources!r}",
             f"MARKET_DATA_FILES = {market_data_files!r}",
+            f"DEFAULT_EXPERIMENT_REF = {default_experiment_ref!r}",
             "TRADES_FILE = Path(ANALYSIS_ARTIFACTS['trades_csv'])",
+            "METRICS_FILE = Path(ANALYSIS_ARTIFACTS['metrics_json']) "
+            "if 'metrics_json' in ANALYSIS_ARTIFACTS else None",
+            "RESULT_FILE = Path(ANALYSIS_ARTIFACTS['result_json']) "
+            "if 'result_json' in ANALYSIS_ARTIFACTS else None",
             "EVENTS_FILE = Path(ANALYSIS_ARTIFACTS['strategy_events_parquet']) "
             "if 'strategy_events_parquet' in ANALYSIS_ARTIFACTS else None",
             "DIAGNOSTICS_FILE = Path(ANALYSIS_ARTIFACTS['diagnostics_json']) "
@@ -313,6 +614,7 @@ async def _call_analyst(
     strategy_events_file: str = "",
     diagnostics_file: str = "",
     family_name: str = "",
+    latest_outcome: dict[str, Any] | None = None,
     resolution_context: dict[str, Any] | None = None,
     reflexion_feedback: str = "",
 ) -> str:
@@ -330,6 +632,13 @@ async def _call_analyst(
         diagnostics_file=diagnostics_file,
         family_name=family_name,
     )
+    experiment_index = _build_experiment_index(
+        trades_file=trades_file,
+        strategy_events_file=strategy_events_file,
+        diagnostics_file=diagnostics_file,
+        family_name=str(manifest.get("family_name") or family_name),
+    )
+    latest_outcome = dict(latest_outcome or {})
     manifest_prompt = _manifest_prompt_block(manifest)
     run_python_failure_budget = AnalystRunPythonFailureBudget()
 
@@ -351,6 +660,58 @@ async def _call_analyst(
             "list_analysis_artifacts",
             output,
             status="ok",
+            duration_ms=0,
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
+        return output
+
+    @function_tool
+    def list_job_experiments() -> str:
+        """Return the current job's experiment refs and summaries for cross-round analysis."""
+        output = ""
+        status = "ok"
+        error_type = ""
+        trace_agent_tool_call(
+            "analyst",
+            current_trace_id,
+            "list_job_experiments",
+            "",
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
+        if experiment_index is None:
+            status = "error"
+            error_type = "NoExperimentIndex"
+            output = "ERROR: No current-job experiment index is available for this analyst call."
+        else:
+            payload = {
+                "family_name": experiment_index.family_name,
+                "db_path": experiment_index.db_path,
+                "job_id": experiment_index.job_id,
+                "default_ref": experiment_index.default_ref,
+                "current_ref": experiment_index.current_ref,
+                "round_refs": experiment_index.round_ref_map,
+                "experiments": [
+                    {
+                        "ref": ref,
+                        **(
+                            experiment_index.manifests_by_ref.get(ref, {}).get("summary", {})
+                            if isinstance(experiment_index.manifests_by_ref.get(ref, {}), dict)
+                            else {}
+                        ),
+                    }
+                    for ref in experiment_index.ordered_refs
+                ],
+            }
+            output = json.dumps(payload, indent=2, sort_keys=True)
+        trace_agent_tool_result(
+            "analyst",
+            current_trace_id,
+            "list_job_experiments",
+            output,
+            status=status,
+            error_type=error_type,
             duration_ms=0,
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
@@ -394,6 +755,56 @@ async def _call_analyst(
             "analyst",
             current_trace_id,
             "read_artifact",
+            output,
+            status=status,
+            error_type=error_type,
+            truncated=truncated,
+            duration_ms=int((monotonic() - started) * 1000),
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
+        return output
+
+    @function_tool
+    def read_experiment_artifact(
+        experiment_ref: str,
+        kind: str,
+        max_chars: int = ANALYST_READ_FILE_MAX_CHARS,
+    ) -> str:
+        """Read an artifact for a specific experiment ref like baseline, latest, best, round:3, or sequence:2."""
+        started = monotonic()
+        output = ""
+        status = "ok"
+        error_type = ""
+        truncated = False
+        max_chars = _resolve_tool_max_chars(max_chars, default=ANALYST_READ_FILE_MAX_CHARS)
+        trace_agent_tool_call(
+            "analyst",
+            current_trace_id,
+            "read_experiment_artifact",
+            json.dumps({"experiment_ref": experiment_ref, "kind": kind}),
+            model_provider="openai",
+            model_name=_CONDUCTOR_MODEL,
+        )
+        try:
+            if experiment_index is None:
+                raise KeyError("No current-job experiment index is available")
+            _, artifacts, _ = _resolve_artifacts_for_ref(experiment_index, experiment_ref)
+            if kind not in artifacts:
+                raise KeyError(
+                    f"Artifact {kind!r} is unavailable for experiment_ref={experiment_ref!r}"
+                )
+            with open(str(artifacts[kind])) as f:
+                content = f.read()
+            output, truncated = _compact_tool_output(content, max_chars=max_chars)
+        except Exception as e:
+            status = "error"
+            error_type = e.__class__.__name__
+            output = f"ERROR: {e}"
+        trace_agent_tool_result(
+            "analyst",
+            current_trace_id,
+            "read_experiment_artifact",
             output,
             status=status,
             error_type=error_type,
@@ -537,12 +948,26 @@ async def _call_analyst(
 {_analyst_data_root_guidance()}
 {_market_data_manifest(trades_file)}
 {manifest_prompt}
+CANONICAL LATEST OUTCOME SUMMARY:
+{json.dumps(latest_outcome, indent=2) if latest_outcome else "(not provided)"}
 {_render_analyst_resolution_context(resolution_context)}
    If no exact universe_path is resolved, do not use raw OHLCV or search for it.
 
-You MUST use ALL provided files. Trades alone show what happened;
-strategy_events show what DIDN'T happen and WHY. Diagnostics give
-the high-level rejection breakdown before you dig into details.
+The default preloaded artifact bundle is the baseline anchor for this job when
+baseline artifacts exist; otherwise it falls back to the current experiment.
+Use that default anchor for mechanism-discovery questions unless the focus
+question is clearly about the latest run, the current best run, or a named
+research round. For cross-round questions, use list_job_experiments and
+read_experiment_artifact to fetch the exact comparison artifacts you need.
+
+You MUST ground conclusions in the artifacts you actually read. Trades alone
+show what happened; strategy_events show what DIDN'T happen and WHY.
+Diagnostics give the high-level rejection breakdown before you dig into
+details.
+For headline backtest metrics, metrics.json produced by the shared metrics
+pipeline is canonical; result.json is the manifest that points to it and to
+diagnostics.json. Only recompute headline metrics as a sanity check, and label
+any recomputed numbers as derived rather than canonical.
 
 RAW TRADES CSV SCHEMA (one row per completed trade):
   entry_date, exit_date, direction, entry_price, exit_price, stop, target,
@@ -558,15 +983,20 @@ STRATEGY EVENTS PARQUET SCHEMA (one row per decision point, read with pd.read_pa
 DIAGNOSTICS JSON: quick summary with event_counts and rejection_breakdown.
 
 WORKFLOW:
-1. ALWAYS start with read_artifact("diagnostics_json") if present.
-2. Use run_python to execute pandas analysis code on trades and/or events.
-3. When the focus question requires market context (volatility, volume,
+1. Start with the default anchor bundle exposed in ANALYSIS MANIFEST:
+   read_artifact("result_json") first if present, then read_artifact("metrics_json")
+   and read_artifact("diagnostics_json").
+2. If the focus question is about latest/current behavior, best-run behavior,
+   or longitudinal comparison, call list_job_experiments and then fetch the
+   exact artifacts you need with read_experiment_artifact.
+3. Use run_python to execute pandas analysis code on trades and/or events.
+4. When the focus question requires market context (volatility, volume,
    trend, gaps, range characteristics), use raw OHLCV only if the manifest
    provides exact paths. If not, state that raw OHLCV is unavailable and
    answer from trades/events/diagnostics/source code.
-4. Focus effort on the FOCUS QUESTION. Go deep, not wide.
-5. When you find a pattern, quantify it with exact numbers and sample sizes.
-6. Each run_python call is stateless. Put imports, path definitions, file reads,
+5. Focus effort on the FOCUS QUESTION. Go deep, not wide.
+6. When you find a pattern, quantify it with exact numbers and sample sizes.
+7. Each run_python call is stateless. Put imports, path definitions, file reads,
    and calculations in the same run_python call. Do not rely on variables from
    earlier tool calls.
 
@@ -580,9 +1010,16 @@ CRITICAL RULES:
 - Do NOT guess source paths. Use read_strategy_source with names from ANALYSIS MANIFEST.
 - Do NOT read large source/data files into the chat unless strictly necessary.
   Prefer targeted run_python summaries and print compact tables only.
-- In run_python, these variables are already defined: TRADES_FILE, EVENTS_FILE,
-  DIAGNOSTICS_FILE, RUNTIME_CONFIG_FILE, ANALYSIS_ARTIFACTS,
-  STRATEGY_SOURCE_FILES, MARKET_DATA_FILES.
+- Use canonical headline metrics from metrics.json before doing your own cohort
+  analysis. If you recompute PF/expectancy/trade_count from raw trades, mark
+  those values as derived and explain why the recomputation was needed.
+- Treat CANONICAL LATEST OUTCOME SUMMARY as a compact prompt-level restatement
+  of the latest experiment metrics. Use it for orientation, but prefer the
+  artifact you explicitly read as the authoritative source.
+- In run_python, these variables are already defined: TRADES_FILE, METRICS_FILE,
+  RESULT_FILE, EVENTS_FILE, DIAGNOSTICS_FILE, RUNTIME_CONFIG_FILE,
+  ANALYSIS_ARTIFACTS, STRATEGY_SOURCE_FILES, MARKET_DATA_FILES,
+  DEFAULT_EXPERIMENT_REF.
 - Start the JSON response with audit fields before long tables so required
   deliverables survive truncation.
 - Every bucketed metric must include n= or N=. If the focus question specifies
@@ -619,7 +1056,7 @@ Return ONLY a JSON object:
   "unsupported_claims": [
     "claims the current artifacts do not directly support"
   ],
-  "artifacts_used": ["trades_csv", "strategy_events_parquet", "diagnostics_json", "runtime_config_json", "market_data_files if used"],
+  "artifacts_used": ["result_json if used", "metrics_json", "trades_csv", "strategy_events_parquet", "diagnostics_json", "runtime_config_json", "market_data_files if used"],
   "files_inspected": ["strategy/config/source files read, or NOT_FOUND"],
   "keys_found": ["config/source keys or fields found, or NOT_FOUND"],
   "focus_answer": "direct answer to the focus question with exact numbers",
@@ -662,8 +1099,9 @@ Be brutally honest."""
             "the same tool/path/prompt failure."
         )
     user_parts.append(
-        "Load artifacts using read_artifact/read_strategy_source and perform analysis using run_python."
-        " Start with diagnostics.json if available for an overview."
+        "Load artifacts using read_artifact/read_experiment_artifact/read_strategy_source and "
+        "perform analysis using run_python. Start from the default baseline anchor unless the "
+        "question is explicitly about latest/current/best or a named round."
     )
     user_prompt = "\n\n".join(user_parts)
     current_trace_id = trace_agent_prompt(
@@ -679,7 +1117,14 @@ Be brutally honest."""
     agent = OAIAgent(
         name="codex-diagnostic-analyst",
         instructions=analyst_prompt,
-        tools=[list_analysis_artifacts, read_artifact, read_strategy_source, run_python],
+        tools=[
+            list_analysis_artifacts,
+            list_job_experiments,
+            read_artifact,
+            read_experiment_artifact,
+            read_strategy_source,
+            run_python,
+        ],
         model=model,
     )
 
