@@ -327,7 +327,10 @@ def _render_release_symlink_bootstrap(
         "    target = runtime_root / rel\n"
         "    target.parent.mkdir(parents=True, exist_ok=True)\n"
         "    if not target.exists():\n"
-        "        target.touch()\n"
+        "        if rel.endswith('_autoresearch.next.json'):\n"
+        '            target.write_text(\'{"state": "running"}\\n\')\n'
+        "        else:\n"
+        "            target.touch()\n"
         "    link = release_dir / rel\n"
         "    if link.is_symlink() or link.exists():\n"
         "        if link.is_dir() and not link.is_symlink():\n"

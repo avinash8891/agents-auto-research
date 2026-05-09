@@ -768,10 +768,11 @@ def _record_builder_promotion_candidate(
     *,
     source_root: Path,
     workspace_root: Path,
-    artifact_root: Path,
+    artifact_root: Path | None,
     task: BuilderTask,
     thesis_id: str,
 ) -> dict[str, Any]:
+    artifact_root_path = artifact_root or source_root
     changed_files = _workspace_changed_promotable_files(
         source_root=source_root,
         workspace_root=workspace_root,
@@ -800,7 +801,7 @@ def _record_builder_promotion_candidate(
         "promoted_files": changed_files,
         "execution_root": workspace_root.as_posix(),
         "promotion_dir": promotion_root.relative_to(source_root).as_posix(),
-        "artifact_root": artifact_root.as_posix(),
+        "artifact_root": artifact_root_path.as_posix(),
         "promotion_status": "queued_review",
         "timestamp": timestamp_now(),
     }

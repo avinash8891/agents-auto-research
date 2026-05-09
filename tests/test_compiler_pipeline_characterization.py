@@ -861,6 +861,43 @@ def test_build_missing_primitives_uses_isolated_workspace_and_records_promotion(
     assert queue_lines
 
 
+def test_record_builder_promotion_candidate_tolerates_missing_artifact_root(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    workspace_root = tmp_path / "workspace"
+    source_strategy = source_root / "strategies" / "ema" / "strategy.py"
+    workspace_strategy = workspace_root / "strategies" / "ema" / "strategy.py"
+    source_strategy.parent.mkdir(parents=True)
+    workspace_strategy.parent.mkdir(parents=True)
+    source_strategy.write_text("ORIGINAL = True\n")
+    workspace_strategy.write_text("PROMOTED = True\n")
+    task = compiler_builder.BuilderTask(
+        thesis_id="ema_workspace_promotion_without_artifact_root",
+        family_name="ema",
+        proposal_path="experiments/ema_workspace_promotion_without_artifact_root/thesis.json",
+        compilation_path="experiments/ema_workspace_promotion_without_artifact_root/contract.json",
+        config_path="experiments/ema_workspace_promotion_without_artifact_root/runtime_config.json",
+        base_config_path="configs/ema_base.yaml",
+        missing_primitives=["missing_probe"],
+        required_diagnostics=[],
+        required_diagnostic_specs=[],
+        config_change_keys=[],
+        mechanism_contract_kind="code_only",
+        implementation_scope=["strategy_runtime"],
+    )
+
+    manifest = compiler_builder._record_builder_promotion_candidate(
+        source_root=source_root,
+        workspace_root=workspace_root,
+        artifact_root=None,
+        task=task,
+        thesis_id=task.thesis_id,
+    )
+
+    assert manifest["artifact_root"] == source_root.as_posix()
+
+
 def test_build_missing_primitives_trace_links_builder_attempt_artifacts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

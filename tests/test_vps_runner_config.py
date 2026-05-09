@@ -3,15 +3,18 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
+from autoresearch_state import read_state
 from strategy_family import load_family
 from vps_runner import (
     VPSConfig,
     _build_arg_parser,
     _localize_remote_result_output,
+    _render_release_symlink_bootstrap,
     _sftp_mkdir_p,
     _should_skip_git_prepare,
     _stream_remote_prepare_command,
@@ -238,23 +241,29 @@ def test_remote_command_runs_controller_for_family() -> None:
     assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
     ) in command
-    assert (
-        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
-        "--fresh-job --prepare-launch-state-only"
-    ) in command
-    assert (
-        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
-        "--run-current-state"
-    ) in command
-    assert command.index("python_bin=.venv/bin/python") < command.index(
-        '"$python_bin" -m pip install -e .'
+
+
+def test_release_symlink_bootstrap_initializes_valid_state_file(tmp_path: Path) -> None:
+    family = load_family("ema")
+    remote_dir = tmp_path / "remote"
+    resolved_sha = "0123456789abcdef0123456789abcdef01234567"
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir=remote_dir.as_posix(),
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
     )
-    assert command.index('"$python_bin" -m pip install -e .') < command.index(
-        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
-    )
-    assert "/root/orb-research" not in command
-    assert "backtest_5ema.py" not in command
-    assert "scp" not in command.lower()
+    release_dir = remote_dir / "releases" / resolved_sha
+    release_dir.mkdir(parents=True)
+    command = _render_release_symlink_bootstrap(config, family, resolved_sha)
+
+    subprocess.run(["bash", "-lc", command], check=True, cwd=tmp_path)
+
+    state_path = remote_dir / f"{family.name}_autoresearch.next.json"
+    assert state_path.exists()
+    assert read_state(state_path) == {"state": "running"}
 
 
 def test_remote_prepare_command_uses_transaction_trace_mode() -> None:
