@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+from typing import Any
+
+from config_hash import _config_hash, _git_sha
+from persistence_utils import utc_now_iso8601
+
+METRIC_KEYS = (
+    "median_expectancy",
+    "trade_count",
+    "profit_factor",
+    "max_drawdown",
+    "pct_profitable_windows",
+    "avg_sharpe_across_windows",
+)
+
+
+def build_result_payload(
+    strategy: str,
+    config_path: str,
+    config: dict[str, Any],
+    result: dict[str, Any],
+    strategy_diagnostics: dict[str, Any],
+    file_paths: dict[str, str],
+) -> dict[str, Any]:
+    payload = {
+        "family": strategy,
+        "config": config_path,
+        "config_hash": _config_hash(config),
+        "git_sha": _git_sha(),
+        "timestamp": utc_now_iso8601(),
+        "metrics": {key: result[key] for key in METRIC_KEYS},
+        "diagnostics": result.get("diagnostics", {}),
+        "strategy_diagnostics": strategy_diagnostics,
+        "trades_file": file_paths["trades_file"],
+        "strategy_events_file": file_paths["strategy_events_file"],
+        "diagnostics_file": file_paths["diagnostics_file"],
+    }
+    if config.get("data_provenance"):
+        payload["data_provenance"] = config["data_provenance"]
+    for key, value in result.items():
+        if key not in payload and key not in METRIC_KEYS and not key.startswith("_"):
+            payload[key] = value
+    return payload

@@ -1,0 +1,160 @@
+Yes, it changes it slightly, but it strengthens it, not weakens it.
+
+  The immutable-deploy plan still stands. In fact, accumulation makes it more necessary.
+
+  ## What stays the same
+
+  These still remain correct:
+
+  1. Immutable deploy checkout
+
+  - deployed code checkout should not be mutated by builder
+
+  2. Per-attempt mutable builder workspaces
+
+  - builder/codegen should run in disposable isolated workspaces
+
+  3. Artifact-only runtime flow
+
+  - runtime/job state should stay outside deploy checkout semantics
+
+  4. State/history separation
+
+  - active state vs prior blocker history should still be separated
+
+  So the core deployment plan does not change.
+
+  ## What changes because of accumulation
+
+  If you want builder accumulation, you need one more layer:
+
+  ### Add a promotion lane between disposable builder workspaces and immutable deploy code
+
+  So the architecture becomes:
+
+  1. Immutable deployed checkout
+
+  - what controller/backtests actually run against
+
+  2. Disposable builder attempt workspace
+
+  - where builder invents or tests code
+
+  3. Promotion pipeline
+
+  - decides whether a successful builder output becomes:
+      - artifact only
+      - or promoted reusable primitive in mainline repo
+
+  That promotion lane is the missing piece.
+
+  ## Best-practice shape with accumulation
+
+  ### Layer 1: deployed runtime checkout
+
+  - /root/autoresearch-2026-05-02/releases/<sha>/
+  - immutable
+  - controller runs only from here
+
+  ### Layer 2: builder attempt workspace
+
+  - /root/autoresearch-runtime/job-26/builder-attempts/<thesis-id>/<attempt>/
+  - mutable
+  - disposable
+  - may contain code edits, generated tests, logs
+
+  ### Layer 3: builder artifact store
+
+  - result.json
+  - patch/diff
+  - verifier report
+  - tests added
+  - diagnostics added
+  - self-check
+  - trace usage
+
+  ### Layer 4: promotion registry / capability registry
+
+  - records which builder-created primitive became reusable
+  - maps:
+      - primitive name
+      - strategies supported
+      - diagnostics exposed
+      - config surface
+      - source commit where promoted
+
+  ### Layer 5: mainline repo promotion
+
+  - only curated successful primitives get committed to repo
+  - later deploys pick them up by SHA
+
+  That is the real “accumulation” model.
+
+  ## Important distinction
+
+  Without accumulation:
+
+  - builder workspace is disposable
+  - artifacts help diagnosis only
+
+  With accumulation:
+
+  - builder workspace is still disposable
+  - but selected outputs can be promoted into:
+      - shared code
+      - shared capability registry
+      - shared implementation memory
+
+  So you still should not let builder mutate the deploy checkout directly.
+
+  That remains wrong in both models.
+
+  ## What should not happen
+
+  Do not interpret accumulation as:
+
+  - “the VPS runtime checkout should keep builder edits around”
+
+  That would be the wrong design.
+
+  Accumulation should happen through:
+
+  - promotion
+  - registry
+  - Git history
+  - artifact memory
+
+  Not through:
+
+  - dirty long-lived working trees
+
+  ## Revised architecture statement
+
+  Earlier plan:
+
+  - immutable deploy checkout
+
+  Revised plan with accumulation:
+
+  - immutable deploy checkout
+  - plus a capability registry for future reuse
+
+  That is the correct extension.
+
+  ## Short answer
+
+  It does not change these fundamentals:
+
+  - deploy checkout should remain immutable
+  3. artifact capture
+  4. promotion pipeline
+  5. reusable capability registry
+  6. state/history separation
+
+  That is the best-practice architecture if you want both:
+
+
+• I’m implementing the structural part, not another cleanup workaround: isolated builder workspaces, artifact/
+  promotion outputs, and state-history cleanup at the resume boundary. I’m reading the current builder and
+  orchestration flow first so the change lands at the right seam.
+ any problem with this desihgn
