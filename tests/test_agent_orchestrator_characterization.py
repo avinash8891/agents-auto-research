@@ -148,7 +148,7 @@ def test_run_web_research_returns_findings_and_writes_memory(monkeypatch):
     assert diary_entries == [
         (
             "web-researcher",
-            "runtime/jobs/job-2/research",
+            "runtime/research/round-2",
             "ROUND:2|FINDINGS:1|External work supports narrowing the entry window.",
         )
     ]
@@ -467,6 +467,23 @@ def test_normalize_thesis_payload_does_not_promote_unknown_family_alias():
     )
 
     assert "strategy_family" not in normalized
+
+
+def test_normalize_thesis_payload_treats_none_lists_as_empty():
+    from thesis_validator import normalize_thesis_payload
+
+    normalized = normalize_thesis_payload(
+        {
+            "thesis_id": "x",
+            "hypothesis": "y",
+            "mechanism": "z",
+            "expected_effects": None,
+            "disqualifiers": None,
+        }
+    )
+
+    assert normalized["expected_effects"] == []
+    assert normalized["disqualifiers"] == []
 
 
 def test_run_single_agent_returns_structured_parse_error_without_stdout(monkeypatch, capsys):

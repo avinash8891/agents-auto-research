@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from autoresearch_experiment import parse_metric
+from autoresearch_experiment import parse_benchmark_details, parse_metric
 from backtest.event_diagnostics import build_event_diagnostics
 from backtest.output import write_all
 
@@ -117,6 +117,36 @@ def test_write_all_serializes_infinite_profit_factor_as_strict_json(
         rejection_breakdown={},
     )
     assert "strategy_diagnostics" not in json.loads(text)
+
+
+def test_write_all_allows_missing_diagnostics_file_and_parser_accepts_it(
+    tmp_path: Path,
+) -> None:
+    result = {
+        "median_expectancy": 1.0,
+        "trade_count": 0,
+        "profit_factor": 1.0,
+        "max_drawdown": 0.0,
+        "pct_profitable_windows": 0.0,
+        "avg_sharpe_across_windows": 0.0,
+        "diagnostics": {},
+        "_trades_df": pd.DataFrame(),
+    }
+
+    write_all(
+        result,
+        {},
+        tmp_path,
+        strategy="ema",
+        config_path="configs/ema_base.yaml",
+    )
+
+    payload = json.loads((tmp_path / "result.json").read_text())
+    assert "diagnostics_file" not in payload
+
+    details = parse_benchmark_details(f"RESULT_JSON {tmp_path / 'result.json'}\n")
+    assert details["strategy_diagnostics"] == {}
+    assert details["trade_count"] == 0
 
 
 def test_write_all_rejects_event_frames_missing_core_schema_columns(tmp_path: Path) -> None:

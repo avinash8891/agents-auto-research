@@ -89,8 +89,41 @@ log = get_logger(__name__)
 ROOT = Path(__file__).resolve().parent
 _AUTONOMY_LEDGER = AutonomyLedger()
 RUNTIME_ROOT = _resolve_runtime_root(ROOT)
-STATE_PATH = RUNTIME_ROOT / "autoresearch.next.json"
-CURRENT_MD_PATH = RUNTIME_ROOT / "autoresearch.current.md"
+
+
+class _DynamicRuntimePath:
+    def __init__(self, suffix: str) -> None:
+        self._suffix = suffix
+
+    def _path(self) -> Path:
+        return _resolve_runtime_root(ROOT) / self._suffix
+
+    def __fspath__(self) -> str:
+        return str(self._path())
+
+    def __str__(self) -> str:
+        return str(self._path())
+
+    def __repr__(self) -> str:
+        return f"_DynamicRuntimePath({self._suffix!r}, path={self._path()!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, _DynamicRuntimePath):
+            return self._path() == other._path()
+        try:
+            return self._path() == Path(other)  # type: ignore[arg-type]
+        except TypeError:
+            return False
+
+    def __truediv__(self, key: object) -> Path:
+        return self._path() / key  # type: ignore[operator]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._path(), name)
+
+
+STATE_PATH = _DynamicRuntimePath("autoresearch.next.json")
+CURRENT_MD_PATH = _DynamicRuntimePath("autoresearch.current.md")
 
 
 def max_consecutive_research_required() -> int:

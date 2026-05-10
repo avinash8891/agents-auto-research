@@ -63,6 +63,8 @@ def write_all(
             "diagnostics_file": str(diagnostics_path) if diagnostics_path else "",
         },
     )
+    if not diagnostics_path:
+        result_payload.pop("diagnostics_file", None)
     result_json_path = output_path / "result.json"
     write_json_atomic(result_json_path, result_payload)
 

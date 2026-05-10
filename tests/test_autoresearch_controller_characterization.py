@@ -59,6 +59,19 @@ def test_controller_uses_configured_jobs_root_when_runtime_is_split(tmp_path: Pa
     )
 
 
+def test_controller_exported_state_paths_follow_late_runtime_root_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import autoresearch_controller as loop_mod
+
+    runtime_root = tmp_path / "runtime-home"
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+
+    assert loop_mod.STATE_PATH == runtime_root / "autoresearch.next.json"
+    assert loop_mod.CURRENT_MD_PATH == runtime_root / "autoresearch.current.md"
+
+
 def test_plan_next_action_runs_baseline_first_for_fresh_job(
     controller: AutoresearchController,
 ) -> None:

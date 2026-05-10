@@ -333,12 +333,13 @@ def parse_benchmark_details(output: str, *, allow_legacy: bool = False) -> dict[
             if result_json.get(key):
                 details[key] = result_json[key]
         diagnostics_file = result_json.get("diagnostics_file", "")
-        if not diagnostics_file:
-            raise ResultJsonError("RESULT_JSON missing required diagnostics_file pointer")
-        diagnostics_path = _resolve_artifact_path(manifest_path, diagnostics_file)
-        if diagnostics_path is None or not diagnostics_path.exists():
-            raise ResultJsonError(f"diagnostics.json not found at {diagnostics_path}")
-        details["strategy_diagnostics"] = _load_json_file(diagnostics_path)
+        if diagnostics_file:
+            diagnostics_path = _resolve_artifact_path(manifest_path, diagnostics_file)
+            if diagnostics_path is None or not diagnostics_path.exists():
+                raise ResultJsonError(f"diagnostics.json not found at {diagnostics_path}")
+            details["strategy_diagnostics"] = _load_json_file(diagnostics_path)
+        else:
+            details["strategy_diagnostics"] = {}
         if "diagnostics" in metrics:
             details["diagnostics"] = metrics["diagnostics"]
         return details
@@ -700,7 +701,7 @@ def _build_db_record(
         )
         verdict_summary = _invalid_duplicate_result_summary(duplicate, details, runtime_config)
     code_commit = _executed_code_commit(controller, details)
-    round_number = int(state.get("research_round", -1) or -1)
+    round_number = _coerce_research_round_number(state)
     research_round_id = (
         f"job-{state.get('job', 0)}-round-{round_number}" if round_number >= 0 else ""
     )
@@ -763,6 +764,16 @@ def _coerce_int_or_none(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _coerce_research_round_number(state: dict[str, Any]) -> int:
+    raw_round = state.get("research_round", -1)
+    if raw_round in (None, ""):
+        return -1
+    try:
+        return int(raw_round)
+    except (TypeError, ValueError):
+        return -1
 
 
 def _find_duplicate_artifact_output(
@@ -865,7 +876,7 @@ def _build_export_entry(
     contract = _contract_from_sidecar(controller, config)
     identity = _resolve_identity(contract, config)
     run_id = f"job-{state.get('job', 0)}-run-{next_run}-{identity}"
-    round_number = int(state.get("research_round", -1) or -1)
+    round_number = _coerce_research_round_number(state)
     research_round_id = (
         f"job-{state.get('job', 0)}-round-{round_number}" if round_number >= 0 else ""
     )

@@ -190,6 +190,33 @@ def test_build_db_record_sets_round_and_backtest_run_metadata(tmp_path: Path) ->
     assert record.is_baseline is False
 
 
+def test_build_db_record_preserves_round_zero_baseline_identity(tmp_path: Path) -> None:
+    controller = SimpleNamespace(
+        ctx=SimpleNamespace(
+            current_contract=None, parent_backtest_run_id="", latest_config_contents={}
+        ),
+        family=SimpleNamespace(name="ema"),
+        root=tmp_path,
+        current_commit=lambda: "abc1234",
+    )
+    state = {"job": 9, "research_round": 0, "_last_round_usage": {}}
+
+    record = _build_db_record(
+        controller,
+        config="runtime/jobs/job-9/research/round-0-baseline/selected_config.json",
+        decision="keep",
+        details={"profit_factor": 1.4, "trade_count": 12},
+        analysis={"trade_analysis": {"verdict": {"status": "accepted", "summary": "ok"}}},
+        runtime_config={"ema_length": 7},
+        fallback_experiment_id="fallback",
+        state=state,
+    )
+
+    assert record.research_round_number == 0
+    assert record.is_baseline is True
+    assert record.backtest_run_id == "job-9-round-0-backtest"
+
+
 def test_build_export_entry_uses_backtest_run_type(tmp_path: Path) -> None:
     controller = SimpleNamespace(
         ctx=SimpleNamespace(current_contract=None, execution_root=None),
@@ -210,3 +237,26 @@ def test_build_export_entry_uses_backtest_run_type(tmp_path: Path) -> None:
     assert entry["type"] == "backtest_run"
     assert entry["backtest_run_id"] == "job-1-round-1-backtest"
     assert entry["research_round_id"] == "job-1-round-1"
+
+
+def test_build_export_entry_preserves_round_zero_baseline_identity(tmp_path: Path) -> None:
+    controller = SimpleNamespace(
+        ctx=SimpleNamespace(current_contract=None, execution_root=None),
+        root=tmp_path,
+        current_commit=lambda: "abc1234",
+    )
+    entry = _build_export_entry(
+        controller,
+        config="runtime/jobs/job-1/research/round-0-baseline/selected_config.json",
+        metric=1.2,
+        decision="keep",
+        details={"profit_factor": 1.2, "git_sha": "abc1234"},
+        asi={"artifact_dir": "runtime/jobs/job-1/research/round-0-baseline/backtest"},
+        next_run=1,
+        state={"job": 1, "research_round": 0},
+    )
+
+    assert entry["backtest_run_id"] == "job-1-round-0-backtest"
+    assert entry["research_round_id"] == "job-1-round-0"
+    assert entry["research_round_number"] == 0
+    assert entry["is_baseline"] is True

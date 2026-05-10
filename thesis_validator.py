@@ -628,11 +628,11 @@ def normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
     if isinstance(dimension, str):
         normalized["mechanism_dimension"] = _normalize_mechanism_dimension_name(dimension)
     normalized["expected_effects"] = [
-        _normalize_expected_effect(effect) for effect in normalized.get("expected_effects", [])
+        _normalize_expected_effect(effect) for effect in (normalized.get("expected_effects") or [])
     ]
     normalized["disqualifiers"] = [
         _normalize_disqualifier(disqualifier)
-        for disqualifier in normalized.get("disqualifiers", [])
+        for disqualifier in (normalized.get("disqualifiers") or [])
     ]
     return normalized
 
