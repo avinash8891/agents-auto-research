@@ -90,4 +90,29 @@ ORB_RESEARCH_SPEC = FamilyResearchSpec(
     thesis_json_hint='"strategy_family": "orb"',
     allowed_config_keys=frozenset(supported_config_keys()) - {"_research_source"},
     resolution_config_keys=("timeframe_minutes",),
+    # Concept regex map for Stage 2 hypothesis-config alignment scoring.
+    # ORB uses a flatter model than EMA: every supported key is conductor-
+    # proposable directly via config_changes. Patterns matched (case-insensitive)
+    # against hypothesis+mechanism. Empty for ORB-specific keys means
+    # "uncatalogued — fall through to benefit of doubt"; populate as the
+    # strategy author identifies stable concept-to-key mappings.
+    key_concepts={
+        # SHARED with EMA — keep in sync (see EMA_RESEARCH_SPEC.key_concepts).
+        # test_shared_concept_pattern_consistency_across_families enforces this.
+        "rr_ratio": (
+            r"risk.{0,3}reward",
+            r"target.{0,5}ratio",
+            r"r.?r.?ratio",
+            r"profit target",
+        ),
+        # SHARED with EMA — keep in sync (see EMA_RESEARCH_SPEC.key_concepts).
+        # test_shared_concept_pattern_consistency_across_families enforces this.
+        "max_hold_bars": (
+            r"hold.{0,5}(duration|bar|time|period)",
+            r"time.?stop",
+            r"decay",
+            r"dissipat",
+            r"max.{0,3}hold",
+        ),
+    },
 )

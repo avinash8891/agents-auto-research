@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -16,6 +16,14 @@ class FamilyResearchSpec:
     thesis_json_hint: str
     allowed_config_keys: frozenset[str]
     resolution_config_keys: tuple[str, ...] = ()
+    # Per-family map from runtime-config key → list of regex patterns matched
+    # against the lowercased hypothesis+mechanism. Used by Stage 2's
+    # hypothesis-config alignment check (`check_hypothesis_alignment`) to
+    # decide whether each compiled-config key relates to the thesis story.
+    # Empty default means the alignment check fails open for that family —
+    # the strategy author opts in by populating this field when they want
+    # alignment scoring to apply.
+    key_concepts: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 def get_family_research_spec(name: str) -> FamilyResearchSpec:

@@ -76,4 +76,93 @@ IMPORTANT:
         }
     ),
     resolution_config_keys=("timeframe_short", "timeframe_long"),
+    # Concept regex map for Stage 2 hypothesis-config alignment scoring.
+    #
+    # EMA uses a deliberate two-layer model. `allowed_config_keys` (above)
+    # restricts what the *conductor* can propose directly via config_changes.
+    # Other keys (trail_after_r, gap_exclude*, min/max_stop_distance_pct,
+    # max_hold_bars, opening_info_*) reach runtime_config via the *compiler's*
+    # primitive injection layer (see strategies/ema/contract.py). The strategy
+    # runtime reads the union.
+    #
+    # Stage 2 alignment scores against the resolved runtime_config — which
+    # contains keys from BOTH layers — so key_concepts must cover both.
+    # Restricting key_concepts to `allowed_config_keys` would silently disable
+    # alignment scoring on every primitive-injected key.
+    #
+    # Patterns are matched (case-insensitive) against hypothesis+mechanism.
+    key_concepts={
+        "entry_cutoff_time": (
+            r"entry.{0,10}tim",
+            r"cutoff",
+            r"time window",
+            r"entry window",
+            r"morning",
+            r"first.{0,5}\d+.{0,5}min",
+            r"open.{0,10}bar",
+        ),
+        "max_trades_per_day": (
+            r"max.{0,5}trade",
+            r"one.{0,5}trade.{0,10}day",
+            r"single.{0,5}trade.{0,10}day",
+            r"first.{0,10}trade",
+            r"first.{0,10}executed.{0,10}trade",
+            r"first.{0,10}setup",
+            r"only.{0,10}first",
+            r"position limit",
+            r"portfolio",
+            r"daily.{0,5}cap",
+            r"trade.{0,5}capacity",
+            r"number of trades",
+        ),
+        # SHARED with ORB — keep in sync (see ORB_RESEARCH_SPEC.key_concepts).
+        # test_shared_concept_pattern_consistency_across_families enforces this.
+        "rr_ratio": (
+            r"risk.{0,3}reward",
+            r"target.{0,5}ratio",
+            r"r.?r.?ratio",
+            r"profit target",
+        ),
+        "trail_after_r": (
+            r"trail",
+            r"let.{0,10}run",
+            r"continuation",
+            r"runner",
+        ),
+        # SHARED with ORB — keep in sync (see ORB_RESEARCH_SPEC.key_concepts).
+        # test_shared_concept_pattern_consistency_across_families enforces this.
+        "max_hold_bars": (
+            r"hold.{0,5}(duration|bar|time|period)",
+            r"time.?stop",
+            r"decay",
+            r"dissipat",
+            r"max.{0,3}hold",
+        ),
+        "gap_filter": (r"gap", r"overnight"),
+        "gap_pct": (r"gap",),
+        "gap_exclude": (r"gap", r"overnight.{0,10}(gap|move)"),
+        "gap_exclude_pct": (r"gap", r"overnight.{0,10}(gap|move)"),
+        "min_stop_distance_pct": (
+            r"stop.{0,5}(distance|loss|size)",
+            r"noise.{0,5}(stop|exit)",
+            r"tight.{0,5}stop",
+            r"slippage",
+        ),
+        "max_stop_distance_pct": (
+            r"stop.{0,5}(distance|loss|size)",
+            r"extreme.{0,5}(move|candle)",
+            r"wide.{0,5}stop",
+            r"candle.{0,5}size",
+        ),
+        "use_range_shift": (
+            r"range.{0,5}shift",
+            r"lookback",
+            r"adaptive",
+            r"context.{0,5}window",
+        ),
+        "range_shift_lookback": (r"range.{0,5}shift", r"lookback", r"adaptive"),
+        "timeframe_short": (r"timeframe", r"bar.{0,3}size", r"resolution", r"5.?min"),
+        "timeframe_long": (r"timeframe", r"bar.{0,3}size", r"resolution", r"15.?min"),
+        "direction_bias": (r"direction", r"long.only", r"short.only", r"bias"),
+    },
 )

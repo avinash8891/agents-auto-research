@@ -32,20 +32,62 @@ def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
             "Connects wick-only false-break evidence with engine-level close "
             "confirmation rather than another nearby threshold change."
         ),
+        "closest_prior_theses_considered": ["prior_signal_quality_baseline"],
+        "orthogonality_defense": (
+            "This thesis changes engine logic for entry confirmation, a different "
+            "lever family than threshold-tuning the existing entry timing."
+        ),
+        "evidence_strength": "mixed",
+        "alternatives_considered": [
+            {
+                "mechanism": "wider stop-distance cap",
+                "why_rejected": "would not address the wick-only false-break root cause directly",
+            },
+            {
+                "mechanism": "session-time entry filter",
+                "why_rejected": "is a proxy for the wick problem rather than the structural fix",
+            },
+        ],
+        "evidence_citations": [
+            {"source": "web_search", "citation": "Cont et al on order-flow imbalance"},
+            {
+                "source": "analyst",
+                "citation": "round-3 analyst: wick-only stop-outs are 37% of total stops",
+            },
+        ],
+        "source_code_verification": (
+            "strategies/ema/signals.py:detect_pullback contains the entry filter; "
+            "the close-confirmation gate would be added here as an additional check."
+        ),
         "config_changes": {"requires_engine_change": True},
         "expected_effects": [
             {
                 "metric": "profit_factor",
                 "direction": "increase",
                 "rationale": "Fewer false-break entries should improve realized edge.",
-            }
+            },
+            {
+                "metric": "trade_count",
+                "direction": "decrease_or_same",
+                "rationale": "Tighter entry filtering should not collapse trade frequency.",
+            },
         ],
         "disqualifiers": [
             {
                 "name": "trade_count_collapse",
                 "condition": "trade_count decreases by more than 50 percent",
                 "severity": "hard_fail",
-            }
+                "kind": "metric_threshold",
+            },
+            {
+                "name": "no_close_confirmation_separation",
+                "condition": (
+                    "If wick-only stop-out rate is no lower for close-confirmed entries, "
+                    "the close-confirmation mechanism does not hold."
+                ),
+                "severity": "hard_fail",
+                "kind": "mechanism_evidence",
+            },
         ],
         "requires_code_change": True,
         "requested_primitives": ["close_confirmed_entry_gate"],
@@ -85,6 +127,86 @@ def test_config_key_overlap_still_rejects_real_overlapping_keys_with_sentinel() 
     assert is_duplicate is True
     assert "entry_cutoff_time" in reason
     assert "requires_engine_change" not in reason
+
+
+def test_config_key_overlap_ignores_requires_new_config_keys_sentinel() -> None:
+    """Production data showed false 100% overlap on `requires_new_config_keys` sentinel.
+
+    Two unrelated theses both setting `requires_new_config_keys: True` (a metadata
+    flag indicating "this thesis needs new config keys built") were flagged as
+    100% duplicates. The flag is bookkeeping, not a real config key.
+    """
+    is_duplicate, reason = config_key_overlap(
+        {"requires_new_config_keys": True},
+        [
+            {
+                "thesis_id": "prior_thesis_with_same_sentinel",
+                "config_changes": {"requires_new_config_keys": True},
+            }
+        ],
+    )
+
+    assert is_duplicate is False, f"sentinel-only theses should not overlap; got: {reason}"
+    assert reason == ""
+
+
+def test_config_key_overlap_ignores_requires_engine_change_prefix_variants() -> None:
+    """Production data showed false 100% overlap on `requires_engine_change__<descriptor>`.
+
+    Two theses both setting `requires_engine_change__<same_descriptor>: True` as
+    their sole config_change get flagged as duplicates. The descriptor is a label
+    for what engine change is needed, not a real config key.
+    """
+    is_duplicate, reason = config_key_overlap(
+        {"requires_engine_change__bucket_stop_distance_filter": True},
+        [
+            {
+                "thesis_id": "prior_with_same_engine_change_label",
+                "config_changes": {
+                    "requires_engine_change__bucket_stop_distance_filter": True,
+                },
+            }
+        ],
+    )
+
+    assert (
+        is_duplicate is False
+    ), f"requires_engine_change__* prefix is a sentinel; should not overlap; got: {reason}"
+    assert reason == ""
+
+
+def test_validate_base_config_path_rejects_runtime_paths_with_clear_hint() -> None:
+    """Production agent constructed paths like `runtime/jobs/job-25/experiments/.../runtime_config.json`.
+
+    The error must explicitly flag runtime/ paths and tell the agent not to
+    construct paths from runtime artifacts.
+    """
+    from thesis_validator import _validate_base_config_path
+
+    bad_path = "runtime/jobs/job-25/experiments/open_subregime/runtime_config.json"
+    with pytest.raises(ThesisValidationError) as excinfo:
+        _validate_base_config_path(bad_path)
+    msg = str(excinfo.value)
+    assert "runtime/" in msg, f"error must mention runtime/ explicitly; got: {msg}"
+    assert (
+        "construct" in msg.lower() or "do not" in msg.lower()
+    ), f"error must instruct the agent not to construct paths; got: {msg}"
+
+
+def test_validate_base_config_path_accepts_configs_path() -> None:
+    from thesis_validator import _validate_base_config_path
+
+    _validate_base_config_path("configs/ema_base.yaml")  # should not raise
+
+
+# NOTE: A historical rejection cited shared keys ['new_config_keys_needed'] as
+# a sentinel-only false positive. The forward fix lives upstream of overlap:
+# `validate_thesis_dict` rejects `new_config_keys_needed` at top-level of
+# `config_changes` via the CONFIG_CHANGES_METADATA_KEYS check (covered by
+# `test_validate_thesis_rejects_new_config_keys_needed_inside_config_changes`).
+# When `new_config_keys_needed` is a parent dict of real config keys, recursion
+# into its children is intentional (covered by
+# `test_config_key_overlap_rejects_same_nested_engine_change_key`).
 
 
 def test_config_key_overlap_compares_nested_engine_change_keys() -> None:
@@ -210,7 +332,14 @@ def test_validate_thesis_rejects_prior_best_language_with_base_config_path() -> 
     thesis["base_contract_id"] = "05287d64f61f"
     thesis["base_config_path"] = "experiments/05287d64f61f/runtime_config.json"
 
-    with pytest.raises(ThesisValidationError, match="legacy experiments/ inheritance paths"):
+    # Stage 1 helper order is structural → thesis_quality → config_validity, so the
+    # banned-language (thesis_quality) check fires before the base_config_path
+    # (config_validity) check. Either rejection is correct; the inheritance message
+    # is the canonical thesis-quality phrasing.
+    with pytest.raises(
+        ThesisValidationError,
+        match="(legacy experiments/ inheritance paths|current-best/prior-winner inheritance)",
+    ):
         validate_thesis_dict(thesis, prior_theses=[])
 
 
@@ -230,7 +359,13 @@ def test_validate_thesis_rejects_job_scoped_experiment_base_config_path() -> Non
     thesis["base_contract_id"] = "05287d64f61f"
     thesis["base_config_path"] = "runtime/jobs/job-26/experiments/05287d64f61f/runtime_config.json"
 
-    with pytest.raises(ThesisValidationError, match="legacy experiments/ inheritance paths"):
+    # Stage 1 helper order is structural → thesis_quality → config_validity. The
+    # banned-language (thesis_quality) check fires first when both conditions are
+    # present; the runtime/ message asserts when only the path is bad.
+    with pytest.raises(
+        ThesisValidationError,
+        match="(Do not construct|current-best/prior-winner inheritance)",
+    ):
         validate_thesis_dict(thesis, prior_theses=[])
 
 
@@ -509,6 +644,7 @@ def test_hypothesis_alignment_accepts_first_trade_only_for_max_trades_per_day() 
             "Capture the opening dislocation only and avoid lower-quality subsequent setups later in the day."
         ),
         config_changes={"max_trades_per_day": 1},
+        family_name="ema",
     )
 
     assert score == 1.0
