@@ -24,22 +24,19 @@ from research_types import StructuredRejection
 RejectionStage = Literal["stage_1", "stage_2", "compile"]
 
 
-def _research_round_thesis_root(
-    root: Path, *, job: int, round_number: int, thesis_id: str
-) -> Path:
+def _research_round_thesis_root(root: Path, *, job: int, round_number: int, thesis_id: str) -> Path:
     """Return `runtime/jobs/job-N/research/round-M/theses/<thesis_id>/`."""
     if not thesis_id:
         raise ValueError("thesis_id must be non-empty")
     return research_round_root(root, job, round_number) / "theses" / thesis_id
 
 
-def rejection_artifact_path(
-    root: Path, *, job: int, round_number: int, thesis_id: str
-) -> Path:
+def rejection_artifact_path(root: Path, *, job: int, round_number: int, thesis_id: str) -> Path:
     """Return the rejection.json path for the given (job, round, thesis_id)."""
-    return _research_round_thesis_root(
-        root, job=job, round_number=round_number, thesis_id=thesis_id
-    ) / "rejection.json"
+    return (
+        _research_round_thesis_root(root, job=job, round_number=round_number, thesis_id=thesis_id)
+        / "rejection.json"
+    )
 
 
 def write_rejection(root: Path, *, job: int, rejection: StructuredRejection) -> Path:
@@ -146,9 +143,7 @@ def get_rejection(
     root: Path, *, job: int, round_number: int, thesis_id: str
 ) -> StructuredRejection | None:
     """Return one rejection record, or None if not found."""
-    path = rejection_artifact_path(
-        root, job=job, round_number=round_number, thesis_id=thesis_id
-    )
+    path = rejection_artifact_path(root, job=job, round_number=round_number, thesis_id=thesis_id)
     if not path.exists():
         return None
     try:
@@ -157,9 +152,7 @@ def get_rejection(
         return None
 
 
-def rejection_pattern_summary(
-    root: Path, *, job: int, window_rounds: int = 10
-) -> list[dict]:
+def rejection_pattern_summary(root: Path, *, job: int, window_rounds: int = 10) -> list[dict]:
     """Group recent rejections by rejection_code and return counts.
 
     `window_rounds` defines how many of the most-recent round numbers are
@@ -199,13 +192,12 @@ _CHALLENGE_REQUIRED_KEYS = (
 )
 
 
-def challenge_artifact_path(
-    root: Path, *, job: int, round_number: int, thesis_id: str
-) -> Path:
+def challenge_artifact_path(root: Path, *, job: int, round_number: int, thesis_id: str) -> Path:
     """Path of challenge.json for one (job, round, thesis_id), next to rejection.json."""
-    return _research_round_thesis_root(
-        root, job=job, round_number=round_number, thesis_id=thesis_id
-    ) / "challenge.json"
+    return (
+        _research_round_thesis_root(root, job=job, round_number=round_number, thesis_id=thesis_id)
+        / "challenge.json"
+    )
 
 
 def write_challenge(root: Path, *, job: int, payload: dict) -> Path:
@@ -216,14 +208,10 @@ def write_challenge(root: Path, *, job: int, payload: dict) -> Path:
     """
     missing = [k for k in _CHALLENGE_REQUIRED_KEYS if k not in payload]
     if missing:
-        raise ValueError(
-            f"validator_challenge payload missing required keys: {missing}"
-        )
+        raise ValueError(f"validator_challenge payload missing required keys: {missing}")
 
     enriched = dict(payload)
-    enriched.setdefault(
-        "created_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    )
+    enriched.setdefault("created_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
 
     target = challenge_artifact_path(
         root,
@@ -252,23 +240,23 @@ def compute_escalation_directive(root: Path, *, job: int) -> str:
     summary_10 = rejection_pattern_summary(root, job=job, window_rounds=10)
 
     cluster_count_7 = next(
-        (row["count"] for row in summary_7 if row["rejection_code"] == "theme_cluster_fixation"),
+        (row["count"] for row in summary_7 if row["rejection_code"] == "thesis_quality_theme_cluster_fixation"),
         0,
     )
     cluster_count_10 = next(
-        (row["count"] for row in summary_10 if row["rejection_code"] == "theme_cluster_fixation"),
+        (row["count"] for row in summary_10 if row["rejection_code"] == "thesis_quality_theme_cluster_fixation"),
         0,
     )
 
     if cluster_count_10 >= 6:
         return (
-            "HALT ESCALATION: theme_cluster_fixation has fired "
+            "HALT ESCALATION: thesis_quality_theme_cluster_fixation has fired"
             f"{cluster_count_10} times in the last 10 rounds. The agent is stuck "
             "in a single mechanism cluster. Loop should halt for human review."
         )
     if cluster_count_7 >= 4:
         return (
-            "ESCALATION: theme_cluster_fixation has fired "
+            "ESCALATION: thesis_quality_theme_cluster_fixation has fired"
             f"{cluster_count_7} times in the last 7 rounds. "
             "This round MUST propose from a different mechanism dimension; "
             "any thesis whose theme_keywords overlap the dominant cluster will "
@@ -318,9 +306,7 @@ def render_rejection_block(root: Path, *, job: int, current_round: int) -> str:
         parts.append("RECENT VALIDATOR PATTERNS (last 10 rounds)")
         for row in summary:
             parts.append(f"  {row['count']} × {row['rejection_code']}")
-        parts.append(
-            "  Tools: list_rejections, get_rejection, rejection_pattern_summary"
-        )
+        parts.append("  Tools: list_rejections, get_rejection, rejection_pattern_summary")
 
     return "\n".join(parts)
 

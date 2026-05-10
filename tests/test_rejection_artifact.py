@@ -10,7 +10,9 @@ import pytest
 from research_types import StructuredRejection
 
 
-def _sample_rejection(round_no: int = 3, thesis_id: str = "ema-rsi-filter-v1") -> StructuredRejection:
+def _sample_rejection(
+    round_no: int = 3, thesis_id: str = "ema-rsi-filter-v1"
+) -> StructuredRejection:
     return StructuredRejection(
         rejected_at="2026-05-09T13:45:22Z",
         round=round_no,
@@ -143,7 +145,7 @@ def test_build_rejection_from_validation_error_falls_back_to_inferred_code() -> 
         exc, round_number=2, thesis_id="ema-foo", stage="stage_1"
     )
 
-    assert rejection.rejection_code == "config_key_overlap_real"
+    assert rejection.rejection_code == "config_validity_config_key_overlap_real"
 
 
 def _seed_rejections(root: Path, *, job: int, entries: list[dict]) -> None:

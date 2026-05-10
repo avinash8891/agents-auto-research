@@ -1085,3 +1085,231 @@ not three. fix all of them everything in the old prompt should be in harness. if
 ---
 
 did we over enringer the harness have a feeling
+
+---
+
+yes roll back and keep them in prompt ony. if we want the roll back again how should we do the roll back now
+
+---
+
+are you sure the prompot and ahrness are in best shape now for our objective
+
+---
+
+why is stage 2 validator empty?o ld validator is in stage 2 right?
+
+---
+
+so you put both thesis validation and config validation in same stage now i.e both new theiss validation hanress and old validation code in same file
+
+---
+
+give me a prompt to do this in new session
+
+---
+
+
+⏺ You're right and I was wrong. Let me be precise.
+
+  What's actually in each stage
+
+  Stage 1 (validate_stage_1 → calls validate_research_thesis):
+  - All structural checks (missing fields, mechanism_dimension validity, emergent dimension fields)
+  - All language regex (banned phrases, current-best language)
+  - base_config_path validation (incl. runtime/ rejection)
+  - config_changes vs requires_code_change consistency
+  - requested_primitives required when code change
+  - Jaccard config-key overlap
+  - B1 theme cluster fixation
+  - B3 needs_code starvation
+  - B2 direction whipsaw
+  - B5 mechanism_evidence disqualifier
+  - Same-dimension novelty explanation
+  - L5 neighboring threshold (post-rollback, still kept)
+  - Don't repeat thesis_id (post-rollback, still kept)
+  - Hypothesis-config alignment scoring at threshold 0.4 ← this is the legacy §14 "implementation gap" check,
+  sitting in Stage 1
+
+  Stage 2 (validate_stage_2(contract)):
+  - Literally return contract. No-op.
+
+  Why this is wrong
+
+  The hypothesis-config alignment check (line 1065-1074) is the most important "does the implementation match
+  the mechanism" rule. By any sensible split, it belongs in Stage 2:
+
+  - Stage 1 = "is the thesis well-formed?" (structural)
+  - Stage 2 = "does the resolved config actually test what the thesis claims?" (semantic, post-compile)
+
+  Today the alignment check runs against raw config_changes from the agent's output, not against the compiled
+  BacktestContract.runtime_config. That's looser than it should be:
+
+  - The compiler may rename, normalize, or reject config keys. If a key gets dropped during compile, the
+  alignment check (run pre-compile) doesn't notice.
+  - Diagnostics referenced in required_diagnostics may or may not actually exist in the compiled config.
+  There's no post-compile check that they do.
+
+  So my earlier claim was wrong twice
+
+  I told you: "Stage 2 is empty, delete it as overhead."
+
+  The correct framing is: Stage 2 is empty because I didn't move the rules that should be there. The split
+  itself is right; the population is wrong.
+
+  What should happen
+
+  Two real Stage 2 rules exist in the legacy material that we never implemented:
+
+  1. Re-run alignment scoring against the compiled runtime_config, not raw config_changes. Catches
+  compile-stage key transformations.
+  2. required_diagnostics presence check: every key in thesis.required_diagnostics must appear in the compiled
+  BacktestContract.required_diagnostic_specs or in the runtime config's diagnostic surface. If the agent asks
+  for pf_by_opening_drive_bucket but the compiler couldn't wire that diagnostic, fail at validation, not at
+  backtest evaluation time.
+
+  Both genuinely need the compiled contract; both are real Stage 2 work.
+
+  Revised recommendation (correcting my earlier answer)
+
+  Don't delete the Stage 2 split. Populate it correctly:
+
+  - Move hypothesis-config alignment from Stage 1 → Stage 2, retargeting it at contract.runtime_config instead
+  of thesis.config_changes.
+  - Add required_diagnostics presence check at Stage 2.
+
+  That gives Stage 2 a real job and makes the split earn its keep. The per-stage retry budget then makes sense
+  too: Stage 1 failures (3 retries) are the agent fixing structural mistakes; Stage 2 failures (2 retries) are
+  the agent fixing what the compiler told it.
+
+  So your question reframed
+
+  You asked "old validator is in stage 2 right?" — the answer is no, the OLD validator's most important
+  post-compile-shaped check is currently in Stage 1. It works because that check happens to not strictly need
+  the compiled output, but it's in the wrong stage semantically and misses post-compile transformations.
+
+  I'd correct it. Want me to do the alignment-move + required_diagnostics-check, and keep Stage 2 alive for
+  real work? Or accept the looseness and delete the split?
+
+✻ Cooked for 1m 1s
+
+❯ so you put both thesis validation and config validation in same stage now i.e both new theiss validation
+  hanress and old validation code in same file
+
+⏺ You're right, and that's a real code-organization problem. Let me lay out exactly what's in there now and
+  what the cleaner split would be.
+
+  What's actually mixed in validate_research_thesis today
+
+  Three different kinds of checks run in one function under the Stage 1 label:
+
+  Category: A. Schema/structural
+  Examples: missing thesis_id, missing mechanism, mechanism_dimension is in known set, requested_primitives
+    required when code change
+  Belongs in: Stage 1 (pre-compile, mechanical)
+  ────────────────────────────────────────
+  Category: B. Thesis quality (about the agent's reasoning)
+  Examples: B1 theme cluster, B3 needs_code starvation, B5 mechanism_evidence disqualifier, B2 whipsaw,
+    dimension_novelty, banned-language regex, don't-repeat thesis_id
+  Belongs in: Stage 1 (pre-compile, judgmental)
+  ────────────────────────────────────────
+  Category: C. Config validity (about whether config_changes are coherent)
+  Examples: Jaccard overlap, metadata-key leak, base_config_path validation, hypothesis-config alignment
+    scoring, L5 neighboring threshold
+  Belongs in: Could be Stage 1 OR Stage 2 — alignment scoring is the gray case
+  ────────────────────────────────────────
+  Category: D. Post-compile (rules that need the compiled BacktestContract)
+  Examples: required_diagnostics presence in resolved config, re-run alignment against runtime_config instead
+  of
+    raw config_changes
+  Belongs in: Stage 2 (currently empty)
+
+  Today, A + B + C all sit in one call (validate_research_thesis), labeled Stage 1. D is empty (Stage 2).
+
+  Two real problems
+
+  1. Hypothesis-config alignment is in the wrong place
+
+  check_hypothesis_alignment runs against the raw config_changes dict the agent submitted. But:
+  - The compiler may rename or drop keys.
+  - The agent might reference pf_by_opening_drive_bucket in required_diagnostics and the compiler may or may
+  not actually wire it.
+  - A thesis that aligns at Stage 1 may have a misaligned compiled output.
+
+  Honest fix: the alignment check should re-run at Stage 2 against contract.runtime_config, not against raw
+  config_changes.
+
+  2. Thesis quality and config validity are conceptually different
+
+  - "B1 theme cluster fixation" is about whether the AGENT is fixating (research-process quality)
+  - "Jaccard config-key overlap" is about whether the AGENT'S CONFIG is duplicating prior work (artifact
+  validity)
+
+  They both fire in Stage 1 today. Same call, same retry budget, same rejection-code namespace. That's a code
+  smell, not a bug — both checks are correct, but they belong in different sections of the validator even if
+  they run in the same stage.
+
+  Cleaner organization (no new stage needed)
+
+  Same thesis_validator.py file, three internal sections clearly named:
+
+  # ── Section A: structural ──────────────────────────────────
+  def _validate_structural(thesis): ...
+
+  # ── Section B: thesis quality (pattern-of-reasoning rules) ──
+  def _validate_thesis_quality(thesis, prior_theses): ...
+
+  # ── Section C: config validity (artifact-coherence rules) ──
+  def _validate_config_validity(thesis, prior_theses): ...
+
+  # ── Stage 1 entry point: A + B + C, in order ──────────────
+  def validate_stage_1(thesis, prior_theses):
+      _validate_structural(thesis)
+      _validate_thesis_quality(thesis, prior_theses)
+      _validate_config_validity(thesis, prior_theses)
+
+  # ── Stage 2: post-compile ──────────────────────────────────
+  def validate_stage_2(contract):
+      _check_alignment_against_runtime_config(contract)
+      _check_required_diagnostics_present(contract)
+
+  That gets you:
+  - Categories visibly separated (greppable, rejection codes can be namespaced by section)
+  - Stage 2 actually does work (alignment + diagnostics presence)
+  - No new stage proliferation
+  - Retry budget still per-stage, with two real stages
+
+  Should we do this now?
+
+  Two options, depending on your appetite:
+
+  Minimal (1-2 hours): move check_hypothesis_alignment from validate_research_thesis to
+  validate_stage_2(contract), retargeting it at contract.runtime_config. Add
+  _check_required_diagnostics_present at Stage 2. Leave Stage 1 organization as-is for now. Tests pass, Stage 2
+   has real work.
+
+  Cleaner (half a day): also reorganize Stage 1 into the three sub-section helpers above. Mostly mechanical
+  refactoring; rejection_code values get a section prefix (structural_*, thesis_quality_*, config_validity_*).
+  Easier to grep and to extend.
+
+  Either is reversible by git revert.
+
+  To your direct question — "old validation in same stage as new validation" — yes, currently true. The old
+  validator (Jaccard, alignment, base_config_path) and the new thesis-quality rules (B1, B3, B5) are sharing
+  one call. They're both correct but they're in the wrong place by category. The minimal fix above separates
+  them by stage where they actually belong. does your prompot contain all of them
+
+---
+
+give me one single prompot
+
+---
+
+can you check this session/conversation and confrim if everything we need to change about validator is in this prompot. ground your truth. not memory
+
+---
+
+expand the prompt
+
+---
+
+the harness shouldnt be stratey specifcic. it should be generic. example your l1 vaidator ontime.
