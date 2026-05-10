@@ -258,13 +258,13 @@ def compute_escalation_directive(root: Path, *, job: int) -> str:
 
     if cluster_count_10 >= 6:
         return (
-            "HALT ESCALATION: thesis_quality_theme_cluster_fixation has fired"
+            "HALT ESCALATION: thesis_quality_theme_cluster_fixation has fired "
             f"{cluster_count_10} times in the last 10 rounds. The agent is stuck "
             "in a single mechanism cluster. Loop should halt for human review."
         )
     if cluster_count_7 >= 4:
         return (
-            "ESCALATION: thesis_quality_theme_cluster_fixation has fired"
+            "ESCALATION: thesis_quality_theme_cluster_fixation has fired "
             f"{cluster_count_7} times in the last 7 rounds. "
             "This round MUST propose from a different mechanism dimension; "
             "any thesis whose theme_keywords overlap the dominant cluster will "

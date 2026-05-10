@@ -1119,7 +1119,8 @@ def _validate_config_validity(
     CONFIG_CHANGES_METADATA_KEYS leak check, the Jaccard config-key overlap
     rule, and the L5 neighboring-threshold rule.
     """
-    _validate_base_config_path(thesis.base_config_path)
+    if thesis.base_config_path:
+        _validate_base_config_path(thesis.base_config_path)
     if thesis.base_contract_id:
         raise ThesisValidationError(
             "base_contract_id is not allowed; research theses must start from the family "

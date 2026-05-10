@@ -422,6 +422,11 @@ class BacktestRunDB:
         from trace_sdk import current_hypothesis_id, get_run_id
 
         state = read_state(state_path)
+        raw_job = state.get("job")
+        try:
+            job_id = int(raw_job)
+        except (TypeError, ValueError):
+            job_id = 0
         resolved_hypothesis_id = hypothesis_id or current_hypothesis_id() or thesis_id
         with self._connect() as conn:
             conn.execute(
@@ -432,8 +437,8 @@ class BacktestRunDB:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    f"job-{state.get('job', 0)}-round-{round_number}",
-                    state.get("job"),
+                    f"job-{job_id}-round-{round_number}",
+                    job_id,
                     round_number,
                     get_run_id(),
                     resolved_hypothesis_id,
