@@ -61,6 +61,7 @@ async def run_web_research(
     research_round: int = 1,
     *,
     family: str,
+    job: int | None = None,
 ) -> dict[str, Any] | None:
     """Run the web researcher via the OpenAI Agents SDK (builds prompt, delegates to search)."""
     trace(
@@ -75,7 +76,12 @@ async def run_web_research(
         return result
 
     if result:
-        result = _persist_web_research_result(result, research_round, family)
+        result = _persist_web_research_result(
+            result,
+            research_round,
+            family,
+            job=job,
+        )
 
     return result
 
@@ -146,6 +152,7 @@ def run_web_research_sync(
     research_round: int = 1,
     *,
     family: str,
+    job: int | None = None,
 ) -> dict[str, Any] | None:
     return _run_coroutine_sync(
         run_web_research(
@@ -154,6 +161,7 @@ def run_web_research_sync(
             result_summary,
             research_round,
             family=family,
+            job=job,
         )
     )
 

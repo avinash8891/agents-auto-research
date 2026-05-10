@@ -15,6 +15,7 @@ from autoresearch_experiment import (
     _validate_backtest_request,
     artifact_dir_for,
 )
+from autoresearch_paths import resolve_config_path
 from backtest_run_db import BacktestRunRecord
 
 
@@ -56,6 +57,27 @@ def test_thesis_sidecar_path_prefers_round_selected_thesis_and_rejects_legacy(
     legacy.write_text("{}\n")
     with pytest.raises(ValueError, match="legacy experiment sidecar path is not supported"):
         _thesis_sidecar_path(controller, "configs/x.yaml", "slug")
+
+
+def test_resolve_config_path_rejects_paths_outside_allowed_roots(tmp_path: Path) -> None:
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime-home"
+    code_root.mkdir()
+    runtime_root.mkdir()
+
+    with pytest.raises(ValueError, match="escapes allowed roots"):
+        resolve_config_path(
+            "../escape.yaml",
+            code_root=code_root,
+            runtime_root=runtime_root,
+        )
+
+    with pytest.raises(ValueError, match="escapes allowed roots"):
+        resolve_config_path(
+            tmp_path.parent / "escape.yaml",
+            code_root=code_root,
+            runtime_root=runtime_root,
+        )
 
 
 def test_artifact_dir_for_uses_round_backtest_root(tmp_path: Path) -> None:
@@ -162,6 +184,7 @@ def test_build_db_record_sets_round_and_backtest_run_metadata(tmp_path: Path) ->
 
     assert isinstance(record, BacktestRunRecord)
     assert record.backtest_run_id == "job-9-round-2-backtest"
+    assert record.run_id == "job-9-round-2-backtest"
     assert record.research_round_id == "job-9-round-2"
     assert record.research_round_number == 2
     assert record.is_baseline is False

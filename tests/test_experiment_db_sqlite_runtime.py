@@ -100,3 +100,21 @@ def test_list_research_rounds_keeps_round_zero_baseline(tmp_path: Path) -> None:
 
     assert rows[0]["round_number"] == 0
     assert rows[0]["selected_thesis_id"] == "baseline"
+
+
+def test_best_by_metric_ignores_malformed_metric_values(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    first = _record(round_number=1, job=1)
+    first.validation_metrics["profit_factor"] = "not-a-number"
+    second = _record(round_number=2, job=1)
+    second.validation_metrics["profit_factor"] = 1.75
+
+    db.add(first)
+    db.add(second)
+
+    best = db.best_by_metric("profit_factor")
+
+    assert best is not None
+    assert best.run_id == second.run_id

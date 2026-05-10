@@ -371,10 +371,22 @@ def _build_round_index(
     best_record = None
     kept_records = [record for record in ordered if getattr(record, "accepted", False)]
     if kept_records:
-        best_record = max(
-            kept_records,
-            key=lambda record: (_record_metric(record, primary_metric_name) or float("-inf")),
-        )
+        direction = db.best_direction()
+        for record in kept_records:
+            candidate = _record_metric(record, primary_metric_name)
+            if candidate is None:
+                continue
+            if best_record is None:
+                best_record = record
+                continue
+            best_value = _record_metric(best_record, primary_metric_name)
+            if best_value is None:
+                best_record = record
+                continue
+            if direction == "higher" and candidate > best_value:
+                best_record = record
+            elif direction != "higher" and candidate < best_value:
+                best_record = record
     base_config_filename = (
         load_family(resolved_family).base_config_filename if resolved_family else ""
     )

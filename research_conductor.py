@@ -947,6 +947,28 @@ async def run_research_conductor(
 
     if parsed:
         theses = parsed.get("suggested_theses", [])
+        gate_error = _check_experiment_results_consulted(tools_called_this_round)
+        if gate_error is not None and not parsed.get("should_stop"):
+            trace(
+                "CONDUCTOR",
+                "validate failed: experiment results gate not satisfied",
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            _REFINEMENT_RECORDER.finish_session(
+                session_id=refinement_session["session_id"],
+                stopping_reason="invalid_output",
+                final_outcome="retry_required",
+            )
+            session_finished = True
+            return {
+                "status": "conductor_error",
+                "error": "experiment_results_not_consulted",
+                "validation_reason": gate_error,
+                "reasoning": parsed.get("reasoning", ""),
+                "suggested_theses": [],
+                "should_stop": False,
+            }
         if parsed.get("should_stop"):
             trace(
                 "CONDUCTOR",

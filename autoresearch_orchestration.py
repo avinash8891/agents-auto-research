@@ -42,15 +42,15 @@ RESEARCH_RETRY_BUILDER_ERROR_CODES = frozenset(
 
 def _controller_research_artifact_dir(controller: "AutoresearchController") -> str:
     research_dir = getattr(controller, "research_dir", None)
-    root = getattr(controller, "root", None)
-    if research_dir is None or root is None:
+    runtime_root = getattr(controller, "runtime_root", None) or getattr(controller, "root", None)
+    if research_dir is None or runtime_root is None:
         raise RuntimeError("Controller must provide job-scoped research_dir for research artifacts")
+    resolved = Path(research_dir).resolve()
+    runtime_root_resolved = Path(runtime_root).resolve()
     try:
-        return Path(research_dir).relative_to(Path(root)).as_posix()
-    except ValueError as exc:
-        raise RuntimeError(
-            f"Controller research_dir must be inside root: research_dir={research_dir} root={root}"
-        ) from exc
+        return resolved.relative_to(runtime_root_resolved).as_posix()
+    except ValueError:
+        return resolved.as_posix()
 
 
 def _builder_result_context(builder_result: dict[str, Any]) -> dict[str, Any]:
@@ -160,7 +160,11 @@ def _activate_builder_config(
             f"runtime/jobs/job-{state.get('job')}/research/round-{research_round}/backtest"
         )
     controller.ctx.parent_backtest_run_id = ""
-    base_root = Path(execution_root) if execution_root else controller.root
+    base_root = (
+        Path(execution_root)
+        if execution_root
+        else getattr(controller, "runtime_root", controller.root)
+    )
     config_path = base_root / generated_config
     thesis_path = config_path.parent / "selected_thesis.json"
     thesis_payload: dict[str, Any] = {"thesis_id": thesis_id}
@@ -515,14 +519,15 @@ def build_missing_primitives_for_state(
 ) -> dict[str, Any]:
     trace("BUILDER", f"start thesis={thesis_id}")
     trace("LOOP", f"building halted thesis={thesis_id}")
-    job_runtime_root = getattr(controller, "job_runtime_root", controller.root)
+    runtime_root = getattr(controller, "runtime_root", None) or controller.root
+    job_runtime_root = getattr(controller, "job_runtime_root", runtime_root)
     raw_job = state.get("job")
     try:
         job = int(raw_job) if raw_job is not None else None
     except (TypeError, ValueError):
         job = None
     round_root = (
-        research_round_root(controller.root, job, int(research_round))
+        research_round_root(runtime_root, job, int(research_round))
         if research_round is not None and job is not None
         else job_runtime_root
     )
@@ -567,7 +572,11 @@ def build_missing_primitives_for_state(
     if builder_result.get("status") == "completed" and builder_result.get("validation_passed"):
         generated_config = builder_result.get("generated_config")
         execution_root = builder_result.get("execution_root")
-        base_root = Path(execution_root) if isinstance(execution_root, str) else controller.root
+        base_root = (
+            Path(execution_root)
+            if isinstance(execution_root, str)
+            else getattr(controller, "runtime_root", controller.root)
+        )
         if generated_config and (base_root / generated_config).exists():
             _mark_builder_heartbeat_finished(state, thesis_id, "completed")
             _attach_builder_runtime_context(state, builder_result)
@@ -649,10 +658,11 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         raise RuntimeError(
             f"halted thesis resume requires a non-baseline research round, got {raw_round!r}"
         )
-    exp_dir = research_round_root(controller.root, int(state.get("job")), research_round)
+    runtime_root = getattr(controller, "runtime_root", None) or controller.root
+    exp_dir = research_round_root(runtime_root, int(state.get("job")), research_round)
     exp_dir.mkdir(parents=True, exist_ok=True)
     config_abspath = exp_dir / "selected_config.json"
-    config_path = serialize_config_path(config_abspath, code_root=controller.root)
+    config_path = serialize_config_path(config_abspath, code_root=runtime_root)
     _write_text_atomic(config_abspath, json.dumps(runtime, indent=2) + "\n")
     resumed_thesis = dict(raw_thesis)
     resumed_thesis.setdefault("thesis_id", halted_id)

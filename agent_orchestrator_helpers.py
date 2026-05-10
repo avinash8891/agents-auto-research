@@ -103,6 +103,8 @@ def _persist_web_research_result(
     result: dict[str, Any],
     research_round: int,
     family: str,
+    *,
+    job: int | None = None,
 ) -> dict[str, Any]:
     findings = result.get("findings", [])
     summary = result.get("summary", "")
@@ -116,13 +118,18 @@ def _persist_web_research_result(
         )
         + (f"\nGAPS: {gaps}" if gaps else "")
     )
+    diary_key = (
+        f"runtime/jobs/job-{job}/research"
+        if job is not None
+        else (f"runtime/research/round-{research_round}")
+    )
     return _persist_to_memory(
         result,
         wing="autoresearch",
         room=f"{family}-web-research",
         content=content,
         agent_name="web-researcher",
-        diary_key=f"runtime/jobs/job-{research_round}/research",
+        diary_key=diary_key,
         diary_summary=f"ROUND:{research_round}|FINDINGS:{len(findings)}|{summary[:100]}",
     )
 

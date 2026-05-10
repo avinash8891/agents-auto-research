@@ -68,6 +68,30 @@ def _artifact_dir_from_files(paths: tuple[str, str, str]) -> str:
     return ""
 
 
+def _load_json_object(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _load_metric_json(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    try:
+        parsed = json_loads_metric_sentinels(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 @dataclass
 class BacktestRunRecord:
     """One complete backtest-run record."""
@@ -695,16 +719,16 @@ class BacktestRunDB:
                 run_id=row["run_id"],
                 thesis_id=row["thesis_id"],
                 config_path=row["config_path"],
-                runtime_config=json.loads(row["runtime_config_json"]),
+                runtime_config=_load_json_object(row["runtime_config_json"]),
                 code_commit=row["code_commit"],
                 data_hash=row["data_hash"],
-                train_metrics=json_loads_metric_sentinels(row["train_metrics_json"]),
-                validation_metrics=json_loads_metric_sentinels(row["validation_metrics_json"]),
+                train_metrics=_load_metric_json(row["train_metrics_json"]),
+                validation_metrics=_load_metric_json(row["validation_metrics_json"]),
                 trade_count=row["trade_count"],
                 trades_file=row["trades_file"],
                 strategy_events_file=row["strategy_events_file"],
                 diagnostics_file=row["diagnostics_file"],
-                strategy_diagnostics=json.loads(row["strategy_diagnostics_json"]),
+                strategy_diagnostics=_load_json_object(row["strategy_diagnostics_json"]),
                 accepted=bool(row["accepted"]),
                 rejection_reason=row["rejection_reason"],
                 verdict_status=row["verdict_status"],
@@ -720,13 +744,13 @@ class BacktestRunDB:
                 hypothesis=row["hypothesis"],
                 mechanism=row["mechanism"],
                 job=row["job"],
-                usage=json.loads(row["usage_json"]),
+                usage=_load_json_object(row["usage_json"]),
                 backtest_run_id=row["backtest_run_id"],
                 research_round_id=row["research_round_id"],
                 research_round_number=row["research_round_number"],
                 is_baseline=bool(row["is_baseline"]),
             )
-            setattr(record, "_asi_export", json.loads(row["asi_json"]))
+            setattr(record, "_asi_export", _load_json_object(row["asi_json"]))
             setattr(record, "_description_export", row["description"])
             self._records.append(record)
         return self._records
@@ -807,9 +831,11 @@ class BacktestRunDB:
             best_val = best.validation_metrics.get(metric)
             if best_val is None:
                 best_val = best.train_metrics.get(metric)
-            if direction == "higher" and val > best_val:
+            candidate = _coerce_metric_float(val)
+            best_candidate = _coerce_metric_float(best_val)
+            if direction == "higher" and candidate > best_candidate:
                 best = r
-            elif direction != "higher" and val < best_val:
+            elif direction != "higher" and candidate < best_candidate:
                 best = r
         return best
 

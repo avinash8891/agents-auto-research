@@ -793,7 +793,7 @@ class AutoresearchController:
     def select_research_next_action(self, results: list[BacktestResultRecord]) -> dict[str, Any]:
         return _planning_select_research_next_action(
             self.root,
-            self.root,
+            self.runtime_root,
             self.family,
             self.builder_requests_dir,
             self.builder_requests_dir,
@@ -805,7 +805,7 @@ class AutoresearchController:
     def should_terminate(self, results: list[BacktestResultRecord] | None = None) -> bool:
         current_results = results if results is not None else self.read_results()
         return _planning_should_terminate(
-            self.root,
+            self.runtime_root,
             self.family,
             self.builder_requests_dir,
             self.research_dir,
@@ -820,7 +820,7 @@ class AutoresearchController:
             state,
             results,
             self.root,
-            self.root,
+            self.runtime_root,
             self.family,
             self.builder_requests_dir,
             self.builder_requests_dir,

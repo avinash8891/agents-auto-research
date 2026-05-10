@@ -122,6 +122,60 @@ def test_malformed_string_timestamp_does_not_crash_db_load(tmp_path: Path) -> No
     assert out[0].timestamp == ""
 
 
+def test_malformed_json_fields_do_not_crash_db_load(tmp_path: Path) -> None:
+    db_path = tmp_path / "backtest_runs.db"
+    BacktestRunDB(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM backtest_runs")
+        conn.execute(
+            """
+            INSERT INTO backtest_runs (
+                run_id, thesis_id, config_path, runtime_config_json, code_commit,
+                data_hash, train_metrics_json, validation_metrics_json, trade_count,
+                trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_backtest_run_id,
+                timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "bad-json",
+                "t",
+                "configs/ema_base.yaml",
+                "{not-json",
+                "abc1234",
+                "d",
+                "{still-bad",
+                "[]",
+                0,
+                "",
+                "",
+                "",
+                "oops",
+                0,
+                "",
+                "none",
+                "",
+                "",
+                "2026-01-01T00:00:00+00:00",
+                "ema",
+                "",
+                "",
+                0,
+                "not-json",
+                "[]",
+                "",
+            ),
+        )
+        conn.commit()
+
+    out = BacktestRunDB(db_path).all()
+    assert len(out) == 1
+    assert out[0].runtime_config == {}
+    assert out[0].strategy_diagnostics == {}
+    assert out[0].usage == {}
+    assert getattr(out[0], "_asi_export", {}) == {}
+
+
 def test_build_config_hash_matches_result_schema_hash_policy() -> None:
     config = {"b": 1, "a": 2}
 

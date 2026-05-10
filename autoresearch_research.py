@@ -686,10 +686,11 @@ def _on_ready_to_run(
     should_stop: bool,
 ) -> dict[str, Any]:
     """Wire the selected round thesis into the controller."""
+    runtime_root = getattr(controller, "runtime_root", None) or controller.root
     round_root = research_round_root(
-        controller.root, int(controller.read_state().get("job")), research_round
+        runtime_root, int(controller.read_state().get("job")), research_round
     )
-    config_path = (round_root / "selected_config.json").relative_to(controller.root).as_posix()
+    config_path = (round_root / "selected_config.json").relative_to(runtime_root).as_posix()
     controller.ctx.current_contract = contract
     latest_db = controller.backtest_run_db.latest(1)
     controller.ctx.parent_backtest_run_id = latest_db[0].run_id if latest_db else ""
@@ -1177,7 +1178,8 @@ def _record_round_quality_and_bridges(
         payload=reflexio_package["files"]["reflexio-event.json"],
     )
     state = controller.read_state()
-    round_root = research_round_root(controller.root, int(state.get("job")), research_round)
+    runtime_root = getattr(controller, "runtime_root", None) or controller.root
+    round_root = research_round_root(runtime_root, int(state.get("job")), research_round)
     _write_adapter_exports(round_root, **payload_kwargs)
 
 
@@ -1244,7 +1246,8 @@ def _write_research_round_artifacts(
         raise ValueError(
             f"job id is required for research round artifact path; got {raw_job!r}"
         ) from exc
-    round_root = research_round_root(controller.root, job, research_round)
+    runtime_root = getattr(controller, "runtime_root", None) or controller.root
+    round_root = research_round_root(runtime_root, job, research_round)
     round_root.mkdir(parents=True, exist_ok=True)
     for dirname in ("conductor", "analyst", "validator", "compiler"):
         (round_root / dirname).mkdir(parents=True, exist_ok=True)

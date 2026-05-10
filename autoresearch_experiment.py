@@ -708,8 +708,9 @@ def _build_db_record(
     backtest_run_id = (
         f"{research_round_id}-backtest" if research_round_id else fallback_experiment_id
     )
+    record_run_id = backtest_run_id or fallback_experiment_id
     record = BacktestRunRecord(
-        run_id=contract.contract_id if contract else fallback_experiment_id,
+        run_id=record_run_id,
         thesis_id=contract.thesis_id if contract else Path(config).stem,
         config_path=config,
         runtime_config=runtime_config,

@@ -94,12 +94,12 @@ def _default_task_runner(task: HoldoutTask, controller_root: Path) -> TaskOutcom
     from strategy_family import load_family
 
     family = load_family(task.family)
-    state_path, current_md_path, runs_dir = default_controller_paths(controller_root, family)
+    state_path, current_md_path, jobs_root = default_controller_paths(controller_root, family)
     controller = AutoresearchController(
         root=controller_root,
         state_path=state_path,
         current_md_path=current_md_path,
-        runs_dir=runs_dir,
+        jobs_root=jobs_root,
         family=family,
     )
     initial_state = {
