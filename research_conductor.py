@@ -89,43 +89,6 @@ def _render_resolution_context(resolution_context: dict[str, Any] | None) -> str
     return "\n".join(lines)
 
 
-_GENERIC_FOCUS_QUESTION_PATTERNS = (
-    "break down ",
-    "breakdown of ",
-    "show me ",
-    "what is the ",
-    "list all ",
-    "summarize all ",
-    "give me everything",
-)
-_MIN_FOCUS_QUESTION_CHARS = 40
-
-
-def _check_focus_question_specific(focus_question: str) -> str | None:
-    """L10: reject generic 'fishing' analyst questions before they leave the gate.
-
-    Catches the obvious cases — too short, or matches phrasings that signal
-    the conductor is using the analyst to discover a hypothesis rather than
-    test one. Approved deviation: a soft prompt one-liner reinforces this.
-    """
-    text = (focus_question or "").strip()
-    if len(text) < _MIN_FOCUS_QUESTION_CHARS:
-        return (
-            f"ERROR: focus_question is too short ({len(text)} < "
-            f"{_MIN_FOCUS_QUESTION_CHARS} chars). Ask the analyst to test a "
-            f"specific hypothesis, not to discover one."
-        )
-    lowered = text.lower()
-    for pattern in _GENERIC_FOCUS_QUESTION_PATTERNS:
-        if pattern in lowered:
-            return (
-                f"ERROR: focus_question uses a generic 'fishing' phrasing "
-                f"('{pattern.strip()}'). Reframe the question as a specific "
-                f"hypothesis test grounded in evidence you have already gathered."
-            )
-    return None
-
-
 def _check_web_search_called_first(tools_called: set[str]) -> str | None:
     """L6: return an error message if web_search has not been called yet; else None.
 
@@ -303,9 +266,6 @@ async def run_research_conductor(
             )
             # L6: web_search must be called before analyze_trades.
             gate_error = _check_web_search_called_first(tools_called_this_round)
-            if gate_error is None:
-                # L10: reject generic / fishing focus questions.
-                gate_error = _check_focus_question_specific(focus_question)
             if gate_error is not None:
                 output = gate_error
             elif not trades_file:

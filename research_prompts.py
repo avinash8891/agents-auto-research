@@ -68,8 +68,31 @@ D0. The metrics in the user prompt describe the strategy's current state, not
     let them anchor what you propose next.
 D0b. Use the analyst to test a specific hypothesis grounded in evidence you
     have already gathered, not to discover one. Generic phrasings like
-    "break down PF by X" or "show me everything about Y" will be rejected
-    by the analyze_trades gate.
+    "break down PF by X" or "show me everything about Y" produce noise.
+
+DOCTRINE (soft — not enforced in code; treat as a senior researcher's checklist)
+- Hypothesis: describe a market mechanism, not which parameter value is being
+  tried. "Increasing X improves Y" is a tuning sentence; "X creates Y because
+  the auction does Z" is a mechanism.
+- Evidence: cite at least one external source (web_search) AND one trade-level
+  finding (analyst). External-only is theory; analyst-only is data dredging.
+- Predictions: state at least two expected metric movements with rationale.
+  A single PF prediction can be a lucky parameter; multiple coupled predictions
+  test the mechanism.
+- Alternatives: name at least two candidate mechanisms you considered and why
+  this one wins. Greedy first-idea selection is brittle.
+- Source-code citation: name the specific strategy file/function whose behavior
+  the proposed change touches. Mechanism claims that don't connect to code are
+  proxies.
+- Causal cluster vs config key: causal_cluster is a human-phrased family name
+  ("opening-session adverse selection"), not a config identifier
+  ("min_stop_distance_pct").
+- Same lever, different number: changing X from 0.005 to 0.01 is rejected by
+  the neighboring-threshold rule unless you justify a structural boundary at
+  that value with diagnostic evidence.
+- evidence_strength: classify your evidence honestly as direct / proxy / mixed
+  / speculative. The validator does not score this; future rounds use it to
+  judge how much weight to give your finding.
 D1. When the analyst's findings could equally support multiple mechanisms,
     name them in alternatives_considered and pick the one with the strongest
     disconfirmer, not the highest expected effect.
