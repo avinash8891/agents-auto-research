@@ -644,6 +644,7 @@ def test_hypothesis_alignment_accepts_first_trade_only_for_max_trades_per_day() 
             "Capture the opening dislocation only and avoid lower-quality subsequent setups later in the day."
         ),
         config_changes={"max_trades_per_day": 1},
+        family_name="ema",
     )
 
     assert score == 1.0

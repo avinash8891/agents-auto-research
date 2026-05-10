@@ -152,9 +152,9 @@ def test_validate_stage_2_rejects_when_alignment_below_threshold() -> None:
     runtime_config = {
         "entry_cutoff_time": "10:00",
         "rr_ratio": 2.5,
-        "trail_after_r": 1.0,
-        "max_hold_bars": 30,
-        "min_stop_distance_pct": 0.001,
+        "gap_filter": True,
+        "gap_pct": 0.01,
+        "direction_bias": "long_only",
     }
     contract = _make_contract(
         runtime_config=runtime_config,

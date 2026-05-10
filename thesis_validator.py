@@ -751,19 +751,45 @@ def config_key_overlap(
 # ---------------------------------------------------------------------------
 
 
+def _load_family_key_concepts(family_name: str) -> dict[str, tuple[str, ...]]:
+    """Return the concept regex map for a family, or empty when unwired/unknown.
+
+    Lookup goes through the strategy registry; an unknown family or a family
+    whose spec has no `key_concepts` returns an empty dict, which makes the
+    alignment rule fail open for that family.
+    """
+    if not family_name:
+        return {}
+    try:
+        from family_research_spec import get_family_research_spec
+    except Exception:  # noqa: BLE001
+        return {}
+    try:
+        spec = get_family_research_spec(family_name)
+    except (KeyError, ValueError):
+        return {}
+    return dict(getattr(spec, "key_concepts", {}) or {})
+
+
 def check_hypothesis_alignment(
     hypothesis: str,
     mechanism: str,
     config_changes: dict[str, Any],
+    *,
+    family_name: str = "",
 ) -> tuple[float, str]:
     """Score whether config_changes actually test the stated hypothesis.
 
-    Uses a heuristic keyword approach (no LLM call needed for v1).
+    Uses a heuristic keyword approach (no LLM call needed for v1) driven by
+    the family-specific `key_concepts` map declared on the strategy's
+    `FamilyResearchSpec`. Strategy-specific data lives on the strategy spec,
+    not in the validator — the validator reads, never hardcodes.
+
     Returns (score 0-1, explanation).
 
     Score meanings:
-      1.0 = config keys directly reference concepts in hypothesis/mechanism
-      0.5 = partial alignment
+      1.0 = every config key referenced a concept in hypothesis/mechanism
+            (or the family ships no concept map → rule fails open)
       0.0 = no connection between story and implementation
     """
     import re
@@ -771,75 +797,28 @@ def check_hypothesis_alignment(
     if not config_changes:
         return 1.0, "No config changes (code change thesis)"
 
+    key_concepts = _load_family_key_concepts(family_name)
+    if not key_concepts:
+        return (
+            1.0,
+            (
+                f"No key_concepts registered for family '{family_name}'. "
+                f"Alignment scoring fails open until the strategy populates "
+                f"FamilyResearchSpec.key_concepts."
+            ),
+        )
+
     hyp_lower = (hypothesis + " " + mechanism).lower()
     config_keys = set(config_changes.keys())
-
-    # Map config keys to concept patterns.
-    # Each pattern is a regex searched against the lowercased hypothesis+mechanism.
-    # Use specific multi-word phrases to avoid false positives.
-    KEY_CONCEPTS: dict[str, list[str]] = {
-        "entry_cutoff_time": [
-            r"entry.{0,10}tim",
-            r"cutoff",
-            r"time window",
-            r"entry window",
-            r"morning",
-            r"first.{0,5}\d+.{0,5}min",
-            r"open.{0,10}bar",
-        ],
-        "max_trades_per_day": [
-            r"max.{0,5}trade",
-            r"one.{0,5}trade.{0,10}day",
-            r"single.{0,5}trade.{0,10}day",
-            r"first.{0,10}trade",
-            r"first.{0,10}executed.{0,10}trade",
-            r"first.{0,10}setup",
-            r"only.{0,10}first",
-            r"position limit",
-            r"portfolio",
-            r"daily.{0,5}cap",
-            r"trade.{0,5}capacity",
-            r"number of trades",
-        ],
-        "rr_ratio": [r"risk.{0,3}reward", r"target.{0,5}ratio", r"r.?r.?ratio", r"profit target"],
-        "trail_after_r": [r"trail", r"let.{0,10}run", r"continuation", r"runner"],
-        "max_hold_bars": [
-            r"hold.{0,5}(duration|bar|time|period)",
-            r"time.?stop",
-            r"decay",
-            r"dissipat",
-            r"max.{0,3}hold",
-        ],
-        "gap_exclude": [r"gap", r"overnight.{0,10}(gap|move)"],
-        "gap_exclude_pct": [r"gap", r"overnight.{0,10}(gap|move)"],
-        "gap_filter": [r"gap", r"overnight"],
-        "gap_pct": [r"gap"],
-        "min_stop_distance_pct": [
-            r"stop.{0,5}(distance|loss|size)",
-            r"noise.{0,5}(stop|exit)",
-            r"tight.{0,5}stop",
-            r"slippage",
-        ],
-        "max_stop_distance_pct": [
-            r"stop.{0,5}(distance|loss|size)",
-            r"extreme.{0,5}(move|candle)",
-            r"wide.{0,5}stop",
-            r"candle.{0,5}size",
-        ],
-        "use_range_shift": [r"range.{0,5}shift", r"lookback", r"adaptive", r"context.{0,5}window"],
-        "range_shift_lookback": [r"range.{0,5}shift", r"lookback", r"adaptive"],
-        "timeframe_short": [r"timeframe", r"bar.{0,3}size", r"resolution", r"5.?min"],
-        "timeframe_long": [r"timeframe", r"bar.{0,3}size", r"resolution", r"15.?min"],
-        "direction_bias": [r"direction", r"long.only", r"short.only", r"bias"],
-    }
 
     aligned_keys = 0
     misaligned_keys: list[str] = []
 
     for key in config_keys:
-        concepts = KEY_CONCEPTS.get(key, [])
+        concepts = key_concepts.get(key, ())
         if not concepts:
-            # Unknown key — can't check, give benefit of doubt
+            # Key isn't catalogued for this family — give benefit of doubt
+            # rather than penalize agent-emitted bookkeeping or new keys.
             aligned_keys += 1
             continue
         matched = any(re.search(pattern, hyp_lower) for pattern in concepts)
@@ -1268,9 +1247,12 @@ def validate_stage_2(contract: Any) -> Any:
     runtime_config = getattr(contract, "runtime_config", None) or {}
     hypothesis = getattr(contract, "hypothesis", "") or ""
     mechanism = getattr(contract, "mechanism", "") or ""
+    strategy_family = getattr(contract, "strategy_family", "") or ""
 
     if isinstance(runtime_config, dict) and runtime_config:
-        score, explanation = check_hypothesis_alignment(hypothesis, mechanism, runtime_config)
+        score, explanation = check_hypothesis_alignment(
+            hypothesis, mechanism, runtime_config, family_name=strategy_family
+        )
         if score < ALIGNMENT_THRESHOLD:
             raise ThesisValidationError(
                 f"Hypothesis-config misalignment (score={score:.2f}): {explanation}",

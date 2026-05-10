@@ -76,4 +76,50 @@ IMPORTANT:
         }
     ),
     resolution_config_keys=("timeframe_short", "timeframe_long"),
+    # Concept regex map for Stage 2 hypothesis-config alignment scoring.
+    # Each key here must also be a member of allowed_config_keys above.
+    # Patterns are matched (case-insensitive) against the hypothesis+mechanism.
+    key_concepts={
+        "entry_cutoff_time": (
+            r"entry.{0,10}tim",
+            r"cutoff",
+            r"time window",
+            r"entry window",
+            r"morning",
+            r"first.{0,5}\d+.{0,5}min",
+            r"open.{0,10}bar",
+        ),
+        "max_trades_per_day": (
+            r"max.{0,5}trade",
+            r"one.{0,5}trade.{0,10}day",
+            r"single.{0,5}trade.{0,10}day",
+            r"first.{0,10}trade",
+            r"first.{0,10}executed.{0,10}trade",
+            r"first.{0,10}setup",
+            r"only.{0,10}first",
+            r"position limit",
+            r"portfolio",
+            r"daily.{0,5}cap",
+            r"trade.{0,5}capacity",
+            r"number of trades",
+        ),
+        "rr_ratio": (
+            r"risk.{0,3}reward",
+            r"target.{0,5}ratio",
+            r"r.?r.?ratio",
+            r"profit target",
+        ),
+        "gap_filter": (r"gap", r"overnight"),
+        "gap_pct": (r"gap",),
+        "use_range_shift": (
+            r"range.{0,5}shift",
+            r"lookback",
+            r"adaptive",
+            r"context.{0,5}window",
+        ),
+        "range_shift_lookback": (r"range.{0,5}shift", r"lookback", r"adaptive"),
+        "timeframe_short": (r"timeframe", r"bar.{0,3}size", r"resolution", r"5.?min"),
+        "timeframe_long": (r"timeframe", r"bar.{0,3}size", r"resolution", r"15.?min"),
+        "direction_bias": (r"direction", r"long.only", r"short.only", r"bias"),
+    },
 )
