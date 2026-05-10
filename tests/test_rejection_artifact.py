@@ -18,7 +18,7 @@ def _sample_rejection(
         round=round_no,
         thesis_id=thesis_id,
         stage="stage_1",
-        rejection_code="theme_cluster_fixation",
+        rejection_code="thesis_quality_theme_cluster_fixation",
         rule_violated="4 of last 7 theses share keywords",
         evidence={"shared_keywords": ["stop_distance", "opening"]},
         remediation_hint="propose from a different mechanism dimension",
@@ -54,7 +54,7 @@ def test_write_rejection_creates_parent_dirs_and_writes_valid_json(tmp_path: Pat
     assert path.exists()
     payload = json.loads(path.read_text())
     assert payload["thesis_id"] == "ema-rsi-filter-v1"
-    assert payload["rejection_code"] == "theme_cluster_fixation"
+    assert payload["rejection_code"] == "thesis_quality_theme_cluster_fixation"
     assert payload["evidence"]["shared_keywords"] == ["stop_distance", "opening"]
 
 
@@ -114,7 +114,7 @@ def test_build_rejection_from_validation_error_uses_explicit_code(tmp_path: Path
 
     exc = ThesisValidationError(
         "config-key Jaccard 100% with 'X'",
-        rejection_code="config_key_overlap_real",
+        rejection_code="config_validity_config_key_overlap_real",
         evidence={"shared_keys": ["foo"]},
         remediation_hint="propose different keys",
     )
@@ -123,7 +123,7 @@ def test_build_rejection_from_validation_error_uses_explicit_code(tmp_path: Path
         exc, round_number=3, thesis_id="ema-rsi-v1", stage="stage_1"
     )
 
-    assert rejection.rejection_code == "config_key_overlap_real"
+    assert rejection.rejection_code == "config_validity_config_key_overlap_real"
     assert rejection.evidence == {"shared_keys": ["foo"]}
     assert rejection.remediation_hint == "propose different keys"
     assert rejection.thesis_id == "ema-rsi-v1"
@@ -145,7 +145,7 @@ def test_build_rejection_from_validation_error_falls_back_to_inferred_code() -> 
         exc, round_number=2, thesis_id="ema-foo", stage="stage_1"
     )
 
-    assert rejection.rejection_code == "config_key_overlap_real"
+    assert rejection.rejection_code == "config_validity_config_key_overlap_real"
 
 
 def _seed_rejections(root: Path, *, job: int, entries: list[dict]) -> None:
@@ -173,9 +173,9 @@ def test_list_rejections_returns_all_rejections_in_job(tmp_path: Path) -> None:
         tmp_path,
         job=7,
         entries=[
-            {"round": 1, "thesis_id": "ema-a", "code": "theme_cluster_fixation"},
-            {"round": 2, "thesis_id": "ema-b", "code": "config_key_overlap_real"},
-            {"round": 2, "thesis_id": "ema-c", "code": "theme_cluster_fixation"},
+            {"round": 1, "thesis_id": "ema-a", "code": "thesis_quality_theme_cluster_fixation"},
+            {"round": 2, "thesis_id": "ema-b", "code": "config_validity_config_key_overlap_real"},
+            {"round": 2, "thesis_id": "ema-c", "code": "thesis_quality_theme_cluster_fixation"},
         ],
     )
 
@@ -183,7 +183,10 @@ def test_list_rejections_returns_all_rejections_in_job(tmp_path: Path) -> None:
 
     assert len(items) == 3
     codes = {it.rejection_code for it in items}
-    assert codes == {"theme_cluster_fixation", "config_key_overlap_real"}
+    assert codes == {
+        "thesis_quality_theme_cluster_fixation",
+        "config_validity_config_key_overlap_real",
+    }
 
 
 def test_list_rejections_filters_by_round(tmp_path: Path) -> None:
@@ -193,8 +196,8 @@ def test_list_rejections_filters_by_round(tmp_path: Path) -> None:
         tmp_path,
         job=7,
         entries=[
-            {"round": 1, "thesis_id": "ema-a", "code": "config_key_overlap_real"},
-            {"round": 2, "thesis_id": "ema-b", "code": "theme_cluster_fixation"},
+            {"round": 1, "thesis_id": "ema-a", "code": "config_validity_config_key_overlap_real"},
+            {"round": 2, "thesis_id": "ema-b", "code": "thesis_quality_theme_cluster_fixation"},
         ],
     )
 
@@ -210,15 +213,15 @@ def test_list_rejections_filters_by_code(tmp_path: Path) -> None:
         tmp_path,
         job=7,
         entries=[
-            {"round": 1, "thesis_id": "ema-a", "code": "config_key_overlap_real"},
-            {"round": 2, "thesis_id": "ema-b", "code": "theme_cluster_fixation"},
-            {"round": 3, "thesis_id": "ema-c", "code": "theme_cluster_fixation"},
+            {"round": 1, "thesis_id": "ema-a", "code": "config_validity_config_key_overlap_real"},
+            {"round": 2, "thesis_id": "ema-b", "code": "thesis_quality_theme_cluster_fixation"},
+            {"round": 3, "thesis_id": "ema-c", "code": "thesis_quality_theme_cluster_fixation"},
         ],
     )
 
-    items = list_rejections(tmp_path, job=7, rejection_code="theme_cluster_fixation")
+    items = list_rejections(tmp_path, job=7, rejection_code="thesis_quality_theme_cluster_fixation")
     assert len(items) == 2
-    assert all(it.rejection_code == "theme_cluster_fixation" for it in items)
+    assert all(it.rejection_code == "thesis_quality_theme_cluster_fixation" for it in items)
 
 
 def test_list_rejections_returns_empty_when_no_rejections(tmp_path: Path) -> None:
@@ -235,13 +238,13 @@ def test_get_rejection_returns_specific_thesis_rejection(tmp_path: Path) -> None
         tmp_path,
         job=7,
         entries=[
-            {"round": 1, "thesis_id": "ema-foo", "code": "config_key_overlap_real"},
+            {"round": 1, "thesis_id": "ema-foo", "code": "config_validity_config_key_overlap_real"},
         ],
     )
 
     obj = get_rejection(tmp_path, job=7, round_number=1, thesis_id="ema-foo")
     assert obj is not None
-    assert obj.rejection_code == "config_key_overlap_real"
+    assert obj.rejection_code == "config_validity_config_key_overlap_real"
 
 
 def test_get_rejection_returns_none_when_missing(tmp_path: Path) -> None:
@@ -258,18 +261,18 @@ def test_rejection_pattern_summary_groups_and_counts(tmp_path: Path) -> None:
         tmp_path,
         job=7,
         entries=[
-            {"round": 1, "thesis_id": "a", "code": "theme_cluster_fixation"},
-            {"round": 2, "thesis_id": "b", "code": "theme_cluster_fixation"},
-            {"round": 2, "thesis_id": "c", "code": "config_key_overlap_real"},
-            {"round": 3, "thesis_id": "d", "code": "theme_cluster_fixation"},
+            {"round": 1, "thesis_id": "a", "code": "thesis_quality_theme_cluster_fixation"},
+            {"round": 2, "thesis_id": "b", "code": "thesis_quality_theme_cluster_fixation"},
+            {"round": 2, "thesis_id": "c", "code": "config_validity_config_key_overlap_real"},
+            {"round": 3, "thesis_id": "d", "code": "thesis_quality_theme_cluster_fixation"},
         ],
     )
 
     summary = rejection_pattern_summary(tmp_path, job=7, window_rounds=10)
 
     counts = {row["rejection_code"]: row["count"] for row in summary}
-    assert counts["theme_cluster_fixation"] == 3
-    assert counts["config_key_overlap_real"] == 1
+    assert counts["thesis_quality_theme_cluster_fixation"] == 3
+    assert counts["config_validity_config_key_overlap_real"] == 1
 
 
 def test_rejection_pattern_summary_respects_window(tmp_path: Path) -> None:
@@ -301,7 +304,7 @@ def test_persist_rejection_writes_to_round_thesis_folder(tmp_path: Path) -> None
 
     exc = ThesisValidationError(
         "Theme-cluster fixation: 4/7 share keywords",
-        rejection_code="theme_cluster_fixation",
+        rejection_code="thesis_quality_theme_cluster_fixation",
         evidence={"shared_keywords": ["opening", "stop_distance"]},
     )
 
@@ -316,6 +319,6 @@ def test_persist_rejection_writes_to_round_thesis_folder(tmp_path: Path) -> None
 
     assert path.name == "rejection.json"
     payload = json.loads(path.read_text())
-    assert payload["rejection_code"] == "theme_cluster_fixation"
+    assert payload["rejection_code"] == "thesis_quality_theme_cluster_fixation"
     assert payload["thesis_id"] == "opening_x_stop_filter"
     assert payload["round"] == 3

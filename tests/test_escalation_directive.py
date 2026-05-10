@@ -37,7 +37,7 @@ def test_no_escalation_below_threshold(tmp_path: Path) -> None:
         tmp_path,
         job=7,
         entries=[
-            {"round": 1, "thesis_id": f"t{i}", "code": "theme_cluster_fixation"}
+            {"round": 1, "thesis_id": f"t{i}", "code": "thesis_quality_theme_cluster_fixation"}
             for i in range(3)  # only 3
         ],
     )
@@ -53,14 +53,14 @@ def test_warn_escalation_when_4_or_more_cluster_fixations_in_last_7_rounds(tmp_p
         tmp_path,
         job=7,
         entries=[
-            {"round": r, "thesis_id": f"t{r}", "code": "theme_cluster_fixation"}
+            {"round": r, "thesis_id": f"t{r}", "code": "thesis_quality_theme_cluster_fixation"}
             for r in range(1, 5)  # rounds 1..4
         ],
     )
 
     out = compute_escalation_directive(tmp_path, job=7)
     assert "ESCALATION" in out
-    assert "theme_cluster_fixation" in out
+    assert "thesis_quality_theme_cluster_fixation" in out
     assert "different mechanism dimension" in out.lower()
 
 
@@ -71,7 +71,7 @@ def test_halt_escalation_when_6_or_more_cluster_fixations_in_last_10(tmp_path: P
         tmp_path,
         job=7,
         entries=[
-            {"round": r, "thesis_id": f"t{r}", "code": "theme_cluster_fixation"}
+            {"round": r, "thesis_id": f"t{r}", "code": "thesis_quality_theme_cluster_fixation"}
             for r in range(1, 7)  # rounds 1..6
         ],
     )

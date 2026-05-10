@@ -130,30 +130,48 @@ def infer_rejection_code(message: str) -> str:
     explicitly. Add new patterns as new rules land.
     """
     msg = message.lower()
+    # config_validity_*
     if "config-key overlap" in msg:
-        return "config_key_overlap_real"
+        return "config_validity_config_key_overlap_real"
+    if "do not construct" in msg or "points into runtime/" in msg:
+        return "config_validity_base_config_path_runtime_construction"
+    if "legacy experiments/ inheritance" in msg or "must be under configs/" in msg:
+        return "config_validity_base_config_path_legacy_experiments"
+    if "must point to a json or yaml" in msg or "must be a relative repo path" in msg:
+        return "config_validity_base_config_path_invalid"
+    if "config_changes contains thesis metadata key" in msg:
+        return "config_validity_config_changes_metadata_leak"
+    if "must be empty or the family baseline" in msg:
+        return "config_validity_base_config_path_inheritance_blocked"
+    if "neighboring threshold" in msg:
+        return "config_validity_neighboring_threshold"
+    # thesis_quality_*
+    if "theme-cluster fixation" in msg:
+        return "thesis_quality_theme_cluster_fixation"
+    if "direction whipsaw" in msg:
+        return "thesis_quality_direction_whipsaw"
+    if "needs_code starvation" in msg:
+        return "thesis_quality_needs_code_starvation"
+    if "has already been proposed" in msg:
+        return "thesis_quality_thesis_id_repeated"
+    # Stage 2 (no section prefix; lives at the contract layer)
     if "hypothesis-config misalignment" in msg:
         return "hypothesis_config_misalignment"
-    if "do not construct" in msg or "points into runtime/" in msg:
-        return "base_config_path_runtime_construction"
-    if "legacy experiments/ inheritance" in msg or "must be under configs/" in msg:
-        return "base_config_path_legacy_experiments"
-    if "must point to a json or yaml" in msg or "must be a relative repo path" in msg:
-        return "base_config_path_invalid"
-    if "config_changes contains thesis metadata key" in msg:
-        return "config_changes_metadata_leak"
-    if "must be empty or the family baseline" in msg:
-        return "base_config_path_inheritance_blocked"
+    if "required diagnostics not present" in msg:
+        return "required_diagnostic_missing_post_compile"
+    # structural_*
     if "missing thesis_id" in msg:
-        return "missing_thesis_id"
+        return "structural_missing_thesis_id"
     if "missing hypothesis" in msg:
-        return "missing_hypothesis"
+        return "structural_missing_hypothesis"
+    if "missing mechanism_dimension" in msg:
+        return "structural_missing_mechanism_dimension"
     if "missing mechanism" in msg:
-        return "missing_mechanism"
+        return "structural_missing_mechanism"
     if "requested_primitives" in msg:
-        return "missing_requested_primitives"
-    if "mechanism_dimension" in msg:
-        return "mechanism_dimension_invalid"
+        return "structural_missing_requested_primitives"
+    if "invalid mechanism_dimension" in msg or "mechanism_dimension" in msg:
+        return "structural_mechanism_dimension_invalid"
     return "unspecified_validation_error"
 
 
@@ -181,11 +199,15 @@ def _validate_base_config_path(path: str) -> None:
     normalized = path.replace("\\", "/")
     if normalized.startswith("/") or ".." in normalized.split("/"):
         raise ThesisValidationError(
-            f"base_config_path '{path}' must be a relative repo path without '..'"
+            f"base_config_path '{path}' must be a relative repo path without '..'",
+            rejection_code="config_validity_base_config_path_invalid",
+            evidence={"path": path},
         )
     if not normalized.endswith((".json", ".yaml", ".yml")):
         raise ThesisValidationError(
-            f"base_config_path '{path}' must point to a JSON or YAML config artifact"
+            f"base_config_path '{path}' must point to a JSON or YAML config artifact",
+            rejection_code="config_validity_base_config_path_invalid",
+            evidence={"path": path},
         )
     is_allowed = normalized.startswith(_ALLOWED_BASE_CONFIG_PREFIXES)
     if not is_allowed:
@@ -193,11 +215,15 @@ def _validate_base_config_path(path: str) -> None:
             raise ThesisValidationError(
                 f"base_config_path '{path}' points into runtime/. Do not construct "
                 f"paths from runtime artifacts; reference a checked-in config under "
-                f"configs/ instead (for example, the family baseline config)."
+                f"configs/ instead (for example, the family baseline config).",
+                rejection_code="config_validity_base_config_path_runtime_construction",
+                evidence={"path": path},
             )
         raise ThesisValidationError(
             f"base_config_path '{path}' must be under configs/ only; "
-            "legacy experiments/ inheritance paths are not allowed"
+            "legacy experiments/ inheritance paths are not allowed",
+            rejection_code="config_validity_base_config_path_legacy_experiments",
+            evidence={"path": path},
         )
 
 
@@ -317,7 +343,14 @@ def _check_theme_cluster_fixation(
             f"Theme-cluster fixation: {overlap_count} of last "
             f"{B1_THEME_CLUSTER_WINDOW} theses share keywords {sorted(proposed_keywords)} "
             f"(overlapping priors: {overlapping_priors}). Propose from a different "
-            f"mechanism dimension, or justify novelty in dimension_novelty."
+            f"mechanism dimension, or justify novelty in dimension_novelty.",
+            rejection_code="thesis_quality_theme_cluster_fixation",
+            evidence={
+                "overlap_count": overlap_count,
+                "window": B1_THEME_CLUSTER_WINDOW,
+                "shared_keywords": sorted(proposed_keywords),
+                "overlapping_priors": overlapping_priors,
+            },
         )
 
 
@@ -369,7 +402,14 @@ def _check_direction_whipsaw(
             f"direction on lever theme {sorted(proposed_kw)}, and this thesis "
             f"flips to {proposed_dir} without acknowledgment. Cite '{prior_id}' "
             f"in prior_lever_outcomes (with direction_then, outcome, and why_retry) "
-            f"or propose from a different mechanism dimension."
+            f"or propose from a different mechanism dimension.",
+            rejection_code="thesis_quality_direction_whipsaw",
+            evidence={
+                "prior_thesis_id": prior_id,
+                "opposing_direction": opposing,
+                "proposed_direction": proposed_dir,
+                "lever_theme": sorted(proposed_kw),
+            },
         )
 
 
@@ -382,7 +422,9 @@ def _check_thesis_id_not_repeated(
         raise ThesisValidationError(
             f"thesis_id '{thesis.thesis_id}' has already been proposed in a prior "
             f"round. Each thesis must have a unique thesis_id (do not repeat or "
-            f"resubmit prior names)."
+            f"resubmit prior names).",
+            rejection_code="thesis_quality_thesis_id_repeated",
+            evidence={"thesis_id": thesis.thesis_id},
         )
 
 
@@ -438,7 +480,15 @@ def _check_neighboring_threshold(
                     f"{ratio:.2f}x, within {_NEIGHBORING_RATIO}x). This is "
                     f"parameter tuning, not a new mechanism. Either justify a "
                     f"structural boundary at this value or test a materially "
-                    f"different lever."
+                    f"different lever.",
+                    rejection_code="config_validity_neighboring_threshold",
+                    evidence={
+                        "config_key": key,
+                        "prior_value": prior_val,
+                        "new_value": new_val,
+                        "prior_thesis_id": str(prior.get("thesis_id", "?")),
+                        "ratio": round(ratio, 4),
+                    },
                 )
 
 
@@ -456,7 +506,8 @@ def _check_qualitative_disqualifier_present(thesis: ResearchThesis) -> None:
         "Disqualifiers list contains only metric_threshold entries. "
         "At least one disqualifier must reference observable mechanism evidence "
         "(set kind='mechanism_evidence'), describing what data pattern would "
-        "falsify the mechanism — independent of whether metrics improve."
+        "falsify the mechanism — independent of whether metrics improve.",
+        rejection_code="thesis_quality_missing_mechanism_evidence_disqualifier",
     )
 
 
@@ -482,7 +533,9 @@ def _check_needs_code_starvation(
         raise ThesisValidationError(
             f"needs_code starvation: {streak} consecutive prior theses required "
             f"engine changes without running. Propose a non-code thesis to break "
-            f"the queue (set requires_code_change=false and operate on existing config keys)."
+            f"the queue (set requires_code_change=false and operate on existing config keys).",
+            rejection_code="thesis_quality_needs_code_starvation",
+            evidence={"streak": streak, "limit": B3_NEEDS_CODE_STARVATION_LIMIT},
         )
 
 
@@ -888,163 +941,173 @@ def generate_variants(
 # ---------------------------------------------------------------------------
 
 
-def validate_research_thesis(
+def _validate_structural(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
-) -> ResearchThesis:
-    """Validate a research thesis. Raises ThesisValidationError if invalid.
+) -> None:
+    """Stage 1 sub-section: schema / required-field invariants.
 
-    Args:
-        thesis: The thesis to validate.
-        prior_theses: Previously proposed theses (from load_prior_theses).
-            If provided, config-key overlap detection is enabled.
+    Owns checks for missing/required fields, mechanism_dimension validity,
+    emergent-dimension required fields, requested_primitives presence, the
+    config_changes XOR requires_code_change consistency, and field-level
+    quality checks (expected_effects, disqualifiers, falsification length,
+    expected-effect metric backing).
     """
-
     if not thesis.thesis_id.strip():
-        raise ThesisValidationError("Missing thesis_id")
+        raise ThesisValidationError(
+            "Missing thesis_id", rejection_code="structural_missing_thesis_id"
+        )
 
     if not thesis.hypothesis.strip():
-        raise ThesisValidationError("Missing hypothesis")
+        raise ThesisValidationError(
+            "Missing hypothesis", rejection_code="structural_missing_hypothesis"
+        )
 
     if not thesis.mechanism.strip():
-        raise ThesisValidationError("Missing mechanism")
+        raise ThesisValidationError(
+            "Missing mechanism", rejection_code="structural_missing_mechanism"
+        )
 
     if not thesis.mechanism_dimension.strip():
         raise ThesisValidationError(
             "Missing mechanism_dimension. Every thesis must declare which "
-            "dimension it explores: " + ", ".join(sorted(MECHANISM_DIMENSIONS))
+            "dimension it explores: " + ", ".join(sorted(MECHANISM_DIMENSIONS)),
+            rejection_code="structural_missing_mechanism_dimension",
         )
     known_dimensions = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
     if thesis.mechanism_dimension not in known_dimensions:
         raise ThesisValidationError(
             f"Invalid mechanism_dimension '{thesis.mechanism_dimension}'. "
-            f"Must be one of: {sorted(known_dimensions)}"
+            f"Must be one of: {sorted(known_dimensions)}",
+            rejection_code="structural_mechanism_dimension_invalid",
+            evidence={"mechanism_dimension": thesis.mechanism_dimension},
         )
     if thesis.mechanism_dimension == EMERGENT_MECHANISM_DIMENSION:
         new_dimension_name = _dimension_slug(thesis.new_dimension_name)
         if not new_dimension_name:
             raise ThesisValidationError(
-                "new_dimension_name is required when mechanism_dimension is emergent"
+                "new_dimension_name is required when mechanism_dimension is emergent",
+                rejection_code="structural_missing_new_dimension_name",
             )
         if new_dimension_name in CORE_MECHANISM_DIMENSIONS:
             raise ThesisValidationError(
                 f"new_dimension_name '{thesis.new_dimension_name}' duplicates a core "
-                "mechanism dimension; use the core dimension instead"
+                "mechanism dimension; use the core dimension instead",
+                rejection_code="structural_new_dimension_name_duplicates_core",
+                evidence={"new_dimension_name": thesis.new_dimension_name},
             )
         for field in _EMERGENT_REQUIRED_FIELDS:
             value = getattr(thesis, field)
             if len(value.strip()) < _MIN_EMERGENT_FIELD_CHARS:
                 raise ThesisValidationError(
                     f"{field} must be at least {_MIN_EMERGENT_FIELD_CHARS} characters "
-                    "when mechanism_dimension is emergent"
+                    "when mechanism_dimension is emergent",
+                    rejection_code="structural_emergent_field_too_short",
+                    evidence={"field": field, "min_chars": _MIN_EMERGENT_FIELD_CHARS},
                 )
     if not thesis.dimension_novelty.strip():
         raise ThesisValidationError(
             "dimension_novelty is empty. "
-            "Explain why this is not a parameter variation of a prior thesis."
+            "Explain why this is not a parameter variation of a prior thesis.",
+            rejection_code="structural_missing_dimension_novelty",
         )
     if prior_theses:
         if not thesis.causal_cluster.strip():
             raise ThesisValidationError(
                 "causal_cluster is required when prior theses exist. "
-                "Name the causal family this thesis belongs to."
+                "Name the causal family this thesis belongs to.",
+                rejection_code="structural_missing_causal_cluster",
             )
         if not thesis.underexplored_dimensions_considered:
             raise ThesisValidationError(
                 "underexplored_dimensions_considered is required when prior theses exist. "
-                "Compare at least two underexplored dimensions before proposing."
+                "Compare at least two underexplored dimensions before proposing.",
+                rejection_code="structural_missing_underexplored_dimensions",
             )
         if thesis.dominant_cluster_overlap == "high" and (
             len(thesis.novel_connection.strip()) < _MIN_NOVEL_CONNECTION_CHARS
         ):
             raise ThesisValidationError(
                 "novel_connection must explain why a high-overlap thesis is "
-                "materially new instead of another variation of the dominant cluster."
+                "materially new instead of another variation of the dominant cluster.",
+                rejection_code="structural_novel_connection_too_short",
+                evidence={"min_chars": _MIN_NOVEL_CONNECTION_CHARS},
             )
 
     if not thesis.config_changes and not thesis.requires_code_change:
         raise ThesisValidationError(
-            "Thesis has neither config_changes nor requires_code_change=true"
+            "Thesis has neither config_changes nor requires_code_change=true",
+            rejection_code="structural_missing_config_or_code_change",
         )
     if thesis.requires_code_change and not thesis.requested_primitives:
-        raise ThesisValidationError("requires_code_change theses must declare requested_primitives")
-    _validate_base_config_path(thesis.base_config_path)
-    if thesis.base_contract_id:
         raise ThesisValidationError(
-            "base_contract_id is not allowed; research theses must start from the family "
-            "baseline instead of inheriting a prior winner."
-        )
-    baseline_path = _family_baseline_path(thesis)
-    if thesis.base_config_path and thesis.base_config_path != baseline_path:
-        raise ThesisValidationError(
-            f"base_config_path must be empty or the family baseline '{baseline_path}'; "
-            "prior/winning config inheritance is not allowed."
-        )
-    if _requires_explicit_base_config(thesis):
-        raise ThesisValidationError(
-            "Thesis references current-best/prior-winner inheritance. "
-            "That exploitation path is disabled; start from the family baseline."
-        )
-    for key in sorted(CONFIG_CHANGES_METADATA_KEYS & set(thesis.config_changes)):
-        raise ThesisValidationError(
-            f"config_changes contains thesis metadata key '{key}'. "
-            f"Set top-level {key}=true instead of putting it in runtime config changes."
+            "requires_code_change theses must declare requested_primitives",
+            rejection_code="structural_missing_requested_primitives",
         )
 
     if not thesis.expected_effects:
         raise ThesisValidationError(
-            "Thesis has no expected_effects — cannot evaluate without predictions"
+            "Thesis has no expected_effects — cannot evaluate without predictions",
+            rejection_code="structural_missing_expected_effects",
         )
 
-    # If falsification_or_alternative is set, require it be substantive. Short
-    # text reads as decoration, not a real disconfirmer. The field is optional
-    # at the schema level but must be quality-controlled when present.
     falsification_text = (thesis.falsification_or_alternative or "").strip()
     if falsification_text and len(falsification_text) < _MIN_FALSIFICATION_CHARS:
         raise ThesisValidationError(
             f"falsification_or_alternative must be at least "
             f"{_MIN_FALSIFICATION_CHARS} characters to count as a real disconfirmer; "
-            f"got {len(falsification_text)} characters."
+            f"got {len(falsification_text)} characters.",
+            rejection_code="structural_falsification_too_short",
+            evidence={
+                "min_chars": _MIN_FALSIFICATION_CHARS,
+                "actual_chars": len(falsification_text),
+            },
         )
 
     if not thesis.disqualifiers:
         raise ThesisValidationError(
-            "Thesis has no disqualifiers — need at least one falsification condition"
+            "Thesis has no disqualifiers — need at least one falsification condition",
+            rejection_code="structural_missing_disqualifiers",
         )
 
-    # Every expected_effect metric must be either a builtin or explicitly
-    # listed in required_diagnostics (so the analyst knows to compute it)
     for effect in thesis.expected_effects:
         if effect.metric not in BUILTIN_METRICS:
             if effect.metric not in thesis.required_diagnostics:
                 raise ThesisValidationError(
                     f"Expected effect metric '{effect.metric}' is not a builtin metric "
-                    f"and is not listed in required_diagnostics"
+                    f"and is not listed in required_diagnostics",
+                    rejection_code="structural_expected_effect_metric_unbacked",
+                    evidence={"metric": effect.metric},
                 )
 
-    if prior_theses and thesis.config_changes:
-        is_dup, reason = config_key_overlap(thesis.config_changes, prior_theses)
-        if is_dup:
-            raise ThesisValidationError(f"Config-key overlap: {reason}")
 
-    # B1 + B3 + B2: cross-thesis pattern rules. Run after structural checks,
-    # before the alignment scoring gate.
+def _validate_thesis_quality(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None = None,
+) -> None:
+    """Stage 1 sub-section: pattern-of-reasoning rules.
+
+    Owns the cross-thesis behavioral rules (B1 cluster fixation, B2 direction
+    whipsaw, B3 needs_code starvation, B5 qualitative disqualifier), the
+    banned-language regex (current-best / preserve / build-on), the
+    same-dimension novelty explanation requirement, and the don't-repeat-id rule.
+    """
+    if _requires_explicit_base_config(thesis):
+        raise ThesisValidationError(
+            "Thesis references current-best/prior-winner inheritance. "
+            "That exploitation path is disabled; start from the family baseline.",
+            rejection_code="thesis_quality_prior_winner_inheritance_language",
+        )
+
     if prior_theses:
         _check_theme_cluster_fixation(thesis, prior_theses)
         _check_needs_code_starvation(thesis, prior_theses)
         _check_direction_whipsaw(thesis, prior_theses)
 
-    # B5: qualitative disqualifier requirement.
     _check_qualitative_disqualifier_present(thesis)
 
-    # Rolled back from L3/L4/L8/L11: many of the legacy-recovery rules turned
-    # out to be over-prescriptive bureaucracy that the agent will satisfy with
-    # perfunctory text. Kept only the rules grounded in observed production
-    # failures (B1, B3, B5, A1, A2 already above; L5 still fires below).
-    # The cut rules' intent now lives as soft prompt doctrine in v3.
     if prior_theses:
         _check_thesis_id_not_repeated(thesis, prior_theses)
-        _check_neighboring_threshold(thesis, prior_theses)
 
     if prior_theses and thesis.mechanism_dimension:
         same_dim = [
@@ -1052,16 +1115,79 @@ def validate_research_thesis(
         ]
         if same_dim:
             prior_ids = [p["thesis_id"] for p in same_dim]
-            # Not a hard reject — the prompt already told the conductor to
-            # pick a different dimension. But if dimension_novelty doesn't
-            # convincingly explain why this is different, warn loudly.
             if len(thesis.dimension_novelty) < _MIN_NOVELTY_EXPLANATION_CHARS:
                 raise ThesisValidationError(
                     f"Dimension '{thesis.mechanism_dimension}' was already explored "
                     f"by {prior_ids}. dimension_novelty must explain (>30 chars) "
-                    f"what fundamentally new mechanism this tests within that dimension."
+                    f"what fundamentally new mechanism this tests within that dimension.",
+                    rejection_code="thesis_quality_dimension_novelty_too_short",
+                    evidence={
+                        "mechanism_dimension": thesis.mechanism_dimension,
+                        "prior_ids": prior_ids,
+                        "min_chars": _MIN_NOVELTY_EXPLANATION_CHARS,
+                    },
                 )
 
+
+def _validate_config_validity(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None = None,
+) -> None:
+    """Stage 1 sub-section: config-validity / artifact-coherence rules.
+
+    Owns base_config_path validation (including runtime/ rejection),
+    base_contract_id rejection, baseline-path enforcement, the
+    CONFIG_CHANGES_METADATA_KEYS leak check, the Jaccard config-key overlap
+    rule, and the L5 neighboring-threshold rule.
+    """
+    _validate_base_config_path(thesis.base_config_path)
+    if thesis.base_contract_id:
+        raise ThesisValidationError(
+            "base_contract_id is not allowed; research theses must start from the family "
+            "baseline instead of inheriting a prior winner.",
+            rejection_code="config_validity_base_contract_id_not_allowed",
+        )
+    baseline_path = _family_baseline_path(thesis)
+    if thesis.base_config_path and thesis.base_config_path != baseline_path:
+        raise ThesisValidationError(
+            f"base_config_path must be empty or the family baseline '{baseline_path}'; "
+            "prior/winning config inheritance is not allowed.",
+            rejection_code="config_validity_base_config_path_inheritance_blocked",
+            evidence={"baseline_path": baseline_path, "actual_path": thesis.base_config_path},
+        )
+    for key in sorted(CONFIG_CHANGES_METADATA_KEYS & set(thesis.config_changes)):
+        raise ThesisValidationError(
+            f"config_changes contains thesis metadata key '{key}'. "
+            f"Set top-level {key}=true instead of putting it in runtime config changes.",
+            rejection_code="config_validity_config_changes_metadata_leak",
+            evidence={"leaked_key": key},
+        )
+
+    if prior_theses and thesis.config_changes:
+        is_dup, reason = config_key_overlap(thesis.config_changes, prior_theses)
+        if is_dup:
+            raise ThesisValidationError(
+                f"Config-key overlap: {reason}",
+                rejection_code="config_validity_config_key_overlap_real",
+                evidence={"reason": reason},
+            )
+
+    if prior_theses:
+        _check_neighboring_threshold(thesis, prior_theses)
+
+
+def validate_research_thesis(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None = None,
+) -> ResearchThesis:
+    """Validate a research thesis. Raises ThesisValidationError if invalid.
+
+    Dispatches Stage 1 to three named sub-section helpers in fixed order:
+    structural → thesis_quality → config_validity.
+    """
+    _validate_structural(thesis, prior_theses)
+    _validate_thesis_quality(thesis, prior_theses)
+    _validate_config_validity(thesis, prior_theses)
     return thesis
 
 

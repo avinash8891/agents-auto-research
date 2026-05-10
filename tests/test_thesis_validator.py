@@ -332,7 +332,14 @@ def test_validate_thesis_rejects_prior_best_language_with_base_config_path() -> 
     thesis["base_contract_id"] = "05287d64f61f"
     thesis["base_config_path"] = "experiments/05287d64f61f/runtime_config.json"
 
-    with pytest.raises(ThesisValidationError, match="legacy experiments/ inheritance paths"):
+    # Stage 1 helper order is structural → thesis_quality → config_validity, so the
+    # banned-language (thesis_quality) check fires before the base_config_path
+    # (config_validity) check. Either rejection is correct; the inheritance message
+    # is the canonical thesis-quality phrasing.
+    with pytest.raises(
+        ThesisValidationError,
+        match="(legacy experiments/ inheritance paths|current-best/prior-winner inheritance)",
+    ):
         validate_thesis_dict(thesis, prior_theses=[])
 
 
@@ -352,9 +359,13 @@ def test_validate_thesis_rejects_job_scoped_experiment_base_config_path() -> Non
     thesis["base_contract_id"] = "05287d64f61f"
     thesis["base_config_path"] = "runtime/jobs/job-26/experiments/05287d64f61f/runtime_config.json"
 
-    # Runtime/ paths get a more specific error than the legacy experiments/ message
-    # (see test_validate_base_config_path_rejects_runtime_paths_with_clear_hint).
-    with pytest.raises(ThesisValidationError, match="Do not construct"):
+    # Stage 1 helper order is structural → thesis_quality → config_validity. The
+    # banned-language (thesis_quality) check fires first when both conditions are
+    # present; the runtime/ message asserts when only the path is bad.
+    with pytest.raises(
+        ThesisValidationError,
+        match="(Do not construct|current-best/prior-winner inheritance)",
+    ):
         validate_thesis_dict(thesis, prior_theses=[])
 
 

@@ -16,7 +16,7 @@ def _valid_payload() -> dict:
         "round": 3,
         "thesis_id": "ema-rsi-filter-v1",
         "stage": "stage_1",
-        "rejection_code": "config_key_overlap_real",
+        "rejection_code": "config_validity_config_key_overlap_real",
         "rule_violated": "config-key Jaccard >= 0.5",
         "evidence": {
             "shared_keys": ["min_stop_distance_pct"],
@@ -34,7 +34,7 @@ def test_structured_rejection_round_trips() -> None:
     payload = _valid_payload()
     obj = StructuredRejection.model_validate(payload)
 
-    assert obj.rejection_code == "config_key_overlap_real"
+    assert obj.rejection_code == "config_validity_config_key_overlap_real"
     assert obj.evidence["shared_keys"] == ["min_stop_distance_pct"]
 
     dumped = obj.model_dump(mode="json")

@@ -276,7 +276,9 @@ class StructuredRejection(BaseModel):
     round: int
     thesis_id: str
     stage: Literal["stage_1", "stage_2", "compile"]
-    rejection_code: str  # short machine-readable category, e.g. "theme_cluster_fixation"
+    rejection_code: (
+        str  # short machine-readable category, e.g. "thesis_quality_theme_cluster_fixation"
+    )
     rule_violated: str = ""  # one-line summary of the rule
     evidence: dict[str, Any] = Field(default_factory=dict)
     remediation_hint: str = ""

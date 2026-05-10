@@ -23,7 +23,7 @@ def test_write_challenge_persists_payload(tmp_path: Path) -> None:
     payload = {
         "challenged_round": 3,
         "challenged_thesis_id": "ema-rsi-v1",
-        "challenged_rejection_code": "config_key_overlap_real",
+        "challenged_rejection_code": "config_validity_config_key_overlap_real",
         "claim": "the shared key is a sentinel, not a real config key",
         "evidence": {"shared_keys": ["requires_engine_change"]},
     }
@@ -32,7 +32,7 @@ def test_write_challenge_persists_payload(tmp_path: Path) -> None:
     assert path.name == "challenge.json"
     on_disk = json.loads(path.read_text())
     assert on_disk["challenged_thesis_id"] == "ema-rsi-v1"
-    assert on_disk["challenged_rejection_code"] == "config_key_overlap_real"
+    assert on_disk["challenged_rejection_code"] == "config_validity_config_key_overlap_real"
     assert "created_at" in on_disk  # writer adds timestamp
 
 

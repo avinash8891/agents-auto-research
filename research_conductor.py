@@ -684,7 +684,7 @@ async def run_research_conductor(
             """List validator/compile rejections for the current job.
 
             Optional filters: round_number to scope to one round; rejection_code
-            to scope to one category (e.g. theme_cluster_fixation). Returns up
+            to scope to one category (e.g. thesis_quality_theme_cluster_fixation). Returns up
             to `limit` records, most-recent rounds first.
             """
             from rejection_artifact import list_rejections
@@ -766,7 +766,7 @@ async def run_research_conductor(
         async def rejection_pattern_summary_tool(window_rounds: int = 10) -> str:
             """Group recent rejections by rejection_code and return counts.
 
-            Use this to detect repeating failure modes (e.g. theme_cluster_fixation
+            Use this to detect repeating failure modes (e.g. thesis_quality_theme_cluster_fixation
             firing 4+ times). The summary covers the last `window_rounds` rounds.
             """
             from rejection_artifact import rejection_pattern_summary

@@ -40,7 +40,7 @@ def test_render_rejection_block_includes_current_round_rejections(tmp_path: Path
             {
                 "round": 2,
                 "thesis_id": "ema-rsi-v1",
-                "code": "theme_cluster_fixation",
+                "code": "thesis_quality_theme_cluster_fixation",
                 "rule": "4 of last 7 theses share keywords",
                 "hint": "propose from a different mechanism dimension",
                 "evidence": {"shared_keywords": ["opening", "stop_distance"]},
@@ -48,7 +48,7 @@ def test_render_rejection_block_includes_current_round_rejections(tmp_path: Path
             {
                 "round": 2,
                 "thesis_id": "ema-rsi-v2",
-                "code": "config_key_overlap_real",
+                "code": "config_validity_config_key_overlap_real",
                 "rule": "Jaccard 100%",
                 "hint": "this lever was tested in round 1",
             },
@@ -60,8 +60,8 @@ def test_render_rejection_block_includes_current_round_rejections(tmp_path: Path
     assert "REJECTED THIS ROUND" in out
     assert "ema-rsi-v1" in out
     assert "ema-rsi-v2" in out
-    assert "theme_cluster_fixation" in out
-    assert "config_key_overlap_real" in out
+    assert "thesis_quality_theme_cluster_fixation" in out
+    assert "config_validity_config_key_overlap_real" in out
 
 
 def test_render_rejection_block_includes_pattern_summary_when_history_exists(
@@ -73,16 +73,16 @@ def test_render_rejection_block_includes_pattern_summary_when_history_exists(
         tmp_path,
         job=7,
         entries=[
-            {"round": 1, "thesis_id": "a", "code": "theme_cluster_fixation"},
-            {"round": 2, "thesis_id": "b", "code": "theme_cluster_fixation"},
-            {"round": 3, "thesis_id": "c", "code": "config_key_overlap_real"},
+            {"round": 1, "thesis_id": "a", "code": "thesis_quality_theme_cluster_fixation"},
+            {"round": 2, "thesis_id": "b", "code": "thesis_quality_theme_cluster_fixation"},
+            {"round": 3, "thesis_id": "c", "code": "config_validity_config_key_overlap_real"},
         ],
     )
 
     out = render_rejection_block(tmp_path, job=7, current_round=3)
 
     assert "RECENT VALIDATOR PATTERNS" in out
-    assert "theme_cluster_fixation" in out
+    assert "thesis_quality_theme_cluster_fixation" in out
     assert "2" in out  # count of theme_cluster_fixation
     # Tool pointers help the agent dig deeper:
     assert "list_rejections" in out
@@ -98,8 +98,16 @@ def test_render_rejection_block_only_lists_current_round_in_rejected_section(
         tmp_path,
         job=7,
         entries=[
-            {"round": 1, "thesis_id": "old-thesis", "code": "config_key_overlap_real"},
-            {"round": 3, "thesis_id": "current-thesis", "code": "theme_cluster_fixation"},
+            {
+                "round": 1,
+                "thesis_id": "old-thesis",
+                "code": "config_validity_config_key_overlap_real",
+            },
+            {
+                "round": 3,
+                "thesis_id": "current-thesis",
+                "code": "thesis_quality_theme_cluster_fixation",
+            },
         ],
     )
 
