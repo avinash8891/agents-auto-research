@@ -1077,3 +1077,7 @@ how -STRATEGY:
 ---
 
 you changed the old 400 plus prompot. show me the proof that all the deleted lines functinoality are not missing after tehc hange. i want to know why you changed each line. go section by section
+
+---
+
+not three. fix all of them everything in the old prompt should be in harness. if there is a deviation take my permission

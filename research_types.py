@@ -43,6 +43,36 @@ class Disqualifier(BaseModel):
     kind: Literal["metric_threshold", "mechanism_evidence"] = "metric_threshold"
 
 
+class Alternative(BaseModel):
+    """One mechanism direction the conductor considered but did not choose.
+
+    Required (>=2) per ResearchThesis when alternatives_considered is enforced
+    by the validator. Forces multi-candidate consideration before final pick
+    (legacy prompt §4 / D1 principle).
+    """
+
+    mechanism: str
+    why_rejected: str = Field(min_length=40)
+
+
+class EvidenceCitation(BaseModel):
+    """One typed evidence citation used to justify the thesis.
+
+    Replaces the legacy `evidence: list[str]` blob with source-tagged citations
+    so the validator can require minimum coverage by source (e.g. >=1 web_search,
+    >=1 analyst).
+    """
+
+    source: Literal[
+        "web_search",
+        "analyst",
+        "source_code",
+        "experiment_result",
+        "memory",
+    ]
+    citation: str
+
+
 class PriorLeverOutcome(BaseModel):
     """Citation that the proposed thesis reuses a config-key concept already tested.
 
@@ -156,6 +186,20 @@ class ResearchThesis(BaseModel):
     # Citations of prior theses whose config-key concepts overlap with this one.
     # Required when reusing a lever in a different direction (B2 whipsaw rule).
     prior_lever_outcomes: list[PriorLeverOutcome] = Field(default_factory=list)
+
+    # Alternative mechanism directions considered before the final pick.
+    # Validator requires >=2 entries (recovers legacy §4 / D1 principle).
+    alternatives_considered: list[Alternative] = Field(default_factory=list)
+
+    # Typed evidence citations. Validator requires at least one with
+    # source='web_search' AND one with source='analyst' (when applicable).
+    # Replaces the legacy `evidence: list[str]` for enforcement purposes; the
+    # legacy field is preserved above for backward compat.
+    evidence_citations: list[EvidenceCitation] = Field(default_factory=list)
+
+    # Citation of which strategy source-code file/function corroborates the
+    # mechanism. Recovers legacy §13.5 "verify mechanism in code" requirement.
+    source_code_verification: str = ""
 
 
 class BacktestContract(BaseModel):

@@ -74,6 +74,20 @@ _MIN_NOVEL_CONNECTION_CHARS = 40
 # is decoration, not a real disconfirmer. The field itself remains optional;
 # this rule only enforces quality when the agent does fill it in.
 _MIN_FALSIFICATION_CHARS = 80
+# Recovered from legacy prompt: minimum field counts and lengths.
+_MIN_ALTERNATIVES_CONSIDERED = 2  # legacy §4
+_MIN_EXPECTED_EFFECTS = 2  # legacy §17
+_MIN_UNDEREXPLORED_DIMENSIONS = 2  # legacy §17
+_MIN_ORTHOGONALITY_DEFENSE_CHARS = 40  # legacy §5
+_MIN_SOURCE_CODE_VERIFICATION_CHARS = 40  # legacy §13.5
+_MIN_EVIDENCE_STRENGTH_VALUES = ("direct", "proxy", "mixed", "speculative")
+# Heuristic: causal_cluster should not look like a snake_case config key.
+# Reject if the value contains common config-key suffixes/tokens, has no spaces,
+# and is all lowercase + underscores.
+_CONFIG_KEY_LIKE_TOKENS = (
+    "_pct", "_threshold", "_atr", "_ratio", "_count", "_min", "_max",
+    "_floor", "_cap", "_distance", "_window", "_seconds", "_minutes",
+)
 _EMERGENT_REQUIRED_FIELDS = (
     "why_existing_dimensions_do_not_fit",
     "mechanism_family_definition",
@@ -362,6 +376,212 @@ def _check_direction_whipsaw(
             f"flips to {proposed_dir} without acknowledgment. Cite '{prior_id}' "
             f"in prior_lever_outcomes (with direction_then, outcome, and why_retry) "
             f"or propose from a different mechanism dimension."
+        )
+
+
+def _check_alternatives_considered(thesis: ResearchThesis) -> None:
+    """L3 (legacy §4): require >=2 alternative mechanisms considered."""
+    if len(thesis.alternatives_considered) < _MIN_ALTERNATIVES_CONSIDERED:
+        raise ThesisValidationError(
+            f"alternatives_considered must contain at least "
+            f"{_MIN_ALTERNATIVES_CONSIDERED} entries (got {len(thesis.alternatives_considered)}). "
+            f"Generate >=2 candidate mechanism directions and explain why this one wins."
+        )
+
+
+def _check_expected_effects_count(thesis: ResearchThesis) -> None:
+    """L3 (legacy §17): require >=2 expected_effects predictions."""
+    if len(thesis.expected_effects) < _MIN_EXPECTED_EFFECTS:
+        raise ThesisValidationError(
+            f"expected_effects must contain at least {_MIN_EXPECTED_EFFECTS} "
+            f"measurable predictions (got {len(thesis.expected_effects)}). "
+            f"A single metric prediction is insufficient to validate a mechanism."
+        )
+
+
+def _check_evidence_strength(thesis: ResearchThesis) -> None:
+    """L3 (legacy §17): evidence_strength must be a valid value, not empty."""
+    value = thesis.evidence_strength
+    if not value:
+        raise ThesisValidationError(
+            f"evidence_strength is required. "
+            f"Set one of: {sorted(_MIN_EVIDENCE_STRENGTH_VALUES)}."
+        )
+    # Pydantic Literal already restricts; this catches the empty-string default.
+
+
+def _check_causal_cluster_not_config_key_like(thesis: ResearchThesis) -> None:
+    """L3 (legacy §17): causal_cluster must be a causal family name, not a
+    config-key identifier."""
+    cluster = thesis.causal_cluster.strip()
+    if not cluster:
+        return  # the upstream "required when prior_theses exist" rule handles emptiness
+    looks_like_key = (
+        " " not in cluster
+        and cluster == cluster.lower()
+        and any(token in cluster for token in _CONFIG_KEY_LIKE_TOKENS)
+    )
+    if looks_like_key:
+        raise ThesisValidationError(
+            f"causal_cluster '{cluster}' looks like a config key name. "
+            f"Use a human-phrased causal-family name (e.g. 'opening-session "
+            f"adverse selection'), not a config identifier."
+        )
+
+
+def _check_underexplored_dimensions_count(thesis: ResearchThesis) -> None:
+    """L3 (legacy §17): >=2 underexplored dimensions when prior_theses exist."""
+    if len(thesis.underexplored_dimensions_considered) < _MIN_UNDEREXPLORED_DIMENSIONS:
+        raise ThesisValidationError(
+            f"underexplored_dimensions_considered must contain at least "
+            f"{_MIN_UNDEREXPLORED_DIMENSIONS} entries (got "
+            f"{len(thesis.underexplored_dimensions_considered)}). Show what you "
+            f"chose not to pursue and why this dimension still wins."
+        )
+
+
+def _check_closest_prior_theses_present(thesis: ResearchThesis) -> None:
+    """L3 (legacy §5): closest_prior_theses_considered required when prior exists."""
+    if not thesis.closest_prior_theses_considered:
+        raise ThesisValidationError(
+            "closest_prior_theses_considered is empty. When prior theses exist, "
+            "name the prior theses you explicitly compared against before proposing."
+        )
+
+
+def _check_orthogonality_defense_quality(thesis: ResearchThesis) -> None:
+    """L3 (legacy §5): orthogonality_defense >=40 chars when prior exists."""
+    text = (thesis.orthogonality_defense or "").strip()
+    if len(text) < _MIN_ORTHOGONALITY_DEFENSE_CHARS:
+        raise ThesisValidationError(
+            f"orthogonality_defense must be at least "
+            f"{_MIN_ORTHOGONALITY_DEFENSE_CHARS} characters (got {len(text)}). "
+            f"Explain why this thesis is orthogonal rather than merely adjacent "
+            f"to the closest prior theses."
+        )
+
+
+def _check_thesis_id_not_repeated(
+    thesis: ResearchThesis, prior_theses: list[dict[str, Any]]
+) -> None:
+    """L3 (legacy §18): the proposed thesis_id must not duplicate a prior one."""
+    prior_ids = {str(p.get("thesis_id") or "") for p in prior_theses}
+    if thesis.thesis_id in prior_ids:
+        raise ThesisValidationError(
+            f"thesis_id '{thesis.thesis_id}' has already been proposed in a prior "
+            f"round. Each thesis must have a unique thesis_id (do not repeat or "
+            f"resubmit prior names)."
+        )
+
+
+# Numeric tuning detector: same key, ratio within [1/_NEIGHBORING_RATIO,
+# _NEIGHBORING_RATIO] is treated as a parameter tuning nudge.
+_NEIGHBORING_RATIO = 2.0
+
+
+def _is_numeric_value(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _check_neighboring_threshold(
+    thesis: ResearchThesis, prior_theses: list[dict[str, Any]]
+) -> None:
+    """L5 (legacy §2 + §12): reject when a numeric config key has been changed
+    by a prior thesis and the new value is within a narrow band of the prior's.
+
+    "Narrow band" = within 2x of the prior value (ratio in [0.5, 2.0]).
+    Different keys, non-numeric values, or large deltas are not flagged here.
+    """
+    new_changes = thesis.config_changes or {}
+    if not new_changes:
+        return
+    for key, new_val in new_changes.items():
+        if not _is_numeric_value(new_val):
+            continue
+        if _is_overlap_ignored_key(str(key)):
+            continue
+        for prior in prior_theses:
+            prior_changes = prior.get("config_changes") or {}
+            if key not in prior_changes:
+                continue
+            prior_val = prior_changes[key]
+            if not _is_numeric_value(prior_val):
+                continue
+            # Both numeric. Compute ratio (handle zero defensively).
+            new_f = float(new_val)
+            prior_f = float(prior_val)
+            if new_f == prior_f:
+                # Identical value — Jaccard rule will catch broader overlap;
+                # not flagged by the threshold detector specifically.
+                continue
+            if new_f == 0 or prior_f == 0:
+                # One side is zero, ratio undefined; treat as significant change.
+                continue
+            ratio = new_f / prior_f
+            if 1.0 / _NEIGHBORING_RATIO <= ratio <= _NEIGHBORING_RATIO:
+                raise ThesisValidationError(
+                    f"Neighboring threshold: config key '{key}' was set to "
+                    f"{prior_val} by prior thesis '{prior.get('thesis_id', '?')}' "
+                    f"and this thesis sets it to {new_val} (ratio "
+                    f"{ratio:.2f}x, within {_NEIGHBORING_RATIO}x). This is "
+                    f"parameter tuning, not a new mechanism. Either justify a "
+                    f"structural boundary at this value or test a materially "
+                    f"different lever."
+                )
+
+
+def _check_mechanism_judge_verdict(thesis: ResearchThesis) -> None:
+    """L11 (legacy §17): LLM-as-judge for hypothesis describing mechanism vs
+    param-value dressed in mechanistic prose. Fails open when no classifier
+    is installed (development environments without OpenAI access).
+    """
+    from mechanism_judge import classify_hypothesis
+
+    verdict = classify_hypothesis(thesis.hypothesis, thesis.mechanism)
+    if verdict == "param_value_in_prose":
+        raise ThesisValidationError(
+            "Mechanism judge classified the hypothesis as 'param_value_in_prose' "
+            "rather than a real mechanism. The hypothesis should describe what "
+            "happens in the market and why this change should produce the "
+            "expected effect — not which parameter value is being tried."
+        )
+
+
+def _check_source_code_verification(thesis: ResearchThesis) -> None:
+    """L8 (legacy §13.5): require a non-trivial source_code_verification string.
+
+    The agent must cite a specific source file/function whose behavior corroborates
+    the mechanism. Empty or short text is decoration, not verification.
+    """
+    text = (thesis.source_code_verification or "").strip()
+    if len(text) < _MIN_SOURCE_CODE_VERIFICATION_CHARS:
+        raise ThesisValidationError(
+            f"source_code_verification must be at least "
+            f"{_MIN_SOURCE_CODE_VERIFICATION_CHARS} characters citing the strategy "
+            f"source file/function whose behavior corroborates the mechanism "
+            f"(got {len(text)} characters)."
+        )
+
+
+def _check_evidence_citations_coverage(thesis: ResearchThesis) -> None:
+    """L4 (legacy §17): evidence_citations must include >=1 web_search AND
+    >=1 analyst source. Recovers the legacy "evidence: ≥1 web + ≥1 analyst" rule.
+    """
+    if not thesis.evidence_citations:
+        raise ThesisValidationError(
+            "evidence_citations is empty. Provide at least one web_search citation "
+            "and one analyst citation supporting the mechanism."
+        )
+    sources = {c.source for c in thesis.evidence_citations}
+    if "web_search" not in sources:
+        raise ThesisValidationError(
+            "evidence_citations must include at least one entry with "
+            "source='web_search'. The mechanism needs external corroboration."
+        )
+    if "analyst" not in sources:
+        raise ThesisValidationError(
+            "evidence_citations must include at least one entry with "
+            "source='analyst'. The mechanism must be grounded in trade-level evidence."
         )
 
 
@@ -959,6 +1179,21 @@ def validate_research_thesis(
 
     # B5: qualitative disqualifier requirement.
     _check_qualitative_disqualifier_present(thesis)
+
+    # L3: legacy-prompt-recovered field-count and content rules.
+    _check_alternatives_considered(thesis)
+    _check_expected_effects_count(thesis)
+    _check_evidence_strength(thesis)
+    _check_causal_cluster_not_config_key_like(thesis)
+    _check_evidence_citations_coverage(thesis)
+    _check_source_code_verification(thesis)
+    _check_mechanism_judge_verdict(thesis)
+    if prior_theses:
+        _check_underexplored_dimensions_count(thesis)
+        _check_closest_prior_theses_present(thesis)
+        _check_orthogonality_defense_quality(thesis)
+        _check_thesis_id_not_repeated(thesis, prior_theses)
+        _check_neighboring_threshold(thesis, prior_theses)
 
     if prior_theses and thesis.mechanism_dimension:
         same_dim = [

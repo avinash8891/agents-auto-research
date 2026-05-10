@@ -40,7 +40,12 @@ def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
                 "metric": "profit_factor",
                 "direction": "increase",
                 "rationale": "Fewer false-break entries should improve realized edge.",
-            }
+            },
+            {
+                "metric": "trade_count",
+                "direction": "decrease_or_same",
+                "rationale": "Confirmation gating should not collapse trade frequency.",
+            },
         ],
         "disqualifiers": [
             {
@@ -59,6 +64,25 @@ def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
                 "kind": "mechanism_evidence",
             },
         ],
+        "evidence_strength": "mixed",
+        "alternatives_considered": [
+            {
+                "mechanism": "wider stop-distance cap",
+                "why_rejected": "would not address the wick-only false-break root cause directly",
+            },
+            {
+                "mechanism": "session-time entry filter",
+                "why_rejected": "is a proxy for the wick problem rather than the structural fix",
+            },
+        ],
+        "evidence_citations": [
+            {"source": "web_search", "citation": "Cont et al on order-flow imbalance"},
+            {"source": "analyst", "citation": "round-3 analyst: wick-only stops 37%"},
+        ],
+        "source_code_verification": (
+            "strategies/ema/signals.py:detect_pullback contains the entry filter; "
+            "the close-confirmation gate would be added here as an additional check."
+        ),
         "requires_code_change": True,
         "requested_primitives": ["close_confirmed_entry_gate"],
         "why_not_overfit": "Mechanism is structural and evaluated across all train years.",

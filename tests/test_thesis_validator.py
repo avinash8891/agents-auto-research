@@ -32,13 +32,45 @@ def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
             "Connects wick-only false-break evidence with engine-level close "
             "confirmation rather than another nearby threshold change."
         ),
+        "closest_prior_theses_considered": ["prior_signal_quality_baseline"],
+        "orthogonality_defense": (
+            "This thesis changes engine logic for entry confirmation, a different "
+            "lever family than threshold-tuning the existing entry timing."
+        ),
+        "evidence_strength": "mixed",
+        "alternatives_considered": [
+            {
+                "mechanism": "wider stop-distance cap",
+                "why_rejected": "would not address the wick-only false-break root cause directly",
+            },
+            {
+                "mechanism": "session-time entry filter",
+                "why_rejected": "is a proxy for the wick problem rather than the structural fix",
+            },
+        ],
+        "evidence_citations": [
+            {"source": "web_search", "citation": "Cont et al on order-flow imbalance"},
+            {
+                "source": "analyst",
+                "citation": "round-3 analyst: wick-only stop-outs are 37% of total stops",
+            },
+        ],
+        "source_code_verification": (
+            "strategies/ema/signals.py:detect_pullback contains the entry filter; "
+            "the close-confirmation gate would be added here as an additional check."
+        ),
         "config_changes": {"requires_engine_change": True},
         "expected_effects": [
             {
                 "metric": "profit_factor",
                 "direction": "increase",
                 "rationale": "Fewer false-break entries should improve realized edge.",
-            }
+            },
+            {
+                "metric": "trade_count",
+                "direction": "decrease_or_same",
+                "rationale": "Tighter entry filtering should not collapse trade frequency.",
+            },
         ],
         "disqualifiers": [
             {

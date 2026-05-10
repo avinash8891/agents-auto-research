@@ -52,6 +52,42 @@ def _base_thesis(thesis_id: str, dimension: str = "signal_quality") -> dict:
             "portfolio_construction",
             "regime_conditioning",
         ],
+        "closest_prior_theses_considered": ["prior_volatility_baseline"],
+        "orthogonality_defense": (
+            "Volatility floor on alert candle is a different lever family than "
+            "entry-time gating that has been explored before."
+        ),
+        "evidence_strength": "mixed",
+        "alternatives_considered": [
+            {
+                "mechanism": "RVOL gate on stocks-in-play list",
+                "why_rejected": "we lack the relative-volume data for the train period",
+            },
+            {
+                "mechanism": "opening drive directional gate",
+                "why_rejected": "weaker disconfirmer than the volatility-floor mechanism here",
+            },
+        ],
+        "evidence_citations": [
+            {"source": "web_search", "citation": "intraday volatility microstructure paper"},
+            {"source": "analyst", "citation": "round-3 analyst: low-vol opens have weaker PF"},
+        ],
+        "source_code_verification": (
+            "strategies/ema/signals.py:detect_alert_candle is where the volatility "
+            "floor on the alert candle would gate entries by ATR-percent."
+        ),
+        "expected_effects": [
+            {
+                "metric": "profit_factor",
+                "direction": "increase",
+                "rationale": "Higher-volatility setups should follow through more reliably.",
+            },
+            {
+                "metric": "trade_count",
+                "direction": "decrease_or_same",
+                "rationale": "Filtering low-volatility setups reduces but does not collapse counts.",
+            },
+        ],
     }
 
 
