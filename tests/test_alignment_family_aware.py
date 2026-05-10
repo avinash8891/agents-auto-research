@@ -59,11 +59,67 @@ def test_ema_research_spec_populates_key_concepts() -> None:
     assert "rr_ratio" in spec.key_concepts
 
 
-def test_orb_research_spec_key_concepts_default_empty() -> None:
-    """ORB ships without alignment scoring (rule fails open) until the strategy
-    author opts in by populating key_concepts on its spec."""
+def test_orb_research_spec_carries_shared_concepts() -> None:
+    """ORB declares concept patterns for keys it shares with other families
+    (rr_ratio, max_hold_bars). Family-specific ORB keys (universe_mode,
+    or_minutes, etc.) remain absent until the strategy author populates them;
+    those keys fall through to the unknown-key benefit-of-doubt branch in
+    `check_hypothesis_alignment`."""
     spec = get_family_research_spec("orb")
-    assert spec.key_concepts == {}
+    assert "rr_ratio" in spec.key_concepts
+    assert "max_hold_bars" in spec.key_concepts
+
+
+# ── Cross-family non-bleed + shared-pattern consistency ──────────────────
+
+
+def test_key_concepts_scoped_to_owning_family() -> None:
+    """A key in EMA's concept map is scored under EMA but treated as unknown
+    under any other family. Ensures concept maps stay family-scoped: changing
+    EMA's gap_exclude pattern must never affect ORB's alignment decisions."""
+    config_changes = {"gap_exclude": True}
+    # Hypothesis + mechanism deliberately avoid the words "gap" and "overnight"
+    # so EMA's gap_exclude regex cannot match (otherwise the cross-family
+    # comparison wouldn't isolate the family-scoping behavior).
+    hypothesis = "Reduce false breaks at the open by tightening regime filters."
+    mechanism = "Regime filters reduce noise from low-quality session prints."
+
+    ema_score, _ = check_hypothesis_alignment(
+        hypothesis=hypothesis,
+        mechanism=mechanism,
+        config_changes=config_changes,
+        family_name="ema",
+    )
+    orb_score, _ = check_hypothesis_alignment(
+        hypothesis=hypothesis,
+        mechanism=mechanism,
+        config_changes=config_changes,
+        family_name="orb",
+    )
+    # EMA recognizes gap_exclude; the hypothesis doesn't say "gap" → misaligned.
+    assert ema_score == 0.0
+    # ORB does not catalog gap_exclude → unknown key → benefit of doubt.
+    assert orb_score == 1.0
+
+
+def test_shared_concept_pattern_consistency_across_families() -> None:
+    """rr_ratio and max_hold_bars patterns are intentionally duplicated across
+    EMA and ORB. This test makes the # SHARED with X comment markers
+    enforceable: if someone updates one family's pattern and forgets the other,
+    this test catches the drift before merge.
+
+    If a future change intentionally diverges a pattern, remove that key from
+    one family's key_concepts (so it falls through to family-specific) rather
+    than letting two truths-of-record live in parallel.
+    """
+    ema = get_family_research_spec("ema")
+    orb = get_family_research_spec("orb")
+    for shared_key in ("rr_ratio", "max_hold_bars"):
+        assert ema.key_concepts[shared_key] == orb.key_concepts[shared_key], (
+            f"shared concept '{shared_key}' has drifted between EMA and ORB; "
+            f"if you intentionally diverged, remove it from one family's "
+            f"key_concepts instead of keeping two parallel definitions."
+        )
 
 
 # ── Alignment scoring honors the family parameter ────────────────────────
@@ -94,8 +150,12 @@ def test_check_hypothesis_alignment_unknown_family_fails_open() -> None:
     assert "concept" in explanation.lower() or "no" in explanation.lower()
 
 
-def test_check_hypothesis_alignment_orb_family_fails_open() -> None:
-    """ORB ships with empty key_concepts; alignment must not punish ORB theses."""
+def test_check_hypothesis_alignment_orb_family_fails_open_for_uncatalogued_keys() -> None:
+    """ORB's key_concepts only declares patterns for shared keys today
+    (rr_ratio, max_hold_bars). ORB-specific keys like universe_mode and
+    stocks_in_play_top_n fall through to the unknown-key benefit-of-doubt
+    branch — alignment must not punish ORB theses for keys the strategy
+    author hasn't catalogued yet."""
     score, _ = check_hypothesis_alignment(
         hypothesis="Filter ORB entries by stocks-in-play universe.",
         mechanism="Restrict the universe to high-liquidity names.",
