@@ -1,0 +1,8 @@
+{
+  "trades_file": "trades.csv",
+  "strategy_events_file": "strategy_events.parquet",
+  "metrics_file": "metrics.json",
+  "diagnostics_file": "diagnostics.json",
+  "git_sha": "b96e64e",
+  "config_hash": "ab12cd34ef56"
+}

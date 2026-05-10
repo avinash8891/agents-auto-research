@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from artifact_io import write_json_artifact
+from autoresearch_artifacts import (
+    queue_from_thesis_artifacts,
+    read_artifacts_relative_to_root,
+    read_research_artifacts,
+    read_run_queue,
+    read_thesis_artifacts,
+)
+
+
+def _write_artifact(directory: Path, name: str, payload: dict) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    path.write_text(json.dumps(payload))
+    return path
+
+
+def test_read_artifacts_relativizes_artifact_path_to_root(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-1"
+    _write_artifact(artifacts_dir, "round.json", {"status": "completed"})
+
+    out = read_artifacts_relative_to_root(artifacts_dir, tmp_path)
+
+    assert out[0]["artifact_path"] == "runtime/jobs/job-1/research/round-1/round.json"
+
+
+def test_read_artifacts_returns_sorted_by_filename(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "queue"
+    _write_artifact(artifacts_dir, "z.json", {"id": "z"})
+    _write_artifact(artifacts_dir, "a.json", {"id": "a"})
+
+    assert [a["id"] for a in read_artifacts_relative_to_root(artifacts_dir, tmp_path)] == [
+        "a",
+        "z",
+    ]
+
+
+def test_read_research_artifacts_reads_round_json_only(tmp_path: Path) -> None:
+    research_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research"
+    _write_artifact(research_dir / "round-0-baseline", "round.json", {"job_id": 1, "round": 0})
+    _write_artifact(research_dir / "round-1", "round.json", {"job_id": 1, "round": 1})
+    _write_artifact(research_dir / "round-1" / "backtest", "result.json", {"ignored": True})
+
+    out = read_research_artifacts(research_dir, tmp_path, job=1)
+
+    assert [artifact["round"] for artifact in out] == [0, 1]
+
+
+def test_read_research_artifacts_filters_by_job(tmp_path: Path) -> None:
+    research_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research"
+    _write_artifact(research_dir / "round-1", "round.json", {"job_id": 1})
+    _write_artifact(research_dir / "round-2", "round.json", {"job_id": 2})
+
+    out = read_research_artifacts(research_dir, tmp_path, job=2)
+
+    assert len(out) == 1
+    assert out[0]["artifact_path"].endswith("round-2/round.json")
+
+
+def test_read_thesis_artifacts_fails_loudly_for_legacy_loose_roots(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="no longer supported"):
+        read_thesis_artifacts(tmp_path / "proposals", tmp_path)
+
+
+def test_read_run_queue_fails_loudly_for_legacy_queue_dirs(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="no longer supported"):
+        read_run_queue(tmp_path / "run-queue", tmp_path)
+
+
+def test_queue_from_thesis_artifacts_fails_loudly_for_variant_queueing(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="no longer supported"):
+        queue_from_thesis_artifacts(tmp_path / "run-queue", tmp_path, [])
+
+
+def test_write_json_artifact_persists_iso8601_timestamp_strings(tmp_path: Path) -> None:
+    path = tmp_path / "artifact.json"
+
+    write_json_artifact(path, {"status": "ok", "timestamp": "2026-04-30T12:00:00+00:00"})
+
+    payload = json.loads(path.read_text())
+    assert payload["timestamp"] == "2026-04-30T12:00:00+00:00"

@@ -1,0 +1,400 @@
+{
+  "files": {
+    "reflexio-event.json": {
+      "episode": {
+        "family": "ema",
+        "outcome": "compiled",
+        "round": 1,
+        "thesis_id": "ema5"
+      },
+      "feedback_signal": {
+        "outcome": "compiled",
+        "quality": {
+          "delta": {},
+          "dimension_scores": {
+            "compiled": 1.0,
+            "conductor_error": 0.0,
+            "needs_code": 0.0,
+            "rejected": 0.0,
+            "stopped": 0.0
+          },
+          "overall_score": 1.0,
+          "regressions": [],
+          "run_label": "round-1",
+          "trend": "initial"
+        },
+        "rejection_reason": ""
+      },
+      "memory_key": "ema:round-1:thesis-ema5",
+      "reflection": {
+        "quality": {
+          "delta": {},
+          "dimension_scores": {
+            "compiled": 1.0,
+            "conductor_error": 0.0,
+            "needs_code": 0.0,
+            "rejected": 0.0,
+            "stopped": 0.0
+          },
+          "overall_score": 1.0,
+          "regressions": [],
+          "run_label": "round-1",
+          "trend": "initial"
+        },
+        "reasoning": "research rationale",
+        "rejection_reason": ""
+      },
+      "resources": {
+        "usage": {
+          "total": {
+            "input_tokens": 1,
+            "output_tokens": 2,
+            "total_tokens": 3
+          }
+        }
+      },
+      "system": "reflexio",
+      "trajectory": [
+        {
+          "action": "command",
+          "agent": "",
+          "category": "trace",
+          "content": "START: python3 -m backtest.runner --config 'configs/ema base.yaml'",
+          "event_id": "evt-00000001",
+          "model": "",
+          "summary": "START: python3 -m backtest.runner --config 'configs/ema base.yaml'",
+          "timestamp": "2026-05-08T03:37:31.785Z",
+          "tool_name": ""
+        },
+        {
+          "action": "hypothesis",
+          "agent": "",
+          "category": "trace",
+          "content": "BEGIN H001 name=ema_base",
+          "event_id": "evt-00000005",
+          "model": "",
+          "summary": "BEGIN H001 name=ema_base",
+          "timestamp": "2026-05-08T03:37:31.894Z",
+          "tool_name": ""
+        },
+        {
+          "action": "loop",
+          "agent": "",
+          "category": "trace",
+          "content": "BENCHMARK START: echo ok",
+          "event_id": "evt-00000007",
+          "model": "",
+          "summary": "BENCHMARK START: echo ok",
+          "timestamp": "2026-05-08T03:37:31.895Z",
+          "tool_name": ""
+        },
+        {
+          "action": "loop",
+          "agent": "",
+          "category": "trace",
+          "content": "METRIC parsed: 1.25 decision=keep config=configs/ema_base.yaml",
+          "event_id": "evt-00000008",
+          "model": "",
+          "summary": "METRIC parsed: 1.25 decision=keep config=configs/ema_base.yaml",
+          "timestamp": "2026-05-08T03:37:31.896Z",
+          "tool_name": ""
+        },
+        {
+          "action": "baseline",
+          "agent": "",
+          "category": "trace",
+          "content": "checkpoint recorded commit=abc1234",
+          "event_id": "evt-00000009",
+          "model": "",
+          "summary": "checkpoint recorded commit=abc1234",
+          "timestamp": "2026-05-08T03:37:31.899Z",
+          "tool_name": ""
+        },
+        {
+          "action": "baseline",
+          "agent": "",
+          "category": "trace",
+          "content": "DRIFT DETECTED: [{'field': 'data_hash', 'previous': '99914b932bd3', 'current': '44136fa355b3', 'severity': 'critical'}, {'field': 'config_hash', 'previous': '2994ac2be47c', 'current': '44136fa355b3', 'severity': 'critical'}]",
+          "event_id": "evt-00000010",
+          "model": "",
+          "summary": "DRIFT DETECTED: [{'field': 'data_hash', 'previous': '99914b932bd3', 'current': '44136fa355b3', 'severity': 'critical'}, {'field': 'config_hash', 'previous': '2994ac2be47c', 'current': '44136fa355b3', 'severity': 'critical'}]",
+          "timestamp": "2026-05-08T03:37:31.899Z",
+          "tool_name": ""
+        },
+        {
+          "action": "eval",
+          "agent": "",
+          "category": "trace",
+          "content": "evaluation error: 'missing diagnostics'",
+          "event_id": "evt-00000011",
+          "model": "",
+          "summary": "evaluation error: 'missing diagnostics'",
+          "timestamp": "2026-05-08T03:37:31.908Z",
+          "tool_name": ""
+        },
+        {
+          "action": "command",
+          "agent": "",
+          "category": "trace",
+          "content": "START: python -m fake",
+          "event_id": "evt-00000012",
+          "model": "",
+          "summary": "START: python -m fake",
+          "timestamp": "2026-05-08T03:37:31.913Z",
+          "tool_name": ""
+        },
+        {
+          "action": "command",
+          "agent": "",
+          "category": "trace",
+          "content": "START: python -m fake",
+          "event_id": "evt-00000014",
+          "model": "",
+          "summary": "START: python -m fake",
+          "timestamp": "2026-05-08T03:37:31.915Z",
+          "tool_name": ""
+        },
+        {
+          "action": "command",
+          "agent": "",
+          "category": "trace",
+          "content": "START: <local-abs-path> -m backtest.runner --strategy ema --config <local-temp-path> --output-dir <local-temp-path>",
+          "event_id": "evt-00000016",
+          "model": "",
+          "summary": "START: <local-abs-path> -m backtest.runner --strategy ema --config <local-temp-path> --output-dir <local-temp-path>",
+          "timestamp": "2026-05-08T03:37:32.043Z",
+          "tool_name": ""
+        },
+        {
+          "action": "command",
+          "agent": "",
+          "category": "trace",
+          "content": "START: <local-abs-path> -m backtest.runner --strategy ema --config <local-temp-path> --output-dir <local-temp-path>",
+          "event_id": "evt-00000019",
+          "model": "",
+          "summary": "START: <local-abs-path> -m backtest.runner --strategy ema --config <local-temp-path> --output-dir <local-temp-path>",
+          "timestamp": "2026-05-08T03:37:35.928Z",
+          "tool_name": ""
+        },
+        {
+          "action": "hypothesis",
+          "agent": "",
+          "category": "trace",
+          "content": "BEGIN H002 name=research-round-1",
+          "event_id": "evt-00000022",
+          "model": "",
+          "summary": "BEGIN H002 name=research-round-1",
+          "timestamp": "2026-05-08T03:37:37.403Z",
+          "tool_name": ""
+        },
+        {
+          "action": "usage",
+          "agent": "",
+          "category": "trace",
+          "content": "round=1 {\"total\": {\"input_tokens\": 1, \"output_tokens\": 2, \"total_tokens\": 3}}",
+          "event_id": "evt-00000024",
+          "model": "",
+          "summary": "round=1 {\"total\": {\"input_tokens\": 1, \"output_tokens\": 2, \"total_tokens\": 3}}",
+          "timestamp": "2026-05-08T03:37:37.406Z",
+          "tool_name": ""
+        },
+        {
+          "action": "hypothesis",
+          "agent": "",
+          "category": "trace",
+          "content": "END H002 name=research-round-1 decision=research_complete metric=None",
+          "event_id": "evt-00000025",
+          "model": "",
+          "summary": "END H002 name=research-round-1 decision=research_complete metric=None",
+          "timestamp": "2026-05-08T03:37:37.407Z",
+          "tool_name": ""
+        },
+        {
+          "action": "append_run",
+          "agent": "",
+          "category": "quality",
+          "content": "research round 1 outcome=compiled",
+          "event_id": "evt-00000026",
+          "model": "",
+          "summary": "research round 1 outcome=compiled",
+          "timestamp": "2026-05-08T03:37:37.455Z",
+          "tool_name": ""
+        }
+      ]
+    },
+    "reflexio-summary.json": {
+      "outcome": "compiled",
+      "round": 1,
+      "thesis_id": "ema5"
+    },
+    "reflexio-trajectory.json": [
+      {
+        "action": "command",
+        "agent": "",
+        "category": "trace",
+        "content": "START: python3 -m backtest.runner --config 'configs/ema base.yaml'",
+        "event_id": "evt-00000001",
+        "model": "",
+        "summary": "START: python3 -m backtest.runner --config 'configs/ema base.yaml'",
+        "timestamp": "2026-05-08T03:37:31.785Z",
+        "tool_name": ""
+      },
+      {
+        "action": "hypothesis",
+        "agent": "",
+        "category": "trace",
+        "content": "BEGIN H001 name=ema_base",
+        "event_id": "evt-00000005",
+        "model": "",
+        "summary": "BEGIN H001 name=ema_base",
+        "timestamp": "2026-05-08T03:37:31.894Z",
+        "tool_name": ""
+      },
+      {
+        "action": "loop",
+        "agent": "",
+        "category": "trace",
+        "content": "BENCHMARK START: echo ok",
+        "event_id": "evt-00000007",
+        "model": "",
+        "summary": "BENCHMARK START: echo ok",
+        "timestamp": "2026-05-08T03:37:31.895Z",
+        "tool_name": ""
+      },
+      {
+        "action": "loop",
+        "agent": "",
+        "category": "trace",
+        "content": "METRIC parsed: 1.25 decision=keep config=configs/ema_base.yaml",
+        "event_id": "evt-00000008",
+        "model": "",
+        "summary": "METRIC parsed: 1.25 decision=keep config=configs/ema_base.yaml",
+        "timestamp": "2026-05-08T03:37:31.896Z",
+        "tool_name": ""
+      },
+      {
+        "action": "baseline",
+        "agent": "",
+        "category": "trace",
+        "content": "checkpoint recorded commit=abc1234",
+        "event_id": "evt-00000009",
+        "model": "",
+        "summary": "checkpoint recorded commit=abc1234",
+        "timestamp": "2026-05-08T03:37:31.899Z",
+        "tool_name": ""
+      },
+      {
+        "action": "baseline",
+        "agent": "",
+        "category": "trace",
+        "content": "DRIFT DETECTED: [{'field': 'data_hash', 'previous': '99914b932bd3', 'current': '44136fa355b3', 'severity': 'critical'}, {'field': 'config_hash', 'previous': '2994ac2be47c', 'current': '44136fa355b3', 'severity': 'critical'}]",
+        "event_id": "evt-00000010",
+        "model": "",
+        "summary": "DRIFT DETECTED: [{'field': 'data_hash', 'previous': '99914b932bd3', 'current': '44136fa355b3', 'severity': 'critical'}, {'field': 'config_hash', 'previous': '2994ac2be47c', 'current': '44136fa355b3', 'severity': 'critical'}]",
+        "timestamp": "2026-05-08T03:37:31.899Z",
+        "tool_name": ""
+      },
+      {
+        "action": "eval",
+        "agent": "",
+        "category": "trace",
+        "content": "evaluation error: 'missing diagnostics'",
+        "event_id": "evt-00000011",
+        "model": "",
+        "summary": "evaluation error: 'missing diagnostics'",
+        "timestamp": "2026-05-08T03:37:31.908Z",
+        "tool_name": ""
+      },
+      {
+        "action": "command",
+        "agent": "",
+        "category": "trace",
+        "content": "START: python -m fake",
+        "event_id": "evt-00000012",
+        "model": "",
+        "summary": "START: python -m fake",
+        "timestamp": "2026-05-08T03:37:31.913Z",
+        "tool_name": ""
+      },
+      {
+        "action": "command",
+        "agent": "",
+        "category": "trace",
+        "content": "START: python -m fake",
+        "event_id": "evt-00000014",
+        "model": "",
+        "summary": "START: python -m fake",
+        "timestamp": "2026-05-08T03:37:31.915Z",
+        "tool_name": ""
+      },
+      {
+        "action": "command",
+        "agent": "",
+        "category": "trace",
+        "content": "START: <local-abs-path> -m backtest.runner --strategy ema --config <local-temp-path> --output-dir <local-temp-path>",
+        "event_id": "evt-00000016",
+        "model": "",
+        "summary": "START: <local-abs-path> -m backtest.runner --strategy ema --config <local-temp-path> --output-dir <local-temp-path>",
+        "timestamp": "2026-05-08T03:37:32.043Z",
+        "tool_name": ""
+      },
+      {
+        "action": "command",
+        "agent": "",
+        "category": "trace",
+        "content": "START: <local-abs-path> -m backtest.runner --strategy ema --config <local-temp-path> --output-dir <local-temp-path>",
+        "event_id": "evt-00000019",
+        "model": "",
+        "summary": "START: <local-abs-path> -m backtest.runner --strategy ema --config <local-temp-path> --output-dir <local-temp-path>",
+        "timestamp": "2026-05-08T03:37:35.928Z",
+        "tool_name": ""
+      },
+      {
+        "action": "hypothesis",
+        "agent": "",
+        "category": "trace",
+        "content": "BEGIN H002 name=research-round-1",
+        "event_id": "evt-00000022",
+        "model": "",
+        "summary": "BEGIN H002 name=research-round-1",
+        "timestamp": "2026-05-08T03:37:37.403Z",
+        "tool_name": ""
+      },
+      {
+        "action": "usage",
+        "agent": "",
+        "category": "trace",
+        "content": "round=1 {\"total\": {\"input_tokens\": 1, \"output_tokens\": 2, \"total_tokens\": 3}}",
+        "event_id": "evt-00000024",
+        "model": "",
+        "summary": "round=1 {\"total\": {\"input_tokens\": 1, \"output_tokens\": 2, \"total_tokens\": 3}}",
+        "timestamp": "2026-05-08T03:37:37.406Z",
+        "tool_name": ""
+      },
+      {
+        "action": "hypothesis",
+        "agent": "",
+        "category": "trace",
+        "content": "END H002 name=research-round-1 decision=research_complete metric=None",
+        "event_id": "evt-00000025",
+        "model": "",
+        "summary": "END H002 name=research-round-1 decision=research_complete metric=None",
+        "timestamp": "2026-05-08T03:37:37.407Z",
+        "tool_name": ""
+      },
+      {
+        "action": "append_run",
+        "agent": "",
+        "category": "quality",
+        "content": "research round 1 outcome=compiled",
+        "event_id": "evt-00000026",
+        "model": "",
+        "summary": "research round 1 outcome=compiled",
+        "timestamp": "2026-05-08T03:37:37.455Z",
+        "tool_name": ""
+      }
+    ]
+  },
+  "schema_version": 1,
+  "target": "reflexio"
+}
