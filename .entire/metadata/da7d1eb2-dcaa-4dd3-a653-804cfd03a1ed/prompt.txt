@@ -1073,3 +1073,7 @@ how -STRATEGY:
       432 -  - orthogonal_discovery = a genuinely different mechanism family
       433 -  - implementation_unlock = code change needed to test a mechanism
       434 -  - cleanup_validation_follow_up = validation or observability follow-up is that current conductor system prompot? we also have a reseach rpompot?
+
+---
+
+you changed the old 400 plus prompot. show me the proof that all the deleted lines functinoality are not missing after tehc hange. i want to know why you changed each line. go section by section
