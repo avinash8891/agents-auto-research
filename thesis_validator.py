@@ -1062,17 +1062,6 @@ def validate_research_thesis(
                     f"what fundamentally new mechanism this tests within that dimension."
                 )
 
-    if thesis.config_changes:
-        score, explanation = check_hypothesis_alignment(
-            thesis.hypothesis,
-            thesis.mechanism,
-            thesis.config_changes,
-        )
-        if score < ALIGNMENT_THRESHOLD:
-            raise ThesisValidationError(
-                f"Hypothesis-config misalignment (score={score:.2f}): {explanation}"
-            )
-
     return thesis
 
 
@@ -1111,11 +1100,94 @@ def validate_stage_1(
     return validate_research_thesis(thesis, prior_theses=prior_theses)
 
 
-def validate_stage_2(contract: Any) -> Any:
-    """Stage 2: post-compile validator. Currently a no-op.
+def _collect_runtime_config_keys(value: Any) -> set[str]:
+    """Return every dict key that appears anywhere in the runtime_config tree.
 
-    Rules that need the resolved/normalized config (e.g. required-diagnostics
-    presence in the compiled output) belong here. Returns the contract
-    unchanged, or raises ThesisValidationError on rule violation.
+    Used by Stage 2 to determine whether a required_diagnostic name is
+    referenced in the compiled config's diagnostic surface, even when the
+    compiler did not turn it into a structured spec.
     """
+    keys: set[str] = set()
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if isinstance(k, str):
+                    keys.add(k)
+                walk(v)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(value)
+    return keys
+
+
+def validate_stage_2(contract: Any) -> Any:
+    """Stage 2: post-compile validator. Operates on the compiled BacktestContract.
+
+    Rules that need the resolved/normalized config live here:
+      - hypothesis-config alignment scored against `contract.runtime_config`
+        (NOT against `thesis.config_changes`, which is a pre-compile artifact)
+      - every entry in `thesis.required_diagnostics` (carried through to
+        `contract.required_diagnostics`) must resolve to a real diagnostic in
+        the compiled output — present in `contract.required_diagnostic_specs`
+        (key or alias) OR referenced as a key in `contract.runtime_config`.
+
+    Returns the contract on success; raises ThesisValidationError on violation.
+    """
+    if contract is None:
+        return contract
+
+    runtime_config = getattr(contract, "runtime_config", None) or {}
+    hypothesis = getattr(contract, "hypothesis", "") or ""
+    mechanism = getattr(contract, "mechanism", "") or ""
+
+    if isinstance(runtime_config, dict) and runtime_config:
+        score, explanation = check_hypothesis_alignment(hypothesis, mechanism, runtime_config)
+        if score < ALIGNMENT_THRESHOLD:
+            raise ThesisValidationError(
+                f"Hypothesis-config misalignment (score={score:.2f}): {explanation}",
+                rejection_code="hypothesis_config_misalignment",
+                evidence={"score": round(score, 4), "explanation": explanation},
+            )
+
+    required_diagnostics = list(getattr(contract, "required_diagnostics", []) or [])
+    if required_diagnostics:
+        from diagnostic_contracts import normalize_diagnostic_requirement
+
+        specs = list(getattr(contract, "required_diagnostic_specs", []) or [])
+        resolved: set[str] = set()
+        for spec in specs:
+            spec_key = getattr(spec, "key", "") or ""
+            if spec_key:
+                resolved.add(spec_key)
+            for alias in getattr(spec, "aliases", []) or []:
+                if isinstance(alias, str) and alias:
+                    resolved.add(alias)
+
+        runtime_keys = _collect_runtime_config_keys(runtime_config)
+        missing: list[str] = []
+        for name in required_diagnostics:
+            if not isinstance(name, str) or not name.strip():
+                continue
+            normalized = normalize_diagnostic_requirement(name)
+            if normalized and (
+                normalized in resolved
+                or name in resolved
+                or name in runtime_keys
+                or normalized in runtime_keys
+            ):
+                continue
+            missing.append(name)
+
+        if missing:
+            raise ThesisValidationError(
+                "Required diagnostics not present in compiled contract: "
+                f"{missing}. Each name must appear as a key/alias in "
+                "required_diagnostic_specs or as a key in runtime_config.",
+                rejection_code="required_diagnostic_missing_post_compile",
+                evidence={"missing": missing},
+            )
+
     return contract
