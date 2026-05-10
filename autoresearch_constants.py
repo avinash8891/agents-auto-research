@@ -42,7 +42,13 @@ MILLISECONDS_PER_SECOND = 1000
 
 # ── Conductor + research ─────────────────────────────────────────
 MAX_RESEARCH_ROUNDS = 100  # safeguard: max single-thesis research iterations
-MAX_VALIDATION_RETRIES = 3
+MAX_VALIDATION_RETRIES = 3  # legacy alias = total retries cap (stage_1 + stage_2 + compile)
+
+# Per-stage retry budgets. The retry loop exits when any stage's counter is
+# exhausted. Total worst-case attempts = sum of the three budgets.
+MAX_VALIDATION_RETRIES_STAGE_1 = 3  # structural / pre-compile rules
+MAX_VALIDATION_RETRIES_STAGE_2 = 2  # post-compile semantic rules (currently no-op)
+MAX_VALIDATION_RETRIES_COMPILE = 1  # compile failures rarely fix in-loop
 
 # ── Model selection ───────────────────────────────────────────────
 # Single source of truth for the OpenAI model used by research agents and

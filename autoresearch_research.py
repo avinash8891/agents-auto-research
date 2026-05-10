@@ -26,6 +26,9 @@ from autoresearch_constants import (
     DISCORD_HTTP_TIMEOUT_SECONDS,
     MAX_RESEARCH_ROUNDS,
     MAX_VALIDATION_RETRIES,
+    MAX_VALIDATION_RETRIES_COMPILE,
+    MAX_VALIDATION_RETRIES_STAGE_1,
+    MAX_VALIDATION_RETRIES_STAGE_2,
 )
 from autoresearch_logging import get_logger
 from autoresearch_orchestration import (
@@ -586,12 +589,36 @@ def _log_validation_rejection(
     raw_thesis: dict[str, Any],
     thesis_id: str,
     reason: str,
+    *,
+    exc: Exception | None = None,
+    stage: str = "stage_1",
 ) -> None:
     rejection_feedback = f"Thesis '{thesis_id}' rejected by validator: {reason}"
     structured_rejection = _structured_rejection_reason(
         source="validator",
         message=reason,
     )
+    # Persist a machine-readable rejection.json next to the thesis. Survives
+    # process restart; read by per-round prompt and rejection-pattern tools.
+    if exc is not None and thesis_id:
+        try:
+            from rejection_artifact import persist_rejection
+
+            state = controller.read_state()
+            job_value = state.get("job") if isinstance(state, dict) else None
+            if job_value is not None:
+                persist_rejection(
+                    controller.root,
+                    job=int(job_value),
+                    round_number=research_round,
+                    thesis_id=thesis_id,
+                    stage=stage,  # type: ignore[arg-type]
+                    exc=exc,
+                )
+        except Exception as persist_exc:  # noqa: BLE001
+            # Persistence is best-effort; never block the validation flow on a
+            # filesystem error. Existing event logging still records the rejection.
+            log.warning(f"failed to persist rejection.json: {persist_exc}")
     log.warning(f"THESIS REJECTED (will retry with feedback): {rejection_feedback}")
     trace("LOOP", f"thesis rejected, retrying: {rejection_feedback}")
     _record_event_fail_open(
@@ -679,25 +706,50 @@ def _on_ready_to_run(
     }
 
 
+def _per_stage_budget_exhausted(stage_1: int, stage_2: int, compile_n: int) -> bool:
+    """Return True if any stage's per-failure counter has hit its budget."""
+    return (
+        stage_1 >= MAX_VALIDATION_RETRIES_STAGE_1
+        or stage_2 >= MAX_VALIDATION_RETRIES_STAGE_2
+        or compile_n >= MAX_VALIDATION_RETRIES_COMPILE
+    )
+
+
 def _try_one_validation_attempt(
     controller: "AutoresearchController",
     research_round: int,
     attempt: int,
     parsed: dict[str, Any],
     prior_theses: Any,
-) -> tuple[dict[str, Any] | None, str | None]:
+) -> tuple[dict[str, Any] | None, str | None, str]:
     """One pass of the conductor-validate-compile retry loop.
 
-    Returns (result, retry_feedback). If `result` is not None, exit the
-    loop with that result. If `retry_feedback` is not None, retry the
-    conductor with that feedback string.
+    Returns (result, retry_feedback, failed_stage).
+    - `result` is not None on success or terminal state.
+    - `retry_feedback` is set on failure for the next conductor call.
+    - `failed_stage` is "stage_1" / "stage_2" / "compile" on failure, "" on success.
     """
     from compiler_pipeline import compile_research_thesis
-    from thesis_validator import ThesisValidationError
+    from thesis_validator import ThesisValidationError, validate_stage_2
 
     raw_thesis = parsed["suggested_theses"][0]
     thesis_id = raw_thesis.get("thesis_id", "unknown")
 
+    # If the conductor attached a validator_challenge, persist it before any
+    # validation work. Logged for human review; does not alter the decision.
+    challenge_payload = raw_thesis.get("validator_challenge")
+    if isinstance(challenge_payload, dict):
+        try:
+            from rejection_artifact import write_challenge
+
+            state = controller.read_state()
+            job_value = state.get("job") if isinstance(state, dict) else None
+            if job_value is not None:
+                write_challenge(controller.root, job=int(job_value), payload=challenge_payload)
+        except Exception as challenge_exc:  # noqa: BLE001
+            log.warning(f"failed to persist validator_challenge: {challenge_exc}")
+
+    # Stage 1: structural / pre-compile validation.
     try:
         raw_thesis, validated = _prepare_thesis_for_validation(
             raw_thesis,
@@ -709,18 +761,60 @@ def _try_one_validation_attempt(
             f"RESEARCH_RAW thesis_id={thesis_id} "
             f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
         )
+    except (ThesisValidationError, ValueError) as exc:
+        _log_validation_rejection(
+            controller,
+            research_round,
+            attempt,
+            raw_thesis,
+            thesis_id,
+            str(exc),
+            exc=exc,
+            stage="stage_1",
+        )
+        return None, f"Thesis '{thesis_id}' rejected by validator: {exc}", "stage_1"
+
+    # Compile.
+    try:
         round_root = research_round_root(
             controller.root, int(controller.read_state().get("job")), research_round
         )
         contract = compile_research_thesis(validated, controller.root, artifact_root=round_root)
     except (ThesisValidationError, ValueError) as exc:
         _log_validation_rejection(
-            controller, research_round, attempt, raw_thesis, thesis_id, str(exc)
+            controller,
+            research_round,
+            attempt,
+            raw_thesis,
+            thesis_id,
+            str(exc),
+            exc=exc,
+            stage="compile",
         )
-        return None, f"Thesis '{thesis_id}' rejected by validator: {exc}"
-    return _dispatch_compiled_contract(
+        return None, f"Thesis '{thesis_id}' rejected at compile: {exc}", "compile"
+
+    # Stage 2: post-compile semantic rules.
+    try:
+        contract = validate_stage_2(contract)
+    except (ThesisValidationError, ValueError) as exc:
+        _log_validation_rejection(
+            controller,
+            research_round,
+            attempt,
+            raw_thesis,
+            thesis_id,
+            str(exc),
+            exc=exc,
+            stage="stage_2",
+        )
+        return None, f"Thesis '{thesis_id}' rejected by stage_2 validator: {exc}", "stage_2"
+
+    result, feedback = _dispatch_compiled_contract(
         controller, research_round, attempt, parsed, raw_thesis, validated, contract, thesis_id
     )
+    # _dispatch_compiled_contract handles the contract-status-not-ready case as
+    # a "compile" rejection.
+    return result, feedback, "" if result is not None else "compile"
 
 
 def _dispatch_compiled_contract(
@@ -756,7 +850,28 @@ def _dispatch_compiled_contract(
         f"Thesis '{thesis_id}' rejected: status={contract.status}, "
         f"missing={contract.missing_primitives}"
     )
-    _log_validation_rejection(controller, research_round, attempt, raw_thesis, thesis_id, feedback)
+    # Construct a synthetic exception so persistence still records a structured
+    # rejection at the compile boundary. The compile rejection_code is explicit.
+    compile_exc = ValueError(feedback)
+    setattr(compile_exc, "rejection_code", "compile_rejected")
+    setattr(
+        compile_exc,
+        "evidence",
+        {
+            "contract_status": contract.status,
+            "missing_primitives": list(contract.missing_primitives),
+        },
+    )
+    _log_validation_rejection(
+        controller,
+        research_round,
+        attempt,
+        raw_thesis,
+        thesis_id,
+        feedback,
+        exc=compile_exc,
+        stage="compile",
+    )
     return None, feedback
 
 
@@ -887,7 +1002,12 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             if (feedback := build_reflexion_feedback(controller, research_round, agent=agent))
         }
     parsed: dict[str, Any] | None = None
-    for attempt in range(MAX_VALIDATION_RETRIES):
+    # Per-stage failure counters. Loop exits when any stage's budget is hit.
+    stage_1_failures = 0
+    stage_2_failures = 0
+    compile_failures = 0
+    attempt = 0
+    while not _per_stage_budget_exhausted(stage_1_failures, stage_2_failures, compile_failures):
         parsed = _call_conductor(
             research_round,
             attempt,
@@ -904,12 +1024,19 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         terminal = _check_parsed_for_terminal(parsed)
         if terminal is not None:
             return terminal
-        result, retry_feedback = _try_one_validation_attempt(
+        result, retry_feedback, failed_stage = _try_one_validation_attempt(
             controller, research_round, attempt, parsed, prior_theses
         )
         if result is not None:
             return result
+        if failed_stage == "stage_1":
+            stage_1_failures += 1
+        elif failed_stage == "stage_2":
+            stage_2_failures += 1
+        elif failed_stage == "compile":
+            compile_failures += 1
         rejection_feedback = retry_feedback or rejection_feedback
+        attempt += 1
     return _exhausted_retries_result(parsed, rejection_feedback)
 
 

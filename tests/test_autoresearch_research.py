@@ -386,7 +386,7 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
     monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
     monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
 
-    result, retry_feedback = _try_one_validation_attempt(
+    result, retry_feedback, _stage = _try_one_validation_attempt(
         _Controller(),
         2,
         0,
@@ -493,7 +493,7 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
         "should_stop": False,
     }
 
-    result, retry_feedback = _try_one_validation_attempt(
+    result, retry_feedback, _stage = _try_one_validation_attempt(
         controller,
         8,
         0,
@@ -527,7 +527,7 @@ def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_f
 
     monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
 
-    result, retry_feedback = _try_one_validation_attempt(
+    result, retry_feedback, _stage = _try_one_validation_attempt(
         _Controller(),
         2,
         0,

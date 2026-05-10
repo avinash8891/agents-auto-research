@@ -89,6 +89,74 @@ def _render_resolution_context(resolution_context: dict[str, Any] | None) -> str
     return "\n".join(lines)
 
 
+_GENERIC_FOCUS_QUESTION_PATTERNS = (
+    "break down ",
+    "breakdown of ",
+    "show me ",
+    "what is the ",
+    "list all ",
+    "summarize all ",
+    "give me everything",
+)
+_MIN_FOCUS_QUESTION_CHARS = 40
+
+
+def _check_focus_question_specific(focus_question: str) -> str | None:
+    """L10: reject generic 'fishing' analyst questions before they leave the gate.
+
+    Catches the obvious cases — too short, or matches phrasings that signal
+    the conductor is using the analyst to discover a hypothesis rather than
+    test one. Approved deviation: a soft prompt one-liner reinforces this.
+    """
+    text = (focus_question or "").strip()
+    if len(text) < _MIN_FOCUS_QUESTION_CHARS:
+        return (
+            f"ERROR: focus_question is too short ({len(text)} < "
+            f"{_MIN_FOCUS_QUESTION_CHARS} chars). Ask the analyst to test a "
+            f"specific hypothesis, not to discover one."
+        )
+    lowered = text.lower()
+    for pattern in _GENERIC_FOCUS_QUESTION_PATTERNS:
+        if pattern in lowered:
+            return (
+                f"ERROR: focus_question uses a generic 'fishing' phrasing "
+                f"('{pattern.strip()}'). Reframe the question as a specific "
+                f"hypothesis test grounded in evidence you have already gathered."
+            )
+    return None
+
+
+def _check_web_search_called_first(tools_called: set[str]) -> str | None:
+    """L6: return an error message if web_search has not been called yet; else None.
+
+    Recovers legacy §13.3 hard gate: external evidence must be consulted before
+    asking the analyst, so the analyst arrives at a specific hypothesis instead
+    of fishing.
+    """
+    if "web_search" in tools_called:
+        return None
+    return (
+        "ERROR: HARD GATE — call web_search at least once before analyze_trades. "
+        "You must arrive at the analyst with a specific hypothesis grounded in "
+        "external evidence, not use the analyst to discover one."
+    )
+
+
+def _check_experiment_results_consulted(tools_called: set[str]) -> str | None:
+    """L7: return an error message if list_experiment_results has not been called; else None.
+
+    Recovers legacy §7 requirement that the conductor consult the full experiment
+    history (not just the prompt's small summary) before proposing.
+    """
+    if "list_experiment_results" in tools_called:
+        return None
+    return (
+        "ERROR: HARD GATE — call list_experiment_results at least once before "
+        "proposing a thesis. The user prompt only contains a small experiment "
+        "summary; the tools are the source of truth for complete experiment history."
+    )
+
+
 async def run_research_conductor(
     trades_file: str,
     experiment_results: str,
@@ -161,6 +229,27 @@ async def run_research_conductor(
             f"Read the source code to understand what the strategy does."
         )
 
+    # Inline structured rejection summary (current-round detail + cross-round
+    # pattern counts). Cheap disk read; small block; high signal.
+    if current_job is not None:
+        try:
+            from rejection_artifact import (
+                compute_escalation_directive,
+                render_rejection_block,
+            )
+
+            rejection_block = render_rejection_block(
+                _ROOT, job=current_job, current_round=research_round
+            )
+            if rejection_block:
+                user_prompt += f"\n\n{rejection_block}\n"
+
+            escalation = compute_escalation_directive(_ROOT, job=current_job)
+            if escalation:
+                user_prompt += f"\n\n{escalation}\n"
+        except Exception as render_exc:  # noqa: BLE001
+            log.warning(f"failed to render rejection block: {render_exc}")
+
     trace(
         "CONDUCTOR",
         f"START round={research_round} trades={'YES' if trades_file else 'NO'}",
@@ -186,6 +275,9 @@ async def run_research_conductor(
     )
     result_text = ""
     session_finished = False
+    # L6/L7: track which tools have been called so we can enforce the
+    # web_search-before-analyze_trades and "consult experiment results" gates.
+    tools_called_this_round: set[str] = set()
     try:
         _ensure_oauth_proxy()
         client = _get_openai_client(_OAUTH_PROXY_URL)
@@ -209,9 +301,17 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-            if not trades_file:
+            # L6: web_search must be called before analyze_trades.
+            gate_error = _check_web_search_called_first(tools_called_this_round)
+            if gate_error is None:
+                # L10: reject generic / fishing focus questions.
+                gate_error = _check_focus_question_specific(focus_question)
+            if gate_error is not None:
+                output = gate_error
+            elif not trades_file:
                 output = "ERROR: No trades file available for this round."
             else:
+                tools_called_this_round.add("analyze_trades")
                 output = await _call_analyst(
                     trades_file,
                     focus_question,
@@ -247,6 +347,7 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            tools_called_this_round.add("web_search")
             output = await _call_web_researcher(
                 query,
                 context,
@@ -274,6 +375,42 @@ async def run_research_conductor(
             scope: str,
             expires_if: str,
         ) -> str:
+            """Persist one structured research finding to cross-round memory.
+
+            SAVE: data facts, dataset properties, seasonal patterns, web research
+            findings — things that will still be true next round.
+            DO NOT SAVE: experiment outcomes, thesis evaluations, opinions like
+            "I think X is better". Experiment results are in the results table;
+            you see them fresh every round. Form your own conclusions; do not
+            cache opinions (they poison future rounds).
+
+            Required fields:
+              finding         the actual insight ONLY — do not repeat
+                              type/status/evidence/scope/expires_if inside it.
+              finding_type    one of [observation, hypothesis, validated_finding,
+                              rejected_finding, open_question, implementation_note]
+              status          one of [unvalidated, validated, rejected, stale]
+              evidence        which round/experiment produced this
+                              (e.g. "round_003, thesis entry_window_test")
+              scope           what data this applies to
+                              (e.g. "train_period_only", "full_sample", "SPY_only")
+              expires_if      condition that would invalidate this
+                              (e.g. "fails on validation split", "baseline changes")
+
+            Good save:
+              finding_type="observation", status="unvalidated",
+              evidence="round_003 analyst", scope="train_2023-2025",
+              expires_if="baseline drift > 5%",
+              finding="Tuesdays have PF=1.7 vs Friday PF=2.7 across 3017 trades."
+
+            Bad save (will poison future rounds):
+              "Parameter value X works better than Y" — opinion, no scope/expiry
+              "Gap filter is too strict" — conclusion without evidence or scope
+
+            When you READ a finding from search_findings later, check its STATUS
+            and SCOPE before trusting it. STATUS=unvalidated from a different
+            data period = hypothesis to verify, not a fact to build on.
+            """
             started = monotonic()
             tool_input = json.dumps(
                 {
@@ -413,6 +550,17 @@ async def run_research_conductor(
 
         @function_tool
         async def list_past_theses(offset: int = 0, limit: int = 25) -> str:
+            """Return a bounded index of prior theses and their outcomes.
+
+            Call this BEFORE proposing — the cumulative research ledger is the
+            source of truth for what has been tried, what worked, what failed,
+            what required code, and which mechanisms remain underexplored.
+
+            Workflow: narrow first with this tool + search_findings, then fetch
+            full details for relevant priors via get_past_thesis. Avoid
+            re-fetching everything; pull only the priors you need to compare
+            against your candidate.
+            """
             started = monotonic()
             tool_input = json.dumps(
                 {"root": str(_ROOT), "job_id": current_job, "offset": offset, "limit": limit},
@@ -504,6 +652,7 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            tools_called_this_round.add("list_experiment_results")
             output = list_experiment_results_for_root(
                 _ROOT, job_id=current_job, order=order, offset=offset, limit=limit
             )
@@ -566,6 +715,153 @@ async def run_research_conductor(
             )
             return output
 
+        @function_tool
+        async def list_rejections_tool(
+            round_number: int | None = None,
+            rejection_code: str | None = None,
+            limit: int = 20,
+        ) -> str:
+            """List validator/compile rejections for the current job.
+
+            Optional filters: round_number to scope to one round; rejection_code
+            to scope to one category (e.g. theme_cluster_fixation). Returns up
+            to `limit` records, most-recent rounds first.
+            """
+            from rejection_artifact import list_rejections
+
+            started = monotonic()
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "list_rejections",
+                json.dumps(
+                    {
+                        "round_number": round_number,
+                        "rejection_code": rejection_code,
+                        "limit": limit,
+                    },
+                    default=str,
+                ),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            if current_job is None:
+                output = json.dumps({"status": "error", "error": "no current job"})
+            else:
+                items = list_rejections(
+                    _ROOT,
+                    job=current_job,
+                    round_number=round_number,
+                    rejection_code=rejection_code,
+                    limit=limit,
+                )
+                output = json.dumps([it.model_dump() for it in items], default=str)
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "list_rejections",
+                output,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
+
+        @function_tool
+        async def get_rejection_tool(round_number: int, thesis_id: str) -> str:
+            """Fetch the full rejection record for one (round, thesis_id)."""
+            from rejection_artifact import get_rejection
+
+            started = monotonic()
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "get_rejection",
+                json.dumps({"round_number": round_number, "thesis_id": thesis_id}),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            if current_job is None:
+                output = json.dumps({"status": "error", "error": "no current job"})
+            else:
+                obj = get_rejection(
+                    _ROOT, job=current_job, round_number=round_number, thesis_id=thesis_id
+                )
+                if obj is None:
+                    output = json.dumps({"status": "not_found"})
+                else:
+                    output = obj.model_dump_json()
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "get_rejection",
+                output,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
+
+        @function_tool
+        async def rejection_pattern_summary_tool(window_rounds: int = 10) -> str:
+            """Group recent rejections by rejection_code and return counts.
+
+            Use this to detect repeating failure modes (e.g. theme_cluster_fixation
+            firing 4+ times). The summary covers the last `window_rounds` rounds.
+            """
+            from rejection_artifact import rejection_pattern_summary
+
+            started = monotonic()
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "rejection_pattern_summary",
+                json.dumps({"window_rounds": window_rounds}),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            if current_job is None:
+                output = json.dumps({"status": "error", "error": "no current job"})
+            else:
+                summary = rejection_pattern_summary(
+                    _ROOT, job=current_job, window_rounds=window_rounds
+                )
+                output = json.dumps(summary)
+            trace_agent_tool_result(
+                "research-conductor",
+                trace_id,
+                "rejection_pattern_summary",
+                output,
+                duration_ms=int((monotonic() - started) * 1000),
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            return output
+
+        @function_tool
+        async def get_dimension_examples_tool() -> str:
+            """Return the catalog of mechanism-research dimensions with examples.
+
+            Use when classifying a thesis into a mechanism_dimension or when
+            choosing among under-explored dimensions.
+            """
+            from research_doctrine import DIMENSION_EXAMPLES
+
+            return DIMENSION_EXAMPLES
+
+        @function_tool
+        async def get_tuning_examples_tool() -> str:
+            """Return concrete examples of what counts as parameter tuning vs
+            a real mechanism change.
+
+            Consult before proposing a thesis that touches an existing config
+            key — the validator's neighboring-threshold and config-overlap rules
+            mirror these examples.
+            """
+            from research_doctrine import PARAMETER_TUNING_EXAMPLES
+
+            return PARAMETER_TUNING_EXAMPLES
+
         agent = OAIAgent(
             name="research-conductor",
             instructions=system_prompt,
@@ -579,6 +875,11 @@ async def run_research_conductor(
                 get_past_thesis,
                 list_experiment_results,
                 get_experiment_result,
+                list_rejections_tool,
+                get_rejection_tool,
+                rejection_pattern_summary_tool,
+                get_dimension_examples_tool,
+                get_tuning_examples_tool,
             ],
             model=model,
         )
