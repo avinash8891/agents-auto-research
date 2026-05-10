@@ -1,0 +1,187 @@
+autoresearch_research.py
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 766-773,785-792,801-808,860-863
+  s_3cc7b1640e8a36::t_56607c35db897c 738-751
+  s_3cc7b1640e8a36::t_725452b89675cc 853-859,864-874
+  s_3cc7b1640e8a36::t_12222da14195f9 1005-1010,1027,1032-1037,1039
+  s_3cc7b1640e8a36::t_39d1061cf1fbc3 592-594,601-621
+  s_3cc7b1640e8a36::t_5f4329219c1e8d 795,798
+  s_3cc7b1640e8a36::t_9f0353d920492f 724,727-730,733,752,764-765,774-778,794,796-797,810-812,815-817
+  s_3cc7b1640e8a36::t_14e43eafcb8ed5 29-31
+  s_3cc7b1640e8a36::t_34f6a76de9a43e 709-717
+tests/test_l10_focus_question_gate.py
+  s_3cc7b1640e8a36::t_69e2bbeb1da9b7 1-16,18-39
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 17
+tests/test_l6_l7_tool_order_gates.py
+  s_3cc7b1640e8a36::t_e320dfa5c08525 1-33
+research_doctrine.py
+  s_3cc7b1640e8a36::t_aa193915d77e4d 1-87
+tests/test_rejection_artifact.py
+  s_3cc7b1640e8a36::t_b498767f793aed 107-150,297-321
+  s_3cc7b1640e8a36::t_3713b3d0550407 151-296
+  s_3cc7b1640e8a36::t_9b6e1f7933ff12 1-12,16-106
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 13-15
+tests/test_schema_additions.py
+  s_3cc7b1640e8a36::t_be5fff3923541a 78-81
+  s_3cc7b1640e8a36::t_c3728a4b2b7d56 1-42,49-54,66,86-184
+  s_3cc7b1640e8a36::t_258d57c08244a9 82-85
+  s_3cc7b1640e8a36::t_fe4f2552ce5687 67-77
+  s_3cc7b1640e8a36::t_e2f55f48b5fa77 43-48
+  s_3cc7b1640e8a36::t_7b496ff152a187 55-65
+tests/test_l5_neighboring_threshold.py
+  s_3cc7b1640e8a36::t_e19111204b509c 81-85
+  s_3cc7b1640e8a36::t_54db31b8305881 74-77
+  s_3cc7b1640e8a36::t_b7c4616133777c 1-46,57-58,64-73,78-80,86-95,113-118,134-139,150-154,170-171
+  s_3cc7b1640e8a36::t_ed82eba328045a 96-104,111-112,119-125,132-133,140-149,155-169
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 47-56,59-63,105-110,126-131
+tests/test_conductor_prompt_v3.py
+  s_3cc7b1640e8a36::t_42250b25312035 1-72
+research_conductor.py
+  s_3cc7b1640e8a36::t_d5ce8293cbf562 236-239,246-249
+  s_3cc7b1640e8a36::t_4954c762061aae 306-308
+  s_3cc7b1640e8a36::t_31268d7bcde7c8 350
+  s_3cc7b1640e8a36::t_36b48457b6b23c 232-235,240-245,250-252
+  s_3cc7b1640e8a36::t_aa0ffe155b50e7 129-159
+  s_3cc7b1640e8a36::t_750e2878bd56b3 378-413
+  s_3cc7b1640e8a36::t_5b7ea88e955c40 278-280
+  s_3cc7b1640e8a36::t_6af475e3f2df42 655
+  s_3cc7b1640e8a36::t_12e7e5a2eaee63 92-128
+  s_3cc7b1640e8a36::t_d189eea30bd805 304-305,309-311,314
+  s_3cc7b1640e8a36::t_17d34376de13bc 553-563
+  s_3cc7b1640e8a36::t_3647838643c314 718-737,743-840,878-880
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 738-742
+  s_3cc7b1640e8a36::t_618960e42a3fb2 841-864,881-882
+research_types.py
+  s_3cc7b1640e8a36::t_0cb8c67d02cb0b 190-203
+  s_3cc7b1640e8a36::t_05bdd4aa830513 268-285
+  s_3cc7b1640e8a36::t_59fcb267bb1c3a 39-45,76-91
+  s_3cc7b1640e8a36::t_2c1c216cab483d 181-189
+  s_3cc7b1640e8a36::t_b1bd34260ce6d0 46-75
+tests/test_validator_stages.py
+  s_3cc7b1640e8a36::t_1fcbdc2ac82c79 66-69
+  s_3cc7b1640e8a36::t_f5ef6fd5433b7f 1-22,25-38,50,86-115
+  s_3cc7b1640e8a36::t_3ba5e1f8cd230a 39-49
+  s_3cc7b1640e8a36::t_df497707cffce8 23-24
+  s_3cc7b1640e8a36::t_10264bac9dade4 51-65,74-85
+  s_3cc7b1640e8a36::t_9ed7543162fedf 70-73
+tests/test_validator_challenge.py
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 55
+  s_3cc7b1640e8a36::t_8b9dc6af15e5e7 1-54,56-68
+mechanism_judge.py
+  s_3cc7b1640e8a36::t_587ea61caad13a 1-59
+tests/test_rejection_prompt_block.py
+  s_3cc7b1640e8a36::t_95bdf2040527e2 1-111
+tests/test_l8_source_code_verification.py
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 40-44
+  s_3cc7b1640e8a36::t_37d0f4beb36568 1-39,45-84
+research_prompts.py
+  s_3cc7b1640e8a36::t_c6b5c39b1cd36c 66-68
+  s_3cc7b1640e8a36::t_5d3971e92f13f4 4,6-15,19,21-23,25-28,30-31,33-37,45-65,73-94,101-102
+  s_3cc7b1640e8a36::t_df8bcd161b0161 96-97
+  s_3cc7b1640e8a36::t_603c3b6a09ef29 38-44
+  s_3cc7b1640e8a36::t_d1bc6cf5d9f6a6 69-72
+  s_3cc7b1640e8a36::t_555cade6671a5c 95,98-100
+tests/test_thesis_validator.py
+  s_3cc7b1640e8a36::t_77c6f50bfe4f2b 154,156-158,164,166,174
+  s_3cc7b1640e8a36::t_22c5f31ea61b5f 80-90
+  s_3cc7b1640e8a36::t_ca23e9451351cd 58-61
+  s_3cc7b1640e8a36::t_407e41654950a4 202-209
+  s_3cc7b1640e8a36::t_900dd9df24800b 35-50,68-73
+  s_3cc7b1640e8a36::t_ee4149d7f7002b 51-57
+  s_3cc7b1640e8a36::t_2b95b8bca3ae55 132-153,155,159-163,165,167-173,175-177,210-211
+  s_3cc7b1640e8a36::t_f519fbdf14dcc3 355-357
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 191-193
+  s_3cc7b1640e8a36::t_d2905596f2ede5 178-190,194-201
+tests/test_escalation_directive.py
+  s_3cc7b1640e8a36::t_32de3b760b3578 1-80
+autoresearch_constants.py
+  s_3cc7b1640e8a36::t_0874bbb3b65d03 45-51
+tests/test_stage1_rules_part2.py
+  s_3cc7b1640e8a36::t_3d2d592c017416 46-60,69-80
+  s_3cc7b1640e8a36::t_fafcc29765ef0a 61-64
+  s_3cc7b1640e8a36::t_cc4ee9d81aa355 65-68
+  s_3cc7b1640e8a36::t_e46f51a700a7b9 1-45,81-190
+rejection_artifact.py
+  s_3cc7b1640e8a36::t_a28c4cf84923f9 12
+  s_3cc7b1640e8a36::t_1623823cc088ba 166-168,172
+  s_3cc7b1640e8a36::t_fabc5aedc362db 229-267
+  s_3cc7b1640e8a36::t_a971cb71897dfc 95-145,147-154,156-165,169-171,173-186,314-331
+  s_3cc7b1640e8a36::t_9375e61b0244ad 59-94,332-350
+  s_3cc7b1640e8a36::t_d894c0f675cddb 1-11,13,15,17-19,25-26,28-33,35,40-58
+  s_3cc7b1640e8a36::t_a93695d0047856 14,16,20-24
+  s_3cc7b1640e8a36::t_0ab942ca185bd5 268-308,310-313
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 27,34,36-39,146,155,195,197-200,211,214,309
+  s_3cc7b1640e8a36::t_4eae3a1c797a7a 187-194,196,201-210,212-213,215-228
+tests/test_l12_teaching_tools.py
+  s_3cc7b1640e8a36::t_03d3031b467c33 1-35
+tests/test_autoresearch_research.py
+  s_3cc7b1640e8a36::t_95f6da6b0a513a 389,496,530
+tests/test_legacy_recovery_schema.py
+  s_3cc7b1640e8a36::t_6da8f941be26c1 1-131
+tests/test_l11_mechanism_judge.py
+  s_3cc7b1640e8a36::t_964d71ae55e522 1-49,55-106
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 50-54
+thesis_validator.py
+  s_3cc7b1640e8a36::t_e283741e107e9f 123,125-176
+  s_3cc7b1640e8a36::t_8cf86aef71526c 563-578
+  s_3cc7b1640e8a36::t_c22f8857212410 343-394,601-619
+  s_3cc7b1640e8a36::t_ba4723ff59f8a9 1196-1200,1204-1208,1210
+  s_3cc7b1640e8a36::t_a36cdca4f2bec5 1186-1187,1191-1194
+  s_3cc7b1640e8a36::t_c5217e335f38d3 1155-1165
+  s_3cc7b1640e8a36::t_4de62ec62e3d50 274-342,620-644
+  s_3cc7b1640e8a36::t_d9826049a3a3c6 211-216
+  s_3cc7b1640e8a36::t_a51340b40d3c35 75-78
+  s_3cc7b1640e8a36::t_9e4a903c36ed97 1201
+  s_3cc7b1640e8a36::t_0c11c17753304f 1203
+  s_3cc7b1640e8a36::t_da881b8a810b33 1209
+  s_3cc7b1640e8a36::t_32338bc0379cea 579-600
+  s_3cc7b1640e8a36::t_53648d1906fb68 79-83,85-89,103
+  s_3cc7b1640e8a36::t_959317efb41131 48-50,57-63,65-70
+  s_3cc7b1640e8a36::t_727763674b6040 1202
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 71-72,90-102
+  s_3cc7b1640e8a36::t_e134c98f28de9f 395-489
+  s_3cc7b1640e8a36::t_8cc2c52ba328ce 84
+  s_3cc7b1640e8a36::t_98e98c1e1759ad 490-545
+  s_3cc7b1640e8a36::t_2685b9c8fd27f3 815
+  s_3cc7b1640e8a36::t_eb0ce859799a33 51-56
+  s_3cc7b1640e8a36::t_b17d05085479c1 1252-1283
+  s_3cc7b1640e8a36::t_3c152ecd8cd025 1188-1190,1195
+  s_3cc7b1640e8a36::t_fe12fe2dde6d66 546-562
+tests/test_stage1_rules.py
+  s_3cc7b1640e8a36::t_4683072c22d3eb 75-78
+  s_3cc7b1640e8a36::t_139fef9d153e05 55-70,79-90
+  s_3cc7b1640e8a36::t_060cdc78d3afd8 94-100,164
+  s_3cc7b1640e8a36::t_2c3b5e9fb963b2 50-54
+  s_3cc7b1640e8a36::t_026cb6e7caf6a0 1-37,48-49,91-93,101-130,132-163,165-214
+  s_3cc7b1640e8a36::t_27c3f608a80dc5 131
+  s_3cc7b1640e8a36::t_df25a3e18ed82c 71-74
+  s_3cc7b1640e8a36::t_e64f84d7ebf107 38-47
+tests/test_validation_retry_budget.py
+  s_3cc7b1640e8a36::t_f8c3837394c423 1-44
+tests/test_legacy_recovery_validator.py
+  s_3cc7b1640e8a36::t_76747f403cd7e9 53-56
+  s_3cc7b1640e8a36::t_14445e2c9bd06d 49-52
+  s_3cc7b1640e8a36::t_8eeca77579c4e5 1-21,24-48,57-95,100-223
+  s_3cc7b1640e8a36::t_2e57fb4b41c987 96-99
+  s_3cc7b1640e8a36::t_64ab94b7fb9a03 22-23
+tests/test_structured_rejection.py
+  s_3cc7b1640e8a36::t_2e2154f2f0d343 1-86
+tests/test_l4_evidence_citations.py
+  s_3cc7b1640e8a36::t_090e6127426c34 75-78
+  s_3cc7b1640e8a36::t_de5e21c74f72ed 1-74,79-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "3c226bdf128ef96cadf88b6ab0a5cc2dede6762a",
+  "prompts": {},
+  "sessions": {
+    "s_3cc7b1640e8a36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da7d1eb2-dcaa-4dd3-a653-804cfd03a1ed",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
