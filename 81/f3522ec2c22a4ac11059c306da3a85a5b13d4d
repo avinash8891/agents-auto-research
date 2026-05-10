@@ -1,0 +1,25 @@
+strategies/ema/research.py
+  s_cae689298e56ac::t_e0112575804cfb 80-93,118-119,126-140,143-156
+tests/test_alignment_family_aware.py
+  s_cae689298e56ac::t_eeff8ffe698a1c 81-83,85
+  s_cae689298e56ac::t_178101bdbc064f 153-158
+  s_cae689298e56ac::t_edf1bfb267239b 62-67,69-80,84,86-122
+strategies/orb/research.py
+  s_cae689298e56ac::t_aaf03b54e70347 93-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "81f3522ec2c22a4ac11059c306da3a85a5b13d4d",
+  "prompts": {},
+  "sessions": {
+    "s_cae689298e56ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9bc93516-d0c8-4a64-9ccc-09cd00bb80c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
