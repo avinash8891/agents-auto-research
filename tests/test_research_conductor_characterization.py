@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
+from agents.tool_context import ToolContext
+
+import research_conductor as conductor
 import research_subagents as subagents
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
 
@@ -61,6 +68,58 @@ def _record(
     )
 
 
+class _StreamedResult:
+    def __init__(
+        self,
+        text: str,
+        agent: object | None = None,
+        tool_calls: list[tuple[str, dict]] | None = None,
+        tool_outputs: list[tuple[str, str]] | None = None,
+    ) -> None:
+        self.final_output = text
+        self.agent = agent
+        self.tool_calls = tool_calls or []
+        self.tool_outputs = tool_outputs if tool_outputs is not None else []
+
+    async def stream_events(self):
+        tools = {tool.name: tool for tool in getattr(self.agent, "tools", [])}
+        for name, payload in self.tool_calls:
+            raw = json.dumps(payload)
+            ctx = ToolContext(None, tool_name=name, tool_call_id=f"call-{name}", tool_arguments=raw)
+            output = await tools[name].on_invoke_tool(ctx, raw)
+            self.tool_outputs.append((name, output))
+        if False:
+            yield None
+
+    def final_output_as(self, output_type):
+        return self.final_output
+
+
+def _patch_conductor_runner(
+    monkeypatch: pytest.MonkeyPatch,
+    output: dict | str,
+    *,
+    tool_calls: list[tuple[str, dict]] | None = None,
+    tool_outputs: list[tuple[str, str]] | None = None,
+) -> list[str]:
+    captured_prompts: list[str] = []
+    text = output if isinstance(output, str) else json.dumps(output)
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+    monkeypatch.setattr(conductor, "OpenAIChatCompletionsModel", lambda **kwargs: object())
+    monkeypatch.setattr(conductor, "OAIAgent", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(conductor, "OAIModelSettings", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(conductor, "OAIRunConfig", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(conductor, "accumulate_agents_sdk_result_usage", lambda *args, **kwargs: None)
+
+    def _run_streamed(agent, user_prompt, max_turns, run_config):
+        captured_prompts.append(user_prompt)
+        return _StreamedResult(text, agent, tool_calls, tool_outputs)
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
+    return captured_prompts
+
+
 def test_analysis_manifest_defaults_to_baseline_when_round_zero_exists(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -82,6 +141,313 @@ def test_analysis_manifest_defaults_to_baseline_when_round_zero_exists(
     assert manifest["default_scope"] == "baseline"
     assert manifest["default_round_ref"] == "baseline"
     assert manifest["artifacts"]["trades_csv"] == baseline.trades_file
+
+
+def test_conductor_prompt_includes_trade_artifacts_and_returns_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trades_file = tmp_path / "trades.csv"
+    events_file = tmp_path / "events.parquet"
+    diagnostics_file = tmp_path / "diagnostics.json"
+    trades_file.write_text("entry_date,pnl_pct\n2026-01-01,1.2\n")
+    events_file.write_text("")
+    diagnostics_file.write_text("{}\n")
+    prompts = _patch_conductor_runner(
+        monkeypatch,
+        {
+            "reasoning": "no statistically defensible next mechanism remains",
+            "suggested_theses": [],
+            "should_stop": True,
+        },
+    )
+
+    out = conductor.run_research_conductor_sync(
+        str(trades_file),
+        "baseline PF=1.2",
+        {
+            "profit_factor": 1.2,
+            "resolution_context": {
+                "resolution_config_keys": ["bar_minutes"],
+                "resolved_minutes_by_key": {"bar_minutes": 5},
+                "minimum_supported_time_bucket_minutes": 5,
+            },
+        },
+        research_round=4,
+        family_name="ema",
+        strategy_events_file=str(events_file),
+        diagnostics_file=str(diagnostics_file),
+        rejection_feedback="previous thesis reused the same filter family",
+        current_job=1,
+    )
+
+    assert out is not None
+    assert out["should_stop"] is True
+    assert f"Trades file for analysis: {trades_file}" in prompts[0]
+    assert f"Strategy events file: {events_file}" in prompts[0]
+    assert f"Diagnostics file: {diagnostics_file}" in prompts[0]
+    assert "minimum_supported_time_bucket_minutes: 5" in prompts[0]
+    assert "previous thesis reused the same filter family" in prompts[0]
+
+
+def test_conductor_returns_timeout_error_when_runner_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+    monkeypatch.setattr(conductor, "OpenAIChatCompletionsModel", lambda **kwargs: object())
+    monkeypatch.setattr(conductor, "OAIAgent", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(conductor, "OAIModelSettings", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(conductor, "OAIRunConfig", lambda **kwargs: SimpleNamespace(**kwargs))
+
+    def _raise_timeout(agent, user_prompt, max_turns, run_config):
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _raise_timeout)
+
+    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema")
+
+    assert out is not None
+    assert out["status"] == "conductor_error"
+    assert out["error"] == "timeout"
+
+
+def test_conductor_marks_oauth_proxy_failure_as_proxy_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        conductor,
+        "_ensure_oauth_proxy",
+        lambda: (_ for _ in ()).throw(RuntimeError("openai-oauth proxy unavailable")),
+    )
+
+    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema")
+
+    assert out is not None
+    assert out["status"] == "conductor_error"
+    assert out["error"] == "proxy_unavailable"
+
+
+def test_conductor_prompt_without_trades_uses_latest_outcome_without_analyst(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompts = _patch_conductor_runner(
+        monkeypatch,
+        {"reasoning": "stop after failed latest run", "suggested_theses": [], "should_stop": True},
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "latest run rejected",
+        {"status": "rejected", "profit_factor": 0.7},
+        research_round=5,
+        family_name="unknown-family",
+    )
+
+    assert out is not None
+    assert out["should_stop"] is True
+    assert "No trades file is available for the latest/current experiment" in prompts[0]
+    assert "Strategy family: unknown-family" not in prompts[0]
+
+
+def test_conductor_rejects_thesis_when_experiment_results_tool_was_not_called(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_conductor_runner(
+        monkeypatch,
+        {
+            "reasoning": "try a new entry timing mechanism",
+            "suggested_theses": [{"thesis_id": "entry_timing"}],
+            "should_stop": False,
+        },
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "small prompt summary",
+        {"status": "keep"},
+        research_round=6,
+        family_name="ema",
+    )
+
+    assert out is not None
+    assert out["status"] == "conductor_error"
+    assert out["error"] == "experiment_results_not_consulted"
+    assert "list_experiment_results" in out["validation_reason"]
+
+
+def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _web(query: str, context: str = "", reflexion_feedback: str = "") -> str:
+        return f"web evidence for {query}"
+
+    async def _analyst(*args, **kwargs) -> str:
+        return "analyst found baseline rejection concentration"
+
+    monkeypatch.setattr(conductor, "_call_web_researcher", _web)
+    monkeypatch.setattr(conductor, "_call_analyst", _analyst)
+    monkeypatch.setattr(conductor, "save_research_finding", lambda **kwargs: "saved finding")
+    monkeypatch.setattr(
+        conductor,
+        "search_research_findings",
+        lambda **kwargs: [{"text": "opening gap failures cluster", "room": "ema", "distance": 0.1}],
+    )
+    monkeypatch.setattr(conductor, "_palace_status", lambda: {"rooms": 3, "healthy": True})
+    monkeypatch.setattr(conductor, "list_past_theses_for_root", lambda *args, **kwargs: "past list")
+    monkeypatch.setattr(
+        conductor,
+        "get_past_thesis_for_root",
+        lambda *args, **kwargs: json.dumps({"status": "not_found"}),
+    )
+    monkeypatch.setattr(
+        conductor,
+        "list_experiment_results_for_root",
+        lambda *args, **kwargs: "experiment list",
+    )
+    monkeypatch.setattr(
+        conductor,
+        "get_experiment_result_for_root",
+        lambda *args, **kwargs: json.dumps({"status": "error", "error": "missing thesis"}),
+    )
+    tool_outputs: list[tuple[str, str]] = []
+    _patch_conductor_runner(
+        monkeypatch,
+        {"reasoning": "tools consulted; stop", "suggested_theses": [], "should_stop": True},
+        tool_outputs=tool_outputs,
+        tool_calls=[
+            ("analyze_trades", {"focus_question": "look before web"}),
+            ("web_search", {"query": "EMA opening gap filters", "context": "SPY intraday"}),
+            ("analyze_trades", {"focus_question": "gap rejection concentration"}),
+            (
+                "save_finding",
+                {
+                    "finding": "Opening gap failures cluster after 10:00.",
+                    "finding_type": "observation",
+                    "status": "unvalidated",
+                    "evidence": "round_008 analyst",
+                    "scope": "train_period_only",
+                    "expires_if": "baseline changes",
+                },
+            ),
+            ("search_findings", {"query": "opening gap", "finding_type": "observation"}),
+            ("memory_status", {}),
+            ("list_past_theses", {"offset": 0, "limit": 5}),
+            ("get_past_thesis", {"thesis_id": "missing"}),
+            ("list_experiment_results", {"order": "latest", "offset": 0, "limit": 5}),
+            ("get_experiment_result", {"thesis_id": "missing", "detail": True}),
+            ("list_rejections_tool", {"round_number": None, "rejection_code": None, "limit": 3}),
+            ("get_rejection_tool", {"round_number": 8, "thesis_id": "missing"}),
+            ("rejection_pattern_summary_tool", {"window_rounds": 4}),
+            ("get_dimension_examples_tool", {}),
+            ("get_tuning_examples_tool", {}),
+        ],
+    )
+
+    out = conductor.run_research_conductor_sync(
+        str(Path("tests/fixtures/AAA.csv").resolve()),
+        "experiment history",
+        {"status": "keep"},
+        research_round=8,
+        family_name="ema",
+    )
+
+    assert out is not None
+    assert out["should_stop"] is True
+    output_by_tool = dict(tool_outputs)
+    assert output_by_tool["analyze_trades"] == "analyst found baseline rejection concentration"
+    assert "call web_search at least once" in tool_outputs[0][1]
+    assert output_by_tool["web_search"] == "web evidence for EMA opening gap filters"
+    assert output_by_tool["save_finding"] == "saved finding"
+    assert "opening gap failures cluster" in output_by_tool["search_findings"]
+    assert '"healthy": true' in output_by_tool["memory_status"]
+    assert output_by_tool["list_experiment_results"] == "experiment list"
+    assert "missing thesis" in output_by_tool["get_experiment_result"]
+    assert '"error": "no current job"' in output_by_tool["list_rejections_tool"]
+    assert output_by_tool["get_dimension_examples_tool"]
+    assert output_by_tool["get_tuning_examples_tool"]
+
+
+@pytest.mark.parametrize(
+    "runner_output, validation_reason",
+    [
+        ({"suggested_theses": [], "should_stop": False}, "expected exactly one thesis, got 0"),
+        (
+            {"suggested_theses": [{"thesis_id": "a"}, {"thesis_id": "b"}], "should_stop": False},
+            "expected exactly one thesis, got 2",
+        ),
+        ({"suggested_theses": "not-a-list", "should_stop": False}, "suggested_theses must be a list"),
+        ({"suggested_theses": ["not-an-object"], "should_stop": False}, "suggested_theses[0] must be an object"),
+    ],
+)
+def test_conductor_reports_structural_validation_failures_after_required_tool_gate(
+    monkeypatch: pytest.MonkeyPatch, runner_output: dict, validation_reason: str
+) -> None:
+    monkeypatch.setattr(conductor, "_check_experiment_results_consulted", lambda tools: None)
+    _patch_conductor_runner(monkeypatch, runner_output)
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "full experiment history consulted by fake runner",
+        {"status": "keep"},
+        research_round=7,
+        family_name="ema",
+    )
+
+    assert out is not None
+    assert out["status"] == "conductor_error"
+    assert out["error"] == "validation_failed"
+    assert out["validation_reason"] == validation_reason
+
+
+def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thesis = {
+        "thesis_id": "gap_rejection_timing",
+        "hypothesis": "Delaying entries after opening gap failures improves signal quality.",
+        "mechanism": "Wait for the first failed opening-gap rejection cluster to clear.",
+        "mechanism_dimension": "signal_quality",
+        "config_changes": {"entry_delay_minutes": 15},
+    }
+    monkeypatch.setattr(conductor, "_check_experiment_results_consulted", lambda tools: None)
+    monkeypatch.setattr(conductor, "validate_thesis_dict", lambda candidate: candidate)
+    _patch_conductor_runner(
+        monkeypatch,
+        {
+            "reasoning": "experiment history supports testing this mechanism",
+            "suggested_theses": [thesis],
+            "should_stop": False,
+        },
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "full experiment history consulted by fake runner",
+        {"status": "keep"},
+        research_round=9,
+        family_name="ema",
+    )
+
+    assert out is not None
+    assert out["suggested_theses"][0]["thesis_id"] == "gap_rejection_timing"
+
+
+def test_conductor_reports_parse_failed_for_non_json_runner_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_conductor_runner(monkeypatch, "not json")
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "",
+        {},
+        research_round=1,
+        family_name="ema",
+    )
+
+    assert out is not None
+    assert out["status"] == "conductor_error"
+    assert out["error"] == "parse_failed"
 
 
 def test_build_round_index_exposes_round_refs_and_latest_round(tmp_path: Path, monkeypatch) -> None:

@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import autoresearch_orchestration as orch
 
 
@@ -46,6 +48,23 @@ def test_controller_research_artifact_dir_uses_runtime_root_when_split(tmp_path:
     )
 
     assert orch._controller_research_artifact_dir(controller) == "runtime/jobs/job-2/research"
+
+
+def test_controller_research_artifact_dir_preserves_absolute_path_outside_runtime_root(
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime-home"
+    outside = tmp_path / "outside" / "research"
+    controller = SimpleNamespace(root=tmp_path, runtime_root=runtime_root, research_dir=outside)
+
+    assert orch._controller_research_artifact_dir(controller) == outside.resolve().as_posix()
+
+
+def test_controller_research_artifact_dir_requires_research_dir(tmp_path: Path) -> None:
+    controller = SimpleNamespace(root=tmp_path, runtime_root=tmp_path)
+
+    with pytest.raises(RuntimeError, match="job-scoped research_dir"):
+        orch._controller_research_artifact_dir(controller)
 
 
 def test_try_resume_halted_thesis_writes_round_selected_files(tmp_path: Path, monkeypatch) -> None:
@@ -306,3 +325,103 @@ def test_build_missing_primitives_for_state_uses_runtime_root_when_split(
         written[-1]["selected_config_path"]
         == "runtime/jobs/job-6/research/round-2/selected_config.json"
     )
+
+
+def test_build_missing_primitives_routes_retryable_builder_failure_to_research(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = {"state": "blocked", "job": 8, "research_round": 2, "halted_reason": "old"}
+    ctrl, written, current_md = _controller(state, tmp_path)
+    ctrl.research_dir = tmp_path / "runtime" / "jobs" / "job-8" / "research"
+    monkeypatch.setattr(
+        "compiler_pipeline.build_missing_primitives",
+        lambda root, thesis_id, artifact_root=None: {
+            "status": "error",
+            "error_code": "builder_missing_primitive_contract",
+            "reason": "primitive sidecar missing required fields",
+            "validation_passed": False,
+            "builder_task": "compile-runtime-config",
+        },
+    )
+
+    out = orch.build_missing_primitives_for_state(
+        ctrl,
+        state,
+        "retry-thesis",
+        {"thesis_id": "retry-thesis", "config_changes": {"ema_length": 7}},
+        research_round=2,
+    )
+
+    assert out["state"] == "blocked"
+    assert out["next_action"]["type"] == "research"
+    assert out["next_action"]["reason_code"] == "research_retry_required"
+    assert out["blockers"][0]["kind"] == "research_retry_required"
+    assert out["heartbeat"]["blocked_builder_status"] == "research_retry_required"
+    assert written[-1]["next_action"]["failed_thesis_id"] == "retry-thesis"
+    assert current_md[-1]["state"] == "blocked"
+
+
+def test_build_missing_primitives_records_deterministic_builder_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = {"state": "blocked", "job": 8, "research_round": 2}
+    ctrl, written, current_md = _controller(state, tmp_path)
+    monkeypatch.setattr(
+        "compiler_pipeline.build_missing_primitives",
+        lambda root, thesis_id, artifact_root=None: {
+            "status": "error",
+            "error_code": "builder_timeout",
+            "reason": "builder exceeded its runtime budget",
+            "validation_passed": False,
+            "promoted_files": ["compiler_output.py"],
+        },
+    )
+
+    out = orch.build_missing_primitives_for_state(
+        ctrl,
+        state,
+        "timeout-thesis",
+        {"thesis_id": "timeout-thesis", "config_changes": {"ema_length": 7}},
+        research_round=2,
+    )
+
+    assert out["state"] == "blocked"
+    assert out["next_action"]["type"] == "builder_failed"
+    assert out["blockers"][0]["kind"] == "builder_failed"
+    assert out["builder_failed_theses"][0]["thesis_id"] == "timeout-thesis"
+    assert out["heartbeat"]["blocked_error_code"] == "builder_timeout"
+    assert written[-1]["next_action"]["artifact_dir"] == "ema-builder-failed"
+    assert current_md[-1]["builder_failed_theses"][0]["round"] == 2
+
+
+def test_build_missing_primitives_marks_unknown_builder_error_manual_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = {"state": "blocked", "job": 8, "research_round": 2}
+    ctrl, written, current_md = _controller(state, tmp_path)
+    monkeypatch.setattr(
+        "compiler_pipeline.build_missing_primitives",
+        lambda root, thesis_id, artifact_root=None: {
+            "status": "error",
+            "error_code": "unexpected_builder_shape",
+            "reason": "builder returned an unclassified result",
+            "validation_passed": False,
+            "usage": {"total_tokens": 42},
+        },
+    )
+
+    out = orch.build_missing_primitives_for_state(
+        ctrl,
+        state,
+        "manual-thesis",
+        {"thesis_id": "manual-thesis", "config_changes": {"ema_length": 7}},
+        research_round=2,
+    )
+
+    assert out["state"] == "blocked"
+    assert out["next_action"]["type"] == "manual_review"
+    assert out["blockers"][0]["kind"] == "manual_review"
+    assert out["manual_review_theses"][0]["thesis_id"] == "manual-thesis"
+    assert out["heartbeat"]["builder_result_context"]["usage"] == {"total_tokens": 42}
+    assert written[-1]["next_action"]["artifact_dir"] == "ema-manual-review"
+    assert current_md[-1]["manual_review_theses"][0]["round"] == 2
