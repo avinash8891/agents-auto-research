@@ -14,23 +14,48 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from autoresearch_constants import MAX_RESEARCH_ROUNDS
+from autoresearch_controller import AutoresearchController
 from autoresearch_research import (
     _check_parsed_for_terminal,
     _handle_needs_code,
     _handle_round_failure,
     _handle_success,
+    _research_feedback_from_verdict,
+    _resolve_conductor_inputs,
     _try_one_validation_attempt,
     accumulate_job_usage,
     execute_research_sdk,
     log_research_round,
     notify_discord,
     results_to_dicts,
+    run_research,
 )
 from autoresearch_state import BacktestResultRecord, write_state
 from backtest_run_db import BacktestRunDB
+from strategies import STRATEGIES
+from strategy_family import load_family
 from thesis_validator import ThesisValidationError
 
 # ── notify_discord fail-open contract ────────────────────────────
+
+
+def _real_controller(tmp_path: Path) -> AutoresearchController:
+    family = load_family("ema")
+    return AutoresearchController(
+        root=tmp_path,
+        runtime_root=tmp_path,
+        family=family,
+        state_path=tmp_path / "ema_autoresearch.next.json",
+        current_md_path=tmp_path / "ema_autoresearch.current.md",
+        jobs_root=tmp_path / "runtime" / "jobs",
+    )
+
+
+def _write_valid_ema_config(path: Path, **overrides: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    config = {**STRATEGIES["ema"].get_defaults(), **overrides}
+    path.write_text(json.dumps(config) + "\n")
 
 
 def test_notify_discord_no_op_when_webhook_empty() -> None:
@@ -339,6 +364,254 @@ def test_results_to_dicts_uses_insight_brief_from_either_layer() -> None:
 
 def test_results_to_dicts_handles_empty_input() -> None:
     assert results_to_dicts([]) == []
+
+
+def test_resolve_conductor_inputs_uses_persisted_artifacts_and_verdict_feedback(
+    tmp_path: Path,
+) -> None:
+    controller = _real_controller(tmp_path)
+    config_path = tmp_path / "runtime" / "jobs" / "job-4" / "research" / "round-1"
+    _write_valid_ema_config(config_path / "selected_config.json", ema_length=8)
+    trades = tmp_path / "runtime" / "jobs" / "job-4" / "research" / "round-1" / "trades.csv"
+    events = (
+        tmp_path / "runtime" / "jobs" / "job-4" / "research" / "round-1" / "strategy_events.csv"
+    )
+    diagnostics = (
+        tmp_path / "runtime" / "jobs" / "job-4" / "research" / "round-1" / "diagnostics.json"
+    )
+    trades.write_text("entry_date,pnl_pct\n2026-01-01,1.0\n")
+    events.write_text("timestamp,event\n")
+    diagnostics.write_text('{"accepted": 3}\n')
+    latest = BacktestResultRecord(
+        config="runtime/jobs/job-4/research/round-1/selected_config.json",
+        metric=1.7,
+        status="discard",
+        description="invalid duplicate",
+        timestamp=100,
+        asi={
+            "thesis_id": "ema-noop",
+            "trades_file": trades.relative_to(tmp_path).as_posix(),
+            "strategy_events_file": events.relative_to(tmp_path).as_posix(),
+            "diagnostics_file": diagnostics.relative_to(tmp_path).as_posix(),
+            "trade_analysis": {
+                "trade_count": 3,
+                "profit_factor": 1.7,
+                "max_drawdown": -0.2,
+                "verdict": {
+                    "status": "invalid_noop_config",
+                    "summary": "trade_count and diagnostics matched a prior run",
+                },
+            },
+        },
+        job=4,
+    )
+    older_other_job = BacktestResultRecord(
+        config="configs/variants/other.yaml",
+        metric=2.0,
+        status="keep",
+        description="other job",
+        timestamp=200,
+        asi={"thesis_id": "other"},
+        job=3,
+    )
+
+    trades_file, events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
+        controller,
+        [older_other_job, latest],
+        current_job=4,
+    )
+
+    assert trades_file == str(trades.resolve())
+    assert events_file == str(events.resolve())
+    assert diagnostics_file == str(diagnostics.resolve())
+    assert latest_outcome["thesis_id"] == "ema-noop"
+    assert latest_outcome["metric"] == 1.7
+    assert latest_outcome["trade_count"] == 3
+    assert latest_outcome["verdict_status"] == "invalid_noop_config"
+    assert "revise the threshold" in latest_outcome["research_feedback"]
+
+
+def test_research_feedback_from_verdict_preserves_prefixed_summary() -> None:
+    feedback = _research_feedback_from_verdict(
+        "rejected",
+        "rejected: trade count collapsed?",
+    )
+
+    assert feedback == "Previous candidate was rejected: trade count collapsed?"
+
+
+def test_run_research_success_persists_round_artifacts_and_next_action(
+    tmp_path: Path, monkeypatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 12,
+            "research_round": 0,
+            "current_best": {"config": "configs/ema_base.yaml", "metric": 1.2},
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    generated_config = "runtime/jobs/job-12/research/round-1/selected_config.json"
+    result = {
+        "status": "completed",
+        "generated_config": generated_config,
+        "generated_config_needs_build": False,
+        "generated_thesis_id": "ema-tight-entry",
+        "thesis_id": "ema-tight-entry",
+        "reasoning": "Tighter entry filter should reduce weak crosses.",
+        "thesis": {
+            "thesis_id": "ema-tight-entry",
+            "hypothesis": "Tighter EMA entry improves expectancy.",
+            "mechanism": "Filter weak crosses before entry.",
+            "mechanism_dimension": "signal_quality",
+            "config_changes": {"ema_length": 8},
+            "closest_prior_theses_considered": ["ema-baseline"],
+            "orthogonality_defense": "changes signal quality, not exit logic",
+            "evidence_strength": "medium",
+            "thesis_role": "orthogonal_discovery",
+            "falsification_or_alternative": "if trades collapse, reject the filter",
+        },
+    }
+    controller.execute_research_one = lambda: dict(result)  # type: ignore[method-assign]
+    monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
+    monkeypatch.setattr(
+        "research_conductor.get_round_usage",
+        lambda: {"total": {"total_tokens": 321, "input_tokens": 200, "output_tokens": 121}},
+    )
+
+    updated = run_research(controller, controller.read_state())
+
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    assert updated["state"] == "running"
+    assert updated["next_action"]["config"] == generated_config
+    assert updated["activity"]["phase"] == "pending_backtest"
+    assert json.loads((round_root / "round.json").read_text())["outcome"] == "compiled"
+    links = json.loads((round_root / "links.json").read_text())
+    assert links["generated_config_path"] == generated_config
+    attempts = controller.backtest_run_db.list_research_thesis_attempts(
+        job_id=12,
+        thesis_id="ema-tight-entry",
+    )
+    assert attempts[0]["validator_status"] == "compiled"
+    assert attempts[0]["thesis_details"]["closest_prior_theses_considered"] == ["ema-baseline"]
+    assert controller.read_state()["job_usage"]["total_tokens"] == 321
+
+
+def test_run_research_should_stop_closes_job_with_finished_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 13,
+            "research_round": 1,
+            "current_best": {"config": "configs/ema_base.yaml", "metric": 1.4},
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    controller.execute_research_one = lambda: {  # type: ignore[method-assign]
+        "status": "completed",
+        "generated_config": None,
+        "generated_thesis_id": "stop-now",
+        "thesis_id": "stop-now",
+        "should_stop": True,
+        "reasoning": "No remaining orthogonal mechanism has enough evidence.",
+    }
+    monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
+    monkeypatch.setattr(
+        "research_conductor.get_round_usage",
+        lambda: {"total": {"total_tokens": 10}},
+    )
+
+    updated = run_research(controller, controller.read_state())
+
+    assert updated["state"] == "finished"
+    assert updated["finished_reason"] == "research_recommends_stop"
+    assert updated["research_stop_reasoning"] == (
+        "No remaining orthogonal mechanism has enough evidence."
+    )
+    assert "activity" not in updated
+    assert (tmp_path / "ema_autoresearch.current.md").exists()
+
+
+def test_run_research_rejected_round_blocks_with_persisted_rejection(
+    tmp_path: Path, monkeypatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 14,
+            "research_round": 2,
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    controller.execute_research_one = lambda: {  # type: ignore[method-assign]
+        "status": "thesis_rejected",
+        "generated_config": None,
+        "generated_thesis_id": "ema-duplicate",
+        "thesis_id": "ema-duplicate",
+        "rejection_reason": "validator_duplicate_or_overlap: duplicates prior thesis",
+        "thesis": {
+            "thesis_id": "ema-duplicate",
+            "hypothesis": "Duplicate EMA idea.",
+            "mechanism": "No new mechanism.",
+            "mechanism_dimension": "signal_quality",
+            "config_changes": {"ema_length": 8},
+        },
+    }
+    monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
+    monkeypatch.setattr(
+        "research_conductor.get_round_usage",
+        lambda: {"total": {"total_tokens": 44}},
+    )
+
+    updated = run_research(controller, controller.read_state())
+
+    round_root = tmp_path / "runtime" / "jobs" / "job-14" / "research" / "round-3"
+    assert updated["state"] == "interrupted"
+    assert updated["research_round"] == 3
+    assert updated["blockers"][0]["kind"] == "research_failed"
+    assert "activity" not in updated
+    assert json.loads((round_root / "round.json").read_text())["outcome"] == "rejected"
+    attempts = controller.backtest_run_db.list_research_thesis_attempts(
+        job_id=14,
+        thesis_id="ema-duplicate",
+    )
+    assert attempts[0]["validator_status"] == "rejected"
+    assert attempts[0]["rejection_reason"] == (
+        "validator_duplicate_or_overlap: duplicates prior thesis"
+    )
+
+
+def test_run_research_max_rounds_finishes_without_conductor_call(tmp_path: Path) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 15,
+            "research_round": MAX_RESEARCH_ROUNDS,
+            "current_best": {"config": "configs/ema_base.yaml", "metric": 1.6},
+            "activity": {"type": "research", "phase": "conductor_running"},
+        }
+    )
+
+    def fail_if_called():
+        raise AssertionError("conductor should not run once max rounds is exceeded")
+
+    controller.execute_research_one = fail_if_called  # type: ignore[method-assign]
+
+    updated = run_research(controller, controller.read_state())
+
+    assert updated["state"] == "finished"
+    assert updated["finished_reason"] == "max_research_rounds_reached"
+    assert "activity" not in updated
 
 
 def test_try_one_validation_attempt_operationalizes_code_change_before_validation(
