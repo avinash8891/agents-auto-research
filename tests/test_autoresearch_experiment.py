@@ -11,12 +11,16 @@ from autoresearch_controller import AutoresearchController
 from autoresearch_experiment import (
     ResultJsonError,
     _baseline_checkpoint_metrics,
+    _baseline_metrics_from_first_result,
     _build_asi_dict,
     _build_db_record,
     _build_export_entry,
     _compute_run_output_dir,
+    _contract_from_sidecar,
+    _evaluate_against_thesis,
     _find_duplicate_artifact_output,
     _invalid_duplicate_result_summary,
+    _record_baseline_checkpoint,
     _round_context_from_state,
     _serialize_artifact_dir,
     _thesis_sidecar_path,
@@ -26,11 +30,14 @@ from autoresearch_experiment import (
     log_experiment_result,
     parse_benchmark_details,
     parse_metric,
+    parse_result_json,
+    primary_metric_name,
     run_command,
     run_experiment,
 )
 from autoresearch_paths import resolve_config_path
-from backtest_run_db import BacktestRunRecord
+from backtest_run_db import BacktestRunRecord, BaselineCheckpoint
+from research_types import BacktestContract
 from strategy_family import load_family
 
 
@@ -192,6 +199,27 @@ def test_run_command_reports_bad_shell_quoting_without_running_shell(tmp_path: P
 
     assert code == 1
     assert "No closing quotation" in output
+
+
+def test_parse_result_json_accepts_inline_payload_only_when_opted_in() -> None:
+    payload = '{"metrics_file": "metrics.json"}'
+
+    assert parse_result_json(payload) is None
+    assert parse_result_json(payload, allow_inline_json=True) == {"metrics_file": "metrics.json"}
+    assert parse_result_json("[1, 2]", allow_inline_json=True) is None
+    assert parse_result_json("{bad", allow_inline_json=True) is None
+
+
+def test_parse_metric_legacy_stdout_is_explicit_and_primary_metric_defaults() -> None:
+    output = "METRIC custom_pf=1.45\n"
+
+    assert parse_metric(output, name="custom_pf") is None
+    assert parse_metric(output, name="custom_pf", allow_legacy=True) == 1.45
+    assert parse_metric(output, name="missing", allow_legacy=True) is None
+    assert primary_metric_name([]) == "profit_factor"
+    assert primary_metric_name(
+        [{"type": "note"}, {"type": "config", "metricName": "custom_pf"}]
+    ) == ("custom_pf")
 
 
 def test_parse_benchmark_details_reads_relative_manifest_artifacts(tmp_path: Path) -> None:
@@ -626,6 +654,239 @@ def test_build_asi_dict_records_baseline_rerun_and_absolute_artifact_dir(tmp_pat
     assert asi["artifact_dir"] == outside.as_posix()
     assert asi["baseline_rerun_for_commit"] == "abcdef1"
     assert _serialize_artifact_dir(controller, tmp_path / "runtime") == "runtime"
+
+
+def test_contract_sidecar_drives_thesis_identity_and_diagnostics(tmp_path: Path) -> None:
+    round_root = tmp_path / "runtime" / "jobs" / "job-5" / "research" / "round-2"
+    round_root.mkdir(parents=True)
+    sidecar = {
+        "thesis_id": "ema-diagnostic-gate",
+        "hypothesis": "Require regime diagnostics before accepting the candidate.",
+        "mechanism": "The filter should improve profit factor with diagnostics present.",
+        "config_changes": {"ema_length": 13},
+        "expected_effects": [
+            {"metric": "profit_factor", "direction": "increase", "threshold": 0.1}
+        ],
+        "required_diagnostic_specs": [
+            {
+                "key": "regime_breakdown",
+                "surface": "strategy_diagnostics",
+                "payload_fields": ["bull"],
+            }
+        ],
+    }
+    (round_root / "selected_thesis.json").write_text(json.dumps(sidecar) + "\n")
+    controller = SimpleNamespace(
+        root=tmp_path,
+        runtime_root=tmp_path,
+        family=SimpleNamespace(name="ema", base_config_filename="ema_base.yaml"),
+        ctx=SimpleNamespace(current_contract=None, execution_root=None),
+    )
+
+    contract = _contract_from_sidecar(
+        controller,
+        "runtime/jobs/job-5/research/round-2/selected_config.json",
+    )
+
+    assert contract is not None
+    assert contract.thesis_id == "ema-diagnostic-gate"
+    assert contract.config_changes == {"ema_length": 13}
+    assert contract.required_diagnostic_specs[0].key == "regime_breakdown"
+
+
+def test_evaluate_against_thesis_rejects_missing_required_diagnostic(tmp_path: Path) -> None:
+    contract = BacktestContract(
+        contract_id="contract-1",
+        thesis_id="ema-diagnostic-gate",
+        strategy_family="ema",
+        baseline_config_path="configs/ema_base.yaml",
+        runtime_config={"ema_length": 13},
+        hypothesis="Candidate needs a regime diagnostic to validate the mechanism.",
+        mechanism="Regime conditioned entries should improve profit factor.",
+        expected_effects=[{"metric": "profit_factor", "direction": "increase", "threshold": 0.1}],
+        required_diagnostic_specs=[
+            {
+                "key": "regime_breakdown",
+                "surface": "strategy_diagnostics",
+                "payload_fields": ["bull"],
+            }
+        ],
+    )
+    controller = SimpleNamespace(
+        root=tmp_path,
+        runtime_root=tmp_path,
+        ctx=SimpleNamespace(execution_root=None),
+        baseline_tracker=None,
+        read_results=lambda: [
+            SimpleNamespace(asi={"trade_analysis": {"profit_factor": 1.0, "trade_count": 5}})
+        ],
+        primary_metric_name=lambda: "profit_factor",
+    )
+    config_dir = tmp_path / "runtime" / "jobs" / "job-5" / "research" / "round-2"
+    config_dir.mkdir(parents=True)
+
+    verdict, decision = _evaluate_against_thesis(
+        controller,
+        contract,
+        "runtime/jobs/job-5/research/round-2/selected_config.json",
+        1.3,
+        "keep",
+        {"profit_factor": 1.3, "trade_count": 6, "strategy_diagnostics": {}},
+    )
+
+    assert decision == "discard"
+    assert verdict.status == "inconclusive"
+    assert verdict.missing_required_diagnostics == ["regime_breakdown"]
+    assert (config_dir / "verdict.json").exists()
+
+
+def test_evaluate_against_thesis_applies_real_verdict_statuses(tmp_path: Path) -> None:
+    accepted_contract = BacktestContract(
+        contract_id="accepted-contract",
+        thesis_id="ema-accepted",
+        strategy_family="ema",
+        baseline_config_path="configs/ema_base.yaml",
+        runtime_config={"ema_length": 13},
+        hypothesis="Candidate improves profit factor.",
+        mechanism="Cleaner entries should raise profit factor.",
+        expected_effects=[{"metric": "profit_factor", "direction": "increase", "threshold": 0.1}],
+    )
+    controller = SimpleNamespace(
+        root=tmp_path,
+        runtime_root=tmp_path,
+        ctx=SimpleNamespace(execution_root=None),
+        baseline_tracker=None,
+        read_results=lambda: [
+            SimpleNamespace(asi={"trade_analysis": {"profit_factor": 1.0, "trade_count": 5}})
+        ],
+        primary_metric_name=lambda: "profit_factor",
+    )
+    config_dir = tmp_path / "runtime" / "jobs" / "job-5" / "research" / "round-3"
+    config_dir.mkdir(parents=True)
+
+    accepted_verdict, accepted_decision = _evaluate_against_thesis(
+        controller,
+        accepted_contract,
+        "runtime/jobs/job-5/research/round-3/selected_config.json",
+        1.3,
+        "discard",
+        {"profit_factor": 1.3, "trade_count": 6},
+    )
+
+    assert accepted_verdict.status == "accepted"
+    assert accepted_decision == "discard"
+    assert json.loads((config_dir / "verdict.json").read_text())["status"] == "accepted"
+
+    rejected_contract = BacktestContract(
+        contract_id="rejected-contract",
+        thesis_id="ema-rejected",
+        strategy_family="ema",
+        baseline_config_path="configs/ema_base.yaml",
+        runtime_config={"ema_length": 21},
+        hypothesis="Candidate improves profit factor unless drawdown explodes.",
+        mechanism="More trades should improve return quality.",
+        expected_effects=[{"metric": "profit_factor", "direction": "increase", "threshold": 0.1}],
+        disqualifiers=[
+            {
+                "name": "drawdown_limit",
+                "condition": "max_drawdown > 0.20",
+                "severity": "hard_fail",
+            }
+        ],
+    )
+
+    rejected_verdict, rejected_decision = _evaluate_against_thesis(
+        controller,
+        rejected_contract,
+        "runtime/jobs/job-5/research/round-3/selected_config.json",
+        1.4,
+        "keep",
+        {"profit_factor": 1.4, "trade_count": 7, "max_drawdown": 0.35},
+    )
+
+    assert rejected_verdict.status == "rejected"
+    assert rejected_verdict.triggered_disqualifiers == ["drawdown_limit"]
+    assert rejected_decision == "discard"
+
+
+def test_baseline_metrics_prefer_tracker_then_fall_back_to_first_result(tmp_path: Path) -> None:
+    checkpoint = BaselineCheckpoint(
+        code_commit="abc1234",
+        data_hash="data",
+        config_hash="config",
+        metrics={"profit_factor": 1.8, "trade_count": 7},
+        timestamp="2026-05-09T00:00:00+00:00",
+    )
+    controller = SimpleNamespace(
+        baseline_tracker=SimpleNamespace(latest=lambda: checkpoint),
+        read_results=lambda: [],
+    )
+    assert _baseline_metrics_from_first_result(controller) == {
+        "profit_factor": 1.8,
+        "trade_count": 7,
+    }
+
+    fallback = SimpleNamespace(
+        baseline_tracker=SimpleNamespace(latest=lambda: None),
+        read_results=lambda: [
+            SimpleNamespace(
+                asi={
+                    "trade_analysis": {
+                        "trade_count": 5,
+                        "profit_factor": 1.2,
+                        "max_drawdown": -0.1,
+                        "ignored": 99,
+                    }
+                }
+            )
+        ],
+    )
+    assert _baseline_metrics_from_first_result(fallback) == {
+        "trade_count": 5,
+        "profit_factor": 1.2,
+        "max_drawdown": -0.1,
+    }
+
+
+def test_record_baseline_checkpoint_persists_critical_drift_and_clears_rerun_marker(
+    tmp_path: Path,
+) -> None:
+    controller = _controller_for_experiment(tmp_path, "")
+    controller.write_state(
+        {
+            "state": "running",
+            "job": 1,
+            "research_round": 0,
+            "next_action": {
+                "type": "run_experiment",
+                "source": "baseline",
+                "baseline_rerun_for_commit": "abc1234",
+            },
+        }
+    )
+    controller.baseline_tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="old-data",
+            config_hash="old-config",
+            metrics={"profit_factor": 1.0},
+            timestamp="2026-05-09T00:00:00+00:00",
+        )
+    )
+
+    _record_baseline_checkpoint(
+        controller,
+        {"profit_factor": 1.5, "trade_count": 6, "git_sha": "abc1234"},
+        {"ema_length": 8},
+    )
+
+    persisted = controller.read_state()
+    assert persisted["baseline_drift"]["drifted"] is True
+    assert "baseline_rerun_for_commit" not in persisted["next_action"]
+    assert controller.baseline_tracker.latest().metrics == {
+        "profit_factor": 1.5,
+        "trade_count": 6.0,
+    }
 
 
 def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Path) -> None:
