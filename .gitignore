@@ -233,3 +233,7 @@ research_findings.jsonl
 
 # Eval dry-run scratch dir — not for production, not committed
 eval_dryrun/
+
+# Local agent/session tool state.
+.claude/
+.entire/
