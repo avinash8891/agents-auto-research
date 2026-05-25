@@ -229,3 +229,20 @@ def test_eval_result_from_dict_uses_defaults_for_missing_suite_keys():
         n_tasks=0,
         n_compiled=0,
     )
+
+
+def test_eval_result_from_dict_default_repeat_uses_filtered_suite_count():
+    result = EvalResult.from_dict(
+        {
+            "label": "legacy",
+            "timestamp": "2026-01-01T00:00:00+00:00",
+            "primary_metric": {"mean": 0.0, "stdev": 0.0, "min": 0.0, "max": 0.0},
+            "suites": [
+                {"compiled_rate": 0.0, "quality_score_p50": None, "n_tasks": 0, "n_compiled": 0},
+                "malformed",
+            ],
+        }
+    )
+
+    assert result.repeat == 1
+    assert len(result.suites) == 1

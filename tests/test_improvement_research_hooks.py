@@ -135,3 +135,32 @@ def test_ratchet_uses_cold_start_when_current_round_did_not_run_eval(tmp_path, m
     _run_improvement_hooks(controller, research_round=4, result={"generated_config": "x"})
 
     assert captured == {"eval_result_path": None, "outcome": "compiled"}
+
+
+def test_ratchet_ignores_apply_eval_path_outside_eval_results(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_HALO, "1")
+    monkeypatch.setenv(ENV_IMPROVEMENT_HALO_APPLY, "1")
+    monkeypatch.setenv(ENV_IMPROVEMENT_RATCHET, "1")
+    from autoresearch_research import _run_improvement_hooks
+
+    captured = {}
+
+    def fake_halo(_round, _event_file, _halo_dir):
+        return tmp_path / "report.json"
+
+    def fake_apply(_halo_report, _repo_root):
+        return {"status": "KEEP", "eval_result_path": tmp_path / "outside.json"}
+
+    def fake_record(controller, round_number, outcome, eval_result_path, *, apply_decision=None):
+        captured["eval_result_path"] = eval_result_path
+        return "keep"
+
+    monkeypatch.setattr("trace_sdk.get_event_file", lambda: tmp_path / "events.jsonl")
+    monkeypatch.setattr("improvement_halo.run_halo_after_round", fake_halo)
+    monkeypatch.setattr("improvement_halo_apply.apply_halo_report", fake_apply)
+    monkeypatch.setattr("improvement_ratchet.record_round_decision", fake_record)
+
+    controller = SimpleNamespace(root=tmp_path)
+    _run_improvement_hooks(controller, research_round=4, result={"generated_config": "x"})
+
+    assert captured == {"eval_result_path": None}

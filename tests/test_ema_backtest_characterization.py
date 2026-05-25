@@ -182,7 +182,8 @@ def test_main_writes_result_json_with_full_schema(tmp_path: Path) -> None:
         rejection_breakdown={},
     )
     assert payload["trades_file"] == ""
-    assert payload["strategy_events_file"] == str(tmp_path / "strategy_events.parquet")
+    assert payload["strategy_events_file"] == ""
+    assert not (tmp_path / "strategy_events.parquet").exists()
 
 
 def test_generic_runner_emits_result_json_marker_on_stdout(tmp_path: Path) -> None:

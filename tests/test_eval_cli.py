@@ -226,3 +226,11 @@ def test_load_prior_result_returns_none_for_invalid_schema(tmp_path):
     (output / "bad-schema.json").write_text(json.dumps(payload), encoding="utf-8")
 
     assert eval_cli._load_prior_result(output, current_path=None) is None
+
+
+def test_load_prior_result_returns_none_for_non_object_json(tmp_path):
+    output = tmp_path / "out"
+    output.mkdir()
+    (output / "bad.json").write_text("[]", encoding="utf-8")
+
+    assert eval_cli._load_prior_result(output, current_path=None) is None

@@ -372,3 +372,12 @@ def test_release_lock_does_not_remove_lock_recreated_by_another_owner(tmp_path):
     improvement_halo_apply._release_lock(lock_path, original)
 
     assert lock_path.read_text(encoding="utf-8") == "other-owner"
+
+
+def test_release_lock_ignores_unreadable_owner_payload(tmp_path):
+    lock_path = tmp_path / ".apply.lock"
+    lock_path.write_bytes(b"\xff")
+
+    improvement_halo_apply._release_lock(lock_path, "{}")
+
+    assert lock_path.exists()

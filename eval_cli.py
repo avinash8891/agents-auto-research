@@ -88,7 +88,7 @@ def _load_prior_result(output_dir: Path, current_path: Path | None):
     most_recent = max(candidates, key=safe_stat_mtime)
     try:
         return EvalResult.from_dict(json.loads(most_recent.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+    except (OSError, json.JSONDecodeError, ValueError, TypeError, AttributeError):
         return None
 
 

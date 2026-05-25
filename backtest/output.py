@@ -36,8 +36,6 @@ def write_all(
     if event_logger:
         events_df = event_logger.to_dataframe()
         validate_event_frame_schema(events_df)
-        if hasattr(event_logger, "write_parquet"):
-            events_path = output_path / "strategy_events.parquet"
         if events_df is not None and not events_df.empty:
             events_path = output_path / "strategy_events.parquet"
             events_df.to_parquet(events_path, index=False)

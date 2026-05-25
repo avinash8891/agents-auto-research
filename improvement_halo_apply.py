@@ -104,7 +104,7 @@ def _release_lock(lock_path: Path, owner_payload: str | None = None) -> None:
         try:
             if lock_path.read_text(encoding="utf-8") != owner_payload:
                 return
-        except FileNotFoundError:
+        except (OSError, UnicodeDecodeError):
             return
     try:
         lock_path.unlink()
