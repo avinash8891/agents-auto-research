@@ -16,6 +16,7 @@ from typing import Any
 from autoresearch_logging import get_logger
 from autoresearch_runtime_paths import research_round_trace_exports_root
 from improvement_flags import reflexion_enabled
+from persistence_utils import safe_stat_mtime
 from reflexio_agent_reflections import build_agent_reflections
 
 log = get_logger(__name__)
@@ -158,9 +159,9 @@ def build_reflexion_feedback(controller, current_round: int, *, agent: str | Non
         return ""
     try:
         controller_root = Path(controller.root)
-    except AttributeError:
+    except (AttributeError, TypeError):
         log.warning(
-            "REFLEXION controller has no root attribute; skipping. "
+            "REFLEXION controller has no valid root attribute; skipping. "
             "Action: pass an AutoresearchController-shaped object."
         )
         return ""
@@ -176,7 +177,7 @@ def build_reflexion_feedback(controller, current_round: int, *, agent: str | Non
     )
     prev_round_str = f"{current_round - 1:03d}"
     pattern = EXPORT_GLOB.format(round_str=prev_round_str)
-    matches = sorted(export_root.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+    matches = sorted(export_root.glob(pattern), key=safe_stat_mtime, reverse=True)
     if not matches:
         log.info(
             f"REFLEXION no prior reflexio export for round={current_round - 1} "
@@ -210,7 +211,14 @@ def build_latest_reflexion_feedback(root: str | Path, *, agent: str | None = Non
     """
     if not reflexion_enabled():
         return ""
-    controller_root = Path(root)
+    try:
+        controller_root = Path(root)
+    except TypeError:
+        log.warning(
+            "REFLEXION latest feedback root is invalid; skipping. "
+            "Action: pass a filesystem path."
+        )
+        return ""
     matches = sorted(
         (
             path
@@ -218,7 +226,7 @@ def build_latest_reflexion_feedback(root: str | Path, *, agent: str | None = Non
             for round_path in (job_path / "research").glob("round-*")
             for path in (round_path / "trace_exports").glob(LATEST_EXPORT_GLOB)
         ),
-        key=lambda p: (_round_from_export_path(p), p.stat().st_mtime),
+        key=lambda p: (_round_from_export_path(p), safe_stat_mtime(p)),
         reverse=True,
     )
     if not matches:
@@ -269,7 +277,7 @@ def _current_job_trace_exports_root(controller: Any, controller_root: Path) -> P
                         path / "research" / f"round-{int(current_round)}" / "trace_exports"
                     ).exists()
                 ),
-                key=lambda path: path.stat().st_mtime,
+                key=safe_stat_mtime,
                 reverse=True,
             )
             if candidates:

@@ -26,24 +26,13 @@ from eval_metrics import (
     compare_eval_results,
 )
 from improvement_flags import halo_apply_enabled
-from persistence_utils import utc_now_iso8601
+from persistence_utils import parse_positive_int_env, utc_now_iso8601
 
 log = get_logger(__name__)
 
 
-def _parse_timeout(env_key: str, default: int) -> int:
-    raw = os.environ.get(env_key)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        log.warning("invalid value %r for %s; using default %d", raw, env_key, default)
-        return default
-
-
 CLAUDE_BINARY = "claude"
-CLAUDE_TIMEOUT_SECONDS = _parse_timeout(ENV_CLAUDE_TIMEOUT_SECONDS, 1800)
+CLAUDE_TIMEOUT_SECONDS = parse_positive_int_env(ENV_CLAUDE_TIMEOUT_SECONDS, 1800, logger=log)
 
 DEFAULT_EDIT_SCOPE = (
     "agent_prompts.py",
@@ -110,7 +99,13 @@ def _acquire_lock(lock_path: Path) -> bool:
     return True
 
 
-def _release_lock(lock_path: Path) -> None:
+def _release_lock(lock_path: Path, owner_payload: str | None = None) -> None:
+    if owner_payload is not None:
+        try:
+            if lock_path.read_text(encoding="utf-8") != owner_payload:
+                return
+        except (OSError, UnicodeDecodeError):
+            return
     try:
         lock_path.unlink()
     except FileNotFoundError:
@@ -186,6 +181,10 @@ def apply_halo_report(
             f"Action: wait or remove the stale lock manually."
         )
         return {"status": DECISION_ABORTED, "reason": "lock_held"}
+    try:
+        lock_owner_payload = lock_path.read_text(encoding="utf-8")
+    except OSError:
+        lock_owner_payload = None
 
     try:
         if shutil.which(CLAUDE_BINARY) is None:
@@ -224,6 +223,9 @@ def apply_halo_report(
                 "reason": "prior_compare_failed",
                 "pre_head": pre_head,
             }
+        new_result_path = latest_eval_result_path(repo_root / EVAL_RESULTS_DIRNAME)
+        if new_result_path is not None and new_result_path != prior_path:
+            decision["eval_result_path"] = str(new_result_path)
 
         decisions_log = report_path.parent / "decisions.jsonl"
         decisions_log.parent.mkdir(parents=True, exist_ok=True)
@@ -232,4 +234,4 @@ def apply_halo_report(
         log.info(f"HALO_APPLY decision={decision['status']} report={report_path}")
         return decision
     finally:
-        _release_lock(lock_path)
+        _release_lock(lock_path, lock_owner_payload)

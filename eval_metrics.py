@@ -72,11 +72,11 @@ class SuiteSummary:
             raise ValueError(f"counts must be non-negative: {self}")
         if self.n_compiled > self.n_tasks:
             raise ValueError(f"n_compiled > n_tasks: {self}")
+        if not 0.0 <= self.compiled_rate <= 1.0:
+            raise ValueError(f"compiled_rate must be in [0, 1]: {self}")
         if self.n_tasks > 0:
             expected = self.n_compiled / self.n_tasks
-            # 0.5 absolute tolerance allows floats serialized through JSON;
-            # tighter than 1/n_tasks would false-positive on legitimate rounding.
-            if abs(self.compiled_rate * self.n_tasks - self.n_compiled) > 0.5:
+            if not math.isclose(self.compiled_rate, expected, rel_tol=1e-9, abs_tol=1e-9):
                 raise ValueError(
                     f"compiled_rate {self.compiled_rate} inconsistent with "
                     f"n_compiled/n_tasks={expected}: {self}"
@@ -144,24 +144,26 @@ class EvalResult:
     def from_dict(cls, payload: dict) -> "EvalResult":
         primary = payload.get("primary_metric") or {}
         suites_payload = payload.get("suites") or []
+        suites = [
+            SuiteSummary(
+                compiled_rate=s.get("compiled_rate", 0.0),
+                quality_score_p50=s.get("quality_score_p50"),
+                n_tasks=s.get("n_tasks", 0),
+                n_compiled=s.get("n_compiled", 0),
+            )
+            for s in suites_payload
+            if isinstance(s, dict)
+        ]
         return cls(
             label=payload.get("label", "?"),
             timestamp=payload.get("timestamp", ""),
-            repeat=payload.get("repeat", len(suites_payload)),
+            repeat=payload.get("repeat", len(suites)),
             primary_metric_name=payload.get("primary_metric_name", "compiled_rate"),
             primary_metric_mean=primary.get("mean", 0.0),
             primary_metric_stdev=primary.get("stdev", 0.0),
             primary_metric_min=primary.get("min", 0.0),
             primary_metric_max=primary.get("max", 0.0),
-            suites=[
-                SuiteSummary(
-                    compiled_rate=s["compiled_rate"],
-                    quality_score_p50=s["quality_score_p50"],
-                    n_tasks=s["n_tasks"],
-                    n_compiled=s["n_compiled"],
-                )
-                for s in suites_payload
-            ],
+            suites=suites,
             secondary_quality_p50_mean=payload.get("secondary_quality_p50_mean"),
         )
 

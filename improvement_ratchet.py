@@ -59,7 +59,7 @@ def _decision_keep_if_compiled(outcome: str) -> tuple[str, str]:
 def _load_eval_result(path: Path) -> EvalResult | None:
     try:
         return EvalResult.from_dict(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError) as exc:
         log.error(
             f"RATCHET could not read {path}: {type(exc).__name__}: {exc}. "
             f"Action: inspect or remove the corrupt eval result."
@@ -113,7 +113,7 @@ def _apply_verdict_contribution(apply_decision: dict | None) -> tuple[str | None
         return DECISION_INCONCLUSIVE, f"halo_apply aborted: {apply_decision.get('reason', '?')}"
     if status in _VERDICT_RANK:
         return status, f"halo_apply={status}"
-    return None, f"halo_apply unknown status: {status!r}"
+    return DECISION_INCONCLUSIVE, f"halo_apply unknown status: {status!r}"
 
 
 def _combine_verdicts(
@@ -154,9 +154,9 @@ def record_round_decision(
 
     try:
         controller_root = Path(controller.root)
-    except AttributeError:
+    except (AttributeError, TypeError):
         log.warning(
-            "RATCHET controller has no root attribute; skipping. "
+            "RATCHET controller has no valid root attribute; skipping. "
             "Action: pass an AutoresearchController-shaped object."
         )
         return DECISION_SKIP

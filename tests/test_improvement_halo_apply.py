@@ -65,10 +65,11 @@ def _plant_prior_eval(tmp_path: Path, mean: float, stdev: float) -> Path:
 
 def _stub_eval_runner(metric: float):
     def runner(*, label):
+        n_tasks = 100
         return summarize_eval(
             label=label,
             timestamp="2026-05-04T00:00:00+00:00",
-            suites=[SuiteSummary(metric, 0.5, 10, int(round(metric * 10)))],
+            suites=[SuiteSummary(metric, 0.5, n_tasks, int(round(metric * n_tasks)))],
         )
 
     return runner
@@ -346,3 +347,37 @@ def test_claude_timeout_invalid_env_falls_back_to_default(monkeypatch):
 
     importlib.reload(m)
     assert m.CLAUDE_TIMEOUT_SECONDS == 1800
+
+
+def test_claude_timeout_non_positive_env_falls_back_to_default(monkeypatch):
+    from autoresearch_constants import ENV_CLAUDE_TIMEOUT_SECONDS
+
+    monkeypatch.setenv(ENV_CLAUDE_TIMEOUT_SECONDS, "-1")
+    import importlib
+
+    import improvement_halo_apply as m
+
+    importlib.reload(m)
+    assert m.CLAUDE_TIMEOUT_SECONDS == 1800
+
+
+def test_release_lock_does_not_remove_lock_recreated_by_another_owner(tmp_path):
+    lock_path = tmp_path / ".apply.lock"
+
+    assert improvement_halo_apply._acquire_lock(lock_path) is True
+    original = lock_path.read_text(encoding="utf-8")
+    lock_path.unlink()
+    lock_path.write_text("other-owner", encoding="utf-8")
+
+    improvement_halo_apply._release_lock(lock_path, original)
+
+    assert lock_path.read_text(encoding="utf-8") == "other-owner"
+
+
+def test_release_lock_ignores_unreadable_owner_payload(tmp_path):
+    lock_path = tmp_path / ".apply.lock"
+    lock_path.write_bytes(b"\xff")
+
+    improvement_halo_apply._release_lock(lock_path, "{}")
+
+    assert lock_path.exists()
