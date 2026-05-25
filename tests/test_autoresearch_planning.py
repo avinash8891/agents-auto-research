@@ -10,8 +10,8 @@ from autoresearch_planning import (
     check_baseline_rerun,
     generate_combination_candidates,
     list_known_variant_configs,
-    plan_next_action,
     pending_configs,
+    plan_next_action,
     select_research_next_action,
     should_terminate,
     thesis_family_for,
@@ -201,9 +201,7 @@ def test_should_terminate_requires_completed_empty_queue_with_findings(
     )
 
 
-def test_plan_next_action_preserves_forced_baseline_rerun_state(
-    tmp_path: Path, ema_family
-) -> None:
+def test_plan_next_action_preserves_forced_baseline_rerun_state(tmp_path: Path, ema_family) -> None:
     state = {
         "state": "running",
         "job": 3,

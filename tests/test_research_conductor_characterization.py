@@ -110,7 +110,9 @@ def _patch_conductor_runner(
     monkeypatch.setattr(conductor, "OAIAgent", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(conductor, "OAIModelSettings", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(conductor, "OAIRunConfig", lambda **kwargs: SimpleNamespace(**kwargs))
-    monkeypatch.setattr(conductor, "accumulate_agents_sdk_result_usage", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        conductor, "accumulate_agents_sdk_result_usage", lambda *args, **kwargs: None
+    )
 
     def _run_streamed(agent, user_prompt, max_turns, run_config):
         captured_prompts.append(user_prompt)
@@ -375,8 +377,14 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
             {"suggested_theses": [{"thesis_id": "a"}, {"thesis_id": "b"}], "should_stop": False},
             "expected exactly one thesis, got 2",
         ),
-        ({"suggested_theses": "not-a-list", "should_stop": False}, "suggested_theses must be a list"),
-        ({"suggested_theses": ["not-an-object"], "should_stop": False}, "suggested_theses[0] must be an object"),
+        (
+            {"suggested_theses": "not-a-list", "should_stop": False},
+            "suggested_theses must be a list",
+        ),
+        (
+            {"suggested_theses": ["not-an-object"], "should_stop": False},
+            "suggested_theses[0] must be an object",
+        ),
     ],
 )
 def test_conductor_reports_structural_validation_failures_after_required_tool_gate(
