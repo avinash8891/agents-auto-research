@@ -121,6 +121,13 @@ CORE_MECHANISM_DIMENSIONS = {
     "portfolio_construction",
     "risk_structure",
     "market_microstructure",
+    # Emerged from wiki ingestion of foundational literature:
+    # Almgren-Chriss/LOB practice, Lopez de Prado ML fund failures,
+    # news sentiment literature, and Grinold-Kahn FLAM.
+    "execution_costs",
+    "universe_selection",
+    "alternative_data",
+    "alpha_decay",
 }
 
 # Valid mechanism dimensions for thesis classification. The emergent path is
