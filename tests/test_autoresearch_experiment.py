@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -201,6 +202,34 @@ def test_run_command_reports_bad_shell_quoting_without_running_shell(tmp_path: P
     assert "No closing quotation" in output
 
 
+def test_run_command_reports_timeout_as_command_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="python slow.py", timeout=300)
+
+    monkeypatch.setattr("autoresearch_experiment.subprocess.run", _timeout)
+
+    code, output = run_command(tmp_path, f"{sys.executable} slow.py")
+
+    assert code == 1
+    assert output == "TIMEOUT"
+
+
+def test_run_command_reports_os_errors_without_swallowing_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _os_error(*args, **kwargs):
+        raise OSError("executable missing")
+
+    monkeypatch.setattr("autoresearch_experiment.subprocess.run", _os_error)
+
+    code, output = run_command(tmp_path, "missing-binary --version")
+
+    assert code == 1
+    assert output == "executable missing"
+
+
 def test_parse_result_json_accepts_inline_payload_only_when_opted_in() -> None:
     payload = '{"metrics_file": "metrics.json"}'
 
@@ -248,6 +277,20 @@ def test_parse_benchmark_details_reads_relative_manifest_artifacts(tmp_path: Pat
     assert parse_metric(f"RESULT_JSON {result_path}\n", name="custom_alpha") == 2.5
 
 
+def test_parse_benchmark_details_defaults_diagnostics_when_manifest_omits_file(
+    tmp_path: Path,
+) -> None:
+    result_path = _write_result_manifest(
+        tmp_path / "run",
+        {"trade_count": 2, "profit_factor": 1.2},
+    )
+
+    details = parse_benchmark_details(f"RESULT_JSON {result_path}\n")
+
+    assert details["strategy_diagnostics"] == {}
+    assert primary_metric_name([{"type": "note", "metricName": "ignored"}]) == "profit_factor"
+
+
 def test_parse_benchmark_details_fails_loudly_for_bad_result_manifest(tmp_path: Path) -> None:
     missing_result = tmp_path / "missing-result.json"
     with pytest.raises(ResultJsonError, match="path does not exist"):
@@ -262,6 +305,13 @@ def test_parse_benchmark_details_fails_loudly_for_bad_result_manifest(tmp_path: 
     no_metrics.write_text(json.dumps({"trades_file": "trades.csv"}) + "\n")
     with pytest.raises(ResultJsonError, match="missing required metrics_file"):
         parse_benchmark_details(f"RESULT_JSON {no_metrics}\n")
+    with pytest.raises(ResultJsonError, match="missing required metrics_file"):
+        parse_metric(f"RESULT_JSON {no_metrics}\n")
+
+    missing_metrics = tmp_path / "missing-metrics-result.json"
+    missing_metrics.write_text(json.dumps({"metrics_file": "missing-metrics.json"}) + "\n")
+    with pytest.raises(ResultJsonError, match="metrics.json not found"):
+        parse_metric(f"RESULT_JSON {missing_metrics}\n")
 
 
 def test_legacy_stdout_parsing_requires_explicit_opt_in() -> None:
@@ -485,6 +535,83 @@ def test_duplicate_artifact_detection_ignores_missing_hash_inputs(tmp_path: Path
     )
 
 
+def test_duplicate_artifact_detection_skips_nonmatching_prior_records(tmp_path: Path) -> None:
+    current_trades = tmp_path / "current_trades.csv"
+    current_diagnostics = tmp_path / "current_diagnostics.json"
+    other_trades = tmp_path / "other_trades.csv"
+    other_diagnostics = tmp_path / "other_diagnostics.json"
+    current_trades.write_text("entry_date,pnl_pct\n2026-01-01,1.0\n")
+    current_diagnostics.write_text('{"accepted": 12}\n')
+    other_trades.write_text("entry_date,pnl_pct\n2026-01-02,-1.0\n")
+    other_diagnostics.write_text('{"accepted": 9}\n')
+
+    def prior(
+        run_id: str,
+        *,
+        family: str = "ema",
+        job: int = 9,
+        trade_count: int = 12,
+        strategy_diagnostics: dict | None = None,
+        trades_file: Path = current_trades,
+        diagnostics_file: Path = current_diagnostics,
+    ) -> BacktestRunRecord:
+        return BacktestRunRecord(
+            run_id=run_id,
+            thesis_id=run_id,
+            config_path="runtime/jobs/job-9/research/round-1/selected_config.json",
+            runtime_config={"ema_length": 5},
+            code_commit="abc1234",
+            data_hash="data",
+            train_metrics={},
+            validation_metrics={},
+            trade_count=trade_count,
+            trades_file=str(trades_file),
+            strategy_events_file="",
+            diagnostics_file=str(diagnostics_file),
+            strategy_diagnostics=strategy_diagnostics or {"accepted": 12},
+            accepted=True,
+            rejection_reason="",
+            verdict_status="accepted",
+            verdict_summary="ok",
+            parent_backtest_run_id="",
+            timestamp="2026-05-09T00:00:00+00:00",
+            family=family,
+            hypothesis="h",
+            mechanism="m",
+            job=job,
+        )
+
+    expected = prior("matching-duplicate")
+    controller = SimpleNamespace(
+        backtest_run_db=SimpleNamespace(
+            all=lambda: [
+                expected,
+                prior("wrong-diagnostics-file", diagnostics_file=other_diagnostics),
+                prior("wrong-trades-file", trades_file=other_trades),
+                prior("wrong-strategy-diagnostics", strategy_diagnostics={"accepted": 11}),
+                prior("wrong-trade-count", trade_count=10),
+                prior("wrong-job", job=10),
+                prior("wrong-family", family="orb"),
+            ]
+        ),
+        family=SimpleNamespace(name="ema"),
+    )
+
+    duplicate = _find_duplicate_artifact_output(
+        controller,
+        runtime_config={"ema_length": 7},
+        details={
+            "trade_count": 12,
+            "trades_file": str(current_trades),
+            "diagnostics_file": str(current_diagnostics),
+            "strategy_diagnostics": {"accepted": 12},
+        },
+        state={"job": 9},
+    )
+
+    assert duplicate is expected
+
+
 def test_build_db_record_preserves_round_zero_baseline_identity(tmp_path: Path) -> None:
     controller = SimpleNamespace(
         ctx=SimpleNamespace(
@@ -547,6 +674,51 @@ def test_invalid_duplicate_summary_distinguishes_identical_runtime_config(tmp_pa
 
     assert summary.startswith("invalid_duplicate_result")
     assert "trade_rejections_due_gap=0" in summary
+
+
+def test_invalid_duplicate_summary_ignores_bool_and_nonnumeric_zero_hints() -> None:
+    duplicate = BacktestRunRecord(
+        run_id="duplicate-run",
+        thesis_id="previous",
+        config_path="config.json",
+        runtime_config={"ema_length": 5},
+        code_commit="abc1234",
+        data_hash="data",
+        train_metrics={},
+        validation_metrics={},
+        trade_count=9,
+        trades_file="",
+        strategy_events_file="",
+        diagnostics_file="",
+        strategy_diagnostics={},
+        accepted=True,
+        rejection_reason="",
+        verdict_status="accepted",
+        verdict_summary="ok",
+        parent_backtest_run_id="",
+        timestamp="2026-05-09T00:00:00+00:00",
+        family="ema",
+        hypothesis="h",
+        mechanism="m",
+        job=1,
+    )
+
+    summary = _invalid_duplicate_result_summary(
+        duplicate,
+        {
+            "strategy_diagnostics": {
+                "trade_rejections_due_bool": False,
+                "trade_rejections_due_text": "not-a-number",
+                "trade_rejections_due_gap": 0,
+            },
+            "trade_count": 9,
+        },
+        {"ema_length": 8},
+    )
+
+    assert "trade_rejections_due_gap=0" in summary
+    assert "trade_rejections_due_bool" not in summary
+    assert "trade_rejections_due_text" not in summary
 
 
 def test_build_export_entry_uses_backtest_run_type(tmp_path: Path) -> None:
@@ -1113,6 +1285,68 @@ def test_run_experiment_blocks_when_metric_marker_is_missing(
     assert persisted["next_action"]["reason"] == "metric_parse_failed"
     assert persisted["blockers"][0]["kind"] == "metric_parse_failed"
     assert "activity" not in persisted
+
+
+def test_run_experiment_records_interrupted_state_when_metric_evaluator_times_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = tmp_path / "write_timeout_candidate.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import json, sys",
+                "from pathlib import Path",
+                "out = Path(sys.argv[1])",
+                "out.mkdir(parents=True, exist_ok=True)",
+                "metrics = {'trade_count': 5, 'profit_factor': 1.4, 'max_drawdown': -0.3}",
+                "(out / 'metrics.json').write_text(json.dumps(metrics) + '\\n')",
+                "(out / 'trades.csv').write_text('entry_date,pnl_pct\\n2026-01-01,0.5\\n')",
+                "(out / 'diagnostics.json').write_text(json.dumps({'accepted': 5}) + '\\n')",
+                "payload = {",
+                "  'metrics_file': str(out / 'metrics.json'),",
+                "  'trades_file': str(out / 'trades.csv'),",
+                "  'diagnostics_file': str(out / 'diagnostics.json'),",
+                "  'strategy_events_file': '',",
+                "  'git_sha': 'abcdef1',",
+                "}",
+                "(out / 'result.json').write_text(json.dumps(payload) + '\\n')",
+                "print('RESULT_JSON ' + str(out / 'result.json'))",
+            ]
+        )
+        + "\n"
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    controller.evaluate_metric = lambda metric: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        TimeoutError("autoresearch_cli evaluate timed out")
+    )
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "ema_base.yaml").write_text("ema_length: 5\n")
+    state = {
+        "state": "running",
+        "job": 11,
+        "research_round": 0,
+        "_last_round_usage": {"total_tokens": 123},
+        "next_action": {
+            "type": "run_experiment",
+            "config": "configs/ema_base.yaml",
+            "source": "baseline",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 1
+    persisted = controller.read_state()
+    assert persisted["state"] == "interrupted"
+    assert persisted["next_action"]["type"] == "terminated"
+    assert persisted["next_action"]["reason"] == "autoresearch_cli evaluate timed out"
+    assert "autoresearch_cli evaluate timed out" in persisted["blockers"][0]["detail"]
+    assert "activity" not in persisted
+    assert "_last_round_usage" not in persisted
+    assert "autoresearch_cli evaluate timed out" in controller.current_md_path.read_text()
+    assert controller.backtest_run_db.all() == []
 
 
 def test_run_experiment_records_baseline_checkpoint_and_clears_rerun_marker(

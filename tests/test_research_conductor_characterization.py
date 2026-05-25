@@ -11,6 +11,8 @@ from agents.tool_context import ToolContext
 import research_conductor as conductor
 import research_subagents as subagents
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
+from rejection_artifact import write_rejection
+from research_types import StructuredRejection
 
 
 def _record(
@@ -75,11 +77,19 @@ class _StreamedResult:
         agent: object | None = None,
         tool_calls: list[tuple[str, dict]] | None = None,
         tool_outputs: list[tuple[str, str]] | None = None,
+        *,
+        final_output: object | None = None,
+        final_output_as_error: bool = False,
+        stream_event_count: int = 0,
     ) -> None:
         self.final_output = text
         self.agent = agent
         self.tool_calls = tool_calls or []
         self.tool_outputs = tool_outputs if tool_outputs is not None else []
+        if final_output is not None:
+            self.final_output = final_output
+        self.final_output_as_error = final_output_as_error
+        self.stream_event_count = stream_event_count
 
     async def stream_events(self):
         tools = {tool.name: tool for tool in getattr(self.agent, "tools", [])}
@@ -88,10 +98,12 @@ class _StreamedResult:
             ctx = ToolContext(None, tool_name=name, tool_call_id=f"call-{name}", tool_arguments=raw)
             output = await tools[name].on_invoke_tool(ctx, raw)
             self.tool_outputs.append((name, output))
-        if False:
+        for _ in range(self.stream_event_count):
             yield None
 
     def final_output_as(self, output_type):
+        if self.final_output_as_error:
+            raise RuntimeError("final output coercion failed")
         return self.final_output
 
 
@@ -101,6 +113,9 @@ def _patch_conductor_runner(
     *,
     tool_calls: list[tuple[str, dict]] | None = None,
     tool_outputs: list[tuple[str, str]] | None = None,
+    final_output: object | None = None,
+    final_output_as_error: bool = False,
+    stream_event_count: int = 0,
 ) -> list[str]:
     captured_prompts: list[str] = []
     text = output if isinstance(output, str) else json.dumps(output)
@@ -116,7 +131,15 @@ def _patch_conductor_runner(
 
     def _run_streamed(agent, user_prompt, max_turns, run_config):
         captured_prompts.append(user_prompt)
-        return _StreamedResult(text, agent, tool_calls, tool_outputs)
+        return _StreamedResult(
+            text,
+            agent,
+            tool_calls,
+            tool_outputs,
+            final_output=final_output,
+            final_output_as_error=final_output_as_error,
+            stream_event_count=stream_event_count,
+        )
 
     monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
     return captured_prompts
@@ -369,6 +392,189 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
     assert output_by_tool["get_tuning_examples_tool"]
 
 
+def test_conductor_tools_read_current_job_rejections_and_error_statuses(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_rejection(
+        tmp_path,
+        job=12,
+        rejection=StructuredRejection(
+            rejected_at="2026-05-09T13:45:22Z",
+            round=8,
+            thesis_id="ema-gap-reject",
+            stage="stage_1",
+            rejection_code="thesis_quality_theme_cluster_fixation",
+            rule_violated="4 of last 7 theses share keywords",
+            evidence={"shared_keywords": ["gap", "open"]},
+            remediation_hint="switch mechanism dimension",
+            validator_version="2.3.0",
+        ),
+    )
+    monkeypatch.setattr(conductor, "_ROOT", tmp_path)
+    monkeypatch.setattr(conductor, "search_research_findings", lambda **kwargs: [])
+    monkeypatch.setattr(
+        conductor,
+        "get_past_thesis_for_root",
+        lambda *args, **kwargs: "not-json",
+    )
+    monkeypatch.setattr(
+        conductor,
+        "get_experiment_result_for_root",
+        lambda *args, **kwargs: json.dumps({"status": "not_found"}),
+    )
+
+    tool_outputs: list[tuple[str, str]] = []
+    _patch_conductor_runner(
+        monkeypatch,
+        {"reasoning": "tools consulted; stop", "suggested_theses": [], "should_stop": True},
+        tool_outputs=tool_outputs,
+        tool_calls=[
+            ("search_findings", {"query": "gap", "finding_type": "observation"}),
+            ("get_past_thesis", {"thesis_id": "ema-gap-reject"}),
+            ("get_experiment_result", {"thesis_id": "ema-gap-reject", "detail": False}),
+            (
+                "list_rejections_tool",
+                {
+                    "round_number": 8,
+                    "rejection_code": "thesis_quality_theme_cluster_fixation",
+                    "limit": 5,
+                },
+            ),
+            ("get_rejection_tool", {"round_number": 8, "thesis_id": "ema-gap-reject"}),
+            ("get_rejection_tool", {"round_number": 8, "thesis_id": "missing"}),
+            ("rejection_pattern_summary_tool", {"window_rounds": 10}),
+        ],
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "experiment history",
+        {"status": "keep"},
+        research_round=8,
+        family_name="ema",
+        current_job=12,
+    )
+
+    assert out is not None
+    assert out["should_stop"] is True
+    output_by_tool = dict(tool_outputs)
+    assert output_by_tool["search_findings"] == "No findings found."
+    assert output_by_tool["get_past_thesis"] == "not-json"
+    assert output_by_tool["get_experiment_result"] == json.dumps({"status": "not_found"})
+    listed = json.loads(output_by_tool["list_rejections_tool"])
+    assert listed[0]["thesis_id"] == "ema-gap-reject"
+    assert listed[0]["evidence"]["shared_keywords"] == ["gap", "open"]
+    fetched_outputs = [output for name, output in tool_outputs if name == "get_rejection_tool"]
+    assert (
+        json.loads(fetched_outputs[0])["rejection_code"] == "thesis_quality_theme_cluster_fixation"
+    )
+    assert json.loads(fetched_outputs[1]) == {"status": "not_found"}
+    assert json.loads(output_by_tool["rejection_pattern_summary_tool"]) == [
+        {
+            "rejection_code": "thesis_quality_theme_cluster_fixation",
+            "count": 1,
+            "example_thesis_ids": ["ema-gap-reject"],
+        }
+    ]
+
+
+def test_conductor_tool_errors_and_final_output_fallback_are_reported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _web(query: str, context: str = "", reflexion_feedback: str = "") -> str:
+        return f"web evidence for {query}"
+
+    monkeypatch.setattr(conductor, "_call_web_researcher", _web)
+    monkeypatch.setattr(
+        conductor,
+        "search_research_findings",
+        lambda **kwargs: [{"error": "palace unavailable"}],
+    )
+    monkeypatch.setattr(
+        conductor,
+        "get_experiment_result_for_root",
+        lambda *args, **kwargs: "not-json",
+    )
+    tool_outputs: list[tuple[str, str]] = []
+    final_payload = {
+        "reasoning": "tool errors observed; stop",
+        "suggested_theses": [],
+        "should_stop": True,
+    }
+    _patch_conductor_runner(
+        monkeypatch,
+        "",
+        tool_outputs=tool_outputs,
+        tool_calls=[
+            ("web_search", {"query": "EMA gap failures", "context": ""}),
+            ("analyze_trades", {"focus_question": "after web but no trades"}),
+            ("search_findings", {"query": "gap", "finding_type": "observation"}),
+            ("get_experiment_result", {"thesis_id": "missing", "detail": False}),
+        ],
+        final_output=final_payload,
+        final_output_as_error=True,
+        stream_event_count=1,
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "experiment history",
+        {"status": "keep"},
+        research_round=10,
+        family_name="ema",
+    )
+
+    assert out == final_payload
+    output_by_tool = dict(tool_outputs)
+    assert output_by_tool["web_search"] == "web evidence for EMA gap failures"
+    assert output_by_tool["analyze_trades"] == "ERROR: No trades file available for this round."
+    assert output_by_tool["search_findings"] == "SEARCH ERROR: palace unavailable"
+    assert output_by_tool["get_experiment_result"] == "not-json"
+
+
+def test_conductor_tolerates_rejection_prompt_failure_and_memory_status_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import rejection_artifact
+
+    monkeypatch.setattr(
+        rejection_artifact,
+        "render_rejection_block",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("artifact corrupt")),
+    )
+    monkeypatch.setattr(conductor, "_palace_status", lambda: {"error": "palace offline"})
+    tool_outputs: list[tuple[str, str]] = []
+    final_payload = json.dumps(
+        {
+            "reasoning": "memory backend unavailable; stop",
+            "suggested_theses": [],
+            "should_stop": True,
+        }
+    )
+    _patch_conductor_runner(
+        monkeypatch,
+        "",
+        tool_outputs=tool_outputs,
+        tool_calls=[("memory_status", {})],
+        final_output=final_payload,
+        final_output_as_error=True,
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "experiment history",
+        {"status": "keep"},
+        research_round=12,
+        family_name="ema",
+        current_job=3,
+    )
+
+    assert out is not None
+    assert out["should_stop"] is True
+    assert dict(tool_outputs)["memory_status"] == "STATUS ERROR: palace offline"
+
+
 @pytest.mark.parametrize(
     "runner_output, validation_reason",
     [
@@ -438,6 +644,46 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
 
     assert out is not None
     assert out["suggested_theses"][0]["thesis_id"] == "gap_rejection_timing"
+
+
+def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thesis = {
+        "thesis_id": "gap_rejection_timing",
+        "hypothesis": "Delaying entries after opening gap failures improves signal quality.",
+        "mechanism": "Wait for the first failed opening-gap rejection cluster to clear.",
+        "mechanism_dimension": "signal_quality",
+        "config_changes": {"entry_delay_minutes": 15},
+    }
+    monkeypatch.setattr(conductor, "_check_experiment_results_consulted", lambda tools: None)
+    monkeypatch.setattr(
+        conductor,
+        "validate_thesis_dict",
+        lambda candidate: (_ for _ in ()).throw(ValueError("mechanism_dimension is stale")),
+    )
+    _patch_conductor_runner(
+        monkeypatch,
+        {
+            "reasoning": "experiment history supports testing this mechanism",
+            "suggested_theses": [thesis],
+            "should_stop": False,
+        },
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "full experiment history consulted by fake runner",
+        {"status": "keep"},
+        research_round=11,
+        family_name="ema",
+    )
+
+    assert out is not None
+    assert out["status"] == "conductor_error"
+    assert out["error"] == "validation_failed"
+    assert out["validation_reason"] == "mechanism_dimension is stale"
+    assert out["suggested_theses"] == []
 
 
 def test_conductor_reports_parse_failed_for_non_json_runner_output(
