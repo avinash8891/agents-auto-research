@@ -30,7 +30,7 @@ from eval_metrics import (
     summarize_eval,
     summarize_suite,
 )
-from persistence_utils import utc_now_iso8601, write_json_atomic
+from persistence_utils import safe_stat_mtime, utc_now_iso8601, write_json_atomic
 
 log = get_logger(__name__)
 
@@ -245,7 +245,11 @@ def latest_eval_result_path(output_dir: Path) -> Path | None:
     candidates = list(output_dir.glob("*.json"))
     if not candidates:
         return None
-    return max(candidates, key=lambda p: p.stat().st_mtime)
+    existing = [(safe_stat_mtime(path), path) for path in candidates]
+    existing = [(mtime, path) for mtime, path in existing if mtime > 0.0]
+    if not existing:
+        return None
+    return max(existing, key=lambda item: item[0])[1]
 
 
 def _resolve_holdout_path() -> Path:

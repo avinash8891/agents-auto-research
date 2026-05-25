@@ -240,3 +240,15 @@ def test_halo_timeout_invalid_env_falls_back_to_default(monkeypatch):
 
     importlib.reload(m)
     assert m.HALO_TIMEOUT_SECONDS == 600
+
+
+def test_halo_timeout_non_positive_env_falls_back_to_default(monkeypatch):
+    from autoresearch_constants import ENV_HALO_TIMEOUT_SECONDS
+
+    monkeypatch.setenv(ENV_HALO_TIMEOUT_SECONDS, "0")
+    import importlib
+
+    import improvement_halo as m
+
+    importlib.reload(m)
+    assert m.HALO_TIMEOUT_SECONDS == 600

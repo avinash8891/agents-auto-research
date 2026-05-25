@@ -145,4 +145,3 @@ The system is working as intended when:
 - Borderline cases produce actionable retry feedback instead of opaque validation failure.
 - Duplicate decisions include the prior thesis id and a human-readable reason.
 - The research loop keeps progressing without repeatedly creating new jobs due to avoidable validation blocks.
-

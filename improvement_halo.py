@@ -17,25 +17,14 @@ import agent_infra
 from autoresearch_constants import ENV_HALO_TIMEOUT_SECONDS
 from autoresearch_logging import get_logger
 from improvement_flags import halo_enabled
-from persistence_utils import write_text_atomic
+from persistence_utils import parse_positive_int_env, write_text_atomic
 
 log = get_logger(__name__)
 
 
-def _parse_timeout(env_key: str, default: int) -> int:
-    raw = os.environ.get(env_key)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        log.warning("invalid value %r for %s; using default %d", raw, env_key, default)
-        return default
-
-
 HALO_BINARY = "halo"
 HALO_MODEL = "gpt-5.2"
-HALO_TIMEOUT_SECONDS = _parse_timeout(ENV_HALO_TIMEOUT_SECONDS, 600)
+HALO_TIMEOUT_SECONDS = parse_positive_int_env(ENV_HALO_TIMEOUT_SECONDS, 600, logger=log)
 HALO_BINARY_ENV = "AUTORESEARCH_HALO_BINARY"
 DEFAULT_HALO_BINARY = Path("/opt/autoresearch-tools/halo/venv/bin/halo")
 

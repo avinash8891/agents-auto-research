@@ -286,6 +286,24 @@ def test_latest_eval_result_path_returns_lex_max(tmp_path):
     assert latest is not None and latest.name == "b-2026-02-01.json"
 
 
+def test_latest_eval_result_path_skips_deleted_candidate(tmp_path, monkeypatch):
+    out = tmp_path / "results"
+    out.mkdir()
+    live = out / "live.json"
+    live.write_text("{}", encoding="utf-8")
+    ghost = out / "ghost.json"
+
+    monkeypatch.setattr(
+        type(out),
+        "glob",
+        lambda self, pattern: (
+            iter([ghost, live]) if self == out and pattern == "*.json" else iter([])
+        ),
+    )
+
+    assert latest_eval_result_path(out) == live
+
+
 def test_persist_eval_result_writes_under_label_filename(tmp_path):
     from eval_metrics import SuiteSummary, summarize_eval
 

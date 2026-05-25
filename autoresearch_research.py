@@ -1355,16 +1355,37 @@ def _run_improvement_hooks(
             apply_decision = None
 
     if ratchet_enabled():
-        from eval_harness import EVAL_RESULTS_DIRNAME, latest_eval_result_path
+        from eval_harness import EVAL_RESULTS_DIRNAME
         from improvement_ratchet import record_round_decision
 
+        eval_result_path = None
+        if isinstance(apply_decision, dict) and apply_decision.get("eval_result_path"):
+            try:
+                candidate_eval_path = Path(str(apply_decision["eval_result_path"])).resolve(
+                    strict=False
+                )
+                eval_results_root = (Path(controller.root) / EVAL_RESULTS_DIRNAME).resolve(
+                    strict=False
+                )
+                if candidate_eval_path.is_relative_to(eval_results_root):
+                    eval_result_path = candidate_eval_path
+                else:
+                    log.warning(
+                        "RATCHET ignoring eval_result_path outside eval_results: "
+                        f"{candidate_eval_path}"
+                    )
+            except (OSError, RuntimeError, TypeError, ValueError):
+                log.warning(
+                    "RATCHET ignoring invalid eval_result_path: "
+                    f"{apply_decision.get('eval_result_path')!r}"
+                )
         _safe_hook(
             "Ratchet",
             record_round_decision,
             controller,
             research_round,
             _classify_round_outcome(result),
-            eval_result_path=latest_eval_result_path(controller.root / EVAL_RESULTS_DIRNAME),
+            eval_result_path=eval_result_path,
             apply_decision=apply_decision,
         )
 

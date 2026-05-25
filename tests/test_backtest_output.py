@@ -72,6 +72,11 @@ class _EmptyEventLogger:
         return {}
 
 
+class _EmptyParquetEventLogger(_EmptyEventLogger):
+    def write_parquet(self, path: str) -> None:
+        Path(path).write_text("events")
+
+
 def test_write_all_serializes_infinite_profit_factor_as_strict_json(
     tmp_path: Path,
 ) -> None:
@@ -193,3 +198,29 @@ def test_write_all_omits_strategy_events_path_for_empty_event_frames(tmp_path: P
 
     assert payload["strategy_events_file"] == ""
     assert json.loads((tmp_path / "result.json").read_text())["strategy_events_file"] == ""
+
+
+def test_write_all_omits_missing_strategy_events_path_for_empty_parquet_logger(
+    tmp_path: Path,
+) -> None:
+    result = {
+        "median_expectancy": 0.0,
+        "trade_count": 0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0,
+        "pct_profitable_windows": 0.0,
+        "avg_sharpe_across_windows": 0.0,
+        "_trades_df": pd.DataFrame(),
+        "_event_logger": _EmptyParquetEventLogger(),
+    }
+
+    payload = write_all(
+        result,
+        {},
+        tmp_path,
+        strategy="ema",
+        config_path="configs/ema_base.yaml",
+    )
+
+    assert payload["strategy_events_file"] == ""
+    assert not (tmp_path / "strategy_events.parquet").exists()

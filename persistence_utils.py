@@ -100,3 +100,20 @@ def safe_stat_mtime(path: Path) -> float:
         return path.stat().st_mtime
     except OSError:
         return 0.0
+
+
+def parse_positive_int_env(env_key: str, default: int, *, logger: Any | None = None) -> int:
+    raw = os.environ.get(env_key)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        if logger is not None:
+            logger.warning("invalid value %r for %s; using default %d", raw, env_key, default)
+        return default
+    if value <= 0:
+        if logger is not None:
+            logger.warning("non-positive value %r for %s; using default %d", raw, env_key, default)
+        return default
+    return value

@@ -197,6 +197,56 @@ def test_benchmark_metric_name_mismatch_returns_inconclusive(tmp_path, monkeypat
     assert decision == "inconclusive_keep"
 
 
+def test_benchmark_invalid_eval_payload_returns_inconclusive(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_RATCHET, "1")
+    eval_dir = tmp_path / "eval_results"
+    eval_dir.mkdir()
+    prior = eval_dir / "prior.json"
+    current = eval_dir / "current.json"
+    _write_eval(prior, label="prior", mean=0.5, stdev=0.1)
+    current.write_text(
+        json.dumps(
+            {
+                "label": "current",
+                "timestamp": "2026-01-01T00:00:00+00:00",
+                "repeat": 1,
+                "primary_metric_name": "compiled_rate",
+                "primary_metric": {"mean": 0.5, "stdev": 0.0, "min": 0.5, "max": 0.5},
+                "suites": [
+                    {
+                        "compiled_rate": 2.0,
+                        "quality_score_p50": None,
+                        "n_tasks": 1,
+                        "n_compiled": 1,
+                    }
+                ],
+            }
+        )
+    )
+    controller = SimpleNamespace(root=tmp_path)
+
+    assert (
+        improvement_ratchet.record_round_decision(controller, 1, "compiled", current)
+        == "inconclusive_keep"
+    )
+
+
+def test_unknown_apply_status_contributes_inconclusive(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_RATCHET, "1")
+    controller = SimpleNamespace(root=tmp_path)
+    decision = improvement_ratchet.record_round_decision(
+        controller,
+        3,
+        "compiled",
+        None,
+        apply_decision={"status": "mystery"},
+    )
+
+    assert decision == "inconclusive_keep"
+    row = json.loads((tmp_path / "improvement_reports/ratchet/decisions.jsonl").read_text().strip())
+    assert row["halo_apply_verdict"] == "inconclusive_keep"
+
+
 # ── decisions log shape ──────────────────────────────────────────
 
 
@@ -303,6 +353,13 @@ def test_apply_decision_none_records_null_audit(tmp_path, monkeypatch):
     assert row["halo_apply_reason"] is None
     assert row["halo_apply_verdict"] is None
     assert row["ratchet_verdict_raw"] == "keep"
+
+
+def test_invalid_controller_root_returns_skip(monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_RATCHET, "1")
+    controller = SimpleNamespace(root=None)
+
+    assert improvement_ratchet.record_round_decision(controller, 1, "compiled", None) == "skip"
 
 
 def test_safe_stat_mtime_returns_zero_on_deleted_file(tmp_path):

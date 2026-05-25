@@ -121,6 +121,13 @@ def test_flag_on_no_export_returns_empty(tmp_path, monkeypatch):
     assert build_reflexion_feedback(controller, current_round=2) == ""
 
 
+def test_invalid_controller_root_returns_empty(monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
+    controller = SimpleNamespace(root=None, job=1)
+
+    assert build_reflexion_feedback(controller, current_round=2) == ""
+
+
 # ── happy path ───────────────────────────────────────────────────
 
 
@@ -164,6 +171,33 @@ def test_flag_on_picks_most_recent_when_multiple_matches(tmp_path, monkeypatch):
     feedback = build_reflexion_feedback(controller, current_round=3)
     assert "newer reasoning" in feedback
     assert "older reasoning" not in feedback
+
+
+def test_prior_export_selection_skips_deleted_candidate(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
+    live = _write_prior_export(
+        tmp_path,
+        research_round=1,
+        job=1,
+        thesis_id="live",
+        reasoning="live reasoning",
+    )
+    ghost = live.parent.parent.parent / "round-001-ghost" / "reflexio" / "reflexio-event.json"
+    export_root = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-1" / "trace_exports"
+
+    monkeypatch.setattr(
+        type(export_root),
+        "glob",
+        lambda self, pattern: (
+            iter([ghost, live])
+            if self == export_root and pattern.endswith("reflexio-event.json")
+            else iter([])
+        ),
+    )
+
+    controller = SimpleNamespace(root=tmp_path, job=1)
+
+    assert "live reasoning" in build_reflexion_feedback(controller, current_round=2)
 
 
 # ── degraded export ──────────────────────────────────────────────
