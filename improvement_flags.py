@@ -13,6 +13,7 @@ from autoresearch_constants import (
     ENV_IMPROVEMENT_HALO,
     ENV_IMPROVEMENT_HALO_APPLY,
     ENV_IMPROVEMENT_RATCHET,
+    ENV_IMPROVEMENT_RECURSIVE_IMPROVE,
     ENV_IMPROVEMENT_REFLEXION,
 )
 
@@ -22,6 +23,7 @@ KNOWN_FLAGS = (
     ENV_IMPROVEMENT_HALO,
     ENV_IMPROVEMENT_HALO_APPLY,
     ENV_IMPROVEMENT_REFLEXION,
+    ENV_IMPROVEMENT_RECURSIVE_IMPROVE,
     ENV_IMPROVEMENT_RATCHET,
 )
 
@@ -47,6 +49,10 @@ def halo_apply_enabled() -> bool:
 
 def reflexion_enabled() -> bool:
     return enabled(ENV_IMPROVEMENT_REFLEXION)
+
+
+def recursive_improve_enabled() -> bool:
+    return enabled(ENV_IMPROVEMENT_RECURSIVE_IMPROVE)
 
 
 def ratchet_enabled() -> bool:

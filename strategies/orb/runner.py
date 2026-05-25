@@ -44,7 +44,6 @@ def run_backtest(config: dict) -> dict:
 
     print(f"Date range: {close.index[0]} to {close.index[-1]}", file=sys.stderr)
 
-    # Stocks-in-play universe filter
     universe_mode = config.get("universe_mode")
     if universe_mode == "stocks_in_play":
         top_n = int(config.get("stocks_in_play_top_n", 20))
@@ -55,13 +54,8 @@ def run_backtest(config: dict) -> dict:
         if close.empty or close.dropna(how="all").empty:
             return {**empty_metrics(), "_trades_df": pd.DataFrame(), "_event_logger": None}
 
-    # Event logger
     event_logger = StrategyEventLogger()
-
-    # Generate signals
     signals = generate_orb_signals(open_, high, low, close, volume=volume, config=config)
-
-    # Log signal events
     _log_signal_events(
         event_logger,
         signals,
@@ -69,7 +63,6 @@ def run_backtest(config: dict) -> dict:
         config,
     )
 
-    # Classify regimes
     regime_labels = classify_regimes(
         open_,
         high,
@@ -81,7 +74,6 @@ def run_backtest(config: dict) -> dict:
         narrow_or_mult=config.get("narrow_or_mult", 0.5),
     )
 
-    # Simulate trades
     trades_df = apply_exits(
         close,
         high,
@@ -96,7 +88,6 @@ def run_backtest(config: dict) -> dict:
         config,
     )
 
-    # Apply regime gating
     skip_regimes = set(config.get("skip_regimes", []))
     require_regimes = set(config.get("require_regimes", []))
     pre_gate_count = len(trades_df)
@@ -109,7 +100,6 @@ def run_backtest(config: dict) -> dict:
         )
     gated_count = pre_gate_count - len(trades_df)
 
-    # Log regime gating
     if gated_count > 0:
         event_logger.log(
             timestamp="",
@@ -127,20 +117,15 @@ def run_backtest(config: dict) -> dict:
 
     trades_df = trades_df[trades_df["pnl_pct"].notna()].reset_index(drop=True)
 
-    # Add stop/target columns for diagnostics if not present
     if "stop" not in trades_df.columns:
         trades_df["stop"] = np.nan
     if "target" not in trades_df.columns:
         trades_df["target"] = np.nan
 
-    # Compute metrics using shared module
     result = compute_metrics(trades_df)
-
-    # Add regime expectancy
     regime_exp = compute_regime_expectancy(trades_df, regime_labels)
     result["regime_expectancy"] = regime_exp
 
-    # Record executed trades as events
     if not trades_df.empty:
         et = trades_df[["entry_date", "symbol", "direction", "entry_price"]].copy()
         et = et.rename(columns={"entry_date": "timestamp"})
@@ -203,14 +188,15 @@ def _apply_stocks_in_play_filter(
         return open_, high, low, close, volume
 
     idx = close.index
-    days = pd.Index(idx.normalize().unique())
+    normalized_idx = idx.normalize()
+    days = pd.Index(normalized_idx.unique())
     bars_in_or = 6  # 30 min / 5 min
     mask = pd.DataFrame(False, index=idx, columns=close.columns)
 
     if ranking == "first30_relative_volume":
         daily_first30 = []
         for day in days:
-            day_rows = idx.normalize() == day
+            day_rows = normalized_idx == day
             day_idx = np.where(day_rows)[0]
             if len(day_idx) < bars_in_or:
                 vals = pd.Series(np.nan, index=close.columns)
@@ -225,7 +211,7 @@ def _apply_stocks_in_play_filter(
         scores_df = None
 
     for day in days:
-        day_rows = idx.normalize() == day
+        day_rows = normalized_idx == day
         day_idx = np.where(day_rows)[0]
         if len(day_idx) < bars_in_or:
             continue

@@ -48,12 +48,6 @@ def real_result_json(fixtures_dir: Path) -> dict:
 
 
 @pytest.fixture
-def real_ideas_backlog_path(fixtures_dir: Path) -> Path:
-    """Path to a captured ideas-backlog markdown."""
-    return fixtures_dir / "ideas_backlog.md"
-
-
-@pytest.fixture
 def repo_root() -> Path:
     """The project root, useful for tests that load real configs."""
     return REPO_ROOT

@@ -21,6 +21,7 @@ py-modules = [
     "agent_orchestrator_helpers",
     "agent_prompts",
     "agent_runners",
+    "agent_sdk_token_usage",
     "agent_token_usage",
     "artifact_io",
     "autoresearch_artifacts",
@@ -29,6 +30,7 @@ py-modules = [
     "autoresearch_controller",
     "autoresearch_experiment",
     "autoresearch_logging",
+    "autoresearch_orchestration",
     "autoresearch_planning",
     "autoresearch_research",
     "autoresearch_state",
@@ -43,7 +45,7 @@ py-modules = [
     "compiler_validate",
     "config_hash",
     "data_loader",
-    "experiment_db",
+    "backtest_run_db",
     "experiment_evaluator",
     "family_research_spec",
     "metrics",
@@ -62,6 +64,7 @@ py-modules = [
     "strategy_family",
     "thesis_validator",
     "trace_autonomy_ledger",
+    "trace_improvement_report",
     "trace_quality_history",
     "trace_refinement",
     "trace_rule_proposals",
@@ -120,6 +123,7 @@ source = [
     "autoresearch_planning",
     "autoresearch_research",
     "autoresearch_experiment",
+    "autoresearch_orchestration",
     "compiler_pipeline",
     "research_conductor",
 ]
@@ -134,9 +138,7 @@ exclude_lines = [
 ]
 show_missing = true
 skip_covered = false
-# Initial gate set to 70% on the union of autoresearch_* modules. Will
-# ratchet to 80% once integration test fixtures land in PR 5.
-fail_under = 70
+fail_under = 80
 
 
 [project]
@@ -145,16 +147,25 @@ version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "openai-agents==0.14.2",
+    "openai>=2.26.0,<3",
+    "pydantic>=2.12.2,<3",
+    "opentelemetry-api==1.41.1",
     "opentelemetry-sdk==1.41.1",
     "opentelemetry-exporter-otlp-proto-http==1.41.1",
+    "openinference-instrumentation==0.1.48",
     "openinference-instrumentation-openai==0.1.45",
     "agnost-mcp==0.1.12",
     "traceloop-sdk==0.60.0",
     "httpx",
     "mcp",
-    "numpy",
+    "mempalace",
+    "numpy<2.3",
+    "numba",
+    "packaging>=24",
     "pandas",
     "paramiko",
     "PyYAML",
     "pyarrow",
+    "tomli>=2; python_version < '3.11'",
+    "tzdata; platform_system == 'Linux'",
 ]

@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -14,14 +17,10 @@ from typing import Any
 # because callers should always go through the controller, never the module
 # functions directly.
 from autoresearch_artifacts import (
-    queue_from_thesis_artifacts as _artifacts_queue_from_thesis_artifacts,
-)
-from autoresearch_artifacts import (
     read_artifacts_relative_to_root as _artifacts_read_artifacts_relative_to_root,
 )
 from autoresearch_artifacts import read_research_artifacts as _artifacts_read_research_artifacts
-from autoresearch_artifacts import read_run_queue as _artifacts_read_run_queue
-from autoresearch_artifacts import read_thesis_artifacts as _artifacts_read_thesis_artifacts
+from autoresearch_constants import PREPARE_RESULT_MARKER
 from autoresearch_experiment import artifact_dir_for as _experiment_artifact_dir_for
 from autoresearch_experiment import derive_trade_analysis as _experiment_derive_trade_analysis
 from autoresearch_experiment import evaluate_metric as _experiment_evaluate_metric
@@ -45,26 +44,20 @@ from autoresearch_orchestration import resolve_next_action as _orchestration_res
 from autoresearch_orchestration import (
     try_resume_halted_thesis as _orchestration_try_resume_halted_thesis,
 )
+from autoresearch_paths import resolve_runtime_root as _resolve_runtime_root
 from autoresearch_planning import (
     COMBINATION_RULES,
     DEFAULT_CONFIG_ORDER,
     THESIS_FAMILY,
 )
 from autoresearch_planning import check_baseline_rerun as _planning_check_baseline_rerun
-from autoresearch_planning import (
-    generate_combination_candidates as _planning_generate_combination_candidates,
-)
-from autoresearch_planning import generate_theses_from_ideas as _planning_generate_theses_from_ideas
 from autoresearch_planning import list_known_variant_configs as _planning_list_known_variant_configs
-from autoresearch_planning import parse_ideas_backlog as _planning_parse_ideas_backlog
-from autoresearch_planning import pending_configs as _planning_pending_configs
 from autoresearch_planning import plan_next_action as _planning_plan_next_action
 from autoresearch_planning import (
     select_research_next_action as _planning_select_research_next_action,
 )
 from autoresearch_planning import should_terminate as _planning_should_terminate
 from autoresearch_planning import thesis_family_for as _planning_thesis_family_for
-from autoresearch_planning import thesis_statuses as _planning_thesis_statuses
 from autoresearch_research import accumulate_job_usage as _research_accumulate_job_usage
 from autoresearch_research import execute_research_one as _research_execute_research_one
 from autoresearch_research import execute_research_sdk as _research_execute_research_sdk
@@ -74,7 +67,8 @@ from autoresearch_research import notify_discord as _notify_discord
 from autoresearch_research import queue_variants as _research_queue_variants
 from autoresearch_research import results_to_dicts as _research_results_to_dicts
 from autoresearch_research import run_research as _research_run_research
-from autoresearch_state import ExperimentRecord, RunContext
+from autoresearch_state import BacktestResultRecord, RunContext
+from autoresearch_state import _coerce_job_to_int as _state_coerce_job_to_int
 from autoresearch_state import best_result as _state_best_result
 from autoresearch_state import deduplicate_entries as _state_deduplicate_entries
 from autoresearch_state import is_better as _state_is_better
@@ -84,8 +78,8 @@ from autoresearch_state import read_state as _state_read_state
 from autoresearch_state import render_current_md as _state_render_current_md
 from autoresearch_state import write_current_md as _state_write_current_md
 from autoresearch_state import write_state as _state_write_state
+from backtest_run_db import BacktestRunDB, BaselineTracker
 from config_hash import _git_sha
-from experiment_db import BaselineTracker, ExperimentDB
 from strategy_family import StrategyFamily, load_family
 from trace_autonomy_ledger import AutonomyLedger
 from trace_sdk import trace, trace_state_change
@@ -94,19 +88,376 @@ log = get_logger(__name__)
 
 ROOT = Path(__file__).resolve().parent
 _AUTONOMY_LEDGER = AutonomyLedger()
-STATE_PATH = ROOT / "autoresearch.next.json"
-CURRENT_MD_PATH = ROOT / "autoresearch.current.md"
-IDEAS_MD_PATH = ROOT / "autoresearch.ideas.md"
+RUNTIME_ROOT = _resolve_runtime_root(ROOT)
 
 
-def default_controller_paths(root: Path, family: StrategyFamily) -> tuple[Path, Path, Path, Path]:
-    """Returns state_path, current_md_path, ideas_md_path, runs_dir."""
+class _DynamicRuntimePath:
+    def __init__(self, suffix: str) -> None:
+        self._suffix = suffix
+
+    def _path(self) -> Path:
+        return _resolve_runtime_root(ROOT) / self._suffix
+
+    def __fspath__(self) -> str:
+        return str(self._path())
+
+    def __str__(self) -> str:
+        return str(self._path())
+
+    def __repr__(self) -> str:
+        return f"_DynamicRuntimePath({self._suffix!r}, path={self._path()!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, _DynamicRuntimePath):
+            return self._path() == other._path()
+        try:
+            return self._path() == Path(other)  # type: ignore[arg-type]
+        except TypeError:
+            return False
+
+    def __truediv__(self, key: object) -> Path:
+        return self._path() / key  # type: ignore[operator]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._path(), name)
+
+
+STATE_PATH = _DynamicRuntimePath("autoresearch.next.json")
+CURRENT_MD_PATH = _DynamicRuntimePath("autoresearch.current.md")
+
+
+def max_consecutive_research_required() -> int:
+    """Read AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED at call time.
+
+    Lazy so pytest's monkeypatch.setenv after import still takes effect.
+    """
+    raw = os.environ.get("AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED", "10")
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED must be an integer, got {raw!r}"
+        ) from exc
+    if value < 1:
+        raise ValueError(
+            f"AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED must be >= 1, got {value}"
+        )
+    return value
+
+
+_RECOVERABLE_BLOCKED_RESUME_KINDS = {"builder_failed", "command_failed", "metric_parse_failed"}
+_RESEARCH_BLOCKER_KINDS = {"research_required", "research_retry_required"}
+
+
+def _blocker_kinds(state: dict[str, Any]) -> set[str]:
+    blockers = state.get("blockers")
+    if not isinstance(blockers, list):
+        return set()
+    return {
+        str(blocker.get("kind"))
+        for blocker in blockers
+        if isinstance(blocker, dict) and blocker.get("kind")
+    }
+
+
+def validate_controller_state_invariants(state: dict[str, Any]) -> None:
+    """Reject contradictory controller states before they reach disk."""
+    if state.get("state") == "running" and _blocker_kinds(state):
+        raise ValueError("running controller state cannot carry blockers")
+
+
+def _dict_state_field(state: dict[str, Any], key: str) -> dict[str, Any]:
+    value = state.get(key)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _is_manual_review_resume_state(state: dict[str, Any]) -> bool:
+    return (
+        state.get("state") == "blocked"
+        and isinstance(state.get("next_action"), dict)
+        and state["next_action"].get("type") == "manual_review"
+        and (
+            state.get("halted_thesis_id")
+            or state.get("manual_review_theses")
+            or state.get("halted_reason") == "requires_code_change"
+        )
+    )
+
+
+def _is_halted_code_change_resume_state(state: dict[str, Any]) -> bool:
+    return (
+        state.get("state") == "halted"
+        and state.get("halted_reason") == "requires_code_change"
+        and bool(state.get("halted_thesis_id"))
+    )
+
+
+def _is_builder_running_resume_state(state: dict[str, Any]) -> bool:
+    next_action = state.get("next_action")
+    return (
+        state.get("state") == "building"
+        and state.get("halted_reason") == "requires_code_change"
+        and bool(state.get("halted_thesis_id"))
+        and isinstance(next_action, dict)
+        and next_action.get("type") == "builder_running"
+    )
+
+
+def _is_interrupted_research_failure_state(state: dict[str, Any]) -> bool:
+    return state.get("state") == "interrupted" and "research_failed" in _blocker_kinds(state)
+
+
+def _is_blocked_research_required_resume_state(state: dict[str, Any]) -> bool:
+    if state.get("state") != "blocked":
+        return False
+    next_action = state.get("next_action")
+    if not isinstance(next_action, dict) or next_action.get("type") != "research":
+        return False
+    return bool(_RESEARCH_BLOCKER_KINDS & _blocker_kinds(state))
+
+
+def _is_blocked_failed_experiment_resume_state(state: dict[str, Any]) -> bool:
+    if state.get("state") != "blocked":
+        return False
+    next_action = state.get("next_action")
+    if not isinstance(next_action, dict) or next_action.get("type") not in {
+        "blocked",
+        "builder_failed",
+    }:
+        return False
+    reason = next_action.get("reason")
+    return bool(_RECOVERABLE_BLOCKED_RESUME_KINDS & _blocker_kinds(state)) or (
+        reason in _RECOVERABLE_BLOCKED_RESUME_KINDS
+    )
+
+
+def _resume_interrupted_research_state(prior_state: dict[str, Any], job: int) -> dict[str, Any]:
+    failed_round = prior_state.get("research_round", 0)
+    try:
+        retry_from_round = max(int(failed_round) - 1, 0)
+    except (TypeError, ValueError):
+        retry_from_round = 0
+
+    prior_detail = ""
+    blockers = prior_state.get("blockers")
+    if not isinstance(blockers, list):
+        blockers = []
+    for blocker in blockers:
+        if isinstance(blocker, dict) and blocker.get("kind") == "research_failed":
+            prior_detail = str(blocker.get("detail") or "")
+            break
+
+    state = dict(prior_state)
+    state.update(
+        {
+            "state": "blocked",
+            "job": job,
+            "research_round": retry_from_round,
+            "research_round_in_progress": failed_round,
+            "blockers": [
+                {
+                    "kind": "research_required",
+                    "detail": (
+                        "Retrying interrupted research failure"
+                        + (f": {prior_detail}" if prior_detail else ".")
+                    ),
+                }
+            ],
+            "next_action": {
+                "type": "research",
+                "reason": "resume_current_job_retry_interrupted_research",
+            },
+        }
+    )
+    state.pop("current_thesis", None)
+    state.pop("pending_configs", None)
+    state.pop("thesis_statuses", None)
+    state.pop("finished_reason", None)
+    state.pop("research_stop_reasoning", None)
+    return state
+
+
+def _running_resume_state(
+    prior_state: dict[str, Any],
+    job: int,
+    *,
+    preserve_resume_metadata: bool,
+    resume_previous_blocker: bool = False,
+) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "state": "running",
+        "job": job,
+        "research_round": prior_state.get("research_round", 0),
+        "job_usage": prior_state.get("job_usage"),
+        "heartbeat": _dict_state_field(prior_state, "heartbeat"),
+    }
+    for key in ("current_best", "baseline_drift"):
+        if key in prior_state:
+            state[key] = prior_state[key]
+
+    if preserve_resume_metadata:
+        blocker_snapshot = _blocker_resume_snapshot(prior_state)
+        if blocker_snapshot:
+            _record_state_history(
+                state,
+                key="last_blocker",
+                value=blocker_snapshot,
+            )
+            state["resume_context"] = {
+                "source": "resume_current_job",
+                "blocker": blocker_snapshot,
+            }
+
+    if resume_previous_blocker:
+        blocker_kinds = sorted(_blocker_kinds(prior_state))
+        state["resume_previous_blocker"] = {
+            "kind": blocker_kinds[0] if blocker_kinds else prior_state.get("state", "unknown"),
+            "next_action": prior_state.get("next_action"),
+            "current_thesis": prior_state.get("current_thesis"),
+        }
+    return state
+
+
+def _record_state_history(state: dict[str, Any], *, key: str, value: dict[str, Any]) -> None:
+    history = state.setdefault("history", {})
+    if not isinstance(history, dict):
+        history = {}
+        state["history"] = history
+    history[key] = value
+
+
+def _blocker_resume_snapshot(prior_state: dict[str, Any]) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {
+        "state": prior_state.get("state"),
+        "next_action": prior_state.get("next_action"),
+        "current_thesis": prior_state.get("current_thesis"),
+    }
+    if prior_state.get("halted_reason"):
+        snapshot["halted_reason"] = prior_state.get("halted_reason")
+    if prior_state.get("halted_thesis_id"):
+        snapshot["halted_thesis_id"] = prior_state.get("halted_thesis_id")
+    if prior_state.get("halted_thesis"):
+        snapshot["halted_thesis"] = prior_state.get("halted_thesis")
+    if prior_state.get("manual_review_theses"):
+        snapshot["manual_review_theses"] = list(prior_state.get("manual_review_theses") or [])
+    if prior_state.get("builder_failed_theses"):
+        snapshot["builder_failed_theses"] = list(prior_state.get("builder_failed_theses") or [])
+    return {k: v for k, v in snapshot.items() if v not in (None, [], {})}
+
+
+def _fresh_launch_state(job: int) -> dict[str, Any]:
+    """Create the only state shape allowed for a new job launch."""
+    return {
+        "state": "running",
+        "job": job,
+        "research_round": 0,
+        "job_usage": None,
+        "heartbeat": {},
+    }
+
+
+def _next_fresh_job_for_launch(controller: Any, prior_state: dict[str, Any]) -> int:
+    allocator = getattr(controller, "next_fresh_job_id", None)
+    if callable(allocator):
+        try:
+            fresh_job = int(allocator(prior_state))
+        except (TypeError, ValueError):
+            fresh_job = 0
+        if fresh_job >= 1:
+            return fresh_job
+    return max(_state_coerce_job_to_int(prior_state.get("job")) + 1, 1)
+
+
+def normalize_controller_launch_state(
+    prior_state: dict[str, Any],
+    *,
+    resume_current_job: bool,
+    fresh_job: int | None = None,
+) -> tuple[dict[str, Any], int]:
+    job = _state_coerce_job_to_int(prior_state.get("job"))
+    resume_manual_review = _is_manual_review_resume_state(prior_state)
+    resume_halted_code_change = _is_halted_code_change_resume_state(prior_state)
+    resume_builder_running = _is_builder_running_resume_state(prior_state)
+    resume_research_failure = _is_interrupted_research_failure_state(prior_state)
+    resume_blocked_research = _is_blocked_research_required_resume_state(prior_state)
+    resume_failed_experiment = _is_blocked_failed_experiment_resume_state(prior_state)
+
+    if resume_current_job:
+        if not (
+            resume_manual_review
+            or resume_halted_code_change
+            or resume_builder_running
+            or resume_research_failure
+            or resume_blocked_research
+            or resume_failed_experiment
+        ):
+            raise ValueError(
+                "--resume-current-job requires a recoverable halted code-change, "
+                "builder-running, manual-review, blocked research-required, "
+                "blocked command/metric failure, or interrupted research-failure state; "
+                f"found state={prior_state.get('state')}"
+            )
+        if job < 1:
+            job = 1
+    else:
+        # Fresh jobs start from the next job number so new launches stay
+        # distinguishable from earlier runs in traces and experiment rows.
+        job = fresh_job if fresh_job is not None else job + 1
+        if job < 1:
+            job = 1
+
+    if resume_current_job and resume_research_failure:
+        return _resume_interrupted_research_state(prior_state, job), job
+    if resume_current_job and resume_blocked_research:
+        state = dict(prior_state)
+        state["job"] = job
+        return state, job
+    if resume_current_job and resume_failed_experiment:
+        return (
+            _running_resume_state(
+                prior_state,
+                job,
+                preserve_resume_metadata=True,
+                resume_previous_blocker=True,
+            ),
+            job,
+        )
+    if resume_current_job and (
+        resume_halted_code_change or resume_builder_running or resume_manual_review
+    ):
+        return (
+            _running_resume_state(prior_state, job, preserve_resume_metadata=True),
+            job,
+        )
+
+    # Fresh jobs must be isolated from any prior resume/manual-review state.
+    # Resume metadata is intentionally preserved only in the explicit
+    # --resume-current-job branches above.
+    return _fresh_launch_state(job), job
+
+
+def _validate_current_executable_state(prior_state: dict[str, Any]) -> int:
+    job = _state_coerce_job_to_int(prior_state.get("job"))
+    executable_blocked = _is_blocked_research_required_resume_state(prior_state)
+    if (
+        prior_state.get("state") not in {"running", "blocked"}
+        or (prior_state.get("state") == "blocked" and not executable_blocked)
+        or job < 1
+    ):
+        raise ValueError(
+            "--run-current-state requires an already prepared executable state with a valid job id; "
+            f"found state={prior_state.get('state')}"
+        )
+    return job
+
+
+def default_controller_paths(runtime_root: Path, family: StrategyFamily) -> tuple[Path, Path, Path]:
+    """Returns state_path, current_md_path, jobs_root."""
     prefix = family.name
     return (
-        root / f"{prefix}_autoresearch.next.json",
-        root / f"{prefix}_autoresearch.current.md",
-        root / f"{prefix}_autoresearch.ideas.md",
-        root / family.runs_dirname,
+        runtime_root / f"{prefix}_autoresearch.next.json",
+        runtime_root / f"{prefix}_autoresearch.current.md",
+        runtime_root / "runtime" / "jobs",
     )
 
 
@@ -116,14 +467,14 @@ def default_controller_paths(root: Path, family: StrategyFamily) -> tuple[Path, 
 # linters do not silently remove the import.
 __all__ = (
     "AutoresearchController",
-    "ExperimentRecord",
+    "BacktestResultRecord",
     "RunContext",
     "default_controller_paths",
     "main",
     "ROOT",
+    "RUNTIME_ROOT",
     "STATE_PATH",
     "CURRENT_MD_PATH",
-    "IDEAS_MD_PATH",
     "DEFAULT_CONFIG_ORDER",
     "THESIS_FAMILY",
     "COMBINATION_RULES",
@@ -131,42 +482,203 @@ __all__ = (
 )
 
 
+def _run_controller_loop(
+    controller: "AutoresearchController", *, family_name: str, job: int
+) -> int:
+    from trace_sdk import get_log_file, get_session_id, set_family
+
+    set_family(family_name, job=job)
+    trace(
+        "MAIN",
+        f"Autoresearch loop starting family={family_name} job={job} session={get_session_id()} log={get_log_file()}",
+    )
+    consecutive_research_required = 0
+    while True:
+        code = controller.execute_once()
+        if code != 0:
+            return code
+        state = controller.read_state()
+        current = state.get("state")
+        if current in ("finished", "interrupted", "halted"):
+            return 0
+        if current == "blocked":
+            blockers = state.get("blockers", [])
+            if any(b.get("kind") in _RESEARCH_BLOCKER_KINDS for b in blockers):
+                consecutive_research_required += 1
+                if consecutive_research_required >= max_consecutive_research_required():
+                    trace(
+                        "MAIN",
+                        f"research_required blocker persisted for {consecutive_research_required} consecutive iterations; treating as terminal",
+                    )
+                    return 1
+                continue
+            # `execute_once()` already performs the only recoverable blocked
+            # transition (`research_required`). Any remaining blocked state is
+            # terminal for the process.
+            return 1
+        consecutive_research_required = 0
+
+
+def _emit_prepare_result(state: dict[str, Any], job: int) -> None:
+    next_action = state.get("next_action")
+    payload = {
+        "ok": True,
+        "job": job,
+        "state": str(state.get("state") or ""),
+        "research_round": state.get("research_round"),
+        "research_round_in_progress": state.get("research_round_in_progress"),
+        "next_action_type": next_action.get("type") if isinstance(next_action, dict) else None,
+    }
+    sys.stdout.write(f"{PREPARE_RESULT_MARKER} {json.dumps(payload, sort_keys=True)}\n")
+    sys.stdout.flush()
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run autoresearch controller")
+    parser.add_argument("--family", required=True, help="Strategy family to run")
+    parser.add_argument(
+        "--fresh-job",
+        action="store_true",
+        help="Start a new job and ignore prior job-scoped queues.",
+    )
+    parser.add_argument(
+        "--resume-current-job",
+        action="store_true",
+        help=(
+            "Resume a recoverable blocked/interrupted state without incrementing the job id. "
+            "Interrupted research failures are retried in the same research round."
+        ),
+    )
+    parser.add_argument(
+        "--prepare-launch-state-only",
+        action="store_true",
+        help=(
+            "Normalize and persist launch state, then exit without executing the controller loop."
+        ),
+    )
+    parser.add_argument(
+        "--run-current-state",
+        action="store_true",
+        help=(
+            "Execute the controller loop against the already prepared running state without "
+            "renormalizing launch state."
+        ),
+    )
+    return parser
+
+
+def _parse_main_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
+    if args.fresh_job and args.resume_current_job:
+        parser.error("--fresh-job and --resume-current-job are mutually exclusive")
+    if args.run_current_state and (args.fresh_job or args.resume_current_job):
+        parser.error(
+            "--run-current-state cannot be combined with --fresh-job or --resume-current-job"
+        )
+    if args.prepare_launch_state_only and args.run_current_state:
+        parser.error("--prepare-launch-state-only and --run-current-state are mutually exclusive")
+    return args
+
+
+def _should_hard_exit_prepare_cli(argv: list[str]) -> bool:
+    try:
+        return bool(_parse_main_args(argv).prepare_launch_state_only)
+    except SystemExit:
+        return False
+
+
 class AutoresearchController:
     def __init__(
         self,
-        root: Path = ROOT,
-        state_path: Path = STATE_PATH,
-        current_md_path: Path = CURRENT_MD_PATH,
-        ideas_md_path: Path = IDEAS_MD_PATH,
-        runs_dir: Path | None = None,
+        root: Path | None = None,
+        runtime_root: Path | None = None,
+        state_path: Path | None = None,
+        current_md_path: Path | None = None,
+        jobs_root: Path | None = None,
         family: StrategyFamily | None = None,
     ) -> None:
-        self.root = root.resolve()
-        self.state_path = state_path if state_path.is_absolute() else self.root / state_path
-        self.current_md_path = (
-            current_md_path if current_md_path.is_absolute() else self.root / current_md_path
+        self.root = (root or ROOT).resolve()
+        self.runtime_root = (runtime_root or self.root).resolve()
+        resolved_state_path = state_path or (self.runtime_root / "autoresearch.next.json")
+        resolved_current_md_path = current_md_path or (
+            self.runtime_root / "autoresearch.current.md"
         )
-        self.ideas_md_path = (
-            ideas_md_path if ideas_md_path.is_absolute() else self.root / ideas_md_path
+        self.state_path = (
+            resolved_state_path
+            if resolved_state_path.is_absolute()
+            else self.runtime_root / resolved_state_path
+        )
+        self.current_md_path = (
+            resolved_current_md_path
+            if resolved_current_md_path.is_absolute()
+            else self.runtime_root / resolved_current_md_path
+        )
+        resolved_jobs_root = jobs_root or (self.runtime_root / "runtime" / "jobs")
+        self.jobs_root = (
+            resolved_jobs_root
+            if resolved_jobs_root.is_absolute()
+            else self.runtime_root / resolved_jobs_root
         )
         if family is None:
             raise ValueError("AutoresearchController requires an explicit strategy family")
         self.family = family
-        raw_runs_dir = runs_dir or Path(self.family.runs_dirname)
-        self.runs_dir = (
-            raw_runs_dir.resolve() if raw_runs_dir.is_absolute() else self.root / raw_runs_dir
+        self._clear_runtime_paths()
+        self.backtest_run_db = BacktestRunDB(
+            self.runtime_root / f"{self.family.name}_backtest_runs.db"
         )
-        self.research_dir = self.root / self.family.research_dirname
-        self.proposals_dir = self.root / self.family.proposals_dirname
-        self.compilations_dir = self.root / self.family.compilations_dirname
-        self.contracts_dir = self.root / self.family.contracts_dirname
-        self.run_queue_dir = self.root / self.family.run_queue_dirname
-        self.experiment_db = ExperimentDB(self.root / f"{self.family.name}_experiments.db")
         self.baseline_tracker = BaselineTracker(
-            self.root / f"{self.family.name}_baseline_checkpoints.json"
+            self.runtime_root / f"{self.family.name}_baseline_checkpoints.json"
         )
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()
+
+    def _clear_runtime_paths(self) -> None:
+        self.job_runtime_root = self.jobs_root
+        self.research_dir = self.jobs_root
+        self.builder_requests_dir = self.jobs_root
+
+    def _set_runtime_paths_for_job(self, job: int) -> None:
+        if job < 1:
+            raise ValueError(f"job id is required for job-scoped runtime paths; got {job!r}")
+        self.job_runtime_root = self.jobs_root / f"job-{job}"
+        self.research_dir = self.job_runtime_root / "research"
+        self.builder_requests_dir = self.job_runtime_root / "builder-requests"
+
+    def _current_job(self) -> int | None:
+        job = self.read_state().get("job")
+        try:
+            return int(job) if job is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _max_runtime_job_id(self) -> int:
+        jobs_root = self.jobs_root
+        if not jobs_root.exists():
+            return 0
+        max_job = 0
+        for path in jobs_root.iterdir():
+            if not path.is_dir() or not path.name.startswith("job-"):
+                continue
+            try:
+                max_job = max(max_job, int(path.name.removeprefix("job-")))
+            except ValueError:
+                continue
+        return max_job
+
+    def next_fresh_job_id(self, prior_state: dict[str, Any] | None = None) -> int:
+        """Pick a fresh job id that cannot collide with checkout history.
+
+        Fresh launches must not reuse a historical job id from the local
+        state file, experiment DB, or runtime job tree. Reusing one of those
+        ids makes a "fresh" job inherit stale baseline decisions, queued
+        theses, or old results.
+        """
+        prior = prior_state if prior_state is not None else self.read_state()
+        max_seen = _state_coerce_job_to_int(prior.get("job"))
+        max_seen = max(max_seen, self.backtest_run_db.max_job_id())
+        max_seen = max(max_seen, self._max_runtime_job_id())
+        return max_seen + 1 if max_seen > 0 else 1
 
     def clear_transient_context(self) -> None:
         """Clear per-experiment and per-research-round context.
@@ -175,7 +687,8 @@ class AutoresearchController:
         the same controller process.
         """
         self.ctx.current_contract = None
-        self.ctx.parent_experiment_id = ""
+        self.ctx.parent_backtest_run_id = ""
+        self.ctx.execution_root = None
 
     def clear_terminal_metadata(self, state: dict[str, Any]) -> None:
         """Remove terminal-only fields when a transition reactivates the run."""
@@ -183,12 +696,13 @@ class AutoresearchController:
         state.pop("research_stop_reasoning", None)
 
     def _ensure_job_metadata(self) -> None:
-        """Stamp job-scoped defaults into state for direct loop entrypoints."""
+        """Validate job-scoped state before direct loop entrypoints."""
         state = self.read_state()
+        raw_job = state.get("job")
+        job = _state_coerce_job_to_int(raw_job)
+        if job < 1:
+            raise ValueError(f"job id is required for controller execution; got {raw_job!r}")
         changed = False
-        if not state.get("job"):
-            state["job"] = 1
-            changed = True
         if "research_round" not in state:
             state["research_round"] = 0
             changed = True
@@ -197,31 +711,39 @@ class AutoresearchController:
             changed = True
         if changed:
             self.write_state(state)
+        else:
+            self._set_runtime_paths_for_job(job)
 
     def read_state(self) -> dict[str, Any]:
         return _state_read_state(self.state_path)
 
     def write_state(self, state: dict[str, Any]) -> None:
+        validate_controller_state_invariants(state)
         previous_state = self.read_state().get("state", "unknown")
         _state_write_state(self.state_path, state)
+        job = _state_coerce_job_to_int(state.get("job"))
+        if job > 0:
+            self._set_runtime_paths_for_job(job)
+        else:
+            self._clear_runtime_paths()
         next_state = state.get("state", "unknown")
         if previous_state != next_state:
             trace_state_change(previous_state, next_state, state.get("finished_reason", ""))
 
     def read_entries(self) -> list[dict[str, Any]]:
-        return self.experiment_db.export_entries()
+        return self.backtest_run_db.export_entries()
 
     def write_entries(self, entries: list[dict[str, Any]]) -> None:
-        self.experiment_db.import_entries(entries)
+        self.backtest_run_db.import_entries(entries)
 
     def current_commit(self) -> str:
         return _git_sha()
 
     def direction(self) -> str:
-        return self.experiment_db.best_direction()
+        return self.backtest_run_db.best_direction()
 
-    def read_results(self) -> list[ExperimentRecord]:
-        all_results = self.experiment_db.read_results()
+    def read_results(self) -> list[BacktestResultRecord]:
+        all_results = self.backtest_run_db.read_results()
         state = self.read_state()
         job = state.get("job")
         if job is None:
@@ -231,7 +753,7 @@ class AutoresearchController:
         except (TypeError, ValueError):
             return all_results
 
-        scoped: list[ExperimentRecord] = []
+        scoped: list[BacktestResultRecord] = []
         for result in all_results:
             try:
                 result_job = int(result.job)
@@ -245,34 +767,36 @@ class AutoresearchController:
         return _artifacts_read_artifacts_relative_to_root(directory, self.root)
 
     def read_research_artifacts(self) -> list[dict[str, Any]]:
-        return _artifacts_read_research_artifacts(self.research_dir, self.root)
+        return _artifacts_read_research_artifacts(
+            self.research_dir, self.root, job=self._current_job()
+        )
 
     def read_thesis_artifacts(self) -> list[dict[str, Any]]:
-        return _artifacts_read_thesis_artifacts(self.proposals_dir, self.root)
+        return []
 
     def is_better(self, candidate: float, current: float | None) -> bool:
         return _state_is_better(self.direction(), candidate, current)
 
-    def best_result(self, results: list[ExperimentRecord]) -> dict[str, Any]:
+    def best_result(self, results: list[BacktestResultRecord]) -> dict[str, Any]:
         return _state_best_result(results, self.direction())
 
-    def latest_result(self, results: list[ExperimentRecord]) -> ExperimentRecord | None:
+    def latest_result(self, results: list[BacktestResultRecord]) -> BacktestResultRecord | None:
         return _state_latest_result(results)
 
     def list_known_variant_configs(self) -> list[str]:
         return _planning_list_known_variant_configs(self.root, self.family)
 
-    def pending_configs(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_pending_configs(self.root, self.family, results)
+    def pending_configs(self, results: list[BacktestResultRecord]) -> list[str]:
+        return []
 
-    def thesis_statuses(self, results: list[ExperimentRecord]) -> dict[str, dict[str, Any]]:
-        return _planning_thesis_statuses(self.root, self.family, self.run_queue_dir, results)
+    def thesis_statuses(self, results: list[BacktestResultRecord]) -> dict[str, dict[str, Any]]:
+        return {}
 
     def read_run_queue(self) -> list[dict[str, Any]]:
-        return _artifacts_read_run_queue(self.run_queue_dir, self.root)
+        return []
 
-    def queue_from_thesis_artifacts(self, results: list[ExperimentRecord]) -> list[str]:
-        return _artifacts_queue_from_thesis_artifacts(self.run_queue_dir, self.root, results)
+    def queue_from_thesis_artifacts(self, results: list[BacktestResultRecord]) -> list[str]:
+        return []
 
     def promote_missing_known_results(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return _state_promote_missing_known_results(entries)
@@ -280,30 +804,15 @@ class AutoresearchController:
     def deduplicate_entries(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return _state_deduplicate_entries(entries)
 
-    # ── WS-2: Thesis generation from ideas backlog ──────────────────────
-
-    def parse_ideas_backlog(self) -> list[dict[str, Any]]:
-        return _planning_parse_ideas_backlog(self.ideas_md_path, self.family)
-
-    def generate_theses_from_ideas(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_generate_theses_from_ideas(
-            self.root,
-            self.family,
-            self.ideas_md_path,
-            self.run_queue_dir,
-            self.proposals_dir,
-            results,
-        )
-
     # ── WS-5: Combination phase ───────────────────────────────────────
 
     def thesis_family_for(self, config: str) -> str:
-        return _planning_thesis_family_for(config, self.family, self.proposals_dir, self.root)
-
-    def generate_combination_candidates(self, results: list[ExperimentRecord]) -> list[str]:
-        return _planning_generate_combination_candidates(
-            self.root, self.family, self.proposals_dir, results
+        return _planning_thesis_family_for(
+            config, self.family, self.builder_requests_dir, self.root
         )
+
+    def generate_combination_candidates(self, results: list[BacktestResultRecord]) -> list[str]:
+        return []
 
     def parse_result_json(self, output: str) -> dict[str, Any] | None:
         return _experiment_parse_result_json(output)
@@ -314,46 +823,58 @@ class AutoresearchController:
     def _parse_benchmark_details_legacy(self, output: str) -> dict[str, Any]:
         return _experiment_parse_benchmark_details_legacy(output)
 
-    def select_research_next_action(self, results: list[ExperimentRecord]) -> dict[str, Any]:
+    def select_research_next_action(self, results: list[BacktestResultRecord]) -> dict[str, Any]:
         return _planning_select_research_next_action(
             self.root,
+            self.runtime_root,
             self.family,
-            self.run_queue_dir,
-            self.proposals_dir,
-            self.ideas_md_path,
+            self.builder_requests_dir,
+            self.builder_requests_dir,
             self.research_dir,
             results,
+            job=self._current_job(),
         )
 
-    def should_terminate(self, results: list[ExperimentRecord] | None = None) -> bool:
+    def should_terminate(self, results: list[BacktestResultRecord] | None = None) -> bool:
         current_results = results if results is not None else self.read_results()
         return _planning_should_terminate(
-            self.root, self.family, self.run_queue_dir, self.research_dir, current_results
+            self.runtime_root,
+            self.family,
+            self.builder_requests_dir,
+            self.research_dir,
+            current_results,
+            job=self._current_job(),
         )
 
     def plan_next_action(
-        self, state: dict[str, Any], results: list[ExperimentRecord]
+        self, state: dict[str, Any], results: list[BacktestResultRecord]
     ) -> dict[str, Any]:
         return _planning_plan_next_action(
             state,
             results,
             self.root,
+            self.runtime_root,
             self.family,
-            self.run_queue_dir,
-            self.proposals_dir,
-            self.ideas_md_path,
+            self.builder_requests_dir,
+            self.builder_requests_dir,
             self.research_dir,
         )
 
-    def render_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> str:
-        return _state_render_current_md(state, results, family_name=self.family.name)
+    def render_current_md(self, state: dict[str, Any], results: list[BacktestResultRecord]) -> str:
+        return _state_render_current_md(
+            state,
+            results,
+            family_name=self.family.name,
+            metric_name=self.primary_metric_name(),
+        )
 
-    def write_current_md(self, state: dict[str, Any], results: list[ExperimentRecord]) -> None:
+    def write_current_md(self, state: dict[str, Any], results: list[BacktestResultRecord]) -> None:
         _state_write_current_md(
             self.current_md_path,
             state,
             results,
             family_name=self.family.name,
+            metric_name=self.primary_metric_name(),
         )
 
     def reconcile_state(self) -> dict[str, Any]:
@@ -395,10 +916,10 @@ class AutoresearchController:
         return state
 
     def artifact_dir_for(self, config: str) -> Path:
-        return _experiment_artifact_dir_for(self.state_path, self.runs_dir, config)
+        return _experiment_artifact_dir_for(self.state_path, self.runtime_root, config)
 
     def sanitize_duplicate_entries(self, config: str) -> None:
-        _experiment_sanitize_duplicate_entries(self.experiment_db, config)
+        _experiment_sanitize_duplicate_entries(self.backtest_run_db, config)
 
     def _accumulate_job_usage(self, round_usage: dict[str, Any]) -> None:
         _research_accumulate_job_usage(self.state_path, round_usage)
@@ -414,11 +935,12 @@ class AutoresearchController:
         hypothesis: str = "",
         mechanism: str = "",
         mechanism_dimension: str = "",
+        thesis_details: dict[str, Any] | None = None,
         rejection_reason: str = "",
         usage: dict[str, Any] | None = None,
     ) -> None:
         _research_log_research_round(
-            self.experiment_db.path,
+            self.backtest_run_db.path,
             self.state_path,
             round_number=round_number,
             thesis_id=thesis_id,
@@ -428,6 +950,7 @@ class AutoresearchController:
             hypothesis=hypothesis,
             mechanism=mechanism,
             mechanism_dimension=mechanism_dimension,
+            thesis_details=thesis_details,
             rejection_reason=rejection_reason,
             usage=usage,
         )
@@ -455,12 +978,12 @@ class AutoresearchController:
         )
 
     def run_command(self, command: str) -> tuple[int, str]:
-        return _experiment_run_command(self.root, command)
+        return _experiment_run_command(self.ctx.execution_root or self.root, command)
 
     def primary_metric_name(self) -> str:
-        return self.experiment_db.primary_metric_name()
+        return self.backtest_run_db.primary_metric_name()
 
-    def parse_metric(self, output: str, name: str = "median_expectancy") -> float | None:
+    def parse_metric(self, output: str, name: str = "profit_factor") -> float | None:
         return _experiment_parse_metric(output, name)
 
     def evaluate_metric(self, metric: float) -> str:
@@ -473,8 +996,8 @@ class AutoresearchController:
         except (TypeError, ValueError):
             job_id = None
         return _experiment_evaluate_metric(
-            self.root,
-            self.experiment_db.path.name,
+            self.runtime_root,
+            self.backtest_run_db.path.name,
             metric,
             job_id=job_id,
         )
@@ -499,11 +1022,14 @@ class AutoresearchController:
     ) -> None:
         _research_queue_variants(
             self.root,
-            self.run_queue_dir,
+            self.builder_requests_dir,
             variants,
             thesis,
             primary_contract,
             baseline_config,
+            experiments_dir=self.builder_requests_dir,
+            job=self._current_job(),
+            created_for_commit=self.current_commit(),
         )
 
     def _results_to_dicts(self, results: list) -> list[dict[str, Any]]:
@@ -556,21 +1082,27 @@ class AutoresearchController:
         # Handle blocked state: invoke research conductor
         if state.get("state") == "blocked":
             blockers = state.get("blockers", [])
-            if any(b.get("kind") == "research_required" for b in blockers):
+            if any(b.get("kind") in _RESEARCH_BLOCKER_KINDS for b in blockers):
                 state = self._run_research(state)
                 if state.get("state") == "running":
                     decision = _AUTONOMY_LEDGER.record_decision(
-                        summary="controller accepted research-generated next action",
+                        summary="controller accepted blocker-cleared research next action",
                         decision_type="research_transition",
                         score=None,
                         graduation_status="supervised",
                         outcome="approved",
-                        rationale="research round produced a runnable next action",
-                        constraints=["must still pass experiment execution"],
+                        rationale=(
+                            "research round produced a runnable next action after "
+                            "clearing research blockers"
+                        ),
+                        constraints=[
+                            "must clear blockers before running",
+                            "must still pass experiment execution",
+                        ],
                         evidence_event_ids=[],
                     )
                     _AUTONOMY_LEDGER.record_audit(
-                        summary="controller applied research-generated next action",
+                        summary="controller applied blocker-cleared research next action",
                         action="transition_to_running",
                         approval_status="approved",
                         actor="autoresearch_controller",
@@ -587,63 +1119,49 @@ class AutoresearchController:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run autoresearch controller")
-    parser.add_argument("--family", required=True, help="Strategy family to run")
-    args = parser.parse_args()
-
+    args = _parse_main_args()
     family = load_family(args.family)
-    state_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(ROOT, family)
+    runtime_root = _resolve_runtime_root(ROOT)
+    state_path, current_md_path, jobs_root = default_controller_paths(runtime_root, family)
     controller = AutoresearchController(
+        root=ROOT,
+        runtime_root=runtime_root,
         family=family,
         state_path=state_path,
         current_md_path=current_md_path,
-        ideas_md_path=ideas_md_path,
-        runs_dir=runs_dir,
+        jobs_root=jobs_root,
     )
-    # Increment job number on each loop start
     prior_state = controller.read_state()
-    job = prior_state.get("job", 0) + 1
-    # New job starts from a clean controller state. This prevents stale
-    # next_action/current_thesis/blockers from prior jobs from skipping
-    # baseline-first planning on launch.
-    state = {
-        "state": "running",
-        "job": job,
-        "research_round": 0,
-        "job_usage": None,
-        "heartbeat": {},
-    }
-    # Preserve halted thesis metadata needed for requires_code_change resume
-    # flow across code deploys while still clearing ordinary next-action state.
-    if prior_state.get("halted_reason") == "requires_code_change" and prior_state.get(
-        "halted_thesis_id"
-    ):
-        for key in ("halted_reason", "halted_thesis_id", "halted_thesis"):
-            if key in prior_state:
-                state[key] = prior_state[key]
-    controller.write_state(state)
-
-    from trace_sdk import get_log_file, get_session_id, set_family
-
-    set_family(args.family, job=job)
-    trace(
-        "MAIN",
-        f"Autoresearch loop starting family={args.family} job={job} session={get_session_id()} log={get_log_file()}",
-    )
-    while True:
-        code = controller.execute_once()
-        if code != 0:
-            return code
-        state = controller.read_state()
-        current = state.get("state")
-        if current in ("finished", "interrupted", "halted"):
-            return 0
-        if current == "blocked":
-            # `execute_once()` already performs the only recoverable blocked
-            # transition (`research_required`). Any remaining blocked state is
-            # terminal for the process.
+    if args.run_current_state:
+        try:
+            job = _validate_current_executable_state(prior_state)
+        except ValueError as exc:
+            log.error("%s", exc)
             return 1
+        return _run_controller_loop(controller, family_name=args.family, job=job)
+
+    launch_fresh_job = args.fresh_job or not args.resume_current_job
+    fresh_job = None
+    if launch_fresh_job:
+        fresh_job = _next_fresh_job_for_launch(controller, prior_state)
+    try:
+        state, job = normalize_controller_launch_state(
+            prior_state,
+            resume_current_job=args.resume_current_job,
+            fresh_job=fresh_job,
+        )
+    except ValueError as exc:
+        log.error("%s", exc)
+        return 1
+    controller.write_state(state)
+    if args.prepare_launch_state_only:
+        _emit_prepare_result(state, job)
+        return 0
+    return _run_controller_loop(controller, family_name=args.family, job=job)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit_code = main()
+    if _should_hard_exit_prepare_cli(sys.argv[1:]):
+        os._exit(exit_code)
+    raise SystemExit(exit_code)

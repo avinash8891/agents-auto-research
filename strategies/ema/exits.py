@@ -59,6 +59,20 @@ def simulate_trades(
 
     trades: list[dict] = []
     in_trade_until = -1
+    alert_bar_idx = getattr(signals, "alert_bar_idx", pd.Series(np.full(n, -1, dtype=int)))
+    alert_bar_idx_values = pd.Series(alert_bar_idx).to_numpy(dtype=int, copy=False)
+    if isinstance(f_idx, pd.DatetimeIndex) and len(f_idx):
+        day_values = f_idx.normalize()
+        entry_bar_index_from_open = np.zeros(n, dtype=np.int64)
+        current = 0
+        for idx in range(1, n):
+            if day_values[idx] == day_values[idx - 1]:
+                current += 1
+            else:
+                current = 0
+            entry_bar_index_from_open[idx] = current
+    else:
+        entry_bar_index_from_open = np.arange(n, dtype=np.int64)
 
     def _ts(bar_idx: int) -> str:
         return str(f_idx[bar_idx]) if bar_idx < n else ""
@@ -182,6 +196,13 @@ def simulate_trades(
                 stop_price=stop,
                 target_price=target,
                 rr_ratio=rr_ratio,
+                **{
+                    "ema.alert_bar_timestamp": (
+                        _ts(alert_bar_idx_values[i]) if 0 <= alert_bar_idx_values[i] < n else None
+                    )
+                },
+                trigger_bar_timestamp=_ts(i),
+                entry_bar_index_from_open=int(entry_bar_index_from_open[i]),
             )
 
     return trades

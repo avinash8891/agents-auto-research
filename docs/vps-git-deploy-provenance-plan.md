@@ -19,7 +19,7 @@
 - Run folders include the resolved SHA.
 
 ```text
-ema_autoresearch-runs/job-12/<commit_sha>/<config_hash>
+runtime/jobs/job-12/research/round-7/backtest
 ```
 
 ## 3. Use one VPS checkout folder
@@ -39,16 +39,10 @@ ema_autoresearch-runs/job-12/<commit_sha>/<config_hash>
 - Output folders are new per job, commit, and config.
 - This prevents artifacts from different code versions mixing.
 
-Current:
-
-```text
-ema_autoresearch-runs/job-12/<config_hash>
-```
-
 Target:
 
 ```text
-ema_autoresearch-runs/job-12/<commit_sha>/<config_hash>
+runtime/jobs/job-12/research/round-7/backtest
 ```
 
 ## 5. Treat builder primitive flow as a gated workflow
@@ -60,7 +54,7 @@ Builder primitive flow is special before the run:
 3. Builder generates code locally.
 4. Human reviews generated code.
 5. Commit and push builder code to the feature branch.
-6. VPS deploys that branch or ref.
+6. VPS deploys that branch/tag or exact SHA.
 7. VPS resolves the exact SHA.
 8. Baseline reruns because the commit changed.
 9. Halted thesis resumes and runs under that SHA.

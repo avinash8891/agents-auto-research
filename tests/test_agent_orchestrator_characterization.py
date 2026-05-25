@@ -153,7 +153,7 @@ def test_run_web_research_returns_findings_and_writes_memory(monkeypatch):
     assert diary_entries == [
         (
             "web-researcher",
-            "ema-research",
+            "runtime/research/round-2",
             "ROUND:2|FINDINGS:1|External work supports narrowing the entry window.",
         )
     ]
@@ -370,6 +370,127 @@ def test_run_single_agent_uses_openai_agents_sdk(monkeypatch):
     assert result == cli_payload
 
 
+def test_run_single_agent_falls_back_to_raw_responses_for_research_agent(monkeypatch):
+    import trace_sdk
+
+    monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(trace_sdk, "trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
+
+    class Completed:
+        def __init__(self):
+            self.final_output = ""
+            self.raw_responses = [
+                SimpleNamespace(
+                    output=[
+                        {
+                            "type": "message",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": json.dumps(
+                                        {
+                                            "reasoning": "Valid thesis",
+                                            "suggested_theses": [
+                                                {
+                                                    "thesis_id": "raw_response_fallback",
+                                                    "hypothesis": "narrow the entry window",
+                                                    "mechanism": "Restrict entries to a narrower opening window.",
+                                                    "mechanism_dimension": "entry_timing",
+                                                    "dimension_novelty": "Tests a distinct open window instead of tuning an existing one.",
+                                                    "config_changes": {
+                                                        "entry_cutoff_time": "09:31"
+                                                    },
+                                                    "expected_effects": [
+                                                        {
+                                                            "metric": "profit_factor",
+                                                            "direction": "increase",
+                                                            "rationale": "Should improve PF by reducing noise.",
+                                                        }
+                                                    ],
+                                                    "disqualifiers": [
+                                                        {
+                                                            "name": "trade_count_collapse",
+                                                            "condition": "trade_count decreases materially versus baseline",
+                                                            "severity": "hard_fail",
+                                                        }
+                                                    ],
+                                                }
+                                            ],
+                                        }
+                                    ),
+                                }
+                            ],
+                        }
+                    ]
+                )
+            ]
+
+        async def stream_events(self):
+            if False:
+                yield None
+
+    monkeypatch.setattr(agent_runners.OAIRunner, "run_streamed", lambda *a, **k: Completed())
+
+    result = asyncio.run(
+        agent_runners._run_single_agent(
+            "research-agent",
+            "user prompt",
+            SimpleNamespace(prompt="system prompt", model="gpt-5.5", maxTurns=15, tools=[]),
+            retries=1,
+        )
+    )
+
+    assert result["suggested_theses"][0]["thesis_id"] == "raw_response_fallback"
+
+
+def test_normalize_thesis_payload_maps_family_alias_to_strategy_family():
+    from thesis_validator import normalize_thesis_payload
+
+    normalized = normalize_thesis_payload(
+        {
+            "thesis_id": "x",
+            "family": "ema",
+            "hypothesis": "y",
+            "mechanism": "z",
+        }
+    )
+
+    assert normalized["strategy_family"] == "ema"
+
+
+def test_normalize_thesis_payload_does_not_promote_unknown_family_alias():
+    from thesis_validator import normalize_thesis_payload
+
+    normalized = normalize_thesis_payload(
+        {
+            "thesis_id": "x",
+            "family": "entry",
+            "hypothesis": "y",
+            "mechanism": "z",
+        }
+    )
+
+    assert "strategy_family" not in normalized
+
+
+def test_normalize_thesis_payload_treats_none_lists_as_empty():
+    from thesis_validator import normalize_thesis_payload
+
+    normalized = normalize_thesis_payload(
+        {
+            "thesis_id": "x",
+            "hypothesis": "y",
+            "mechanism": "z",
+            "expected_effects": None,
+            "disqualifiers": None,
+        }
+    )
+
+    assert normalized["expected_effects"] == []
+    assert normalized["disqualifiers"] == []
+
+
 def test_run_single_agent_returns_structured_parse_error_without_stdout(monkeypatch, capsys):
     import trace_sdk
 
@@ -411,76 +532,70 @@ def test_run_single_agent_returns_structured_parse_error_without_stdout(monkeypa
 
 
 def test_run_web_research_openai_returns_structured_error_without_stdout(monkeypatch, capsys):
-    import agents
-
     import trace_sdk
+    from web_research_cli import WebResearchCliError
 
-    monkeypatch.setattr(agent_infra, "_ensure_oauth_proxy", lambda: None)
     monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
     monkeypatch.setattr(trace_sdk, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
 
-    class Completed:
-        def __init__(self):
-            self.final_output = "not-json"
-            self.raw_responses = [
-                SimpleNamespace(
-                    usage=SimpleNamespace(input_tokens=4, output_tokens=1, total_tokens=5)
-                )
-            ]
+    def fake_run_codex_web_research(*args, **kwargs):
+        raise WebResearchCliError("codex CLI not found on PATH")
 
-        async def stream_events(self):
-            if False:
-                yield None
-
-    monkeypatch.setattr(agents.Runner, "run_streamed", lambda *a, **k: Completed())
+    monkeypatch.setattr(agent_openai_calls, "run_codex_web_research", fake_run_codex_web_research)
 
     usage.reset_round_usage()
     result = asyncio.run(agent_openai_calls._run_web_research_openai("prompt", retries=1))
     captured = capsys.readouterr()
 
     assert result["status"] == "error"
-    assert result["kind"] == "no_json"
+    assert result["kind"] == "transport"
     assert "WEB_RESEARCH parse/validate failed" not in captured.out
     assert "WEB_RESEARCH error" not in captured.out
     assert captured.err == ""
-    assert usage.get_round_usage()["by_agent"]["web-researcher"]["calls"] == 1
+    assert usage.get_round_usage()["by_agent"]["web-researcher"]["failed_calls"] == 1
 
 
-def test_run_web_research_openai_uses_responses_model_for_web_search(monkeypatch):
-    import agents
-
+def test_run_web_research_openai_uses_codex_cli_web_search(monkeypatch):
     import trace_sdk
 
-    monkeypatch.setattr(agent_infra, "_ensure_oauth_proxy", lambda: None)
     monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
     monkeypatch.setattr(trace_sdk, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
 
     captured: dict[str, object] = {}
 
-    class Completed:
-        def __init__(self):
-            self.final_output = "not-json"
-            self.raw_responses = []
+    def fake_run_codex_web_research(prompt, *, instructions, model):
+        captured["prompt"] = prompt
+        captured["instructions"] = instructions
+        captured["model"] = model
+        return (
+            json.dumps(
+                {
+                    "findings": [
+                        {
+                            "topic": "microstructure",
+                            "finding": "codex CLI web search returned valid JSON",
+                            "source": None,
+                            "source_quality": "practitioner",
+                            "actionable_idea": "use the verified CLI web-search boundary",
+                        }
+                    ],
+                    "summary": "codex cli text extraction works",
+                }
+            ),
+            {"exit_code": 0, "output_len": 10},
+        )
 
-        async def stream_events(self):
-            if False:
-                yield None
-
-    def fake_run_streamed(agent, *args, **kwargs):
-        captured["model_type"] = type(agent.model).__name__
-        captured["tool_type"] = type(agent.tools[0]).__name__
-        return Completed()
-
-    monkeypatch.setattr(agents.Runner, "run_streamed", fake_run_streamed)
+    monkeypatch.setattr(agent_openai_calls, "run_codex_web_research", fake_run_codex_web_research)
 
     result = asyncio.run(agent_openai_calls._run_web_research_openai("prompt", retries=1))
 
-    assert captured["model_type"] == "OpenAIResponsesModel"
-    assert captured["tool_type"] == "WebSearchTool"
-    assert result["status"] == "error"
-    assert result["kind"] == "no_json"
+    assert captured["prompt"] == "prompt"
+    assert "external evidence" in captured["instructions"]
+    assert captured["model"] == agent_openai_calls._MODEL
+    assert result["findings"][0]["finding"] == "codex CLI web search returned valid JSON"
+    assert result["summary"] == "codex cli text extraction works"
 
 
 def test_run_research_agent_propagates_error_result_without_memory_writes(monkeypatch):
@@ -617,6 +732,22 @@ def test_mempalace_helpers_propagate_unexpected_exceptions(monkeypatch):
 
     with pytest.raises(ValueError, match="bad subprocess shim"):
         agent_memory._mempalace_diary("agent", "topic", "entry")
+
+
+def test_mempalace_helpers_fall_back_when_cli_fails(monkeypatch):
+    def fail(*args, **kwargs):
+        return agent_memory.subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="mempalace unavailable",
+        )
+
+    monkeypatch.setattr(agent_memory.subprocess, "run", fail)
+
+    assert agent_memory._mempalace_search("query") == "(memory search unavailable)"
+    assert agent_memory._mempalace_write("wing", "room", "content") is False
+    assert agent_memory._mempalace_diary("agent", "topic", "entry") is False
 
 
 def test_validate_output_rejects_diagnostic_without_pattern():

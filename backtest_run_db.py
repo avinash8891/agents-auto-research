@@ -1,28 +1,35 @@
-"""Experiment result database — canonical sqlite-backed storage."""
+"""Backtest-run database — canonical sqlite-backed storage."""
 
 from __future__ import annotations
 
 import json
-import logging
 import sqlite3
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from autoresearch_logging import get_logger
 from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
 from config_hash import _config_hash
 from persistence_utils import (
     json_dumps_strict,
     json_loads_metric_sentinels,
+)
+from persistence_utils import utc_now_iso8601 as _iso8601_utc_now
+from persistence_utils import (
     write_text_atomic,
 )
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
+INVALID_RESULT_VERDICTS = frozenset(
+    {
+        "invalid_duplicate_result",
+        "invalid_noop_config",
+    }
+)
 
-def _iso8601_utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+BACKTEST_RUNS_TABLE = "backtest_runs"
 
 
 def _coerce_metric_float(value: Any, *, default: float = 0.0) -> float:
@@ -32,18 +39,64 @@ def _coerce_metric_float(value: Any, *, default: float = 0.0) -> float:
         return default
 
 
-def _metric_value_for_record(record: ExperimentResult, metric: str) -> Any:
+def _metric_value_for_record(record: BacktestRunRecord, metric: str) -> Any:
     validation_value = record.validation_metrics.get(metric)
     if validation_value is not None:
         return validation_value
     return record.train_metrics.get(metric)
 
 
-@dataclass
-class ExperimentResult:
-    """One complete experiment record."""
+def _record_job_as_int(record: BacktestRunRecord) -> int | None:
+    try:
+        return int(getattr(record, "job", 0))
+    except (TypeError, ValueError):
+        return None
 
-    experiment_id: str
+
+def is_metric_rankable_backtest_run(record: BacktestRunRecord) -> bool:
+    """Return whether a backtest run can be used as a best/worst metric candidate."""
+    return bool(record.accepted) and record.verdict_status not in INVALID_RESULT_VERDICTS
+
+
+def _artifact_dir_from_files(paths: tuple[str, str, str]) -> str:
+    for path in paths:
+        if not path:
+            continue
+        parent = Path(path).parent
+        if str(parent) != ".":
+            return str(parent)
+    return ""
+
+
+def _load_json_object(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _load_metric_json(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    try:
+        parsed = json_loads_metric_sentinels(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+@dataclass
+class BacktestRunRecord:
+    """One complete backtest-run record."""
+
+    run_id: str
     thesis_id: str
     config_path: str
     runtime_config: dict[str, Any]
@@ -65,23 +118,27 @@ class ExperimentResult:
     verdict_status: str  # accepted, rejected, inconclusive, none
     verdict_summary: str
 
-    parent_experiment_id: str = ""
+    parent_backtest_run_id: str = ""
     # ISO-8601 UTC string. Legacy DB files with int epoch-ms timestamps
-    # are coerced to ISO on load (see ExperimentDB._load).
+    # are coerced to ISO on load (see BacktestRunDB._load).
     timestamp: str = ""
     family: str = ""
     hypothesis: str = ""
     mechanism: str = ""
     job: int = 0
     usage: dict[str, Any] = field(default_factory=dict)
+    backtest_run_id: str = ""
+    research_round_id: str = ""
+    research_round_number: int = -1
+    is_baseline: bool = False
 
 
-class ExperimentDB:
-    """Canonical experiment database backed by sqlite3."""
+class BacktestRunDB:
+    """Canonical backtest-run database backed by sqlite3."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._records: list[ExperimentResult] | None = None
+        self._records: list[BacktestRunRecord] | None = None
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
@@ -99,9 +156,13 @@ class ExperimentDB:
                     best_direction TEXT NOT NULL
                 )
                 """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS experiments (
-                    experiment_id TEXT PRIMARY KEY,
+            conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS {BACKTEST_RUNS_TABLE} (
+                    run_id TEXT PRIMARY KEY,
+                    backtest_run_id TEXT NOT NULL DEFAULT '',
+                    research_round_id TEXT NOT NULL DEFAULT '',
+                    research_round_number INTEGER NOT NULL DEFAULT -1,
+                    is_baseline INTEGER NOT NULL DEFAULT 0,
                     thesis_id TEXT NOT NULL,
                     config_path TEXT NOT NULL,
                     runtime_config_json TEXT NOT NULL,
@@ -118,14 +179,14 @@ class ExperimentDB:
                     rejection_reason TEXT NOT NULL,
                     verdict_status TEXT NOT NULL,
                     verdict_summary TEXT NOT NULL,
-                    parent_experiment_id TEXT NOT NULL,
+                    parent_backtest_run_id TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
                     family TEXT NOT NULL,
                     hypothesis TEXT NOT NULL,
                     mechanism TEXT NOT NULL,
                     job INTEGER NOT NULL,
                     usage_json TEXT NOT NULL,
-                    asi_json TEXT NOT NULL DEFAULT '{}',
+                    asi_json TEXT NOT NULL DEFAULT '{{}}',
                     description TEXT NOT NULL DEFAULT ''
                 )
                 """)
@@ -153,13 +214,42 @@ class ExperimentDB:
                     mechanism_dimension TEXT NOT NULL,
                     hypothesis TEXT NOT NULL,
                     mechanism TEXT NOT NULL,
+                    thesis_details_json TEXT NOT NULL DEFAULT '{}',
                     rejection_reason TEXT NOT NULL,
                     selected_for_execution INTEGER NOT NULL,
                     created_at_utc TEXT NOT NULL,
                     PRIMARY KEY (research_round_id, attempt_number)
                 )
                 """)
+            self._ensure_column(
+                conn,
+                "research_thesis_attempts",
+                "thesis_details_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "backtest_run_id", "TEXT NOT NULL DEFAULT ''"
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "research_round_id", "TEXT NOT NULL DEFAULT ''"
+            )
+            self._ensure_column(
+                conn,
+                BACKTEST_RUNS_TABLE,
+                "research_round_number",
+                "INTEGER NOT NULL DEFAULT -1",
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "is_baseline", "INTEGER NOT NULL DEFAULT 0"
+            )
             conn.commit()
+
+    def _ensure_column(
+        self, conn: sqlite3.Connection, table: str, column: str, definition: str
+    ) -> None:
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def session_meta(self) -> dict[str, Any]:
         with self._connect() as conn:
@@ -187,7 +277,7 @@ class ExperimentDB:
             conn.commit()
 
     def primary_metric_name(self) -> str:
-        return self.session_meta().get("metricName", "median_expectancy")
+        return self.session_meta().get("metricName", "profit_factor")
 
     def best_direction(self) -> str:
         return self.session_meta().get("bestDirection", "higher")
@@ -196,7 +286,7 @@ class ExperimentDB:
         direction = self.best_direction()
         records = self.all()
         if job_id is not None:
-            records = [record for record in records if int(getattr(record, "job", 0)) == job_id]
+            records = [record for record in records if _record_job_as_int(record) == job_id]
         if not records:
             return "keep"
         kept = [r for r in records if r.accepted]
@@ -223,7 +313,7 @@ class ExperimentDB:
     def add_from_sqlite_fields(
         self,
         *,
-        experiment_id: str,
+        run_id: str,
         thesis_id: str,
         config_path: str,
         runtime_config: dict[str, Any],
@@ -237,7 +327,6 @@ class ExperimentDB:
         verdict_summary: str,
         family: str,
         job_id: int,
-        run_id: str,
         primary_metric_name: str,
         primary_metric_value: float,
     ) -> None:
@@ -248,8 +337,8 @@ class ExperimentDB:
                 if key not in merged_metrics and isinstance(value, (int, float)):
                     merged_metrics[key] = value
         self.add(
-            ExperimentResult(
-                experiment_id=experiment_id,
+            BacktestRunRecord(
+                run_id=run_id,
                 thesis_id=thesis_id,
                 config_path=config_path,
                 runtime_config=runtime_config,
@@ -272,20 +361,25 @@ class ExperimentDB:
             )
         )
 
-    def _write_record(self, conn: sqlite3.Connection, record: ExperimentResult) -> None:
+    def _write_record(self, conn: sqlite3.Connection, record: BacktestRunRecord) -> None:
         conn.execute(
             """
-            INSERT OR REPLACE INTO experiments (
-                experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+            INSERT OR REPLACE INTO backtest_runs (
+                run_id, backtest_run_id, research_round_id, research_round_number,
+                is_baseline, thesis_id, config_path, runtime_config_json, code_commit,
                 data_hash, train_metrics_json, validation_metrics_json, trade_count,
                 trades_file, strategy_events_file, diagnostics_file,
                 strategy_diagnostics_json, accepted, rejection_reason, verdict_status,
-                verdict_summary, parent_experiment_id, timestamp, family, hypothesis,
+                verdict_summary, parent_backtest_run_id, timestamp, family, hypothesis,
                 mechanism, job, usage_json, asi_json, description
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                record.experiment_id,
+                record.run_id,
+                record.backtest_run_id,
+                record.research_round_id,
+                record.research_round_number,
+                int(record.is_baseline),
                 record.thesis_id,
                 record.config_path,
                 json_dumps_strict(record.runtime_config),
@@ -302,7 +396,7 @@ class ExperimentDB:
                 record.rejection_reason,
                 record.verdict_status,
                 record.verdict_summary,
-                record.parent_experiment_id,
+                record.parent_backtest_run_id,
                 record.timestamp,
                 record.family,
                 record.hypothesis,
@@ -328,6 +422,11 @@ class ExperimentDB:
         from trace_sdk import current_hypothesis_id, get_run_id
 
         state = read_state(state_path)
+        raw_job = state.get("job")
+        try:
+            job_id = int(raw_job)
+        except (TypeError, ValueError):
+            job_id = 0
         resolved_hypothesis_id = hypothesis_id or current_hypothesis_id() or thesis_id
         with self._connect() as conn:
             conn.execute(
@@ -338,8 +437,8 @@ class ExperimentDB:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    f"job-{state.get('job', 0)}-round-{round_number}",
-                    state.get("job"),
+                    f"job-{job_id}-round-{round_number}",
+                    job_id,
                     round_number,
                     get_run_id(),
                     resolved_hypothesis_id,
@@ -382,21 +481,53 @@ class ExperimentDB:
             result.append(payload)
         return result
 
-    def list_research_thesis_attempts(self) -> list[dict[str, Any]]:
+    def list_research_thesis_attempts(
+        self, *, job_id: int | None = None, thesis_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        where: list[str] = []
+        params: list[Any] = []
+        if job_id is not None:
+            where.append("r.job_id = ?")
+            params.append(job_id)
+        if thesis_id:
+            where.append("a.thesis_id = ?")
+            params.append(thesis_id)
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         with self._connect() as conn:
-            rows = conn.execute("""
-                SELECT research_round_id, attempt_number, thesis_id, strategy_family,
-                       config_changes_json, validator_status, mechanism_dimension,
-                       hypothesis, mechanism, rejection_reason, selected_for_execution,
-                       created_at_utc
-                FROM research_thesis_attempts ORDER BY research_round_id, attempt_number
-                """).fetchall()
+            rows = conn.execute(
+                f"""
+                SELECT a.research_round_id, a.attempt_number, a.thesis_id,
+                       a.strategy_family, a.config_changes_json, a.validator_status,
+                       a.mechanism_dimension, a.hypothesis, a.mechanism,
+                       a.thesis_details_json, a.rejection_reason, a.selected_for_execution,
+                       a.created_at_utc, r.job_id, r.round_number,
+                       r.outcome AS round_outcome, r.run_id, r.hypothesis_id,
+                       r.usage_json AS round_usage_json
+                FROM research_thesis_attempts a
+                LEFT JOIN research_rounds r
+                  ON r.research_round_id = a.research_round_id
+                {where_sql}
+                ORDER BY COALESCE(r.job_id, 0) DESC,
+                         COALESCE(r.round_number, 0) DESC,
+                         a.created_at_utc DESC,
+                         a.attempt_number DESC
+                """,
+                params,
+            ).fetchall()
         result: list[dict[str, Any]] = []
         for row in rows:
             try:
                 config_changes = json.loads(row["config_changes_json"])
             except Exception:
                 config_changes = None
+            try:
+                round_usage = json.loads(row["round_usage_json"] or "{}")
+            except Exception:
+                round_usage = {}
+            try:
+                thesis_details = json.loads(row["thesis_details_json"] or "{}")
+            except Exception:
+                thesis_details = {}
             record = {
                 "research_round_id": row["research_round_id"],
                 "attempt_number": row["attempt_number"],
@@ -407,9 +538,16 @@ class ExperimentDB:
                 "mechanism_dimension": row["mechanism_dimension"],
                 "hypothesis": row["hypothesis"],
                 "mechanism": row["mechanism"],
+                "thesis_details": thesis_details if isinstance(thesis_details, dict) else {},
                 "rejection_reason": row["rejection_reason"],
                 "selected_for_execution": row["selected_for_execution"],
                 "created_at_utc": row["created_at_utc"],
+                "job_id": row["job_id"],
+                "round_number": row["round_number"],
+                "round_outcome": row["round_outcome"],
+                "run_id": row["run_id"],
+                "hypothesis_id": row["hypothesis_id"],
+                "round_usage": round_usage,
             }
             if not record["thesis_id"] or not isinstance(config_changes, dict):
                 result.append({"_invalid": True, **record})
@@ -424,9 +562,9 @@ class ExperimentDB:
                 INSERT OR REPLACE INTO research_thesis_attempts (
                     research_round_id, attempt_number, thesis_id, strategy_family,
                     config_changes_json, validator_status, mechanism_dimension,
-                    hypothesis, mechanism, rejection_reason, selected_for_execution,
+                    hypothesis, mechanism, thesis_details_json, rejection_reason, selected_for_execution,
                     created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row["research_round_id"],
@@ -438,6 +576,7 @@ class ExperimentDB:
                     row.get("mechanism_dimension", ""),
                     row.get("hypothesis", ""),
                     row.get("mechanism", ""),
+                    json_dumps_strict(row.get("thesis_details", {})),
                     row.get("rejection_reason", ""),
                     int(row.get("selected_for_execution", 0)),
                     row.get("created_at_utc", _iso8601_utc_now()),
@@ -449,58 +588,38 @@ class ExperimentDB:
         with self._connect() as conn:
             conn.execute("DELETE FROM research_thesis_attempts")
             for row in rows:
-                if not isinstance(row, dict) or "thesis_id" not in row:
-                    conn.execute(
-                        """
-                        INSERT INTO research_thesis_attempts (
-                            research_round_id, attempt_number, thesis_id, strategy_family,
-                            config_changes_json, validator_status, mechanism_dimension,
-                            hypothesis, mechanism, rejection_reason, selected_for_execution,
-                            created_at_utc
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            row.get("research_round_id", "") if isinstance(row, dict) else "",
-                            row.get("attempt_number", 0) if isinstance(row, dict) else 0,
-                            "",
-                            row.get("strategy_family", "") if isinstance(row, dict) else "",
-                            json_dumps_strict(row),
-                            row.get("validator_status", "") if isinstance(row, dict) else "",
-                            row.get("mechanism_dimension", "") if isinstance(row, dict) else "",
-                            row.get("hypothesis", "") if isinstance(row, dict) else "",
-                            row.get("mechanism", "") if isinstance(row, dict) else "",
-                            row.get("rejection_reason", "") if isinstance(row, dict) else "",
-                            0,
-                            (
-                                row.get("created_at_utc", _iso8601_utc_now())
-                                if isinstance(row, dict)
-                                else _iso8601_utc_now()
-                            ),
-                        ),
-                    )
-                    continue
+                invalid = not isinstance(row, dict) or "thesis_id" not in row
+                r = row if isinstance(row, dict) else {}
+                thesis_id = "" if invalid else r.get("thesis_id", "")
+                config_changes = (
+                    json_dumps_strict(row)
+                    if invalid
+                    else json_dumps_strict(r.get("config_changes", {}))
+                )
+                selected = 0 if invalid else int(r.get("selected_for_execution", 0))
                 conn.execute(
                     """
                     INSERT INTO research_thesis_attempts (
                         research_round_id, attempt_number, thesis_id, strategy_family,
                         config_changes_json, validator_status, mechanism_dimension,
-                        hypothesis, mechanism, rejection_reason, selected_for_execution,
+                        hypothesis, mechanism, thesis_details_json, rejection_reason, selected_for_execution,
                         created_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        row.get("research_round_id", ""),
-                        row.get("attempt_number", 0),
-                        row.get("thesis_id", ""),
-                        row.get("strategy_family", ""),
-                        json_dumps_strict(row.get("config_changes", {})),
-                        row.get("validator_status", ""),
-                        row.get("mechanism_dimension", ""),
-                        row.get("hypothesis", ""),
-                        row.get("mechanism", ""),
-                        row.get("rejection_reason", ""),
-                        int(row.get("selected_for_execution", 0)),
-                        row.get("created_at_utc", _iso8601_utc_now()),
+                        r.get("research_round_id", ""),
+                        r.get("attempt_number", 0),
+                        thesis_id,
+                        r.get("strategy_family", ""),
+                        config_changes,
+                        r.get("validator_status", ""),
+                        r.get("mechanism_dimension", ""),
+                        r.get("hypothesis", ""),
+                        r.get("mechanism", ""),
+                        json_dumps_strict(r.get("thesis_details", {})),
+                        r.get("rejection_reason", ""),
+                        selected,
+                        r.get("created_at_utc", _iso8601_utc_now()),
                     ),
                 )
             conn.commit()
@@ -535,61 +654,91 @@ class ExperimentDB:
         self._save()
 
     def read_results(self) -> list[Any]:
-        from autoresearch_state import ExperimentRecord
+        from autoresearch_state import BacktestResultRecord
 
         primary_metric_name = self.primary_metric_name()
-        results: list[ExperimentRecord] = []
+        results: list[BacktestResultRecord] = []
         for record in self.all():
             metric = record.validation_metrics.get(primary_metric_name)
             if metric is None:
                 metric = record.train_metrics.get(primary_metric_name, 0.0)
+            artifact_dir = _artifact_dir_from_files(
+                (
+                    record.trades_file,
+                    record.strategy_events_file,
+                    record.diagnostics_file,
+                )
+            )
             results.append(
-                ExperimentRecord(
+                BacktestResultRecord(
                     config=record.config_path,
                     metric=_coerce_metric_float(metric),
                     status="keep" if record.accepted else "discard",
                     description=f"strict-native loop: {Path(record.config_path).stem}",
                     timestamp=record.timestamp or "1970-01-01T00:00:00+00:00",
-                    asi={"config": record.config_path, "thesis_id": record.thesis_id},
+                    asi={
+                        "config": record.config_path,
+                        "thesis_id": record.thesis_id,
+                        "research_round_id": record.research_round_id,
+                        "research_round_number": record.research_round_number,
+                        "backtest_run_id": record.backtest_run_id or record.run_id,
+                        "artifact_dir": artifact_dir,
+                        "trade_analysis": {
+                            **dict(record.validation_metrics),
+                            "verdict": {
+                                "status": record.verdict_status,
+                                "summary": record.verdict_summary,
+                            },
+                        },
+                        "trades_file": record.trades_file,
+                        "strategy_events_file": record.strategy_events_file,
+                        "diagnostics_file": record.diagnostics_file,
+                        "strategy_diagnostics": record.strategy_diagnostics,
+                    },
                     job=record.job,
                 )
             )
         return results
 
-    def _load(self) -> list[ExperimentResult]:
+    def reload(self) -> None:
+        """Invalidate the in-memory cache so the next call re-reads from SQLite."""
+        self._records = None
+
+    def _load(self) -> list[BacktestRunRecord]:
         if self._records is not None:
             return self._records
         with self._connect() as conn:
             rows = conn.execute("""
-                SELECT experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+                SELECT run_id, backtest_run_id, research_round_id, research_round_number,
+                       is_baseline, thesis_id, config_path, runtime_config_json, code_commit,
                        data_hash, train_metrics_json, validation_metrics_json, trade_count,
                        trades_file, strategy_events_file, diagnostics_file,
                        strategy_diagnostics_json, accepted, rejection_reason, verdict_status,
-                       verdict_summary, parent_experiment_id, timestamp, family, hypothesis,
+                       verdict_summary, parent_backtest_run_id, timestamp, family, hypothesis,
                        mechanism, job, usage_json, asi_json, description
-                FROM experiments
+                FROM backtest_runs
                 """).fetchall()
         self._records = []
         for row in rows:
-            record = ExperimentResult(
-                experiment_id=row["experiment_id"],
+            record = BacktestRunRecord(
+                run_id=row["run_id"],
                 thesis_id=row["thesis_id"],
                 config_path=row["config_path"],
-                runtime_config=json.loads(row["runtime_config_json"]),
+                runtime_config=_load_json_object(row["runtime_config_json"]),
                 code_commit=row["code_commit"],
                 data_hash=row["data_hash"],
-                train_metrics=json_loads_metric_sentinels(row["train_metrics_json"]),
-                validation_metrics=json_loads_metric_sentinels(row["validation_metrics_json"]),
+                train_metrics=_load_metric_json(row["train_metrics_json"]),
+                validation_metrics=_load_metric_json(row["validation_metrics_json"]),
                 trade_count=row["trade_count"],
                 trades_file=row["trades_file"],
                 strategy_events_file=row["strategy_events_file"],
                 diagnostics_file=row["diagnostics_file"],
-                strategy_diagnostics=json.loads(row["strategy_diagnostics_json"]),
+                strategy_diagnostics=_load_json_object(row["strategy_diagnostics_json"]),
                 accepted=bool(row["accepted"]),
                 rejection_reason=row["rejection_reason"],
                 verdict_status=row["verdict_status"],
                 verdict_summary=row["verdict_summary"],
-                parent_experiment_id=row["parent_experiment_id"],
+                parent_backtest_run_id=row["parent_backtest_run_id"],
                 timestamp=coerce_timestamp_to_iso8601_utc(row["timestamp"])
                 or (
                     coerce_timestamp_to_iso8601_utc(int(row["timestamp"]))
@@ -600,9 +749,13 @@ class ExperimentDB:
                 hypothesis=row["hypothesis"],
                 mechanism=row["mechanism"],
                 job=row["job"],
-                usage=json.loads(row["usage_json"]),
+                usage=_load_json_object(row["usage_json"]),
+                backtest_run_id=row["backtest_run_id"],
+                research_round_id=row["research_round_id"],
+                research_round_number=row["research_round_number"],
+                is_baseline=bool(row["is_baseline"]),
             )
-            setattr(record, "_asi_export", json.loads(row["asi_json"]))
+            setattr(record, "_asi_export", _load_json_object(row["asi_json"]))
             setattr(record, "_description_export", row["description"])
             self._records.append(record)
         return self._records
@@ -610,18 +763,18 @@ class ExperimentDB:
     def _save(self) -> None:
         records = self._load()
         with self._connect() as conn:
-            conn.execute("DELETE FROM experiments")
+            conn.execute(f"DELETE FROM {BACKTEST_RUNS_TABLE}")
             for r in records:
                 self._write_record(conn, r)
             conn.commit()
 
-    def add(self, result: ExperimentResult) -> None:
-        """Add an experiment result. Deduplicates by experiment_id."""
+    def add(self, result: BacktestRunRecord) -> None:
+        """Add a backtest-run result. Deduplicates by run_id."""
         records = self._load()
         export_asi = getattr(result, "_asi_export", None)
         export_description = getattr(result, "_description_export", None)
-        # Replace if same experiment_id exists (re-run)
-        records = [r for r in records if r.experiment_id != result.experiment_id]
+        # Replace if same run_id exists (re-run)
+        records = [r for r in records if r.run_id != result.run_id]
         records.append(result)
         if export_asi is not None:
             setattr(records[-1], "_asi_export", export_asi)
@@ -632,19 +785,19 @@ class ExperimentDB:
             self._write_record(conn, records[-1])
             conn.commit()
 
-    def get(self, experiment_id: str) -> ExperimentResult | None:
+    def get(self, run_id: str) -> BacktestRunRecord | None:
         for r in self._load():
-            if r.experiment_id == experiment_id:
+            if r.run_id == run_id:
                 return r
         return None
 
-    def get_by_thesis(self, thesis_id: str) -> list[ExperimentResult]:
+    def get_by_thesis(self, thesis_id: str) -> list[BacktestRunRecord]:
         return [r for r in self._load() if r.thesis_id == thesis_id]
 
-    def all(self) -> list[ExperimentResult]:
+    def all(self) -> list[BacktestRunRecord]:
         return list(self._load())
 
-    def latest(self, n: int = 1) -> list[ExperimentResult]:
+    def latest(self, n: int = 1) -> list[BacktestRunRecord]:
         records = self._load()
         # Sort by epoch-ms equivalent so a mixed-format DB (legacy int
         # rows that have not been re-saved yet) still orders correctly.
@@ -652,11 +805,24 @@ class ExperimentDB:
             records, key=lambda r: coerce_timestamp_to_epoch_ms(r.timestamp), reverse=True
         )[:n]
 
-    def accepted_experiments(self) -> list[ExperimentResult]:
+    def max_job_id(self) -> int:
+        with self._connect() as conn:
+            experiment_row = conn.execute(
+                f"SELECT COALESCE(MAX(job), 0) FROM {BACKTEST_RUNS_TABLE}"
+            ).fetchone()
+            research_row = conn.execute(
+                "SELECT COALESCE(MAX(job_id), 0) FROM research_rounds"
+            ).fetchone()
+        experiment_job = int(experiment_row[0] or 0) if experiment_row else 0
+        research_job = int(research_row[0] or 0) if research_row else 0
+        return max(experiment_job, research_job)
+
+    def accepted_backtest_runs(self) -> list[BacktestRunRecord]:
         return [r for r in self._load() if r.accepted]
 
-    def best_by_metric(self, metric: str) -> ExperimentResult | None:
-        records = self._load()
+    def best_by_metric(self, metric: str) -> BacktestRunRecord | None:
+        records = [r for r in self._load() if is_metric_rankable_backtest_run(r)]
+        direction = self.best_direction()
         best = None
         for r in records:
             val = r.validation_metrics.get(metric)
@@ -670,7 +836,11 @@ class ExperimentDB:
             best_val = best.validation_metrics.get(metric)
             if best_val is None:
                 best_val = best.train_metrics.get(metric)
-            if val > best_val:
+            candidate = _coerce_metric_float(val)
+            best_candidate = _coerce_metric_float(best_val)
+            if direction == "higher" and candidate > best_candidate:
+                best = r
+            elif direction != "higher" and candidate < best_candidate:
                 best = r
         return best
 
@@ -678,7 +848,7 @@ class ExperimentDB:
         """Format all results as a structured table for the conductor."""
         records = self._load()
         if not records:
-            return "No experiments in database yet."
+            return "No backtest runs in database yet."
         primary_metric_name = self.primary_metric_name()
         lines: list[str] = []
         for r in records:
@@ -705,9 +875,9 @@ class ExperimentDB:
                 rb = sd["rejection_breakdown"]
                 top = sorted(rb.items(), key=lambda x: x[1], reverse=True)[:2]
                 parts.append(f"top_rejections={dict(top)}")
-            lines.append(f"  - {r.thesis_id} ({r.experiment_id[:8]}): {' | '.join(parts)}")
-            if r.parent_experiment_id:
-                lines.append(f"    parent: {r.parent_experiment_id[:8]}")
+            lines.append(f"  - {r.thesis_id} ({r.run_id[:8]}): {' | '.join(parts)}")
+            if r.parent_backtest_run_id:
+                lines.append(f"    parent: {r.parent_backtest_run_id[:8]}")
         return "\n".join(lines)
 
     def count(self) -> int:
@@ -891,13 +1061,13 @@ def build_data_hash(config: dict[str, Any]) -> str:
     return _config_hash(data_fields)
 
 
-def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:
+def _entry_to_record(entry: dict[str, Any]) -> BacktestRunRecord | None:
     if entry.get("type") in ("config", "research_round"):
         return None
     asi = entry.get("asi") or {}
     metrics = json_loads_metric_sentinels(json.dumps(entry.get("metrics") or {}))
     primary_metric_name = entry.get("primary_metric_name") or metrics.get(
-        "primary_metric_name", "median_expectancy"
+        "primary_metric_name", "profit_factor"
     )
     if primary_metric_name not in metrics and entry.get("metric") is not None:
         metrics[primary_metric_name] = entry.get("metric")
@@ -905,8 +1075,8 @@ def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:
     for k, v in trade_analysis.items():
         if k not in metrics and isinstance(v, (int, float)):
             metrics[k] = v
-    record = ExperimentResult(
-        experiment_id=entry.get("experiment_id") or entry.get("run_id", ""),
+    record = BacktestRunRecord(
+        run_id=entry.get("run_id", ""),
         thesis_id=asi.get("thesis_id") or Path(asi.get("config", "")).stem,
         config_path=asi.get("config", ""),
         runtime_config={},
@@ -929,6 +1099,10 @@ def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:
         mechanism=entry.get("mechanism", ""),
         job=entry.get("job", 0),
         usage=entry.get("usage", {}),
+        backtest_run_id=entry.get("backtest_run_id") or entry.get("run_id", ""),
+        research_round_id=entry.get("research_round_id", ""),
+        research_round_number=int(entry.get("research_round_number", -1) or -1),
+        is_baseline=bool(entry.get("is_baseline", False)),
     )
     setattr(record, "_asi_export", asi)
     setattr(record, "_description_export", entry.get("description", ""))
@@ -936,7 +1110,7 @@ def _entry_to_record(entry: dict[str, Any]) -> ExperimentResult | None:
 
 
 def _record_to_entry(
-    record: ExperimentResult, run: int, primary_metric_name: str
+    record: BacktestRunRecord, run: int, primary_metric_name: str
 ) -> dict[str, Any]:
     primary_metric_value = record.validation_metrics.get(primary_metric_name)
     if primary_metric_value is None:
@@ -951,10 +1125,14 @@ def _record_to_entry(
         "trade_analysis": {},
     }
     return {
+        "type": "backtest_run",
         "run": run,
         "job": record.job,
-        "run_id": record.experiment_id,
-        "experiment_id": record.experiment_id,
+        "run_id": record.run_id,
+        "backtest_run_id": record.backtest_run_id or record.run_id,
+        "research_round_id": record.research_round_id,
+        "research_round_number": record.research_round_number,
+        "is_baseline": record.is_baseline,
         "commit": record.code_commit,
         "metric": _coerce_metric_float(primary_metric_value),
         "primary_metric_name": primary_metric_name,

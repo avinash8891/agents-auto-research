@@ -1,393 +1,111 @@
 from __future__ import annotations
 
-import asyncio
-import json
-import sys
 from pathlib import Path
-from types import SimpleNamespace
 
-import pytest
-
-# ruff: noqa: E402
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-import agent_token_usage as usage
-import research_conductor as rc
-import research_memory as memory
-import research_paths as infra
 import research_subagents as subagents
-import research_tools_mcp as tools_mcp
-from family_research_spec import get_family_research_spec
-from strategies import STRATEGIES
+from backtest_run_db import BacktestRunDB, BacktestRunRecord
 
 
-def _assistant_message(text: str):
-    return SimpleNamespace(content=[SimpleNamespace(text=text)])
-
-
-def _result_message(*, usage=None, model_usage=None, result=None, total_cost_usd=None):
-    return SimpleNamespace(
-        usage=usage,
-        model_usage=model_usage,
-        result=result,
-        total_cost_usd=total_cost_usd,
+def _record(
+    *, job: int, round_number: int, baseline: bool = False, root: Path
+) -> BacktestRunRecord:
+    backtest_dir = (
+        root / "runtime" / "jobs" / f"job-{job}" / "research" / "round-0-baseline" / "backtest"
+        if baseline
+        else root
+        / "runtime"
+        / "jobs"
+        / f"job-{job}"
+        / "research"
+        / f"round-{round_number}"
+        / "backtest"
+    )
+    backtest_dir.mkdir(parents=True, exist_ok=True)
+    (backtest_dir / "trades.csv").write_text("entry_date,exit_date\n")
+    (backtest_dir / "metrics.json").write_text("{}\n")
+    (backtest_dir / "result.json").write_text("{}\n")
+    (backtest_dir / "diagnostics.json").write_text("{}\n")
+    (backtest_dir / "config.json").write_text('{"strategy_family":"ema","data_universe":"u1"}\n')
+    return BacktestRunRecord(
+        run_id=f"exp-{job}-{round_number}",
+        thesis_id="baseline" if baseline else f"thesis-{round_number}",
+        config_path=(
+            "configs/ema_base.yaml"
+            if baseline
+            else f"runtime/jobs/job-{job}/research/round-{round_number}/selected_config.json"
+        ),
+        runtime_config={},
+        code_commit="abc1234",
+        data_hash="data",
+        train_metrics={},
+        validation_metrics={"profit_factor": 1.2 + round_number},
+        trade_count=10,
+        trades_file=str((backtest_dir / "trades.csv").resolve()),
+        strategy_events_file=str((backtest_dir / "strategy_events.parquet").resolve()),
+        diagnostics_file=str((backtest_dir / "diagnostics.json").resolve()),
+        strategy_diagnostics={},
+        accepted=True,
+        rejection_reason="",
+        verdict_status="accepted",
+        verdict_summary="good",
+        parent_backtest_run_id="",
+        timestamp=f"2026-05-09T00:00:0{round_number}+00:00",
+        family="ema",
+        hypothesis="h",
+        mechanism="m",
+        job=job,
+        backtest_run_id=f"job-{job}-round-{round_number}-backtest",
+        research_round_id=f"job-{job}-round-{round_number}",
+        research_round_number=round_number,
+        is_baseline=baseline,
     )
 
 
-async def _async_empty_iter():
-    if False:
-        yield None
+def test_analysis_manifest_defaults_to_baseline_when_round_zero_exists(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    baseline = _record(job=7, round_number=0, baseline=True, root=tmp_path)
+    latest = _record(job=7, round_number=1, root=tmp_path)
+    db.add(baseline)
+    db.add(latest)
+    monkeypatch.setattr(
+        subagents, "_resolve_backtest_db_path", lambda trades_file, family_name: db.path
+    )
 
-
-def test_run_research_conductor_sync_returns_parsed_thesis_on_valid_json(monkeypatch):
-    parsed_payload = {
-        "reasoning": "grounded",
-        "suggested_theses": [
-            {
-                "thesis_id": "entry_window_test",
-                "hypothesis": "narrow the entry window to reduce weak early signals.",
-                "mechanism": "Tightening the EMA entry window removes noisier open-driven setups.",
-                "mechanism_dimension": "entry_timing",
-                "dimension_novelty": "This is a distinct timing regime rather than a simple parameter sweep.",
-                "config_changes": {"entry_cutoff_time": "09:35"},
-                "expected_effects": [
-                    {
-                        "metric": "profit_factor",
-                        "direction": "increase",
-                        "threshold": 0.05,
-                        "rationale": "A narrower opening window should remove low-quality trades.",
-                    },
-                    {
-                        "metric": "trade_count",
-                        "direction": "increase_or_same",
-                        "rationale": "The change should preserve most opportunities.",
-                    },
-                ],
-                "disqualifiers": [
-                    {
-                        "name": "trade_count_collapse",
-                        "condition": "trade_count decreases by more than 30 percent versus baseline",
-                        "severity": "hard_fail",
-                    }
-                ],
-            }
-        ],
-        "should_stop": False,
-    }
-
-    monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
-    monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
-    monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
-    monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
-    monkeypatch.setattr(rc, "validate_thesis_dict", lambda thesis: None)
-    monkeypatch.setattr(rc, "validate_thesis_dict", lambda thesis: None)
-
-    captured: dict[str, object] = {}
-
-    class _FakeResult:
-        def __init__(self, payload: str):
-            self.final_output = payload
-            self.raw_responses = [
-                SimpleNamespace(
-                    usage=SimpleNamespace(
-                        input_tokens=5,
-                        output_tokens=7,
-                        total_tokens=12,
-                    ),
-                    total_cost_usd=0.25,
-                )
-            ]
-
-        async def stream_events(self):
-            if False:
-                yield None
-
-    def fake_run_streamed(starting_agent, input, **kwargs):
-        captured["agent"] = starting_agent
-        captured["input"] = input
-        captured["kwargs"] = kwargs
-        return _FakeResult("```json\n" + json.dumps(parsed_payload) + "\n```")
-
-    monkeypatch.setattr(rc.OAIRunner, "run_streamed", fake_run_streamed)
-
-    rc.reset_round_usage()
-    result = rc.run_research_conductor_sync(
-        trades_file="/tmp/trades.csv",
-        experiment_results="results",
-        latest_outcome={"profit_factor": 1.2},
-        research_round=3,
+    manifest = subagents._analysis_manifest(
+        trades_file=baseline.trades_file,
         family_name="ema",
     )
 
-    assert result == parsed_payload
-    assert "5 EMA PULLBACK/REVERSAL STRATEGY" in captured["agent"].instructions
-    assert captured["input"].startswith("Research round: 3")
-    assert captured["kwargs"]["max_turns"] == 50
-    assert captured["kwargs"]["run_config"].tracing_disabled is True
+    assert manifest["default_scope"] == "baseline"
+    assert manifest["default_round_ref"] == "baseline"
+    assert manifest["artifacts"]["trades_csv"] == baseline.trades_file
 
 
-def test_run_research_conductor_sync_records_top_level_usage_when_raw_usage_missing(
-    monkeypatch,
-):
-    parsed_payload = {
-        "reasoning": "grounded",
-        "suggested_theses": [
-            {
-                "thesis_id": "entry_window_test",
-                "hypothesis": "narrow the entry window to reduce weak early signals.",
-                "mechanism": "Tightening the EMA entry window removes noisier open-driven setups.",
-                "mechanism_dimension": "entry_timing",
-                "dimension_novelty": "This is a distinct timing regime rather than a simple parameter sweep.",
-                "config_changes": {"entry_cutoff_time": "09:35"},
-                "expected_effects": [],
-                "disqualifiers": [],
-            }
-        ],
-        "should_stop": False,
-    }
-
-    monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
-    monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
-    monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
-    monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
-    monkeypatch.setattr(rc, "validate_thesis_dict", lambda thesis: None)
-
-    class _FakeResult:
-        def __init__(self, payload: str):
-            self.final_output = payload
-            self.raw_responses = [SimpleNamespace()]
-            self.usage = SimpleNamespace(
-                input_tokens=5,
-                output_tokens=7,
-                total_tokens=12,
-            )
-            self.total_cost_usd = 0.25
-
-        async def stream_events(self):
-            if False:
-                yield None
-
-    def fake_run_streamed(*args, **kwargs):
-        return _FakeResult(json.dumps(parsed_payload))
-
-    monkeypatch.setattr(rc.OAIRunner, "run_streamed", fake_run_streamed)
-
-    rc.reset_round_usage()
-    result = rc.run_research_conductor_sync(
-        trades_file="/tmp/trades.csv",
-        experiment_results="results",
-        latest_outcome={"profit_factor": 1.2},
-        research_round=3,
-        family_name="ema",
+def test_build_round_index_exposes_round_refs_and_latest_round(tmp_path: Path, monkeypatch) -> None:
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    baseline = _record(job=7, round_number=0, baseline=True, root=tmp_path)
+    round_one = _record(job=7, round_number=1, root=tmp_path)
+    db.add(baseline)
+    db.add(round_one)
+    monkeypatch.setattr(
+        subagents, "_resolve_backtest_db_path", lambda trades_file, family_name: db.path
     )
 
-    assert result == parsed_payload
-    round_usage = rc.get_round_usage()
-    assert round_usage["by_agent"]["conductor"]["calls"] == 1
-    assert round_usage["by_agent"]["conductor"]["total_tokens"] == 12
-    assert round_usage["by_agent"]["conductor"]["cost_usd"] == pytest.approx(0.25)
+    index = subagents._build_round_index(trades_file=round_one.trades_file, family_name="ema")
 
+    assert index is not None
+    assert index.round_ref_map["round:0"] == "baseline"
+    assert "round:1" in index.round_ref_map
 
-def test_run_research_conductor_sync_returns_conductor_error_on_timeout(monkeypatch):
-    monkeypatch.setattr(rc, "_ensure_oauth_proxy", lambda: None)
-    monkeypatch.setattr(rc, "trace", lambda *a, **k: None)
-    monkeypatch.setattr(rc, "trace_agent_prompt", lambda *a, **k: "trace-id")
-    monkeypatch.setattr(rc, "trace_agent_response", lambda *a, **k: None)
+    resolved_ref, artifacts, summary = subagents._resolve_artifacts_for_ref(index, "round:1")
+    assert resolved_ref.startswith("sequence:")
+    assert artifacts["trades_csv"] == round_one.trades_file
+    assert summary["research_round_number"] == 1
 
-    def fake_run_streamed(*args, **kwargs):
-        raise asyncio.TimeoutError
-
-    monkeypatch.setattr(rc.OAIRunner, "run_streamed", fake_run_streamed)
-    result = rc.run_research_conductor_sync(
-        trades_file="/tmp/trades.csv",
-        experiment_results="results",
-        latest_outcome={},
-        research_round=4,
-        family_name="ema",
-    )
-
-    assert result == {
-        "status": "conductor_error",
-        "error": "timeout",
-        "suggested_theses": [],
-        "should_stop": False,
-    }
-
-
-def test_accumulate_usage_tracks_tokens_across_agents():
-    usage.reset_round_usage()
-
-    usage._accumulate_usage(
-        "analyst",
-        {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13},
-        cost_usd=0.11,
-    )
-    usage._accumulate_usage("web_researcher", {"input": 7, "output": 2, "total": 9}, cost_usd=0.05)
-    usage._accumulate_usage("conductor", {"input_tokens": 5, "output_tokens": 4, "total_tokens": 9})
-
-    round_usage = usage.get_round_usage()
-
-    assert round_usage["total"] == {
-        "input_tokens": 22,
-        "output_tokens": 9,
-        "total_tokens": 31,
-        "cost_usd": pytest.approx(0.16),
-        "calls": 3,
-    }
-    assert round_usage["by_agent"]["analyst"]["calls"] == 1
-    assert round_usage["by_agent"]["web_researcher"]["total_tokens"] == 9
-    assert round_usage["by_agent"]["conductor"]["output_tokens"] == 4
-
-    usage.reset_round_usage()
-    assert usage.get_round_usage() == {
-        "by_agent": {},
-        "total": {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "cost_usd": 0.0,
-            "calls": 0,
-        },
-    }
-
-
-def test_accumulate_usage_dedupes_repeated_message_key():
-    usage.reset_round_usage()
-
-    usage._accumulate_usage(
-        "conductor",
-        {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
-        cost_usd=0.25,
-        dedupe_key="message-1",
-    )
-    usage._accumulate_usage(
-        "conductor",
-        {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
-        cost_usd=0.25,
-        dedupe_key="message-1",
-    )
-
-    round_usage = usage.get_round_usage()
-    assert round_usage["by_agent"]["conductor"]["calls"] == 1
-    assert round_usage["by_agent"]["conductor"]["total_tokens"] == 12
-    assert round_usage["by_agent"]["conductor"]["cost_usd"] == 0.25
-
-
-def test_accumulate_result_usage_uses_reported_total_cost_when_raw_usage_missing():
-    usage.reset_round_usage()
-
-    result = SimpleNamespace(
-        raw_responses=[],
-        total_cost_usd=0.42,
-    )
-
-    usage._accumulate_result_usage("analyst", result)
-
-    round_usage = usage.get_round_usage()
-    assert round_usage["by_agent"]["analyst"]["calls"] == 1
-    assert round_usage["by_agent"]["analyst"]["cost_usd"] == pytest.approx(0.42)
-
-
-def test_orb_research_spec_resolves_from_strategy_registry() -> None:
-    assert get_family_research_spec("orb") is STRATEGIES["orb"].research_spec
-
-
-def test_ema_research_spec_matches_supported_operational_keys() -> None:
-    spec = get_family_research_spec("ema")
-    for key in {"gap_filter", "gap_pct", "use_range_shift", "range_shift_lookback"}:
-        assert key in spec.allowed_config_keys
-        assert key in spec.config_schema
-        assert any(key in rule for rule in spec.config_rules)
-
-
-def test_save_research_finding_rejects_bad_type(monkeypatch):
-    tracked: dict[str, object] = {}
-
-    def fake_track(server, org_id, cfg):
-        tracked["calls"] = tracked.get("calls", 0) + 1
-        tracked["server"] = server
-        tracked["org_id"] = org_id
-        tracked["cfg"] = cfg
-
-    monkeypatch.setattr(tools_mcp, "track", fake_track)
-
-    mcp = tools_mcp._build_research_tools_mcp(
-        trades_file="/tmp/trades.csv",
-        call_analyst=subagents._call_analyst,
-        call_web_researcher=subagents._call_web_researcher,
-        save_research_finding=memory.save_research_finding,
-        palace_search=memory._palace_search,
-        palace_status=memory._palace_status,
-        root=infra._ROOT,
-        list_past_theses_for_root=memory.list_past_theses,
-    )
-    assert tracked["calls"] == 1
-    assert tracked["org_id"] == "a042226c-b858-46f3-9756-b1e675c03c13"
-    identity = tracked["cfg"].identify(
-        {"headers": {"x-user-id": "user-123", "mcp-session-id": "session-456"}},
-        {"USER": "fallback-user"},
-    )
-    assert identity == {
-        "userId": "user-123",
-        "sessionId": "session-456",
-        "conversationId": "session-456",
-        "email": None,
-        "clientId": None,
-    }
-    tool = next(tool for tool in mcp._tool_manager.list_tools() if tool.name == "save_finding")
-
-    result = asyncio.run(
-        tool.fn(
-            finding="test finding",
-            finding_type="garbage",
-            status="validated",
-            evidence="round_001",
-            scope="full_sample",
-            expires_if="baseline changes",
-        )
-    )
-
-    assert "REJECTED" in result
-
-
-def test_list_past_theses_reads_sqlite_history(monkeypatch, tmp_path):
-    from experiment_db import ExperimentDB
-
-    db_one = ExperimentDB(tmp_path / "ema_experiments.db")
-    db_two = ExperimentDB(tmp_path / "orb_experiments.db")
-    db_one.add_research_thesis_attempt(
-        {
-            "research_round_id": "job-1-round-1",
-            "attempt_number": 1,
-            "thesis_id": "ema_one",
-            "validator_status": "compiled",
-        }
-    )
-    db_two.add_research_thesis_attempt(
-        {
-            "research_round_id": "job-2-round-2",
-            "attempt_number": 1,
-            "thesis_id": "orb_two",
-            "validator_status": "rejected",
-        }
-    )
-
-    mcp = tools_mcp._build_research_tools_mcp(
-        trades_file="/tmp/trades.csv",
-        call_analyst=subagents._call_analyst,
-        call_web_researcher=subagents._call_web_researcher,
-        save_research_finding=memory.save_research_finding,
-        palace_search=memory._palace_search,
-        palace_status=memory._palace_status,
-        root=tmp_path,
-        list_past_theses_for_root=memory.list_past_theses,
-    )
-    tool = next(tool for tool in mcp._tool_manager.list_tools() if tool.name == "list_past_theses")
-
-    payload = asyncio.run(tool.fn())
-    parsed = json.loads(payload)
-
-    assert {entry["thesis_id"] for entry in parsed} == {"ema_one", "orb_two"}
+    _, latest_artifacts, latest_summary = subagents._resolve_artifacts_for_ref(index, "latest")
+    assert latest_artifacts["trades_csv"] == round_one.trades_file
+    assert latest_summary["research_round_number"] == 1

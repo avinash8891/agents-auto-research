@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import sys
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -13,14 +14,7 @@ class StrategyFamily:
     name: str
     benchmark_script: str
     description_for_research: str = ""
-    proposals_dirname: str = "proposals"
-    compilations_dirname: str = "compilations"
-    contracts_dirname: str = "contracts"
-    run_queue_dirname: str = "run-queue"
-    research_dirname: str = "research"
-    builder_requests_dirname: str = "builder-requests"
     base_config_filename: str = "base.yaml"
-    runs_dirname: str = "autoresearch-runs"
     discord_webhook: str = ""
     # Family-aware variant config conventions. Variant config files live
     # at `configs/variants/{variant_prefix}{slug}.yaml`. Default variants
@@ -52,7 +46,7 @@ class StrategyFamily:
 
     def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
         config_path_str = str(config_path)
-        python_bin = os.environ.get("AUTORESEARCH_PYTHON_BIN", "python3")
+        python_bin = os.environ.get("AUTORESEARCH_PYTHON_BIN", sys.executable)
         cmd = (
             f"{shlex.quote(python_bin)} -m backtest.runner --strategy {shlex.quote(self.name)} "
             f"--config {shlex.quote(config_path_str)}"
@@ -84,14 +78,7 @@ def _families() -> dict[str, StrategyFamily]:
             name=name,
             benchmark_script=strategy.benchmark_script or f"backtest_{name}.py",
             description_for_research=strategy.description_for_research,
-            proposals_dirname=strategy.family_dirnames.proposals,
-            compilations_dirname=strategy.family_dirnames.compilations,
-            contracts_dirname=strategy.family_dirnames.contracts,
-            run_queue_dirname=strategy.family_dirnames.run_queue,
-            research_dirname=strategy.family_dirnames.research,
-            builder_requests_dirname=strategy.family_dirnames.builder_requests,
             base_config_filename=strategy.family_dirnames.base_config_filename,
-            runs_dirname=strategy.family_dirnames.runs,
             discord_webhook=_discord_webhook_for(name),
             variant_prefix=strategy.family_dirnames.variant_prefix,
             default_variants=strategy.default_variants,

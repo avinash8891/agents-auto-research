@@ -59,7 +59,7 @@ Important rule:
 ## Required tables
 
 Implement these tables only:
-1. `experiments`
+1. `backtest_runs`
 2. `research_rounds`
 3. `research_thesis_attempts`
 4. `baseline_checkpoints`
@@ -74,7 +74,7 @@ When a research round starts:
 3. if validator rejects it, update that attempt row with `validator_status = rejected`
 4. if conductor retries with a new thesis in the same round, create a new attempt row
 5. if one thesis is accepted for execution, mark that attempt row with `selected_for_execution = 1`
-6. only then create an `experiments` row when a backtest actually runs
+6. only then create a `backtest_runs` row when a backtest actually runs
 
 This preserves the real workflow:
 - one round
@@ -91,7 +91,7 @@ This preserves the real workflow:
 - add deterministic migration-safe ids where needed
 
 ### Phase 2 — Canonical write path
-- write experiments directly to SQLite
+- write backtest runs directly to SQLite
 - write research rounds directly to SQLite
 - write thesis attempts directly to SQLite
 - write baseline checkpoints directly to SQLite

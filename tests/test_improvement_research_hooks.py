@@ -20,6 +20,7 @@ from autoresearch_constants import (
     ENV_IMPROVEMENT_HALO,
     ENV_IMPROVEMENT_HALO_APPLY,
     ENV_IMPROVEMENT_RATCHET,
+    ENV_IMPROVEMENT_RECURSIVE_IMPROVE,
     ENV_IMPROVEMENT_REFLEXION,
 )
 
@@ -28,6 +29,7 @@ _IMPROVEMENT_MODULES = (
     "improvement_halo_apply",
     "improvement_ratchet",
     "improvement_reflexion",
+    "improvement_recursive_improve",
     "eval_harness",
     "eval_metrics",
 )
@@ -40,6 +42,7 @@ def _all_flags_off(monkeypatch):
         ENV_IMPROVEMENT_HALO_APPLY,
         ENV_IMPROVEMENT_RATCHET,
         ENV_IMPROVEMENT_REFLEXION,
+        ENV_IMPROVEMENT_RECURSIVE_IMPROVE,
     ):
         monkeypatch.delenv(env, raising=False)
     yield
@@ -77,9 +80,35 @@ def test_flag_off_does_not_import_improvement_modules(tmp_path):
         "improvement_halo_apply",
         "improvement_ratchet",
         "improvement_reflexion",
+        "improvement_recursive_improve",
     }
     leaked_forbidden = [m for m in leaked if m in forbidden]
     assert not leaked_forbidden, (
         f"flag-off path eagerly imported gated modules: {leaked_forbidden}. "
         f"This breaks the byte-identical guarantee — gate the import behind the flag check."
     )
+
+
+def test_recursive_improve_flag_runs_scheduled_report(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_RECURSIVE_IMPROVE, "1")
+    from autoresearch_research import _run_improvement_hooks
+
+    calls = []
+
+    def fake_run(root, *, research_round, job):
+        calls.append((root, research_round, job))
+        return SimpleNamespace(
+            status="prepared",
+            output_dir=tmp_path / "improvement_reports" / "recursive_improve",
+            reason="",
+        )
+
+    monkeypatch.setattr(
+        "improvement_recursive_improve.run_scheduled_recursive_improve_reports",
+        fake_run,
+    )
+    controller = SimpleNamespace(root=tmp_path, read_state=lambda: {"job": 22})
+
+    _run_improvement_hooks(controller, research_round=10, result={})
+
+    assert calls == [(tmp_path, 10, 22)]

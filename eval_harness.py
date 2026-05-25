@@ -94,15 +94,12 @@ def _default_task_runner(task: HoldoutTask, controller_root: Path) -> TaskOutcom
     from strategy_family import load_family
 
     family = load_family(task.family)
-    state_path, current_md_path, ideas_md_path, runs_dir = default_controller_paths(
-        controller_root, family
-    )
+    state_path, current_md_path, jobs_root = default_controller_paths(controller_root, family)
     controller = AutoresearchController(
         root=controller_root,
         state_path=state_path,
         current_md_path=current_md_path,
-        ideas_md_path=ideas_md_path,
-        runs_dir=runs_dir,
+        jobs_root=jobs_root,
         family=family,
     )
     initial_state = {
@@ -168,9 +165,15 @@ def run_one_suite(
     """
     runner = task_runner or _default_task_runner
     if max_workers > 1:
-        with ProcessPoolExecutor(max_workers=max_workers) as pool:
-            futures = [pool.submit(_run_one_task_with_runner, runner, t) for t in tasks]
-            return summarize_suite([f.result() for f in futures])
+        try:
+            with ProcessPoolExecutor(max_workers=max_workers) as pool:
+                futures = [pool.submit(_run_one_task_with_runner, runner, t) for t in tasks]
+                return summarize_suite([f.result() for f in futures])
+        except (PermissionError, NotImplementedError, OSError) as exc:
+            log.warning(
+                "EVAL_HARNESS process pool unavailable; falling back to serial execution: %s",
+                exc,
+            )
 
     return summarize_suite([_run_one_task_with_runner(runner, t) for t in tasks])
 

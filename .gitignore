@@ -230,8 +230,11 @@ logs/
 *_baseline_checkpoints.json
 experiments/
 research_findings.jsonl
+.remember/
+prompts.db
+ema_experiments.db
 
-# Eval dry-run scratch dir — not for production, not committed
+# Eval dry-run scratch dir - not for production, not committed.
 eval_dryrun/
 
 # Local agent/session tool state.

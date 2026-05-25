@@ -29,9 +29,9 @@ def _append_bounded(lines: list[str], line: str, *, budget: int, emitted: int) -
 
 
 def format_result_history(results: list[dict[str, Any]]) -> str:
-    """Format experiment results into a readable history for prompts."""
+    """Format backtest-run results into a readable history for prompts."""
     if not results:
-        return "No experiments run yet."
+        return "No backtest runs yet."
     lines: list[str] = []
     emitted = 0
     for idx, r in enumerate(results):
@@ -119,6 +119,44 @@ def format_result_history(results: list[dict[str, Any]]) -> str:
             if not ok:
                 break
     return "\n".join(lines)
+
+
+def format_experiment_results_summary(results: list[dict[str, Any]]) -> str:
+    """Small prompt seed; conductor tools provide full experiment history."""
+    if not results:
+        return "No backtest runs yet."
+    metric_name = "metric"
+    latest = results[-1]
+
+    def _metric_score(result: dict[str, Any]) -> float:
+        try:
+            return float(result.get("metric") or 0)
+        except (TypeError, ValueError):
+            return float("-inf")
+
+    best = max(results, key=_metric_score)
+
+    def _line(label: str, result: dict[str, Any]) -> str:
+        thesis_id = result.get("thesis_id") or result.get("config") or "unknown"
+        return (
+            f"{label}: {thesis_id} | {metric_name}={result.get('metric', '?')} "
+            f"| status={result.get('status', '?')}"
+        )
+
+    kept = sum(1 for result in results if result.get("status") == "keep")
+    discarded = sum(1 for result in results if result.get("status") == "discard")
+    return "\n".join(
+        [
+            f"total_experiments={len(results)} keep={kept} discard={discarded}",
+            _line("best", best),
+            _line("latest", latest),
+            (
+                "Use list_experiment_results(order='latest') and "
+                "list_experiment_results(order='best') for details."
+            ),
+            "Call get_experiment_result(thesis_id) before relying on a specific experiment.",
+        ]
+    )
 
 
 def format_insight_brief(analysis: dict[str, Any]) -> str:

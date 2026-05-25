@@ -1,4 +1,4 @@
-"""Tests for the rule-J timestamp migration on ExperimentDB / BaselineCheckpoint.
+"""Tests for the rule-J timestamp migration on BacktestRunDB / BaselineCheckpoint.
 
 Pre-this-PR: timestamps stored as int epoch milliseconds.
 Post-this-PR: timestamps stored as ISO-8601 UTC strings, with backward
@@ -12,21 +12,21 @@ import sqlite3
 import stat
 from pathlib import Path
 
-from config_hash import _config_hash
-from experiment_db import (
+from backtest_run_db import (
+    BacktestRunDB,
+    BacktestRunRecord,
     BaselineCheckpoint,
     BaselineTracker,
-    ExperimentDB,
-    ExperimentResult,
     build_config_hash,
     build_data_hash,
 )
+from config_hash import _config_hash
 from persistence_utils import write_text_atomic
 
 
-def _make_record(experiment_id: str, *, timestamp: str = "") -> ExperimentResult:
-    return ExperimentResult(
-        experiment_id=experiment_id,
+def _make_record(run_id: str, *, timestamp: str = "") -> BacktestRunRecord:
+    return BacktestRunRecord(
+        run_id=run_id,
         thesis_id="t",
         config_path="configs/ema_base.yaml",
         runtime_config={},
@@ -51,7 +51,7 @@ def _make_record(experiment_id: str, *, timestamp: str = "") -> ExperimentResult
 
 
 def test_new_record_round_trip_preserves_iso_timestamp(tmp_path: Path) -> None:
-    db = ExperimentDB(tmp_path / "experiments.db")
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
     db.add(_make_record("exp1", timestamp="2026-04-29T12:00:00+00:00"))
     # Force re-load by clearing the in-memory cache.
     db._records = None
@@ -62,29 +62,27 @@ def test_new_record_round_trip_preserves_iso_timestamp(tmp_path: Path) -> None:
 
 def test_disk_payload_is_iso_string(tmp_path: Path) -> None:
     """The on-disk sqlite row must contain a string, not an int, for new writes."""
-    db_path = tmp_path / "experiments.db"
-    db = ExperimentDB(db_path)
+    db_path = tmp_path / "backtest_runs.db"
+    db = BacktestRunDB(db_path)
     db.add(_make_record("exp1", timestamp="2026-04-29T12:00:00+00:00"))
     with sqlite3.connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT timestamp FROM experiments WHERE experiment_id = 'exp1'"
-        ).fetchone()
+        row = conn.execute("SELECT timestamp FROM backtest_runs WHERE run_id = 'exp1'").fetchone()
     assert isinstance(row[0], str)
     assert row[0].endswith("+00:00")
 
 
 def test_malformed_string_timestamp_does_not_crash_db_load(tmp_path: Path) -> None:
-    db_path = tmp_path / "experiments.db"
-    ExperimentDB(db_path)
+    db_path = tmp_path / "backtest_runs.db"
+    BacktestRunDB(db_path)
     with sqlite3.connect(db_path) as conn:
-        conn.execute("DELETE FROM experiments")
+        conn.execute("DELETE FROM backtest_runs")
         conn.execute(
             """
-            INSERT INTO experiments (
-                experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+            INSERT INTO backtest_runs (
+                run_id, thesis_id, config_path, runtime_config_json, code_commit,
                 data_hash, train_metrics_json, validation_metrics_json, trade_count,
                 trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
-                accepted, rejection_reason, verdict_status, verdict_summary, parent_experiment_id,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_backtest_run_id,
                 timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -119,9 +117,63 @@ def test_malformed_string_timestamp_does_not_crash_db_load(tmp_path: Path) -> No
         )
         conn.commit()
 
-    out = ExperimentDB(db_path).all()
+    out = BacktestRunDB(db_path).all()
     assert len(out) == 1
     assert out[0].timestamp == ""
+
+
+def test_malformed_json_fields_do_not_crash_db_load(tmp_path: Path) -> None:
+    db_path = tmp_path / "backtest_runs.db"
+    BacktestRunDB(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM backtest_runs")
+        conn.execute(
+            """
+            INSERT INTO backtest_runs (
+                run_id, thesis_id, config_path, runtime_config_json, code_commit,
+                data_hash, train_metrics_json, validation_metrics_json, trade_count,
+                trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_backtest_run_id,
+                timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "bad-json",
+                "t",
+                "configs/ema_base.yaml",
+                "{not-json",
+                "abc1234",
+                "d",
+                "{still-bad",
+                "[]",
+                0,
+                "",
+                "",
+                "",
+                "oops",
+                0,
+                "",
+                "none",
+                "",
+                "",
+                "2026-01-01T00:00:00+00:00",
+                "ema",
+                "",
+                "",
+                0,
+                "not-json",
+                "[]",
+                "",
+            ),
+        )
+        conn.commit()
+
+    out = BacktestRunDB(db_path).all()
+    assert len(out) == 1
+    assert out[0].runtime_config == {}
+    assert out[0].strategy_diagnostics == {}
+    assert out[0].usage == {}
+    assert getattr(out[0], "_asi_export", {}) == {}
 
 
 def test_build_config_hash_matches_result_schema_hash_policy() -> None:
@@ -146,17 +198,17 @@ def test_build_data_hash_uses_12_char_policy() -> None:
 
 def test_legacy_int_db_file_loads_and_coerces_to_iso(tmp_path: Path) -> None:
     """A sqlite row with int epoch-ms timestamps must still load as ISO in memory."""
-    legacy_db = tmp_path / "experiments.db"
-    db = ExperimentDB(legacy_db)
+    legacy_db = tmp_path / "backtest_runs.db"
+    db = BacktestRunDB(legacy_db)
     with sqlite3.connect(legacy_db) as conn:
-        conn.execute("DELETE FROM experiments")
+        conn.execute("DELETE FROM backtest_runs")
         conn.execute(
             """
-            INSERT INTO experiments (
-                experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+            INSERT INTO backtest_runs (
+                run_id, thesis_id, config_path, runtime_config_json, code_commit,
                 data_hash, train_metrics_json, validation_metrics_json, trade_count,
                 trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
-                accepted, rejection_reason, verdict_status, verdict_summary, parent_experiment_id,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_backtest_run_id,
                 timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -191,7 +243,7 @@ def test_legacy_int_db_file_loads_and_coerces_to_iso(tmp_path: Path) -> None:
         )
         conn.commit()
 
-    db = ExperimentDB(legacy_db)
+    db = BacktestRunDB(legacy_db)
     out = db.all()
     assert len(out) == 1
     # Coerced from int 1704067200000 → ISO string.
@@ -201,10 +253,10 @@ def test_legacy_int_db_file_loads_and_coerces_to_iso(tmp_path: Path) -> None:
 def test_latest_orders_correctly_across_legacy_and_new(tmp_path: Path) -> None:
     """A DB containing one legacy int row and one new ISO row must order
     correctly when latest() is called."""
-    db_path = tmp_path / "experiments.db"
-    db = ExperimentDB(db_path)
+    db_path = tmp_path / "backtest_runs.db"
+    db = BacktestRunDB(db_path)
     with sqlite3.connect(db_path) as conn:
-        conn.execute("DELETE FROM experiments")
+        conn.execute("DELETE FROM backtest_runs")
         base = (
             "t",
             "x",
@@ -233,11 +285,11 @@ def test_latest_orders_correctly_across_legacy_and_new(tmp_path: Path) -> None:
         )
         conn.execute(
             """
-            INSERT INTO experiments (
-                experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+            INSERT INTO backtest_runs (
+                run_id, thesis_id, config_path, runtime_config_json, code_commit,
                 data_hash, train_metrics_json, validation_metrics_json, trade_count,
                 trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
-                accepted, rejection_reason, verdict_status, verdict_summary, parent_experiment_id,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_backtest_run_id,
                 timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -245,11 +297,11 @@ def test_latest_orders_correctly_across_legacy_and_new(tmp_path: Path) -> None:
         )
         conn.execute(
             """
-            INSERT INTO experiments (
-                experiment_id, thesis_id, config_path, runtime_config_json, code_commit,
+            INSERT INTO backtest_runs (
+                run_id, thesis_id, config_path, runtime_config_json, code_commit,
                 data_hash, train_metrics_json, validation_metrics_json, trade_count,
                 trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
-                accepted, rejection_reason, verdict_status, verdict_summary, parent_experiment_id,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_backtest_run_id,
                 timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -257,10 +309,10 @@ def test_latest_orders_correctly_across_legacy_and_new(tmp_path: Path) -> None:
         )
         conn.commit()
 
-    db = ExperimentDB(db_path)
+    db = BacktestRunDB(db_path)
     latest_records = db.latest(2)
-    assert latest_records[0].experiment_id == "new"
-    assert latest_records[1].experiment_id == "legacy"
+    assert latest_records[0].run_id == "new"
+    assert latest_records[1].run_id == "legacy"
 
 
 # ── BaselineCheckpoint mirrors the same migration ───────────────

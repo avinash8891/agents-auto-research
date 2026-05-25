@@ -46,7 +46,7 @@ Expected behavior: Experiment logging should accept an absolute `runs_dir` and s
 Reproduction steps: 1. Instantiate `AutoresearchController` with an absolute temp `runs_dir`. 2. Seed a running baseline experiment. 3. Call `execute_once()`. 4. Observe whether result logging crashes on `artifact_dir.relative_to(controller.root)`.
 Reproduction status: reproduced
 Reproduction command: `python3` direct controller repro with temp absolute `runs_dir` and `job=1`
-Observed failure: `ValueError: '/private/.../runs/job-0/...'' is not in the subpath of '/Users/.../agents-auto-research'`
+Observed failure: `ValueError: '/private/.../runs/...'' is not in the subpath of '/Users/.../agents-auto-research'`
 Evidence / error message: `artifact_dir.relative_to(controller.root)` raised `ValueError` during `_build_asi_dict`.
 Suspected files: `autoresearch_experiment.py`, `autoresearch_controller.py`
 Verification command: direct `python3` controller repro with absolute `runs_dir` completed without crashing after serialization fix
@@ -123,8 +123,8 @@ Reproduction steps: 1. Instantiate a controller directly. 2. Seed a runnable bas
 Reproduction status: reproduced
 Reproduction command: direct `python3` controller repro without `job` metadata
 Observed failure: `sqlite3.IntegrityError: NOT NULL constraint failed: research_rounds.job_id`
-Evidence / error message: `db.log_research_round()` wrote `state.get("job")` as NULL in `experiment_db.py`
-Suspected files: `autoresearch_controller.py`, `autoresearch_research.py`, `experiment_db.py`
+Evidence / error message: `db.log_research_round()` wrote `state.get("job")` as NULL in `backtest_run_db.py`
+Suspected files: `autoresearch_controller.py`, `autoresearch_research.py`, `backtest_run_db.py`
 Verification command: direct `python3` controller repro now returns a structured interrupted state with `job=1`
 Fix notes: Added `_ensure_job_metadata()` to `AutoresearchController` and call it at the start of `execute_once()`.
 Files changed: autoresearch_controller.py, BUGS.md
@@ -978,13 +978,13 @@ Symptom: A malformed persisted metric value in the experiment DB could crash `re
 Expected behavior: Storage/data reads should tolerate malformed numeric fields in persisted rows and keep the loop alive.
 Reproduction steps: 1. Insert a DB row with `validation_metrics["median_expectancy"]` set to a dict. 2. Call `read_results()`. 3. Observe the `float()` crash before the fix. 4. Re-run after the fix and confirm the row is returned with a numeric fallback.
 Reproduction status: reproduced
-Reproduction command: direct `python3` call to `ExperimentDB.read_results()` after seeding a malformed metric row
+Reproduction command: direct `python3` call to `BacktestRunDB.read_results()` after seeding a malformed metric row
 Observed failure: `TypeError: float() argument must be a string or a real number, not 'dict'`
-Evidence / error message: `ExperimentDB.read_results()` called `float(metric)` on a dict in `experiment_db.py`
-Suspected files: `experiment_db.py`
-Verification command: direct `python3` call to `ExperimentDB.read_results()` now returns the row with `metric=0.0`
+Evidence / error message: `BacktestRunDB.read_results()` called `float(metric)` on a dict in `backtest_run_db.py`
+Suspected files: `backtest_run_db.py`
+Verification command: direct `python3` call to `BacktestRunDB.read_results()` now returns the row with `metric=0.0`
 Fix notes: Added `_coerce_metric_float()` and used it in `read_results()` and `evaluate_metric()` to avoid crashing on malformed persisted metric values.
-Files changed: experiment_db.py, BUGS.md
+Files changed: backtest_run_db.py, BUGS.md
 Result: Fixed and verified by direct code-path reproduction.
 Notes: This is the direct malformed-metric storage failure; the old characterization entry was too vague to capture it.
 ## B052 - SD-002 Storage / Data
@@ -996,13 +996,13 @@ Symptom: A malformed persisted `usage_json` value in `research_rounds` could cra
 Expected behavior: Storage/data reads should tolerate malformed persisted JSON and return a sanitized row instead of failing.
 Reproduction steps: 1. Insert a `research_rounds` row with invalid JSON in `usage_json`. 2. Call `list_research_rounds()`. 3. Observe the decode failure before the fix. 4. Re-run after the fix and confirm the row is returned with `usage_json={}` and `invalid_usage_json=True`.
 Reproduction status: reproduced
-Reproduction command: direct `python3` call to `ExperimentDB.list_research_rounds()` after seeding a malformed `research_rounds.usage_json`
+Reproduction command: direct `python3` call to `BacktestRunDB.list_research_rounds()` after seeding a malformed `research_rounds.usage_json`
 Observed failure: `JSONDecodeError: Expecting property name enclosed in double quotes`
-Evidence / error message: `json.loads(row["usage_json"])` raised in `experiment_db.py`
-Suspected files: `experiment_db.py`
-Verification command: direct `python3` call to `ExperimentDB.list_research_rounds()` returned the sanitized row after the fallback fix
+Evidence / error message: `json.loads(row["usage_json"])` raised in `backtest_run_db.py`
+Suspected files: `backtest_run_db.py`
+Verification command: direct `python3` call to `BacktestRunDB.list_research_rounds()` returned the sanitized row after the fallback fix
 Fix notes: Added tolerant parsing for `usage_json` in `list_research_rounds()`.
-Files changed: experiment_db.py, BUGS.md
+Files changed: backtest_run_db.py, BUGS.md
 Result: Fixed and verified by direct code-path reproduction.
 Notes: This is the direct malformed-round-usage storage failure; the old placeholder entry did not capture the real failure mode.
 ## B053 - SD-003 Storage / Data
@@ -1017,7 +1017,7 @@ Reproduction status: covered_by_group_repro
 Reproduction command: `pytest -q tests/test_experiment_db_sqlite_runtime.py tests/test_experiment_db_timestamps.py tests/test_experiment_db_crash_consistency.py tests/test_autoresearch_research.py tests/test_autoresearch_research_helpers.py`
 Observed failure: No current failure on branch; the storage/data checks already pass.
 Evidence / error message: `64 passed`
-Suspected files: `experiment_db.py`, `research_memory.py`, `research_paths.py`
+Suspected files: `backtest_run_db.py`, `research_memory.py`, `research_paths.py`
 Verification command: pytest -q tests/test_autoresearch_experiment.py
 Fix notes: Verified on branch via the storage/data characterization suite; no code changes were needed for this group.
 Files changed: BUGS.md, FIX_PLAN.md
@@ -1035,7 +1035,7 @@ Reproduction status: covered_by_group_repro
 Reproduction command: `pytest -q tests/test_experiment_db_sqlite_runtime.py tests/test_experiment_db_timestamps.py tests/test_experiment_db_crash_consistency.py tests/test_autoresearch_research.py tests/test_autoresearch_research_helpers.py`
 Observed failure: No current failure on branch; the storage/data checks already pass.
 Evidence / error message: `64 passed`
-Suspected files: `experiment_db.py`, `research_memory.py`, `research_paths.py`
+Suspected files: `backtest_run_db.py`, `research_memory.py`, `research_paths.py`
 Verification command: pytest -q tests/test_autoresearch_experiment.py
 Fix notes: Verified on branch via the storage/data characterization suite; no code changes were needed for this group.
 Files changed: BUGS.md, FIX_PLAN.md
@@ -1053,7 +1053,7 @@ Reproduction status: covered_by_group_repro
 Reproduction command: `pytest -q tests/test_experiment_db_sqlite_runtime.py tests/test_experiment_db_timestamps.py tests/test_experiment_db_crash_consistency.py tests/test_autoresearch_research.py tests/test_autoresearch_research_helpers.py`
 Observed failure: No current failure on branch; the storage/data checks already pass.
 Evidence / error message: `64 passed`
-Suspected files: `experiment_db.py`, `research_memory.py`, `research_paths.py`
+Suspected files: `backtest_run_db.py`, `research_memory.py`, `research_paths.py`
 Verification command: pytest -q tests/test_autoresearch_experiment.py
 Fix notes: Verified on branch via the storage/data characterization suite; no code changes were needed for this group.
 Files changed: BUGS.md, FIX_PLAN.md
@@ -1071,7 +1071,7 @@ Reproduction status: covered_by_group_repro
 Reproduction command: `pytest -q tests/test_experiment_db_sqlite_runtime.py tests/test_experiment_db_timestamps.py tests/test_experiment_db_crash_consistency.py tests/test_autoresearch_research.py tests/test_autoresearch_research_helpers.py`
 Observed failure: No current failure on branch; the storage/data checks already pass.
 Evidence / error message: `64 passed`
-Suspected files: `experiment_db.py`, `research_memory.py`, `research_paths.py`
+Suspected files: `backtest_run_db.py`, `research_memory.py`, `research_paths.py`
 Verification command: pytest -q tests/test_autoresearch_experiment.py
 Fix notes: Verified on branch via the storage/data characterization suite; no code changes were needed for this group.
 Files changed: BUGS.md, FIX_PLAN.md
@@ -1089,7 +1089,7 @@ Reproduction status: covered_by_group_repro
 Reproduction command: `pytest -q tests/test_experiment_db_sqlite_runtime.py tests/test_experiment_db_timestamps.py tests/test_experiment_db_crash_consistency.py tests/test_autoresearch_research.py tests/test_autoresearch_research_helpers.py`
 Observed failure: No current failure on branch; the storage/data checks already pass.
 Evidence / error message: `64 passed`
-Suspected files: `experiment_db.py`, `research_memory.py`, `research_paths.py`
+Suspected files: `backtest_run_db.py`, `research_memory.py`, `research_paths.py`
 Verification command: pytest -q tests/test_autoresearch_experiment.py
 Fix notes: Verified on branch via the storage/data characterization suite; no code changes were needed for this group.
 Files changed: BUGS.md, FIX_PLAN.md
@@ -1107,7 +1107,7 @@ Reproduction status: covered_by_group_repro
 Reproduction command: `pytest -q tests/test_experiment_db_sqlite_runtime.py tests/test_experiment_db_timestamps.py tests/test_experiment_db_crash_consistency.py tests/test_autoresearch_research.py tests/test_autoresearch_research_helpers.py`
 Observed failure: No current failure on branch; the storage/data checks already pass.
 Evidence / error message: `64 passed`
-Suspected files: `experiment_db.py`, `research_memory.py`, `research_paths.py`
+Suspected files: `backtest_run_db.py`, `research_memory.py`, `research_paths.py`
 Verification command: pytest -q tests/test_autoresearch_experiment.py
 Fix notes: Verified on branch via the storage/data characterization suite; no code changes were needed for this group.
 Files changed: BUGS.md, FIX_PLAN.md
@@ -1125,7 +1125,7 @@ Reproduction status: covered_by_group_repro
 Reproduction command: `pytest -q tests/test_experiment_db_sqlite_runtime.py tests/test_experiment_db_timestamps.py tests/test_experiment_db_crash_consistency.py tests/test_autoresearch_research.py tests/test_autoresearch_research_helpers.py`
 Observed failure: No current failure on branch; the storage/data checks already pass.
 Evidence / error message: `64 passed`
-Suspected files: `experiment_db.py`, `research_memory.py`, `research_paths.py`
+Suspected files: `backtest_run_db.py`, `research_memory.py`, `research_paths.py`
 Verification command: pytest -q tests/test_autoresearch_experiment.py
 Fix notes: Verified on branch via the storage/data characterization suite; no code changes were needed for this group.
 Files changed: BUGS.md, FIX_PLAN.md
@@ -1143,7 +1143,7 @@ Reproduction status: covered_by_group_repro
 Reproduction command: `pytest -q tests/test_experiment_db_sqlite_runtime.py tests/test_experiment_db_timestamps.py tests/test_experiment_db_crash_consistency.py tests/test_autoresearch_research.py tests/test_autoresearch_research_helpers.py`
 Observed failure: No current failure on branch; the storage/data checks already pass.
 Evidence / error message: `64 passed`
-Suspected files: `experiment_db.py`, `research_memory.py`, `research_paths.py`
+Suspected files: `backtest_run_db.py`, `research_memory.py`, `research_paths.py`
 Verification command: pytest -q tests/test_autoresearch_experiment.py
 Fix notes: Verified on branch via the storage/data characterization suite; no code changes were needed for this group.
 Files changed: BUGS.md, FIX_PLAN.md
@@ -1161,7 +1161,7 @@ Reproduction status: covered_by_group_repro
 Reproduction command: `pytest -q tests/test_experiment_db_sqlite_runtime.py tests/test_experiment_db_timestamps.py tests/test_experiment_db_crash_consistency.py tests/test_autoresearch_research.py tests/test_autoresearch_research_helpers.py`
 Observed failure: No current failure on branch; the storage/data checks already pass.
 Evidence / error message: `64 passed`
-Suspected files: `experiment_db.py`, `research_memory.py`, `research_paths.py`
+Suspected files: `backtest_run_db.py`, `research_memory.py`, `research_paths.py`
 Verification command: pytest -q tests/test_autoresearch_experiment.py
 Fix notes: Verified on branch via the storage/data characterization suite; no code changes were needed for this group.
 Files changed: BUGS.md, FIX_PLAN.md
@@ -1179,7 +1179,7 @@ Reproduction status: covered_by_group_repro
 Reproduction command: `pytest -q tests/test_experiment_db_sqlite_runtime.py tests/test_experiment_db_timestamps.py tests/test_experiment_db_crash_consistency.py tests/test_autoresearch_research.py tests/test_autoresearch_research_helpers.py`
 Observed failure: No current failure on branch; the storage/data checks already pass.
 Evidence / error message: `64 passed`
-Suspected files: `experiment_db.py`, `research_memory.py`, `research_paths.py`
+Suspected files: `backtest_run_db.py`, `research_memory.py`, `research_paths.py`
 Verification command: pytest -q tests/test_autoresearch_experiment.py
 Fix notes: Verified on branch via the storage/data characterization suite; no code changes were needed for this group.
 Files changed: BUGS.md, FIX_PLAN.md

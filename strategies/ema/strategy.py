@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -24,26 +23,10 @@ from strategies.ema.validate import validate_ema_runtime_config
 from strategy_event_logger import StrategyEventLogger
 
 
-def _validate_runtime_config_scope(
-    config: dict[str, Any], *, source_path: Path | None = None
-) -> dict[str, Any]:
-    if config.get("allow_unbounded_research_backtest"):
-        return config
-    missing = [key for key in ("validation_start", "validation_end") if not config.get(key)]
-    if missing:
-        source = f" for {source_path}" if source_path is not None else ""
-        raise ValueError(
-            "Refusing unbounded EMA backtest"
-            f"{source}: missing {', '.join(missing)}. "
-            "Set validation_start and validation_end, or explicitly set "
-            "allow_unbounded_research_backtest=true."
-        )
-    return config
-
-
 def _log_filter_rejections(
     event_logger: StrategyEventLogger,
     frame: pd.DataFrame,
+    signals,
     before_mask: np.ndarray,
     after_mask: np.ndarray,
     entry_prices: np.ndarray,
@@ -51,10 +34,6 @@ def _log_filter_rejections(
     symbol: str,
     direction: str,
     reason: str,
-    filter_name: str | None = None,
-    filter_value: str | None = None,
-    filter_threshold: str | None = None,
-    entry_cutoff_time: str | None = None,
 ) -> None:
     killed = before_mask & ~after_mask
     event_logger.record_events(
@@ -66,6 +45,7 @@ def _log_filter_rejections(
         reason=reason,
         entry_prices=entry_prices,
         stop_prices=stop_prices,
+        extras=_standard_event_extras(frame, signals),
     )
 
 
@@ -84,6 +64,7 @@ def _log_raw_setups(
         event_type="raw_setup",
         entry_prices=signals.entry_price.values,
         stop_prices=signals.stop_price.values,
+        extras=_standard_event_extras(frame, signals),
     )
 
 
@@ -102,7 +83,62 @@ def _log_accepted_signals(
         event_type="accepted_signal",
         entry_prices=signals.entry_price.values,
         stop_prices=signals.stop_price.values,
+        extras=_standard_event_extras(frame, signals),
     )
+
+
+def _entry_bar_index_from_open(index: pd.Index) -> np.ndarray:
+    n = len(index)
+    if not isinstance(index, pd.DatetimeIndex) or n == 0:
+        return np.arange(n, dtype=np.int64)
+    values = np.zeros(n, dtype=np.int64)
+    days = index.normalize()
+    current = 0
+    values[0] = 0
+    for i in range(1, n):
+        if days[i] == days[i - 1]:
+            current += 1
+        else:
+            current = 0
+        values[i] = current
+    return values
+
+
+def _standard_event_extras(frame: pd.DataFrame, signals) -> dict[str, np.ndarray]:
+    n = len(frame)
+    if n == 0:
+        return {}
+
+    stop_distance_pct = np.full(n, np.nan, dtype=np.float64)
+    entry_values = signals.entry_price.to_numpy(dtype=float, copy=False)
+    stop_values = signals.stop_price.to_numpy(dtype=float, copy=False)
+    valid_prices = np.isfinite(entry_values) & np.isfinite(stop_values) & (entry_values > 0)
+    stop_distance_pct[valid_prices] = (
+        np.abs(entry_values[valid_prices] - stop_values[valid_prices])
+        / entry_values[valid_prices]
+        * 100.0
+    )
+
+    trigger_bar_timestamp = (
+        frame.index.to_numpy(dtype="datetime64[ns]")
+        if isinstance(frame.index, pd.DatetimeIndex)
+        else np.full(n, np.datetime64("NaT"), dtype="datetime64[ns]")
+    )
+    ema_alert_bar_timestamp = np.full(n, np.datetime64("NaT"), dtype="datetime64[ns]")
+    alert_idx = getattr(signals, "alert_bar_idx", None)
+    if alert_idx is not None and isinstance(frame.index, pd.DatetimeIndex):
+        alert_idx_values = pd.Series(alert_idx).to_numpy(dtype=int, copy=False)
+        valid_alert_idx = (alert_idx_values >= 0) & (alert_idx_values < n)
+        ema_alert_bar_timestamp[valid_alert_idx] = trigger_bar_timestamp[
+            alert_idx_values[valid_alert_idx]
+        ]
+
+    return {
+        "stop_distance_pct": stop_distance_pct,
+        "trigger_bar_timestamp": trigger_bar_timestamp,
+        "entry_bar_index_from_open": _entry_bar_index_from_open(frame.index),
+        "ema.alert_bar_timestamp": ema_alert_bar_timestamp,
+    }
 
 
 def run_backtest(config: dict) -> dict:
@@ -124,34 +160,20 @@ def run_backtest(config: dict) -> dict:
     direction_bias = config.get("direction_bias", "long_only")
     use_range_shift = config.get("use_range_shift", False)
     range_shift_lookback = int(config.get("range_shift_lookback", 20))
-
-    # Entry cutoff: only allow entries before this time (e.g. "10:30")
     entry_cutoff_time = config.get("entry_cutoff_time", None)
-
-    # Gap filter: only trade on days with significant gaps
     gap_filter = config.get("gap_filter", False)
-    gap_pct = config.get("gap_pct", 0.01)  # 1% default
-
-    # Gap exclude: skip shorts on gap-up days (fading inflated opens is risky)
+    gap_pct = config.get("gap_pct", 0.01)
     gap_exclude = config.get("gap_exclude", False)
-    gap_exclude_pct = config.get("gap_exclude_pct", 0.005)  # 0.5% default
-
-    # Minimum stop distance: filter out trades where the stop is too tight for
-    # slippage to be absorbed.  Value is in percent (e.g. 0.20 = 0.20%).
+    gap_exclude_pct = config.get("gap_exclude_pct", 0.005)
     min_stop_distance_pct = config.get("min_stop_distance_pct", None)
     if min_stop_distance_pct is not None:
         min_stop_distance_pct = float(min_stop_distance_pct)
-
-    # Maximum stop distance: filter out trades where the alert candle is too large
-    # (extreme moves likely to reverse).  Value is in percent (e.g. 0.50 = 0.50%).
     max_stop_distance_pct = config.get("max_stop_distance_pct", None)
     if max_stop_distance_pct is not None:
         max_stop_distance_pct = float(max_stop_distance_pct)
-
-    # Daily trade cap: transcript says 3-5 trades per day TOTAL across all symbols.
-    # T2 (Best Use): "When I had completed five trades, I would end them"
-    # T4 (Game Changer): "not more than 3 times a day"
+    # Transcript: 3-5 trades per day TOTAL (T2: "five trades"; T4: "not more than 3 times a day")
     max_trades_per_day = config.get("max_trades_per_day", None)
+    entry_cutoff = pd.Timestamp(entry_cutoff_time).time() if entry_cutoff_time else None
 
     all_trades: list[dict] = []
 
@@ -164,15 +186,12 @@ def run_backtest(config: dict) -> dict:
         if sym_close.empty:
             continue
 
-        # Pre-compute gap days for this symbol
         gap_up_days = _compute_gap_up_days(sym_open, sym_close, gap_pct) if gap_filter else None
         gap_down_days = _compute_gap_down_days(sym_open, sym_close, gap_pct) if gap_filter else None
-        # Gap-exclude days: gap-up days where shorts should be skipped
         gap_exclude_up_days = (
             _compute_gap_up_days(sym_open, sym_close, gap_exclude_pct) if gap_exclude else None
         )
 
-        # LONG signals on 15min chart, simulated on 15min bars
         if direction_bias in {"both", "long_only"}:
             long_frame = build_timeframe_frame(sym_open, sym_close, sym_high, sym_low, tf_long)
             long_signals = generate_signals_for_frame(
@@ -185,93 +204,88 @@ def run_backtest(config: dict) -> dict:
 
             _log_raw_setups(event_logger, long_frame, long_signals, symbol, "long")
 
-            if entry_cutoff_time and isinstance(long_frame.index, pd.DatetimeIndex):
+            if entry_cutoff and isinstance(long_frame.index, pd.DatetimeIndex):
                 before = long_signals.entries.values.copy()
-                cutoff = pd.Timestamp(entry_cutoff_time).time()
-                mask = long_frame.index.time <= cutoff
+                entry_before = long_signals.entry_price.values.copy()
+                stop_before = long_signals.stop_price.values.copy()
+                mask = long_frame.index.time <= entry_cutoff
                 long_signals.entries[~mask] = False
                 long_signals.entry_price[~mask] = np.nan
                 long_signals.stop_price[~mask] = np.nan
                 _log_filter_rejections(
                     event_logger,
                     long_frame,
+                    long_signals,
                     before,
                     long_signals.entries.values,
-                    long_signals.entry_price.values,
-                    long_signals.stop_price.values,
+                    entry_before,
+                    stop_before,
                     symbol,
                     "long",
                     "entry_cutoff",
-                    filter_name="entry_cutoff_time",
-                    filter_threshold=entry_cutoff_time,
-                    entry_cutoff_time=entry_cutoff_time,
                 )
             if gap_filter:
                 before = long_signals.entries.values.copy()
+                entry_before = long_signals.entry_price.values.copy()
+                stop_before = long_signals.stop_price.values.copy()
                 _filter_signals_to_days(long_signals, long_frame, gap_down_days)
                 _log_filter_rejections(
                     event_logger,
                     long_frame,
+                    long_signals,
                     before,
                     long_signals.entries.values,
-                    long_signals.entry_price.values,
-                    long_signals.stop_price.values,
+                    entry_before,
+                    stop_before,
                     symbol,
                     "long",
                     "gap_filter",
-                    filter_name="gap_filter",
-                    filter_threshold=str(gap_pct),
                 )
 
-            if min_stop_distance_pct is not None:
-                before = long_signals.entries.values.copy()
-                stop_dist = (
+            if min_stop_distance_pct is not None or max_stop_distance_pct is not None:
+                long_stop_dist = (
                     np.abs(long_signals.entry_price - long_signals.stop_price)
                     / long_signals.entry_price
                     * 100
                 )
-                too_tight = stop_dist < min_stop_distance_pct
-                long_signals.entries[too_tight] = False
-                long_signals.entry_price[too_tight] = np.nan
-                long_signals.stop_price[too_tight] = np.nan
-                _log_filter_rejections(
-                    event_logger,
-                    long_frame,
-                    before,
-                    long_signals.entries.values,
-                    long_signals.entry_price.values,
-                    long_signals.stop_price.values,
-                    symbol,
-                    "long",
-                    "min_stop_distance",
-                    filter_name="min_stop_distance_pct",
-                    filter_threshold=str(min_stop_distance_pct),
-                )
-
-            if max_stop_distance_pct is not None:
-                before = long_signals.entries.values.copy()
-                stop_dist = (
-                    np.abs(long_signals.entry_price - long_signals.stop_price)
-                    / long_signals.entry_price
-                    * 100
-                )
-                too_wide = stop_dist > max_stop_distance_pct
-                long_signals.entries[too_wide] = False
-                long_signals.entry_price[too_wide] = np.nan
-                long_signals.stop_price[too_wide] = np.nan
-                _log_filter_rejections(
-                    event_logger,
-                    long_frame,
-                    before,
-                    long_signals.entries.values,
-                    long_signals.entry_price.values,
-                    long_signals.stop_price.values,
-                    symbol,
-                    "long",
-                    "max_stop_distance",
-                    filter_name="max_stop_distance_pct",
-                    filter_threshold=str(max_stop_distance_pct),
-                )
+                if min_stop_distance_pct is not None:
+                    before = long_signals.entries.values.copy()
+                    entry_before = long_signals.entry_price.values.copy()
+                    stop_before = long_signals.stop_price.values.copy()
+                    long_signals.entries[long_stop_dist < min_stop_distance_pct] = False
+                    long_signals.entry_price[long_stop_dist < min_stop_distance_pct] = np.nan
+                    long_signals.stop_price[long_stop_dist < min_stop_distance_pct] = np.nan
+                    _log_filter_rejections(
+                        event_logger,
+                        long_frame,
+                        long_signals,
+                        before,
+                        long_signals.entries.values,
+                        entry_before,
+                        stop_before,
+                        symbol,
+                        "long",
+                        "min_stop_distance",
+                    )
+                if max_stop_distance_pct is not None:
+                    before = long_signals.entries.values.copy()
+                    entry_before = long_signals.entry_price.values.copy()
+                    stop_before = long_signals.stop_price.values.copy()
+                    long_signals.entries[long_stop_dist > max_stop_distance_pct] = False
+                    long_signals.entry_price[long_stop_dist > max_stop_distance_pct] = np.nan
+                    long_signals.stop_price[long_stop_dist > max_stop_distance_pct] = np.nan
+                    _log_filter_rejections(
+                        event_logger,
+                        long_frame,
+                        long_signals,
+                        before,
+                        long_signals.entries.values,
+                        entry_before,
+                        stop_before,
+                        symbol,
+                        "long",
+                        "max_stop_distance",
+                    )
 
             _log_accepted_signals(event_logger, long_frame, long_signals, symbol, "long")
 
@@ -281,7 +295,6 @@ def run_backtest(config: dict) -> dict:
                 t["symbol"] = symbol
                 all_trades.append(t)
 
-        # SHORT signals on 5min chart, simulated on 5min bars
         if direction_bias in {"both", "short_only"}:
             short_frame = build_timeframe_frame(sym_open, sym_close, sym_high, sym_low, tf_short)
             short_signals = generate_signals_for_frame(
@@ -294,111 +307,107 @@ def run_backtest(config: dict) -> dict:
 
             _log_raw_setups(event_logger, short_frame, short_signals, symbol, "short")
 
-            if entry_cutoff_time and isinstance(short_frame.index, pd.DatetimeIndex):
+            if entry_cutoff and isinstance(short_frame.index, pd.DatetimeIndex):
                 before = short_signals.entries.values.copy()
-                cutoff = pd.Timestamp(entry_cutoff_time).time()
-                mask = short_frame.index.time <= cutoff
+                entry_before = short_signals.entry_price.values.copy()
+                stop_before = short_signals.stop_price.values.copy()
+                mask = short_frame.index.time <= entry_cutoff
                 short_signals.entries[~mask] = False
                 short_signals.entry_price[~mask] = np.nan
                 short_signals.stop_price[~mask] = np.nan
                 _log_filter_rejections(
                     event_logger,
                     short_frame,
+                    short_signals,
                     before,
                     short_signals.entries.values,
-                    short_signals.entry_price.values,
-                    short_signals.stop_price.values,
+                    entry_before,
+                    stop_before,
                     symbol,
                     "short",
                     "entry_cutoff",
-                    filter_name="entry_cutoff_time",
-                    filter_threshold=entry_cutoff_time,
-                    entry_cutoff_time=entry_cutoff_time,
                 )
             if gap_filter:
                 # Short on gap-up days (fade the gap — transcript core rule)
                 before = short_signals.entries.values.copy()
+                entry_before = short_signals.entry_price.values.copy()
+                stop_before = short_signals.stop_price.values.copy()
                 _filter_signals_to_days(short_signals, short_frame, gap_up_days)
                 _log_filter_rejections(
                     event_logger,
                     short_frame,
+                    short_signals,
                     before,
                     short_signals.entries.values,
-                    short_signals.entry_price.values,
-                    short_signals.stop_price.values,
+                    entry_before,
+                    stop_before,
                     symbol,
                     "short",
                     "gap_filter",
-                    filter_name="gap_filter",
-                    filter_threshold=str(gap_pct),
                 )
 
             if gap_exclude and gap_exclude_up_days:
                 before = short_signals.entries.values.copy()
+                entry_before = short_signals.entry_price.values.copy()
+                stop_before = short_signals.stop_price.values.copy()
                 _exclude_signals_on_days(short_signals, short_frame, gap_exclude_up_days)
                 _log_filter_rejections(
                     event_logger,
                     short_frame,
+                    short_signals,
                     before,
                     short_signals.entries.values,
-                    short_signals.entry_price.values,
-                    short_signals.stop_price.values,
+                    entry_before,
+                    stop_before,
                     symbol,
                     "short",
                     "gap_exclude",
-                    filter_name="gap_exclude",
-                    filter_threshold=str(gap_exclude_pct),
                 )
 
-            if min_stop_distance_pct is not None:
-                before = short_signals.entries.values.copy()
-                stop_dist = (
+            if min_stop_distance_pct is not None or max_stop_distance_pct is not None:
+                short_stop_dist = (
                     np.abs(short_signals.entry_price - short_signals.stop_price)
                     / short_signals.entry_price
                     * 100
                 )
-                too_tight = stop_dist < min_stop_distance_pct
-                short_signals.entries[too_tight] = False
-                short_signals.entry_price[too_tight] = np.nan
-                short_signals.stop_price[too_tight] = np.nan
-                _log_filter_rejections(
-                    event_logger,
-                    short_frame,
-                    before,
-                    short_signals.entries.values,
-                    short_signals.entry_price.values,
-                    short_signals.stop_price.values,
-                    symbol,
-                    "short",
-                    "min_stop_distance",
-                    filter_name="min_stop_distance_pct",
-                    filter_threshold=str(min_stop_distance_pct),
-                )
-
-            if max_stop_distance_pct is not None:
-                before = short_signals.entries.values.copy()
-                stop_dist = (
-                    np.abs(short_signals.entry_price - short_signals.stop_price)
-                    / short_signals.entry_price
-                    * 100
-                )
-                too_wide = stop_dist > max_stop_distance_pct
-                short_signals.entries[too_wide] = False
-                short_signals.entry_price[too_wide] = np.nan
-                short_signals.stop_price[too_wide] = np.nan
-                _log_filter_rejections(
-                    event_logger,
-                    short_frame,
-                    before,
-                    short_signals.entries.values,
-                    short_signals.entry_price.values,
-                    short_signals.stop_price.values,
-                    symbol,
-                    "short",
-                    "max_stop_distance",
-                    filter_name="max_stop_distance_pct",
-                    filter_threshold=str(max_stop_distance_pct),
-                )
+                if min_stop_distance_pct is not None:
+                    before = short_signals.entries.values.copy()
+                    entry_before = short_signals.entry_price.values.copy()
+                    stop_before = short_signals.stop_price.values.copy()
+                    short_signals.entries[short_stop_dist < min_stop_distance_pct] = False
+                    short_signals.entry_price[short_stop_dist < min_stop_distance_pct] = np.nan
+                    short_signals.stop_price[short_stop_dist < min_stop_distance_pct] = np.nan
+                    _log_filter_rejections(
+                        event_logger,
+                        short_frame,
+                        short_signals,
+                        before,
+                        short_signals.entries.values,
+                        entry_before,
+                        stop_before,
+                        symbol,
+                        "short",
+                        "min_stop_distance",
+                    )
+                if max_stop_distance_pct is not None:
+                    before = short_signals.entries.values.copy()
+                    entry_before = short_signals.entry_price.values.copy()
+                    stop_before = short_signals.stop_price.values.copy()
+                    short_signals.entries[short_stop_dist > max_stop_distance_pct] = False
+                    short_signals.entry_price[short_stop_dist > max_stop_distance_pct] = np.nan
+                    short_signals.stop_price[short_stop_dist > max_stop_distance_pct] = np.nan
+                    _log_filter_rejections(
+                        event_logger,
+                        short_frame,
+                        short_signals,
+                        before,
+                        short_signals.entries.values,
+                        entry_before,
+                        stop_before,
+                        symbol,
+                        "short",
+                        "max_stop_distance",
+                    )
 
             _log_accepted_signals(event_logger, short_frame, short_signals, symbol, "short")
 
@@ -415,7 +424,6 @@ def run_backtest(config: dict) -> dict:
 
     trades_df = pd.DataFrame(all_trades)
 
-    # Apply daily trade cap: keep first N trades per day across all symbols
     if max_trades_per_day and max_trades_per_day > 0:
         trades_df = trades_df.sort_values("entry_date")
         trades_df["_date"] = trades_df["entry_date"].dt.date
@@ -445,11 +453,6 @@ class EMAStrategy(BaseStrategy):
 
     def run(self, config: dict[str, Any]) -> dict[str, Any]:
         return run_backtest(config)
-
-    def validate_runtime_config_scope(
-        self, config: dict[str, Any], source_path: Path | None = None
-    ) -> dict[str, Any]:
-        return _validate_runtime_config_scope(config, source_path=source_path)
 
     def validate_runtime_config(self, config: dict[str, Any]) -> list[str]:
         return validate_ema_runtime_config(config)

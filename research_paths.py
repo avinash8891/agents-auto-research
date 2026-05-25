@@ -1,37 +1,25 @@
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
+from agent_infra import _OAUTH_PROXY_PORT, _OAUTH_PROXY_URL, _ensure_oauth_proxy, _get_openai_client
+from autoresearch_constants import DEFAULT_AGENT_MODEL as _CONDUCTOR_MODEL
+from autoresearch_logging import get_logger
+
 _ROOT = Path(__file__).resolve().parent
-_OAUTH_PROXY_PORT = 10531
-_OAUTH_PROXY_URL = f"http://127.0.0.1:{_OAUTH_PROXY_PORT}/v1"
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
-
-def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
-    import socket
-    import time
-
-    deadline = time.monotonic() + timeout_seconds
-    last_error: OSError | None = None
-    while True:
-        try:
-            with socket.create_connection(("127.0.0.1", _OAUTH_PROXY_PORT), timeout=1):
-                return
-        except OSError as exc:
-            last_error = exc
-        if time.monotonic() >= deadline:
-            break
-        time.sleep(0.5)
-
-    raise RuntimeError(
-        f"openai-oauth proxy is not listening at {_OAUTH_PROXY_URL}. "
-        "Start openai-oauth.service before running research jobs. "
-        f"Last error: {last_error}"
-    )
+__all__ = [
+    "_CONDUCTOR_MODEL",
+    "_get_openai_client",
+    "_OAUTH_PROXY_PORT",
+    "_OAUTH_PROXY_URL",
+    "_ROOT",
+    "_ensure_oauth_proxy",
+    "_parse_json",
+]
 
 
 def _parse_json(text: str) -> dict[str, Any] | None:
@@ -65,3 +53,91 @@ def _parse_json(text: str) -> dict[str, Any] | None:
                     )
                     return None
     return None
+
+
+def _extract_runner_output_text(result: Any) -> str:
+    """Normalize Agents SDK runner output to a text payload.
+
+    Some runner/model combinations populate ``final_output_as(str)`` while
+    leaving ``final_output`` empty or structured. Prefer the explicit string
+    extraction first, then fall back to the raw attribute.
+    """
+    text = ""
+    if hasattr(result, "final_output_as"):
+        try:
+            text = result.final_output_as(str) or ""
+        except Exception as exc:
+            final_output = getattr(result, "final_output", None)
+            new_items = getattr(result, "new_items", None) or []
+            log.warning(
+                "final_output_as failed for runner: %s final_output_type=%s new_items=%d",
+                exc.__class__.__name__,
+                type(final_output).__name__,
+                len(new_items),
+            )
+            text = ""
+    if not text:
+        final_output = getattr(result, "final_output", None)
+        if isinstance(final_output, str):
+            text = final_output
+        elif final_output is not None:
+            text = json.dumps(final_output, default=str)
+    if not text:
+        new_items = getattr(result, "new_items", None) or []
+        if new_items:
+            try:
+                from agents.items import ItemHelpers
+
+                text = ItemHelpers.text_message_outputs(list(new_items))
+            except Exception as exc:
+                log.warning(
+                    "message output extraction failed for runner: %s new_items=%d",
+                    exc.__class__.__name__,
+                    len(new_items),
+                )
+    if not text:
+        raw_responses = getattr(result, "raw_responses", None) or []
+        if raw_responses:
+            try:
+                from agents.items import ItemHelpers
+
+                parts: list[str] = []
+                for response in raw_responses:
+                    response_text = getattr(response, "output_text", None)
+                    if isinstance(response_text, str) and response_text:
+                        parts.append(response_text)
+                        continue
+                    for item in getattr(response, "output", None) or []:
+                        if isinstance(item, dict):
+                            part = ""
+                            if item.get("type") == "message":
+                                for content_item in item.get("content") or []:
+                                    if (
+                                        isinstance(content_item, dict)
+                                        and content_item.get("type") == "output_text"
+                                    ):
+                                        part += content_item.get("text") or ""
+                        else:
+                            part = ItemHelpers.extract_text(item)
+                        if part:
+                            parts.append(part)
+                text = "".join(parts)
+            except Exception as exc:
+                log.warning(
+                    "raw response output extraction failed for runner: %s raw_responses=%d",
+                    exc.__class__.__name__,
+                    len(raw_responses),
+                )
+    if not text:
+        final_output = getattr(result, "final_output", None)
+        new_items = getattr(result, "new_items", None) or []
+        raw_responses = getattr(result, "raw_responses", None) or []
+        raw_response_types = [type(response).__name__ for response in list(raw_responses)[:3]]
+        log.warning(
+            "runner output extraction returned empty text final_output_type=%s new_items=%d raw_responses=%d raw_response_types=%s",
+            type(final_output).__name__,
+            len(new_items),
+            len(raw_responses),
+            raw_response_types,
+        )
+    return text

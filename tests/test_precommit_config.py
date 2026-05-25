@@ -9,8 +9,8 @@ def test_cubic_review_pre_push_hook_bootstraps_cubic_path() -> None:
 
     assert "cubic-review" in config_text
     assert "entry: scripts/cubic_review.sh origin/main" in config_text
-    assert 'timeout_seconds="${CUBIC_REVIEW_TIMEOUT_SECONDS:-300}"' in script_text
+    assert 'timeout_seconds="${CUBIC_REVIEW_TIMEOUT_SECONDS:-3600}"' in script_text
     assert (
-        'env PATH="$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_ref" "$@"'
+        'env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_ref" "$@"'
         in script_text
     )

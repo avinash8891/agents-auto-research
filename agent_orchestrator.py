@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import threading
 from typing import Any
 
 import agent_formatters
@@ -24,40 +22,11 @@ from agent_orchestrator_helpers import (
 from trace_sdk import trace
 
 format_result_history = agent_formatters.format_result_history
-format_insight_brief = agent_formatters.format_insight_brief
-format_web_findings = agent_formatters.format_web_findings
-_parse_json = agent_infra._parse_json
-
-# Backward compatibility for callers that still import the single-agent runner
-# from the orchestrator module.
 _run_single_agent = agent_runners._run_single_agent
+_is_error_result = agent_infra._is_error_result
 
 
-def _is_error_result(result: dict[str, Any] | None) -> bool:
-    return agent_infra._is_error_result(result)
-
-
-def _run_coroutine_sync(coro):
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-
-    result_box: dict[str, Any] = {}
-    error_box: dict[str, BaseException] = {}
-
-    def _runner() -> None:
-        try:
-            result_box["value"] = asyncio.run(coro)
-        except BaseException as exc:  # pragma: no cover - exercised via regression test
-            error_box["error"] = exc
-
-    thread = threading.Thread(target=_runner, daemon=True)
-    thread.start()
-    thread.join()
-    if error_box:
-        raise error_box["error"]
-    return result_box.get("value")
+_run_coroutine_sync = agent_infra._run_coroutine_sync
 
 
 # DEAD CODE — diagnostic analysis entry point. Superseded by
@@ -102,6 +71,7 @@ async def run_web_research(
     research_round: int = 1,
     *,
     family: str,
+    job: int | None = None,
 ) -> dict[str, Any] | None:
     """Run the web researcher via the OpenAI Agents SDK (builds prompt, delegates to search)."""
     trace(
@@ -116,7 +86,12 @@ async def run_web_research(
         return result
 
     if result:
-        result = _persist_web_research_result(result, research_round, family)
+        result = _persist_web_research_result(
+            result,
+            research_round,
+            family,
+            job=job,
+        )
 
     return result
 
@@ -138,6 +113,7 @@ async def run_research_agent(
 
     research_def = agent_prompts._research_agent(
         strategy_label=spec.strategy_label,
+        family_name=family_name,
         config_rules=spec.config_rules,
         config_schema=spec.config_schema,
         thesis_json_hint=spec.thesis_json_hint,
@@ -189,6 +165,7 @@ def run_web_research_sync(
     research_round: int = 1,
     *,
     family: str,
+    job: int | None = None,
 ) -> dict[str, Any] | None:
     return _run_coroutine_sync(
         run_web_research(
@@ -197,6 +174,7 @@ def run_web_research_sync(
             result_summary,
             research_round,
             family=family,
+            job=job,
         )
     )
 

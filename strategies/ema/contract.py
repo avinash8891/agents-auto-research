@@ -24,6 +24,14 @@ def compile_ema_contract(contract: list[dict[str, Any]]) -> CompilationResult:
     if not normalized:
         return CompilationResult("invalid_contract", {}, ["empty_contract"], normalized)
 
+    missing_primitives = [
+        str(primitive.get("key") or primitive.get("type"))
+        for primitive in normalized
+        if primitive.get("type") == "missing_primitive"
+    ]
+    if missing_primitives:
+        return CompilationResult("invalid_contract", {}, sorted(missing_primitives), normalized)
+
     seen = {primitive.get("type") for primitive in normalized}
     missing = sorted(REQUIRED_TYPES - seen)
     if missing:
@@ -31,7 +39,8 @@ def compile_ema_contract(contract: list[dict[str, Any]]) -> CompilationResult:
 
     # Defaults match transcript-grounded baseline (ema_base.yaml).
     # Keep the research window bounded when a raw primitive contract is run
-    # directly from ema-contracts/ instead of a pre-rendered runtime config.
+    # directly from a job-scoped contract artifact instead of a pre-rendered
+    # runtime config.
     from strategies.ema.defaults import _get_ema_defaults
 
     runtime = {
@@ -61,8 +70,29 @@ def compile_ema_contract(contract: list[dict[str, Any]]) -> CompilationResult:
             runtime["gap_filter"] = primitive.get("enabled", True)
             if "gap_pct" in primitive:
                 runtime["gap_pct"] = primitive["gap_pct"]
-        elif primitive["type"] == "config_changes_passthrough":
-            runtime.update(primitive.get("config_changes", {}))
+        elif primitive["type"] == "gap_exclude":
+            runtime["gap_exclude"] = primitive.get("enabled", True)
+            if "gap_exclude_pct" in primitive:
+                runtime["gap_exclude_pct"] = primitive["gap_exclude_pct"]
+        elif primitive["type"] in {
+            "data_universe",
+            "symbols",
+            "validation_start",
+            "validation_end",
+            "max_hold_bars",
+            "min_stop_distance_pct",
+            "max_stop_distance_pct",
+            "trail_after_r",
+            "trail_distance_mode",
+            "trail_atr_lookback_bars",
+            "trail_atr_multiple",
+            "opening_info_intensity_gate_enabled",
+            "opening_info_window_end_time",
+            "opening_info_abs_return_min_quantile",
+            "opening_info_volume_z_min_quantile",
+            "opening_info_volume_z_lookback_sessions",
+        }:
+            runtime[primitive["type"]] = primitive.get("value")
 
     # Validate before returning
     from strategies.ema.validate import validate_ema_runtime_config
@@ -76,6 +106,7 @@ def compile_ema_contract(contract: list[dict[str, Any]]) -> CompilationResult:
 
 def map_ema_config_changes_to_contract(config_changes: dict[str, Any]) -> list[dict[str, Any]]:
     from strategies.ema.defaults import _get_ema_defaults
+    from strategies.ema.validate import supported_ema_runtime_keys
 
     config_changes = {**_get_ema_defaults(), **config_changes}
     primitive_contract: list[dict[str, Any]] = []
@@ -119,6 +150,14 @@ def map_ema_config_changes_to_contract(config_changes: dict[str, Any]) -> list[d
                 "lookback": config_changes.get("range_shift_lookback"),
             }
         )
+    if "gap_exclude" in config_changes:
+        primitive_contract.append(
+            {
+                "type": "gap_exclude",
+                "enabled": bool(config_changes["gap_exclude"]),
+                "gap_exclude_pct": config_changes.get("gap_exclude_pct"),
+            }
+        )
     explicitly_mapped_keys = {
         "ema_length",
         "timeframe_long",
@@ -129,14 +168,17 @@ def map_ema_config_changes_to_contract(config_changes: dict[str, Any]) -> list[d
         "max_trades_per_day",
         "gap_filter",
         "gap_pct",
+        "gap_exclude",
+        "gap_exclude_pct",
         "use_range_shift",
         "range_shift_lookback",
     }
-    passthrough_changes = {
-        key: value for key, value in config_changes.items() if key not in explicitly_mapped_keys
-    }
-    if passthrough_changes:
-        primitive_contract.append(
-            {"type": "config_changes_passthrough", "config_changes": passthrough_changes}
-        )
+    supported = supported_ema_runtime_keys()
+    for key, value in config_changes.items():
+        if key in explicitly_mapped_keys or key == "family":
+            continue
+        if key in supported:
+            primitive_contract.append({"type": key, "value": value})
+        else:
+            primitive_contract.append({"type": "missing_primitive", "key": key, "value": value})
     return primitive_contract

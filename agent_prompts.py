@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from autoresearch_constants import DEFAULT_AGENT_MODEL
+
 MAX_TURNS_RESEARCH = 15
 MAX_RETRIES = 2
 
@@ -64,6 +66,7 @@ Return ONLY the JSON object."""
 
 def _research_agent(
     strategy_label: str,
+    family_name: str,
     config_rules: list[str],
     config_schema: str,
     thesis_json_hint: str,
@@ -86,13 +89,15 @@ WORKFLOW:
    and external evidence. Prioritize high-confidence anomalies with large sample sizes.
 3. Formulate ONE concrete thesis with specific config_changes.
 
-CRITICAL RULES:
-- Your thesis MUST include "config_changes" with specific key-value pairs from the schema below.
-- config_changes is applied as a DELTA ON TOP OF THE FAMILY DEFAULTS, NOT the current best.
+        CRITICAL RULES:
+        - The top-level thesis payload MUST include "strategy_family" equal to "{family_name}".
+        - Do not use a generic "family" field. Emit "strategy_family" instead.
+        - Your thesis MUST include "config_changes" with specific key-value pairs from the schema below.
+        - config_changes is applied as a DELTA ON TOP OF THE FAMILY DEFAULTS, NOT the current best.
   If you want to change two runtime values, you MUST include BOTH keys.
   Any key you omit stays at the default value, NOT at the current best value.
 - TWO configs with the same final runtime values are DUPLICATES even if thesis_id differs.
-  Before proposing, mentally compute the full config and check it differs from all prior experiments.
+  Before proposing, mentally compute the full config and check it differs from all prior backtests.
 - Do NOT propose vague ideas. Every thesis must map to exact parameter values.
 - Do NOT repeat a thesis_id that appears in PRIOR THESES or EXPERIMENT HISTORY.
 - If the diagnostic data shows a clear pattern (e.g., only 09:00 hour is profitable),
@@ -114,8 +119,12 @@ CONFIG SCHEMA (only these keys are valid in config_changes):
       "suggested_theses": [
         {{
           "thesis_id": "short_snake_case_name (unique, never reuse)",
-          "mechanism_dimension": "one of: entry_timing, exit_mechanism, signal_quality, regime_conditioning, portfolio_construction, risk_structure, market_microstructure",
+          "mechanism_dimension": "one of: entry_timing, exit_mechanism, signal_quality, regime_conditioning, portfolio_construction, risk_structure, market_microstructure, emergent, or a prior emergent dimension name",
           "dimension_novelty": "why this is not a parameter variation of any prior thesis in the same dimension",
+          "new_dimension_name": "required only when mechanism_dimension is emergent; otherwise empty string",
+          "why_existing_dimensions_do_not_fit": "required only when mechanism_dimension is emergent; otherwise empty string",
+          "mechanism_family_definition": "required only when mechanism_dimension is emergent; otherwise empty string",
+          "expected_reuse_across_future_theses": "required only when mechanism_dimension is emergent; otherwise empty string",
           "hypothesis": "what this tests and what improvement is expected",
           {thesis_json_hint},
           "mechanism": "what structural change it makes and why it should help",
@@ -153,6 +162,6 @@ CONFIG SCHEMA (only these keys are valid in config_changes):
       exhausting all patterns in the diagnostic data.
     Return ONLY the JSON object.""",
         tools=[],
-        model="gpt-5.5",
+        model=DEFAULT_AGENT_MODEL,
         maxTurns=MAX_TURNS_RESEARCH,
     )

@@ -3,23 +3,38 @@ from __future__ import annotations
 import json
 import os
 import shlex
-from pathlib import Path, PureWindowsPath
+import subprocess
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
 from strategy_family import load_family
 from vps_runner import (
     VPSConfig,
+    _build_arg_parser,
     _localize_remote_result_output,
+    _render_release_symlink_bootstrap,
     _sftp_mkdir_p,
+    _should_skip_git_prepare,
+    _stream_remote_prepare_command,
+    build_activity_probe_command,
     build_git_prepare_command,
+    build_git_status_command,
     build_remote_command,
+    build_remote_prepare_command,
+    build_remote_run_command,
     config_from_env,
     create_verified_ssh_client,
+    materialize_remote_codex_auth,
     materialize_remote_config_if_needed,
+    materialize_remote_runtime_env,
+    parse_activity_probe,
+    parse_current_sha,
+    parse_prepare_result,
     parse_resolved_sha,
     redact_git_repo_url,
     redact_secrets,
+    render_runtime_env_file,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -30,8 +45,8 @@ def test_vps_config_reads_remote_details_from_environment(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     config = config_from_env(git_ref="feature/ema")
 
     assert config.host == "203.0.113.10"
@@ -47,10 +62,9 @@ def test_vps_config_reads_optional_remote_data_root_from_environment(monkeypatch
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/data/autoresearch")
-
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     config = config_from_env(git_ref="feature/ema")
 
     assert config.data_root == "/data/autoresearch"
@@ -60,10 +74,9 @@ def test_vps_config_expands_tilde_data_root_for_root_user(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "root")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "~/autoresearch-data")
-
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/root/autoresearch")
     config = config_from_env(git_ref="feature/ema")
 
     assert config.data_root == "/root/autoresearch-data"
@@ -73,10 +86,9 @@ def test_vps_config_expands_tilde_data_root_for_non_root_user(monkeypatch) -> No
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "~/autoresearch-data")
-
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/home/researcher/autoresearch")
     config = config_from_env(git_ref="feature/ema")
 
     assert config.data_root == "/home/researcher/autoresearch-data"
@@ -87,7 +99,6 @@ def test_vps_config_requires_explicit_environment(monkeypatch) -> None:
         "AUTORESEARCH_VPS_HOST",
         "AUTORESEARCH_VPS_USER",
         "AUTORESEARCH_VPS_KEY",
-        "AUTORESEARCH_VPS_DIR",
         "AUTORESEARCH_GIT_REPO",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -100,8 +111,8 @@ def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_VPS_HOST", "203.0.113.10")
     monkeypatch.setenv("AUTORESEARCH_VPS_USER", "researcher")
     monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
-    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     monkeypatch.setenv("AUTORESEARCH_GIT_REPO", "https://github.com/example/repo.git")
+    monkeypatch.setenv("AUTORESEARCH_VPS_DIR", "/srv/autoresearch")
     for bad_ref in ("feature/ema:refs/heads/main", "+main", "-main", "main..next", "main@{1}"):
         with pytest.raises(ValueError, match="AUTORESEARCH_GIT_REF"):
             config_from_env(git_ref=bad_ref)
@@ -110,6 +121,73 @@ def test_vps_config_rejects_unsafe_git_refs(monkeypatch) -> None:
         config_from_env(git_ref="0123456789abcdef0123456789abcdef01234567").git_ref
         == "0123456789abcdef0123456789abcdef01234567"
     )
+
+
+def test_vps_runner_parser_accepts_git_sha_alias() -> None:
+    parser = _build_arg_parser()
+
+    ref_args = parser.parse_args(["--strategy", "ema", "--git-ref", "main"])
+    sha_args = parser.parse_args(
+        ["--strategy", "ema", "--git-sha", "0123456789abcdef0123456789abcdef01234567"]
+    )
+
+    assert ref_args.git_ref == "main"
+    assert sha_args.git_ref == "0123456789abcdef0123456789abcdef01234567"
+
+
+def test_vps_runner_parser_accepts_skip_deploy_when_resuming_current_job() -> None:
+    parser = _build_arg_parser()
+
+    args = parser.parse_args(
+        [
+            "--strategy",
+            "ema",
+            "--git-ref",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--resume-current-job",
+            "--skip-deploy-if-current",
+        ]
+    )
+
+    assert args.resume_current_job is True
+    assert args.skip_deploy_if_current is True
+
+
+def test_vps_runner_parser_accepts_skip_deploy_for_fresh_job() -> None:
+    parser = _build_arg_parser()
+
+    args = parser.parse_args(
+        [
+            "--strategy",
+            "ema",
+            "--git-ref",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--fresh-job",
+            "--skip-deploy-if-current",
+        ]
+    )
+
+    assert args.fresh_job is True
+    assert args.resume_current_job is False
+    assert args.skip_deploy_if_current is True
+
+
+def test_vps_runner_parser_accepts_force_override() -> None:
+    parser = _build_arg_parser()
+
+    args = parser.parse_args(
+        [
+            "--strategy",
+            "ema",
+            "--git-ref",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--resume-current-job",
+            "--force",
+        ]
+    )
+
+    assert args.resume_current_job is True
+    assert args.force is True
 
 
 def test_vps_config_rejects_unsafe_remote_dirs(monkeypatch) -> None:
@@ -140,23 +218,176 @@ def test_remote_command_runs_controller_for_family() -> None:
     resolved_sha = "0123456789abcdef0123456789abcdef01234567"
     command = build_remote_command(config, family, resolved_sha)
 
-    assert f"cd {shlex.quote(config.remote_dir)}" in command
+    release_dir = str(PurePosixPath(config.remote_dir) / "releases" / resolved_sha)
+    assert f"cd {shlex.quote(release_dir)}" in command
+    assert "os.symlink(target, link)" in command
+    assert "runtime" in command
+    assert f"export AUTORESEARCH_RUNTIME_ROOT={shlex.quote(config.remote_dir)}" in command
+    assert "deps_fingerprint=$(python3 -c" in command
+    assert ".venv/.autoresearch-deps.sha256" in command
+    assert 'if [ -f ".venv/.autoresearch-deps.sha256" ] && ' in command
+    assert "then rm -rf .venv; fi" in command
     assert 'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi' in command
     assert "python_bin=.venv/bin/python" in command
     assert f"export AUTORESEARCH_RESOLVED_SHA={resolved_sha}" in command
     assert '"$python_bin" -m pip install -e .' in command
     assert (
+        'if [ ! -f ".venv/.autoresearch-deps.sha256" ] || '
+        '[ "$(cat .venv/.autoresearch-deps.sha256)" != "$deps_fingerprint" ]; then '
+        '"$python_bin" -m pip install -e .'
+    ) in command
+    assert 'printf "%s\\n" "$deps_fingerprint" > .venv/.autoresearch-deps.sha256' in command
+    assert (
         f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
     ) in command
-    assert command.index("python_bin=.venv/bin/python") < command.index(
-        '"$python_bin" -m pip install -e .'
+
+
+def test_release_symlink_bootstrap_only_links_shared_dirs(tmp_path: Path) -> None:
+    family = load_family("ema")
+    remote_dir = tmp_path / "remote"
+    resolved_sha = "0123456789abcdef0123456789abcdef01234567"
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir=remote_dir.as_posix(),
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
     )
-    assert command.index('"$python_bin" -m pip install -e .') < command.index(
-        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)}'
+    release_dir = remote_dir / "releases" / resolved_sha
+    release_dir.mkdir(parents=True)
+    command = _render_release_symlink_bootstrap(config, family, resolved_sha)
+
+    subprocess.run(["bash", "-lc", command], check=True, cwd=tmp_path)
+
+    assert (release_dir / "runtime").is_symlink()
+    assert (release_dir / "logs").is_symlink()
+    assert not (release_dir / f"{family.name}_autoresearch.next.json").exists()
+
+
+def test_remote_prepare_command_uses_transaction_trace_mode() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
     )
-    assert "/root/orb-research" not in command
-    assert "backtest_5ema.py" not in command
-    assert "scp" not in command.lower()
+
+    command = build_remote_prepare_command(config, family, "0" * 40)
+
+    assert "export AUTORESEARCH_TRACE_MODE=transaction" in command
+    assert "--fresh-job --prepare-launch-state-only" in command
+    assert "--run-current-state" not in command
+
+
+def test_remote_prepare_command_is_shell_parseable_when_bootstrap_is_chained() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_prepare_command(config, family, "0" * 40)
+
+    subprocess.run(["bash", "-n"], input=command, text=True, check=True)
+
+
+def test_remote_run_command_clears_transaction_trace_mode() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_run_command(config, family, "0" * 40)
+
+    assert "unset AUTORESEARCH_TRACE_MODE || true" in command
+    assert f"export AUTORESEARCH_RUNTIME_ROOT={config.remote_dir}" in command
+    assert "os.symlink(target, link)" not in command
+    assert "--run-current-state" in command
+    assert "--prepare-launch-state-only" not in command
+
+
+def test_remote_resume_command_can_skip_dependency_install_when_sha_is_current() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_command(
+        config,
+        family,
+        "0" * 40,
+        resume_current_job=True,
+        skip_dependency_install=True,
+    )
+
+    assert 'if [ ! -x ".venv/bin/python" ]; then' in command
+    assert "Existing checkout matches requested ref but .venv is missing" in command
+    assert '"$python_bin" -m pip install -e .' in command
+    assert "deps_fingerprint=$(python3 -c" in command
+    assert 'test -x ".venv/bin/python"' not in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--resume-current-job --prepare-launch-state-only"
+    ) in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--run-current-state"
+    ) in command
+
+
+def test_remote_fresh_command_can_skip_dependency_install_when_sha_is_current() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_command(
+        config,
+        family,
+        "0" * 40,
+        skip_dependency_install=True,
+    )
+
+    assert 'if [ ! -x ".venv/bin/python" ]; then' in command
+    assert '"$python_bin" -m pip install -e .' in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--fresh-job --prepare-launch-state-only"
+    ) in command
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--run-current-state"
+    ) in command
+
+
+def test_should_skip_git_prepare_when_remote_checkout_already_matches() -> None:
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    assert _should_skip_git_prepare(current_sha=sha, resolved_sha=sha) is True
+    assert _should_skip_git_prepare(current_sha=sha, resolved_sha="f" * 40) is False
+    assert _should_skip_git_prepare(current_sha=None, resolved_sha=sha) is False
 
 
 def test_remote_command_exports_optional_data_root() -> None:
@@ -176,6 +407,383 @@ def test_remote_command_exports_optional_data_root() -> None:
     assert "export AUTORESEARCH_DATA_ROOT=/data/autoresearch &&" in command
 
 
+def test_remote_command_can_resume_current_job() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_command(config, family, "0" * 40, resume_current_job=True)
+
+    assert (
+        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} '
+        "--resume-current-job --prepare-launch-state-only"
+    ) in command
+
+
+def test_parse_prepare_result_reads_success_payload() -> None:
+    payload = {"ok": True, "job": 26, "state": "blocked", "research_round_in_progress": 6}
+    output = f"AUTORESEARCH_PREPARE_RESULT {json.dumps(payload)}\n"
+
+    assert parse_prepare_result(output) == payload
+
+
+def test_activity_probe_command_targets_family_state_and_process() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_activity_probe_command(config, family)
+
+    assert f"cd {shlex.quote(config.remote_dir)}" in command
+    assert (
+        f"if [ ! -d {shlex.quote(config.remote_dir + '/repo-cache')}/.git ]"
+        f" && [ ! -d {shlex.quote(config.remote_dir)}/.git ]; then "
+    ) in command
+    assert "state_path = pathlib.Path('ema' + '_autoresearch.next.json')" in command
+    assert "ps', '-eo', 'command='" in command
+    assert "autoresearch_controller.py --family ema" in command
+    assert "'pgrep -af' not in line" in command
+    assert "AUTORESEARCH_ACTIVE_RUN" in command
+    assert "research_round_in_progress" in command
+    assert "builder_running" in command
+    assert "run_experiment" in command
+    assert "controller_process_running_without_active_state" in command
+    assert "state_error" in command
+
+
+class _FakePrepareChannel:
+    def __init__(self, stdout_chunks, stderr_chunks, *, exit_ready=True):
+        self._stdout_chunks = list(stdout_chunks)
+        self._stderr_chunks = list(stderr_chunks)
+        self._exit_ready = exit_ready
+        self.closed = False
+
+    def recv_ready(self) -> bool:
+        return bool(self._stdout_chunks)
+
+    def recv(self, _size: int) -> bytes:
+        if not self._stdout_chunks:
+            return b""
+        return self._stdout_chunks.pop(0)
+
+    def recv_stderr_ready(self) -> bool:
+        return bool(self._stderr_chunks)
+
+    def recv_stderr(self, _size: int) -> bytes:
+        if not self._stderr_chunks:
+            return b""
+        return self._stderr_chunks.pop(0)
+
+    def exit_status_ready(self) -> bool:
+        return self._exit_ready and not self._stdout_chunks and not self._stderr_chunks
+
+    def recv_exit_status(self) -> int:
+        return 0
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakePrepareFile:
+    def __init__(self, channel: _FakePrepareChannel):
+        self.channel = channel
+
+
+def test_stream_remote_prepare_command_forced_close_returns_failure_code(monkeypatch) -> None:
+    channel = _FakePrepareChannel(
+        [b'AUTORESEARCH_PREPARE_RESULT {"ok": true}\n'],
+        [],
+        exit_ready=False,
+    )
+    stdout = _FakePrepareFile(channel)
+    stderr = _FakePrepareFile(channel)
+    times = iter([100.0, 100.1, 100.2, 101.0])
+    monkeypatch.setattr("vps_runner.time.time", lambda: next(times))
+
+    exit_code, out, err, forced_close = _stream_remote_prepare_command(
+        stdout,
+        stderr,
+        linger_after_success_seconds=0.5,
+    )
+
+    assert forced_close is True
+    assert channel.closed is True
+    assert exit_code == 124
+    assert "AUTORESEARCH_PREPARE_RESULT" in out
+    assert "did not exit within grace period" in err
+
+
+def test_stream_remote_prepare_command_times_out_without_marker(monkeypatch) -> None:
+    channel = _FakePrepareChannel([], [], exit_ready=False)
+    stdout = _FakePrepareFile(channel)
+    stderr = _FakePrepareFile(channel)
+    times = iter([100.0, 101.0])
+    monkeypatch.setattr("vps_runner.time.time", lambda: next(times))
+
+    exit_code, out, err, forced_close = _stream_remote_prepare_command(
+        stdout,
+        stderr,
+        timeout_seconds=0.5,
+    )
+
+    assert forced_close is True
+    assert channel.closed is True
+    assert exit_code == 124
+    assert out == ""
+    assert "timed out before reporting completion" in err
+
+
+def test_vps_runner_parser_accepts_explicit_fresh_job_mode() -> None:
+    parser = _build_arg_parser()
+
+    args = parser.parse_args(["--strategy", "ema", "--git-ref", "main", "--fresh-job"])
+
+    assert args.fresh_job is True
+    assert args.resume_current_job is False
+
+
+def test_remote_command_sources_runtime_env_file() -> None:
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_command(config, family, "0" * 40)
+
+    assert (
+        "if [ -f /srv/autoresearch/.env.autoresearch ]; then "
+        "set -a; . /srv/autoresearch/.env.autoresearch; set +a; fi"
+    ) in command
+
+
+def test_git_status_command_reports_current_and_resolved_sha_without_checkout() -> None:
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="0123456789abcdef0123456789abcdef01234567",
+    )
+
+    command = build_git_status_command(config)
+
+    assert "git checkout" not in command
+    assert "git reset --hard" not in command
+    assert "git clean" not in command
+    assert "git remote set-url" not in command
+    assert f"elif [ -d {shlex.quote(config.remote_dir)}/.git ]; then " in command
+    assert 'current=$(git -C "$repo_dir" rev-parse --verify HEAD^{commit})' in command
+    assert "git -c remote.origin.url=https://github.com/example/repo.git fetch" in command
+    assert "AUTORESEARCH_CURRENT_SHA" in command
+    assert "AUTORESEARCH_RESOLVED_SHA" in command
+
+
+def test_parse_current_sha_reads_remote_status_marker() -> None:
+    output = "\nAUTORESEARCH_CURRENT_SHA abcdef0123456789abcdef0123456789abcdef01\n"
+
+    assert parse_current_sha(output) == "abcdef0123456789abcdef0123456789abcdef01"
+
+
+def test_parse_activity_probe_reads_remote_marker() -> None:
+    output = (
+        'AUTORESEARCH_ACTIVE_RUN {"active": true, "job": 26, "state": "building", '
+        '"next_action_type": "builder_running", "reason": "builder_running thesis=T1"}\n'
+    )
+
+    payload = parse_activity_probe(output)
+
+    assert payload["active"] is True
+    assert payload["job"] == 26
+    assert payload["state"] == "building"
+    assert payload["next_action_type"] == "builder_running"
+
+
+def test_parse_current_sha_returns_none_when_remote_checkout_is_missing() -> None:
+    output = "\nAUTORESEARCH_CURRENT_SHA missing\n"
+
+    assert parse_current_sha(output) is None
+
+
+def test_render_runtime_env_file_includes_runtime_env_and_skips_runner_only_keys(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_DISCORD_WEBHOOK_EMA", "https://example.com/webhook")
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/data/autoresearch")
+    monkeypatch.setenv("AUTORESEARCH_IMPROVEMENT_HALO", "1")
+    monkeypatch.setenv("TRACELOOP_API_KEY", "trace-key")
+    monkeypatch.setenv("AUTORESEARCH_VPS_KEY", "~/.ssh/research_key")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "9")
+
+    content = render_runtime_env_file()
+
+    assert "AUTORESEARCH_DATA_ROOT" in content
+    assert "AUTORESEARCH_IMPROVEMENT_HALO" in content
+    assert "AUTORESEARCH_JOB" in content
+    assert "AUTORESEARCH_DISCORD_WEBHOOK_EMA" not in content
+    assert "TRACELOOP_API_KEY" not in content
+    assert "AUTORESEARCH_VPS_KEY" not in content
+    assert "AUTORESEARCH_GIT_REPO" not in content
+
+
+def test_render_runtime_env_file_defaults_reflexion_on_for_vps_launch(monkeypatch) -> None:
+    monkeypatch.delenv("AUTORESEARCH_IMPROVEMENT_REFLEXION", raising=False)
+
+    content = render_runtime_env_file()
+
+    assert "AUTORESEARCH_IMPROVEMENT_REFLEXION=1" in content
+
+
+def test_materialize_remote_runtime_env_uploads_autogenerated_env_file(monkeypatch) -> None:
+    class FakeSFTP:
+        def __init__(self) -> None:
+            self.put_calls: list[tuple[str, str]] = []
+            self.put_contents: list[str] = []
+            self.mkdirs: list[str] = []
+            self.chmod_calls: list[tuple[str, int]] = []
+
+        def stat(self, remote_path: str) -> None:
+            if remote_path not in {"/", "/srv", "/srv/autoresearch"} | set(self.mkdirs):
+                raise OSError("missing")
+
+        def mkdir(self, remote_path: str) -> None:
+            self.mkdirs.append(remote_path)
+
+        def put(self, local_path: str, remote_path: str) -> None:
+            self.put_calls.append((local_path, remote_path))
+            self.put_contents.append(Path(local_path).read_text(encoding="utf-8"))
+
+        def chmod(self, remote_path: str, mode: int) -> None:
+            self.chmod_calls.append((remote_path, mode))
+
+        def close(self) -> None:
+            pass
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.sftp = FakeSFTP()
+
+        def open_sftp(self):
+            return self.sftp
+
+    monkeypatch.setenv("AUTORESEARCH_DISCORD_WEBHOOK_EMA", "https://example.com/webhook")
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "/data/autoresearch")
+    monkeypatch.setenv("AUTORESEARCH_JOB", "9")
+
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    client = FakeClient()
+    remote_path = materialize_remote_runtime_env(client, config)
+
+    assert remote_path == "/srv/autoresearch/.env.autoresearch"
+    assert client.sftp.put_calls
+    assert client.sftp.put_calls[0][1] == remote_path
+    assert client.sftp.chmod_calls == [(remote_path, 0o600)]
+    content = client.sftp.put_contents[0]
+    assert "AUTORESEARCH_DISCORD_WEBHOOK_EMA" not in content
+    assert "AUTORESEARCH_DATA_ROOT" in content
+    assert "AUTORESEARCH_JOB" in content
+
+
+def test_materialize_remote_codex_auth_uploads_local_auth_bundle(monkeypatch, tmp_path) -> None:
+    local_codex = tmp_path / ".codex"
+    local_codex.mkdir()
+    (local_codex / "auth.json").write_text(
+        json.dumps(
+            {
+                "OPENAI_API_KEY": None,
+                "tokens": {
+                    "access_token": "redacted",
+                    "refresh_token": "redacted",
+                    "id_token": "redacted",
+                    "account_id": "redacted",
+                },
+            }
+        )
+    )
+
+    class FakeSFTP:
+        def __init__(self) -> None:
+            self.put_calls: list[tuple[str, str]] = []
+            self.mkdirs: list[str] = []
+            self.chmod_calls: list[tuple[str, int]] = []
+
+        def stat(self, remote_path: str) -> None:
+            if remote_path not in {
+                "/",
+                "/home",
+                "/home/researcher",
+                "/home/researcher/.codex",
+            } | set(self.mkdirs):
+                raise OSError("missing")
+
+        def mkdir(self, remote_path: str) -> None:
+            self.mkdirs.append(remote_path)
+
+        def put(self, local_path: str, remote_path: str) -> None:
+            self.put_calls.append((local_path, remote_path))
+
+        def chmod(self, remote_path: str, mode: int) -> None:
+            self.chmod_calls.append((remote_path, mode))
+
+        def close(self) -> None:
+            pass
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.sftp = FakeSFTP()
+
+        def open_sftp(self):
+            return self.sftp
+
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    monkeypatch.setattr("vps_runner.Path.home", lambda: tmp_path)
+
+    client = FakeClient()
+    remote_path = materialize_remote_codex_auth(client, config)
+
+    assert remote_path == "/home/researcher/.codex/auth.json"
+    assert client.sftp.put_calls == [
+        (str(local_codex / "auth.json"), "/home/researcher/.codex/auth.json")
+    ]
+    assert client.sftp.chmod_calls == [
+        ("/home/researcher/.codex", 0o700),
+        ("/home/researcher/.codex/auth.json", 0o600),
+    ]
+
+
 def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() -> None:
     config = VPSConfig(
         host="203.0.113.10",
@@ -189,23 +797,73 @@ def test_git_prepare_command_clones_fetches_and_preserves_runtime_artifacts() ->
     command = build_git_prepare_command(config)
 
     assert "git clone --no-checkout" in command
+    assert f"{shlex.quote(config.remote_dir + '/repo-cache')}" in command
+    assert f"{shlex.quote(config.remote_dir + '/releases')}" in command
     assert f"git fetch --prune origin {shlex.quote(config.git_ref)}" in command
-    assert 'git checkout --detach "$resolved"' in command
-    assert "git clean -ffdx" in command
-    assert "-e '*_autoresearch-runs'" in command
-    assert "-e 'venv'" not in command
-    assert "-e '.venv'" not in command
-    assert "-e 'data'" in command
-    assert "-e 'experiments'" in command
-    assert "-e 'proposals'" in command
-    assert "-e '*-proposals'" in command
-    assert "-e 'run-queue'" in command
-    assert "-e '*-run-queue'" in command
-    assert "-e '*-contracts'" in command
-    assert "-e '*-builder-requests'" in command
-    assert "-e '*_experiments.db'" in command
+    assert "resolved=$(git rev-parse --verify FETCH_HEAD^{commit})" in command
+    assert f"release_dir={shlex.quote(config.remote_dir + '/releases')}\"/$resolved\"" in command
+    assert "release_dir=\"'" not in command
+    assert 'git archive "$resolved" | tar -x -C "$tmp_release"' in command
+    assert 'mv "$tmp_release" "$release_dir"' in command
+    assert 'ln -sfn "$release_dir"' in command
+    assert 'git checkout --detach "$resolved"' not in command
+    assert 'git reset --hard "$resolved"' not in command
+    assert "git clean -ffdx" not in command
     assert "AUTORESEARCH_RESOLVED_SHA %s" in command
     assert "scp" not in command.lower()
+
+
+def test_build_remote_command_exports_codex_home_for_remote_user() -> None:
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    family = load_family("ema")
+    command = build_remote_command(config, family, "0123456789abcdef0123456789abcdef01234567")
+
+    assert "export CODEX_HOME=/home/researcher/.codex" in command
+    assert "export AUTORESEARCH_RESOLVED_SHA=0123456789abcdef0123456789abcdef01234567" in command
+
+
+def test_git_prepare_command_uses_commit_ref_resolution_for_sha() -> None:
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch code",
+        git_repo="https://github.com/example/repo.git",
+        git_ref=sha,
+    )
+
+    command = build_git_prepare_command(config)
+
+    # Full SHA deploys fetch all refs (SHAs cannot be used as refspecs) then resolve locally.
+    assert "git fetch --prune origin &&" in command
+    assert f"resolved=$(git rev-parse --verify {shlex.quote(sha)}^{{commit}})" in command
+
+
+def test_git_prepare_command_treats_abbreviated_hex_ref_as_sha() -> None:
+    short_sha = "284e8c9"
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch code",
+        git_repo="https://github.com/example/repo.git",
+        git_ref=short_sha,
+    )
+
+    command = build_git_prepare_command(config)
+
+    assert "git fetch --prune origin &&" in command
+    assert f"resolved=$(git rev-parse --verify {shlex.quote(short_sha)}^{{commit}})" in command
+    assert f"git fetch --prune origin {shlex.quote(short_sha)}" not in command
 
 
 def test_git_prepare_command_uses_posix_remote_parent_on_windows(monkeypatch) -> None:
@@ -320,11 +978,14 @@ def test_sftp_mkdir_p_uses_posix_remote_parts_on_windows(monkeypatch) -> None:
 
     monkeypatch.setattr("vps_runner.Path", PureWindowsPath)
 
-    _sftp_mkdir_p(FakeSFTP(), "/srv/autoresearch/experiments/ema5")
+    _sftp_mkdir_p(FakeSFTP(), "/srv/autoresearch/runtime/jobs/job-4/research/round-2")
 
     assert created_dirs == [
-        "/srv/autoresearch/experiments",
-        "/srv/autoresearch/experiments/ema5",
+        "/srv/autoresearch/runtime",
+        "/srv/autoresearch/runtime/jobs",
+        "/srv/autoresearch/runtime/jobs/job-4",
+        "/srv/autoresearch/runtime/jobs/job-4/research",
+        "/srv/autoresearch/runtime/jobs/job-4/research/round-2",
     ]
 
 
@@ -358,7 +1019,9 @@ def test_materialize_remote_config_skips_tracked_configs(monkeypatch, tmp_path) 
 def test_materialize_remote_config_uploads_generated_experiment_input(
     monkeypatch, tmp_path
 ) -> None:
-    config_file = tmp_path / "experiments" / "ema5" / "runtime_config.json"
+    config_file = (
+        tmp_path / "runtime" / "jobs" / "job-4" / "research" / "round-2" / "selected_config.json"
+    )
     config_file.parent.mkdir(parents=True)
     config_file.write_text('{"strategy": "ema"}\n')
     uploaded: list[tuple[str, str]] = []
@@ -397,24 +1060,26 @@ def test_materialize_remote_config_uploads_generated_experiment_input(
     remote_config = materialize_remote_config_if_needed(
         FakeClient(),
         config,
-        "experiments/ema5/runtime_config.json",
+        "runtime/jobs/job-4/research/round-2/selected_config.json",
     )
 
-    assert remote_config == "experiments/ema5/runtime_config.json"
+    assert remote_config == "runtime/jobs/job-4/research/round-2/selected_config.json"
     assert uploaded == [
         (
             str(config_file),
-            "/srv/autoresearch/experiments/ema5/runtime_config.json",
+            "/srv/autoresearch/runtime/jobs/job-4/research/round-2/selected_config.json",
         )
     ]
-    assert "/srv/autoresearch/experiments" in created_dirs
-    assert "/srv/autoresearch/experiments/ema5" in created_dirs
+    assert "/srv/autoresearch/runtime/jobs/job-4/research" in created_dirs
+    assert "/srv/autoresearch/runtime/jobs/job-4/research/round-2" in created_dirs
 
 
 def test_materialize_remote_config_uses_posix_remote_parent_on_windows(
     monkeypatch, tmp_path
 ) -> None:
-    config_file = tmp_path / "experiments" / "ema5" / "runtime_config.json"
+    config_file = (
+        tmp_path / "runtime" / "jobs" / "job-4" / "research" / "round-2" / "selected_config.json"
+    )
     config_file.parent.mkdir(parents=True)
     config_file.write_text('{"strategy": "ema"}\n')
     created_dirs: list[str] = []
@@ -429,7 +1094,10 @@ def test_materialize_remote_config_uses_posix_remote_parent_on_windows(
 
         def put(self, local_path: str, remote_path: str) -> None:
             assert local_path == str(config_file)
-            assert remote_path == "/srv/autoresearch/experiments/ema5/runtime_config.json"
+            assert (
+                remote_path
+                == "/srv/autoresearch/runtime/jobs/job-4/research/round-2/selected_config.json"
+            )
 
         def close(self) -> None:
             pass
@@ -455,12 +1123,15 @@ def test_materialize_remote_config_uses_posix_remote_parent_on_windows(
     materialize_remote_config_if_needed(
         FakeClient(),
         config,
-        "experiments/ema5/runtime_config.json",
+        "runtime/jobs/job-4/research/round-2/selected_config.json",
     )
 
     assert created_dirs == [
-        "/srv/autoresearch/experiments",
-        "/srv/autoresearch/experiments/ema5",
+        "/srv/autoresearch/runtime",
+        "/srv/autoresearch/runtime/jobs",
+        "/srv/autoresearch/runtime/jobs/job-4",
+        "/srv/autoresearch/runtime/jobs/job-4/research",
+        "/srv/autoresearch/runtime/jobs/job-4/research/round-2",
     ]
 
 
@@ -488,7 +1159,8 @@ def test_materialize_remote_config_rejects_untracked_non_experiment_configs(
     monkeypatch.setattr("vps_runner._is_git_tracked", lambda rel_path: False)
 
     with pytest.raises(
-        RuntimeError, match="tracked config files or generated experiments/ configs"
+        RuntimeError,
+        match="tracked config files or generated runtime/jobs/job-N/research/round-\\*/selected_config.json inputs",
     ):
         materialize_remote_config_if_needed(FakeClient(), config, "tmp/runtime_config.json")
 

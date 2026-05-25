@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from autoresearch_state import (
-    ExperimentRecord,
+    BacktestResultRecord,
     RunContext,
     best_result,
     coerce_timestamp_to_epoch_ms,
@@ -20,7 +20,6 @@ from autoresearch_state import (
     deduplicate_entries,
     direction,
     is_better,
-    iso8601_utc_now,
     latest_result,
     promote_missing_known_results,
     read_results,
@@ -29,6 +28,7 @@ from autoresearch_state import (
     write_current_md,
     write_state,
 )
+from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 
 # ── State JSON round-trip ────────────────────────────────────────
 
@@ -103,10 +103,10 @@ def test_is_better_lower_direction() -> None:
 
 def test_best_result_picks_highest_keep_metric() -> None:
     results = [
-        ExperimentRecord("configs/ema_base.yaml", 1.0, "keep", "", 1, {}),
-        ExperimentRecord("configs/variants/ema_a.yaml", 1.5, "keep", "", 2, {}),
-        ExperimentRecord("configs/variants/ema_b.yaml", 1.7, "discard", "", 3, {}),
-        ExperimentRecord("configs/variants/ema_c.yaml", 1.3, "keep", "", 4, {}),
+        BacktestResultRecord("configs/ema_base.yaml", 1.0, "keep", "", 1, {}),
+        BacktestResultRecord("configs/variants/ema_a.yaml", 1.5, "keep", "", 2, {}),
+        BacktestResultRecord("configs/variants/ema_b.yaml", 1.7, "discard", "", 3, {}),
+        BacktestResultRecord("configs/variants/ema_c.yaml", 1.3, "keep", "", 4, {}),
     ]
     assert best_result(results, "higher") == {
         "config": "configs/variants/ema_a.yaml",
@@ -116,26 +116,44 @@ def test_best_result_picks_highest_keep_metric() -> None:
 
 def test_best_result_excludes_discard_status() -> None:
     results = [
-        ExperimentRecord("configs/ema_base.yaml", 0.9, "keep", "", 1, {}),
-        ExperimentRecord("configs/variants/ema_x.yaml", 99.0, "discard", "", 2, {}),
+        BacktestResultRecord("configs/ema_base.yaml", 0.9, "keep", "", 1, {}),
+        BacktestResultRecord("configs/variants/ema_x.yaml", 99.0, "discard", "", 2, {}),
     ]
     assert best_result(results, "higher")["metric"] == 0.9
 
 
 def test_best_result_returns_empty_when_no_keeps() -> None:
-    results = [ExperimentRecord("configs/ema_base.yaml", 1.5, "discard", "", 1, {})]
+    results = [BacktestResultRecord("configs/ema_base.yaml", 1.5, "discard", "", 1, {})]
     assert best_result(results, "higher") == {}
 
 
 def test_latest_result_picks_largest_timestamp() -> None:
-    a = ExperimentRecord("configs/a.yaml", 1.0, "keep", "", 1700000000, {})
-    b = ExperimentRecord("configs/b.yaml", 2.0, "keep", "", 1700000005, {})
-    c = ExperimentRecord("configs/c.yaml", 3.0, "discard", "", 1700000003, {})
+    a = BacktestResultRecord("configs/a.yaml", 1.0, "keep", "", 1700000000, {})
+    b = BacktestResultRecord("configs/b.yaml", 2.0, "keep", "", 1700000005, {})
+    c = BacktestResultRecord("configs/c.yaml", 3.0, "discard", "", 1700000003, {})
     assert latest_result([a, b, c]).config == "configs/b.yaml"
 
 
 def test_latest_result_returns_none_for_empty_list() -> None:
     assert latest_result([]) is None
+
+
+def test_read_results_treats_legacy_string_job_ids_as_zero() -> None:
+    entries = [
+        {
+            "metric": 1.25,
+            "status": "keep",
+            "description": "legacy",
+            "timestamp": 1700000000,
+            "job": "2026-05-02",
+            "asi": {"config": "configs/ema_base.yaml"},
+        }
+    ]
+
+    results = read_results(entries)
+
+    assert len(results) == 1
+    assert results[0].job == 0
 
 
 # ── read_results filtering ───────────────────────────────────────
@@ -179,12 +197,14 @@ def test_deduplicate_entries_keeps_single_entry_unchanged() -> None:
 def test_deduplicate_entries_picks_richer_of_two_for_same_config() -> None:
     sparse = {
         "run": 1,
+        "job": 1,
         "metric": 1.0,
         "status": "keep",
         "asi": {"config": "configs/ema_base.yaml"},
     }
     rich = {
         "run": 2,
+        "job": 1,
         "metric": 1.0,
         "status": "keep",
         "asi": {
@@ -196,6 +216,28 @@ def test_deduplicate_entries_picks_richer_of_two_for_same_config() -> None:
     out = deduplicate_entries([sparse, rich])
     assert len(out) == 1
     assert out[0]["asi"].get("trade_analysis") == {"trade_count": 287}
+
+
+def test_deduplicate_entries_keeps_same_config_across_different_jobs() -> None:
+    job_one = {
+        "run": 1,
+        "job": 1,
+        "metric": 1.0,
+        "status": "keep",
+        "asi": {"config": "configs/ema_base.yaml"},
+    }
+    job_two = {
+        "run": 2,
+        "job": 2,
+        "metric": 1.5,
+        "status": "keep",
+        "asi": {"config": "configs/ema_base.yaml", "trade_analysis": {"trade_count": 10}},
+    }
+
+    out = deduplicate_entries([job_one, job_two])
+
+    assert len(out) == 2
+    assert {entry["job"] for entry in out} == {1, 2}
 
 
 def test_deduplicate_entries_preserves_non_experiment_rows() -> None:
@@ -224,7 +266,7 @@ def test_render_current_md_includes_best_and_latest_when_present() -> None:
         "blockers": [],
     }
     results = [
-        ExperimentRecord("configs/variants/ema_a.yaml", 1.5, "keep", "", 100, {}),
+        BacktestResultRecord("configs/variants/ema_a.yaml", 1.5, "keep", "", 100, {}),
     ]
     md = render_current_md(state, results, family_name="ema")
     assert "# EMA Autoresearch Current State" in md
@@ -236,12 +278,26 @@ def test_render_current_md_includes_best_and_latest_when_present() -> None:
     assert "## Latest Insights" in md
 
 
+def test_render_current_md_uses_configured_metric_name() -> None:
+    md = render_current_md(
+        {
+            "state": "running",
+            "current_best": {"config": "configs/ema_base.yaml", "metric": 1.5},
+        },
+        [],
+        family_name="ema",
+        metric_name="median_expectancy",
+    )
+    assert "- median_expectancy: `1.5`" in md
+    assert "- profit_factor: `1.5`" not in md
+
+
 def test_render_current_md_handles_no_results_and_no_action() -> None:
     md = render_current_md(
         {"state": "blocked", "blockers": []},
         [],
     )
-    assert "No experiments logged yet." in md
+    assert "No backtest runs logged yet." in md
     assert "## Blockers" in md
 
 
@@ -345,7 +401,7 @@ def test_run_context_defaults_are_empty_and_isolate_per_instance() -> None:
     ctx_a = RunContext()
     ctx_b = RunContext()
     assert ctx_a.current_contract is None
-    assert ctx_a.parent_experiment_id == ""
+    assert ctx_a.parent_backtest_run_id == ""
     assert ctx_a.current_artifact_dir is None
     assert ctx_a.latest_trades_file == ""
     assert ctx_a.latest_strategy_events_file == ""

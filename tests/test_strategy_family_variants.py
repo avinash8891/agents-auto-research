@@ -9,6 +9,7 @@ from __future__ import annotations
 import shlex
 import sys
 import sysconfig
+from dataclasses import fields
 from pathlib import Path
 
 import backtest.legacy_entrypoint as legacy_entrypoint
@@ -33,7 +34,7 @@ def test_orb_family_has_orb_prefix_and_default_variants() -> None:
     assert fam.variant_prefix == "orb_"
     assert "configs/variants/orb_spy_only.yaml" in fam.default_variants
     assert "configs/variants/orb_trailing_stop.yaml" in fam.default_variants
-    assert fam.research_dirname == "orb-research-artifacts"
+    assert "research" not in {field.name for field in fields(StrategyFamily)}
 
 
 def test_orb_family_default_variants_are_shipped() -> None:
@@ -60,14 +61,10 @@ def test_orb_family_is_built_from_registered_strategy_metadata() -> None:
 
     assert family.benchmark_script == strategy.benchmark_script
     assert family.description_for_research == strategy.description_for_research
-    assert family.proposals_dirname == strategy.family_dirnames.proposals
-    assert family.compilations_dirname == strategy.family_dirnames.compilations
-    assert family.contracts_dirname == strategy.family_dirnames.contracts
-    assert family.run_queue_dirname == strategy.family_dirnames.run_queue
-    assert family.research_dirname == strategy.family_dirnames.research
-    assert family.builder_requests_dirname == strategy.family_dirnames.builder_requests
+    assert not hasattr(strategy.family_dirnames, "research")
     assert family.base_config_filename == strategy.family_dirnames.base_config_filename
-    assert family.runs_dirname == strategy.family_dirnames.runs
+    removed_field = "runs" "_dirname"
+    assert removed_field not in {field.name for field in fields(StrategyFamily)}
     assert family.variant_prefix == strategy.family_dirnames.variant_prefix
 
 
@@ -116,10 +113,18 @@ def test_benchmark_command_uses_generic_strategy_runner() -> None:
     output_dir = "/tmp/run dir"
     command = load_family("ema").benchmark_command(config_path, output_dir=output_dir)
     assert command == (
-        "python3 -m backtest.runner --strategy ema --config "
+        f"{shlex.quote(sys.executable)} -m backtest.runner --strategy ema --config "
         f"{shlex.quote(config_path)} --output-dir {shlex.quote(output_dir)}"
     )
     assert "backtest_5ema.py" not in command
+
+
+def test_benchmark_command_allows_explicit_python_override(monkeypatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_PYTHON_BIN", ".venv/bin/python")
+
+    command = load_family("ema").benchmark_command("configs/ema_base.yaml")
+
+    assert command.startswith(".venv/bin/python -m backtest.runner ")
 
 
 def test_benchmark_command_accepts_pathlike_output_dir(tmp_path: Path) -> None:

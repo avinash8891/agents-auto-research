@@ -51,6 +51,12 @@ def write_json_atomic(path: Path, payload: Any) -> None:
     write_text_atomic(path, json_dumps_strict(payload) + "\n")
 
 
+def write_yaml_atomic(path: Path, payload: Any) -> None:
+    import yaml
+
+    write_text_atomic(path, yaml.dump(payload, default_flow_style=False))
+
+
 def _json_safe_value(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         if math.isnan(value):

@@ -42,7 +42,19 @@ MILLISECONDS_PER_SECOND = 1000
 
 # ── Conductor + research ─────────────────────────────────────────
 MAX_RESEARCH_ROUNDS = 100  # safeguard: max single-thesis research iterations
-MAX_VALIDATION_RETRIES = 3
+MAX_VALIDATION_RETRIES = 3  # legacy alias = total retries cap (stage_1 + stage_2 + compile)
+
+# Per-stage retry budgets. The retry loop exits when any stage's counter is
+# exhausted. Total worst-case attempts = sum of the three budgets.
+MAX_VALIDATION_RETRIES_STAGE_1 = 3  # structural / pre-compile rules
+MAX_VALIDATION_RETRIES_STAGE_2 = 2  # post-compile semantic rules (currently no-op)
+MAX_VALIDATION_RETRIES_COMPILE = 1  # compile failures rarely fix in-loop
+
+# ── Model selection ───────────────────────────────────────────────
+# Single source of truth for the OpenAI model used by research agents and
+# the compiler operationalize pipeline. Replaces _CONDUCTOR_MODEL in
+# research_paths.py and _OPENAI_AGENT_MODEL in agent_openai_calls.py.
+DEFAULT_AGENT_MODEL = "gpt-5.2"
 
 # ── Improvement-loop feature flags (env var names) ───────────────
 # All default off. Each flag gates exactly one arrow in the improvement
@@ -50,12 +62,22 @@ MAX_VALIDATION_RETRIES = 3
 ENV_IMPROVEMENT_HALO = "AUTORESEARCH_IMPROVEMENT_HALO"
 ENV_IMPROVEMENT_HALO_APPLY = "AUTORESEARCH_IMPROVEMENT_HALO_APPLY"
 ENV_IMPROVEMENT_REFLEXION = "AUTORESEARCH_IMPROVEMENT_REFLEXION"
+ENV_IMPROVEMENT_RECURSIVE_IMPROVE = "AUTORESEARCH_IMPROVEMENT_RECURSIVE_IMPROVE"
 ENV_IMPROVEMENT_RATCHET = "AUTORESEARCH_IMPROVEMENT_RATCHET"
 
 # Tunable subprocess timeouts for improvement-loop tools (env var names).
 # Defaults: 600s (halo CLI) and 1800s (Claude Code subprocess).
 ENV_HALO_TIMEOUT_SECONDS = "AUTORESEARCH_HALO_TIMEOUT_SECONDS"
 ENV_CLAUDE_TIMEOUT_SECONDS = "AUTORESEARCH_CLAUDE_TIMEOUT_SECONDS"
+ENV_RECURSIVE_IMPROVE_INTERVAL = "AUTORESEARCH_RECURSIVE_IMPROVE_INTERVAL"
+ENV_RECURSIVE_IMPROVE_MODEL = "AUTORESEARCH_RECURSIVE_IMPROVE_MODEL"
+ENV_RECURSIVE_IMPROVE_COMMAND = "AUTORESEARCH_RECURSIVE_IMPROVE_COMMAND"
+ENV_RECURSIVE_IMPROVE_TIMEOUT_SECONDS = "AUTORESEARCH_RECURSIVE_IMPROVE_TIMEOUT_SECONDS"
+
+# ── Control-plane / tracing ─────────────────────────────────────
+ENV_TRACE_MODE = "AUTORESEARCH_TRACE_MODE"
+TRACE_MODE_TRANSACTION = "transaction"
+PREPARE_RESULT_MARKER = "AUTORESEARCH_PREPARE_RESULT"
 
 # Default location of the held-out task list relative to the repo root.
 HOLDOUT_TASKS_PATH = "configs/eval/holdout_tasks.yaml"
