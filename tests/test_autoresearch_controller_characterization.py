@@ -7,10 +7,13 @@ import pytest
 
 from autoresearch_controller import (
     AutoresearchController,
+    _emit_prepare_result,
     _parse_main_args,
+    _run_controller_loop,
     _should_hard_exit_prepare_cli,
     _validate_current_executable_state,
     default_controller_paths,
+    main,
     max_consecutive_research_required,
     normalize_controller_launch_state,
     validate_controller_state_invariants,
@@ -201,6 +204,38 @@ def test_read_results_returns_all_when_state_job_is_invalid(
     assert {result.job for result in results} == {3, 4}
 
 
+def test_read_results_skips_records_with_invalid_result_job(
+    controller: AutoresearchController,
+) -> None:
+    valid = _record(job=4, run_id="job-4-result", metric=1.8)
+    invalid = _record(job=4, run_id="job-bad-result", metric=2.1)
+    invalid.job = "bad"
+    controller.backtest_run_db.add(valid)
+    controller.backtest_run_db.add(invalid)
+    controller.write_state({"state": "running", "job": 4, "research_round": 1})
+
+    results = controller.read_results()
+
+    assert [result.config for result in results] == ["configs/variants/job-4-result.yaml"]
+
+
+def test_controller_reads_job_scoped_research_artifacts(
+    controller: AutoresearchController,
+) -> None:
+    controller.write_state({"state": "running", "job": 12, "research_round": 1})
+    artifact_dir = controller.research_dir / "round-1"
+    artifact_dir.mkdir(parents=True)
+    artifact_path = artifact_dir / "round.json"
+    artifact_path.write_text(json.dumps({"job": 12, "thesis_id": "ema-artifact"}) + "\n")
+
+    direct = controller.read_json_artifacts(artifact_dir)
+    research = controller.read_research_artifacts()
+
+    assert direct[0]["thesis_id"] == "ema-artifact"
+    assert research[0]["thesis_id"] == "ema-artifact"
+    assert controller.read_thesis_artifacts() == []
+
+
 def test_clear_transient_context_removes_lineage_and_execution_root(
     controller: AutoresearchController,
     tmp_path: Path,
@@ -380,6 +415,30 @@ def test_should_hard_exit_prepare_cli_only_for_valid_prepare_mode() -> None:
     assert _should_hard_exit_prepare_cli(["--family", "ema", "--unknown"]) is False
 
 
+def test_emit_prepare_result_reports_launch_state(capsys: pytest.CaptureFixture[str]) -> None:
+    _emit_prepare_result(
+        {
+            "state": "blocked",
+            "research_round": 3,
+            "research_round_in_progress": 4,
+            "next_action": {"type": "research"},
+        },
+        17,
+    )
+
+    marker, payload = capsys.readouterr().out.strip().split(" ", 1)
+    assert marker == "AUTORESEARCH_PREPARE_RESULT"
+    parsed = json.loads(payload)
+    assert parsed == {
+        "job": 17,
+        "next_action_type": "research",
+        "ok": True,
+        "research_round": 3,
+        "research_round_in_progress": 4,
+        "state": "blocked",
+    }
+
+
 def test_max_consecutive_research_required_reads_env_lazily(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -433,6 +492,21 @@ def test_plan_next_action_blocks_for_research_after_results_exist(
 
     assert out["state"] == "blocked"
     assert out["next_action"]["type"] == "research"
+
+
+def test_reconcile_state_records_latest_result_and_writes_current_md(
+    controller: AutoresearchController,
+) -> None:
+    controller.backtest_run_db.add(_record(job=15, run_id="job-15-baseline", metric=1.2))
+    controller.write_state({"state": "running", "job": 15, "research_round": 0})
+
+    out = controller.reconcile_state()
+
+    assert out["current_best"]["metric"] == 1.2
+    assert out["heartbeat"]["last_completed_thesis"] == "configs/variants/job-15-baseline.yaml"
+    assert out["heartbeat"]["last_metric"] == 1.2
+    assert out["next_action"]["type"] == "research"
+    assert controller.current_md_path.exists()
 
 
 def test_try_resume_halted_thesis_writes_selected_round_artifacts(
@@ -497,3 +571,180 @@ def test_try_resume_halted_thesis_rejects_non_round_scoped_resume(
 
     with pytest.raises(RuntimeError, match="non-baseline research round"):
         controller._try_resume_halted_thesis()
+
+
+def test_execute_once_runs_research_then_experiment_when_blocker_clears(
+    controller: AutoresearchController,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller.write_state({"state": "running", "job": 13, "research_round": 1})
+    calls: list[str] = []
+
+    controller._resolve_next_action = lambda: {  # type: ignore[method-assign]
+        "state": "blocked",
+        "job": 13,
+        "research_round": 1,
+        "blockers": [{"kind": "research_required", "detail": "need next thesis"}],
+    }
+
+    def _run_research(state: dict) -> dict:
+        calls.append("research")
+        return {
+            **state,
+            "state": "running",
+            "blockers": [],
+            "next_action": {
+                "type": "run_experiment",
+                "config": "runtime/jobs/job-13/research/round-1/selected_config.json",
+            },
+        }
+
+    controller._run_research = _run_research  # type: ignore[method-assign]
+    controller._run_experiment = lambda state: calls.append("experiment") or 0  # type: ignore[method-assign]
+
+    class Ledger:
+        def record_decision(self, **kwargs):
+            calls.append(f"decision:{kwargs['decision_type']}")
+            return {"decision_id": "decision-1"}
+
+        def record_audit(self, **kwargs):
+            calls.append(f"audit:{kwargs['action']}")
+
+    monkeypatch.setattr("autoresearch_controller._AUTONOMY_LEDGER", Ledger())
+
+    assert controller.execute_once() == 0
+    assert calls == [
+        "research",
+        "decision:research_transition",
+        "audit:transition_to_running",
+        "experiment",
+    ]
+
+
+def test_execute_once_stops_without_experiment_for_terminal_blocked_state(
+    controller: AutoresearchController,
+) -> None:
+    controller.write_state({"state": "running", "job": 14, "research_round": 1})
+    controller._resolve_next_action = lambda: {  # type: ignore[method-assign]
+        "state": "blocked",
+        "job": 14,
+        "research_round": 1,
+        "blockers": [{"kind": "manual_review", "detail": "operator required"}],
+    }
+    controller._run_experiment = lambda state: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("terminal blocked state must not run experiment")
+    )
+
+    assert controller.execute_once() == 0
+
+
+def test_run_controller_loop_exits_on_terminal_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    states = [{"state": "running"}, {"state": "finished"}]
+
+    class LoopController:
+        def execute_once(self) -> int:
+            states.pop(0)
+            return 0
+
+        def read_state(self) -> dict:
+            return states[0]
+
+    events: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        "trace_sdk.set_family", lambda family, job=None: events.append((family, job))
+    )
+
+    assert _run_controller_loop(LoopController(), family_name="ema", job=21) == 0
+    assert events == [("ema", 21)]
+
+
+def test_run_controller_loop_returns_nonzero_execute_once_code() -> None:
+    class LoopController:
+        def execute_once(self) -> int:
+            return 7
+
+        def read_state(self) -> dict:
+            raise AssertionError("loop must not read state after non-zero iteration")
+
+    assert _run_controller_loop(LoopController(), family_name="ema", job=23) == 7
+
+
+def test_run_controller_loop_treats_nonresearch_blocked_state_as_terminal() -> None:
+    class LoopController:
+        def execute_once(self) -> int:
+            return 0
+
+        def read_state(self) -> dict:
+            return {"state": "blocked", "blockers": [{"kind": "manual_review"}]}
+
+    assert _run_controller_loop(LoopController(), family_name="ema", job=24) == 1
+
+
+def test_run_controller_loop_stops_after_repeated_research_required(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class LoopController:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def execute_once(self) -> int:
+            self.calls += 1
+            return 0
+
+        def read_state(self) -> dict:
+            return {"state": "blocked", "blockers": [{"kind": "research_required"}]}
+
+    controller = LoopController()
+    monkeypatch.setenv("AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED", "2")
+
+    assert _run_controller_loop(controller, family_name="ema", job=22) == 1
+    assert controller.calls == 2
+
+
+def test_main_prepare_launch_state_only_writes_family_scoped_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runtime_root = tmp_path / "runtime-home"
+    runtime_root.mkdir()
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "autoresearch_controller.py",
+            "--family",
+            "ema",
+            "--prepare-launch-state-only",
+            "--fresh-job",
+        ],
+    )
+
+    assert main() == 0
+
+    marker, payload = capsys.readouterr().out.strip().split(" ", 1)
+    parsed = json.loads(payload)
+    state = json.loads((runtime_root / "ema_autoresearch.next.json").read_text())
+    assert marker == "AUTORESEARCH_PREPARE_RESULT"
+    assert parsed["job"] == 1
+    assert parsed["state"] == "running"
+    assert state["job"] == 1
+    assert state["research_round"] == 0
+
+
+def test_main_run_current_state_rejects_unprepared_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "runtime-home"
+    runtime_root.mkdir()
+    (runtime_root / "ema_autoresearch.next.json").write_text(
+        json.dumps({"state": "blocked", "job": 3, "blockers": [{"kind": "manual_review"}]}) + "\n"
+    )
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+    monkeypatch.setattr(
+        "sys.argv",
+        ["autoresearch_controller.py", "--family", "ema", "--run-current-state"],
+    )
+
+    assert main() == 1
