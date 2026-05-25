@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Operating discipline for Claude Code in this repository. Project-specific context (schemas, architecture, tasks, acceptance criteria) lives in the project's spec file, not here. Read this file at session start. It wins on conflict unless resolved explicitly.
+Operating discipline for Codex and coding agents in this repository. Project-specific context (schemas, architecture, tasks, acceptance criteria) lives in the project's spec file, not here. Read this file at session start. It wins on conflict unless resolved explicitly.
 
 ## Non-negotiable rules
 
