@@ -112,3 +112,26 @@ def test_recursive_improve_flag_runs_scheduled_report(tmp_path, monkeypatch):
     _run_improvement_hooks(controller, research_round=10, result={})
 
     assert calls == [(tmp_path, 10, 22)]
+
+
+def test_ratchet_uses_cold_start_when_current_round_did_not_run_eval(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_IMPROVEMENT_RATCHET, "1")
+    from autoresearch_research import _run_improvement_hooks
+
+    captured = {}
+
+    def fail_latest_eval_path(_output_dir):
+        raise FileNotFoundError("stale eval directory rotated")
+
+    def fake_record(controller, round_number, outcome, eval_result_path, *, apply_decision=None):
+        captured["eval_result_path"] = eval_result_path
+        captured["outcome"] = outcome
+        return "keep"
+
+    monkeypatch.setattr("eval_harness.latest_eval_result_path", fail_latest_eval_path)
+    monkeypatch.setattr("improvement_ratchet.record_round_decision", fake_record)
+
+    controller = SimpleNamespace(root=tmp_path)
+    _run_improvement_hooks(controller, research_round=4, result={"generated_config": "x"})
+
+    assert captured == {"eval_result_path": None, "outcome": "compiled"}

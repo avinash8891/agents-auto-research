@@ -1355,16 +1355,18 @@ def _run_improvement_hooks(
             apply_decision = None
 
     if ratchet_enabled():
-        from eval_harness import EVAL_RESULTS_DIRNAME, latest_eval_result_path
         from improvement_ratchet import record_round_decision
 
+        eval_result_path = None
+        if isinstance(apply_decision, dict) and apply_decision.get("eval_result_path"):
+            eval_result_path = Path(str(apply_decision["eval_result_path"]))
         _safe_hook(
             "Ratchet",
             record_round_decision,
             controller,
             research_round,
             _classify_round_outcome(result),
-            eval_result_path=latest_eval_result_path(controller.root / EVAL_RESULTS_DIRNAME),
+            eval_result_path=eval_result_path,
             apply_decision=apply_decision,
         )
 

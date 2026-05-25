@@ -75,7 +75,7 @@ def test_load_prior_result_returns_prior_when_present(tmp_path):
         "primary_metric_name": "compiled_rate",
         "primary_metric": {"mean": 0.5, "stdev": 0.1, "min": 0.5, "max": 0.5},
         "secondary_quality_p50_mean": None,
-        "suites": [{"compiled_rate": 0.5, "quality_score_p50": 0.5, "n_tasks": 1, "n_compiled": 0}],
+        "suites": [{"compiled_rate": 0.5, "quality_score_p50": 0.5, "n_tasks": 2, "n_compiled": 1}],
     }
     (output / "prior-2026-01-01T000000p0000.json").write_text(json.dumps(prior_payload))
     # A fictitious "current" path that doesn't exist on disk — just used
@@ -112,7 +112,7 @@ def test_main_runs_with_planted_prior_without_error(tmp_path, monkeypatch):
         "primary_metric_name": "compiled_rate",
         "primary_metric": {"mean": 0.5, "stdev": 0.1, "min": 0.5, "max": 0.5},
         "secondary_quality_p50_mean": None,
-        "suites": [{"compiled_rate": 0.5, "quality_score_p50": 0.5, "n_tasks": 1, "n_compiled": 0}],
+        "suites": [{"compiled_rate": 0.5, "quality_score_p50": 0.5, "n_tasks": 2, "n_compiled": 1}],
     }
     (output / "prior-2026-01-01T000000p0000.json").write_text(json.dumps(prior_payload))
 
@@ -200,3 +200,29 @@ def test_load_prior_result_skips_deleted_file(tmp_path, monkeypatch):
     # candidate, then read_text raises OSError — the guarded try/except returns None.
     result = eval_cli._load_prior_result(tmp_path, current_path=None)
     assert result is None
+
+
+def test_load_prior_result_returns_none_for_malformed_json(tmp_path):
+    output = tmp_path / "out"
+    output.mkdir()
+    (output / "bad.json").write_text("{not json", encoding="utf-8")
+
+    assert eval_cli._load_prior_result(output, current_path=None) is None
+
+
+def test_load_prior_result_returns_none_for_invalid_schema(tmp_path):
+    output = tmp_path / "out"
+    output.mkdir()
+    payload = {
+        "label": "bad",
+        "timestamp": "2026-01-01T00:00:00+00:00",
+        "repeat": 1,
+        "primary_metric_name": "compiled_rate",
+        "primary_metric": {"mean": 0.5, "stdev": 0.0, "min": 0.5, "max": 0.5},
+        "suites": [
+            {"compiled_rate": 2.0, "quality_score_p50": None, "n_tasks": 1, "n_compiled": 1}
+        ],
+    }
+    (output / "bad-schema.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    assert eval_cli._load_prior_result(output, current_path=None) is None
