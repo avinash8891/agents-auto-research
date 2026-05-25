@@ -425,3 +425,195 @@ def test_build_missing_primitives_marks_unknown_builder_error_manual_review(
     assert out["heartbeat"]["builder_result_context"]["usage"] == {"total_tokens": 42}
     assert written[-1]["next_action"]["artifact_dir"] == "ema-manual-review"
     assert current_md[-1]["manual_review_theses"][0]["round"] == 2
+
+
+def test_apply_forced_baseline_rerun_archives_existing_blocker(tmp_path: Path) -> None:
+    state = {
+        "state": "blocked",
+        "job": 9,
+        "halted_reason": "requires_code_change",
+        "halted_thesis_id": "stalled-thesis",
+        "halted_thesis": {"thesis_id": "stalled-thesis", "config_changes": {"ema_length": 7}},
+        "manual_review_theses": [{"thesis_id": "manual-one"}],
+        "builder_failed_theses": [{"thesis_id": "failed-one"}],
+        "current_thesis": {"status": "needs_code"},
+        "next_action": {"type": "manual_review", "reason": "operator required"},
+        "blockers": [{"kind": "manual_review"}],
+    }
+    ctrl, written, _ = _controller(state, tmp_path)
+    baseline_action = {
+        "type": "run_experiment",
+        "config": "configs/ema_base.yaml",
+        "source": "baseline",
+        "baseline_rerun_for_commit": "abc1234",
+    }
+
+    out = orch.apply_forced_baseline_rerun(ctrl, baseline_action)
+
+    assert out["state"] == "running"
+    assert out["next_action"] == baseline_action
+    assert out["blockers"] == []
+    assert out["history"]["last_blocker"]["halted_thesis_id"] == "stalled-thesis"
+    assert out["history"]["last_blocker"]["manual_review_theses"] == [{"thesis_id": "manual-one"}]
+    assert out["resume_context"]["source"] == "forced_baseline_rerun"
+    assert "halted_thesis_id" not in out
+    assert "manual_review_theses" not in out
+    assert written[-1]["next_action"]["baseline_rerun_for_commit"] == "abc1234"
+
+
+def test_resolve_next_action_prioritizes_baseline_rerun_before_state_reconcile(
+    tmp_path: Path,
+) -> None:
+    baseline_action = {
+        "type": "run_experiment",
+        "config": "configs/ema_base.yaml",
+        "source": "baseline",
+    }
+    calls: list[str] = []
+    controller = SimpleNamespace(
+        _check_baseline_rerun=lambda: baseline_action,
+        _apply_forced_baseline_rerun=lambda action: calls.append("baseline") or {"applied": action},
+        read_state=lambda: (_ for _ in ()).throw(AssertionError("state should not be read")),
+        read_results=lambda: (_ for _ in ()).throw(AssertionError("results should not be read")),
+        reconcile_state=lambda: (_ for _ in ()).throw(AssertionError("reconcile should not run")),
+    )
+
+    assert orch.resolve_next_action(controller) == {"applied": baseline_action}
+    assert calls == ["baseline"]
+
+
+def test_resolve_next_action_resumes_or_builds_halted_thesis(tmp_path: Path) -> None:
+    state = {
+        "state": "blocked",
+        "job": 3,
+        "research_round": 2,
+        "halted_thesis_id": "needs-code",
+        "halted_reason": "requires_code_change",
+        "halted_thesis": {"thesis_id": "needs-code", "config_changes": {"ema_length": 7}},
+    }
+    calls: list[tuple[str, int | None]] = []
+    resumed = {"state": "running", "selected_thesis_id": "needs-code"}
+    controller = SimpleNamespace(
+        _check_baseline_rerun=lambda: None,
+        read_state=lambda: state,
+        read_results=lambda: [SimpleNamespace(run_id="baseline")],
+        _try_resume_halted_thesis=lambda: resumed,
+        reconcile_state=lambda: (_ for _ in ()).throw(AssertionError("reconcile should not run")),
+    )
+
+    assert orch.resolve_next_action(controller) == resumed
+
+    controller._try_resume_halted_thesis = lambda: None
+
+    def _build(ctrl, current_state, thesis_id, thesis, *, research_round=None):
+        calls.append((thesis_id, research_round))
+        assert current_state is state
+        assert thesis == state["halted_thesis"]
+        return {"state": "blocked", "next_action": {"type": "manual_review"}}
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(orch, "build_missing_primitives_for_state", _build)
+        assert orch.resolve_next_action(controller)["next_action"]["type"] == "manual_review"
+    finally:
+        monkeypatch.undo()
+    assert calls == [("needs-code", 2)]
+
+
+def test_resolve_next_action_reconciles_fresh_running_job_before_halted_recovery(
+    tmp_path: Path,
+) -> None:
+    state = {
+        "state": "running",
+        "halted_thesis_id": "preserved-for-later",
+        "halted_reason": "requires_code_change",
+    }
+    controller = SimpleNamespace(
+        _check_baseline_rerun=lambda: None,
+        read_state=lambda: state,
+        read_results=lambda: [],
+        reconcile_state=lambda: {"state": "running", "next_action": {"type": "baseline"}},
+        _try_resume_halted_thesis=lambda: (_ for _ in ()).throw(
+            AssertionError("fresh running job should reconcile baseline first")
+        ),
+    )
+
+    assert orch.resolve_next_action(controller)["next_action"]["type"] == "baseline"
+
+
+def test_reflexio_export_refresh_rewrites_package_for_matching_thesis(tmp_path: Path) -> None:
+    export_dir = (
+        tmp_path / "research" / "round-3" / "trace_exports" / "round-003-20260525" / "reflexio"
+    )
+    export_dir.mkdir(parents=True)
+    current = export_dir / "reflexio-event.json"
+    current.write_text(
+        json.dumps(
+            {
+                "episode": {"round": 3, "thesis_id": "refresh-me", "family": "ema"},
+                "reflection": {
+                    "reasoning": "Builder should compile this thesis.",
+                    "rejection_reason": "",
+                    "quality": {"score": 0.8},
+                },
+                "resources": {"usage": {"total_tokens": 12}},
+            }
+        )
+        + "\n"
+    )
+    stale = export_dir.parent.parent / "round-003-stale" / "reflexio"
+    stale.mkdir(parents=True)
+    (stale / "reflexio-event.json").write_text("{not-json\n")
+
+    found = orch._find_reflexio_export_for_thesis(
+        tmp_path,
+        3,
+        "refresh-me",
+        artifact_root=tmp_path,
+    )
+    assert found == current
+
+    trace_path = tmp_path / "trace.jsonl"
+    trace_path.write_text("{}\n")
+    orch._refresh_reflexio_export_after_builder(
+        tmp_path,
+        research_round=3,
+        thesis_id="refresh-me",
+        family="ema",
+        builder_result={"status": "completed", "validation_passed": True},
+        canonical_trace_path=trace_path,
+    )
+
+    refreshed = json.loads(current.read_text())
+    package = json.loads((export_dir / "package.json").read_text())
+    assert refreshed["episode"]["outcome"] == "compiled"
+    assert package["files"]["reflexio-event.json"]["episode"]["thesis_id"] == "refresh-me"
+
+
+def test_reflexio_export_refresh_marks_builder_failures(tmp_path: Path) -> None:
+    export_dir = (
+        tmp_path / "research" / "round-4" / "trace_exports" / "round-004-20260525" / "reflexio"
+    )
+    export_dir.mkdir(parents=True)
+    current = export_dir / "reflexio-event.json"
+    current.write_text(
+        json.dumps(
+            {
+                "episode": {"round": 4, "thesis_id": "failed-builder", "family": "ema"},
+                "reflection": {"reasoning": "Builder returned a validation error."},
+                "resources": {},
+            }
+        )
+        + "\n"
+    )
+
+    orch._refresh_reflexio_export_after_builder(
+        tmp_path,
+        research_round=4,
+        thesis_id="failed-builder",
+        family="ema",
+        builder_result={"status": "error", "validation_passed": False},
+        canonical_trace_path=tmp_path / "trace.jsonl",
+    )
+
+    assert json.loads(current.read_text())["episode"]["outcome"] == "builder_failed"
