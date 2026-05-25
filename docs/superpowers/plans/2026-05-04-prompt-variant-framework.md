@@ -18,17 +18,17 @@
 
 3. **Analyst builder takes zero args in the registry.** `_build_analyst_system_prompt(data_root)` takes a `data_root` argument, but the registered default lambda bakes in `str(_ROOT / "data")` at registration time. All callers call `get_builder("analyst", variant_id)()` with no args. A custom analyst variant that needs a different data root must also bake it in at registration.
 
-4. **`operationalize_thesis` is not in the active research loop.** `_run_operationalization_agent` is only reachable via `create_executable_artifact` → `derive_thesis_artifacts`, which have zero callers from `autoresearch_research.py`, `autoresearch_planning.py`, or `autoresearch_controller.py`. It is **not wired** in this plan. If it becomes active, add `prompt_variant_id` to `operationalize_thesis` and its callers following the same pattern as the conductor.
+4. **Operationalization is in the active research loop for code-change theses.** `_prepare_thesis_for_validation()` calls `compiler_pipeline.operationalize_thesis()` when `requires_code_change=true` and `requested_primitives` is absent. `operationalize_thesis()` can call `_run_operationalization_agent()`. This path must receive its own `operationalizer` variant ID so runs do not execute an unversioned prompt while recording a variant hash.
 
 5. **Registry is process-global.** `_REGISTRY` is a module-level dict populated at import time. All registrations happen once per process when `research_prompts` is first imported. Two concurrent experiments in the same process share one registry — which is fine because the registry is read-only after startup.
 
-6. **Same variant is used for an entire experiment run.** `prompt_variants` is resolved once at the start of a run from `controller.resolved_prompt_variants` and stays fixed for all rounds in that run. Mid-run variant switching is not supported.
+6. **Same variant map is used for an entire experiment run.** `prompt_variants` is resolved once at the start of a run from `controller.resolved_prompt_variants` and stays fixed for all rounds in that run. Mid-run variant switching is not supported. Different agents may use different IDs inside the same run, e.g. `{"conductor": "v1", "analyst": "v2", "web_researcher": "default", "operationalizer": "default"}`.
 
 7. **DB migration is additive.** `ALTER TABLE experiments ADD COLUMN prompt_variant_hash TEXT NOT NULL DEFAULT ''` works on all existing sqlite3 DBs. Rows predating this migration load with `prompt_variant_hash = ""`.
 
 8. **`run_research_agent` / `agent_orchestrator.run_diagnostic_analysis` / `run_web_research` are unused from the active loop.** Confirmed no callers in `autoresearch_research.py`, `autoresearch_controller.py`, or `autoresearch_planning.py`. These standalone orchestrator paths are not wired in this plan.
 
-9. **`compile_research_thesis` does not call `operationalize_thesis`.** Confirmed by reading `compiler_research.py` — it only converts a pre-validated `ResearchThesis` into an `ExperimentContract` using registered strategy defaults. No LLM call.
+9. **`compile_research_thesis` does not call `operationalize_thesis`.** Confirmed by reading `compiler_research.py` — it only converts a pre-validated `ResearchThesis` into an `ExperimentContract` using registered strategy defaults. The active operationalization LLM path is earlier, inside `_prepare_thesis_for_validation()`.
 
 ---
 
@@ -38,9 +38,9 @@
 - Research conductor (`research_conductor.py`)
 - Diagnostic analyst — conductor tool path (`research_subagents.py:_call_analyst`)
 - Web researcher — conductor tool path (`research_subagents.py:_call_web_researcher`)
+- Operationalization agent — code-change thesis path (`compiler_operationalize._run_operationalization_agent`)
 
 **Out of scope (confirmed unused from active loop):**
-- Operationalization agent (`compiler_operationalize._run_operationalization_agent`)
 - Standalone analyst / web researcher (`agent_openai_calls.py`, `agent_orchestrator.py`)
 - Research proposer agent (`agent_orchestrator.run_research_agent`)
 
@@ -51,15 +51,16 @@
 | File | Action | Responsibility |
 |---|---|---|
 | `prompt_registry.py` | **Create** | Variant definitions, lookup, hashing, resolve |
-| `research_prompts.py` | **Modify** | Add analyst + web_researcher builder fns; register all three agent defaults |
+| `research_prompts.py` | **Modify** | Add analyst + web_researcher + operationalizer builder fns; register all active agent defaults |
 | `research_subagents.py` | **Modify** | Accept `prompt_variant_id`; use registry (zero-arg call for analyst, zero-arg for web_researcher) |
-| `research_conductor.py` | **Modify** | Accept `prompt_variant_id`; use registry for conductor prompt; thread to subagent calls; tag trace |
+| `compiler_operationalize.py` | **Modify** | Accept `prompt_variant_id`; use registry for operationalization prompt |
+| `research_conductor.py` | **Modify** | Accept `prompt_variant_ids`; use `conductor` variant for conductor prompt; thread `analyst` and `web_researcher` variants to tools; tag trace |
 | `strategies/base.py` | **Modify** | Add `default_prompt_variants: tuple[tuple[str,str],...]` to `BaseStrategy` |
 | `strategy_family.py` | **Modify** | Add same field + `prompt_variants_dict` property to `StrategyFamily`; wire from `BaseStrategy` |
 | `experiment_db.py` | **Modify** | Add `prompt_variant_hash` to `ExperimentResult` dataclass; add DB column + migration; update all load paths |
 | `autoresearch_experiment.py` | **Modify** | Read `state["_prompt_variant_hash"]` into `ExperimentResult` at construction (line 534 pattern) |
 | `autoresearch_controller.py` | **Modify** | Accept `prompt_variants` dict; resolve against family defaults into `resolved_prompt_variants` |
-| `autoresearch_research.py` | **Modify** | Pass `prompt_variant_id` through conductor call chain; write `_prompt_variant_hash` to state |
+| `autoresearch_research.py` | **Modify** | Pass full `prompt_variant_ids` map through conductor and operationalization paths; write `_prompt_variant_hash` to state |
 | `trace_sdk.py` | **Modify** | Add optional `variant_id: str = ""` to `trace_agent_prompt` payload |
 | `agent_token_usage.py` | **Modify** | Add `variant_id: str = ""` to `_accumulate_usage`; key as `f"{agent_type}:{variant_id}"` when set |
 | `tests/test_prompt_registry.py` | **Create** | Registry lookup, hash stability, resolve_variants |
@@ -218,7 +219,7 @@ git commit -m "feat: add prompt variant registry with hashing and resolve logic"
 - Modify: `research_prompts.py`
 - Create: `tests/test_research_prompts.py`
 
-The analyst system prompt lives inline in `research_subagents.py:70–139`. The web researcher system prompt lives inline at `research_subagents.py:214–236`. Both are moved to `research_prompts.py` as named builder functions and registered.
+The analyst system prompt lives inline in `research_subagents.py:70–139`. The web researcher system prompt lives inline at `research_subagents.py:214–236`. The operationalization prompt is built in `compiler_operationalize.py` by `_build_operationalization_prompt()`. All three are moved or wrapped as named builder functions and registered.
 
 **Important (see Assumption 3):** The analyst builder `_build_analyst_system_prompt(data_root)` takes one argument, but the registered lambda bakes in `_ROOT` and takes zero args. All callers use `get_builder("analyst", variant_id)()` — no args.
 
@@ -230,6 +231,7 @@ from research_prompts import (
     _build_conductor_system_prompt,
     _build_analyst_system_prompt,
     _build_web_researcher_system_prompt,
+    _build_operationalizer_system_prompt,
 )
 import prompt_registry as pr
 
@@ -252,11 +254,17 @@ def test_web_researcher_builder_returns_string():
     assert "actionable_idea" in prompt
 
 
+def test_operationalizer_builder_returns_string():
+    prompt = _build_operationalizer_system_prompt()
+    assert "exact executable contracts" in prompt
+
+
 def test_defaults_registered_after_import():
     import research_prompts  # noqa: F401
     assert pr.get_builder("conductor", "default") is not None
     assert pr.get_builder("analyst", "default") is not None
     assert pr.get_builder("web_researcher", "default") is not None
+    assert pr.get_builder("operationalizer", "default") is not None
 
 
 def test_analyst_default_zero_arg():
@@ -351,8 +359,12 @@ OUTPUT FORMAT — return ONLY this JSON:
 }"""
 
 
+def _build_operationalizer_system_prompt() -> str:
+    return "Resolves ambiguous trading theses into exact executable contracts."
+
+
 # ---------------------------------------------------------------------------
-# Register defaults — importing this module activates all three variants.
+# Register defaults — importing this module activates all active-loop variants.
 # The analyst lambda bakes in _ROOT so callers use get_builder("analyst", id)()
 # with no arguments (see Assumption 3).
 # ---------------------------------------------------------------------------
@@ -365,6 +377,8 @@ _pr.register("analyst", "default",
              "Original analyst prompt with full OHLCV access")
 _pr.register("web_researcher", "default", _build_web_researcher_system_prompt,
              "Original web researcher prompt")
+_pr.register("operationalizer", "default", _build_operationalizer_system_prompt,
+             "Original operationalization agent prompt")
 ```
 
 - [ ] **Step 4: Run tests**
@@ -408,7 +422,7 @@ git commit -m "refactor: extract inline agent prompts into research_prompts.py a
 
 ---
 
-## Task 3: Thread `prompt_variant_id` through conductor and subagents
+## Task 3: Thread per-agent variants through conductor and subagents
 
 **Files:**
 - Modify: `research_subagents.py`
@@ -423,11 +437,11 @@ import inspect
 import prompt_registry as pr
 
 
-def test_conductor_accepts_prompt_variant_id():
+def test_conductor_accepts_prompt_variant_ids():
     from research_conductor import run_research_conductor
     sig = inspect.signature(run_research_conductor)
-    assert "prompt_variant_id" in sig.parameters
-    assert sig.parameters["prompt_variant_id"].default == "default"
+    assert "prompt_variant_ids" in sig.parameters
+    assert sig.parameters["prompt_variant_ids"].default is None
 
 
 def test_call_analyst_accepts_prompt_variant_id():
@@ -455,7 +469,7 @@ def test_custom_analyst_variant_is_used():
 ```bash
 pytest tests/test_prompt_variant_threading.py -v
 ```
-Expected: signature tests fail — no `prompt_variant_id` param yet.
+Expected: signature tests fail — no `prompt_variant_ids` / `prompt_variant_id` params yet.
 
 - [ ] **Step 3: Update `research_subagents.py`**
 
@@ -502,7 +516,7 @@ async def run_research_conductor(
     strategy_events_file: str = "",
     diagnostics_file: str = "",
     rejection_feedback: str = "",
-    prompt_variant_id: str = "default",
+    prompt_variant_ids: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
 ```
 
@@ -510,7 +524,11 @@ Replace line 81 (conductor system prompt):
 ```python
 import research_prompts  # noqa: F401
 import prompt_registry as _pr
-system_prompt = _pr.get_builder("conductor", prompt_variant_id)(strategy_desc)
+variant_ids = prompt_variant_ids or {}
+conductor_variant_id = variant_ids.get("conductor", "default")
+analyst_variant_id = variant_ids.get("analyst", "default")
+web_researcher_variant_id = variant_ids.get("web_researcher", "default")
+system_prompt = _pr.get_builder("conductor", conductor_variant_id)(strategy_desc)
 ```
 
 In the `analyze_trades` tool closure (line 146), thread through:
@@ -520,16 +538,16 @@ return await _call_analyst(
     focus_question,
     strategy_events_file=strategy_events_file,
     diagnostics_file=diagnostics_file,
-    prompt_variant_id=prompt_variant_id,
+    prompt_variant_id=analyst_variant_id,
 )
 ```
 
 In the `web_search` tool closure (line 157):
 ```python
-return await _call_web_researcher(query, context, prompt_variant_id=prompt_variant_id)
+return await _call_web_researcher(query, context, prompt_variant_id=web_researcher_variant_id)
 ```
 
-Also update `run_research_conductor_sync` at the bottom — add `prompt_variant_id: str = "default"` to its signature and pass it to `run_research_conductor`.
+Also update `run_research_conductor_sync` at the bottom — add `prompt_variant_ids: dict[str, str] | None = None` to its signature and pass it to `run_research_conductor`.
 
 - [ ] **Step 5: Run tests**
 
@@ -542,7 +560,102 @@ Expected: all pass.
 
 ```bash
 git add research_conductor.py research_subagents.py tests/test_prompt_variant_threading.py
-git commit -m "feat: thread prompt_variant_id through conductor and subagents"
+git commit -m "feat: thread per-agent prompt variants through conductor tools"
+```
+
+---
+
+## Task 3b: Thread `operationalizer` variant through thesis operationalization
+
+**Files:**
+- Modify: `compiler_operationalize.py`
+- Modify: `autoresearch_research.py`
+- Create: `tests/test_operationalizer_prompt_variant.py`
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# tests/test_operationalizer_prompt_variant.py
+import inspect
+
+
+def test_operationalize_thesis_accepts_prompt_variant_id():
+    from compiler_operationalize import operationalize_thesis
+    sig = inspect.signature(operationalize_thesis)
+    assert "prompt_variant_id" in sig.parameters
+    assert sig.parameters["prompt_variant_id"].default == "default"
+
+
+def test_prepare_validation_accepts_prompt_variant_ids():
+    from autoresearch_research import _prepare_thesis_for_validation
+    sig = inspect.signature(_prepare_thesis_for_validation)
+    assert "prompt_variant_ids" in sig.parameters
+```
+
+- [ ] **Step 2: Update `compiler_operationalize.py`**
+
+Add `prompt_variant_id` to `operationalize_thesis()` and `_run_operationalization_agent()`:
+
+```python
+def operationalize_thesis(
+    thesis: dict[str, Any],
+    *,
+    prompt_variant_id: str = "default",
+) -> dict[str, Any]:
+    ...
+    clarification = _run_operationalization_agent(
+        thesis,
+        prompt_variant_id=prompt_variant_id,
+    )
+
+
+def _run_operationalization_agent(
+    thesis: dict[str, Any],
+    *,
+    prompt_variant_id: str = "default",
+) -> dict[str, Any]:
+    import research_prompts  # noqa: F401
+    import prompt_registry as _pr
+
+    base_prompt = _pr.get_builder("operationalizer", prompt_variant_id)()
+    agent_def = SimpleNamespace(
+        description=base_prompt,
+        prompt=_build_operationalization_prompt(thesis),
+        ...
+    )
+```
+
+- [ ] **Step 3: Update `autoresearch_research.py`**
+
+Thread the resolved `operationalizer` variant into every `_prepare_thesis_for_validation()` call:
+
+```python
+def _prepare_thesis_for_validation(
+    thesis: dict[str, Any],
+    *,
+    strategy_family: str,
+    prior_theses: list[dict[str, Any]] | None = None,
+    allow_schema_only_code_change_fallback: bool = False,
+    prompt_variant_ids: dict[str, str] | None = None,
+):
+    ...
+    operationalized = operationalize_thesis(
+        dict(raw_thesis),
+        prompt_variant_id=(prompt_variant_ids or {}).get("operationalizer", "default"),
+    )
+```
+
+- [ ] **Step 4: Run tests**
+
+```bash
+pytest tests/test_operationalizer_prompt_variant.py tests/test_research_prompts.py -v
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add compiler_operationalize.py autoresearch_research.py tests/test_operationalizer_prompt_variant.py
+git commit -m "feat: thread prompt variants through operationalization agent"
 ```
 
 ---
@@ -949,25 +1062,27 @@ state["_prompt_variant_hash"] = _pvh(_variants)
 controller.write_state(state)
 ```
 
-In `_call_conductor_once()` (line ~585), pass the variant through:
+In `_call_conductor_once()` (line ~585), pass the full variant map through:
 
 ```python
 def _call_conductor_once(
     ...,
-    prompt_variant_id: str = "default",
+    prompt_variant_ids: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     ...
     return run_research_conductor_sync(
         ...,
-        prompt_variant_id=prompt_variant_id,
+        prompt_variant_ids=prompt_variant_ids,
     )
 ```
 
-In `execute_research_sdk()`, read from controller and pass down:
+In `execute_research_sdk()`, read the full resolved map from the controller and pass it down. Do not collapse it to the conductor variant:
 ```python
-variant_id = getattr(controller, "resolved_prompt_variants", {}).get("conductor", "default")
-# pass variant_id to _call_conductor_once(...)
+variant_ids = getattr(controller, "resolved_prompt_variants", {})
+# pass variant_ids to _call_conductor_once(...)
 ```
+
+Also pass `variant_ids` into `_prepare_thesis_for_validation()` so the operationalizer gets `variant_ids["operationalizer"]`.
 
 - [ ] **Step 4: Update `autoresearch_experiment.py` line ~534**
 
@@ -994,7 +1109,7 @@ Expected: all pass.
 
 ```bash
 git add autoresearch_research.py autoresearch_experiment.py tests/test_experiment_result_prompt_hash.py
-git commit -m "feat: thread prompt_variant_id through research loop; write hash to state and ExperimentResult"
+git commit -m "feat: persist prompt variant hash for research runs"
 ```
 
 ---
@@ -1023,10 +1138,10 @@ def test_trace_agent_prompt_accepts_variant_id():
 def test_conductor_passes_variant_id_to_trace():
     import inspect
     from research_conductor import run_research_conductor
-    # Verify the trace call at line 137 uses prompt_variant_id — confirmed by reading
+    # Verify the trace call uses the conductor variant from prompt_variant_ids — confirmed by reading
     # the source; this test checks the signature is in place
     sig = inspect.signature(run_research_conductor)
-    assert "prompt_variant_id" in sig.parameters
+    assert "prompt_variant_ids" in sig.parameters
 ```
 
 - [ ] **Step 2: Run to confirm failure**
@@ -1056,7 +1171,7 @@ In the `_record_event` payload dict, add:
 
 ```python
 trace_id = trace_agent_prompt(
-    "research-conductor", user_prompt, system_prompt, variant_id=prompt_variant_id
+    "research-conductor", user_prompt, system_prompt, variant_id=conductor_variant_id
 )
 ```
 
@@ -1154,7 +1269,7 @@ In `_accumulate_result_usage`, add `variant_id: str = ""` and pass it to `_accum
 
 - [ ] **Step 4: Update `research_conductor.py` accumulate calls**
 
-Find where `_accumulate_usage("conductor", ...)` or `_accumulate_result_usage` is called and add `variant_id=prompt_variant_id`.
+Find where `_accumulate_usage("conductor", ...)` or `_accumulate_result_usage` is called and add `variant_id=conductor_variant_id`.
 
 - [ ] **Step 5: Run tests**
 
@@ -1184,7 +1299,8 @@ git commit -m "feat: key token usage by agent:variant_id for per-variant cost tr
 **Spec coverage:**
 - [x] Prompt variant registry with lookup and hashing — Task 1
 - [x] Inline prompts extracted and registered as defaults — Task 2
-- [x] `prompt_variant_id` threaded through conductor + subagents — Task 3
+- [x] Per-agent prompt variants threaded through conductor + subagents — Task 3
+- [x] `operationalizer` prompt variant threaded through code-change thesis operationalization — Task 3b
 - [x] Family-level default variants via `StrategyFamily` — Task 4
 - [x] `prompt_variant_hash` field + DB column + migration — Task 5
 - [x] Controller resolves overrides against family defaults — Task 6
@@ -1193,12 +1309,12 @@ git commit -m "feat: key token usage by agent:variant_id for per-variant cost tr
 - [x] Token usage keyed by `agent:variant_id` — Task 9
 
 **Confirmed out of scope:**
-- Operationalization agent: `_run_operationalization_agent` is only reachable via `create_executable_artifact` → `derive_thesis_artifacts`, which are not called from the active research loop. Add `prompt_variant_id` there if those paths are activated.
 - Standalone paths (`agent_openai_calls.py`, `agent_orchestrator.run_research_agent`): no callers from the main loop.
 
 **Type consistency:**
-- `prompt_variant_id: str` — single agent key in function signatures (Tasks 3, 7, 8, 9)
-- `prompt_variants: dict[str, str]` — full `{agent: variant_id}` map (Tasks 1, 4, 6, 7)
+- `prompt_variant_id: str` — single agent key only at leaf-agent functions (`_call_analyst`, `_call_web_researcher`, `operationalize_thesis`)
+- `prompt_variant_ids: dict[str, str]` — full `{agent: variant_id}` map at conductor and research-loop boundaries
+- `prompt_variants: dict[str, str]` — controller input override map (Tasks 1, 4, 6, 7)
 - `prompt_variant_hash: str` — 12-char SHA of variants dict on `ExperimentResult` and DB (Tasks 1, 5, 7)
 - `default_prompt_variants: tuple[tuple[str, str], ...]` — frozen-safe field on `StrategyFamily` / `BaseStrategy` (Task 4)
 - `prompt_variants_dict: dict[str, str]` — property on `StrategyFamily` (Task 4)
