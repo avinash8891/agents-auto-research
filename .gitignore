@@ -230,3 +230,6 @@ logs/
 *_baseline_checkpoints.json
 experiments/
 research_findings.jsonl
+
+# Eval dry-run scratch dir — not for production, not committed
+eval_dryrun/

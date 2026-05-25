@@ -38,7 +38,10 @@ class Disqualifier(BaseModel):
     severity: Literal["hard_fail", "soft_fail"] = "hard_fail"
 
 
-# Valid mechanism dimensions for thesis classification
+# Valid mechanism dimensions for thesis classification.
+# Dimensions beyond the original 7 emerged from wiki ingestion of foundational literature:
+# execution_costs (Almgren-Chriss, LOB practice), universe_selection (Lopez de Prado ML fund
+# failures), alternative_data (news sentiment literature), alpha_decay (Grinold-Kahn FLAM).
 MECHANISM_DIMENSIONS = {
     "entry_timing",
     "exit_mechanism",
@@ -47,6 +50,11 @@ MECHANISM_DIMENSIONS = {
     "portfolio_construction",
     "risk_structure",
     "market_microstructure",
+    # emerged from wiki ingestion
+    "execution_costs",
+    "universe_selection",
+    "alternative_data",
+    "alpha_decay",
 }
 
 
