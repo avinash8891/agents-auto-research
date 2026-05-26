@@ -257,9 +257,11 @@ def test_plan_next_action_runs_baseline_and_clears_terminal_metadata(
     assert "research_stop_reasoning" not in out
 
 
-def test_plan_next_action_clears_terminal_metadata_when_running_branch_selected(
-    tmp_path: Path, ema_family, monkeypatch: pytest.MonkeyPatch
+def test_plan_next_action_clears_terminal_metadata_when_baseline_branch_selected(
+    tmp_path: Path, ema_family
 ) -> None:
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "ema_base.yaml").write_text("ema_length: 5\n")
     state = {
         "state": "finished",
         "job": 3,
@@ -267,14 +269,9 @@ def test_plan_next_action_clears_terminal_metadata_when_running_branch_selected(
         "research_stop_reasoning": "old",
     }
 
-    monkeypatch.setattr(
-        "autoresearch_planning.select_research_next_action",
-        lambda *args, **kwargs: {"state": "running", "next_action": {"type": "run_experiment"}},
-    )
-
     out = plan_next_action(
         state,
-        [BacktestResultRecord("configs/ema_base.yaml", 1.0, "keep", "", 1, {})],
+        [],
         tmp_path,
         tmp_path,
         ema_family,
@@ -284,6 +281,7 @@ def test_plan_next_action_clears_terminal_metadata_when_running_branch_selected(
     )
 
     assert out["state"] == "running"
+    assert out["selected_thesis_id"] == "baseline"
     assert "finished_reason" not in out
     assert "research_stop_reasoning" not in out
 

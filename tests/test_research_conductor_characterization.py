@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from agents.tool_context import ToolContext
@@ -121,16 +120,17 @@ def _patch_conductor_runner(
     text = output if isinstance(output, str) else json.dumps(output)
     monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
     monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
-    monkeypatch.setattr(conductor, "OpenAIChatCompletionsModel", lambda **kwargs: object())
-    monkeypatch.setattr(conductor, "OAIAgent", lambda **kwargs: SimpleNamespace(**kwargs))
-    monkeypatch.setattr(conductor, "OAIModelSettings", lambda **kwargs: SimpleNamespace(**kwargs))
-    monkeypatch.setattr(conductor, "OAIRunConfig", lambda **kwargs: SimpleNamespace(**kwargs))
-    monkeypatch.setattr(
-        conductor, "accumulate_agents_sdk_result_usage", lambda *args, **kwargs: None
-    )
 
     def _run_streamed(agent, user_prompt, max_turns, run_config):
         captured_prompts.append(user_prompt)
+        assert agent.name == "research-conductor"
+        assert {tool.name for tool in agent.tools} >= {
+            "analyze_trades",
+            "web_search",
+            "list_experiment_results",
+        }
+        assert run_config.tracing_disabled is True
+        assert run_config.model_settings.store is False
         return _StreamedResult(
             text,
             agent,
@@ -219,12 +219,10 @@ def test_conductor_returns_timeout_error_when_runner_times_out(
 ) -> None:
     monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
     monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
-    monkeypatch.setattr(conductor, "OpenAIChatCompletionsModel", lambda **kwargs: object())
-    monkeypatch.setattr(conductor, "OAIAgent", lambda **kwargs: SimpleNamespace(**kwargs))
-    monkeypatch.setattr(conductor, "OAIModelSettings", lambda **kwargs: SimpleNamespace(**kwargs))
-    monkeypatch.setattr(conductor, "OAIRunConfig", lambda **kwargs: SimpleNamespace(**kwargs))
 
     def _raise_timeout(agent, user_prompt, max_turns, run_config):
+        assert agent.name == "research-conductor"
+        assert run_config.tracing_disabled is True
         raise asyncio.TimeoutError
 
     monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _raise_timeout)

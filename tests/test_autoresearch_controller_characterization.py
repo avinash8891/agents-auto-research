@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -573,34 +574,65 @@ def test_try_resume_halted_thesis_rejects_non_round_scoped_resume(
         controller._try_resume_halted_thesis()
 
 
-def test_execute_once_runs_research_then_experiment_when_blocker_clears(
-    controller: AutoresearchController,
+def test_execute_once_runs_baseline_experiment_through_real_handlers(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    controller.write_state({"state": "running", "job": 13, "research_round": 1})
+    script = tmp_path / "write_result.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import json, sys",
+                "from pathlib import Path",
+                "out = Path(sys.argv[1])",
+                "out.mkdir(parents=True, exist_ok=True)",
+                "metrics = {'trade_count': 6, 'profit_factor': 2.1}",
+                "(out / 'metrics.json').write_text(json.dumps(metrics) + '\\n')",
+                "(out / 'trades.csv').write_text('entry_date,pnl_pct\\n2026-01-01,1.0\\n')",
+                "(out / 'diagnostics.json').write_text(json.dumps({'accepted': 6}) + '\\n')",
+                "payload = {",
+                "  'metrics_file': str(out / 'metrics.json'),",
+                "  'trades_file': str(out / 'trades.csv'),",
+                "  'diagnostics_file': str(out / 'diagnostics.json'),",
+                "  'strategy_events_file': '',",
+                "  'git_sha': 'abcdef1',",
+                "}",
+                "(out / 'result.json').write_text(json.dumps(payload) + '\\n')",
+                "print('RESULT_JSON ' + str(out / 'result.json'))",
+            ]
+        )
+        + "\n"
+    )
+
+    class Family:
+        name = "ema"
+        base_config_filename = "ema_base.yaml"
+        discord_webhook = ""
+
+        @property
+        def baseline_config_path(self) -> str:
+            return f"configs/{self.base_config_filename}"
+
+        def benchmark_command(self, config, output_dir=None) -> str:
+            return f"{sys.executable} {script} {output_dir}"
+
+    family = Family()
+    controller = AutoresearchController(
+        root=tmp_path,
+        runtime_root=tmp_path,
+        family=family,
+        state_path=tmp_path / "ema_autoresearch.next.json",
+        current_md_path=tmp_path / "ema_autoresearch.current.md",
+        jobs_root=tmp_path / "runtime" / "jobs",
+    )
+    controller.backtest_run_db.init_session(
+        name="ema", metric_name="profit_factor", direction="higher"
+    )
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "ema_base.yaml").write_text("ema_length: 5\n")
+    controller.write_state({"state": "running", "job": 13, "research_round": 0})
     calls: list[str] = []
-
-    controller._resolve_next_action = lambda: {  # type: ignore[method-assign]
-        "state": "blocked",
-        "job": 13,
-        "research_round": 1,
-        "blockers": [{"kind": "research_required", "detail": "need next thesis"}],
-    }
-
-    def _run_research(state: dict) -> dict:
-        calls.append("research")
-        return {
-            **state,
-            "state": "running",
-            "blockers": [],
-            "next_action": {
-                "type": "run_experiment",
-                "config": "runtime/jobs/job-13/research/round-1/selected_config.json",
-            },
-        }
-
-    controller._run_research = _run_research  # type: ignore[method-assign]
-    controller._run_experiment = lambda state: calls.append("experiment") or 0  # type: ignore[method-assign]
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
 
     class Ledger:
         def record_decision(self, **kwargs):
@@ -613,12 +645,21 @@ def test_execute_once_runs_research_then_experiment_when_blocker_clears(
     monkeypatch.setattr("autoresearch_controller._AUTONOMY_LEDGER", Ledger())
 
     assert controller.execute_once() == 0
-    assert calls == [
-        "research",
-        "decision:research_transition",
-        "audit:transition_to_running",
-        "experiment",
-    ]
+    assert calls == []
+    records = controller.backtest_run_db.all()
+    assert len(records) == 1
+    assert records[0].thesis_id == "ema_base"
+    assert records[0].accepted is True
+    assert (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-13"
+        / "research"
+        / "round-0-baseline"
+        / "backtest"
+        / "benchmark_output.txt"
+    ).exists()
 
 
 def test_execute_once_stops_without_experiment_for_terminal_blocked_state(
