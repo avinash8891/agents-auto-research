@@ -17,7 +17,7 @@ def build_recursive_improve_payload(
     outcome: str,
     family: str,
     reasoning: str = "",
-    rejection_reason: str = "",
+    validation_failure_reason: str = "",
     quality: dict[str, Any] | None = None,
     usage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -31,7 +31,7 @@ def build_recursive_improve_payload(
         },
         "feedback": {
             "reasoning": reasoning,
-            "rejection_reason": rejection_reason,
+            "validation_failure_reason": validation_failure_reason,
             "quality": deepcopy(quality or {}),
         },
         "usage": deepcopy(usage or {}),
@@ -82,9 +82,9 @@ def build_recursive_improve_trace(
         "timestamp": str(first.get("timestamp") or ""),
         "duration_s": _duration_seconds(events),
         "success": success,
-        "error": "" if success else str(feedback.get("rejection_reason") or status),
+        "error": "" if success else str(feedback.get("validation_failure_reason") or status),
         "output": str(feedback.get("reasoning") or ""),
-        "feedback": str(feedback.get("rejection_reason") or ""),
+        "feedback": str(feedback.get("validation_failure_reason") or ""),
         "git_branch": "",
         "git_commit": "",
         "metadata": {

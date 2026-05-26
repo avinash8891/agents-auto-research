@@ -338,7 +338,7 @@ def _index_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "selected_for_execution": bool(entry.get("selected_for_execution")),
         "config_change_keys": sorted(config_changes.keys()),
         "short_hypothesis": _short_text(entry.get("hypothesis", ""), 180),
-        "short_rejection_reason": _short_text(entry.get("rejection_reason", ""), 160),
+        "short_validation_failure_reason": _short_text(entry.get("validation_failure_reason", ""), 160),
         "learning_signal": _learning_signal(entry),
     }
 
@@ -359,7 +359,7 @@ def _attempt_detail(entry: dict[str, Any]) -> dict[str, Any]:
         "mechanism_dimension": entry.get("mechanism_dimension", ""),
         "hypothesis": entry.get("hypothesis", ""),
         "mechanism": entry.get("mechanism", ""),
-        "rejection_reason": entry.get("rejection_reason", ""),
+        "validation_failure_reason": entry.get("validation_failure_reason", ""),
         "selected_for_execution": bool(entry.get("selected_for_execution")),
         "created_at_utc": entry.get("created_at_utc"),
         "round_usage": entry.get("round_usage", {}),

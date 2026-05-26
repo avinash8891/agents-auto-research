@@ -215,7 +215,7 @@ class BacktestRunDB:
                     hypothesis TEXT NOT NULL,
                     mechanism TEXT NOT NULL,
                     thesis_details_json TEXT NOT NULL DEFAULT '{}',
-                    rejection_reason TEXT NOT NULL,
+                    validation_failure_reason TEXT NOT NULL,
                     selected_for_execution INTEGER NOT NULL,
                     created_at_utc TEXT NOT NULL,
                     PRIMARY KEY (research_round_id, attempt_number)
@@ -226,6 +226,9 @@ class BacktestRunDB:
                 "research_thesis_attempts",
                 "thesis_details_json",
                 "TEXT NOT NULL DEFAULT '{}'",
+            )
+            self._ensure_column_renamed(
+                conn, "research_thesis_attempts", "rejection_reason", "validation_failure_reason"
             )
             self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "backtest_run_id", "TEXT NOT NULL DEFAULT ''"
@@ -250,6 +253,16 @@ class BacktestRunDB:
         columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def _ensure_column_renamed(
+        self, conn: sqlite3.Connection, table: str, old: str, new: str
+    ) -> None:
+        try:
+            columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if old in columns and new not in columns:
+                conn.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
+        except Exception:
+            pass
 
     def session_meta(self) -> dict[str, Any]:
         with self._connect() as conn:
@@ -499,7 +512,7 @@ class BacktestRunDB:
                 SELECT a.research_round_id, a.attempt_number, a.thesis_id,
                        a.strategy_family, a.config_changes_json, a.validator_status,
                        a.mechanism_dimension, a.hypothesis, a.mechanism,
-                       a.thesis_details_json, a.rejection_reason, a.selected_for_execution,
+                       a.thesis_details_json, a.validation_failure_reason, a.selected_for_execution,
                        a.created_at_utc, r.job_id, r.round_number,
                        r.outcome AS round_outcome, r.run_id, r.hypothesis_id,
                        r.usage_json AS round_usage_json
@@ -539,7 +552,7 @@ class BacktestRunDB:
                 "hypothesis": row["hypothesis"],
                 "mechanism": row["mechanism"],
                 "thesis_details": thesis_details if isinstance(thesis_details, dict) else {},
-                "rejection_reason": row["rejection_reason"],
+                "validation_failure_reason": row["validation_failure_reason"],
                 "selected_for_execution": row["selected_for_execution"],
                 "created_at_utc": row["created_at_utc"],
                 "job_id": row["job_id"],
@@ -562,7 +575,7 @@ class BacktestRunDB:
                 INSERT OR REPLACE INTO research_thesis_attempts (
                     research_round_id, attempt_number, thesis_id, strategy_family,
                     config_changes_json, validator_status, mechanism_dimension,
-                    hypothesis, mechanism, thesis_details_json, rejection_reason, selected_for_execution,
+                    hypothesis, mechanism, thesis_details_json, validation_failure_reason, selected_for_execution,
                     created_at_utc
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -577,7 +590,7 @@ class BacktestRunDB:
                     row.get("hypothesis", ""),
                     row.get("mechanism", ""),
                     json_dumps_strict(row.get("thesis_details", {})),
-                    row.get("rejection_reason", ""),
+                    row.get("validation_failure_reason", ""),
                     int(row.get("selected_for_execution", 0)),
                     row.get("created_at_utc", _iso8601_utc_now()),
                 ),
@@ -602,7 +615,7 @@ class BacktestRunDB:
                     INSERT INTO research_thesis_attempts (
                         research_round_id, attempt_number, thesis_id, strategy_family,
                         config_changes_json, validator_status, mechanism_dimension,
-                        hypothesis, mechanism, thesis_details_json, rejection_reason, selected_for_execution,
+                        hypothesis, mechanism, thesis_details_json, validation_failure_reason, selected_for_execution,
                         created_at_utc
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
@@ -617,7 +630,7 @@ class BacktestRunDB:
                         r.get("hypothesis", ""),
                         r.get("mechanism", ""),
                         json_dumps_strict(r.get("thesis_details", {})),
-                        r.get("rejection_reason", ""),
+                        r.get("validation_failure_reason", ""),
                         selected,
                         r.get("created_at_utc", _iso8601_utc_now()),
                     ),

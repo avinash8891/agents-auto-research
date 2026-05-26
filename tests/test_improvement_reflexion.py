@@ -25,7 +25,7 @@ def build_reflexio_payload(
     outcome: str,
     family: str,
     reasoning: str = "",
-    rejection_reason: str = "",
+    validation_failure_reason: str = "",
 ) -> dict:
     """Inline copy of the producer schema (trace_adapters/reflexio.py:9).
 
@@ -45,13 +45,13 @@ def build_reflexio_payload(
         },
         "reflection": {
             "reasoning": reasoning,
-            "rejection_reason": rejection_reason,
+            "validation_failure_reason": validation_failure_reason,
             "quality": {},
         },
         "feedback_signal": {
             "outcome": outcome,
             "research_outcome": outcome,
-            "rejection_reason": rejection_reason,
+            "validation_failure_reason": validation_failure_reason,
             "scope": "research_agents",
             "quality": {},
         },
@@ -73,7 +73,7 @@ def _write_prior_export(
     thesis_id: str = "T1",
     outcome: str = "rejected",
     reasoning: str = "tried fixed stop loss",
-    rejection_reason: str = "stop too tight, gave up too early",
+    validation_failure_reason: str = "stop too tight, gave up too early",
 ) -> Path:
     payload = build_reflexio_payload(
         research_round=research_round,
@@ -81,7 +81,7 @@ def _write_prior_export(
         outcome=outcome,
         family="ema",
         reasoning=reasoning,
-        rejection_reason=rejection_reason,
+        validation_failure_reason=validation_failure_reason,
     )
     resolved_job = job if job is not None else 1
     trace_root = (
@@ -138,7 +138,7 @@ def test_flag_on_with_prior_export_returns_preamble(tmp_path, monkeypatch):
         research_round=4,
         job=22,
         reasoning="tried tight stop",
-        rejection_reason="filtered too many trades",
+        validation_failure_reason="filtered too many trades",
     )
     controller = SimpleNamespace(root=tmp_path, job=22)
     feedback = build_reflexion_feedback(controller, current_round=5)
@@ -242,13 +242,13 @@ def test_non_dict_json_returns_empty(tmp_path, monkeypatch):
 
 
 def test_missing_optional_fields_yields_minimal_preamble(tmp_path, monkeypatch):
-    """Empty reasoning/rejection_reason: preamble still emits outcome + footer."""
+    """Empty reasoning/validation_failure_reason: preamble still emits outcome + footer."""
     monkeypatch.setenv(ENV_IMPROVEMENT_REFLEXION, "1")
     _write_prior_export(
         tmp_path,
         research_round=1,
         reasoning="",
-        rejection_reason="",
+        validation_failure_reason="",
         outcome="conductor_error",
     )
     controller = SimpleNamespace(root=tmp_path, job=1)
@@ -267,7 +267,7 @@ def test_feedback_includes_prior_trajectory_when_export_has_it(tmp_path, monkeyp
         outcome="rejected",
         family="ema",
         reasoning="builder produced baseline clone",
-        rejection_reason="same PF/trades as baseline",
+        validation_failure_reason="same PF/trades as baseline",
     )
     payload["trajectory"] = [
         {"action": "prompt", "summary": "ask analyst to inspect duplicate config"},
@@ -303,7 +303,7 @@ def test_agent_scoped_feedback_uses_only_matching_agent_trajectory(tmp_path, mon
         outcome="builder_failed",
         family="ema",
         reasoning="round needed code",
-        rejection_reason="generated config failed validation",
+        validation_failure_reason="generated config failed validation",
     )
     payload["trajectory"] = [
         {
@@ -359,7 +359,7 @@ def test_agent_scoped_feedback_prefers_agent_reflection_over_round_reasoning(tmp
         outcome="builder_failed",
         family="ema",
         reasoning="generic round lesson should not drive analyst feedback",
-        rejection_reason="round failed",
+        validation_failure_reason="round failed",
     )
     payload["agent_reflections"] = {
         "analyst": {
@@ -419,7 +419,7 @@ def test_agent_scoped_feedback_derives_reflection_from_legacy_trajectory(tmp_pat
         outcome="builder_failed",
         family="ema",
         reasoning="generic round lesson must not be used for analyst feedback",
-        rejection_reason="round failed",
+        validation_failure_reason="round failed",
     )
     payload["trajectory"] = [
         {

@@ -458,7 +458,7 @@ def _refresh_reflexio_export_after_builder(
         outcome=outcome,
         family=str(episode.get("family") or family),
         reasoning=str(reflection.get("reasoning") or ""),
-        rejection_reason=str(reflection.get("rejection_reason") or ""),
+        validation_failure_reason=str(reflection.get("validation_failure_reason") or ""),
         quality=reflection.get("quality") if isinstance(reflection.get("quality"), dict) else {},
         usage=resources.get("usage") if isinstance(resources.get("usage"), dict) else {},
         canonical_trace_path=trace_path,

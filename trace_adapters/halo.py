@@ -41,7 +41,7 @@ def build_halo_payload(
     outcome: str,
     family: str,
     reasoning: str = "",
-    rejection_reason: str = "",
+    validation_failure_reason: str = "",
     quality: dict[str, Any] | None = None,
     usage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -55,7 +55,7 @@ def build_halo_payload(
         },
         "evaluation": {
             "reasoning": reasoning,
-            "rejection_reason": rejection_reason,
+            "validation_failure_reason": validation_failure_reason,
             "quality": deepcopy(quality or {}),
         },
         "resources": {"usage": deepcopy(usage or {})},

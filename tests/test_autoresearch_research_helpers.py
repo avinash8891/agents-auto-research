@@ -18,7 +18,7 @@ from autoresearch_research import (
     _check_parsed_for_terminal,
     _classify_round_outcome,
     _exhausted_retries_result,
-    _structured_rejection_reason,
+    _structured_validation_failure,
     load_baseline_config,
     queue_variants,
 )
@@ -34,7 +34,7 @@ def test_check_parsed_for_terminal_none_input_is_parse_failed() -> None:
     assert out["status"] == "parse_failed"
     assert out["generated_config"] is None
     assert out["should_stop"] is False
-    assert "rejection_reason" in out
+    assert "validation_failure_reason" in out
 
 
 def test_check_parsed_for_terminal_conductor_error_propagates_message() -> None:
@@ -42,11 +42,11 @@ def test_check_parsed_for_terminal_conductor_error_propagates_message() -> None:
     out = _check_parsed_for_terminal(parsed)
     assert out is not None
     assert out["status"] == "conductor_error"
-    assert "rate limited at retry 2" in out["rejection_reason"]
+    assert "rate limited at retry 2" in out["validation_failure_reason"]
 
 
-def test_structured_rejection_reason_classifies_validator_errors() -> None:
-    rejection = _structured_rejection_reason(
+def test_structured_validation_failure_classifies_validator_errors() -> None:
+    rejection = _structured_validation_failure(
         source="validator",
         message="missing required config_changes",
     )
@@ -63,7 +63,7 @@ def test_check_parsed_for_terminal_conductor_error_falls_back_to_reasoning() -> 
     parsed = {"status": "conductor_error", "reasoning": "model returned junk"}
     out = _check_parsed_for_terminal(parsed)
     assert out is not None
-    assert "model returned junk" in out["rejection_reason"]
+    assert "model returned junk" in out["validation_failure_reason"]
 
 
 def test_check_parsed_for_terminal_no_suggested_theses_returns_completed() -> None:
@@ -106,7 +106,7 @@ def test_classify_round_outcome_compiled() -> None:
 
 
 def test_classify_round_outcome_rejected() -> None:
-    result = {"rejection_reason": "schema mismatch"}
+    result = {"validation_failure_reason": "schema mismatch"}
     assert _classify_round_outcome(result) == "rejected"
 
 
@@ -123,7 +123,7 @@ def test_exhausted_retries_result_returns_thesis_id_when_present() -> None:
     out = _exhausted_retries_result(parsed, "validator failed: x")
     assert out["status"] == "thesis_rejected"
     assert out["generated_thesis_id"] == "trailing_stop"
-    assert out["rejection_reason"] == "validator failed: x"
+    assert out["validation_failure_reason"] == "validator failed: x"
     assert out["should_stop"] is False
 
 

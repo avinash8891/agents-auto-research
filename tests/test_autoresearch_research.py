@@ -180,7 +180,7 @@ def test_check_parsed_for_terminal_preserves_conductor_validation_reason() -> No
         "status": "conductor_error",
         "generated_config": None,
         "should_stop": False,
-        "rejection_reason": (
+        "validation_failure_reason": (
             "research conductor failed: validation_failed: expected exactly one thesis, got 2"
         ),
         "validation_reason": "expected exactly one thesis, got 2",
@@ -672,7 +672,7 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
         thesis_id="ema-duplicate",
     )
     assert attempts[0]["validator_status"] == "rejected"
-    assert "config_changes contains thesis metadata key" in attempts[-1]["rejection_reason"]
+    assert "config_changes contains thesis metadata key" in attempts[-1]["validation_failure_reason"]
 
 
 def test_run_research_max_rounds_finishes_without_conductor_call(tmp_path: Path) -> None:
@@ -1189,7 +1189,7 @@ def test_handle_round_failure_clears_activity(tmp_path: Path) -> None:
         "research_round_in_progress": 8,
         "activity": {"type": "research", "phase": "conductor_running", "round": 8},
     }
-    result = {"rejection_reason": "no thesis generated"}
+    result = {"validation_failure_reason": "no thesis generated"}
 
     updated = _handle_round_failure(_Controller(), state, result, research_round=8)
 

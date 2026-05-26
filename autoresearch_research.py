@@ -201,7 +201,7 @@ def log_research_round(
     mechanism: str = "",
     mechanism_dimension: str = "",
     thesis_details: dict[str, Any] | None = None,
-    rejection_reason: str = "",
+    validation_failure_reason: str = "",
     usage: dict[str, Any] | None = None,
 ) -> None:
     """Log every research round outcome to canonical persistence."""
@@ -235,7 +235,7 @@ def log_research_round(
             "hypothesis": hypothesis,
             "mechanism": mechanism,
             "thesis_details": thesis_details or {},
-            "rejection_reason": rejection_reason,
+            "validation_failure_reason": validation_failure_reason,
             "selected_for_execution": 1 if outcome == "compiled" else 0,
             "created_at_utc": iso8601_utc_now(),
         }
@@ -523,19 +523,19 @@ def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] 
             "status": "parse_failed",
             "generated_config": None,
             "should_stop": False,
-            "rejection_reason": "research conductor returned no parseable thesis",
+            "validation_failure_reason": "research conductor returned no parseable thesis",
         }
     if parsed.get("status") == "conductor_error":
         error = parsed.get("error") or parsed.get("reasoning") or "unknown conductor error"
         validation_reason = str(parsed.get("validation_reason") or "")
-        rejection_reason = f"research conductor failed: {error}"
+        validation_failure_reason = f"research conductor failed: {error}"
         if validation_reason:
-            rejection_reason = f"{rejection_reason}: {validation_reason}"
+            validation_failure_reason = f"{validation_failure_reason}: {validation_reason}"
         result = {
             "status": "conductor_error",
             "generated_config": None,
             "should_stop": False,
-            "rejection_reason": rejection_reason,
+            "validation_failure_reason": validation_failure_reason,
         }
         if validation_reason:
             result["validation_reason"] = validation_reason
@@ -543,7 +543,7 @@ def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] 
             source_module="autoresearch_research",
             category="conductor",
             action="conductor_error",
-            summary=rejection_reason,
+            summary=validation_failure_reason,
             payload={
                 "error_code": "conductor_error",
                 "error": str(error),
@@ -562,7 +562,7 @@ def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] 
     return None
 
 
-def _structured_rejection_reason(*, source: str, message: str) -> dict[str, str]:
+def _structured_validation_failure(*, source: str, message: str) -> dict[str, str]:
     """Normalize free-form rejection text into stable routing/trace metadata."""
     lower = message.lower()
     if "overlap" in lower or "duplicate" in lower:
@@ -594,7 +594,7 @@ def _log_validation_rejection(
     stage: str = "stage_1",
 ) -> None:
     rejection_feedback = f"Thesis '{thesis_id}' rejected by validator: {reason}"
-    structured_rejection = _structured_rejection_reason(
+    structured_rejection = _structured_validation_failure(
         source="validator",
         message=reason,
     )
@@ -663,7 +663,7 @@ def _log_validation_rejection(
             if key in raw_thesis
         }
         | {"structured_rejection": structured_rejection},
-        rejection_reason=reason,
+        validation_failure_reason=reason,
     )
     _RULE_PROPOSALS.create_proposal(
         title=f"Round {research_round} rejected thesis {thesis_id}",
@@ -887,7 +887,7 @@ def _exhausted_retries_result(
     log.error(
         f"THESIS REJECTED after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback} "
         f"| hint=the conductor produced a thesis that failed validation 3 times in a row; "
-        f"review the rejection_reason above and refine the conductor system prompt or "
+        f"review the validation_failure_reason above and refine the conductor system prompt or "
         f"add a counterexample to thesis_validator.load_prior_theses"
     )
     trace(
@@ -899,7 +899,7 @@ def _exhausted_retries_result(
         "generated_config": None,
         "generated_config_needs_build": False,
         "generated_thesis_id": thesis_id,
-        "rejection_reason": rejection_feedback,
+        "validation_failure_reason": rejection_feedback,
         "should_stop": False,
         "reasoning": parsed.get("reasoning", "") if parsed else "",
     }
@@ -1116,7 +1116,7 @@ def _classify_round_outcome(result: dict[str, Any]) -> str:
         return OUTCOME_NEEDS_CODE
     if result.get("generated_config"):
         return OUTCOME_COMPILED
-    if result.get("rejection_reason"):
+    if result.get("validation_failure_reason"):
         return OUTCOME_REJECTED
     return OUTCOME_CONDUCTOR_ERROR
 
@@ -1131,7 +1131,7 @@ def _record_round_quality_and_bridges(
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
     thesis_meta = _thesis_meta_from_result(result, controller.family.name)
     reasoning = result.get("reasoning", "")
-    rejection_reason = result.get("rejection_reason", "")
+    validation_failure_reason = result.get("validation_failure_reason", "")
     dimension_scores = {
         k: 1.0 if k == outcome else 0.0
         for k in ("compiled", "needs_code", "stopped", "rejected", "conductor_error")
@@ -1154,7 +1154,7 @@ def _record_round_quality_and_bridges(
         "outcome": outcome,
         "family": controller.family.name,
         "reasoning": reasoning,
-        "rejection_reason": rejection_reason,
+        "validation_failure_reason": validation_failure_reason,
         "usage": round_usage,
         "quality": quality_event,
     }
@@ -1205,7 +1205,7 @@ def _write_adapter_exports(
     outcome: str,
     family: str,
     reasoning: str,
-    rejection_reason: str,
+    validation_failure_reason: str,
     usage: dict[str, Any],
     quality: Any,
 ) -> None:
@@ -1215,7 +1215,7 @@ def _write_adapter_exports(
         outcome=outcome,
         family=family,
         reasoning=reasoning,
-        rejection_reason=rejection_reason,
+        validation_failure_reason=validation_failure_reason,
         usage=usage,
         quality=quality,
     )
@@ -1416,13 +1416,13 @@ def _run_improvement_hooks(
 
 
 def _record_rejection_rule_if_needed(research_round: int, result: dict[str, Any]) -> None:
-    rejection_reason = result.get("rejection_reason")
-    if not rejection_reason:
+    validation_failure_reason = result.get("validation_failure_reason")
+    if not validation_failure_reason:
         return
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
     _RULE_PROPOSALS.create_proposal(
         title=f"Round {research_round} rejected thesis {thesis_id}",
-        rationale=rejection_reason,
+        rationale=validation_failure_reason,
         evidence_event_ids=[],
         expected_impact="reduce repeated rejected research outcomes",
         proposed_rule=f"Prevent repeated rejection path for thesis {thesis_id}",
@@ -1599,7 +1599,7 @@ def _handle_round_failure(
     result: dict[str, Any],
     research_round: int,
 ) -> dict[str, Any]:
-    reason = result.get("rejection_reason") or result.get("reasoning") or "no thesis generated"
+    reason = result.get("validation_failure_reason") or result.get("reasoning") or "no thesis generated"
     trace("LOOP", f"research round {research_round} produced no config: {reason}")
     log.warning(f"HEARTBEAT research round {research_round} failed: {reason}")
     state["research_round"] = research_round
@@ -1695,7 +1695,7 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
             )
             if key in thesis_meta
         },
-        rejection_reason=result.get("rejection_reason") or result.get("reasoning", ""),
+        validation_failure_reason=result.get("validation_failure_reason") or result.get("reasoning", ""),
         usage=round_usage,
     )
     _record_rejection_rule_if_needed(research_round, result)

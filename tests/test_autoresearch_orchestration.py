@@ -635,7 +635,7 @@ def test_reflexio_export_refresh_rewrites_package_for_matching_thesis(tmp_path: 
                 "episode": {"round": 3, "thesis_id": "refresh-me", "family": "ema"},
                 "reflection": {
                     "reasoning": "Builder should compile this thesis.",
-                    "rejection_reason": "",
+                    "validation_failure_reason": "",
                     "quality": {"score": 0.8},
                 },
                 "resources": {"usage": {"total_tokens": 12}},
