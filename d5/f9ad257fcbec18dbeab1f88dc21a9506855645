@@ -1,0 +1,90 @@
+research_memory.py
+  s_eeaca68b53c0c2::t_0cfcd41afbe167 341
+  s_eeaca68b53c0c2::t_59815d7f760f40 362
+tests/test_improvement_reflexion.py
+  s_eeaca68b53c0c2::t_da1700dd146ef7 28,48,54
+  s_eeaca68b53c0c2::t_08bfbcedbb6e59 76,84
+  s_eeaca68b53c0c2::t_f354f49b8ec940 245
+  s_eeaca68b53c0c2::t_21db66e0a55890 251
+  s_eeaca68b53c0c2::t_bb5ff52aa0b7c8 306
+  s_eeaca68b53c0c2::t_d1d9134bcdcbcd 141
+  s_eeaca68b53c0c2::t_0b58374d829356 270
+  s_eeaca68b53c0c2::t_604d4b2340b650 362,422
+autoresearch_research.py
+  s_eeaca68b53c0c2::t_5400d91b281c25 565
+  s_eeaca68b53c0c2::t_00fce742460447 531,533,538,546
+  s_eeaca68b53c0c2::t_f307cf2dfd1851 1698
+  s_eeaca68b53c0c2::t_12460b8518cd02 890
+  s_eeaca68b53c0c2::t_afb26f55f8a0ce 1157
+  s_eeaca68b53c0c2::t_9607e61d310a34 238
+  s_eeaca68b53c0c2::t_9d88fa7b872a5f 1602
+  s_eeaca68b53c0c2::t_86c06d34b5c808 526
+  s_eeaca68b53c0c2::t_c0c14c7a298308 666
+  s_eeaca68b53c0c2::t_f72c855905c857 902
+  s_eeaca68b53c0c2::t_1ba199dccc48ae 204
+  s_eeaca68b53c0c2::t_ffa61f9254153a 1119
+  s_eeaca68b53c0c2::t_547bc97af7598a 597
+  s_eeaca68b53c0c2::t_f2b1d216afaf81 1134
+  s_eeaca68b53c0c2::t_69c9d2c00ab1a0 1208,1218
+  s_eeaca68b53c0c2::t_72ed13288942c0 1419-1420,1425
+tests/test_autoresearch_research.py
+  s_eeaca68b53c0c2::t_0cb5f1c3db17e5 1192
+  s_eeaca68b53c0c2::t_07ce72bfd5a5ff 183
+  s_eeaca68b53c0c2::t_1efc8d2de8d0bb 675
+autoresearch_controller.py
+  s_eeaca68b53c0c2::t_44d4761036c967 939,954
+autoresearch_orchestration.py
+  s_eeaca68b53c0c2::t_9c43538557dd93 461
+improvement_reflexion.py
+  s_eeaca68b53c0c2::t_6ababf310be9da 84
+  s_eeaca68b53c0c2::t_059602311cfae9 103-104
+tests/test_autoresearch_research_helpers.py
+  s_eeaca68b53c0c2::t_ace35463a1d1ff 126
+  s_eeaca68b53c0c2::t_96d1a98865f338 66
+  s_eeaca68b53c0c2::t_946a46e8df13d2 37
+  s_eeaca68b53c0c2::t_916208d99f9b31 45
+  s_eeaca68b53c0c2::t_cd81f28586c4b1 21
+  s_eeaca68b53c0c2::t_0d2b3a9baae225 48-49
+  s_eeaca68b53c0c2::t_534f5701be95e1 109
+trace_adapters/recursive_improve.py
+  s_eeaca68b53c0c2::t_b6850a1254ae11 20,34
+  s_eeaca68b53c0c2::t_ebbe6f147806c5 85,87
+trace_adapters/reflexio.py
+  s_eeaca68b53c0c2::t_5cf0fe0a6d7ab1 20,39,51
+tests/test_trace_higher_level_modules.py
+  s_eeaca68b53c0c2::t_143762be117c0f 367
+  s_eeaca68b53c0c2::t_40000c1178cf19 466
+  s_eeaca68b53c0c2::t_600a1632d6728e 898,964,1040
+  s_eeaca68b53c0c2::t_92886b8ecbcd6e 335,346
+backtest_run_db.py
+  s_eeaca68b53c0c2::t_3116ddc0d34f96 618,633
+  s_eeaca68b53c0c2::t_bfc657d329a4b0 578,593
+  s_eeaca68b53c0c2::t_484cbfb5ecc2f0 230-232
+  s_eeaca68b53c0c2::t_99e8c646ecf774 218
+  s_eeaca68b53c0c2::t_26c6d007e06d63 257-266
+  s_eeaca68b53c0c2::t_4e26db07bcc0a2 515
+  s_eeaca68b53c0c2::t_a688095f31f3fe 555
+trace_adapters/halo.py
+  s_eeaca68b53c0c2::t_c3624f77779ea4 44,58
+tests/test_autoresearch_orchestration.py
+  s_eeaca68b53c0c2::t_0db99499be2d82 638
+docs/superpowers/plans/2026-05-04-prompt-variant-framework.md
+  s_eeaca68b53c0c2::t_77b0da04c1dd0f 830
+  s_eeaca68b53c0c2::t_c797461ad1860e 793
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d5f9ad257fcbec18dbeab1f88dc21a9506855645",
+  "prompts": {},
+  "sessions": {
+    "s_eeaca68b53c0c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e73224a3-7aac-4c74-95d7-b5f5193ba7f4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
