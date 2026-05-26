@@ -1,0 +1,25 @@
+agent_infra.py
+  df23f17b640abbde 12-13,69-75
+tests/test_agent_token_usage.py
+  df23f17b640abbde 9,273-303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "8a4609c65c46ed6580b9b02134091fe72a79a584",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 383,
+      "total_deletions": 86,
+      "accepted_lines": 340,
+      "overriden_lines": 0
+    }
+  }
+}

@@ -1,0 +1,19 @@
+old_conductor_prompt.md
+  s_eaab37724b8db1::t_3ed17f52b9c992 1-442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "659b0b8bca65b2b7fd99f5c12e56b70292069d22",
+  "prompts": {},
+  "sessions": {
+    "s_eaab37724b8db1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "14db7df9-cd80-4731-8409-c4acea09d59c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

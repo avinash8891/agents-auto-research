@@ -1,0 +1,27 @@
+tests/test_ema_backtest_characterization.py
+  dbc5ae606013cb0f 366-383
+strategies/ema/validate.py
+  dbc5ae606013cb0f 10-13,24,28,76-85
+strategies/orb/validate.py
+  dbc5ae606013cb0f 10-13,27,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "82d75723d92847dbd43a3ae4d01dd9e441f2ffd7",
+  "prompts": {
+    "dbc5ae606013cb0f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de36d-cd36-7ad0-86bd-68166dfcd69b",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 40,
+      "total_deletions": 11,
+      "accepted_lines": 40,
+      "overriden_lines": 0
+    }
+  }
+}

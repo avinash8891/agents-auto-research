@@ -1,0 +1,48 @@
+research_types.py
+  s_df23f17b640abb::t_e9ea3d474a327a 78-82,107-108
+compiler_builder.py
+  s_df23f17b640abb::t_0f861ed19e771a 510,538,546,585,629,649,680
+  s_df23f17b640abb::t_03451e0025cc31 312,324,334,368
+  s_df23f17b640abb::t_53bd4250a746d2 241
+  s_df23f17b640abb::t_933baab8339029 248-257,268
+research_prompts.py
+  s_df23f17b640abb::t_034780999ec3ad 265-266,321-325
+thesis_validator.py
+  s_df23f17b640abb::t_ecc3e226ecc44e 56-64,109-120,610-614
+  s_df23f17b640abb::t_ca094414a60b96 55,91-108,609
+compiler_research.py
+  s_df23f17b640abb::t_dc9f6b6524bdbd 7-8,19-30,34-37,41-48,64-65,97-99,112-114,123,144-147
+  s_df23f17b640abb::t_4cf446b73499e0 119-120
+  s_df23f17b640abb::t_d343b334ce125c 31-33,38-40
+  s_df23f17b640abb::t_c426295fba5001 66
+tests/test_compiler_pipeline_characterization.py
+  s_df23f17b640abb::t_d343b334ce125c 114-117,125-131,138-140,683,1072,1142
+  s_df23f17b640abb::t_9c366b039e5ed3 1287
+  s_df23f17b640abb::t_3deccd09358792 1430
+  s_df23f17b640abb::t_197d7a77dee47c 1488
+  s_df23f17b640abb::t_707ed99a01f20a 1565
+  s_df23f17b640abb::t_aeae9fee80b4f6 1553-1554,1564
+  s_df23f17b640abb::t_5fd8f1f719b40a 31-36
+  s_df23f17b640abb::t_ad6f078bf3bd80 106-113,118-124,132-137,141-142,144-145,827-831,833-839,841-851,853-858,860-873
+  s_df23f17b640abb::t_561427fa042a44 143,832,840,852,859
+compiler_implementation_verify.py
+  s_df23f17b640abb::t_62ba21425b1f62 130-131
+  s_df23f17b640abb::t_83fe8e071b9fb2 41,91-95,97-104,115-128
+  s_df23f17b640abb::t_fb8cb337d19b58 51,96,105-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "64a11e23cb7b13307a7aae18431e05b9ab211311",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

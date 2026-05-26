@@ -1,0 +1,31 @@
+backtest/data_universe.py
+  c6764ab5a64b40e0 82-83
+scripts/cubic_review.sh
+  c6764ab5a64b40e0 8-15
+tests/test_ema_backtest_characterization.py
+  c6764ab5a64b40e0 419-426
+tests/test_precommit_config.py
+  c6764ab5a64b40e0 12-16
+tests/conftest.py
+  c6764ab5a64b40e0 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "da2988208f0e3425140280f9feba27fac39e4a5e",
+  "prompts": {
+    "c6764ab5a64b40e0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de78d-e526-7713-bd7d-2b58420b3c7d",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 24,
+      "total_deletions": 4,
+      "accepted_lines": 120,
+      "overriden_lines": 0
+    }
+  }
+}

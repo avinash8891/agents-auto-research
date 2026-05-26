@@ -1,0 +1,9 @@
+backtest/runtime_config.py
+  cf3feb0734dbfe97 51-53,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "a1ed9cc6f4557a4c16834282ecc0c7ea7a138898",
+  "prompts": {}
+}

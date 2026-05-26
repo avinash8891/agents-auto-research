@@ -1,0 +1,25 @@
+vps_runner.py
+  e9043dd1c79c0e1f 662
+tests/test_vps_runner_config.py
+  e9043dd1c79c0e1f 266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "46c7754ac6ef40b2362f5896bb75ea20d8edd419",
+  "prompts": {
+    "e9043dd1c79c0e1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f9012dd-4759-4430-ace7-b24e736113f1",
+        "model": "<synthetic>"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 6,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}

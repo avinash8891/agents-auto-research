@@ -1,0 +1,55 @@
+tests/test_eval_metrics.py
+  a4f2ec1088d3ded8 17-102
+improvement_halo.py
+  a4f2ec1088d3ded8 1-6
+autoresearch_research.py
+  a4f2ec1088d3ded8 798-852
+tests/test_improvement_halo_apply.py
+  a4f2ec1088d3ded8 3-324
+tests/test_improvement_research_hooks.py
+  a4f2ec1088d3ded8 1-80
+improvement_halo_apply.py
+  a4f2ec1088d3ded8 1-213
+improvement_flags.py
+  a4f2ec1088d3ded8 3-30
+tests/test_improvement_ratchet.py
+  a4f2ec1088d3ded8 7-181
+eval_harness.py
+  a4f2ec1088d3ded8 1-198
+improvement_ratchet.py
+  a4f2ec1088d3ded8 1-124
+eval_metrics.py
+  a4f2ec1088d3ded8 25-257
+eval_cli.py
+  a4f2ec1088d3ded8 61-96
+autoresearch_constants.py
+  a4f2ec1088d3ded8 49
+tests/test_improvement_flags.py
+  a4f2ec1088d3ded8 3-72
+improvement_reflexion.py
+  a4f2ec1088d3ded8 1-64
+tests/test_eval_harness.py
+  a4f2ec1088d3ded8 115-178
+tests/test_eval_cli.py
+  a4f2ec1088d3ded8 39-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "46fb2fc135dfa07c56b3509e07efb9705014952c",
+  "prompts": {
+    "a4f2ec1088d3ded8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5aa5b256-3939-45a6-b654-08179c447d92",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 625,
+      "total_deletions": 426,
+      "accepted_lines": 1403,
+      "overriden_lines": 0
+    }
+  }
+}

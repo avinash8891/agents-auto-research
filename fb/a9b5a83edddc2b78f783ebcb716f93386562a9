@@ -1,0 +1,126 @@
+autoresearch_logging.py
+  4fdac69567eddff2 25-26
+trace_exports/round-001-ema5/halo/halo-event.json
+  4fdac69567eddff2 4-11,22
+trace_quality_history.py
+  4fdac69567eddff2 57
+agent_token_usage.py
+  4fdac69567eddff2 5-7,58-78,99,142,210,214
+scripts/token_audit.py
+  4fdac69567eddff2 28-31,140-150
+backtest/output.py
+  4fdac69567eddff2 7,55
+backtest/filters.py
+  4fdac69567eddff2 35,49
+strategies/orb/validate.py
+  4fdac69567eddff2 5
+trace_exports/round-001-ema5/recursive_improve/package.json
+  4fdac69567eddff2 6-13,24
+agent_orchestrator.py
+  4fdac69567eddff2 24,27
+trace_rule_proposals.py
+  4fdac69567eddff2 39,62
+trace_exports/round-001-ema5/reflexio/package.json
+  4fdac69567eddff2 12-19,30
+compiler_operationalize.py
+  4fdac69567eddff2 7-9,12-13,136,149-153,165,174
+autoresearch_constants.py
+  4fdac69567eddff2 46-51
+thesis_validator.py
+  4fdac69567eddff2 21,24,337,481
+tests/test_autoresearch_planning.py
+  4fdac69567eddff2 380
+CLAUDE.md
+  6282a61e8b4a52b8 5,20,43-125,128
+backtest/runner.py
+  4fdac69567eddff2 32
+strategies/orb/runner.py
+  4fdac69567eddff2 191-192,199,214
+strategies/ema/validate.py
+  4fdac69567eddff2 5
+trace_refinement.py
+  4fdac69567eddff2 33,62,85
+metrics.py
+  4fdac69567eddff2 12-14
+trace_adapters/__init__.py
+  4fdac69567eddff2 1-25
+strategies/orb/strategy.py
+  4fdac69567eddff2 5,23
+autoresearch_research.py
+  4fdac69567eddff2 39,681-682,684-685,698-718,745,747-755,757-763,780-791,799-801,806,819-821,826,856-858,865,932,953,955,964-965,975-978
+trace_autonomy_ledger.py
+  4fdac69567eddff2 44,74
+agent_memory.py
+  4fdac69567eddff2 5-6,9
+tests/test_vps_runner_config.py
+  4fdac69567eddff2 373-375
+agent_prompts.py
+  4fdac69567eddff2 5-6,211
+trace_exports/round-001-ema5/reflexio/reflexio-event.json
+  4fdac69567eddff2 10-17,28
+strategy_event_logger.py
+  4fdac69567eddff2 25-27
+autoresearch_cli.py
+  4fdac69567eddff2 13,17,20-25,46-48,227-229,288,333,377
+strategies/base.py
+  4fdac69567eddff2 66-67,76,83-97
+trace_exports/round-001-ema5/recursive_improve/recursive-improve-event.json
+  4fdac69567eddff2 4-11,22
+autoresearch_orchestration.py
+  4fdac69567eddff2 7,82
+trace_exports/round-001-ema5/halo/package.json
+  4fdac69567eddff2 6-13,24
+research_memory.py
+  4fdac69567eddff2 7,11
+.gitignore
+  4fdac69567eddff2 233
+tests/test_autoresearch_state.py
+  4fdac69567eddff2 31
+autoresearch_state.py
+  4fdac69567eddff2 323-325
+tests/test_research_conductor_characterization.py
+  4fdac69567eddff2 239,254
+agent_orchestrator_helpers.py
+  4fdac69567eddff2 9-29,74-82,119-127,172-182
+tests/test_precommit_config.py
+  4fdac69567eddff2 14
+backtest/result_schema.py
+  4fdac69567eddff2 6,31
+vps_runner.py
+  4fdac69567eddff2 262-276
+autoresearch_controller.py
+  4fdac69567eddff2 644-647
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "fba9b5a83edddc2b78f783ebcb716f93386562a9",
+  "prompts": {
+    "4fdac69567eddff2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e009dc20-8bf3-41af-89d4-ef43ebf1515e",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 513,
+      "total_deletions": 413,
+      "accepted_lines": 510,
+      "overriden_lines": 0
+    },
+    "6282a61e8b4a52b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "94abb7d7-4a32-4cc9-b3cf-2ebd079af057",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 86,
+      "overriden_lines": 0
+    }
+  }
+}

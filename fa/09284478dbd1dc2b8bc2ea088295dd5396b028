@@ -1,0 +1,23 @@
+CLAUDE.md
+  becf7afbb66bcc9c 19,36,44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "fa09284478dbd1dc2b8bc2ea088295dd5396b028",
+  "prompts": {
+    "becf7afbb66bcc9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f09f6e23-ecca-4698-bc48-e07528fbf3c4",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 1,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}

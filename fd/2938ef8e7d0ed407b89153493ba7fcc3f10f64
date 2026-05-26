@@ -1,0 +1,23 @@
+vps_runner.py
+  dc8cf914dcec6328 2,4,9-10,250,409,416,455
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "fd2938ef8e7d0ed407b89153493ba7fcc3f10f64",
+  "prompts": {
+    "dc8cf914dcec6328": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de81a-3102-7e81-b62d-39ed90f5dc00",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 32,
+      "total_deletions": 79,
+      "accepted_lines": 10,
+      "overriden_lines": 0
+    }
+  }
+}

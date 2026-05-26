@@ -1,0 +1,24 @@
+tests/test_dependencies.py
+  s_df23f17b640abb::t_3fd6fa61b24cef 24,29
+tests/test_improvement_halo.py
+  s_df23f17b640abb::t_1547bf43276353 47,90
+  s_df23f17b640abb::t_3abeb74a2caa87 106-129
+improvement_halo.py
+  s_df23f17b640abb::t_b73a6fdeac8082 14,38,41,61-107,126-127,129-130,155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "2d874222277a34d26bcd328fa332ecf7c6d890df",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

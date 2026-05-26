@@ -1,0 +1,76 @@
+tests/test_trace_higher_level_modules.py
+  s_df23f17b640abb::t_0e19cebbf06a43 355,369
+  s_df23f17b640abb::t_db5e7eb6c73d39 370,374-403,406-460
+  s_df23f17b640abb::t_6f795236aee06c 371-373
+  s_df23f17b640abb::t_bd3014287c89bf 404-405
+research_memory.py
+  s_df23f17b640abb::t_a4d26fe37d5835 71
+  s_df23f17b640abb::t_87d03267d0b9c4 51
+trace_exports/round-001-ema5/recursive_improve/recursive-improve-trace.json
+  s_df23f17b640abb::t_d95546d70df120 10
+agent_token_usage.py
+  s_df23f17b640abb::t_5be95635a2102f 115-138
+improvement_reflexion.py
+  s_df23f17b640abb::t_03d0834bc38fb6 65-67
+  s_df23f17b640abb::t_25fbe72c87c780 64,68,84-87,104-133
+compiler_builder.py
+  s_df23f17b640abb::t_47c2986ee0317b 194,198-200,205-223
+trace_adapters/artifacts.py
+  s_df23f17b640abb::t_e3314a1dc79fd2 16-20,76-77,81-90
+  s_df23f17b640abb::t_4b93566cf7c257 21
+  s_df23f17b640abb::t_a1108b06f0244a 91-92
+trace_exports/round-001-ema5/reflexio/reflexio-trajectory.json
+  s_df23f17b640abb::t_d95546d70df120 105,108,116,119
+research_tools_mcp.py
+  s_df23f17b640abb::t_741940f32723de 183-188,192-193
+autoresearch_orchestration.py
+  s_df23f17b640abb::t_03d0834bc38fb6 293-295
+  s_df23f17b640abb::t_b82227c023e0ba 273-292,296-319,321-323,325-349,386-395
+  s_df23f17b640abb::t_bb8428729760ba 320,324
+  s_df23f17b640abb::t_a0174a6c2e11e0 5
+tests/test_research_conductor_characterization.py
+  s_df23f17b640abb::t_44a3f2f8f1183d 1405-1407,1430-1432,1441
+autoresearch_research.py
+  s_df23f17b640abb::t_de04f256f448c7 71-77
+  s_df23f17b640abb::t_6cd6d5eee948ec 528,586
+tests/test_vps_runner_config.py
+  s_df23f17b640abb::t_a35dd710f68949 217-221
+vps_runner.py
+  s_df23f17b640abb::t_2d162747224cc9 384-397,410
+  s_df23f17b640abb::t_e912c6a0c012a2 399,402-404
+tests/test_compiler_pipeline_characterization.py
+  s_df23f17b640abb::t_dc883f09cf173c 508
+trace_exports/round-001-ema5/reflexio/package.json
+  s_df23f17b640abb::t_d95546d70df120 161,164,172,175,334,337,345,348
+trace_exports/round-001-ema5/reflexio/reflexio-event.json
+  s_df23f17b640abb::t_d95546d70df120 159,162,170,173
+tests/test_improvement_reflexion.py
+  s_df23f17b640abb::t_03d0834bc38fb6 259
+  s_df23f17b640abb::t_18b9479b082fde 260-308
+trace_adapters/recursive_improve.py
+  s_df23f17b640abb::t_12dacb94fe72e0 10,97
+trace_adapters/reflexio.py
+  s_df23f17b640abb::t_6c027dcf93bbbd 23,25,39-44,96,98-100,108,117-191,196-263
+  s_df23f17b640abb::t_03d0834bc38fb6 192-195
+trace_exports/round-001-ema5/recursive_improve/package.json
+  s_df23f17b640abb::t_d95546d70df120 51
+tests/test_autoresearch_orchestration.py
+  s_df23f17b640abb::t_33490157c26ffd 399
+  s_df23f17b640abb::t_0423a5f0b91ea2 342-398,400-408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "6eafce99e720638a106ad2187961d96764c4c7cb",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}

@@ -1,0 +1,54 @@
+tests/test_validator_subsections.py
+  s_cae689298e56ac::t_83ef823586254e 1-153,159-312
+  s_cae689298e56ac::t_a50a45c0db3b48 154-158
+tests/test_rejection_artifact.py
+  s_cae689298e56ac::t_eea788d6225835 117,126,177,186-187,189,199,216,241,247,266,275
+  s_cae689298e56ac::t_3231326e850e56 21,57,176,178,200,217-218,222,224,264-265,267,274,307,322
+  s_cae689298e56ac::t_121f4d5db4cd74 148
+rejection_artifact.py
+  s_cae689298e56ac::t_8a1816addbde7e 243-247,251-255
+  s_cae689298e56ac::t_5d6f368dbdff32 261,267
+tests/test_escalation_directive.py
+  s_cae689298e56ac::t_198de77dc98436 40,56,74
+  s_cae689298e56ac::t_ade5fdac2c81d8 63
+research_conductor.py
+  s_cae689298e56ac::t_ff93592d583be1 687,769
+tests/test_rejection_prompt_block.py
+  s_cae689298e56ac::t_60bd54b4086a7c 43,63,76-77,85,106-108,110
+  s_cae689298e56ac::t_f4b85696817115 51,64,78,101-103,105
+tests/test_validator_challenge.py
+  s_cae689298e56ac::t_3904a8750429bd 26,35
+research_types.py
+  s_cae689298e56ac::t_d16f4e251776f8 280
+thesis_validator.py
+  s_cae689298e56ac::t_94db4d5d89abde 202-204,208-210,218-220,224-226
+  s_cae689298e56ac::t_2e0a8e41a6b723 944,947-948,950-954,957-959,962-964,967-969,974-975,981-983,989-990,995-997,1004-1006,1011-1012,1018-1019,1024-1025,1032-1034,1039-1040,1044-1045,1050-1051,1059-1064,1069-1070,1078-1080,1084-1101,1122-1128,1131-1190
+  s_cae689298e56ac::t_b8f13848c303be 536-538
+  s_cae689298e56ac::t_e0548c7c0fa22b 405-412
+  s_cae689298e56ac::t_52995ec8c4e5bb 483-491
+  s_cae689298e56ac::t_40d8b9781d37f8 133,135,137,139,141,143,145-162,164,166-168,170,172-174
+  s_cae689298e56ac::t_a8228e493c22e9 346-353
+  s_cae689298e56ac::t_1e635f5ffcc490 425-427
+  s_cae689298e56ac::t_29103305bd0830 509-510
+tests/test_thesis_validator.py
+  s_cae689298e56ac::t_05e2aac121549e 362-368
+  s_cae689298e56ac::t_b92ed4c575fdd7 335-342
+tests/test_structured_rejection.py
+  s_cae689298e56ac::t_ed1a6f93c51c72 19,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "008a8a38710dded67f4b17a913525c7bd2e05892",
+  "prompts": {},
+  "sessions": {
+    "s_cae689298e56ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9bc93516-d0c8-4a64-9ccc-09cd00bb80c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

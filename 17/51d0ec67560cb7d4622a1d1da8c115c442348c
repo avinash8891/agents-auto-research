@@ -1,0 +1,87 @@
+tests/test_research_conductor_characterization.py
+  s_df23f17b640abb::t_44a3f2f8f1183d 1405-1407,1430-1432,1441
+tests/test_vps_runner_config.py
+  s_df23f17b640abb::t_a35dd710f68949 217-221
+research_tools_mcp.py
+  s_df23f17b640abb::t_741940f32723de 183-188,192-193
+compiler_builder.py
+  s_df23f17b640abb::t_47c2986ee0317b 194,198-200,205-223
+research_memory.py
+  s_df23f17b640abb::t_a4d26fe37d5835 71
+  s_df23f17b640abb::t_87d03267d0b9c4 51
+tests/test_analyst_dataframe_helpers.py
+  s_df23f17b640abb::t_33f93f9628395a 4,43-63
+tests/test_improvement_reflexion.py
+  s_df23f17b640abb::t_18b9479b082fde 260-308
+  s_df23f17b640abb::t_03d0834bc38fb6 259
+autoresearch_controller.py
+  s_df23f17b640abb::t_c42d3a2f4017c1 122,197-200
+trace_adapters/recursive_improve.py
+  s_df23f17b640abb::t_12dacb94fe72e0 10,97
+trace_adapters/artifacts.py
+  s_df23f17b640abb::t_a1108b06f0244a 97-98
+  s_df23f17b640abb::t_4b93566cf7c257 27
+  s_df23f17b640abb::t_e3314a1dc79fd2 16-19,26,82-83,87-96
+  s_df23f17b640abb::t_a4cee5ebc25e6f 20-25
+autoresearch_orchestration.py
+  s_df23f17b640abb::t_b82227c023e0ba 273-291,294-312,314-316,318-333,346,358-365,402-411
+  s_df23f17b640abb::t_bb8428729760ba 313,317
+  s_df23f17b640abb::t_a0174a6c2e11e0 5
+  s_df23f17b640abb::t_1cc19460f69f6c 292-293,334-345,347-357
+autoresearch_research.py
+  s_df23f17b640abb::t_6cd6d5eee948ec 528,586
+  s_df23f17b640abb::t_de04f256f448c7 71-77
+trace_exports/round-001-ema5/reflexio/package.json
+  s_df23f17b640abb::t_5a7ecca89d976a 161,164,172,175,334,337,345,348
+trace_exports/round-001-ema5/recursive_improve/package.json
+  s_df23f17b640abb::t_d95546d70df120 51
+vps_runner.py
+  s_df23f17b640abb::t_e912c6a0c012a2 399,402-404
+  s_df23f17b640abb::t_2d162747224cc9 384-397,410
+tests/test_trace_higher_level_modules.py
+  s_df23f17b640abb::t_6f795236aee06c 371-373
+  s_df23f17b640abb::t_db5e7eb6c73d39 370,374-375,392-419,422-476
+  s_df23f17b640abb::t_0e19cebbf06a43 355,369
+  s_df23f17b640abb::t_0651e448cd1b88 376-391
+  s_df23f17b640abb::t_bd3014287c89bf 420-421
+tests/test_autoresearch_controller_characterization.py
+  s_df23f17b640abb::t_c8b072d799a859 2515-2541
+trace_exports/round-001-ema5/reflexio/reflexio-event.json
+  s_df23f17b640abb::t_5a7ecca89d976a 159,162,170,173
+trace_exports/round-001-ema5/reflexio/reflexio-trajectory.json
+  s_df23f17b640abb::t_5a7ecca89d976a 105,108,116,119
+tests/test_compiler_pipeline_characterization.py
+  s_df23f17b640abb::t_dc883f09cf173c 508
+tests/test_autoresearch_orchestration.py
+  s_df23f17b640abb::t_0423a5f0b91ea2 342-343,364-418,420-426,430-431
+  s_df23f17b640abb::t_59c96c058c365b 344-363,427-429
+  s_df23f17b640abb::t_33490157c26ffd 419
+analyst_dataframe_helpers.py
+  s_df23f17b640abb::t_1e9ffd81fe1a0b 36-40,83-88
+agent_token_usage.py
+  s_df23f17b640abb::t_5be95635a2102f 115-138
+trace_adapters/reflexio.py
+  s_df23f17b640abb::t_03d0834bc38fb6 192-195
+  s_df23f17b640abb::t_6c027dcf93bbbd 23,25,39-44,96,98-100,108,117-191,196-263
+improvement_reflexion.py
+  s_df23f17b640abb::t_03d0834bc38fb6 65-67
+  s_df23f17b640abb::t_25fbe72c87c780 64,68,84-87,104-133
+trace_exports/round-001-ema5/recursive_improve/recursive-improve-trace.json
+  s_df23f17b640abb::t_d95546d70df120 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "1751d0ec67560cb7d4622a1d1da8c115c442348c",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}

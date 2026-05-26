@@ -1,0 +1,25 @@
+tests/test_research_conductor_characterization.py
+  df23f17b640abbde 598-604
+research_subagents.py
+  df23f17b640abbde 35-42,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "0465e24bc1b05fdc5fe09a99c073c2bb8ddb7ac7",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 16,
+      "total_deletions": 1,
+      "accepted_lines": 16,
+      "overriden_lines": 0
+    }
+  }
+}

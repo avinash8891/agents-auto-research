@@ -1,0 +1,23 @@
+tests/test_autoresearch_experiment.py
+  c6764ab5a64b40e0 522-523
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "69874710e2a30b116eed5f056df7dba8c0fe0762",
+  "prompts": {
+    "c6764ab5a64b40e0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de78d-e526-7713-bd7d-2b58420b3c7d",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 143,
+      "total_deletions": 186,
+      "accepted_lines": 74,
+      "overriden_lines": 0
+    }
+  }
+}

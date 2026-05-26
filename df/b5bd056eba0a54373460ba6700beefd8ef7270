@@ -1,0 +1,35 @@
+autoresearch_controller.py
+  dc8cf914dcec6328 463,642-644
+autoresearch_state.py
+  dc8cf914dcec6328 286
+experiment_db.py
+  dc8cf914dcec6328 197,907
+autoresearch_cli.py
+  dc8cf914dcec6328 56,235
+autoresearch_experiment.py
+  dc8cf914dcec6328 236,239-240,244,840-845
+tests/test_autoresearch_controller_characterization.py
+  dc8cf914dcec6328 1412-1464
+tests/test_autoresearch_experiment.py
+  dc8cf914dcec6328 243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "dfb5bd056eba0a54373460ba6700beefd8ef7270",
+  "prompts": {
+    "dc8cf914dcec6328": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de81a-3102-7e81-b62d-39ed90f5dc00",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 73,
+      "total_deletions": 16,
+      "accepted_lines": 73,
+      "overriden_lines": 0
+    }
+  }
+}

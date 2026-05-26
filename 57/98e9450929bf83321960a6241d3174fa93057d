@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "5798e9450929bf83321960a6241d3174fa93057d",
+  "prompts": {
+    "c6764ab5a64b40e0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de78d-e526-7713-bd7d-2b58420b3c7d",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 131,
+      "total_deletions": 131,
+      "accepted_lines": 96,
+      "overriden_lines": 0
+    }
+  }
+}

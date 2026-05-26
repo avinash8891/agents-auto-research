@@ -1,0 +1,50 @@
+tests/test_autoresearch_experiment.py
+  s_df23f17b640abb::t_99d128e283c494 34,463-530
+compiler_builder.py
+  s_df23f17b640abb::t_055a7fe668af6e 190-193
+tests/test_compiler_pipeline_characterization.py
+  s_df23f17b640abb::t_cefcab3353cfc1 685-687,699-701
+  s_df23f17b640abb::t_45d4deaa0fbd7f 58-70
+  s_df23f17b640abb::t_fac2e21854012b 808-811
+  s_df23f17b640abb::t_27bcaccd105719 688-698,702-705
+  s_df23f17b640abb::t_ec93c376248a5f 822-825
+tests/test_ema_backtest_characterization.py
+  s_df23f17b640abb::t_5ecf55688fd8b7 597-628
+  s_df23f17b640abb::t_2867d884848d13 314-336
+strategies/ema/validate.py
+  s_df23f17b640abb::t_6c97dc4f478d66 16-19,21
+  s_df23f17b640abb::t_6bf1264a974e1a 5,8-15,20,22-25,29-33
+strategies/ema/contract.py
+  s_df23f17b640abb::t_7e36c4f9d0d61a 27-34,72-94,108,152-159,170-171,175-182
+autoresearch_experiment.py
+  s_df23f17b640abb::t_77acd84fa64ce2 11,529-541,572-611
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "dcd1e1bc722881771a85b4c4fa048bff1229b061",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>",
+      "total_additions": 12,
+      "total_deletions": 54,
+      "accepted_lines": 12,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

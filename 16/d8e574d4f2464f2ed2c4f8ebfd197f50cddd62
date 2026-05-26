@@ -1,0 +1,45 @@
+tests/test_improvement_ratchet.py
+  a4f2ec1088d3ded8 116-181
+tests/test_improvement_halo_apply.py
+  a4f2ec1088d3ded8 140-150
+eval_harness.py
+  a4f2ec1088d3ded8 25-199
+improvement_ratchet.py
+  a4f2ec1088d3ded8 1-124
+improvement_reflexion.py
+  a4f2ec1088d3ded8 68
+eval_metrics.py
+  a4f2ec1088d3ded8 25-224
+autoresearch_research.py
+  a4f2ec1088d3ded8 798-847
+tests/test_eval_metrics.py
+  a4f2ec1088d3ded8 17-104
+tests/test_eval_harness.py
+  a4f2ec1088d3ded8 115-178
+eval_cli.py
+  a4f2ec1088d3ded8 61-96
+tests/test_eval_cli.py
+  a4f2ec1088d3ded8 39-184
+improvement_halo_apply.py
+  a4f2ec1088d3ded8 1-189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "16d8e574d4f2464f2ed2c4f8ebfd197f50cddd62",
+  "prompts": {
+    "a4f2ec1088d3ded8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5aa5b256-3939-45a6-b654-08179c447d92",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 340,
+      "total_deletions": 324,
+      "accepted_lines": 322,
+      "overriden_lines": 0
+    }
+  }
+}

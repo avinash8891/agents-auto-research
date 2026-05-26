@@ -1,0 +1,55 @@
+autoresearch_runtime_paths.py
+  s_df23f17b640abb::t_d29e30c8386d1d 1-12
+compiler_research.py
+  s_df23f17b640abb::t_3228643206a18b 53,58,84-85,89,149-150,155-157,164,172,181-183
+autoresearch_controller.py
+  s_df23f17b640abb::t_2b4b98187f7fc7 78,428,436-452,482-485,494-496,538-540,558-560,563-565,571-573,625
+  s_df23f17b640abb::t_f061a2d9e5558e 594,604
+  s_df23f17b640abb::t_bd949345b41ea1 631-636,820-822
+  s_df23f17b640abb::t_d9bce9ed2147f5 915-918,928-929
+tests/test_autoresearch_controller_characterization.py
+  s_df23f17b640abb::t_f5ef536f7b1e6d 112-118,463-516,518-522
+  s_df23f17b640abb::t_68d9ccc82ad0a8 612-615,1391-1392,1483-1484
+  s_df23f17b640abb::t_dff2bfd992d96a 440-441,606,611,617,622-623
+  s_df23f17b640abb::t_4a657a74b33882 462,517
+autoresearch_research.py
+  s_df23f17b640abb::t_e518e97043620c 280-283,312,328,335-338
+  s_df23f17b640abb::t_ceb27f77048e9d 661,721-723,1249-1251
+  s_df23f17b640abb::t_4a657a74b33882 662-665
+compiler_builder.py
+  s_df23f17b640abb::t_4a657a74b33882 470-473,476-478,483-485,564-566
+  s_df23f17b640abb::t_6a0c2c6f3049cd 127,129-139,142-144,146,433-435,438-439,469,475,501-502,563
+tests/test_autoresearch_artifacts.py
+  s_df23f17b640abb::t_9eb46334afec05 180-229
+autoresearch_orchestration.py
+  s_df23f17b640abb::t_f9c5dbb695ca91 386-388
+autoresearch_artifacts.py
+  s_df23f17b640abb::t_d29e30c8386d1d 83,90-105
+autoresearch_planning.py
+  s_df23f17b640abb::t_d29e30c8386d1d 77,79,136,140,479,542,544,601
+  s_df23f17b640abb::t_c25ca1df9d7f98 150,154-162
+  s_df23f17b640abb::t_913a0296bd3c76 232,264,353,372,382,426,449,462,555,557,570,573,602-603
+compiler_thesis_io.py
+  s_df23f17b640abb::t_467245ad890666 23-26,75-76,83,93-94,108-111,120-123,166-169,187-190,206,209,221-222,233-241,249,261-262,283-289,297-299,310-313,328-336
+vps_runner.py
+  s_df23f17b640abb::t_14d91ea97fb89e 287
+  s_df23f17b640abb::t_d9bce9ed2147f5 416,419,697-701,723-724
+tests/test_vps_runner_config.py
+  s_df23f17b640abb::t_db52231f9bb3d0 187-190,268-274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "01ad92efabf5075976a98b3774d198373961c613",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

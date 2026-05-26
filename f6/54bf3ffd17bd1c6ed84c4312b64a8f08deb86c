@@ -1,0 +1,33 @@
+tests/test_autoresearch_experiment.py
+  2cc93c2f0b61529a 164,170-171,366-368,376-378
+tests/test_vps_runner_config.py
+  2cc93c2f0b61529a 14,18,29-31,39-41,50-51,66-68,72-73,76-78,80-81,85-107,110-111,113,115-116
+vps_runner.py
+  2cc93c2f0b61529a 2,6-10,32-33,42-44,53-54,59-64,69-72,76-80,82-97,101-120,122-131,235-236,238-256,258,269,275,279
+docs/vps-git-deploy-provenance-plan.md
+  2cc93c2f0b61529a 1-96
+autoresearch_experiment.py
+  2cc93c2f0b61529a 39,661-664
+config_hash.py
+  2cc93c2f0b61529a 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "f654bf3ffd17bd1c6ed84c4312b64a8f08deb86c",
+  "prompts": {
+    "2cc93c2f0b61529a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de6cc-3a7c-7121-90c0-ed381a1718c9",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 278,
+      "total_deletions": 171,
+      "accepted_lines": 261,
+      "overriden_lines": 0
+    }
+  }
+}

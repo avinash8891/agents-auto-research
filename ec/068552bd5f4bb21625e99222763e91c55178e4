@@ -1,0 +1,25 @@
+tests/test_error_loudness.py
+  10a07f78d234f13c 127,146
+metrics.py
+  10a07f78d234f13c 50,91,102,113,126,138,194,221,291,305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "ec068552bd5f4bb21625e99222763e91c55178e4",
+  "prompts": {
+    "10a07f78d234f13c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de304-8ece-74e3-91e3-a641c23979ba",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 12,
+      "total_deletions": 19,
+      "accepted_lines": 12,
+      "overriden_lines": 0
+    }
+  }
+}
