@@ -31,6 +31,16 @@ def test_read_artifacts_relativizes_artifact_path_to_root(tmp_path: Path) -> Non
     assert out[0]["artifact_path"] == "runtime/jobs/job-1/research/round-1/round.json"
 
 
+def test_read_research_artifacts_preserves_absolute_paths_outside_root(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-artifact-outside"
+    round_dir = outside / "round-1"
+    round_path = _write_artifact(round_dir, "round.json", {"job": 1})
+
+    out = read_research_artifacts(outside, tmp_path, job=1)
+
+    assert out[0]["artifact_path"] == round_path.as_posix()
+
+
 def test_read_artifacts_returns_sorted_by_filename(tmp_path: Path) -> None:
     artifacts_dir = tmp_path / "queue"
     _write_artifact(artifacts_dir, "z.json", {"id": "z"})
@@ -62,6 +72,44 @@ def test_read_research_artifacts_filters_by_job(tmp_path: Path) -> None:
 
     assert len(out) == 1
     assert out[0]["artifact_path"].endswith("round-2/round.json")
+
+
+def test_read_research_artifacts_without_job_returns_unfiltered_rounds(tmp_path: Path) -> None:
+    research_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research"
+    _write_artifact(research_dir / "round-1", "round.json", {"job": 1})
+    _write_artifact(research_dir / "round-2", "round.json", {"job": 2})
+
+    out = read_research_artifacts(research_dir, tmp_path)
+
+    assert [artifact["job"] for artifact in out] == [1, 2]
+
+
+def test_read_research_artifacts_skips_malformed_round_json(tmp_path: Path) -> None:
+    research_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research"
+    _write_artifact(research_dir / "round-1", "round.json", {"job": 1})
+    bad_round = research_dir / "round-2"
+    bad_round.mkdir(parents=True)
+    (bad_round / "round.json").write_text("{not-json")
+
+    out = read_research_artifacts(research_dir, tmp_path)
+
+    assert [artifact["job"] for artifact in out] == [1]
+
+
+def test_read_research_artifacts_skips_missing_and_malformed_job_fields(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    research_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research"
+    _write_artifact(research_dir / "round-1", "round.json", {"job": 1})
+    _write_artifact(research_dir / "round-2", "round.json", {"status": "completed"})
+    _write_artifact(research_dir / "round-3", "round.json", {"job": "not-an-int"})
+
+    out = read_research_artifacts(research_dir, tmp_path, job=1)
+
+    assert [artifact["artifact_path"] for artifact in out] == [
+        "runtime/jobs/job-1/research/round-1/round.json"
+    ]
+    assert "malformed job field" in caplog.text
 
 
 def test_read_thesis_artifacts_fails_loudly_for_legacy_loose_roots(tmp_path: Path) -> None:
