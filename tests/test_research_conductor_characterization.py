@@ -594,8 +594,11 @@ def test_conductor_tolerates_rejection_prompt_failure_and_memory_status_error(
 def test_conductor_reports_structural_validation_failures_after_required_tool_gate(
     monkeypatch: pytest.MonkeyPatch, runner_output: dict, validation_reason: str
 ) -> None:
-    monkeypatch.setattr(conductor, "_check_experiment_results_consulted", lambda tools: None)
-    _patch_conductor_runner(monkeypatch, runner_output)
+    _patch_conductor_runner(
+        monkeypatch,
+        runner_output,
+        tool_calls=[("list_experiment_results", {"order": "latest", "offset": 0, "limit": 1})],
+    )
 
     out = conductor.run_research_conductor_sync(
         "",
@@ -621,7 +624,6 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
         "mechanism_dimension": "signal_quality",
         "config_changes": {"entry_delay_minutes": 15},
     }
-    monkeypatch.setattr(conductor, "_check_experiment_results_consulted", lambda tools: None)
     monkeypatch.setattr(conductor, "validate_thesis_dict", lambda candidate: candidate)
     _patch_conductor_runner(
         monkeypatch,
@@ -630,6 +632,7 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
             "suggested_theses": [thesis],
             "should_stop": False,
         },
+        tool_calls=[("list_experiment_results", {"order": "latest", "offset": 0, "limit": 1})],
     )
 
     out = conductor.run_research_conductor_sync(
@@ -654,7 +657,6 @@ def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
         "mechanism_dimension": "signal_quality",
         "config_changes": {"entry_delay_minutes": 15},
     }
-    monkeypatch.setattr(conductor, "_check_experiment_results_consulted", lambda tools: None)
     monkeypatch.setattr(
         conductor,
         "validate_thesis_dict",
@@ -667,6 +669,7 @@ def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
             "suggested_theses": [thesis],
             "should_stop": False,
         },
+        tool_calls=[("list_experiment_results", {"order": "latest", "offset": 0, "limit": 1})],
     )
 
     out = conductor.run_research_conductor_sync(

@@ -173,7 +173,10 @@ def _running_state(config: str, family: StrategyFamily, source: str) -> dict[str
 
 
 def _baseline_branch(
-    root: Path, family: StrategyFamily, results: list[BacktestResultRecord]
+    root: Path,
+    family: StrategyFamily,
+    results: list[BacktestResultRecord],
+    job: int | None = None,
 ) -> dict[str, Any] | None:
     if results:
         return None
@@ -184,7 +187,8 @@ def _baseline_branch(
     state["research_round"] = 0
     state["selected_config_path"] = baseline_config
     state["selected_thesis_id"] = "baseline"
-    state["backtest_target_path"] = "runtime/jobs/job-{job}/research/round-0-baseline/backtest"
+    job_part = f"job-{job}" if job is not None else "job-unknown"
+    state["backtest_target_path"] = f"runtime/jobs/{job_part}/research/round-0-baseline/backtest"
     state["current_thesis"]["selected_thesis_id"] = "baseline"
     state["next_action"]["selected_thesis_id"] = "baseline"
     return state
@@ -223,7 +227,7 @@ def select_research_next_action(
     results: list[BacktestResultRecord],
     job: int | None = None,
 ) -> dict[str, Any]:
-    baseline = _baseline_branch(code_root, family, results)
+    baseline = _baseline_branch(code_root, family, results, job=job)
     if baseline is not None:
         return baseline
     if should_terminate(runtime_root, family, run_queue_dir, research_dir, results, job=job):
@@ -297,7 +301,7 @@ def plan_next_action(
         return state
     # Brand-new job policy: baseline always runs first for the family.
     if not results:
-        baseline = _baseline_branch(code_root, family, results)
+        baseline = _baseline_branch(code_root, family, results, job=state.get("job"))
         if baseline is not None:
             state.update(baseline)
             state.pop("finished_reason", None)

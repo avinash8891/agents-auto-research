@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from autoresearch_constants import MAX_RESEARCH_ROUNDS
 from autoresearch_controller import AutoresearchController
 from autoresearch_research import (
@@ -440,10 +442,108 @@ def test_research_feedback_from_verdict_preserves_prefixed_summary() -> None:
     assert feedback == "Previous candidate was rejected: trade count collapsed?"
 
 
+def _write_ema_base_config(root: Path) -> None:
+    (root / "configs").mkdir(exist_ok=True)
+    (root / "configs" / "ema_base.yaml").write_text("ema_length: 5\n")
+
+
+def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
+    return {
+        "thesis_id": thesis_id,
+        "hypothesis": (
+            f"Increasing ema_length to {ema_length} should smooth weak EMA crosses "
+            "and improve profit_factor."
+        ),
+        "mechanism": (
+            f"A slower ema_length={ema_length} signal filters noisy pullback crosses "
+            "before entry."
+        ),
+        "mechanism_dimension": "signal_quality",
+        "dimension_novelty": (
+            "Tests EMA smoothing as a signal-quality gate with explicit analyst and "
+            "web evidence rather than a neighboring threshold retry."
+        ),
+        "causal_cluster": "ema smoothing signal quality",
+        "dominant_cluster_overlap": "low",
+        "underexplored_dimensions_considered": [
+            "entry_timing",
+            "regime_conditioning",
+        ],
+        "novel_connection": (
+            "Connects noisy pullback-cross failures to signal smoothing instead of "
+            "session timing or exit changes."
+        ),
+        "closest_prior_theses_considered": ["ema-baseline"],
+        "orthogonality_defense": "Changes signal smoothness, not exit logic or session timing.",
+        "evidence_strength": "mixed",
+        "thesis_role": "orthogonal_discovery",
+        "falsification_or_alternative": (
+            "Reject this mechanism if trade count collapses by more than half, "
+            "profit_factor does not improve versus baseline, or losses are not "
+            "concentrated in noisy EMA cross events."
+        ),
+        "alternatives_considered": [
+            {
+                "mechanism": "Delay entries after open",
+                "why_rejected": "This changes session timing instead of the noisy-cross root cause.",
+            },
+            {
+                "mechanism": "Tighten stop distance",
+                "why_rejected": "This changes risk structure instead of filtering weak EMA signals.",
+            },
+        ],
+        "evidence_citations": [
+            {"source": "web_search", "citation": "EMA smoothing reduces noisy signals."},
+            {"source": "analyst", "citation": "Analyst found weak crosses cluster in losses."},
+        ],
+        "source_code_verification": (
+            "strategies/ema/signals.py uses ema_length in EMA signal construction."
+        ),
+        "config_changes": {"ema_length": ema_length},
+        "expected_effects": [
+            {
+                "metric": "profit_factor",
+                "direction": "increase",
+                "rationale": "Filtering weak crosses should improve realized edge.",
+            }
+        ],
+        "disqualifiers": [
+            {
+                "name": "trade_count_collapse",
+                "condition": "trade_count falls by more than half",
+                "severity": "hard_fail",
+                "kind": "metric_threshold",
+            },
+            {
+                "name": "no_noisy_cross_reduction",
+                "condition": (
+                    "Losing trades are not concentrated in weak EMA cross events, "
+                    "or slower EMA smoothing does not reduce those weak-cross losses."
+                ),
+                "severity": "hard_fail",
+                "kind": "mechanism_evidence",
+            },
+        ],
+        "why_not_overfit": "Mechanism is signal quality and is tested against full train history.",
+    }
+
+
+def _patch_conductor_round(monkeypatch: pytest.MonkeyPatch, *outputs: dict) -> None:
+    queue = list(outputs)
+
+    def _run_conductor(*args, **kwargs):
+        if len(queue) > 1:
+            return queue.pop(0)
+        return dict(queue[0])
+
+    monkeypatch.setattr("research_conductor.run_research_conductor_sync", _run_conductor)
+
+
 def test_run_research_success_persists_round_artifacts_and_next_action(
     tmp_path: Path, monkeypatch
 ) -> None:
     controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
     controller.write_state(
         {
             "state": "blocked",
@@ -455,27 +555,15 @@ def test_run_research_success_persists_round_artifacts_and_next_action(
         }
     )
     generated_config = "runtime/jobs/job-12/research/round-1/selected_config.json"
-    result = {
-        "status": "completed",
-        "generated_config": generated_config,
-        "generated_config_needs_build": False,
-        "generated_thesis_id": "ema-tight-entry",
-        "thesis_id": "ema-tight-entry",
-        "reasoning": "Tighter entry filter should reduce weak crosses.",
-        "thesis": {
-            "thesis_id": "ema-tight-entry",
-            "hypothesis": "Tighter EMA entry improves expectancy.",
-            "mechanism": "Filter weak crosses before entry.",
-            "mechanism_dimension": "signal_quality",
-            "config_changes": {"ema_length": 8},
-            "closest_prior_theses_considered": ["ema-baseline"],
-            "orthogonality_defense": "changes signal quality, not exit logic",
-            "evidence_strength": "medium",
-            "thesis_role": "orthogonal_discovery",
-            "falsification_or_alternative": "if trades collapse, reject the filter",
+    thesis = _compiled_ema_thesis("ema-tight-entry", ema_length=8)
+    _patch_conductor_round(
+        monkeypatch,
+        {
+            "reasoning": "Tighter entry filter should reduce weak crosses.",
+            "suggested_theses": [thesis],
+            "should_stop": False,
         },
-    }
-    controller.execute_research_one = lambda: dict(result)  # type: ignore[method-assign]
+    )
     monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
     monkeypatch.setattr(
         "research_conductor.get_round_usage",
@@ -504,6 +592,7 @@ def test_run_research_should_stop_closes_job_with_finished_state(
     tmp_path: Path, monkeypatch
 ) -> None:
     controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
     controller.write_state(
         {
             "state": "blocked",
@@ -514,14 +603,15 @@ def test_run_research_should_stop_closes_job_with_finished_state(
             "next_action": {"type": "research"},
         }
     )
-    controller.execute_research_one = lambda: {  # type: ignore[method-assign]
-        "status": "completed",
-        "generated_config": None,
-        "generated_thesis_id": "stop-now",
-        "thesis_id": "stop-now",
-        "should_stop": True,
-        "reasoning": "No remaining orthogonal mechanism has enough evidence.",
-    }
+    _patch_conductor_round(
+        monkeypatch,
+        {
+            "status": "completed",
+            "suggested_theses": [],
+            "should_stop": True,
+            "reasoning": "No remaining orthogonal mechanism has enough evidence.",
+        },
+    )
     monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
     monkeypatch.setattr(
         "research_conductor.get_round_usage",
@@ -543,6 +633,7 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
     tmp_path: Path, monkeypatch
 ) -> None:
     controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
     controller.write_state(
         {
             "state": "blocked",
@@ -552,20 +643,16 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
             "next_action": {"type": "research"},
         }
     )
-    controller.execute_research_one = lambda: {  # type: ignore[method-assign]
-        "status": "thesis_rejected",
-        "generated_config": None,
-        "generated_thesis_id": "ema-duplicate",
-        "thesis_id": "ema-duplicate",
-        "rejection_reason": "validator_duplicate_or_overlap: duplicates prior thesis",
-        "thesis": {
-            "thesis_id": "ema-duplicate",
-            "hypothesis": "Duplicate EMA idea.",
-            "mechanism": "No new mechanism.",
-            "mechanism_dimension": "signal_quality",
-            "config_changes": {"ema_length": 8},
+    invalid_thesis = _compiled_ema_thesis("ema-duplicate", ema_length=8)
+    invalid_thesis["config_changes"] = {"requires_code_change": True}
+    _patch_conductor_round(
+        monkeypatch,
+        {
+            "reasoning": "Duplicate EMA idea.",
+            "suggested_theses": [invalid_thesis],
+            "should_stop": False,
         },
-    }
+    )
     monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
     monkeypatch.setattr(
         "research_conductor.get_round_usage",
@@ -585,9 +672,7 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
         thesis_id="ema-duplicate",
     )
     assert attempts[0]["validator_status"] == "rejected"
-    assert attempts[0]["rejection_reason"] == (
-        "validator_duplicate_or_overlap: duplicates prior thesis"
-    )
+    assert "config_changes contains thesis metadata key" in attempts[-1]["rejection_reason"]
 
 
 def test_run_research_max_rounds_finishes_without_conductor_call(tmp_path: Path) -> None:

@@ -119,9 +119,7 @@ def test_select_research_next_action_runs_baseline_first(tmp_path: Path, ema_fam
     assert out["state"] == "running"
     assert out["research_round"] == 0
     assert out["next_action"]["source"] == "baseline"
-    assert (
-        out["backtest_target_path"] == "runtime/jobs/job-{job}/research/round-0-baseline/backtest"
-    )
+    assert out["backtest_target_path"] == "runtime/jobs/job-3/research/round-0-baseline/backtest"
 
 
 def test_select_research_next_action_blocks_when_baseline_config_missing(

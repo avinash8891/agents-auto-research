@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 import autoresearch_orchestration as orch
+from autoresearch_controller import AutoresearchController
+from strategy_family import load_family
 
 
 def _controller(state: dict, root: Path, runtime_root: Path | None = None):
@@ -482,42 +484,122 @@ def test_resolve_next_action_prioritizes_baseline_rerun_before_state_reconcile(
     assert calls == ["baseline"]
 
 
-def test_resolve_next_action_resumes_or_builds_halted_thesis(tmp_path: Path) -> None:
-    state = {
-        "state": "blocked",
-        "job": 3,
-        "research_round": 2,
-        "halted_thesis_id": "needs-code",
-        "halted_reason": "requires_code_change",
-        "halted_thesis": {"thesis_id": "needs-code", "config_changes": {"ema_length": 7}},
-    }
-    calls: list[tuple[str, int | None]] = []
-    resumed = {"state": "running", "selected_thesis_id": "needs-code"}
-    controller = SimpleNamespace(
-        _check_baseline_rerun=lambda: None,
-        read_state=lambda: state,
-        read_results=lambda: [SimpleNamespace(run_id="baseline")],
-        _try_resume_halted_thesis=lambda: resumed,
-        reconcile_state=lambda: (_ for _ in ()).throw(AssertionError("reconcile should not run")),
+def test_resolve_next_action_resumes_halted_thesis_with_real_controller(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "configs").mkdir()
+    source = Path(__file__).resolve().parents[1] / "configs" / "ema_base.yaml"
+    (tmp_path / "configs" / "ema_base.yaml").write_text(source.read_text())
+    family = load_family("ema")
+    controller = AutoresearchController(
+        root=tmp_path,
+        runtime_root=tmp_path,
+        family=family,
+        state_path=tmp_path / "ema_autoresearch.next.json",
+        current_md_path=tmp_path / "ema_autoresearch.current.md",
+        jobs_root=tmp_path / "runtime" / "jobs",
+    )
+    controller.backtest_run_db.init_session(
+        name="ema",
+        metric_name="profit_factor",
+        direction="higher",
+    )
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 3,
+            "research_round": 2,
+            "halted_thesis_id": "needs-code",
+            "halted_reason": "requires_code_change",
+            "halted_thesis": {
+                "thesis_id": "needs-code",
+                "hypothesis": "Increasing EMA length should reduce noisy crosses.",
+                "mechanism": "Smooth entries with a slower EMA.",
+                "config_changes": {"ema_length": 7},
+            },
+            "blockers": [{"kind": "manual_review", "detail": "builder missing primitive"}],
+        }
     )
 
-    assert orch.resolve_next_action(controller) == resumed
+    out = orch.resolve_next_action(controller)
 
-    controller._try_resume_halted_thesis = lambda: None
+    assert out["state"] == "running"
+    assert out["next_action"]["source"] == "resumed_halted_thesis"
+    assert out["next_action"]["selected_thesis_id"] == "needs-code"
+    assert out["backtest_target_path"] == "runtime/jobs/job-3/research/round-2/backtest"
+    assert (
+        tmp_path / "runtime" / "jobs" / "job-3" / "research" / "round-2" / "selected_config.json"
+    ).exists()
+    assert controller.ctx.current_contract is not None
 
-    def _build(ctrl, current_state, thesis_id, thesis, *, research_round=None):
-        calls.append((thesis_id, research_round))
-        assert current_state is state
-        assert thesis == state["halted_thesis"]
-        return {"state": "blocked", "next_action": {"type": "manual_review"}}
 
-    monkeypatch = pytest.MonkeyPatch()
-    try:
-        monkeypatch.setattr(orch, "build_missing_primitives_for_state", _build)
-        assert orch.resolve_next_action(controller)["next_action"]["type"] == "manual_review"
-    finally:
-        monkeypatch.undo()
-    assert calls == [("needs-code", 2)]
+def test_resolve_next_action_builds_halted_thesis_when_resume_cannot_materialize(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "configs").mkdir()
+    source = Path(__file__).resolve().parents[1] / "configs" / "ema_base.yaml"
+    (tmp_path / "configs" / "ema_base.yaml").write_text(source.read_text())
+    family = load_family("ema")
+    controller = AutoresearchController(
+        root=tmp_path,
+        runtime_root=tmp_path,
+        family=family,
+        state_path=tmp_path / "ema_autoresearch.next.json",
+        current_md_path=tmp_path / "ema_autoresearch.current.md",
+        jobs_root=tmp_path / "runtime" / "jobs",
+    )
+    controller.backtest_run_db.init_session(
+        name="ema",
+        metric_name="profit_factor",
+        direction="higher",
+    )
+    controller.backtest_run_db.add_from_sqlite_fields(
+        run_id="baseline-run",
+        thesis_id="baseline",
+        config_path="configs/ema_base.yaml",
+        runtime_config={"ema_length": 5},
+        code_commit="abcdef1",
+        data_hash="data",
+        metrics={"profit_factor": 1.0},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="accepted",
+        verdict_summary="accepted",
+        family="ema",
+        job_id=3,
+        primary_metric_name="profit_factor",
+        primary_metric_value=1.0,
+    )
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 3,
+            "research_round": 2,
+            "halted_thesis_id": "needs-code",
+            "halted_reason": "requires_code_change",
+            "halted_thesis": {"thesis_id": "needs-code", "config_changes": {"unknown_gate": True}},
+        }
+    )
+
+    def _builder(root, thesis_id, artifact_root=None):
+        assert thesis_id == "needs-code"
+        assert artifact_root == (tmp_path / "runtime" / "jobs" / "job-3" / "research" / "round-2")
+        return {
+            "status": "error",
+            "reason": "builder cannot materialize unknown_gate",
+            "error_code": "builder_unknown_strategy_family",
+            "generated_config": None,
+            "validation_passed": False,
+        }
+
+    monkeypatch.setattr("compiler_pipeline.build_missing_primitives", _builder)
+
+    out = orch.resolve_next_action(controller)
+
+    assert out["state"] == "blocked"
+    assert out["next_action"]["type"] == "builder_failed"
+    assert out["builder_failed_theses"][0]["thesis_id"] == "needs-code"
 
 
 def test_resolve_next_action_reconciles_fresh_running_job_before_halted_recovery(

@@ -1317,8 +1317,13 @@ def test_run_experiment_records_interrupted_state_when_metric_evaluator_times_ou
     )
     controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
     monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
-    controller.evaluate_metric = lambda metric: (_ for _ in ()).throw(  # type: ignore[method-assign]
-        TimeoutError("autoresearch_cli evaluate timed out")
+
+    def _raise_timeout(self, metric, *, job_id=None):
+        raise TimeoutError("autoresearch_cli evaluate timed out")
+
+    monkeypatch.setattr(
+        "backtest_run_db.BacktestRunDB.evaluate_metric",
+        _raise_timeout,
     )
     (tmp_path / "configs").mkdir()
     (tmp_path / "configs" / "ema_base.yaml").write_text("ema_length: 5\n")
