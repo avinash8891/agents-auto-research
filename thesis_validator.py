@@ -1092,59 +1092,6 @@ def generate_variants(
 # ---------------------------------------------------------------------------
 
 
-def _validate_underexplored_dimensions(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]],
-) -> None:
-    """Enforce the underexplored_dimensions_considered contract:
-
-      * Non-empty list (required when prior theses exist).
-      * Every entry is a known mechanism dimension.
-      * Chosen mechanism_dimension is NOT in the list.
-
-    All failure modes share one rejection_code with structured evidence so
-    the LLM sees every issue at once instead of one per retry.
-    """
-    issues: list[dict[str, Any]] = []
-    items = thesis.underexplored_dimensions_considered
-
-    if not items:
-        issues.append({"kind": "empty"})
-    else:
-        known = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
-        invalid = [d for d in items if d not in known]
-        if invalid:
-            issues.append(
-                {"kind": "invalid_values", "invalid": invalid, "valid": sorted(known)}
-            )
-        if thesis.mechanism_dimension in items:
-            issues.append(
-                {"kind": "includes_chosen", "chosen": thesis.mechanism_dimension}
-            )
-
-    if not issues:
-        return
-
-    descriptions = []
-    for issue in issues:
-        if issue["kind"] == "empty":
-            descriptions.append("must be non-empty when prior theses exist")
-        elif issue["kind"] == "invalid_values":
-            descriptions.append(
-                f"contains invalid mechanism dimensions: {issue['invalid']}"
-            )
-        elif issue["kind"] == "includes_chosen":
-            descriptions.append(
-                f"must not include the chosen dimension '{issue['chosen']}'"
-            )
-
-    raise ThesisValidationError(
-        f"underexplored_dimensions_considered invalid: {'; '.join(descriptions)}",
-        rejection_code="structural_underexplored_dimensions_invalid",
-        evidence={"issues": issues},
-    )
-
-
 def _validate_emergent_dimension(thesis: ResearchThesis) -> None:
     """Validate the rare emergent-dimension path with a single rejection code.
 
@@ -1201,6 +1148,59 @@ def _validate_emergent_dimension(thesis: ResearchThesis) -> None:
             "issues": issues,
             "min_emergent_field_chars": _MIN_EMERGENT_FIELD_CHARS,
         },
+    )
+
+
+def _validate_underexplored_dimensions(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]],
+) -> None:
+    """Enforce the underexplored_dimensions_considered contract:
+
+      * Non-empty list (required when prior theses exist).
+      * Every entry is a known mechanism dimension.
+      * Chosen mechanism_dimension is NOT in the list.
+
+    All failure modes share one rejection_code with structured evidence so
+    the LLM sees every issue at once instead of one per retry.
+    """
+    issues: list[dict[str, Any]] = []
+    items = thesis.underexplored_dimensions_considered
+
+    if not items:
+        issues.append({"kind": "empty"})
+    else:
+        known = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
+        invalid = [d for d in items if d not in known]
+        if invalid:
+            issues.append(
+                {"kind": "invalid_values", "invalid": invalid, "valid": sorted(known)}
+            )
+        if thesis.mechanism_dimension in items:
+            issues.append(
+                {"kind": "includes_chosen", "chosen": thesis.mechanism_dimension}
+            )
+
+    if not issues:
+        return
+
+    descriptions = []
+    for issue in issues:
+        if issue["kind"] == "empty":
+            descriptions.append("must be non-empty when prior theses exist")
+        elif issue["kind"] == "invalid_values":
+            descriptions.append(
+                f"contains invalid mechanism dimensions: {issue['invalid']}"
+            )
+        elif issue["kind"] == "includes_chosen":
+            descriptions.append(
+                f"must not include the chosen dimension '{issue['chosen']}'"
+            )
+
+    raise ThesisValidationError(
+        f"underexplored_dimensions_considered invalid: {'; '.join(descriptions)}",
+        rejection_code="structural_underexplored_dimensions_invalid",
+        evidence={"issues": issues},
     )
 
 
