@@ -8,6 +8,10 @@ from agnost_mcp import config, track
 from rejection_artifact import get_rejection as _get_rejection
 from rejection_artifact import list_rejections as _list_rejections
 from rejection_artifact import rejection_pattern_summary as _rejection_pattern_summary
+from research_memory import get_experiment_result as _get_result_for_root
+from research_memory import get_past_thesis as _get_past_thesis_for_root
+from research_memory import list_experiment_results as _list_results_for_root
+from research_memory import list_past_theses as _list_past_theses_for_root
 from trace_sdk import trace
 
 
@@ -157,8 +161,6 @@ def _build_research_tools_mcp(
         details on relevant prior thesis IDs.
         """
         if list_past_theses_for_root is None:
-            from research_memory import list_past_theses as _list_past_theses_for_root
-
             return _list_past_theses_for_root(root, job_id=current_job, offset=offset, limit=limit)
         return list_past_theses_for_root(root, job_id=current_job, offset=offset, limit=limit)
 
@@ -166,8 +168,6 @@ def _build_research_tools_mcp(
     async def get_past_thesis(thesis_id: str) -> str:
         """Fetch full stored details for one prior thesis ID."""
         if get_past_thesis_for_root is None:
-            from research_memory import get_past_thesis as _get_past_thesis_for_root
-
             return _get_past_thesis_for_root(root, thesis_id, job_id=current_job)
         return get_past_thesis_for_root(root, thesis_id, job_id=current_job)
 
@@ -177,8 +177,6 @@ def _build_research_tools_mcp(
     ) -> str:
         """List a bounded index of experiment/backtest outcomes."""
         if list_experiment_results_for_root is None:
-            from research_memory import list_experiment_results as _list_results_for_root
-
             return _list_results_for_root(
                 root, job_id=current_job, order=order, offset=offset, limit=limit
             )
@@ -194,8 +192,6 @@ def _build_research_tools_mcp(
         only when the compact result is insufficient for the current decision.
         """
         if get_experiment_result_for_root is None:
-            from research_memory import get_experiment_result as _get_result_for_root
-
             return _get_result_for_root(root, thesis_id, job_id=current_job, detail=detail)
         return get_experiment_result_for_root(root, thesis_id, job_id=current_job, detail=detail)
 

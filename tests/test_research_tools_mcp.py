@@ -230,6 +230,14 @@ def test_every_advertised_mcp_tool_is_registered(tmp_path: Path) -> None:
     assert not missing, f"missing MCP tool registrations: {sorted(missing)}"
 
 
+def test_research_memory_fallback_imports_are_hoisted() -> None:
+    source = __import__("research_tools_mcp").__loader__.get_source("research_tools_mcp")
+    assert "from research_memory import get_past_thesis as _get_past_thesis_for_root" in source
+    assert "from research_memory import list_past_theses as _list_past_theses_for_root" in source
+    function_body = source.split("def _build_research_tools_mcp", 1)[1]
+    assert "from research_memory import" not in function_body
+
+
 # ---------------------------------------------------------------------------
 # Delegating tools (LLM / web / memory) — assert wiring + propagation
 # ---------------------------------------------------------------------------

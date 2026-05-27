@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
 
@@ -179,6 +180,8 @@ def infer_rejection_code(message: str) -> str:
     explicitly. Add new patterns as new rules land.
     """
     msg = message.lower()
+    # TODO(post-N.N): remove these legacy L6/L7 message patterns after
+    # persisted rejection records no longer rely on message-only inference.
     if (
         "process gate failed" in msg
         or "call web_search at least once before analyze_trades" in msg
@@ -348,7 +351,7 @@ _REQUIRED_PROCESS_TOOLS: Final[tuple[str, ...]] = (
 )
 
 
-def _validate_process(_thesis: ResearchThesis, tools_called: set[str]) -> None:
+def _validate_process(tools_called: set[str]) -> None:
     missing = [tool for tool in _REQUIRED_PROCESS_TOOLS if tool not in tools_called]
     if not missing:
         return
@@ -1049,6 +1052,7 @@ class MissingFamilyKeyConceptsError(LookupError):
     """
 
 
+@lru_cache(maxsize=None)
 def _load_family_key_concepts(family_name: str) -> dict[str, tuple[str, ...]]:
     """Return the concept regex map for a family.
 
@@ -1720,7 +1724,7 @@ def validate_research_thesis(
     process → structural → thesis_quality → config_validity.
     """
     if tools_called is not None:
-        _validate_process(thesis, tools_called)
+        _validate_process(tools_called)
     _validate_structural(thesis, prior_theses)
     _validate_thesis_quality(thesis, prior_theses)
     _validate_config_validity(thesis, prior_theses)

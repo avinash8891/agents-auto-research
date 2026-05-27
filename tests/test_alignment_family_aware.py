@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+import family_research_spec
 from family_research_spec import FamilyResearchSpec, get_family_research_spec
 from research_types import BacktestContract
 from thesis_validator import (
@@ -134,6 +135,33 @@ def test_check_hypothesis_alignment_uses_family_specific_concepts() -> None:
         family_name="ema",
     )
     assert score == 1.0
+
+
+def test_family_key_concepts_are_loaded_once_per_family(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Repeated alignment checks should reuse the family concept map."""
+    from thesis_validator import _load_family_key_concepts
+
+    _load_family_key_concepts.cache_clear()
+    original_get_spec = family_research_spec.get_family_research_spec
+    calls: list[str] = []
+
+    def counted_get_spec(family_name: str) -> FamilyResearchSpec:
+        calls.append(family_name)
+        return original_get_spec(family_name)
+
+    monkeypatch.setattr(family_research_spec, "get_family_research_spec", counted_get_spec)
+
+    for _ in range(2):
+        score, _ = check_hypothesis_alignment(
+            hypothesis="Restrict entries to the morning entry window.",
+            mechanism="Capture the opening dislocation only.",
+            config_changes={"entry_cutoff_time": "10:00"},
+            family_name="ema",
+        )
+        assert score == 1.0
+
+    assert calls == ["ema"]
+    _load_family_key_concepts.cache_clear()
 
 
 def test_check_hypothesis_alignment_unknown_family_now_fails_loud() -> None:
