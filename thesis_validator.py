@@ -223,6 +223,20 @@ def _dimension_slug(text: str) -> str:
     return "_".join(words)
 
 
+def _format_remediation(remediation: tuple[str, ...]) -> str:
+    """Format a tuple of remediation suggestions into a single string.
+
+    For a single suggestion, returns it as-is. For multiple, numbers them
+    so the conductor can distinguish discrete options instead of seeing a
+    forward-slash wall.
+    """
+    if not remediation:
+        return ""
+    if len(remediation) == 1:
+        return remediation[0]
+    return "; ".join(f"({i + 1}) {item}" for i, item in enumerate(remediation))
+
+
 def _normalize_mechanism_dimension_name(dimension: Any) -> str:
     if not isinstance(dimension, str):
         return ""
@@ -1473,7 +1487,7 @@ def _validate_thesis_quality(
             triggering.summary,
             rejection_code=triggering.code,
             evidence=dict(triggering.evidence),
-            remediation_hint=" / ".join(triggering.remediation) if triggering.remediation else "",
+            remediation_hint=_format_remediation(triggering.remediation),
         )
     # accept and accept_with_warning paths: no raise. Warnings will be
     # surfaced to the conductor in a future phase.
