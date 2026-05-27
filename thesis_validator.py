@@ -681,37 +681,44 @@ def _check_neighboring_threshold(
                 )
 
 
-def _check_qualitative_disqualifier_present(thesis: ResearchThesis) -> None:
-    """B5: ≥1 Disqualifier must have kind='mechanism_evidence' AND a
-    substantive condition (≥40 chars).
+def _detect_missing_mechanism_evidence_disqualifier(
+    thesis: ResearchThesis,
+) -> "BehaviorSignal | None":
+    """Detect when no substantive mechanism_evidence disqualifier is present.
 
-    The kind alone is trivial — the LLM can satisfy with kind='mechanism_evidence'
-    and condition='x'. The length threshold makes the gate enforce SUBSTANTIVE
-    mechanism-evidence rather than ceremonial enum tagging.
-
-    Pure metric-threshold disqualifiers ('PF must improve by 5%') are pass/fail
-    criteria, not Popperian disconfirmers. Force one to be substantively
-    qualitative.
+    Requires at least one disqualifier with kind='mechanism_evidence' AND
+    condition ≥40 chars. Pure metric_threshold disqualifiers are pass/fail
+    criteria, not Popperian disconfirmers; substantively-short mechanism_evidence
+    conditions are ceremonial (the LLM can game the enum without writing real
+    falsification evidence).
     """
     if not thesis.disqualifiers:
-        return  # absence handled by structural_missing_disqualifiers
-    has_substantive_mechanism_evidence = any(
+        return None  # absence handled by structural_missing_disqualifiers
+    has_substantive = any(
         d.kind == "mechanism_evidence"
         and len(d.condition.strip()) >= _MIN_MECHANISM_EVIDENCE_CONDITION_CHARS
         for d in thesis.disqualifiers
     )
-    if has_substantive_mechanism_evidence:
-        return
-    raise ThesisValidationError(
-        "Need at least one disqualifier with kind='mechanism_evidence' AND a "
-        f"condition ≥{_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS} chars describing "
-        "an observable data pattern that would falsify the mechanism. "
-        "Pure kind='metric_threshold' disqualifiers ('PF must improve by 5%') "
-        "are pass/fail criteria, not Popperian disconfirmers.",
-        rejection_code="thesis_quality_missing_mechanism_evidence_disqualifier",
+    if has_substantive:
+        return None
+    return BehaviorSignal(
+        code="thesis_quality_missing_mechanism_evidence_disqualifier",
+        confidence=1.0,
+        severity="block",
+        summary=(
+            "Need at least one disqualifier with kind='mechanism_evidence' AND a "
+            f"condition ≥{_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS} chars describing "
+            "an observable data pattern that would falsify the mechanism. "
+            "Pure kind='metric_threshold' disqualifiers ('PF must improve by 5%') "
+            "are pass/fail criteria, not Popperian disconfirmers."
+        ),
         evidence={
             "min_condition_chars": _MIN_MECHANISM_EVIDENCE_CONDITION_CHARS,
+            "disqualifier_count": len(thesis.disqualifiers),
         },
+        remediation=(
+            "Add a disqualifier with kind='mechanism_evidence' and a substantive condition",
+        ),
     )
 
 
@@ -1455,7 +1462,8 @@ def _validate_thesis_quality(
         if (sig := _detect_direction_whipsaw(thesis, prior_theses)) is not None:
             signals.append(sig)
 
-    _check_qualitative_disqualifier_present(thesis)
+    if (sig := _detect_missing_mechanism_evidence_disqualifier(thesis)) is not None:
+        signals.append(sig)
 
     decision = _policy_decide(signals)
     if decision.action == "reject":

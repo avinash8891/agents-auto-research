@@ -206,3 +206,40 @@ def test_direction_whipsaw_detector_returns_signal_on_flip() -> None:
     assert sig is not None
     assert sig.code == "thesis_quality_direction_whipsaw"
     assert sig.severity == "block"
+
+
+def test_missing_mechanism_evidence_disqualifier_detector_fires_when_all_metric_threshold() -> None:
+    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
+    from thesis_validator import _detect_missing_mechanism_evidence_disqualifier
+
+    proposal = ResearchThesis(
+        thesis_id="ema-x", strategy_family="ema",
+        hypothesis="x", mechanism="x",
+        mechanism_dimension="entry_timing",
+        dimension_novelty="x" * 50,
+        config_changes={"k": 1},
+        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
+        disqualifiers=[Disqualifier(name="x", condition="y" * 100, kind="metric_threshold")],
+        falsification_or_alternative="z" * 100,
+    )
+    sig = _detect_missing_mechanism_evidence_disqualifier(proposal)
+    assert sig is not None
+    assert sig.code == "thesis_quality_missing_mechanism_evidence_disqualifier"
+    assert sig.severity == "block"
+
+
+def test_missing_mechanism_evidence_disqualifier_detector_returns_none_when_substantive_present() -> None:
+    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
+    from thesis_validator import _detect_missing_mechanism_evidence_disqualifier
+
+    proposal = ResearchThesis(
+        thesis_id="ema-x", strategy_family="ema",
+        hypothesis="x", mechanism="x",
+        mechanism_dimension="entry_timing",
+        dimension_novelty="x" * 50,
+        config_changes={"k": 1},
+        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
+        disqualifiers=[Disqualifier(name="x", condition="z" * 50, kind="mechanism_evidence")],
+        falsification_or_alternative="z" * 100,
+    )
+    assert _detect_missing_mechanism_evidence_disqualifier(proposal) is None
