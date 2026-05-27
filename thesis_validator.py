@@ -343,7 +343,7 @@ _REQUIRED_PROCESS_TOOLS: Final[tuple[str, ...]] = (
 )
 
 
-def _validate_process(tools_called: set[str]) -> None:
+def _validate_process(tools_called: set[str] | frozenset[str]) -> None:
     missing = [tool for tool in _REQUIRED_PROCESS_TOOLS if tool not in tools_called]
     if not missing:
         return
@@ -725,23 +725,88 @@ def _check_neighboring_threshold(
                 continue
             ratio = new_f / prior_f
             if 1.0 / _NEIGHBORING_RATIO <= ratio <= _NEIGHBORING_RATIO:
-                raise ThesisValidationError(
-                    f"Neighboring threshold: config key '{key}' was set to "
-                    f"{prior_val} by prior thesis '{prior.get('thesis_id', '?')}' "
-                    f"and this thesis sets it to {new_val} (ratio "
-                    f"{ratio:.2f}x, within {_NEIGHBORING_RATIO}x). This is "
-                    f"parameter tuning, not a new mechanism. Either justify a "
-                    f"structural boundary at this value or test a materially "
-                    f"different lever.",
-                    rejection_code="config_validity_neighboring_threshold",
-                    evidence={
-                        "config_key": key,
-                        "prior_value": prior_val,
-                        "new_value": new_val,
-                        "prior_thesis_id": str(prior.get("thesis_id", "?")),
-                        "ratio": round(ratio, 4),
-                    },
+                signal = _neighboring_threshold_signal(
+                    key=str(key),
+                    prior_value=prior_val,
+                    new_value=new_val,
+                    prior_thesis_id=str(prior.get("thesis_id", "?")),
+                    ratio=ratio,
                 )
+                raise ThesisValidationError(
+                    signal.summary,
+                    rejection_code=signal.code,
+                    evidence=dict(signal.evidence),
+                    remediation_hint=_format_remediation(signal.remediation),
+                )
+
+
+def _neighboring_threshold_signal(
+    *,
+    key: str,
+    prior_value: Any,
+    new_value: Any,
+    prior_thesis_id: str,
+    ratio: float,
+) -> BehaviorSignal:
+    return BehaviorSignal(
+        code="config_validity_neighboring_threshold",
+        confidence=1.0,
+        severity="block",
+        summary=(
+            f"Neighboring threshold: config key '{key}' was set to "
+            f"{prior_value} by prior thesis '{prior_thesis_id}' "
+            f"and this thesis sets it to {new_value} (ratio "
+            f"{ratio:.2f}x, within {_NEIGHBORING_RATIO}x). This is "
+            f"parameter tuning, not a new mechanism. Either justify a "
+            f"structural boundary at this value or test a materially "
+            f"different lever."
+        ),
+        evidence={
+            "config_key": key,
+            "prior_value": prior_value,
+            "new_value": new_value,
+            "prior_thesis_id": prior_thesis_id,
+            "ratio": round(ratio, 4),
+        },
+        remediation=(
+            "Test a materially different lever",
+            "Or justify the structural boundary at this value",
+        ),
+    )
+
+
+def _detect_neighboring_threshold(
+    thesis: ResearchThesis, prior_theses: list[dict[str, Any]]
+) -> BehaviorSignal | None:
+    new_changes = thesis.config_changes or {}
+    if not new_changes:
+        return None
+    for key, new_val in new_changes.items():
+        if not _is_numeric_value(new_val):
+            continue
+        if _is_overlap_ignored_key(str(key)):
+            continue
+        for prior in prior_theses:
+            prior_changes = prior.get("config_changes") or {}
+            if key not in prior_changes:
+                continue
+            prior_val = prior_changes[key]
+            if not _is_numeric_value(prior_val):
+                continue
+            new_f = float(new_val)
+            prior_f = float(prior_val)
+            if new_f == prior_f or new_f == 0 or prior_f == 0:
+                continue
+            ratio = new_f / prior_f
+            if 1.0 / _NEIGHBORING_RATIO <= ratio <= _NEIGHBORING_RATIO:
+                return _neighboring_threshold_signal(
+                    key=str(key),
+                    prior_value=prior_val,
+                    new_value=new_val,
+                    prior_thesis_id=str(prior.get("thesis_id", "?")),
+                    ratio=ratio,
+                )
+    return None
 
 
 def _detect_missing_mechanism_evidence_disqualifier(
@@ -1028,6 +1093,25 @@ def config_key_overlap(
                 f"Change DIFFERENT config keys to explore a new dimension."
             )
     return False, ""
+
+
+def _detect_config_key_overlap(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None,
+) -> BehaviorSignal | None:
+    if not prior_theses or not thesis.config_changes:
+        return None
+    is_dup, reason = config_key_overlap(thesis.config_changes, prior_theses)
+    if not is_dup:
+        return None
+    return BehaviorSignal(
+        code="config_validity_config_key_overlap_real",
+        confidence=1.0,
+        severity="block",
+        summary=f"Config-key overlap: {reason}",
+        evidence={"reason": reason},
+        remediation=("Change different config keys to explore a new dimension",),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1704,6 +1788,304 @@ def _validate_config_validity(
             )
 
 
+def _signal_from_validation_error(exc: ThesisValidationError) -> BehaviorSignal:
+    return BehaviorSignal(
+        code=exc.rejection_code or infer_rejection_code(str(exc)),
+        confidence=1.0,
+        severity="block",
+        summary=str(exc),
+        evidence=dict(exc.evidence),
+        remediation=(exc.remediation_hint,) if exc.remediation_hint else (),
+    )
+
+
+def _collect_from_validator(call: Callable[[], None]) -> list[BehaviorSignal]:
+    try:
+        call()
+    except ThesisValidationError as exc:
+        return [_signal_from_validation_error(exc)]
+    return []
+
+
+def _run_behavioral_pass(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None = None,
+) -> None:
+    signals: list[BehaviorSignal] = []
+
+    if prior_theses:
+        if (sig := _detect_theme_cluster_fixation(thesis, prior_theses)) is not None:
+            signals.append(sig)
+        if (sig := _detect_needs_code_starvation(thesis, prior_theses)) is not None:
+            signals.append(sig)
+        if (sig := _detect_direction_whipsaw(thesis, prior_theses)) is not None:
+            signals.append(sig)
+
+    if (sig := _detect_missing_mechanism_evidence_disqualifier(thesis)) is not None:
+        signals.append(sig)
+
+    if prior_theses:
+        if (sig := _detect_neighboring_threshold(thesis, prior_theses)) is not None:
+            signals.append(sig)
+        if (sig := _detect_config_key_overlap(thesis, prior_theses)) is not None:
+            signals.append(sig)
+
+    decision = _policy_decide(signals)
+    if decision.action == "reject":
+        triggering = decision.triggering
+        assert triggering is not None, "reject decisions must carry a triggering signal"
+        raise ThesisValidationError(
+            triggering.summary,
+            rejection_code=triggering.code,
+            evidence=dict(triggering.evidence),
+            remediation_hint=_format_remediation(triggering.remediation),
+        )
+
+
+def _collect_inline_structural_failures(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None,
+) -> list[BehaviorSignal]:
+    failures: list[BehaviorSignal] = []
+
+    if not thesis.thesis_id.strip():
+        failures.append(
+            BehaviorSignal(
+                code="structural_missing_thesis_id",
+                confidence=1.0,
+                severity="block",
+                summary="Missing thesis_id",
+            )
+        )
+    elif prior_theses:
+        failures.extend(
+            _collect_from_validator(lambda: _check_thesis_id_not_repeated(thesis, prior_theses))
+        )
+
+    if not thesis.hypothesis.strip():
+        failures.append(
+            BehaviorSignal(
+                code="structural_missing_hypothesis",
+                confidence=1.0,
+                severity="block",
+                summary="Missing hypothesis",
+            )
+        )
+    if not thesis.mechanism.strip():
+        failures.append(
+            BehaviorSignal(
+                code="structural_missing_mechanism",
+                confidence=1.0,
+                severity="block",
+                summary="Missing mechanism",
+            )
+        )
+
+    novelty_text = thesis.dimension_novelty.strip()
+    if not novelty_text or len(novelty_text) < _MIN_NOVELTY_EXPLANATION_CHARS:
+        failures.append(
+            BehaviorSignal(
+                code="structural_dimension_novelty_invalid",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    f"dimension_novelty must be ≥{_MIN_NOVELTY_EXPLANATION_CHARS} chars "
+                    f"explaining why this thesis is not a parameter variation of prior work. "
+                    f"Got {len(novelty_text)} chars."
+                ),
+                evidence={
+                    "actual_chars": len(novelty_text),
+                    "min_chars": _MIN_NOVELTY_EXPLANATION_CHARS,
+                },
+            )
+        )
+
+    if prior_theses:
+        if not thesis.causal_cluster.strip():
+            failures.append(
+                BehaviorSignal(
+                    code="structural_missing_causal_cluster",
+                    confidence=1.0,
+                    severity="block",
+                    summary=(
+                        "causal_cluster is required when prior theses exist. "
+                        "Name the causal family this thesis belongs to."
+                    ),
+                )
+            )
+        computed_overlap = _computed_dominant_cluster_overlap(thesis, prior_theses)
+        if computed_overlap == "high" and (
+            len(thesis.novel_connection.strip()) < _MIN_NOVEL_CONNECTION_CHARS
+        ):
+            failures.append(
+                BehaviorSignal(
+                    code="structural_novel_connection_too_short",
+                    confidence=1.0,
+                    severity="block",
+                    summary=(
+                        f"novel_connection must explain why a high-overlap thesis is "
+                        f"materially new instead of another variation of the dominant cluster "
+                        f"(computed overlap with prior theme_keywords: high). "
+                        f"Required ≥{_MIN_NOVEL_CONNECTION_CHARS} chars in novel_connection."
+                    ),
+                    evidence={
+                        "min_chars": _MIN_NOVEL_CONNECTION_CHARS,
+                        "computed_overlap": computed_overlap,
+                    },
+                )
+            )
+
+    falsification_text = (thesis.falsification_or_alternative or "").strip()
+    if len(falsification_text) < _MIN_FALSIFICATION_CHARS:
+        failures.append(
+            BehaviorSignal(
+                code="structural_falsification_invalid",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    f"falsification_or_alternative must be ≥{_MIN_FALSIFICATION_CHARS} chars "
+                    f"describing what data pattern would weaken this mechanism, independent "
+                    f"of metric movement. Got {len(falsification_text)} chars."
+                ),
+                evidence={
+                    "actual_chars": len(falsification_text),
+                    "min_chars": _MIN_FALSIFICATION_CHARS,
+                },
+            )
+        )
+
+    if not thesis.disqualifiers:
+        failures.append(
+            BehaviorSignal(
+                code="structural_missing_disqualifiers",
+                confidence=1.0,
+                severity="block",
+                summary="Thesis has no disqualifiers — need at least one falsification condition",
+            )
+        )
+
+    return failures
+
+
+def _collect_mechanical_config_validity_failures(thesis: ResearchThesis) -> list[BehaviorSignal]:
+    failures: list[BehaviorSignal] = []
+    base_path_valid = True
+    if thesis.base_config_path:
+        path_failures = _collect_from_validator(
+            lambda: _validate_base_config_path(thesis.base_config_path)
+        )
+        failures.extend(path_failures)
+        base_path_valid = not path_failures
+    if thesis.base_contract_id:
+        failures.append(
+            BehaviorSignal(
+                code="config_validity_base_contract_id_not_allowed",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    "base_contract_id is not allowed; research theses must start from the family "
+                    "baseline instead of inheriting a prior winner."
+                ),
+            )
+        )
+    family_load_failed = False
+    try:
+        baseline_path = _family_baseline_path(thesis)
+    except ThesisValidationError as exc:
+        family_load_failed = True
+        failures.append(_signal_from_validation_error(exc))
+    if (
+        not family_load_failed
+        and base_path_valid
+        and thesis.base_config_path
+        and thesis.base_config_path != baseline_path
+    ):
+        failures.append(
+            BehaviorSignal(
+                code="config_validity_base_config_path_inheritance_blocked",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    f"base_config_path must be empty or the family baseline '{baseline_path}'; "
+                    "prior/winning config inheritance is not allowed."
+                ),
+                evidence={"baseline_path": baseline_path, "actual_path": thesis.base_config_path},
+            )
+        )
+    for key in sorted(CONFIG_CHANGES_METADATA_KEYS & set(thesis.config_changes)):
+        failures.append(
+            BehaviorSignal(
+                code="config_validity_config_changes_metadata_leak",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    f"config_changes contains thesis metadata key '{key}'. "
+                    f"Set top-level {key}=true instead of putting it in runtime config changes."
+                ),
+                evidence={"leaked_key": key},
+            )
+        )
+    return failures
+
+
+def _collect_mechanical_failures(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None = None,
+) -> list[BehaviorSignal]:
+    failures = _collect_inline_structural_failures(thesis, prior_theses)
+    failures.extend(
+        _collect_from_validator(lambda: _validate_mechanism_dimension(thesis, prior_theses))
+    )
+    if prior_theses:
+        failures.extend(
+            _collect_from_validator(
+                lambda: _validate_underexplored_dimensions(thesis, prior_theses)
+            )
+        )
+    failures.extend(_collect_from_validator(lambda: _validate_thesis_specifies_change(thesis)))
+    failures.extend(_collect_from_validator(lambda: _validate_expected_effects_present(thesis)))
+    for effect in thesis.expected_effects:
+        if effect.metric in BUILTIN_METRICS:
+            continue
+        if effect.metric in thesis.required_diagnostics:
+            continue
+        failures.append(
+            BehaviorSignal(
+                code="structural_expected_effect_metric_unbacked",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    f"Expected effect metric '{effect.metric}' is not a builtin metric "
+                    f"and is not listed in required_diagnostics"
+                ),
+                evidence={"metric": effect.metric},
+            )
+        )
+    failures.extend(_collect_mechanical_config_validity_failures(thesis))
+    return failures
+
+
+def _raise_mechanical_batch(failures: list[BehaviorSignal]) -> None:
+    if not failures:
+        return
+    if len(failures) == 1:
+        single = failures[0]
+        raise ThesisValidationError(
+            single.summary,
+            rejection_code=single.code,
+            evidence=dict(single.evidence),
+            remediation_hint=_format_remediation(single.remediation),
+        )
+    failure_payload = [
+        {"code": f.code, "summary": f.summary, "evidence": dict(f.evidence)} for f in failures
+    ]
+    raise ThesisValidationError(
+        "Multiple mechanical issues: " + "; ".join(f"{f.code}: {f.summary}" for f in failures),
+        rejection_code="structural_mechanical_batch_failures",
+        evidence={"count": len(failures), "failures": failure_payload},
+    )
+
+
 def validate_research_thesis(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
@@ -1713,13 +2095,13 @@ def validate_research_thesis(
     """Validate a research thesis. Raises ThesisValidationError if invalid.
 
     Dispatches Stage 1 to four named sub-section helpers in fixed order:
-    process → structural → thesis_quality → config_validity.
+    process → behavioral → mechanical.
     """
     if tools_called is not None:
         _validate_process(tools_called)
-    _validate_structural(thesis, prior_theses)
-    _validate_thesis_quality(thesis, prior_theses)
-    _validate_config_validity(thesis, prior_theses)
+    _run_behavioral_pass(thesis, prior_theses)
+    mechanical_failures = _collect_mechanical_failures(thesis, prior_theses)
+    _raise_mechanical_batch(mechanical_failures)
     return thesis
 
 
@@ -1759,9 +2141,15 @@ def validate_thesis_dict(
 def validate_stage_1(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
+    *,
+    tools_called: set[str] | None = None,
 ) -> ResearchThesis:
     """Stage 1: pre-compile validator. Alias for `validate_research_thesis`."""
-    return validate_research_thesis(thesis, prior_theses=prior_theses)
+    return validate_research_thesis(
+        thesis,
+        prior_theses=prior_theses,
+        tools_called=tools_called,
+    )
 
 
 def _collect_runtime_config_keys(value: Any) -> set[str]:
@@ -1787,6 +2175,78 @@ def _collect_runtime_config_keys(value: Any) -> set[str]:
     return keys
 
 
+def _detect_stage_2_hypothesis_config_misalignment(
+    hypothesis: str,
+    mechanism: str,
+    runtime_config: dict[str, Any],
+    strategy_family: str,
+) -> BehaviorSignal | None:
+    score, explanation = check_hypothesis_alignment(
+        hypothesis, mechanism, runtime_config, family_name=strategy_family
+    )
+    if score >= ALIGNMENT_THRESHOLD:
+        return None
+    return BehaviorSignal(
+        code="hypothesis_config_misalignment",
+        confidence=1.0,
+        severity="block",
+        summary=f"Hypothesis-config misalignment (score={score:.2f}): {explanation}",
+        evidence={"score": round(score, 4), "explanation": explanation},
+    )
+
+
+def _collect_stage_2_required_diagnostic_failures(
+    contract: Any,
+    runtime_config: dict[str, Any],
+) -> list[BehaviorSignal]:
+    required_diagnostics = list(getattr(contract, "required_diagnostics", []) or [])
+    if not required_diagnostics:
+        return []
+
+    from diagnostic_contracts import normalize_diagnostic_requirement
+
+    specs = list(getattr(contract, "required_diagnostic_specs", []) or [])
+    resolved: set[str] = set()
+    for spec in specs:
+        spec_key = getattr(spec, "key", "") or ""
+        if spec_key:
+            resolved.add(spec_key)
+        for alias in getattr(spec, "aliases", []) or []:
+            if isinstance(alias, str) and alias:
+                resolved.add(alias)
+
+    runtime_keys = _collect_runtime_config_keys(runtime_config)
+    missing: list[str] = []
+    for name in required_diagnostics:
+        if not isinstance(name, str) or not name.strip():
+            continue
+        normalized = normalize_diagnostic_requirement(name)
+        if normalized and (
+            normalized in resolved
+            or name in resolved
+            or name in runtime_keys
+            or normalized in runtime_keys
+        ):
+            continue
+        missing.append(name)
+
+    if not missing:
+        return []
+    return [
+        BehaviorSignal(
+            code="required_diagnostic_missing_post_compile",
+            confidence=1.0,
+            severity="block",
+            summary=(
+                "Required diagnostics not present in compiled contract: "
+                f"{missing}. Each name must appear as a key/alias in "
+                "required_diagnostic_specs or as a key in runtime_config."
+            ),
+            evidence={"missing": missing},
+        )
+    ]
+
+
 def validate_stage_2(contract: Any) -> Any:
     """Stage 2: post-compile validator. Operates on the compiled BacktestContract.
 
@@ -1808,10 +2268,11 @@ def validate_stage_2(contract: Any) -> Any:
     mechanism = getattr(contract, "mechanism", "") or ""
     strategy_family = getattr(contract, "strategy_family", "") or ""
 
+    signals: list[BehaviorSignal] = []
     if isinstance(runtime_config, dict) and runtime_config:
         try:
-            score, explanation = check_hypothesis_alignment(
-                hypothesis, mechanism, runtime_config, family_name=strategy_family
+            signal = _detect_stage_2_hypothesis_config_misalignment(
+                hypothesis, mechanism, runtime_config, strategy_family
             )
         except MissingFamilyKeyConceptsError as exc:
             # Operator-visible configuration error, not a thesis-quality issue.
@@ -1827,49 +2288,24 @@ def validate_stage_2(contract: Any) -> Any:
                     "reason": str(exc),
                 },
             ) from exc
-        if score < ALIGNMENT_THRESHOLD:
-            raise ThesisValidationError(
-                f"Hypothesis-config misalignment (score={score:.2f}): {explanation}",
-                rejection_code="hypothesis_config_misalignment",
-                evidence={"score": round(score, 4), "explanation": explanation},
-            )
+        if signal is not None:
+            signals.append(signal)
 
-    required_diagnostics = list(getattr(contract, "required_diagnostics", []) or [])
-    if required_diagnostics:
-        from diagnostic_contracts import normalize_diagnostic_requirement
+    decision = _policy_decide(signals)
+    if decision.action == "reject":
+        triggering = decision.triggering
+        assert triggering is not None, "reject decisions must carry a triggering signal"
+        raise ThesisValidationError(
+            triggering.summary,
+            rejection_code=triggering.code,
+            evidence=dict(triggering.evidence),
+            remediation_hint=_format_remediation(triggering.remediation),
+        )
 
-        specs = list(getattr(contract, "required_diagnostic_specs", []) or [])
-        resolved: set[str] = set()
-        for spec in specs:
-            spec_key = getattr(spec, "key", "") or ""
-            if spec_key:
-                resolved.add(spec_key)
-            for alias in getattr(spec, "aliases", []) or []:
-                if isinstance(alias, str) and alias:
-                    resolved.add(alias)
-
-        runtime_keys = _collect_runtime_config_keys(runtime_config)
-        missing: list[str] = []
-        for name in required_diagnostics:
-            if not isinstance(name, str) or not name.strip():
-                continue
-            normalized = normalize_diagnostic_requirement(name)
-            if normalized and (
-                normalized in resolved
-                or name in resolved
-                or name in runtime_keys
-                or normalized in runtime_keys
-            ):
-                continue
-            missing.append(name)
-
-        if missing:
-            raise ThesisValidationError(
-                "Required diagnostics not present in compiled contract: "
-                f"{missing}. Each name must appear as a key/alias in "
-                "required_diagnostic_specs or as a key in runtime_config.",
-                rejection_code="required_diagnostic_missing_post_compile",
-                evidence={"missing": missing},
-            )
+    mechanical_failures = _collect_stage_2_required_diagnostic_failures(
+        contract,
+        runtime_config if isinstance(runtime_config, dict) else {},
+    )
+    _raise_mechanical_batch(mechanical_failures)
 
     return contract

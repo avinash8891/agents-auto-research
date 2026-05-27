@@ -64,6 +64,45 @@ def test_render_rejection_block_includes_current_round_rejections(tmp_path: Path
     assert "config_validity_config_key_overlap_real" in out
 
 
+def test_render_rejection_block_expands_mechanical_batch_failures(tmp_path: Path) -> None:
+    from rejection_artifact import render_rejection_block
+
+    _seed(
+        tmp_path,
+        job=7,
+        entries=[
+            {
+                "round": 2,
+                "thesis_id": "ema-batched-v1",
+                "code": "structural_mechanical_batch_failures",
+                "rule": "Multiple mechanical issues: ['structural_missing_thesis_id']",
+                "evidence": {
+                    "count": 2,
+                    "failures": [
+                        {
+                            "code": "structural_missing_thesis_id",
+                            "summary": "Missing thesis_id",
+                            "evidence": {},
+                        },
+                        {
+                            "code": "structural_missing_hypothesis",
+                            "summary": "Missing hypothesis",
+                            "evidence": {},
+                        },
+                    ],
+                },
+            }
+        ],
+    )
+
+    out = render_rejection_block(tmp_path, job=7, current_round=2)
+
+    assert "rejection_code: structural_mechanical_batch_failures (2 failures)" in out
+    assert "Fix all in one retry:" in out
+    assert "[1] structural_missing_thesis_id: Missing thesis_id" in out
+    assert "[2] structural_missing_hypothesis: Missing hypothesis" in out
+
+
 def test_render_rejection_block_includes_pattern_summary_when_history_exists(
     tmp_path: Path,
 ) -> None:

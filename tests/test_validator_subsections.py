@@ -21,9 +21,21 @@ import thesis_validator
 from thesis_validator import (
     ThesisValidationError,
     infer_rejection_code,
-    validate_stage_1,
-    validate_thesis_dict,
 )
+from thesis_validator import validate_stage_1 as _validate_stage_1
+from thesis_validator import validate_thesis_dict as _validate_thesis_dict
+
+_VALID_PROCESS_TOOLS = {"list_experiment_results", "web_search"}
+
+
+def validate_stage_1(*args: object, **kwargs: object) -> object:
+    kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    return _validate_stage_1(*args, **kwargs)
+
+
+def validate_thesis_dict(*args: object, **kwargs: object) -> object:
+    kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    return _validate_thesis_dict(*args, **kwargs)
 
 
 def _base_thesis(thesis_id: str = "subsection_test") -> dict:
@@ -90,8 +102,8 @@ def _prior(thesis_id: str, *, theme_keywords: list[str]) -> dict:
 # ── Helper existence + ordering ──────────────────────────────────────────
 
 
-def test_validate_stage_1_dispatches_to_three_named_helpers_in_order() -> None:
-    """validate_stage_1 calls structural → thesis_quality → config_validity, in that order."""
+def test_validate_stage_1_dispatches_to_tier_helpers_in_order() -> None:
+    """validate_stage_1 calls process → behavioral → mechanical tiers in order."""
     raw = _base_thesis()
     validated = validate_thesis_dict(raw)
 
@@ -104,24 +116,30 @@ def test_validate_stage_1_dispatches_to_three_named_helpers_in_order() -> None:
         return _wrapper
 
     with (
-        patch.object(thesis_validator, "_validate_structural", side_effect=record("structural")),
+        patch.object(thesis_validator, "_validate_process", side_effect=record("process")),
+        patch.object(thesis_validator, "_run_behavioral_pass", side_effect=record("behavioral")),
         patch.object(
-            thesis_validator, "_validate_thesis_quality", side_effect=record("thesis_quality")
+            thesis_validator,
+            "_collect_mechanical_failures",
+            side_effect=lambda *args, **kwargs: record("mechanical_collect")(),
         ),
         patch.object(
-            thesis_validator, "_validate_config_validity", side_effect=record("config_validity")
+            thesis_validator,
+            "_raise_mechanical_batch",
+            side_effect=record("mechanical_raise"),
         ),
     ):
-        validate_stage_1(validated, prior_theses=[])
+        validate_stage_1(validated, prior_theses=[], tools_called=_VALID_PROCESS_TOOLS)
 
-    assert call_order == ["structural", "thesis_quality", "config_validity"]
+    assert call_order == ["process", "behavioral", "mechanical_collect", "mechanical_raise"]
 
 
 def test_validate_stage_1_helpers_are_module_level_functions() -> None:
-    """The three helpers must exist as importable callables on the module."""
-    assert callable(getattr(thesis_validator, "_validate_structural", None))
-    assert callable(getattr(thesis_validator, "_validate_thesis_quality", None))
-    assert callable(getattr(thesis_validator, "_validate_config_validity", None))
+    """The tier helpers must exist as importable callables on the module."""
+    assert callable(getattr(thesis_validator, "_validate_process", None))
+    assert callable(getattr(thesis_validator, "_run_behavioral_pass", None))
+    assert callable(getattr(thesis_validator, "_collect_mechanical_failures", None))
+    assert callable(getattr(thesis_validator, "_raise_mechanical_batch", None))
 
 
 # ── Structural section: at least one rejection in the namespace ──────────

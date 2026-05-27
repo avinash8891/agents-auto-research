@@ -300,10 +300,29 @@ def render_rejection_block(root: Path, *, job: int, current_round: int) -> str:
             )
             parts.append(f"  ─── {item.thesis_id} ───")
             parts.append(f"    stage: {item.stage}")
-            parts.append(f"    rejection_code: {item.rejection_code}")
+            failures = item.evidence.get("failures") if isinstance(item.evidence, dict) else None
+            if item.rejection_code == "structural_mechanical_batch_failures" and isinstance(
+                failures, list
+            ):
+                count = item.evidence.get("count", len(failures))
+                parts.append(f"    rejection_code: {item.rejection_code} ({count} failures)")
+            else:
+                parts.append(f"    rejection_code: {item.rejection_code}")
             if item.rule_violated:
                 parts.append(f"    rule: {item.rule_violated}")
-            parts.append(f"    evidence: {evidence_str}")
+            if item.rejection_code == "structural_mechanical_batch_failures" and isinstance(
+                failures, list
+            ):
+                parts.append("    evidence: see failure list below")
+                parts.append("    Fix all in one retry:")
+                for idx, failure in enumerate(failures, start=1):
+                    if not isinstance(failure, dict):
+                        continue
+                    code = failure.get("code", "unknown")
+                    summary_text = failure.get("summary", "")
+                    parts.append(f"      [{idx}] {code}: {summary_text}")
+            else:
+                parts.append(f"    evidence: {evidence_str}")
             if item.remediation_hint:
                 parts.append(f"    hint: {item.remediation_hint}")
 
