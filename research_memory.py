@@ -447,14 +447,33 @@ def get_past_thesis(root: Path, thesis_id: str, *, job_id: int | None = None) ->
     return json.dumps(payload, indent=2, default=str)
 
 
-def latest_thesis_details(root: Path, thesis_id: str) -> dict[str, Any]:
+def latest_thesis_details(
+    root: Path,
+    thesis_id: str,
+    *,
+    job_id: int | None = None,
+) -> dict[str, Any]:
     """Return proposal metadata from the most recent attempt for a thesis_id.
 
-    Used by _resolve_conductor_inputs to inject what the previous round predicted
-    into latest_outcome so the conductor can compare prediction vs. actual result.
+    Used by _resolve_conductor_inputs to inject what the previous round
+    predicted into latest_outcome so the conductor can compare prediction
+    vs. actual result.
+
+    Pass ``job_id`` to scope the lookup to one job — without it, the same
+    thesis_id used in multiple jobs returns the most-recent match across
+    ALL jobs, which can surface unrelated prior predictions and steer the
+    conductor wrong. Flagged in PR #57 review by chatgpt-codex-connector.
+
+    Empty/whitespace-only ``thesis_id`` returns {} immediately rather than
+    falling through to a query that would return the most-recent unrelated
+    thesis. Flagged in PR #57 review by cubic-dev-ai.
+
     Returns {} when the thesis has no saved attempt records.
     """
-    entries = _iter_thesis_attempts(root, thesis_id=thesis_id)
+    requested_id = str(thesis_id or "").strip()
+    if not requested_id:
+        return {}
+    entries = _iter_thesis_attempts(root, job_id=job_id, thesis_id=requested_id)
     if not entries:
         return {}
     entry = entries[0]  # list_research_thesis_attempts orders DESC; first = most recent

@@ -257,12 +257,25 @@ class BacktestRunDB:
     def _ensure_column_renamed(
         self, conn: sqlite3.Connection, table: str, old: str, new: str
     ) -> None:
+        """Rename a column at init time. Surface any failure loudly.
+
+        Swallowing this previously allowed a half-migrated schema to slip
+        through init: subsequent INSERT/SELECT statements that reference the
+        new column would then fail at runtime with `no such column`,
+        producing failures far from the actual cause. Failing loudly keeps
+        the schema-migration error localized to startup. Flagged in PR #57
+        review by cubic-dev-ai and chatgpt-codex-connector.
+        """
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if old not in columns or new in columns:
+            return
         try:
-            columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
-            if old in columns and new not in columns:
-                conn.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
-        except Exception:
-            pass
+            conn.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to rename column {table}.{old} to {new}; "
+                f"schema migration is incomplete"
+            ) from exc
 
     def session_meta(self) -> dict[str, Any]:
         with self._connect() as conn:
