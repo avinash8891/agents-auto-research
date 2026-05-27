@@ -443,6 +443,33 @@ def test_resolve_conductor_inputs_injects_previous_thesis_from_db(tmp_path: Path
     controller = _real_controller(tmp_path)
     db = BacktestRunDB(controller.backtest_run_db.path)
     write_state(controller.state_path, {"job": 1, "research_round": 2, "family": "ema"})
+
+    # latest_thesis_details now requires a research_rounds row to resolve job_id
+    # for the job-scoped lookup added per PR #57 review (chatgpt-codex-connector).
+    # Without this seed row the LEFT JOIN would return NULL job_id and the WHERE
+    # r.job_id=1 filter would exclude the attempt.
+    with db._connect() as conn:  # noqa: SLF001 — test fixture, direct SQL is intentional
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO research_rounds (
+                research_round_id, job_id, round_number, run_id, hypothesis_id,
+                selected_thesis_id, outcome, created_at_utc, usage_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "job-1-round-2",
+                1,
+                2,
+                "run-1-2",
+                "ema-momentum-breakout",
+                "ema-momentum-breakout",
+                "thesis_accepted",
+                utc_now_iso8601(),
+                "{}",
+            ),
+        )
+        conn.commit()
+
     db.add_research_thesis_attempt(
         {
             "research_round_id": "job-1-round-2",

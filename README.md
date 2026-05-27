@@ -93,7 +93,7 @@ Research jobs route all LLM calls through a local OAuth proxy at `http://127.0.0
 
 **VPS deploys** (via `vps_runner.py`): `openai-oauth.service` is already running on the VPS as a systemd service — nothing extra needed.
 
-**Local runs**: start the proxy manually or via `systemctl start openai-oauth.service` before invoking `autoresearch_controller.py`.
+**Local runs**: start the proxy manually or via `sudo systemctl start openai-oauth.service` (root or configured polkit required) before invoking `autoresearch_controller.py`.
 
 The proxy reads an OAuth token from (in order):
 1. `CLAUDE_CODE_OAUTH_TOKEN` env var

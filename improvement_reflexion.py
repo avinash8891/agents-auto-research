@@ -81,7 +81,15 @@ def _format_preamble(
             return ""
     outcome = episode.get("research_outcome") or episode.get("outcome", "?")
     reasoning = (reflection.get("reasoning") or "").strip()
-    validation_failure_reason = (reflection.get("validation_failure_reason") or "").strip()
+    # Fall back to the legacy `rejection_reason` field for Reflexio exports
+    # written before the validation_failure_reason rename. Without this,
+    # upgrade/resume scenarios would drop the prior failure context
+    # (why_it_failed → empty), weakening reflexion guidance and making
+    # repeated rejection loops more likely. Flagged in PR #57 review by
+    # chatgpt-codex-connector.
+    validation_failure_reason = (
+        reflection.get("validation_failure_reason") or reflection.get("rejection_reason") or ""
+    ).strip()
     prev_round = source_round if source_round is not None else int(current_round or 1) - 1
     title = (
         f"PRIOR AGENT REFLEXION (round {prev_round}, agent {agent})"
