@@ -1074,10 +1074,23 @@ def _load_family_key_concepts(family_name: str) -> dict[str, tuple[str, ...]]:
         ) from exc
     key_concepts = dict(getattr(spec, "key_concepts", {}) or {})
     if not key_concepts:
-        raise MissingFamilyKeyConceptsError(
-            f"FamilyResearchSpec for family '{family_name}' has empty key_concepts; "
-            f"populate it so Stage 2 hypothesis-config alignment can be enforced"
+        # Documented fail-open per FamilyResearchSpec default (key_concepts
+        # field defaults to empty dict). Families opt INTO Stage 2 alignment
+        # enforcement by populating key_concepts; they opt OUT by leaving it
+        # empty. Log loudly so operators can see when a family is opting out
+        # without breaking the documented contract.
+        #
+        # The earlier hard-fail behavior broke the `_demo` skeleton (which
+        # uses the default) and any newly scaffolded family that hadn't yet
+        # opted into alignment scoring. Flagged in PR #57 review by
+        # chatgpt-codex-connector.
+        log.warning(
+            "family %r has empty FamilyResearchSpec.key_concepts — Stage 2 "
+            "hypothesis-config alignment will fail-open. Populate key_concepts "
+            "to enable enforcement.",
+            family_name,
         )
+        return {}
     return key_concepts
 
 
@@ -1107,12 +1120,19 @@ def check_hypothesis_alignment(
     if not config_changes:
         return 1.0, "No config changes (code change thesis)"
 
-    # _load_family_key_concepts raises MissingFamilyKeyConceptsError when the
-    # family has no concept map. Stage 2 validation catches that error and
-    # converts it into a clear ThesisValidationError so the operator sees
-    # exactly which family needs key_concepts populated — instead of theses
-    # silently passing alignment for the rest of the family's lifetime.
+    # _load_family_key_concepts raises MissingFamilyKeyConceptsError only when
+    # the family is unknown / unregistered (a configuration error). When the
+    # family is registered but has empty key_concepts (the documented
+    # fail-open default), the function logs and returns {} — we then
+    # short-circuit to score 1.0 so families that haven't opted into Stage 2
+    # alignment scoring don't get hard-rejected. See _load_family_key_concepts
+    # for the policy rationale.
     key_concepts = _load_family_key_concepts(family_name)
+    if not key_concepts:
+        return (
+            1.0,
+            f"family '{family_name}' has empty key_concepts — alignment fails open",
+        )
 
     hyp_lower = (hypothesis + " " + mechanism).lower()
     config_keys = set(config_changes.keys())

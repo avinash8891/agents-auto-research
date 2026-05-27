@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from backtest.event_diagnostics import validate_event_frame_schema, write_event_diagnostics
 from backtest.result_schema import build_result_payload
 from persistence_utils import write_json_atomic
@@ -41,9 +43,15 @@ def write_all(
             _FLOAT_EVENT_COLS = {"entry_price", "stop_price", "target_price", "stop_distance_pct"}
             for _col in _FLOAT_EVENT_COLS:
                 if _col in events_df.columns and events_df[_col].dtype == object:
-                    events_df[_col] = events_df[_col].apply(
-                        lambda v: float(v) if v not in (None, "", "nan") else float("nan")
-                    )
+                    # Coerce object-dtype columns to float64. Using
+                    # pd.to_numeric(..., errors="coerce") correctly handles
+                    # pandas nullable values (pd.NA, NaT, etc.) — the
+                    # previous `v not in (None, "", "nan")` membership test
+                    # raised `TypeError: boolean value of NA is ambiguous`
+                    # when an event row carried pd.NA from upstream nullable
+                    # dtype operations. Flagged in PR #57 review by
+                    # chatgpt-codex-connector.
+                    events_df[_col] = pd.to_numeric(events_df[_col], errors="coerce")
             events_df.to_parquet(events_path, index=False)
 
     diagnostics_path = ""
