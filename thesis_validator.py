@@ -458,6 +458,12 @@ _LEVER_PREFIX_LOOSEN_ON_INCREASE: Final[tuple[str, ...]] = (
     "cap_",
 )
 
+# Pre-computed frozensets for hot-path membership checks in _b2_direction_of.
+# Avoids rebuilding a fresh set on every call (called per-thesis during
+# direction-whipsaw evaluation against the full prior list).
+_B2_DIRECTION_TIGHTEN_TOKEN_SET: Final[frozenset[str]] = frozenset(_B2_DIRECTION_TIGHTEN_TOKENS)
+_B2_DIRECTION_WIDEN_TOKEN_SET: Final[frozenset[str]] = frozenset(_B2_DIRECTION_WIDEN_TOKENS)
+
 
 def _b2_direction_of(text: str) -> str | None:
     """Return 'tighten', 'widen', or None for the dominant direction in `text`.
@@ -474,8 +480,8 @@ def _b2_direction_of(text: str) -> str | None:
         `_`. Tokenisation sidesteps the issue by treating `_` as a separator.
     """
     tokens = set(re.findall(r"[a-z]+", text.lower()))
-    has_tighten = bool(tokens & set(_B2_DIRECTION_TIGHTEN_TOKENS))
-    has_widen = bool(tokens & set(_B2_DIRECTION_WIDEN_TOKENS))
+    has_tighten = bool(tokens & _B2_DIRECTION_TIGHTEN_TOKEN_SET)
+    has_widen = bool(tokens & _B2_DIRECTION_WIDEN_TOKEN_SET)
     if has_tighten and not has_widen:
         return "tighten"
     if has_widen and not has_tighten:
