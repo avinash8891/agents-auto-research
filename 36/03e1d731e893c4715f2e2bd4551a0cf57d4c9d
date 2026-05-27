@@ -1,0 +1,20 @@
+tests/test_l6_l7_tool_order_gates.py
+  s_00e024b3fdfb90::t_8677095d4d3f59 19,24,28,33
+  s_00e024b3fdfb90::t_6952f8cfade1f0 3-4,8-10,12,16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3603e1d731e893c4715f2e2bd4551a0cf57d4c9d",
+  "prompts": {},
+  "sessions": {
+    "s_00e024b3fdfb90": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6a5b-f3c7-7540-8d73-175a15705d5d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
