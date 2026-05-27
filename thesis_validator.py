@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any, Final
 
 from autoresearch_logging import get_logger
@@ -1092,6 +1093,61 @@ def generate_variants(
 # ---------------------------------------------------------------------------
 
 
+def _raise_aggregated_validation_error(
+    *,
+    rejection_code: str,
+    summary_prefix: str,
+    issues: list[dict[str, Any]],
+    describer: Callable[[dict[str, Any]], str],
+    extra_evidence: dict[str, Any] | None = None,
+) -> None:
+    """Raise one ThesisValidationError summarizing N independent failures.
+
+    Used by gates that validate multiple aspects of one field. Collects
+    every failure mode into a single rejection with structured evidence
+    so the LLM sees the full picture in one attempt instead of N retries.
+    """
+    if not issues:
+        return
+    descriptions = [describer(issue) for issue in issues]
+    evidence: dict[str, Any] = {"issues": issues}
+    if extra_evidence:
+        evidence.update(extra_evidence)
+    raise ThesisValidationError(
+        f"{summary_prefix}: {'; '.join(descriptions)}",
+        rejection_code=rejection_code,
+        evidence=evidence,
+    )
+
+
+def _describe_emergent_issue(issue: dict[str, Any]) -> str:
+    kind = issue["kind"]
+    if kind == "missing_new_dimension_name":
+        return "new_dimension_name is empty"
+    if kind == "new_dimension_name_duplicates_core":
+        return f"new_dimension_name '{issue['name']}' duplicates a core dimension"
+    if kind == "short_fields":
+        field_list = ", ".join(
+            f"{f['field']} ({f['actual_chars']} chars)" for f in issue["fields"]
+        )
+        return (
+            f"emergent justification fields each need "
+            f"≥{_MIN_EMERGENT_FIELD_CHARS} chars: {field_list}"
+        )
+    return kind  # defensive: unknown kinds surface their tag
+
+
+def _describe_underexplored_issue(issue: dict[str, Any]) -> str:
+    kind = issue["kind"]
+    if kind == "empty":
+        return "must be non-empty when prior theses exist"
+    if kind == "invalid_values":
+        return f"contains invalid mechanism dimensions: {issue['invalid']}"
+    if kind == "includes_chosen":
+        return f"must not include the chosen dimension '{issue['chosen']}'"
+    return kind  # defensive: unknown kinds surface their tag
+
+
 def _validate_emergent_dimension(thesis: ResearchThesis) -> None:
     """Validate the rare emergent-dimension path with a single rejection code.
 
@@ -1121,33 +1177,13 @@ def _validate_emergent_dimension(thesis: ResearchThesis) -> None:
     if short_fields:
         issues.append({"kind": "short_fields", "fields": short_fields})
 
-    if not issues:
-        return
-
-    issue_descriptions = []
-    for issue in issues:
-        if issue["kind"] == "missing_new_dimension_name":
-            issue_descriptions.append("new_dimension_name is empty")
-        elif issue["kind"] == "new_dimension_name_duplicates_core":
-            issue_descriptions.append(
-                f"new_dimension_name '{issue['name']}' duplicates a core dimension"
-            )
-        elif issue["kind"] == "short_fields":
-            field_list = ", ".join(
-                f"{f['field']} ({f['actual_chars']} chars)" for f in issue["fields"]
-            )
-            issue_descriptions.append(
-                f"emergent justification fields each need "
-                f"≥{_MIN_EMERGENT_FIELD_CHARS} chars: {field_list}"
-            )
-
-    raise ThesisValidationError(
-        f"Emergent thesis malformed: {'; '.join(issue_descriptions)}",
+    # emergent passes the global threshold so the LLM rejection block can show it
+    _raise_aggregated_validation_error(
         rejection_code="structural_emergent_thesis_malformed",
-        evidence={
-            "issues": issues,
-            "min_emergent_field_chars": _MIN_EMERGENT_FIELD_CHARS,
-        },
+        summary_prefix="Emergent thesis malformed",
+        issues=issues,
+        describer=_describe_emergent_issue,
+        extra_evidence={"min_emergent_field_chars": _MIN_EMERGENT_FIELD_CHARS},
     )
 
 
@@ -1181,26 +1217,14 @@ def _validate_underexplored_dimensions(
                 {"kind": "includes_chosen", "chosen": thesis.mechanism_dimension}
             )
 
-    if not issues:
-        return
-
-    descriptions = []
-    for issue in issues:
-        if issue["kind"] == "empty":
-            descriptions.append("must be non-empty when prior theses exist")
-        elif issue["kind"] == "invalid_values":
-            descriptions.append(
-                f"contains invalid mechanism dimensions: {issue['invalid']}"
-            )
-        elif issue["kind"] == "includes_chosen":
-            descriptions.append(
-                f"must not include the chosen dimension '{issue['chosen']}'"
-            )
-
-    raise ThesisValidationError(
-        f"underexplored_dimensions_considered invalid: {'; '.join(descriptions)}",
+    # underexplored carries no extra_evidence: the valid-dimension list is
+    # already embedded per-issue, and there is no global threshold to surface
+    # (unlike emergent which reports min_emergent_field_chars).
+    _raise_aggregated_validation_error(
         rejection_code="structural_underexplored_dimensions_invalid",
-        evidence={"issues": issues},
+        summary_prefix="underexplored_dimensions_considered invalid",
+        issues=issues,
+        describer=_describe_underexplored_issue,
     )
 
 
