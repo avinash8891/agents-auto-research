@@ -104,9 +104,15 @@ def test_mechanical_batch_collects_multiple_presence_failures() -> None:
     ]
 
 
-def test_process_gate_runs_when_tools_called_omitted() -> None:
+def test_process_gate_skips_when_tools_called_unobserved() -> None:
+    thesis = validate_research_thesis(_thesis(), tools_called=None)
+
+    assert thesis.thesis_id == "ema-tier-batching-v1"
+
+
+def test_process_gate_runs_when_tools_called_observed_empty() -> None:
     with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(_thesis())
+        validate_research_thesis(_thesis(), tools_called=set())
 
     assert exc_info.value.rejection_code == "process_required_tools_not_called"
     assert exc_info.value.evidence["missing_tools"] == [
@@ -168,6 +174,28 @@ def test_mechanical_batch_includes_underexplored_dimensions_when_cluster_missing
     assert [failure["code"] for failure in failures] == [
         "structural_missing_causal_cluster",
         "structural_underexplored_dimensions_invalid",
+    ]
+
+
+def test_mechanical_batch_does_not_escape_on_unknown_family_without_base_path() -> None:
+    thesis = _thesis(
+        strategy_family="unknown-family",
+        thesis_id="",
+        base_contract_id="prior-contract-abc123",
+    )
+
+    with pytest.raises(ThesisValidationError) as exc_info:
+        validate_research_thesis(
+            thesis,
+            tools_called={"list_experiment_results", "web_search"},
+        )
+
+    assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
+    failures = exc_info.value.evidence["failures"]
+    assert [failure["code"] for failure in failures] == [
+        "structural_missing_thesis_id",
+        "config_validity_base_contract_id_not_allowed",
+        "unspecified_validation_error",
     ]
 
 

@@ -343,7 +343,7 @@ _REQUIRED_PROCESS_TOOLS: Final[tuple[str, ...]] = (
 )
 
 
-def _validate_process(tools_called: set[str]) -> None:
+def _validate_process(tools_called: set[str] | frozenset[str]) -> None:
     missing = [tool for tool in _REQUIRED_PROCESS_TOOLS if tool not in tools_called]
     if not missing:
         return
@@ -1988,8 +1988,18 @@ def _collect_mechanical_config_validity_failures(thesis: ResearchThesis) -> list
                 ),
             )
         )
-    baseline_path = _family_baseline_path(thesis)
-    if base_path_valid and thesis.base_config_path and thesis.base_config_path != baseline_path:
+    family_load_failed = False
+    try:
+        baseline_path = _family_baseline_path(thesis)
+    except ThesisValidationError as exc:
+        family_load_failed = True
+        failures.append(_signal_from_validation_error(exc))
+    if (
+        not family_load_failed
+        and base_path_valid
+        and thesis.base_config_path
+        and thesis.base_config_path != baseline_path
+    ):
         failures.append(
             BehaviorSignal(
                 code="config_validity_base_config_path_inheritance_blocked",
@@ -2087,7 +2097,8 @@ def validate_research_thesis(
     Dispatches Stage 1 to four named sub-section helpers in fixed order:
     process → behavioral → mechanical.
     """
-    _validate_process(tools_called or set())
+    if tools_called is not None:
+        _validate_process(tools_called)
     _run_behavioral_pass(thesis, prior_theses)
     mechanical_failures = _collect_mechanical_failures(thesis, prior_theses)
     _raise_mechanical_batch(mechanical_failures)
