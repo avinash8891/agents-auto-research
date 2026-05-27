@@ -44,6 +44,7 @@ from autoresearch_state import (
 )
 from backtest.runtime_config import load_runtime_config
 from family_research_spec import resolve_research_resolution_context
+from research_memory import latest_thesis_details as _latest_thesis_details
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_types import ResearchThesis
@@ -495,6 +496,12 @@ def _resolve_conductor_inputs(
                     verdict_status,
                     verdict_summary,
                 )
+    if latest_outcome:
+        thesis_id = latest_outcome.get("thesis_id")
+        if thesis_id:
+            prior = _latest_thesis_details(controller.runtime_root, str(thesis_id))
+            if prior:
+                latest_outcome["previous_thesis"] = prior
     return trades_file, strategy_events_file, diagnostics_file, latest_outcome
 
 

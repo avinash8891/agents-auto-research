@@ -445,6 +445,39 @@ def get_past_thesis(root: Path, thesis_id: str, *, job_id: int | None = None) ->
     return json.dumps(payload, indent=2, default=str)
 
 
+def latest_thesis_details(root: Path, thesis_id: str) -> dict[str, Any]:
+    """Return proposal metadata from the most recent attempt for a thesis_id.
+
+    Used by _resolve_conductor_inputs to inject what the previous round predicted
+    into latest_outcome so the conductor can compare prediction vs. actual result.
+    Returns {} when the thesis has no saved attempt records.
+    """
+    entries = _iter_thesis_attempts(root, thesis_id=thesis_id)
+    if not entries:
+        return {}
+    entry = entries[0]  # list_research_thesis_attempts orders DESC; first = most recent
+    details = _thesis_details(entry)
+    out: dict[str, Any] = {
+        "hypothesis": entry.get("hypothesis", ""),
+        "mechanism": entry.get("mechanism", ""),
+        "config_changes": entry.get("config_changes") or {},
+    }
+    for key in (
+        "expected_effects",
+        "evidence",
+        "disqualifiers",
+        "evidence_strength",
+        "closest_prior_theses_considered",
+        "orthogonality_defense",
+        "falsification_or_alternative",
+        "why_not_overfit",
+    ):
+        val = details.get(key)
+        if val is not None:
+            out[key] = val
+    return out
+
+
 def _record_job_id(record: Any) -> int | None:
     try:
         return int(getattr(record, "job", 0))
@@ -514,6 +547,8 @@ def _experiment_index_entry(item: dict[str, Any]) -> dict[str, Any]:
         "verdict_status": getattr(record, "verdict_status", ""),
         "verdict_summary": _short_text(getattr(record, "verdict_summary", ""), 180),
         "timestamp": getattr(record, "timestamp", ""),
+        "hypothesis": _short_text(getattr(record, "hypothesis", ""), 300),
+        "mechanism": _short_text(getattr(record, "mechanism", ""), 300),
     }
 
 

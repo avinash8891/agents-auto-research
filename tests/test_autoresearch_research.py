@@ -433,6 +433,86 @@ def test_resolve_conductor_inputs_uses_persisted_artifacts_and_verdict_feedback(
     assert "revise the threshold" in latest_outcome["research_feedback"]
 
 
+def test_resolve_conductor_inputs_injects_previous_thesis_from_db(tmp_path: Path) -> None:
+    """previous_thesis in latest_outcome carries full thesis_details from the thesis attempt DB."""
+    from autoresearch_state import write_state
+    from backtest_run_db import BacktestRunDB
+    from persistence_utils import utc_now_iso8601
+
+    controller = _real_controller(tmp_path)
+    db = BacktestRunDB(controller.db_path)
+    write_state(controller.state_path, {"job": 1, "research_round": 2, "family": "ema"})
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-1-round-2",
+            "attempt_number": 1,
+            "thesis_id": "ema-momentum-breakout",
+            "strategy_family": "ema",
+            "config_changes": {"ema_length": 12},
+            "validator_status": "compiled",
+            "mechanism_dimension": "entry_timing",
+            "hypothesis": "EMA crossover accelerates after news",
+            "mechanism": "Momentum buildup drives short-term trend persistence",
+            "thesis_details": {
+                "expected_effects": [{"metric": "profit_factor", "direction": "increase"}],
+                "evidence": ["backtested on 2024 data"],
+                "evidence_strength": "proxy",
+                "closest_prior_theses_considered": ["ema-baseline"],
+                "orthogonality_defense": "Different timing layer",
+                "falsification_or_alternative": "If ATR-based stop dominates, mechanism is wrong",
+                "why_not_overfit": "Validated on out-of-sample window",
+            },
+            "validation_failure_reason": "",
+            "selected_for_execution": 1,
+            "created_at_utc": utc_now_iso8601(),
+        }
+    )
+    config_path = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-2"
+    _write_valid_ema_config(config_path / "selected_config.json", ema_length=12)
+    latest = BacktestResultRecord(
+        config="runtime/jobs/job-1/research/round-2/selected_config.json",
+        metric=1.5,
+        status="discard",
+        description="rejected",
+        timestamp="2026-05-01T00:00:00+00:00",
+        asi={"thesis_id": "ema-momentum-breakout", "trade_analysis": {}},
+        job=1,
+    )
+
+    _, _, _, latest_outcome = _resolve_conductor_inputs(controller, [latest], current_job=1)
+
+    assert "previous_thesis" in latest_outcome
+    prev = latest_outcome["previous_thesis"]
+    assert prev["hypothesis"] == "EMA crossover accelerates after news"
+    assert prev["mechanism"] == "Momentum buildup drives short-term trend persistence"
+    assert prev["config_changes"] == {"ema_length": 12}
+    assert prev["evidence_strength"] == "proxy"
+    assert prev["closest_prior_theses_considered"] == ["ema-baseline"]
+    assert prev["falsification_or_alternative"] == "If ATR-based stop dominates, mechanism is wrong"
+    assert prev["why_not_overfit"] == "Validated on out-of-sample window"
+    assert len(prev["expected_effects"]) == 1
+
+
+def test_resolve_conductor_inputs_no_previous_thesis_when_no_attempt_exists(
+    tmp_path: Path,
+) -> None:
+    """When the thesis_id has no saved attempt, previous_thesis is absent from latest_outcome."""
+    controller = _real_controller(tmp_path)
+    latest = BacktestResultRecord(
+        config="runtime/jobs/job-1/research/round-1/selected_config.json",
+        metric=1.0,
+        status="discard",
+        description="rejected",
+        timestamp="2026-05-01T00:00:00+00:00",
+        asi={"thesis_id": "ema-unknown-thesis", "trade_analysis": {}},
+        job=1,
+    )
+
+    _, _, _, latest_outcome = _resolve_conductor_inputs(controller, [latest], current_job=1)
+
+    assert "previous_thesis" not in latest_outcome
+
+
 def test_research_feedback_from_verdict_preserves_prefixed_summary() -> None:
     feedback = _research_feedback_from_verdict(
         "rejected",
