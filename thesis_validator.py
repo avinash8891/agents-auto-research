@@ -72,6 +72,10 @@ def _is_overlap_ignored_key(key: str) -> bool:
 
 _MIN_EMERGENT_FIELD_CHARS = 40
 _MIN_NOVEL_CONNECTION_CHARS = 40
+# A mechanism_evidence disqualifier's `condition` must be substantive — short
+# strings like "x" or "yes" satisfy the kind=mechanism_evidence check trivially
+# without describing any observable data pattern. 40 chars forces real content.
+_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS = 40
 # When falsification_or_alternative is set, it must be substantive — short text
 # is decoration, not a real disconfirmer. The field itself remains optional;
 # this rule only enforces quality when the agent does fill it in.
@@ -605,21 +609,35 @@ def _check_neighboring_threshold(
 
 
 def _check_qualitative_disqualifier_present(thesis: ResearchThesis) -> None:
-    """B5: at least one Disqualifier must have kind='mechanism_evidence'.
+    """B5: ≥1 Disqualifier must have kind='mechanism_evidence' AND a
+    substantive condition (≥40 chars).
 
-    Pure metric-threshold disqualifiers ("PF must improve by 5%") are pass/fail
-    criteria, not Popperian disconfirmers. Force one to be qualitative.
+    The kind alone is trivial — the LLM can satisfy with kind='mechanism_evidence'
+    and condition='x'. The length threshold makes the gate enforce SUBSTANTIVE
+    mechanism-evidence rather than ceremonial enum tagging.
+
+    Pure metric-threshold disqualifiers ('PF must improve by 5%') are pass/fail
+    criteria, not Popperian disconfirmers. Force one to be substantively
+    qualitative.
     """
     if not thesis.disqualifiers:
-        return  # absence is handled by the earlier "no disqualifiers" rule
-    if any(d.kind == "mechanism_evidence" for d in thesis.disqualifiers):
+        return  # absence handled by structural_missing_disqualifiers
+    has_substantive_mechanism_evidence = any(
+        d.kind == "mechanism_evidence"
+        and len(d.condition.strip()) >= _MIN_MECHANISM_EVIDENCE_CONDITION_CHARS
+        for d in thesis.disqualifiers
+    )
+    if has_substantive_mechanism_evidence:
         return
     raise ThesisValidationError(
-        "Disqualifiers list contains only metric_threshold entries. "
-        "At least one disqualifier must reference observable mechanism evidence "
-        "(set kind='mechanism_evidence'), describing what data pattern would "
-        "falsify the mechanism — independent of whether metrics improve.",
+        "Need at least one disqualifier with kind='mechanism_evidence' AND a "
+        f"condition ≥{_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS} chars describing "
+        "an observable data pattern that would falsify the mechanism. "
+        "Short or metric-only conditions don't count as Popperian disconfirmers.",
         rejection_code="thesis_quality_missing_mechanism_evidence_disqualifier",
+        evidence={
+            "min_condition_chars": _MIN_MECHANISM_EVIDENCE_CONDITION_CHARS,
+        },
     )
 
 

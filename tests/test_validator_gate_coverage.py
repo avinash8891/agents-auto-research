@@ -62,7 +62,10 @@ def _minimal_valid_thesis(**overrides: Any) -> ResearchThesis:
         "disqualifiers": [
             Disqualifier(
                 name="opening_loss_pattern",
-                condition="first-5min loss rate not concentrated",
+                condition=(
+                    "first-5min loss rate not concentrated in the opening "
+                    "auction window"
+                ),  # ≥40 chars to satisfy mechanism_evidence substantiveness gate
                 kind="mechanism_evidence",
             )
         ],
@@ -444,6 +447,24 @@ def test_gate_thesis_quality_missing_mechanism_evidence_disqualifier() -> None:
                 name="metric_only",
                 condition="profit_factor < 1.0",
                 kind="metric_threshold",  # not mechanism_evidence
+            )
+        ],
+    )
+    _expect_rejection(
+        thesis, None, "thesis_quality_missing_mechanism_evidence_disqualifier"
+    )
+
+
+def test_gate_thesis_quality_mechanism_evidence_disqualifier_too_short() -> None:
+    """A mechanism_evidence disqualifier with a trivially-short condition does
+    not satisfy the gate. Without a content threshold the LLM could pass with
+    {"kind": "mechanism_evidence", "condition": "x"}, which is theater."""
+    thesis = _minimal_valid_thesis(
+        disqualifiers=[
+            Disqualifier(
+                name="trivial",
+                condition="x",  # too short
+                kind="mechanism_evidence",
             )
         ],
     )
