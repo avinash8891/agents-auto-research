@@ -169,6 +169,8 @@ def test_accumulate_job_usage_handles_missing_total_block(tmp_path: Path) -> Non
 
 
 def test_check_parsed_for_terminal_preserves_conductor_validation_reason() -> None:
+    """A conductor_error without an attached thesis is unrecoverable and must
+    short-circuit so the round records the failure with the original reason."""
     result = _check_parsed_for_terminal(
         ConductorResult(
             status="conductor_error",
@@ -186,6 +188,24 @@ def test_check_parsed_for_terminal_preserves_conductor_validation_reason() -> No
         ),
         "validation_reason": "expected exactly one thesis, got 2",
     }
+
+
+def test_check_parsed_for_terminal_defers_validation_failed_when_thesis_attached() -> None:
+    """When the conductor parsed a thesis but the validator raised (e.g. process
+    gate), the outer loop must re-run Stage 1 through _try_one_validation_attempt
+    so the failure consumes the normal Stage 1 retry budget instead of aborting
+    the round on a single missing-tool mistake."""
+    result = _check_parsed_for_terminal(
+        ConductorResult(
+            status="conductor_error",
+            error="validation_failed",
+            validation_reason="Process gate failed: required tools not called: ['web_search']",
+            thesis={"thesis_id": "open_alert_regime_filter"},
+            tools_called=frozenset({"list_experiment_results"}),
+        )
+    )
+
+    assert result is None
 
 
 def test_log_research_round_persists_required_fields_to_sqlite(tmp_path: Path) -> None:
@@ -850,7 +870,7 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
         status = "needs_code"
         contract_id = "opening_range_gate"
 
-    def fake_validate(raw, prior_theses=None):
+    def fake_validate(raw, prior_theses=None, tools_called=None):
         captured["validated_raw"] = dict(raw)
         return _Validated()
 
@@ -936,7 +956,8 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
         contract_id = "exp-001"
 
     monkeypatch.setattr(
-        "thesis_validator.validate_thesis_dict", lambda raw, prior_theses=None: _Validated()
+        "thesis_validator.validate_thesis_dict",
+        lambda raw, prior_theses=None, tools_called=None: _Validated(),
     )
     monkeypatch.setattr(
         "compiler_pipeline.compile_research_thesis",
@@ -1060,7 +1081,7 @@ def test_handle_needs_code_uses_full_validation_contract_before_compile(
     class _Validated:
         thesis_id = "buffered_trailing"
 
-    def fake_validate(raw, prior_theses=None):
+    def fake_validate(raw, prior_theses=None, tools_called=None):
         captured["validated_raw"] = dict(raw)
         return _Validated()
 
@@ -1133,7 +1154,7 @@ def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_ch
         updated["config_changes"] = {"buffered_trailing_stop_rule": True}
         return updated
 
-    def fake_validate(raw, prior_theses=None):
+    def fake_validate(raw, prior_theses=None, tools_called=None):
         captured["validated_raw"] = dict(raw)
         raise ThesisValidationError("Missing mechanism_dimension")
 

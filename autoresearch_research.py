@@ -87,6 +87,7 @@ def _prepare_thesis_for_validation(
     strategy_family: str,
     prior_theses: list[dict[str, Any]] | None = None,
     allow_schema_only_code_change_fallback: bool = False,
+    tools_called: frozenset[str] | set[str] | None = None,
 ):
     from compiler_pipeline import operationalize_thesis
     from thesis_validator import (
@@ -104,7 +105,9 @@ def _prepare_thesis_for_validation(
             operationalized["requested_primitives"] = missing
         raw_thesis = operationalized
     try:
-        validated = validate_thesis_dict(raw_thesis, prior_theses=prior_theses)
+        validated = validate_thesis_dict(
+            raw_thesis, prior_theses=prior_theses, tools_called=tools_called
+        )
     except ThesisValidationError:
         if not (allow_schema_only_code_change_fallback and raw_thesis.get("requires_code_change")):
             raise
@@ -548,6 +551,14 @@ def _check_parsed_for_terminal(result: ConductorResult | None) -> dict[str, Any]
             "validation_failure_reason": "research conductor returned no parseable thesis",
         }
     if result.status == "conductor_error":
+        # validation_failed with a parsed thesis is recoverable: the outer
+        # _try_one_validation_attempt re-runs Stage 1 (which now sees
+        # tools_called for process-gate enforcement) and consumes one of
+        # the normal retry budgets, matching how compile and Stage 2
+        # rejections are handled. Without this branch a single missing-tool
+        # mistake would abort the round on the first attempt.
+        if result.error == "validation_failed" and result.thesis is not None:
+            return None
         error = result.error or result.reasoning or "unknown conductor error"
         validation_failure_reason = f"research conductor failed: {error}"
         if result.validation_reason:
@@ -756,6 +767,7 @@ def _try_one_validation_attempt(
 
     assert conductor_result.thesis is not None
     raw_thesis = conductor_result.thesis
+    tools_called = conductor_result.tools_called
     thesis_id = raw_thesis.get("thesis_id", "unknown")
 
     # If the conductor attached a validator_challenge, persist it before any
@@ -778,6 +790,7 @@ def _try_one_validation_attempt(
             raw_thesis,
             strategy_family=controller.family.name,
             prior_theses=prior_theses,
+            tools_called=tools_called,
         )
         thesis_id = raw_thesis.get("thesis_id", "unknown")
         log.info(

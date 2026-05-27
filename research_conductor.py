@@ -955,6 +955,9 @@ async def run_research_conductor(
             try:
                 validate_thesis_dict(candidate, tools_called=tools_called_this_round)
             except Exception as exc:
+                # Capture failure so the outer retry loop can re-validate and
+                # consume one of its Stage 1 attempts, instead of being
+                # short-circuited by a conductor_error terminal state.
                 validation_reason = str(exc)
                 trace(
                     "CONDUCTOR",
@@ -982,6 +985,7 @@ async def run_research_conductor(
                     status="ok",
                     thesis=thesis,
                     reasoning=parsed.get("reasoning", ""),
+                    tools_called=frozenset(tools_called_this_round),
                 )
         trace(
             "CONDUCTOR",
@@ -994,6 +998,10 @@ async def run_research_conductor(
             error="validation_failed",
             validation_reason=validation_reason,
             reasoning=parsed.get("reasoning", ""),
+            # Attach parsed thesis + tools so the outer validation loop can
+            # retry through Stage 1 instead of treating this as terminal.
+            thesis=thesis if isinstance(thesis, dict) else None,
+            tools_called=frozenset(tools_called_this_round),
         )
     else:
         trace(

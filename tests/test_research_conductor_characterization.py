@@ -677,7 +677,11 @@ def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
     assert out.status == "conductor_error"
     assert out.error == "validation_failed"
     assert out.validation_reason == "mechanism_dimension is stale"
-    assert out.thesis is None
+    # The conductor now attaches the parsed thesis on validation failure so
+    # _check_parsed_for_terminal can defer to _try_one_validation_attempt's
+    # Stage 1 retry budget instead of treating the round as terminal.
+    assert out.thesis is not None
+    assert out.thesis["thesis_id"] == "gap_rejection_timing"
 
 
 def test_conductor_reports_parse_failed_for_non_json_runner_output(

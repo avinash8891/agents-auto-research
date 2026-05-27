@@ -9,7 +9,7 @@ The evaluator checks the result against predictions and produces an BacktestVerd
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -308,6 +308,10 @@ class ConductorResult:
     validation_reason: str = ""
     reasoning: str = ""
     should_stop: bool = False
+    # Tools the conductor invoked during this attempt. Surfaced so the outer
+    # validator can enforce process-tier gates (e.g. web_search required) on
+    # a retry-eligible basis instead of short-circuiting through conductor_error.
+    tools_called: frozenset[str] = field(default_factory=frozenset)
 
 
 class BacktestVerdict(BaseModel):
