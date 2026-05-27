@@ -68,7 +68,9 @@ def test_check_parsed_for_terminal_conductor_error_falls_back_to_reasoning() -> 
 
 
 def test_check_parsed_for_terminal_should_stop_returns_completed() -> None:
-    result = ConductorResult(status="should_stop", should_stop=True, reasoning="nothing more to try")
+    result = ConductorResult(
+        status="should_stop", should_stop=True, reasoning="nothing more to try"
+    )
     out = _check_parsed_for_terminal(result)
     assert out is not None
     assert out["status"] == "completed"

@@ -20,6 +20,8 @@ from autoresearch_constants import MAX_RESEARCH_ROUNDS
 from autoresearch_controller import AutoresearchController
 from autoresearch_research import (
     _check_parsed_for_terminal,  # keep for backward-compat callers in integration tests
+)
+from autoresearch_research import (
     _handle_needs_code,
     _handle_round_failure,
     _handle_success,
@@ -33,9 +35,9 @@ from autoresearch_research import (
     results_to_dicts,
     run_research,
 )
-from research_types import ConductorResult
 from autoresearch_state import BacktestResultRecord, write_state
 from backtest_run_db import BacktestRunDB
+from research_types import ConductorResult
 from strategies import STRATEGIES
 from strategy_family import load_family
 from thesis_validator import ThesisValidationError
@@ -751,7 +753,9 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
         thesis_id="ema-duplicate",
     )
     assert attempts[0]["validator_status"] == "rejected"
-    assert "config_changes contains thesis metadata key" in attempts[-1]["validation_failure_reason"]
+    assert (
+        "config_changes contains thesis metadata key" in attempts[-1]["validation_failure_reason"]
+    )
 
 
 def test_run_research_max_rounds_finishes_without_conductor_call(tmp_path: Path) -> None:
@@ -1193,7 +1197,9 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
     monkeypatch.setattr("improvement_flags.reflexion_enabled", lambda: False)
     monkeypatch.setattr(
         "autoresearch_research._call_conductor",
-        lambda *args, **kwargs: ConductorResult(status="should_stop", should_stop=True, reasoning="done"),
+        lambda *args, **kwargs: ConductorResult(
+            status="should_stop", should_stop=True, reasoning="done"
+        ),
     )
     monkeypatch.setattr(
         "autoresearch_research._check_parsed_for_terminal",

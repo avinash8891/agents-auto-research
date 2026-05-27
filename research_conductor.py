@@ -949,9 +949,9 @@ async def run_research_conductor(
         revise={"used_feedback_retry": bool(rejection_feedback)},
         evaluate={
             "parsed": bool(parsed),
-            "has_thesis": bool(
-                parsed.get("thesis_id") or parsed.get("suggested_theses")
-            ) if parsed else False,
+            "has_thesis": (
+                bool(parsed.get("thesis_id") or parsed.get("suggested_theses")) if parsed else False
+            ),
             "should_stop": bool(parsed.get("should_stop")) if parsed else False,
         },
     )

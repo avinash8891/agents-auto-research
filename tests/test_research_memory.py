@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
 from persistence_utils import utc_now_iso8601
 from research_memory import _experiment_index_entry, latest_thesis_details
@@ -19,7 +17,7 @@ from research_memory import _experiment_index_entry, latest_thesis_details
 def _add_thesis_attempt(db: BacktestRunDB, thesis_id: str, **overrides: object) -> None:
     db.add_research_thesis_attempt(
         {
-            "research_round_id": f"job-1-round-1",
+            "research_round_id": "job-1-round-1",
             "attempt_number": 1,
             "thesis_id": thesis_id,
             "strategy_family": "ema",

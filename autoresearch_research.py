@@ -44,9 +44,9 @@ from autoresearch_state import (
 )
 from backtest.runtime_config import load_runtime_config
 from family_research_spec import resolve_research_resolution_context
-from research_memory import latest_thesis_details as _latest_thesis_details
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
+from research_memory import latest_thesis_details as _latest_thesis_details
 from research_types import ConductorResult, ResearchThesis
 from strategy_family import StrategyFamily
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
@@ -820,7 +820,14 @@ def _try_one_validation_attempt(
         return None, f"Thesis '{thesis_id}' rejected by stage_2 validator: {exc}", "stage_2"
 
     result, feedback = _dispatch_compiled_contract(
-        controller, research_round, attempt, conductor_result, raw_thesis, validated, contract, thesis_id
+        controller,
+        research_round,
+        attempt,
+        conductor_result,
+        raw_thesis,
+        validated,
+        contract,
+        thesis_id,
     )
     # _dispatch_compiled_contract handles the contract-status-not-ready case as
     # a "compile" rejection.
@@ -852,7 +859,13 @@ def _dispatch_compiled_contract(
     if contract.status == "ready_to_run":
         return (
             _on_ready_to_run(
-                controller, research_round, contract, raw_thesis, thesis_id, conductor_result, should_stop
+                controller,
+                research_round,
+                contract,
+                raw_thesis,
+                thesis_id,
+                conductor_result,
+                should_stop,
             ),
             None,
         )
@@ -1608,7 +1621,9 @@ def _handle_round_failure(
     result: dict[str, Any],
     research_round: int,
 ) -> dict[str, Any]:
-    reason = result.get("validation_failure_reason") or result.get("reasoning") or "no thesis generated"
+    reason = (
+        result.get("validation_failure_reason") or result.get("reasoning") or "no thesis generated"
+    )
     trace("LOOP", f"research round {research_round} produced no config: {reason}")
     log.warning(f"HEARTBEAT research round {research_round} failed: {reason}")
     state["research_round"] = research_round
@@ -1704,7 +1719,8 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
             )
             if key in thesis_meta
         },
-        validation_failure_reason=result.get("validation_failure_reason") or result.get("reasoning", ""),
+        validation_failure_reason=result.get("validation_failure_reason")
+        or result.get("reasoning", ""),
         usage=round_usage,
     )
     _record_rejection_rule_if_needed(research_round, result)
