@@ -434,18 +434,18 @@ def test_write_text_atomic_ignores_race_when_target_disappears_before_stat(
     real_exists = Path.exists
     calls = {"exists": 0, "stat": 0}
 
-    def fake_exists(self: Path) -> bool:
+    def fake_exists(self: Path, *args: object, **kwargs: object) -> bool:
         if self == path:
             calls["exists"] += 1
             return True
-        return real_exists(self)
+        return real_exists(self, *args, **kwargs)
 
-    def fake_stat(self: Path):
+    def fake_stat(self: Path, *args: object, **kwargs: object):
         if self == path:
             calls["stat"] += 1
             if calls["stat"] == 1:
                 raise FileNotFoundError
-        return real_stat(self)
+        return real_stat(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "exists", fake_exists)
     monkeypatch.setattr(Path, "stat", fake_stat)
