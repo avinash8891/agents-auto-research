@@ -92,6 +92,12 @@ def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
         "requires_code_change": True,
         "requested_primitives": ["close_confirmed_entry_gate"],
         "why_not_overfit": "Mechanism is structural and evaluated across all train years.",
+        # falsification_or_alternative is unconditionally required by the
+        # validator (was optional pre-refactor; doctrine never enforced).
+        "falsification_or_alternative": (
+            "If close-confirmed entries show the same wick-only stop-out rate as "
+            "intrabar entries, the close-confirmation mechanism does not hold."
+        ),
     }
 
 
@@ -314,17 +320,32 @@ def test_validate_thesis_rejects_new_config_keys_needed_inside_config_changes() 
         validate_thesis_dict(thesis, prior_theses=[])
 
 
-def test_validate_thesis_rejects_prior_best_language_without_base_config_path() -> None:
+def test_prior_winner_language_alone_no_longer_rejected() -> None:
+    """The prior-winner language regex gate (thesis_quality_prior_winner_inheritance_language)
+    was removed. Behavioral text detection had high false-negative rate; actual
+    inheritance is caught structurally via base_config_path / base_contract_id
+    gates. A thesis using formerly-banned language WITHOUT actually setting an
+    inheritance path now passes thesis_quality (other gates still apply).
+
+    This test pins the removal so the regex gate is not accidentally
+    re-introduced. See `test_validate_thesis_rejects_prior_best_language_with_base_config_path`
+    for the case where actual inheritance IS attempted — that still rejects
+    via the structural base_config_path check.
+    """
     thesis = _base_engine_change_thesis("preserve_best_without_base", "market_microstructure")
     thesis["mechanism"] = (
         "Preserve the current best trailing-stop edge while adding a new execution filter."
     )
+    # No base_config_path / base_contract_id set — there is no actual
+    # inheritance to detect. Should pass.
+    validate_thesis_dict(thesis, prior_theses=[])
 
-    with pytest.raises(ThesisValidationError, match="inheritance|family baseline"):
-        validate_thesis_dict(thesis, prior_theses=[])
 
-
-def test_validate_thesis_rejects_prior_best_language_with_base_config_path() -> None:
+def test_validate_thesis_rejects_actual_inheritance_via_base_config_path() -> None:
+    """Actual inheritance (structured fields set) is rejected by the
+    config_validity layer regardless of mechanism prose. The text-detection
+    regex was removed; the structural check is the authoritative enforcement.
+    """
     thesis = _base_engine_change_thesis("preserve_best_with_base", "market_microstructure")
     thesis["mechanism"] = (
         "Preserve the current best trailing-stop edge while adding a new execution filter."
@@ -332,13 +353,9 @@ def test_validate_thesis_rejects_prior_best_language_with_base_config_path() -> 
     thesis["base_contract_id"] = "05287d64f61f"
     thesis["base_config_path"] = "experiments/05287d64f61f/runtime_config.json"
 
-    # Stage 1 helper order is structural → thesis_quality → config_validity, so the
-    # banned-language (thesis_quality) check fires before the base_config_path
-    # (config_validity) check. Either rejection is correct; the inheritance message
-    # is the canonical thesis-quality phrasing.
     with pytest.raises(
         ThesisValidationError,
-        match="(legacy experiments/ inheritance paths|current-best/prior-winner inheritance)",
+        match="(must be empty or the family baseline|base_contract_id is not allowed)",
     ):
         validate_thesis_dict(thesis, prior_theses=[])
 
@@ -347,7 +364,7 @@ def test_validate_thesis_rejects_legacy_experiments_base_config_path() -> None:
     thesis = _base_engine_change_thesis("legacy_experiments_base_path", "market_microstructure")
     thesis["base_config_path"] = "experiments/05287d64f61f/runtime_config.json"
 
-    with pytest.raises(ThesisValidationError, match="legacy experiments/ inheritance paths"):
+    with pytest.raises(ThesisValidationError, match="must be empty or the family baseline"):
         validate_thesis_dict(thesis, prior_theses=[])
 
 
@@ -456,15 +473,26 @@ def test_validate_thesis_requires_diversity_reasoning_when_prior_context_exists(
 
 
 def test_validate_thesis_rejects_high_overlap_without_novel_connection() -> None:
+    """Overlap is now COMPUTED from theme_keywords data, not LLM self-reported.
+
+    The thesis's `dominant_cluster_overlap` field is informational only after
+    the refactor — the validator computes overlap from theme_keywords vs
+    prior theme_keywords. Setup: 100% of priors share at least one keyword
+    with the proposal → computed overlap = "high" → novel_connection
+    required to be substantive.
+    """
     thesis = _base_engine_change_thesis("opening_gate_followup", "signal_quality")
     thesis.update(
         {
             "causal_cluster": "opening-session short adverse-selection filters",
-            "dominant_cluster_overlap": "high",
+            # Field is ignored by the gate now; left blank to prove the gate
+            # fires regardless of what the LLM reports.
+            "dominant_cluster_overlap": "",
             "underexplored_dimensions_considered": [
                 "portfolio_construction",
                 "regime_conditioning",
             ],
+            "theme_keywords": ["opening_session", "alpha"],
             "novel_connection": "",
         }
     )
@@ -473,6 +501,7 @@ def test_validate_thesis_rejects_high_overlap_without_novel_connection() -> None
             "thesis_id": "prior_opening_gate",
             "config_changes": {"entry_cutoff_time": "09:45"},
             "mechanism_dimension": "entry_timing",
+            "thesis_details": {"theme_keywords": ["opening_session", "beta"]},
         }
     ]
 
@@ -485,11 +514,12 @@ def test_validate_thesis_allows_high_overlap_with_novel_connection() -> None:
     thesis.update(
         {
             "causal_cluster": "opening-session short adverse-selection filters",
-            "dominant_cluster_overlap": "high",
+            "dominant_cluster_overlap": "",
             "underexplored_dimensions_considered": [
                 "portfolio_construction",
                 "regime_conditioning",
             ],
+            "theme_keywords": ["opening_session", "alpha"],
             "novel_connection": (
                 "Connects previously separate opening adverse-selection evidence "
                 "with symbol-level confirmation, not another nearby time cutoff."
@@ -501,6 +531,7 @@ def test_validate_thesis_allows_high_overlap_with_novel_connection() -> None:
             "thesis_id": "prior_opening_gate",
             "config_changes": {"entry_cutoff_time": "09:45"},
             "mechanism_dimension": "entry_timing",
+            "thesis_details": {"theme_keywords": ["opening_session", "beta"]},
         }
     ]
 

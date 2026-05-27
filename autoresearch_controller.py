@@ -936,7 +936,7 @@ class AutoresearchController:
         mechanism: str = "",
         mechanism_dimension: str = "",
         thesis_details: dict[str, Any] | None = None,
-        rejection_reason: str = "",
+        validation_failure_reason: str = "",
         usage: dict[str, Any] | None = None,
     ) -> None:
         _research_log_research_round(
@@ -951,7 +951,7 @@ class AutoresearchController:
             mechanism=mechanism,
             mechanism_dimension=mechanism_dimension,
             thesis_details=thesis_details,
-            rejection_reason=rejection_reason,
+            validation_failure_reason=validation_failure_reason,
             usage=usage,
         )
 

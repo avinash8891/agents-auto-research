@@ -46,7 +46,8 @@ from backtest.runtime_config import load_runtime_config
 from family_research_spec import resolve_research_resolution_context
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
-from research_types import ResearchThesis
+from research_memory import latest_thesis_details as _latest_thesis_details
+from research_types import ConductorResult, ResearchThesis
 from strategy_family import StrategyFamily
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
 from trace_adapters.halo import build_halo_export_package, build_halo_payload
@@ -86,6 +87,7 @@ def _prepare_thesis_for_validation(
     strategy_family: str,
     prior_theses: list[dict[str, Any]] | None = None,
     allow_schema_only_code_change_fallback: bool = False,
+    tools_called: frozenset[str] | set[str] | None = None,
 ):
     from compiler_pipeline import operationalize_thesis
     from thesis_validator import (
@@ -103,7 +105,9 @@ def _prepare_thesis_for_validation(
             operationalized["requested_primitives"] = missing
         raw_thesis = operationalized
     try:
-        validated = validate_thesis_dict(raw_thesis, prior_theses=prior_theses)
+        validated = validate_thesis_dict(
+            raw_thesis, prior_theses=prior_theses, tools_called=tools_called
+        )
     except ThesisValidationError:
         if not (allow_schema_only_code_change_fallback and raw_thesis.get("requires_code_change")):
             raise
@@ -201,7 +205,7 @@ def log_research_round(
     mechanism: str = "",
     mechanism_dimension: str = "",
     thesis_details: dict[str, Any] | None = None,
-    rejection_reason: str = "",
+    validation_failure_reason: str = "",
     usage: dict[str, Any] | None = None,
 ) -> None:
     """Log every research round outcome to canonical persistence."""
@@ -235,7 +239,7 @@ def log_research_round(
             "hypothesis": hypothesis,
             "mechanism": mechanism,
             "thesis_details": thesis_details or {},
-            "rejection_reason": rejection_reason,
+            "validation_failure_reason": validation_failure_reason,
             "selected_for_execution": 1 if outcome == "compiled" else 0,
             "created_at_utc": iso8601_utc_now(),
         }
@@ -495,6 +499,25 @@ def _resolve_conductor_inputs(
                     verdict_status,
                     verdict_summary,
                 )
+    if latest_outcome:
+        thesis_id = latest_outcome.get("thesis_id")
+        if thesis_id:
+            # Fail-open: enrichment, not required. Job-scoped: same thesis_id
+            # can recur across jobs and would surface unrelated priors.
+            try:
+                prior = _latest_thesis_details(
+                    controller.runtime_root, str(thesis_id), job_id=current_job
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.debug(
+                    "latest_thesis_details lookup failed for thesis_id=%s job=%s: %s",
+                    thesis_id,
+                    current_job,
+                    exc,
+                )
+                prior = {}
+            if prior:
+                latest_outcome["previous_thesis"] = prior
     return trades_file, strategy_events_file, diagnostics_file, latest_outcome
 
 
@@ -514,55 +537,64 @@ def _research_feedback_from_verdict(verdict_status: str, verdict_summary: str) -
     return feedback
 
 
-def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Inspect the conductor response for terminal conditions before any
-    thesis validation. Returns a result dict if the response should
-    short-circuit out of the validation-retry loop, else None."""
-    if not parsed:
+def _check_parsed_for_terminal(result: ConductorResult | None) -> dict[str, Any] | None:
+    """Inspect the conductor result for terminal conditions before thesis validation.
+
+    Returns an outer result dict to short-circuit the validation-retry loop, or None
+    to continue to validation.
+    """
+    if result is None:
         return {
             "status": "parse_failed",
             "generated_config": None,
             "should_stop": False,
-            "rejection_reason": "research conductor returned no parseable thesis",
+            "validation_failure_reason": "research conductor returned no parseable thesis",
         }
-    if parsed.get("status") == "conductor_error":
-        error = parsed.get("error") or parsed.get("reasoning") or "unknown conductor error"
-        validation_reason = str(parsed.get("validation_reason") or "")
-        rejection_reason = f"research conductor failed: {error}"
-        if validation_reason:
-            rejection_reason = f"{rejection_reason}: {validation_reason}"
-        result = {
+    if result.status == "conductor_error":
+        # validation_failed with a parsed thesis is recoverable: the outer
+        # _try_one_validation_attempt re-runs Stage 1 (which now sees
+        # tools_called for process-gate enforcement) and consumes one of
+        # the normal retry budgets, matching how compile and Stage 2
+        # rejections are handled. Without this branch a single missing-tool
+        # mistake would abort the round on the first attempt.
+        if result.error == "validation_failed" and result.thesis is not None:
+            return None
+        error = result.error or result.reasoning or "unknown conductor error"
+        validation_failure_reason = f"research conductor failed: {error}"
+        if result.validation_reason:
+            validation_failure_reason = f"{validation_failure_reason}: {result.validation_reason}"
+        outer: dict[str, Any] = {
             "status": "conductor_error",
             "generated_config": None,
             "should_stop": False,
-            "rejection_reason": rejection_reason,
+            "validation_failure_reason": validation_failure_reason,
         }
-        if validation_reason:
-            result["validation_reason"] = validation_reason
+        if result.validation_reason:
+            outer["validation_reason"] = result.validation_reason
         _record_event_fail_open(
             source_module="autoresearch_research",
             category="conductor",
             action="conductor_error",
-            summary=rejection_reason,
+            summary=validation_failure_reason,
             payload={
                 "error_code": "conductor_error",
                 "error": str(error),
-                "validation_reason": validation_reason,
+                "validation_reason": result.validation_reason,
             },
         )
-        return result
-    if not parsed.get("suggested_theses"):
-        reasoning = parsed.get("reasoning") or "research conductor returned no suggested_theses"
+        return outer
+    if result.status == "should_stop":
+        reasoning = result.reasoning or "research conductor recommends stopping"
         return {
             "status": "completed",
             "generated_config": None,
-            "should_stop": parsed.get("should_stop", False),
+            "should_stop": True,
             "reasoning": reasoning,
         }
     return None
 
 
-def _structured_rejection_reason(*, source: str, message: str) -> dict[str, str]:
+def _structured_validation_failure(*, source: str, message: str) -> dict[str, str]:
     """Normalize free-form rejection text into stable routing/trace metadata."""
     lower = message.lower()
     if "overlap" in lower or "duplicate" in lower:
@@ -594,7 +626,7 @@ def _log_validation_rejection(
     stage: str = "stage_1",
 ) -> None:
     rejection_feedback = f"Thesis '{thesis_id}' rejected by validator: {reason}"
-    structured_rejection = _structured_rejection_reason(
+    structured_rejection = _structured_validation_failure(
         source="validator",
         message=reason,
     )
@@ -663,7 +695,7 @@ def _log_validation_rejection(
             if key in raw_thesis
         }
         | {"structured_rejection": structured_rejection},
-        rejection_reason=reason,
+        validation_failure_reason=reason,
     )
     _RULE_PROPOSALS.create_proposal(
         title=f"Round {research_round} rejected thesis {thesis_id}",
@@ -682,7 +714,7 @@ def _on_ready_to_run(
     contract: Any,
     raw_thesis: dict[str, Any],
     thesis_id: str,
-    parsed: dict[str, Any],
+    conductor_result: "ConductorResult",
     should_stop: bool,
 ) -> dict[str, Any]:
     """Wire the selected round thesis into the controller."""
@@ -703,7 +735,7 @@ def _on_ready_to_run(
         "thesis_id": thesis_id,
         "thesis": raw_thesis,
         "should_stop": should_stop,
-        "reasoning": parsed.get("reasoning", ""),
+        "reasoning": conductor_result.reasoning,
     }
 
 
@@ -720,7 +752,7 @@ def _try_one_validation_attempt(
     controller: "AutoresearchController",
     research_round: int,
     attempt: int,
-    parsed: dict[str, Any],
+    conductor_result: ConductorResult,
     prior_theses: Any,
 ) -> tuple[dict[str, Any] | None, str | None, str]:
     """One pass of the conductor-validate-compile retry loop.
@@ -733,7 +765,9 @@ def _try_one_validation_attempt(
     from compiler_pipeline import compile_research_thesis
     from thesis_validator import ThesisValidationError, validate_stage_2
 
-    raw_thesis = parsed["suggested_theses"][0]
+    assert conductor_result.thesis is not None
+    raw_thesis = conductor_result.thesis
+    tools_called = conductor_result.tools_called
     thesis_id = raw_thesis.get("thesis_id", "unknown")
 
     # If the conductor attached a validator_challenge, persist it before any
@@ -756,6 +790,7 @@ def _try_one_validation_attempt(
             raw_thesis,
             strategy_family=controller.family.name,
             prior_theses=prior_theses,
+            tools_called=tools_called,
         )
         thesis_id = raw_thesis.get("thesis_id", "unknown")
         log.info(
@@ -811,7 +846,14 @@ def _try_one_validation_attempt(
         return None, f"Thesis '{thesis_id}' rejected by stage_2 validator: {exc}", "stage_2"
 
     result, feedback = _dispatch_compiled_contract(
-        controller, research_round, attempt, parsed, raw_thesis, validated, contract, thesis_id
+        controller,
+        research_round,
+        attempt,
+        conductor_result,
+        raw_thesis,
+        validated,
+        contract,
+        thesis_id,
     )
     # _dispatch_compiled_contract handles the contract-status-not-ready case as
     # a "compile" rejection.
@@ -822,13 +864,13 @@ def _dispatch_compiled_contract(
     controller: "AutoresearchController",
     research_round: int,
     attempt: int,
-    parsed: dict[str, Any],
+    conductor_result: "ConductorResult",
     raw_thesis: dict[str, Any],
     validated: Any,
     contract: Any,
     thesis_id: str,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    should_stop = parsed.get("should_stop", False)
+    should_stop = conductor_result.should_stop
     if contract.status == "needs_code":
         return {
             "status": "completed",
@@ -837,13 +879,19 @@ def _dispatch_compiled_contract(
             "generated_thesis_id": thesis_id,
             "thesis_id": thesis_id,
             "should_stop": should_stop,
-            "reasoning": parsed.get("reasoning", ""),
+            "reasoning": conductor_result.reasoning,
             "thesis": raw_thesis,
         }, None
     if contract.status == "ready_to_run":
         return (
             _on_ready_to_run(
-                controller, research_round, contract, raw_thesis, thesis_id, parsed, should_stop
+                controller,
+                research_round,
+                contract,
+                raw_thesis,
+                thesis_id,
+                conductor_result,
+                should_stop,
             ),
             None,
         )
@@ -877,17 +925,17 @@ def _dispatch_compiled_contract(
 
 
 def _exhausted_retries_result(
-    parsed: dict[str, Any] | None, rejection_feedback: str
+    conductor_result: ConductorResult | None, rejection_feedback: str
 ) -> dict[str, Any]:
     thesis_id = (
-        parsed["suggested_theses"][0].get("thesis_id", "unknown")
-        if parsed and parsed.get("suggested_theses")
+        conductor_result.thesis.get("thesis_id", "unknown")
+        if conductor_result and conductor_result.thesis
         else "unknown"
     )
     log.error(
         f"THESIS REJECTED after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback} "
         f"| hint=the conductor produced a thesis that failed validation 3 times in a row; "
-        f"review the rejection_reason above and refine the conductor system prompt or "
+        f"review the validation_failure_reason above and refine the conductor system prompt or "
         f"add a counterexample to thesis_validator.load_prior_theses"
     )
     trace(
@@ -899,9 +947,9 @@ def _exhausted_retries_result(
         "generated_config": None,
         "generated_config_needs_build": False,
         "generated_thesis_id": thesis_id,
-        "rejection_reason": rejection_feedback,
+        "validation_failure_reason": rejection_feedback,
         "should_stop": False,
-        "reasoning": parsed.get("reasoning", "") if parsed else "",
+        "reasoning": conductor_result.reasoning if conductor_result else "",
     }
 
 
@@ -918,7 +966,7 @@ def _call_conductor(
     rejection_feedback: str,
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
-) -> dict[str, Any] | None:
+) -> ConductorResult | None:
     """One conductor HTTP/SDK call with the per-attempt log preamble."""
     from research_conductor import run_research_conductor_sync
 
@@ -1002,14 +1050,14 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             for agent in ("analyst", "web-researcher")
             if (feedback := build_reflexion_feedback(controller, research_round, agent=agent))
         }
-    parsed: dict[str, Any] | None = None
+    conductor_result: ConductorResult | None = None
     # Per-stage failure counters. Loop exits when any stage's budget is hit.
     stage_1_failures = 0
     stage_2_failures = 0
     compile_failures = 0
     attempt = 0
     while not _per_stage_budget_exhausted(stage_1_failures, stage_2_failures, compile_failures):
-        parsed = _call_conductor(
+        conductor_result = _call_conductor(
             research_round,
             attempt,
             trades_file=trades_file,
@@ -1022,11 +1070,11 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             agent_reflexions=agent_reflexions,
             current_job=current_job,
         )
-        terminal = _check_parsed_for_terminal(parsed)
+        terminal = _check_parsed_for_terminal(conductor_result)
         if terminal is not None:
             return terminal
         result, retry_feedback, failed_stage = _try_one_validation_attempt(
-            controller, research_round, attempt, parsed, prior_theses
+            controller, research_round, attempt, conductor_result, prior_theses
         )
         if result is not None:
             return result
@@ -1038,7 +1086,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             compile_failures += 1
         rejection_feedback = retry_feedback or rejection_feedback
         attempt += 1
-    return _exhausted_retries_result(parsed, rejection_feedback)
+    return _exhausted_retries_result(conductor_result, rejection_feedback)
 
 
 def execute_research_one(controller: "AutoresearchController") -> dict[str, Any]:
@@ -1116,7 +1164,7 @@ def _classify_round_outcome(result: dict[str, Any]) -> str:
         return OUTCOME_NEEDS_CODE
     if result.get("generated_config"):
         return OUTCOME_COMPILED
-    if result.get("rejection_reason"):
+    if result.get("validation_failure_reason"):
         return OUTCOME_REJECTED
     return OUTCOME_CONDUCTOR_ERROR
 
@@ -1131,7 +1179,7 @@ def _record_round_quality_and_bridges(
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
     thesis_meta = _thesis_meta_from_result(result, controller.family.name)
     reasoning = result.get("reasoning", "")
-    rejection_reason = result.get("rejection_reason", "")
+    validation_failure_reason = result.get("validation_failure_reason", "")
     dimension_scores = {
         k: 1.0 if k == outcome else 0.0
         for k in ("compiled", "needs_code", "stopped", "rejected", "conductor_error")
@@ -1154,7 +1202,7 @@ def _record_round_quality_and_bridges(
         "outcome": outcome,
         "family": controller.family.name,
         "reasoning": reasoning,
-        "rejection_reason": rejection_reason,
+        "validation_failure_reason": validation_failure_reason,
         "usage": round_usage,
         "quality": quality_event,
     }
@@ -1205,7 +1253,7 @@ def _write_adapter_exports(
     outcome: str,
     family: str,
     reasoning: str,
-    rejection_reason: str,
+    validation_failure_reason: str,
     usage: dict[str, Any],
     quality: Any,
 ) -> None:
@@ -1215,7 +1263,7 @@ def _write_adapter_exports(
         outcome=outcome,
         family=family,
         reasoning=reasoning,
-        rejection_reason=rejection_reason,
+        validation_failure_reason=validation_failure_reason,
         usage=usage,
         quality=quality,
     )
@@ -1416,13 +1464,13 @@ def _run_improvement_hooks(
 
 
 def _record_rejection_rule_if_needed(research_round: int, result: dict[str, Any]) -> None:
-    rejection_reason = result.get("rejection_reason")
-    if not rejection_reason:
+    validation_failure_reason = result.get("validation_failure_reason")
+    if not validation_failure_reason:
         return
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
     _RULE_PROPOSALS.create_proposal(
         title=f"Round {research_round} rejected thesis {thesis_id}",
-        rationale=rejection_reason,
+        rationale=validation_failure_reason,
         evidence_event_ids=[],
         expected_impact="reduce repeated rejected research outcomes",
         proposed_rule=f"Prevent repeated rejection path for thesis {thesis_id}",
@@ -1599,7 +1647,9 @@ def _handle_round_failure(
     result: dict[str, Any],
     research_round: int,
 ) -> dict[str, Any]:
-    reason = result.get("rejection_reason") or result.get("reasoning") or "no thesis generated"
+    reason = (
+        result.get("validation_failure_reason") or result.get("reasoning") or "no thesis generated"
+    )
     trace("LOOP", f"research round {research_round} produced no config: {reason}")
     log.warning(f"HEARTBEAT research round {research_round} failed: {reason}")
     state["research_round"] = research_round
@@ -1695,7 +1745,8 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
             )
             if key in thesis_meta
         },
-        rejection_reason=result.get("rejection_reason") or result.get("reasoning", ""),
+        validation_failure_reason=result.get("validation_failure_reason")
+        or result.get("reasoning", ""),
         usage=round_usage,
     )
     _record_rejection_rule_if_needed(research_round, result)

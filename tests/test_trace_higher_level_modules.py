@@ -332,7 +332,7 @@ def test_recursive_improve_and_reflexio_exports_include_canonical_trace_details(
         outcome="rejected",
         family="ema",
         reasoning="baseline duplicated",
-        rejection_reason="no behavior change",
+        validation_failure_reason="no behavior change",
         quality={"trend": "down"},
         usage={"total": {"total_tokens": 15}},
         canonical_trace_path=trace_sdk.get_event_file(),
@@ -343,7 +343,7 @@ def test_recursive_improve_and_reflexio_exports_include_canonical_trace_details(
         outcome="rejected",
         family="ema",
         reasoning="baseline duplicated",
-        rejection_reason="no behavior change",
+        validation_failure_reason="no behavior change",
         quality={"trend": "down"},
         usage={"total": {"total_tokens": 15}},
         canonical_trace_path=trace_sdk.get_event_file(),
@@ -364,7 +364,7 @@ def test_recursive_improve_and_reflexio_exports_include_canonical_trace_details(
     reflexio_event = reflexio["files"]["reflexio-event.json"]
     trajectory = reflexio["files"]["reflexio-trajectory.json"]
     assert reflexio_event["memory_key"] == "ema:round-7:thesis-th-7"
-    assert reflexio_event["feedback_signal"]["rejection_reason"] == "no behavior change"
+    assert reflexio_event["feedback_signal"]["validation_failure_reason"] == "no behavior change"
     assert reflexio_event["trajectory"] == trajectory
     assert any(step["action"] == "tool_result" for step in trajectory)
     assert any("duplicate baseline" in step["content"] for step in trajectory)
@@ -463,7 +463,7 @@ def test_reflexio_export_builds_distinct_agent_reflections_from_trace(
         outcome="builder_failed",
         family="ema",
         reasoning="generic round lesson",
-        rejection_reason="builder failed",
+        validation_failure_reason="builder failed",
         quality={"trend": "flat"},
         usage={},
         canonical_trace_path=trace_sdk.get_event_file(),
@@ -895,7 +895,7 @@ def test_trace_export_adapters_skip_malformed_canonical_jsonl(tmp_path: Path) ->
                 "candidate_id": "th-1",
                 "status": "rejected",
             },
-            "feedback": {"rejection_reason": "bad"},
+            "feedback": {"validation_failure_reason": "bad"},
         },
     )
     trajectory = build_reflexio_trajectory(trace)
@@ -961,7 +961,7 @@ def test_recursive_improve_and_reflexio_redact_tool_previews(tmp_path: Path) -> 
                 "candidate_id": "th-1",
                 "status": "rejected",
             },
-            "feedback": {"rejection_reason": "bad"},
+            "feedback": {"validation_failure_reason": "bad"},
         },
     )
     trajectory = build_reflexio_trajectory(trace)
@@ -1037,7 +1037,7 @@ def test_recursive_improve_duration_handles_mixed_timezone_timestamps(tmp_path: 
                 "candidate_id": "th-1",
                 "status": "rejected",
             },
-            "feedback": {"rejection_reason": "bad"},
+            "feedback": {"validation_failure_reason": "bad"},
         },
     )
 

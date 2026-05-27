@@ -9,6 +9,7 @@ The evaluator checks the result against predictions and produces an BacktestVerd
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -290,6 +291,30 @@ class StructuredRejection(BaseModel):
     evidence: dict[str, Any] = Field(default_factory=dict)
     remediation_hint: str = ""
     validator_version: str = ""
+
+
+@dataclass
+class ConductorResult:
+    """Typed return from run_research_conductor.
+
+    The conductor returns one thesis directly (v3 prompt contract, thesis_id at top level).
+    status values: "ok" — thesis ready; "should_stop" — conductor decided to quit;
+    "conductor_error" — timeout, parse failure, gate violation, or validation failure.
+    """
+
+    status: Literal["ok", "should_stop", "conductor_error"]
+    thesis: dict[str, Any] | None = None
+    error: str = ""
+    validation_reason: str = ""
+    reasoning: str = ""
+    should_stop: bool = False
+    # Tools the conductor invoked during this attempt. Surfaced so the outer
+    # validator can enforce process-tier gates (e.g. web_search required) on
+    # a retry-eligible basis instead of short-circuiting through conductor_error.
+    # None = caller did not observe tools (e.g. tests constructing the result
+    # by hand); the outer validator should skip the process gate. An empty
+    # frozenset = the conductor ran and called no tools — gate must fire.
+    tools_called: frozenset[str] | None = None
 
 
 class BacktestVerdict(BaseModel):

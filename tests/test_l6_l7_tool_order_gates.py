@@ -1,33 +1,33 @@
-"""Tests for L6 (web_search before analyze_trades) and L7 (list_experiment_results required)."""
-
 from __future__ import annotations
 
+from pathlib import Path
 
-def test_l6_check_returns_error_when_web_search_not_called() -> None:
-    from research_conductor import _check_web_search_called_first
+from thesis_validator import infer_rejection_code
 
-    err = _check_web_search_called_first(set())
-    assert err is not None
-    assert "web_search" in err
+_RESEARCH_CONDUCTOR_SOURCE = Path("research_conductor.py").read_text()
 
 
-def test_l6_check_returns_none_after_web_search_called() -> None:
-    from research_conductor import _check_web_search_called_first
-
-    err = _check_web_search_called_first({"web_search"})
-    assert err is None
+def test_conductor_no_longer_exports_web_search_order_gate() -> None:
+    assert "def _check_web_search_called_first" not in _RESEARCH_CONDUCTOR_SOURCE
 
 
-def test_l7_check_returns_error_when_experiment_results_not_called() -> None:
-    from research_conductor import _check_experiment_results_consulted
-
-    err = _check_experiment_results_consulted(set())
-    assert err is not None
-    assert "list_experiment_results" in err
+def test_conductor_no_longer_exports_experiment_results_gate() -> None:
+    assert "def _check_experiment_results_consulted" not in _RESEARCH_CONDUCTOR_SOURCE
 
 
-def test_l7_check_returns_none_after_experiment_results_called() -> None:
-    from research_conductor import _check_experiment_results_consulted
+def test_legacy_l6_message_no_longer_maps_to_process_required_tools_code() -> None:
+    assert (
+        infer_rejection_code(
+            "ERROR: HARD GATE — call web_search at least once before analyze_trades."
+        )
+        == "unspecified_validation_error"
+    )
 
-    err = _check_experiment_results_consulted({"list_experiment_results"})
-    assert err is None
+
+def test_legacy_l7_message_no_longer_maps_to_process_required_tools_code() -> None:
+    assert (
+        infer_rejection_code(
+            "ERROR: HARD GATE — call list_experiment_results at least once before proposing a thesis."
+        )
+        == "unspecified_validation_error"
+    )

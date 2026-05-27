@@ -71,6 +71,18 @@ def _base_thesis(thesis_id: str) -> dict:
                 "rationale": "Filtering low-volatility setups reduces but does not collapse counts.",
             },
         ],
+        # Required field post-refactor.
+        "falsification_or_alternative": (
+            "If volatility quintile PF spread is below 0.2, the volatility-quality "
+            "mechanism does not hold and the filter cannot be the cause of the gap."
+        ),
+        # B2 / B5 setups with overlapping theme_keywords trip the computed
+        # novel_connection gate before the gate under test; provide
+        # substantive text to navigate past it.
+        "novel_connection": (
+            "Recasts the volatility floor as a regime-conditioning signal rather than "
+            "an absolute threshold change, distinct from prior theme-cluster work."
+        ),
     }
 
 

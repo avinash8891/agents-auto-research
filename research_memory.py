@@ -338,7 +338,9 @@ def _index_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "selected_for_execution": bool(entry.get("selected_for_execution")),
         "config_change_keys": sorted(config_changes.keys()),
         "short_hypothesis": _short_text(entry.get("hypothesis", ""), 180),
-        "short_rejection_reason": _short_text(entry.get("rejection_reason", ""), 160),
+        "short_validation_failure_reason": _short_text(
+            entry.get("validation_failure_reason", ""), 160
+        ),
         "learning_signal": _learning_signal(entry),
     }
 
@@ -359,7 +361,7 @@ def _attempt_detail(entry: dict[str, Any]) -> dict[str, Any]:
         "mechanism_dimension": entry.get("mechanism_dimension", ""),
         "hypothesis": entry.get("hypothesis", ""),
         "mechanism": entry.get("mechanism", ""),
-        "rejection_reason": entry.get("rejection_reason", ""),
+        "validation_failure_reason": entry.get("validation_failure_reason", ""),
         "selected_for_execution": bool(entry.get("selected_for_execution")),
         "created_at_utc": entry.get("created_at_utc"),
         "round_usage": entry.get("round_usage", {}),
@@ -388,7 +390,22 @@ def _iter_thesis_attempts(
 
         db = BacktestRunDB(db_path)
         entries.extend(db.list_research_thesis_attempts(job_id=job_id, thesis_id=thesis_id))
+    # Per-DB rows arrive sorted, but concatenating across multiple family DBs
+    # leaves the combined list ordered by filename, not by recency. Re-sort with
+    # the same key BacktestRunDB.list_research_thesis_attempts uses so callers
+    # like latest_thesis_details get the globally most recent attempt regardless
+    # of which family DB it lives in.
+    entries.sort(key=_thesis_attempt_sort_key, reverse=True)
     return entries
+
+
+def _thesis_attempt_sort_key(entry: dict[str, Any]) -> tuple[int, int, str, int]:
+    return (
+        int(entry.get("job_id") or 0),
+        int(entry.get("round_number") or 0),
+        str(entry.get("created_at_utc") or ""),
+        int(entry.get("attempt_number") or 0),
+    )
 
 
 def list_past_theses(
@@ -443,6 +460,54 @@ def get_past_thesis(root: Path, thesis_id: str, *, job_id: int | None = None) ->
         "attempts": [_attempt_detail(entry) for entry in entries],
     }
     return json.dumps(payload, indent=2, default=str)
+
+
+def latest_thesis_details(
+    root: Path,
+    thesis_id: str,
+    *,
+    job_id: int | None = None,
+) -> dict[str, Any]:
+    """Return proposal metadata from the most recent attempt for a thesis_id.
+
+    Used by _resolve_conductor_inputs to inject what the previous round
+    predicted into latest_outcome so the conductor can compare prediction
+    vs. actual result.
+
+    Pass ``job_id`` to scope the lookup to one job — without it, the same
+    thesis_id used in multiple jobs returns the most-recent match across
+    ALL jobs, which surfaces unrelated prior predictions.
+
+    Returns {} for empty/whitespace ``thesis_id`` or when the thesis has
+    no saved attempt records.
+    """
+    requested_id = str(thesis_id or "").strip()
+    if not requested_id:
+        return {}
+    entries = _iter_thesis_attempts(root, job_id=job_id, thesis_id=requested_id)
+    if not entries:
+        return {}
+    entry = entries[0]  # list_research_thesis_attempts orders DESC; first = most recent
+    details = _thesis_details(entry)
+    out: dict[str, Any] = {
+        "hypothesis": entry.get("hypothesis", ""),
+        "mechanism": entry.get("mechanism", ""),
+        "config_changes": entry.get("config_changes") or {},
+    }
+    for key in (
+        "expected_effects",
+        "evidence",
+        "disqualifiers",
+        "evidence_strength",
+        "closest_prior_theses_considered",
+        "orthogonality_defense",
+        "falsification_or_alternative",
+        "why_not_overfit",
+    ):
+        val = details.get(key)
+        if val is not None:
+            out[key] = val
+    return out
 
 
 def _record_job_id(record: Any) -> int | None:
@@ -514,6 +579,8 @@ def _experiment_index_entry(item: dict[str, Any]) -> dict[str, Any]:
         "verdict_status": getattr(record, "verdict_status", ""),
         "verdict_summary": _short_text(getattr(record, "verdict_summary", ""), 180),
         "timestamp": getattr(record, "timestamp", ""),
+        "hypothesis": _short_text(getattr(record, "hypothesis", ""), 300),
+        "mechanism": _short_text(getattr(record, "mechanism", ""), 300),
     }
 
 

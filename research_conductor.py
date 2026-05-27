@@ -32,6 +32,7 @@ from research_paths import (
 )
 from research_prompts import _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
+from research_types import ConductorResult
 from strategy_family import load_family
 from thesis_validator import validate_thesis_dict
 from trace_refinement import RefinementRecorder
@@ -89,35 +90,24 @@ def _render_resolution_context(resolution_context: dict[str, Any] | None) -> str
     return "\n".join(lines)
 
 
-def _check_web_search_called_first(tools_called: set[str]) -> str | None:
-    """L6: return an error message if web_search has not been called yet; else None.
+def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    """Extract single thesis dict from conductor response. Returns (thesis, validation_error).
 
-    Recovers legacy §13.3 hard gate: external evidence must be consulted before
-    asking the analyst, so the analyst arrives at a specific hypothesis instead
-    of fishing.
+    v3 prompt contract: conductor returns the thesis object directly (thesis_id at top level).
+    The suggested_theses wrapper path is kept for backward compatibility with test fixtures only.
     """
-    if "web_search" in tools_called:
-        return None
-    return (
-        "ERROR: HARD GATE — call web_search at least once before analyze_trades. "
-        "You must arrive at the analyst with a specific hypothesis grounded in "
-        "external evidence, not use the analyst to discover one."
-    )
-
-
-def _check_experiment_results_consulted(tools_called: set[str]) -> str | None:
-    """L7: return an error message if list_experiment_results has not been called; else None.
-
-    Recovers legacy §7 requirement that the conductor consult the full experiment
-    history (not just the prompt's small summary) before proposing.
-    """
-    if "list_experiment_results" in tools_called:
-        return None
-    return (
-        "ERROR: HARD GATE — call list_experiment_results at least once before "
-        "proposing a thesis. The user prompt only contains a small experiment "
-        "summary; the tools are the source of truth for complete experiment history."
-    )
+    if "thesis_id" in parsed:
+        return parsed, ""
+    theses = parsed.get("suggested_theses")
+    if theses is None:
+        return None, "no thesis returned"
+    if not isinstance(theses, list):
+        return None, "suggested_theses must be a list"
+    if len(theses) != 1:
+        return None, f"expected exactly one thesis, got {len(theses)}"
+    if not isinstance(theses[0], dict):
+        return None, "suggested_theses[0] must be an object"
+    return theses[0], ""
 
 
 async def run_research_conductor(
@@ -131,7 +121,7 @@ async def run_research_conductor(
     rejection_feedback: str = "",
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
-) -> dict[str, Any] | None:
+) -> ConductorResult:
     strategy_desc = _strategy_description_for(family_name)
     resolution_context = latest_outcome.get("resolution_context")
 
@@ -238,8 +228,8 @@ async def run_research_conductor(
     )
     result_text = ""
     session_finished = False
-    # L6/L7: track which tools have been called so we can enforce the
-    # web_search-before-analyze_trades and "consult experiment results" gates.
+    # Track which tools have been called so the thesis validator can enforce
+    # per-thesis process requirements after the conductor proposes a thesis.
     tools_called_this_round: set[str] = set()
     try:
         _ensure_oauth_proxy()
@@ -264,11 +254,7 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-            # L6: web_search must be called before analyze_trades.
-            gate_error = _check_web_search_called_first(tools_called_this_round)
-            if gate_error is not None:
-                output = gate_error
-            elif not trades_file:
+            if not trades_file:
                 output = "ERROR: No trades file available for this round."
             else:
                 tools_called_this_round.add("analyze_trades")
@@ -890,12 +876,7 @@ async def run_research_conductor(
             final_outcome="conductor_error",
         )
         session_finished = True
-        return {
-            "status": "conductor_error",
-            "error": "timeout",
-            "suggested_theses": [],
-            "should_stop": False,
-        }
+        return ConductorResult(status="conductor_error", error="timeout")
     except Exception as exc:
         error_text = str(exc)
         error_kind = "proxy_unavailable" if "openai-oauth proxy" in error_text else "exception"
@@ -911,13 +892,7 @@ async def run_research_conductor(
             final_outcome="conductor_error",
         )
         session_finished = True
-        return {
-            "status": "conductor_error",
-            "error": error_kind,
-            "details": exc.__class__.__name__,
-            "suggested_theses": [],
-            "should_stop": False,
-        }
+        return ConductorResult(status="conductor_error", error=error_kind)
 
     parsed = _parse_json(result_text)
     trace_agent_response(
@@ -940,35 +915,14 @@ async def run_research_conductor(
         revise={"used_feedback_retry": bool(rejection_feedback)},
         evaluate={
             "parsed": bool(parsed),
-            "suggested_theses": len(parsed.get("suggested_theses", [])) if parsed else 0,
+            "has_thesis": (
+                bool(parsed.get("thesis_id") or parsed.get("suggested_theses")) if parsed else False
+            ),
             "should_stop": bool(parsed.get("should_stop")) if parsed else False,
         },
     )
 
     if parsed:
-        theses = parsed.get("suggested_theses", [])
-        gate_error = _check_experiment_results_consulted(tools_called_this_round)
-        if gate_error is not None and not parsed.get("should_stop"):
-            trace(
-                "CONDUCTOR",
-                "validate failed: experiment results gate not satisfied",
-                model_provider="openai",
-                model_name=_CONDUCTOR_MODEL,
-            )
-            _REFINEMENT_RECORDER.finish_session(
-                session_id=refinement_session["session_id"],
-                stopping_reason="invalid_output",
-                final_outcome="retry_required",
-            )
-            session_finished = True
-            return {
-                "status": "conductor_error",
-                "error": "experiment_results_not_consulted",
-                "validation_reason": gate_error,
-                "reasoning": parsed.get("reasoning", ""),
-                "suggested_theses": [],
-                "should_stop": False,
-            }
         if parsed.get("should_stop"):
             trace(
                 "CONDUCTOR",
@@ -982,14 +936,12 @@ async def run_research_conductor(
                 final_outcome="stop",
             )
             session_finished = True
-            return parsed
-        validation_reason = ""
-        if not isinstance(theses, list):
-            validation_reason = "suggested_theses must be a list"
-        elif len(theses) != 1:
-            validation_reason = f"expected exactly one thesis, got {len(theses)}"
-        elif not isinstance(theses[0], dict):
-            validation_reason = "suggested_theses[0] must be an object"
+            return ConductorResult(
+                status="should_stop",
+                should_stop=True,
+                reasoning=parsed.get("reasoning", ""),
+            )
+        thesis, validation_reason = _extract_thesis(parsed)
         if validation_reason:
             trace(
                 "CONDUCTOR",
@@ -997,24 +949,26 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-        elif theses:
-            t = theses[0]
-            candidate = dict(t)
+        elif thesis is not None:
+            candidate = dict(thesis)
             candidate["strategy_family"] = family_name
             try:
-                validate_thesis_dict(candidate)
+                validate_thesis_dict(candidate, tools_called=tools_called_this_round)
             except Exception as exc:
+                # Capture failure so the outer retry loop can re-validate and
+                # consume one of its Stage 1 attempts, instead of being
+                # short-circuited by a conductor_error terminal state.
                 validation_reason = str(exc)
                 trace(
                     "CONDUCTOR",
-                    f"validate failed thesis={t.get('thesis_id', 'unknown')}: {exc}",
+                    f"validate failed thesis={thesis.get('thesis_id', 'unknown')}: {exc}",
                     model_provider="openai",
                     model_name=_CONDUCTOR_MODEL,
                 )
             else:
                 trace(
                     "CONDUCTOR",
-                    f"OK thesis={t['thesis_id']}",
+                    f"OK thesis={thesis['thesis_id']}",
                     model_provider="openai",
                     model_name=_CONDUCTOR_MODEL,
                 )
@@ -1024,21 +978,31 @@ async def run_research_conductor(
                     final_outcome="accepted",
                 )
                 session_finished = True
-                return parsed
+                # Preserve reasoning on success — downstream readers
+                # (_dispatch_compiled_contract, _on_ready_to_run) use it
+                # for round result, artifacts, and trace/reflexion payloads.
+                return ConductorResult(
+                    status="ok",
+                    thesis=thesis,
+                    reasoning=parsed.get("reasoning", ""),
+                    tools_called=frozenset(tools_called_this_round),
+                )
         trace(
             "CONDUCTOR",
             f"validate failed (len={len(result_text)})",
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
-        failure = {
-            "status": "conductor_error",
-            "error": "validation_failed",
-            "validation_reason": validation_reason,
-            "reasoning": parsed.get("reasoning", ""),
-            "suggested_theses": [],
-            "should_stop": False,
-        }
+        failure = ConductorResult(
+            status="conductor_error",
+            error="validation_failed",
+            validation_reason=validation_reason,
+            reasoning=parsed.get("reasoning", ""),
+            # Attach parsed thesis + tools so the outer validation loop can
+            # retry through Stage 1 instead of treating this as terminal.
+            thesis=thesis if isinstance(thesis, dict) else None,
+            tools_called=frozenset(tools_called_this_round),
+        )
     else:
         trace(
             "CONDUCTOR",
@@ -1046,13 +1010,7 @@ async def run_research_conductor(
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
-        failure = {
-            "status": "conductor_error",
-            "error": "parse_failed",
-            "reasoning": "",
-            "suggested_theses": [],
-            "should_stop": False,
-        }
+        failure = ConductorResult(status="conductor_error", error="parse_failed")
 
     if not session_finished:
         _REFINEMENT_RECORDER.finish_session(
@@ -1075,7 +1033,7 @@ def run_research_conductor_sync(
     rejection_feedback: str = "",
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
-) -> dict[str, Any] | None:
+) -> ConductorResult | None:
     return _run_coroutine_sync(
         run_research_conductor(
             trades_file,

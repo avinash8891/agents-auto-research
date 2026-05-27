@@ -69,9 +69,14 @@ class StrategyEventLogger:
 
     @staticmethod
     def _normalize_extra_array(values: Any, n: int) -> np.ndarray:
+        if values is None:
+            return np.full(n, np.nan, dtype=np.float64)
         arr = np.asarray(values)
         if arr.ndim == 0:
-            arr = np.full(n, arr.item(), dtype=object)
+            item = arr.item()
+            if item is None:
+                return np.full(n, np.nan, dtype=np.float64)
+            arr = np.full(n, item, dtype=arr.dtype)
         if len(arr) != n:
             raise ValueError(f"event extra length mismatch: expected {n}, got {len(arr)}")
         if np.issubdtype(arr.dtype, np.datetime64):

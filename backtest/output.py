@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from backtest.event_diagnostics import validate_event_frame_schema, write_event_diagnostics
 from backtest.result_schema import build_result_payload
 from persistence_utils import write_json_atomic
@@ -38,6 +40,13 @@ def write_all(
         validate_event_frame_schema(events_df)
         if events_df is not None and not events_df.empty:
             events_path = output_path / "strategy_events.parquet"
+            _FLOAT_EVENT_COLS = {"entry_price", "stop_price", "target_price", "stop_distance_pct"}
+            for _col in _FLOAT_EVENT_COLS:
+                if _col in events_df.columns and events_df[_col].dtype == object:
+                    # Coerce object-dtype to float; pd.to_numeric handles
+                    # pd.NA / NaT correctly (plain float() raises on them).
+                    # errors="coerce" turns non-numerics into NaN.
+                    events_df[_col] = pd.to_numeric(events_df[_col], errors="coerce")
             events_df.to_parquet(events_path, index=False)
 
     diagnostics_path = ""

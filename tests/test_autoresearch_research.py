@@ -19,7 +19,9 @@ import pytest
 from autoresearch_constants import MAX_RESEARCH_ROUNDS
 from autoresearch_controller import AutoresearchController
 from autoresearch_research import (
-    _check_parsed_for_terminal,
+    _check_parsed_for_terminal,  # keep for backward-compat callers in integration tests
+)
+from autoresearch_research import (
     _handle_needs_code,
     _handle_round_failure,
     _handle_success,
@@ -35,6 +37,7 @@ from autoresearch_research import (
 )
 from autoresearch_state import BacktestResultRecord, write_state
 from backtest_run_db import BacktestRunDB
+from research_types import ConductorResult
 from strategies import STRATEGIES
 from strategy_family import load_family
 from thesis_validator import ThesisValidationError
@@ -166,25 +169,43 @@ def test_accumulate_job_usage_handles_missing_total_block(tmp_path: Path) -> Non
 
 
 def test_check_parsed_for_terminal_preserves_conductor_validation_reason() -> None:
+    """A conductor_error without an attached thesis is unrecoverable and must
+    short-circuit so the round records the failure with the original reason."""
     result = _check_parsed_for_terminal(
-        {
-            "status": "conductor_error",
-            "error": "validation_failed",
-            "validation_reason": "expected exactly one thesis, got 2",
-            "suggested_theses": [],
-            "should_stop": False,
-        }
+        ConductorResult(
+            status="conductor_error",
+            error="validation_failed",
+            validation_reason="expected exactly one thesis, got 2",
+        )
     )
 
     assert result == {
         "status": "conductor_error",
         "generated_config": None,
         "should_stop": False,
-        "rejection_reason": (
+        "validation_failure_reason": (
             "research conductor failed: validation_failed: expected exactly one thesis, got 2"
         ),
         "validation_reason": "expected exactly one thesis, got 2",
     }
+
+
+def test_check_parsed_for_terminal_defers_validation_failed_when_thesis_attached() -> None:
+    """When the conductor parsed a thesis but the validator raised (e.g. process
+    gate), the outer loop must re-run Stage 1 through _try_one_validation_attempt
+    so the failure consumes the normal Stage 1 retry budget instead of aborting
+    the round on a single missing-tool mistake."""
+    result = _check_parsed_for_terminal(
+        ConductorResult(
+            status="conductor_error",
+            error="validation_failed",
+            validation_reason="Process gate failed: required tools not called: ['web_search']",
+            thesis={"thesis_id": "open_alert_regime_filter"},
+            tools_called=frozenset({"list_experiment_results"}),
+        )
+    )
+
+    assert result is None
 
 
 def test_log_research_round_persists_required_fields_to_sqlite(tmp_path: Path) -> None:
@@ -433,6 +454,112 @@ def test_resolve_conductor_inputs_uses_persisted_artifacts_and_verdict_feedback(
     assert "revise the threshold" in latest_outcome["research_feedback"]
 
 
+def test_resolve_conductor_inputs_injects_previous_thesis_from_db(tmp_path: Path) -> None:
+    """previous_thesis in latest_outcome carries full thesis_details from the thesis attempt DB."""
+    from autoresearch_state import write_state
+    from backtest_run_db import BacktestRunDB
+    from persistence_utils import utc_now_iso8601
+
+    controller = _real_controller(tmp_path)
+    db = BacktestRunDB(controller.backtest_run_db.path)
+    write_state(controller.state_path, {"job": 1, "research_round": 2, "family": "ema"})
+
+    # Needed for the job-scoped lookup: latest_thesis_details JOINs to
+    # research_rounds for job_id, so the row must exist or the WHERE
+    # r.job_id=1 filter excludes the attempt.
+    with db._connect() as conn:  # noqa: SLF001 — test fixture, direct SQL is intentional
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO research_rounds (
+                research_round_id, job_id, round_number, run_id, hypothesis_id,
+                selected_thesis_id, outcome, created_at_utc, usage_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "job-1-round-2",
+                1,
+                2,
+                "run-1-2",
+                "ema-momentum-breakout",
+                "ema-momentum-breakout",
+                "thesis_accepted",
+                utc_now_iso8601(),
+                "{}",
+            ),
+        )
+        conn.commit()
+
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-1-round-2",
+            "attempt_number": 1,
+            "thesis_id": "ema-momentum-breakout",
+            "strategy_family": "ema",
+            "config_changes": {"ema_length": 12},
+            "validator_status": "compiled",
+            "mechanism_dimension": "entry_timing",
+            "hypothesis": "EMA crossover accelerates after news",
+            "mechanism": "Momentum buildup drives short-term trend persistence",
+            "thesis_details": {
+                "expected_effects": [{"metric": "profit_factor", "direction": "increase"}],
+                "evidence": ["backtested on 2024 data"],
+                "evidence_strength": "proxy",
+                "closest_prior_theses_considered": ["ema-baseline"],
+                "orthogonality_defense": "Different timing layer",
+                "falsification_or_alternative": "If ATR-based stop dominates, mechanism is wrong",
+                "why_not_overfit": "Validated on out-of-sample window",
+            },
+            "validation_failure_reason": "",
+            "selected_for_execution": 1,
+            "created_at_utc": utc_now_iso8601(),
+        }
+    )
+    config_path = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-2"
+    _write_valid_ema_config(config_path / "selected_config.json", ema_length=12)
+    latest = BacktestResultRecord(
+        config="runtime/jobs/job-1/research/round-2/selected_config.json",
+        metric=1.5,
+        status="discard",
+        description="rejected",
+        timestamp="2026-05-01T00:00:00+00:00",
+        asi={"thesis_id": "ema-momentum-breakout", "trade_analysis": {}},
+        job=1,
+    )
+
+    _, _, _, latest_outcome = _resolve_conductor_inputs(controller, [latest], current_job=1)
+
+    assert "previous_thesis" in latest_outcome
+    prev = latest_outcome["previous_thesis"]
+    assert prev["hypothesis"] == "EMA crossover accelerates after news"
+    assert prev["mechanism"] == "Momentum buildup drives short-term trend persistence"
+    assert prev["config_changes"] == {"ema_length": 12}
+    assert prev["evidence_strength"] == "proxy"
+    assert prev["closest_prior_theses_considered"] == ["ema-baseline"]
+    assert prev["falsification_or_alternative"] == "If ATR-based stop dominates, mechanism is wrong"
+    assert prev["why_not_overfit"] == "Validated on out-of-sample window"
+    assert len(prev["expected_effects"]) == 1
+
+
+def test_resolve_conductor_inputs_no_previous_thesis_when_no_attempt_exists(
+    tmp_path: Path,
+) -> None:
+    """When the thesis_id has no saved attempt, previous_thesis is absent from latest_outcome."""
+    controller = _real_controller(tmp_path)
+    latest = BacktestResultRecord(
+        config="runtime/jobs/job-1/research/round-1/selected_config.json",
+        metric=1.0,
+        status="discard",
+        description="rejected",
+        timestamp="2026-05-01T00:00:00+00:00",
+        asi={"thesis_id": "ema-unknown-thesis", "trade_analysis": {}},
+        job=1,
+    )
+
+    _, _, _, latest_outcome = _resolve_conductor_inputs(controller, [latest], current_job=1)
+
+    assert "previous_thesis" not in latest_outcome
+
+
 def test_research_feedback_from_verdict_preserves_prefixed_summary() -> None:
     feedback = _research_feedback_from_verdict(
         "rejected",
@@ -528,13 +655,27 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
     }
 
 
+def _dict_to_conductor_result(d: dict) -> ConductorResult:
+    """Convert legacy test dict (suggested_theses wrapper) to ConductorResult."""
+    if d.get("should_stop"):
+        return ConductorResult(
+            status="should_stop", should_stop=True, reasoning=d.get("reasoning", "")
+        )
+    theses = d.get("suggested_theses") or []
+    return ConductorResult(
+        status="ok",
+        thesis=theses[0] if theses else None,
+        reasoning=d.get("reasoning", ""),
+        tools_called=frozenset(d.get("tools_called", {"list_experiment_results", "web_search"})),
+    )
+
+
 def _patch_conductor_round(monkeypatch: pytest.MonkeyPatch, *outputs: dict) -> None:
     queue = list(outputs)
 
     def _run_conductor(*args, **kwargs):
-        if len(queue) > 1:
-            return queue.pop(0)
-        return dict(queue[0])
+        raw = queue.pop(0) if len(queue) > 1 else dict(queue[0])
+        return _dict_to_conductor_result(raw)
 
     monkeypatch.setattr("research_conductor.run_research_conductor_sync", _run_conductor)
 
@@ -672,7 +813,9 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
         thesis_id="ema-duplicate",
     )
     assert attempts[0]["validator_status"] == "rejected"
-    assert "config_changes contains thesis metadata key" in attempts[-1]["rejection_reason"]
+    assert (
+        "config_changes contains thesis metadata key" in attempts[-1]["validation_failure_reason"]
+    )
 
 
 def test_run_research_max_rounds_finishes_without_conductor_call(tmp_path: Path) -> None:
@@ -728,7 +871,7 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
         status = "needs_code"
         contract_id = "opening_range_gate"
 
-    def fake_validate(raw, prior_theses=None):
+    def fake_validate(raw, prior_theses=None, tools_called=None):
         captured["validated_raw"] = dict(raw)
         return _Validated()
 
@@ -748,35 +891,33 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
         _Controller(),
         2,
         0,
-        {
-            "reasoning": "code change thesis",
-            "suggested_theses": [
-                {
-                    "thesis_id": "opening_range_gate",
-                    "hypothesis": "need a new opening range gate",
-                    "mechanism": "gate post-open entries on opening range resolution",
-                    "mechanism_dimension": "signal_quality",
-                    "dimension_novelty": "new gate",
-                    "expected_effects": [
-                        {
-                            "metric": "profit_factor",
-                            "direction": "increase",
-                            "rationale": "better quality",
-                        }
-                    ],
-                    "disqualifiers": [
-                        {
-                            "name": "trade_count_collapse",
-                            "condition": "trade_count falls too much",
-                            "severity": "hard_fail",
-                        }
-                    ],
-                    "requires_code_change": True,
-                    "requested_primitives": [],
-                }
-            ],
-            "should_stop": False,
-        },
+        ConductorResult(
+            status="ok",
+            thesis={
+                "thesis_id": "opening_range_gate",
+                "hypothesis": "need a new opening range gate",
+                "mechanism": "gate post-open entries on opening range resolution",
+                "mechanism_dimension": "signal_quality",
+                "dimension_novelty": "new gate",
+                "expected_effects": [
+                    {
+                        "metric": "profit_factor",
+                        "direction": "increase",
+                        "rationale": "better quality",
+                    }
+                ],
+                "disqualifiers": [
+                    {
+                        "name": "trade_count_collapse",
+                        "condition": "trade_count falls too much",
+                        "severity": "hard_fail",
+                    }
+                ],
+                "requires_code_change": True,
+                "requested_primitives": [],
+            },
+            reasoning="code change thesis",
+        ),
         prior_theses=[],
     )
 
@@ -816,7 +957,8 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
         contract_id = "exp-001"
 
     monkeypatch.setattr(
-        "thesis_validator.validate_thesis_dict", lambda raw, prior_theses=None: _Validated()
+        "thesis_validator.validate_thesis_dict",
+        lambda raw, prior_theses=None, tools_called=None: _Validated(),
     )
     monkeypatch.setattr(
         "compiler_pipeline.compile_research_thesis",
@@ -827,10 +969,13 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
     controller = _Controller()
     controller.backtest_run_db = type("DB", (), {"latest": lambda self, n: []})()
 
-    parsed = {
-        "reasoning": "candidate looks good",
-        "suggested_theses": [
-            {
+    result, retry_feedback, _stage = _try_one_validation_attempt(
+        controller,
+        8,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
                 "thesis_id": "symbol_day_gate",
                 "hypothesis": "gate later shorts on 09:30 raw setup presence",
                 "mechanism": "symbol-day setup gate",
@@ -846,16 +991,9 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
                 "config_changes": {"symbol_day_opening_setup_gate_enabled": True},
                 "expected_effects": [],
                 "disqualifiers": [],
-            }
-        ],
-        "should_stop": False,
-    }
-
-    result, retry_feedback, _stage = _try_one_validation_attempt(
-        controller,
-        8,
-        0,
-        parsed,
+            },
+            reasoning="candidate looks good",
+        ),
         prior_theses=[],
     )
 
@@ -889,35 +1027,33 @@ def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_f
         _Controller(),
         2,
         0,
-        {
-            "reasoning": "code change thesis",
-            "suggested_theses": [
-                {
-                    "thesis_id": "opening_range_gate",
-                    "hypothesis": "need a new opening range gate",
-                    "mechanism": "gate post-open entries on opening range resolution",
-                    "mechanism_dimension": "signal_quality",
-                    "dimension_novelty": "new gate",
-                    "expected_effects": [
-                        {
-                            "metric": "profit_factor",
-                            "direction": "increase",
-                            "rationale": "better quality",
-                        }
-                    ],
-                    "disqualifiers": [
-                        {
-                            "name": "trade_count_collapse",
-                            "condition": "trade_count falls too much",
-                            "severity": "hard_fail",
-                        }
-                    ],
-                    "requires_code_change": True,
-                    "requested_primitives": [],
-                }
-            ],
-            "should_stop": False,
-        },
+        ConductorResult(
+            status="ok",
+            thesis={
+                "thesis_id": "opening_range_gate",
+                "hypothesis": "need a new opening range gate",
+                "mechanism": "gate post-open entries on opening range resolution",
+                "mechanism_dimension": "signal_quality",
+                "dimension_novelty": "new gate",
+                "expected_effects": [
+                    {
+                        "metric": "profit_factor",
+                        "direction": "increase",
+                        "rationale": "better quality",
+                    }
+                ],
+                "disqualifiers": [
+                    {
+                        "name": "trade_count_collapse",
+                        "condition": "trade_count falls too much",
+                        "severity": "hard_fail",
+                    }
+                ],
+                "requires_code_change": True,
+                "requested_primitives": [],
+            },
+            reasoning="code change thesis",
+        ),
         prior_theses=[],
     )
 
@@ -946,7 +1082,7 @@ def test_handle_needs_code_uses_full_validation_contract_before_compile(
     class _Validated:
         thesis_id = "buffered_trailing"
 
-    def fake_validate(raw, prior_theses=None):
+    def fake_validate(raw, prior_theses=None, tools_called=None):
         captured["validated_raw"] = dict(raw)
         return _Validated()
 
@@ -1019,7 +1155,7 @@ def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_ch
         updated["config_changes"] = {"buffered_trailing_stop_rule": True}
         return updated
 
-    def fake_validate(raw, prior_theses=None):
+    def fake_validate(raw, prior_theses=None, tools_called=None):
         captured["validated_raw"] = dict(raw)
         raise ThesisValidationError("Missing mechanism_dimension")
 
@@ -1114,11 +1250,13 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
     monkeypatch.setattr("improvement_flags.reflexion_enabled", lambda: False)
     monkeypatch.setattr(
         "autoresearch_research._call_conductor",
-        lambda *args, **kwargs: {"status": "completed", "reasoning": "done"},
+        lambda *args, **kwargs: ConductorResult(
+            status="should_stop", should_stop=True, reasoning="done"
+        ),
     )
     monkeypatch.setattr(
         "autoresearch_research._check_parsed_for_terminal",
-        lambda parsed: {
+        lambda result: {
             "status": "completed",
             "generated_config": "runtime/jobs/job-26/research/round-8/selected_config.json",
             "should_stop": False,
@@ -1189,7 +1327,7 @@ def test_handle_round_failure_clears_activity(tmp_path: Path) -> None:
         "research_round_in_progress": 8,
         "activity": {"type": "research", "phase": "conductor_running", "round": 8},
     }
-    result = {"rejection_reason": "no thesis generated"}
+    result = {"validation_failure_reason": "no thesis generated"}
 
     updated = _handle_round_failure(_Controller(), state, result, research_round=8)
 

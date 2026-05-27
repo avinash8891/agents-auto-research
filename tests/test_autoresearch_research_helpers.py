@@ -18,11 +18,12 @@ from autoresearch_research import (
     _check_parsed_for_terminal,
     _classify_round_outcome,
     _exhausted_retries_result,
-    _structured_rejection_reason,
+    _structured_validation_failure,
     load_baseline_config,
     queue_variants,
 )
 from autoresearch_state import BacktestResultRecord
+from research_types import ConductorResult
 from strategy_family import load_family
 
 # ── _check_parsed_for_terminal ──────────────────────────────────
@@ -34,19 +35,19 @@ def test_check_parsed_for_terminal_none_input_is_parse_failed() -> None:
     assert out["status"] == "parse_failed"
     assert out["generated_config"] is None
     assert out["should_stop"] is False
-    assert "rejection_reason" in out
+    assert "validation_failure_reason" in out
 
 
 def test_check_parsed_for_terminal_conductor_error_propagates_message() -> None:
-    parsed = {"status": "conductor_error", "error": "rate limited at retry 2"}
-    out = _check_parsed_for_terminal(parsed)
+    result = ConductorResult(status="conductor_error", error="rate limited at retry 2")
+    out = _check_parsed_for_terminal(result)
     assert out is not None
     assert out["status"] == "conductor_error"
-    assert "rate limited at retry 2" in out["rejection_reason"]
+    assert "rate limited at retry 2" in out["validation_failure_reason"]
 
 
-def test_structured_rejection_reason_classifies_validator_errors() -> None:
-    rejection = _structured_rejection_reason(
+def test_structured_validation_failure_classifies_validator_errors() -> None:
+    rejection = _structured_validation_failure(
         source="validator",
         message="missing required config_changes",
     )
@@ -60,31 +61,33 @@ def test_structured_rejection_reason_classifies_validator_errors() -> None:
 
 def test_check_parsed_for_terminal_conductor_error_falls_back_to_reasoning() -> None:
     """If `error` is absent, the helper falls back to `reasoning`."""
-    parsed = {"status": "conductor_error", "reasoning": "model returned junk"}
-    out = _check_parsed_for_terminal(parsed)
+    result = ConductorResult(status="conductor_error", reasoning="model returned junk")
+    out = _check_parsed_for_terminal(result)
     assert out is not None
-    assert "model returned junk" in out["rejection_reason"]
+    assert "model returned junk" in out["validation_failure_reason"]
 
 
-def test_check_parsed_for_terminal_no_suggested_theses_returns_completed() -> None:
-    parsed = {"reasoning": "nothing more to try"}
-    out = _check_parsed_for_terminal(parsed)
+def test_check_parsed_for_terminal_should_stop_returns_completed() -> None:
+    result = ConductorResult(
+        status="should_stop", should_stop=True, reasoning="nothing more to try"
+    )
+    out = _check_parsed_for_terminal(result)
     assert out is not None
     assert out["status"] == "completed"
-    assert out["should_stop"] is False
+    assert out["should_stop"] is True
     assert "nothing more to try" in out["reasoning"]
 
 
 def test_check_parsed_for_terminal_passes_should_stop_through() -> None:
-    parsed = {"should_stop": True}
-    out = _check_parsed_for_terminal(parsed)
+    result = ConductorResult(status="should_stop", should_stop=True)
+    out = _check_parsed_for_terminal(result)
     assert out is not None
     assert out["should_stop"] is True
 
 
 def test_check_parsed_for_terminal_returns_none_when_thesis_present() -> None:
-    parsed = {"suggested_theses": [{"thesis_id": "x"}]}
-    assert _check_parsed_for_terminal(parsed) is None
+    result = ConductorResult(status="ok", thesis={"thesis_id": "x"})
+    assert _check_parsed_for_terminal(result) is None
 
 
 # ── _classify_round_outcome ─────────────────────────────────────
@@ -106,7 +109,7 @@ def test_classify_round_outcome_compiled() -> None:
 
 
 def test_classify_round_outcome_rejected() -> None:
-    result = {"rejection_reason": "schema mismatch"}
+    result = {"validation_failure_reason": "schema mismatch"}
     assert _classify_round_outcome(result) == "rejected"
 
 
@@ -119,11 +122,11 @@ def test_classify_round_outcome_default_is_conductor_error() -> None:
 
 
 def test_exhausted_retries_result_returns_thesis_id_when_present() -> None:
-    parsed = {"suggested_theses": [{"thesis_id": "trailing_stop"}]}
-    out = _exhausted_retries_result(parsed, "validator failed: x")
+    result = ConductorResult(status="ok", thesis={"thesis_id": "trailing_stop"})
+    out = _exhausted_retries_result(result, "validator failed: x")
     assert out["status"] == "thesis_rejected"
     assert out["generated_thesis_id"] == "trailing_stop"
-    assert out["rejection_reason"] == "validator failed: x"
+    assert out["validation_failure_reason"] == "validator failed: x"
     assert out["should_stop"] is False
 
 
@@ -134,8 +137,8 @@ def test_exhausted_retries_result_returns_unknown_when_no_thesis() -> None:
 
 
 def test_exhausted_retries_result_carries_reasoning_from_parsed() -> None:
-    parsed = {"suggested_theses": [{"thesis_id": "t"}], "reasoning": "ran out of ideas"}
-    out = _exhausted_retries_result(parsed, "fb")
+    result = ConductorResult(status="ok", thesis={"thesis_id": "t"}, reasoning="ran out of ideas")
+    out = _exhausted_retries_result(result, "fb")
     assert out["reasoning"] == "ran out of ideas"
 
 

@@ -87,7 +87,20 @@ Copy `.env.example` → `.env`. Required:
 | `AUTORESEARCH_DISCORD_WEBHOOK_ORB` | Run notifications for ORB family (optional) |
 | `AUTORESEARCH_DISCORD_WEBHOOK_EMA` | Run notifications for EMA family (optional) |
 
-The openai-oauth proxy (`http://127.0.0.1:10531/v1`) must be running locally before any research job. Start `openai-oauth.service` or run the proxy manually.
+### OpenAI OAuth proxy
+
+Research jobs route all LLM calls through a local OAuth proxy at `http://127.0.0.1:10531/v1`. The proxy must be reachable on whichever machine runs the research process (VPS or local).
+
+**VPS deploys** (via `vps_runner.py`): `openai-oauth.service` is already running on the VPS as a systemd service — nothing extra needed.
+
+**Local runs**: start the proxy manually or via `sudo systemctl start openai-oauth.service` (root or configured polkit required) before invoking `autoresearch_controller.py`.
+
+The proxy reads an OAuth token from (in order):
+1. `CLAUDE_CODE_OAUTH_TOKEN` env var
+2. `~/.openai_oauth_token` (on the machine running the research process)
+3. `~/.claude_oauth_token` (legacy fallback)
+
+If you need to run manually on the VPS as root, the token lives at `/home/researcher/.openai_oauth_token`. Copy it to `/root/.openai_oauth_token` first.
 
 ## Development
 

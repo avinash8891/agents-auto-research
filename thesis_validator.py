@@ -9,16 +9,50 @@ Three guardrails inspired by AlphaAgent (arxiv 2502.16789v2):
    actually test the stated hypothesis (their c1/c2 consistency scoring).
 3. Duplicate/runtime-compatibility rejection — fail loudly on legacy inheritance
    paths or reused runtime shapes instead of probing extra variants.
+
+──────────────────────────────────────────────────────────────────────────────
+Contract-extraction rule (for maintainers adding or refactoring checks)
+──────────────────────────────────────────────────────────────────────────────
+
+Multi-check contracts (e.g. mechanism_dimension, emergent path,
+underexplored_dimensions, thesis_specifies_change, expected_effects) live in
+dedicated private `_validate_<contract>(...)` helpers placed adjacent to the
+`_validate_structural` orchestrator. The orchestrator stays a thin sequence
+of inline single-check raises + helper calls.
+
+When deciding whether to bundle two related checks into one helper, apply
+this test:
+
+    Do these checks have to run at different points in the
+    overall fail-fast sequence?
+
+If YES → split into separate helpers, called from the orchestrator at their
+respective positions. Example: `_validate_expected_effects_present` (early,
+presence-tier priority) and `_validate_expected_effects_metrics_backed`
+(late, after disqualifiers presence check). Bundling them regresses the
+global fail-fast order — pinned by the regression test
+`test_disqualifiers_fire_before_expected_effects_metric_unbacked`.
+
+If NO → one helper owning both checks is fine, with structured `evidence`
+when failure modes are independent. Example: `_validate_emergent_dimension`
+collects all emergent-path failures into one rejection.
+
+Single-check contracts (thesis_id presence, hypothesis presence, etc.) stay
+inline in the orchestrator — extracting them into one-line helpers is noise.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from autoresearch_logging import get_logger
+from behavior_signals import BehaviorSignal
+from behavior_signals import decide as _policy_decide
 from research_types import (
     CORE_MECHANISM_DIMENSIONS,
     EMERGENT_MECHANISM_DIMENSION,
@@ -72,6 +106,10 @@ def _is_overlap_ignored_key(key: str) -> bool:
 
 _MIN_EMERGENT_FIELD_CHARS = 40
 _MIN_NOVEL_CONNECTION_CHARS = 40
+# A mechanism_evidence disqualifier's `condition` must be substantive — short
+# strings like "x" or "yes" satisfy the kind=mechanism_evidence check trivially
+# without describing any observable data pattern. 40 chars forces real content.
+_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS: Final[int] = 40
 # When falsification_or_alternative is set, it must be substantive — short text
 # is decoration, not a real disconfirmer. The field itself remains optional;
 # this rule only enforces quality when the agent does fill it in.
@@ -88,16 +126,10 @@ _EMERGENT_REQUIRED_FIELDS = (
     "expected_reuse_across_future_theses",
 )
 _ALLOWED_BASE_CONFIG_PREFIXES = ("configs/",)
-_PRIOR_BASE_LANGUAGE_PATTERNS = (
-    r"\bcurrent\s+best\b",
-    r"\bbest\s+(?:config|configuration|experiment|result|winner|runtime|trailing|pf)\b",
-    r"\bprior\s+(?:config|configuration|experiment|result|winner|runtime|thesis)\b",
-    r"\bkept\s+(?:config|configuration|experiment|result|winner|runtime|thesis)\b",
-    r"\bwinning\s+(?:config|configuration|experiment|result|runtime|thesis)\b",
-    r"\bpreserve\s+(?:the\s+)?(?:current\s+best|best|prior|kept|winning)\b",
-    r"\b(?:build|builds|building)\s+on\s+(?:the\s+)?(?:current\s+best|best|prior|kept|winning)\b",
-    r"\bcompound\s+(?:the\s+)?(?:current\s+best|best|prior|kept|winning)\b",
-)
+
+# Removed gate: prior-winner inheritance language regex.
+# See docs/superpowers/plans/2026-05-27-validator-gate-consolidation.md
+# ("Removed gates" section) for the rationale.
 
 
 class ThesisValidationError(ValueError):
@@ -123,6 +155,24 @@ class ThesisValidationError(ValueError):
         self.remediation_hint = remediation_hint
 
 
+# Renames from the 2026-05-27 validator consolidation. Listed explicitly so
+# downstream consumers (drift checker, analytics, prompt-rule mappings) can
+# detect the rename rather than silently encountering an "unknown" code.
+RETIRED_REJECTION_CODES: Final[dict[str, str]] = {
+    "structural_missing_dimension_novelty": "structural_dimension_novelty_invalid",
+    "thesis_quality_dimension_novelty_too_short": "structural_dimension_novelty_invalid",
+    "structural_missing_falsification": "structural_falsification_invalid",
+    "structural_falsification_too_short": "structural_falsification_invalid",
+    "structural_missing_new_dimension_name": "structural_emergent_thesis_malformed",
+    "structural_new_dimension_name_duplicates_core": "structural_emergent_thesis_malformed",
+    "structural_emergent_field_too_short": "structural_emergent_thesis_malformed",
+    "structural_missing_underexplored_dimensions": "structural_underexplored_dimensions_invalid",
+    "structural_underexplored_dimensions_includes_chosen": "structural_underexplored_dimensions_invalid",
+    "config_validity_base_config_path_legacy_experiments": "config_validity_base_config_path_inheritance_blocked",
+    "thesis_quality_thesis_id_repeated": "structural_thesis_id_repeated",
+}
+
+
 def infer_rejection_code(message: str) -> str:
     """Best-effort mapping from a legacy ThesisValidationError message → code.
 
@@ -136,11 +186,30 @@ def infer_rejection_code(message: str) -> str:
     if "do not construct" in msg or "points into runtime/" in msg:
         return "config_validity_base_config_path_runtime_construction"
     if "legacy experiments/ inheritance" in msg or "must be under configs/" in msg:
-        return "config_validity_base_config_path_legacy_experiments"
+        return "config_validity_base_config_path_inheritance_blocked"
     if "must point to a json or yaml" in msg or "must be a relative repo path" in msg:
         return "config_validity_base_config_path_invalid"
     if "config_changes contains thesis metadata key" in msg:
         return "config_validity_config_changes_metadata_leak"
+    if "falsification_or_alternative" in msg:
+        return "structural_falsification_invalid"
+    if "underexplored_dimensions_considered" in msg:
+        return "structural_underexplored_dimensions_invalid"
+    if "emergent" in msg and (
+        "malformed" in msg or "new_dimension_name" in msg or "duplicates a core" in msg
+    ):
+        return "structural_emergent_thesis_malformed"
+    # Each branch below maps EITHER the current message OR a legacy message
+    # from a renamed gate to the canonical rejection_code. The retired
+    # codes themselves are listed in RETIRED_REJECTION_CODES above; this
+    # function is the parallel back-compat layer for persisted rejection.json
+    # records whose `message` field was written before the rename.
+    if (
+        "dimension_novelty must explain" in msg
+        or "dimension_novelty is empty" in msg
+        or "dimension_novelty must be" in msg
+    ):
+        return "structural_dimension_novelty_invalid"
     if "must be empty or the family baseline" in msg:
         return "config_validity_base_config_path_inheritance_blocked"
     if "neighboring threshold" in msg:
@@ -153,7 +222,7 @@ def infer_rejection_code(message: str) -> str:
     if "needs_code starvation" in msg:
         return "thesis_quality_needs_code_starvation"
     if "has already been proposed" in msg:
-        return "thesis_quality_thesis_id_repeated"
+        return "structural_thesis_id_repeated"
     # Stage 2 (no section prefix; lives at the contract layer)
     if "hypothesis-config misalignment" in msg:
         return "hypothesis_config_misalignment"
@@ -184,6 +253,20 @@ MECHANISM_DIMENSION_ALIASES = {
 def _dimension_slug(text: str) -> str:
     words = re.findall(r"[a-z0-9]+", text.lower())
     return "_".join(words)
+
+
+def _format_remediation(remediation: tuple[str, ...]) -> str:
+    """Format a tuple of remediation suggestions into a single string.
+
+    For a single suggestion, returns it as-is. For multiple, numbers them
+    so the conductor can distinguish discrete options instead of seeing a
+    forward-slash wall.
+    """
+    if not remediation:
+        return ""
+    if len(remediation) == 1:
+        return remediation[0]
+    return "; ".join(f"({i + 1}) {item}" for i, item in enumerate(remediation))
 
 
 def _normalize_mechanism_dimension_name(dimension: Any) -> str:
@@ -219,24 +302,10 @@ def _validate_base_config_path(path: str) -> None:
                 rejection_code="config_validity_base_config_path_runtime_construction",
                 evidence={"path": path},
             )
-        raise ThesisValidationError(
-            f"base_config_path '{path}' must be under configs/ only; "
-            "legacy experiments/ inheritance paths are not allowed",
-            rejection_code="config_validity_base_config_path_legacy_experiments",
-            evidence={"path": path},
-        )
-
-
-def _requires_explicit_base_config(thesis: ResearchThesis) -> bool:
-    text = " ".join(
-        [
-            thesis.hypothesis,
-            thesis.mechanism,
-            thesis.dimension_novelty,
-            " ".join(thesis.evidence),
-        ]
-    ).lower()
-    return any(re.search(pattern, text) for pattern in _PRIOR_BASE_LANGUAGE_PATTERNS)
+        # Other non-configs/ paths (including legacy experiments/) fall through
+        # to the inheritance_blocked check in _validate_config_validity, which
+        # rejects ANY path that isn't the family baseline. That gate is the
+        # authoritative inheritance check; this specific subcase was redundant.
 
 
 def _family_baseline_path(thesis: ResearchThesis) -> str:
@@ -266,6 +335,23 @@ def _known_emergent_dimension_names(prior_theses: list[dict[str, Any]] | None) -
         if isinstance(name, str) and name.strip():
             known.add(_dimension_slug(name))
     return known
+
+
+_REQUIRED_PROCESS_TOOLS: Final[tuple[str, ...]] = (
+    "list_experiment_results",
+    "web_search",
+)
+
+
+def _validate_process(tools_called: set[str]) -> None:
+    missing = [tool for tool in _REQUIRED_PROCESS_TOOLS if tool not in tools_called]
+    if not missing:
+        return
+    raise ThesisValidationError(
+        f"Process gate failed: required tools not called: {missing}",
+        rejection_code="process_required_tools_not_called",
+        evidence={"missing_tools": missing, "tools_called": sorted(tools_called)},
+    )
 
 
 def _prior_thesis_entry(row: dict[str, Any]) -> dict[str, Any]:
@@ -302,6 +388,40 @@ def _theme_keywords_from_prior(prior: dict[str, Any]) -> set[str]:
     return {str(kw).strip() for kw in raw if str(kw).strip()}
 
 
+# Thresholds for the computed dominant-cluster overlap. The cutoffs are tuned
+# to match operator intuition: "high" means more than half the recent priors
+# share a keyword with the proposed thesis.
+_OVERLAP_HIGH_RATIO: Final[float] = 0.5
+_OVERLAP_MEDIUM_RATIO: Final[float] = 0.25
+
+
+def _computed_dominant_cluster_overlap(
+    thesis: ResearchThesis, prior_theses: list[dict[str, Any]]
+) -> str:
+    """Compute overlap level from theme_keywords data, not LLM self-report.
+
+    Returns "high" / "medium" / "low" based on the fraction of priors whose
+    theme_keywords intersect the proposed thesis's theme_keywords.
+
+    The LLM's `dominant_cluster_overlap` field is informational only — this
+    function is the authoritative source for downstream gates.
+    """
+    if not prior_theses:
+        return "low"
+    proposed_kw = {kw.strip() for kw in thesis.theme_keywords if kw.strip()}
+    if not proposed_kw:
+        return "low"
+    overlap_count = sum(
+        1 for prior in prior_theses if _theme_keywords_from_prior(prior) & proposed_kw
+    )
+    ratio = overlap_count / len(prior_theses)
+    if ratio >= _OVERLAP_HIGH_RATIO:
+        return "high"
+    if ratio >= _OVERLAP_MEDIUM_RATIO:
+        return "medium"
+    return "low"
+
+
 def _prior_required_code_change(prior: dict[str, Any]) -> bool:
     details = _prior_thesis_details(prior)
     return bool(details.get("requires_code_change") or prior.get("requires_code_change"))
@@ -321,16 +441,26 @@ def _prior_was_run(prior: dict[str, Any]) -> bool:
     return True
 
 
-def _check_theme_cluster_fixation(
+def _detect_theme_cluster_fixation(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]],
-) -> None:
+) -> BehaviorSignal | None:
+    """Detect when the proposed thesis fixates on a theme cluster.
+
+    Returns a BehaviorSignal when >=4 of the last 7 priors (including the
+    proposal itself) share at least one theme_keyword. Returns None when
+    the pattern is absent.
+
+    Confidence is proportional to the fraction of the window that overlaps:
+    4/7 -> 0.57, 7/7 -> 1.0. Severity is "block" in Phase C to match the
+    pre-refactor hard-block behavior.
+    """
     proposed_keywords = {kw.strip() for kw in thesis.theme_keywords if kw.strip()}
     if not proposed_keywords:
-        return
+        return None
     recent = prior_theses[-(B1_THEME_CLUSTER_WINDOW - 1) :]
     if not recent:
-        return
+        return None
     overlap_count = 1  # the new thesis itself
     overlapping_priors: list[str] = []
     for prior in recent:
@@ -338,32 +468,94 @@ def _check_theme_cluster_fixation(
         if prior_kw & proposed_keywords:
             overlap_count += 1
             overlapping_priors.append(str(prior.get("thesis_id") or "?"))
-    if overlap_count >= B1_THEME_CLUSTER_THRESHOLD:
-        raise ThesisValidationError(
+    if overlap_count < B1_THEME_CLUSTER_THRESHOLD:
+        return None
+    return BehaviorSignal(
+        code="thesis_quality_theme_cluster_fixation",
+        confidence=min(1.0, overlap_count / B1_THEME_CLUSTER_WINDOW),
+        severity="block",
+        summary=(
             f"Theme-cluster fixation: {overlap_count} of last "
             f"{B1_THEME_CLUSTER_WINDOW} theses share keywords {sorted(proposed_keywords)} "
             f"(overlapping priors: {overlapping_priors}). Propose from a different "
-            f"mechanism dimension, or justify novelty in dimension_novelty.",
-            rejection_code="thesis_quality_theme_cluster_fixation",
-            evidence={
-                "overlap_count": overlap_count,
-                "window": B1_THEME_CLUSTER_WINDOW,
-                "shared_keywords": sorted(proposed_keywords),
-                "overlapping_priors": overlapping_priors,
-            },
-        )
+            f"mechanism dimension, or justify novelty in dimension_novelty."
+        ),
+        evidence={
+            "overlap_count": overlap_count,
+            "window": B1_THEME_CLUSTER_WINDOW,
+            "shared_keywords": sorted(proposed_keywords),
+            "overlapping_priors": overlapping_priors,
+        },
+        remediation=(
+            "Propose from a different mechanism_dimension",
+            "If staying in this dimension, use distinct theme_keywords",
+        ),
+    )
 
 
-# B2 direction whipsaw: maps lowercase substrings → opposing-direction tag.
-_B2_DIRECTION_TIGHTEN_TOKENS = ("tighten", "narrow", "min_", "floor", "shrink")
-_B2_DIRECTION_WIDEN_TOKENS = ("widen", "loosen", "max_", "cap_removal", "remove_cap", "expand")
+# B2 direction whipsaw: detection has two complementary signals.
+#
+# (1) Data signal — preferred when both theses change the same numeric config
+#     key. Lever-name prefix conventions map a value change to a direction:
+#       - keys with min_/floor_ prefix: increase = tighten, decrease = loosen
+#       - keys with max_/ceiling_ prefix: increase = loosen, decrease = tighten
+#     This is the authoritative signal because it reads what the thesis
+#     actually does, not what its name suggests.
+#
+# (2) Text signal — fallback when no shared numeric key gives a data direction.
+#     Word-boundary match on explicit direction verbs in thesis_id or
+#     hypothesis. Config-key prefixes are NOT direction tokens — that caused
+#     false-positives where `min_stop_distance_pct` (a config key) registered
+#     as a "tighten" direction word.
+_B2_DIRECTION_TIGHTEN_TOKENS: Final[tuple[str, ...]] = (
+    "tighten",
+    "tightening",
+    "narrow",
+    "narrowing",
+    "shrink",
+    "shrinking",
+)
+_B2_DIRECTION_WIDEN_TOKENS: Final[tuple[str, ...]] = (
+    "widen",
+    "widening",
+    "loosen",
+    "loosening",
+    "expand",
+    "expanding",
+)
+
+_LEVER_PREFIX_TIGHTEN_ON_INCREASE: Final[tuple[str, ...]] = ("min_", "floor_", "minimum_")
+_LEVER_PREFIX_LOOSEN_ON_INCREASE: Final[tuple[str, ...]] = (
+    "max_",
+    "ceiling_",
+    "maximum_",
+    "cap_",
+)
+
+# Pre-computed frozensets for hot-path membership checks in _b2_direction_of.
+# Avoids rebuilding a fresh set on every call (called per-thesis during
+# direction-whipsaw evaluation against the full prior list).
+_B2_DIRECTION_TIGHTEN_TOKEN_SET: Final[frozenset[str]] = frozenset(_B2_DIRECTION_TIGHTEN_TOKENS)
+_B2_DIRECTION_WIDEN_TOKEN_SET: Final[frozenset[str]] = frozenset(_B2_DIRECTION_WIDEN_TOKENS)
 
 
 def _b2_direction_of(text: str) -> str | None:
-    """Return 'tighten', 'widen', or None for the dominant direction in `text`."""
-    lowered = text.lower()
-    has_tighten = any(tok in lowered for tok in _B2_DIRECTION_TIGHTEN_TOKENS)
-    has_widen = any(tok in lowered for tok in _B2_DIRECTION_WIDEN_TOKENS)
+    """Return 'tighten', 'widen', or None for the dominant direction in `text`.
+
+    Tokenises `text` by splitting on any non-alphabetic character (so snake_case,
+    kebab-case, and natural prose all decompose to the same alphabetic-token set)
+    and tests for exact token membership in the direction-word sets. This avoids
+    two prior failure modes:
+
+      * Substring matching let config-key prefixes like 'min_' (an old TIGHTEN
+        token) trip on `min_stop_distance_pct` (not a direction word).
+      * `re.search(\\bwiden\\b)` does not match `widen_max_stops` because `_`
+        is a regex word character, so the word-boundary fails between `n` and
+        `_`. Tokenisation sidesteps the issue by treating `_` as a separator.
+    """
+    tokens = set(re.findall(r"[a-z]+", text.lower()))
+    has_tighten = bool(tokens & _B2_DIRECTION_TIGHTEN_TOKEN_SET)
+    has_widen = bool(tokens & _B2_DIRECTION_WIDEN_TOKEN_SET)
     if has_tighten and not has_widen:
         return "tighten"
     if has_widen and not has_tighten:
@@ -371,46 +563,106 @@ def _b2_direction_of(text: str) -> str | None:
     return None  # ambiguous or none
 
 
-def _check_direction_whipsaw(
+def _direction_from_value_change(key: str, old_val: float, new_val: float) -> str | None:
+    """Map a numeric value change on a known-convention key to tighten/widen.
+
+    Returns None when the key has no recognized convention (in which case the
+    text-based signal is the only available fallback) or when values are equal.
+    """
+    if old_val == new_val:
+        return None
+    lower_key = key.lower()
+    increased = new_val > old_val
+    if any(lower_key.startswith(p) for p in _LEVER_PREFIX_TIGHTEN_ON_INCREASE):
+        return "tighten" if increased else "widen"
+    if any(lower_key.startswith(p) for p in _LEVER_PREFIX_LOOSEN_ON_INCREASE):
+        return "widen" if increased else "tighten"
+    return None
+
+
+def _proposed_direction(thesis: ResearchThesis, prior: dict[str, Any]) -> str | None:
+    """Resolve direction prioritising data signal over text signal.
+
+    Looks for a shared numeric config key with a known lever-name convention;
+    if found, returns the data-derived direction. Otherwise falls back to
+    word-boundary text match on thesis_id + hypothesis.
+
+    The asymmetry with _prior_direction is intentional: a prior thesis's
+    config_changes are accessible via the prior dict, but its BASELINE value
+    is not — without baseline, the prior's data-direction is unrecoverable.
+    Text matching on the prior's thesis_id is the only signal available there.
+    """
+    prior_changes = prior.get("config_changes") or {}
+    for key, new_val in (thesis.config_changes or {}).items():
+        if key not in prior_changes:
+            continue
+        prior_val = prior_changes[key]
+        if not (_is_numeric_value(new_val) and _is_numeric_value(prior_val)):
+            continue
+        data_direction = _direction_from_value_change(str(key), float(prior_val), float(new_val))
+        if data_direction is not None:
+            return data_direction
+    return _b2_direction_of(f"{thesis.thesis_id} {thesis.hypothesis}")
+
+
+def _prior_direction(prior: dict[str, Any]) -> str | None:
+    """Resolve prior's direction: text-only (no baseline available here)."""
+    return _b2_direction_of(str(prior.get("thesis_id") or ""))
+
+
+def _detect_direction_whipsaw(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]],
-) -> None:
-    """Reject if the thesis flips the direction of a lever already tested by a prior
-    thesis on the same theme, unless prior_lever_outcomes cites that prior.
+) -> BehaviorSignal | None:
+    """Detect when the thesis flips the direction of a lever already tested
+    by a prior thesis on the same theme, without citing it.
+
+    Direction is determined per (current_thesis, prior) pair using the data
+    signal first (shared numeric key with lever-name convention), falling
+    back to word-boundary text matching when no data signal is available.
     """
-    proposed_dir = _b2_direction_of(thesis.thesis_id + " " + thesis.hypothesis)
-    if proposed_dir is None:
-        return
     proposed_kw = {kw.strip() for kw in thesis.theme_keywords if kw.strip()}
     if not proposed_kw:
-        return
+        return None
     cited_prior_ids = {p.prior_thesis_id for p in thesis.prior_lever_outcomes}
 
-    opposing = "widen" if proposed_dir == "tighten" else "tighten"
     for prior in prior_theses:
         prior_kw = _theme_keywords_from_prior(prior)
         if not (prior_kw & proposed_kw):
             continue
-        prior_dir = _b2_direction_of(str(prior.get("thesis_id") or ""))
-        if prior_dir != opposing:
-            continue
         prior_id = str(prior.get("thesis_id") or "")
         if prior_id in cited_prior_ids:
             continue
-        raise ThesisValidationError(
-            f"Direction whipsaw: prior thesis '{prior_id}' tested the {opposing} "
-            f"direction on lever theme {sorted(proposed_kw)}, and this thesis "
-            f"flips to {proposed_dir} without acknowledgment. Cite '{prior_id}' "
-            f"in prior_lever_outcomes (with direction_then, outcome, and why_retry) "
-            f"or propose from a different mechanism dimension.",
-            rejection_code="thesis_quality_direction_whipsaw",
+        prior_dir = _prior_direction(prior)
+        if prior_dir is None:
+            continue
+        proposed_dir = _proposed_direction(thesis, prior)
+        opposing = "widen" if prior_dir == "tighten" else "tighten"
+        if proposed_dir != opposing:
+            continue
+        return BehaviorSignal(
+            code="thesis_quality_direction_whipsaw",
+            confidence=1.0,
+            severity="block",
+            summary=(
+                f"Direction whipsaw: prior thesis '{prior_id}' tested the {prior_dir} "
+                f"direction on lever theme {sorted(proposed_kw)}, and this thesis "
+                f"flips to {proposed_dir} without acknowledgment. Cite '{prior_id}' "
+                f"in prior_lever_outcomes (with direction_then, outcome, and why_retry) "
+                f"or propose from a different mechanism dimension."
+            ),
             evidence={
                 "prior_thesis_id": prior_id,
                 "opposing_direction": opposing,
                 "proposed_direction": proposed_dir,
                 "lever_theme": sorted(proposed_kw),
             },
+            remediation=(
+                f"Cite '{prior_id}' in prior_lever_outcomes",
+                "Or propose from a different mechanism dimension",
+            ),
         )
+    return None
 
 
 def _check_thesis_id_not_repeated(
@@ -423,7 +675,7 @@ def _check_thesis_id_not_repeated(
             f"thesis_id '{thesis.thesis_id}' has already been proposed in a prior "
             f"round. Each thesis must have a unique thesis_id (do not repeat or "
             f"resubmit prior names).",
-            rejection_code="thesis_quality_thesis_id_repeated",
+            rejection_code="structural_thesis_id_repeated",
             evidence={"thesis_id": thesis.thesis_id},
         )
 
@@ -492,32 +744,59 @@ def _check_neighboring_threshold(
                 )
 
 
-def _check_qualitative_disqualifier_present(thesis: ResearchThesis) -> None:
-    """B5: at least one Disqualifier must have kind='mechanism_evidence'.
+def _detect_missing_mechanism_evidence_disqualifier(
+    thesis: ResearchThesis,
+) -> BehaviorSignal | None:
+    """Detect when no substantive mechanism_evidence disqualifier is present.
 
-    Pure metric-threshold disqualifiers ("PF must improve by 5%") are pass/fail
-    criteria, not Popperian disconfirmers. Force one to be qualitative.
+    Requires at least one disqualifier with kind='mechanism_evidence' AND
+    condition ≥40 chars. Pure metric_threshold disqualifiers are pass/fail
+    criteria, not Popperian disconfirmers; substantively-short mechanism_evidence
+    conditions are ceremonial (the LLM can game the enum without writing real
+    falsification evidence).
     """
     if not thesis.disqualifiers:
-        return  # absence is handled by the earlier "no disqualifiers" rule
-    if any(d.kind == "mechanism_evidence" for d in thesis.disqualifiers):
-        return
-    raise ThesisValidationError(
-        "Disqualifiers list contains only metric_threshold entries. "
-        "At least one disqualifier must reference observable mechanism evidence "
-        "(set kind='mechanism_evidence'), describing what data pattern would "
-        "falsify the mechanism — independent of whether metrics improve.",
-        rejection_code="thesis_quality_missing_mechanism_evidence_disqualifier",
+        return None  # absence handled by structural_missing_disqualifiers
+    has_substantive = any(
+        d.kind == "mechanism_evidence"
+        and len(d.condition.strip()) >= _MIN_MECHANISM_EVIDENCE_CONDITION_CHARS
+        for d in thesis.disqualifiers
+    )
+    if has_substantive:
+        return None
+    return BehaviorSignal(
+        code="thesis_quality_missing_mechanism_evidence_disqualifier",
+        confidence=1.0,
+        severity="block",
+        summary=(
+            "Need at least one disqualifier with kind='mechanism_evidence' AND a "
+            f"condition ≥{_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS} chars describing "
+            "an observable data pattern that would falsify the mechanism. "
+            "Pure kind='metric_threshold' disqualifiers ('PF must improve by 5%') "
+            "are pass/fail criteria, not Popperian disconfirmers."
+        ),
+        evidence={
+            "min_condition_chars": _MIN_MECHANISM_EVIDENCE_CONDITION_CHARS,
+            "disqualifier_count": len(thesis.disqualifiers),
+        },
+        remediation=(
+            "Add a disqualifier with kind='mechanism_evidence' and a substantive condition",
+        ),
     )
 
 
-def _check_needs_code_starvation(
+def _detect_needs_code_starvation(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]],
-) -> None:
+) -> BehaviorSignal | None:
+    """Detect when the conductor is queueing engine work without progress.
+
+    Fires when 3+ consecutive most-recent priors required code changes
+    without a completed run between them, and this thesis also requires
+    a code change. Returns None otherwise.
+    """
     if not thesis.requires_code_change:
-        return
-    # Walk priors most-recent-first; count consecutive needs_code + requires_code_change.
+        return None
     streak = 0
     for prior in reversed(prior_theses):
         if _prior_was_run(prior):
@@ -525,18 +804,23 @@ def _check_needs_code_starvation(
         if _prior_required_code_change(prior):
             streak += 1
         else:
-            # Non-code prior breaks the streak even if it didn't run.
             break
         if streak >= B3_NEEDS_CODE_STARVATION_LIMIT:
             break
-    if streak >= B3_NEEDS_CODE_STARVATION_LIMIT:
-        raise ThesisValidationError(
+    if streak < B3_NEEDS_CODE_STARVATION_LIMIT:
+        return None
+    return BehaviorSignal(
+        code="thesis_quality_needs_code_starvation",
+        confidence=1.0,
+        severity="block",
+        summary=(
             f"needs_code starvation: {streak} consecutive prior theses required "
             f"engine changes without running. Propose a non-code thesis to break "
-            f"the queue (set requires_code_change=false and operate on existing config keys).",
-            rejection_code="thesis_quality_needs_code_starvation",
-            evidence={"streak": streak, "limit": B3_NEEDS_CODE_STARVATION_LIMIT},
-        )
+            f"the queue (set requires_code_change=false and operate on existing config keys)."
+        ),
+        evidence={"streak": streak, "limit": B3_NEEDS_CODE_STARVATION_LIMIT},
+        remediation=("Set requires_code_change=false and use existing config keys",),
+    )
 
 
 def _slugify(text: str, max_words: int = 8) -> str:
@@ -751,24 +1035,55 @@ def config_key_overlap(
 # ---------------------------------------------------------------------------
 
 
-def _load_family_key_concepts(family_name: str) -> dict[str, tuple[str, ...]]:
-    """Return the concept regex map for a family, or empty when unwired/unknown.
+class MissingFamilyKeyConceptsError(LookupError):
+    """Raised when a family's `key_concepts` map is missing or empty.
 
-    Lookup goes through the strategy registry; an unknown family or a family
-    whose spec has no `key_concepts` returns an empty dict, which makes the
-    alignment rule fail open for that family.
+    Stage 2 alignment is unenforceable without it; surfacing as a hard error
+    forces operators to populate the map at the strategy level rather than
+    silently disabling alignment for that family.
+    """
+
+
+@lru_cache(maxsize=None)
+def _load_family_key_concepts(family_name: str) -> dict[str, tuple[str, ...]]:
+    """Return the concept regex map for a family.
+
+    Raises ``MissingFamilyKeyConceptsError`` when the family is unknown or
+    has no `key_concepts` populated. Callers that need a permissive default
+    must catch the error explicitly — there is no silent fail-open path here
+    on purpose. The old fail-open behavior let entire families skip Stage 2
+    alignment enforcement undetected.
     """
     if not family_name:
-        return {}
+        raise MissingFamilyKeyConceptsError(
+            "family_name is empty; cannot enforce hypothesis-config alignment"
+        )
     try:
         from family_research_spec import get_family_research_spec
-    except Exception:  # noqa: BLE001
-        return {}
+    except Exception as exc:  # noqa: BLE001
+        raise MissingFamilyKeyConceptsError(
+            f"family_research_spec module not importable: {exc}"
+        ) from exc
     try:
         spec = get_family_research_spec(family_name)
-    except (KeyError, ValueError):
+    except (KeyError, ValueError) as exc:
+        raise MissingFamilyKeyConceptsError(
+            f"no FamilyResearchSpec registered for family '{family_name}'"
+        ) from exc
+    key_concepts = dict(getattr(spec, "key_concepts", {}) or {})
+    if not key_concepts:
+        # Documented fail-open: FamilyResearchSpec.key_concepts defaults to
+        # empty. Families opt INTO Stage 2 alignment by populating it. Log
+        # so operators can see opt-outs without breaking valid families
+        # (e.g. the _demo skeleton, newly scaffolded families).
+        log.warning(
+            "family %r has empty FamilyResearchSpec.key_concepts — Stage 2 "
+            "hypothesis-config alignment will fail-open. Populate key_concepts "
+            "to enable enforcement.",
+            family_name,
+        )
         return {}
-    return dict(getattr(spec, "key_concepts", {}) or {})
+    return key_concepts
 
 
 def check_hypothesis_alignment(
@@ -797,15 +1112,18 @@ def check_hypothesis_alignment(
     if not config_changes:
         return 1.0, "No config changes (code change thesis)"
 
+    # _load_family_key_concepts raises MissingFamilyKeyConceptsError only when
+    # the family is unknown / unregistered (a configuration error). When the
+    # family is registered but has empty key_concepts (the documented
+    # fail-open default), the function logs and returns {} — we then
+    # short-circuit to score 1.0 so families that haven't opted into Stage 2
+    # alignment scoring don't get hard-rejected. See _load_family_key_concepts
+    # for the policy rationale.
     key_concepts = _load_family_key_concepts(family_name)
     if not key_concepts:
         return (
             1.0,
-            (
-                f"No key_concepts registered for family '{family_name}'. "
-                f"Alignment scoring fails open until the strategy populates "
-                f"FamilyResearchSpec.key_concepts."
-            ),
+            f"family '{family_name}' has empty key_concepts — alignment fails open",
         )
 
     hyp_lower = (hypothesis + " " + mechanism).lower()
@@ -920,33 +1238,161 @@ def generate_variants(
 # ---------------------------------------------------------------------------
 
 
-def _validate_structural(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]] | None = None,
+def _raise_aggregated_validation_error(
+    *,
+    rejection_code: str,
+    summary_prefix: str,
+    issues: list[dict[str, Any]],
+    describer: Callable[[dict[str, Any]], str],
+    extra_evidence: dict[str, Any] | None = None,
 ) -> None:
-    """Stage 1 sub-section: schema / required-field invariants.
+    """Raise one ThesisValidationError summarizing N independent failures.
 
-    Owns checks for missing/required fields, mechanism_dimension validity,
-    emergent-dimension required fields, requested_primitives presence, the
-    config_changes XOR requires_code_change consistency, and field-level
-    quality checks (expected_effects, disqualifiers, falsification length,
-    expected-effect metric backing).
+    Used by gates that validate multiple aspects of one field. Collects
+    every failure mode into a single rejection with structured evidence
+    so the LLM sees the full picture in one attempt instead of N retries.
     """
-    if not thesis.thesis_id.strip():
-        raise ThesisValidationError(
-            "Missing thesis_id", rejection_code="structural_missing_thesis_id"
+    if not issues:
+        return
+    descriptions = [describer(issue) for issue in issues]
+    evidence: dict[str, Any] = {"issues": issues}
+    if extra_evidence:
+        evidence.update(extra_evidence)
+    raise ThesisValidationError(
+        f"{summary_prefix}: {'; '.join(descriptions)}",
+        rejection_code=rejection_code,
+        evidence=evidence,
+    )
+
+
+def _describe_emergent_issue(issue: dict[str, Any]) -> str:
+    kind = issue["kind"]
+    if kind == "missing_new_dimension_name":
+        return "new_dimension_name is empty"
+    if kind == "new_dimension_name_duplicates_core":
+        return f"new_dimension_name '{issue['name']}' duplicates a core dimension"
+    if kind == "short_fields":
+        field_list = ", ".join(f"{f['field']} ({f['actual_chars']} chars)" for f in issue["fields"])
+        return (
+            f"emergent justification fields each need "
+            f"≥{_MIN_EMERGENT_FIELD_CHARS} chars: {field_list}"
+        )
+    return kind  # defensive: unknown kinds surface their tag
+
+
+def _describe_underexplored_issue(issue: dict[str, Any]) -> str:
+    kind = issue["kind"]
+    if kind == "empty":
+        return "must be non-empty when prior theses exist"
+    if kind == "invalid_values":
+        return f"contains invalid mechanism dimensions: {issue['invalid']}"
+    if kind == "includes_chosen":
+        return f"must not include the chosen dimension '{issue['chosen']}'"
+    return kind  # defensive: unknown kinds surface their tag
+
+
+def _validate_emergent_dimension(thesis: ResearchThesis) -> None:
+    """Validate the rare emergent-dimension path with a single rejection code.
+
+    All emergent-path failures roll up to ``structural_emergent_thesis_malformed``
+    with structured evidence describing every issue found. One rejection per
+    attempt (since emergent fields are interdependent and the LLM should fix
+    them all together).
+    """
+    issues: list[dict[str, Any]] = []
+
+    new_dimension_name = _dimension_slug(thesis.new_dimension_name)
+    if not new_dimension_name:
+        issues.append({"kind": "missing_new_dimension_name"})
+    elif new_dimension_name in CORE_MECHANISM_DIMENSIONS:
+        issues.append(
+            {
+                "kind": "new_dimension_name_duplicates_core",
+                "name": thesis.new_dimension_name,
+            }
         )
 
-    if not thesis.hypothesis.strip():
-        raise ThesisValidationError(
-            "Missing hypothesis", rejection_code="structural_missing_hypothesis"
-        )
+    short_fields = [
+        {"field": field, "actual_chars": len(getattr(thesis, field).strip())}
+        for field in _EMERGENT_REQUIRED_FIELDS
+        if len(getattr(thesis, field).strip()) < _MIN_EMERGENT_FIELD_CHARS
+    ]
+    if short_fields:
+        issues.append({"kind": "short_fields", "fields": short_fields})
 
-    if not thesis.mechanism.strip():
-        raise ThesisValidationError(
-            "Missing mechanism", rejection_code="structural_missing_mechanism"
-        )
+    # emergent passes the global threshold so the LLM rejection block can show it
+    _raise_aggregated_validation_error(
+        rejection_code="structural_emergent_thesis_malformed",
+        summary_prefix="Emergent thesis malformed",
+        issues=issues,
+        describer=_describe_emergent_issue,
+        extra_evidence={"min_emergent_field_chars": _MIN_EMERGENT_FIELD_CHARS},
+    )
 
+
+def _validate_underexplored_dimensions(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None,
+) -> None:
+    """Enforce the underexplored_dimensions_considered contract.
+
+    The contract only fires when prior theses exist (no priors = nothing to
+    have underexplored). The helper is self-guarding: it returns immediately
+    when prior_theses is None or empty, so callers don't need to wrap the
+    call in `if prior_theses:`. Signature matches its sibling
+    `_validate_mechanism_dimension` for consistency.
+
+    When priors exist, the contract requires:
+      * Non-empty list.
+      * Every entry is a known mechanism dimension.
+      * Chosen mechanism_dimension is NOT in the list.
+
+    All failure modes share one rejection_code with structured evidence so
+    the LLM sees every issue at once instead of one per retry.
+    """
+    if not prior_theses:
+        return
+    issues: list[dict[str, Any]] = []
+    items = thesis.underexplored_dimensions_considered
+
+    if not items:
+        issues.append({"kind": "empty"})
+    else:
+        known = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
+        invalid = [d for d in items if d not in known]
+        if invalid:
+            issues.append({"kind": "invalid_values", "invalid": invalid, "valid": sorted(known)})
+        if thesis.mechanism_dimension in items:
+            issues.append({"kind": "includes_chosen", "chosen": thesis.mechanism_dimension})
+
+    # underexplored carries no extra_evidence: the valid-dimension list is
+    # already embedded per-issue, and there is no global threshold to surface
+    # (unlike emergent which reports min_emergent_field_chars).
+    _raise_aggregated_validation_error(
+        rejection_code="structural_underexplored_dimensions_invalid",
+        summary_prefix="underexplored_dimensions_considered invalid",
+        issues=issues,
+        describer=_describe_underexplored_issue,
+    )
+
+
+def _validate_mechanism_dimension(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None,
+) -> None:
+    """Validate the mechanism_dimension contract.
+
+    Three checks in dependency order:
+      1. Field is non-empty.
+      2. Value is a known dimension (core set OR a prior-emergent name).
+      3. If "emergent", delegate to _validate_emergent_dimension for the
+         conditional sub-contract (new_dimension_name + 3 emergent fields).
+
+    Fail-fast within the contract: a missing-field failure does not check
+    the value-validity rule, since the latter would fire a meaningless
+    "'' is not a valid mechanism_dimension" rejection. Each gate's
+    rejection_code is preserved from its pre-refactor identity.
+    """
     if not thesis.mechanism_dimension.strip():
         raise ThesisValidationError(
             "Missing mechanism_dimension. Every thesis must declare which "
@@ -962,57 +1408,21 @@ def _validate_structural(
             evidence={"mechanism_dimension": thesis.mechanism_dimension},
         )
     if thesis.mechanism_dimension == EMERGENT_MECHANISM_DIMENSION:
-        new_dimension_name = _dimension_slug(thesis.new_dimension_name)
-        if not new_dimension_name:
-            raise ThesisValidationError(
-                "new_dimension_name is required when mechanism_dimension is emergent",
-                rejection_code="structural_missing_new_dimension_name",
-            )
-        if new_dimension_name in CORE_MECHANISM_DIMENSIONS:
-            raise ThesisValidationError(
-                f"new_dimension_name '{thesis.new_dimension_name}' duplicates a core "
-                "mechanism dimension; use the core dimension instead",
-                rejection_code="structural_new_dimension_name_duplicates_core",
-                evidence={"new_dimension_name": thesis.new_dimension_name},
-            )
-        for field in _EMERGENT_REQUIRED_FIELDS:
-            value = getattr(thesis, field)
-            if len(value.strip()) < _MIN_EMERGENT_FIELD_CHARS:
-                raise ThesisValidationError(
-                    f"{field} must be at least {_MIN_EMERGENT_FIELD_CHARS} characters "
-                    "when mechanism_dimension is emergent",
-                    rejection_code="structural_emergent_field_too_short",
-                    evidence={"field": field, "min_chars": _MIN_EMERGENT_FIELD_CHARS},
-                )
-    if not thesis.dimension_novelty.strip():
-        raise ThesisValidationError(
-            "dimension_novelty is empty. "
-            "Explain why this is not a parameter variation of a prior thesis.",
-            rejection_code="structural_missing_dimension_novelty",
-        )
-    if prior_theses:
-        if not thesis.causal_cluster.strip():
-            raise ThesisValidationError(
-                "causal_cluster is required when prior theses exist. "
-                "Name the causal family this thesis belongs to.",
-                rejection_code="structural_missing_causal_cluster",
-            )
-        if not thesis.underexplored_dimensions_considered:
-            raise ThesisValidationError(
-                "underexplored_dimensions_considered is required when prior theses exist. "
-                "Compare at least two underexplored dimensions before proposing.",
-                rejection_code="structural_missing_underexplored_dimensions",
-            )
-        if thesis.dominant_cluster_overlap == "high" and (
-            len(thesis.novel_connection.strip()) < _MIN_NOVEL_CONNECTION_CHARS
-        ):
-            raise ThesisValidationError(
-                "novel_connection must explain why a high-overlap thesis is "
-                "materially new instead of another variation of the dominant cluster.",
-                rejection_code="structural_novel_connection_too_short",
-                evidence={"min_chars": _MIN_NOVEL_CONNECTION_CHARS},
-            )
+        _validate_emergent_dimension(thesis)
 
+
+def _validate_thesis_specifies_change(thesis: ResearchThesis) -> None:
+    """Validate that the thesis declares WHAT it changes.
+
+    Two checks in dependency order:
+      1. At least one of config_changes / requires_code_change is set.
+      2. If requires_code_change=true, requested_primitives must be
+         non-empty.
+
+    Fail-fast within the contract: if neither change is specified, the
+    requested_primitives check is meaningless. Each gate's rejection_code
+    is preserved.
+    """
     if not thesis.config_changes and not thesis.requires_code_change:
         raise ThesisValidationError(
             "Thesis has neither config_changes nor requires_code_change=true",
@@ -1024,22 +1434,163 @@ def _validate_structural(
             rejection_code="structural_missing_requested_primitives",
         )
 
+
+def _validate_expected_effects_present(thesis: ResearchThesis) -> None:
+    """Validate that expected_effects is populated.
+
+    The conductor must declare ≥1 prediction before a thesis can be
+    evaluated. Per-effect metric-backing validation lives in a separate
+    helper (_validate_expected_effects_metrics_backed) called later in
+    _validate_structural — that check must run only after the falsification
+    and disqualifiers presence checks have passed, preserving the baseline
+    fail-fast order that was in place before the contract-extraction
+    refactor.
+    """
     if not thesis.expected_effects:
         raise ThesisValidationError(
             "Thesis has no expected_effects — cannot evaluate without predictions",
             rejection_code="structural_missing_expected_effects",
         )
 
-    falsification_text = (thesis.falsification_or_alternative or "").strip()
-    if falsification_text and len(falsification_text) < _MIN_FALSIFICATION_CHARS:
+
+def _validate_expected_effects_metrics_backed(thesis: ResearchThesis) -> None:
+    """Validate that every declared expected_effects metric is reachable.
+
+    Each effect's metric must be either a builtin OR declared in
+    required_diagnostics. Runs after the presence check and after
+    falsification/disqualifiers — see _validate_expected_effects_present
+    for why the two checks are not bundled.
+    """
+    for effect in thesis.expected_effects:
+        if effect.metric in BUILTIN_METRICS:
+            continue
+        if effect.metric in thesis.required_diagnostics:
+            continue
         raise ThesisValidationError(
-            f"falsification_or_alternative must be at least "
-            f"{_MIN_FALSIFICATION_CHARS} characters to count as a real disconfirmer; "
-            f"got {len(falsification_text)} characters.",
-            rejection_code="structural_falsification_too_short",
+            f"Expected effect metric '{effect.metric}' is not a builtin metric "
+            f"and is not listed in required_diagnostics",
+            rejection_code="structural_expected_effect_metric_unbacked",
+            evidence={"metric": effect.metric},
+        )
+
+
+def _validate_structural(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None = None,
+) -> None:
+    """Stage 1 sub-section: schema / required-field invariants — orchestrator.
+
+    Sequences simple presence checks (thesis_id, hypothesis, mechanism,
+    falsification, disqualifiers) inline with calls to dedicated contract
+    helpers for multi-check contracts:
+
+      * `_validate_mechanism_dimension` — missing + invalid + emergent path
+      * `_validate_dimension_novelty` (inline) — non-empty + ≥30 chars
+      * `_validate_underexplored_dimensions` (when priors exist)
+      * `_validate_thesis_specifies_change` — config_changes XOR + requested_primitives
+      * `_validate_expected_effects_present` and `_validate_expected_effects_metrics_backed`
+        (split so the per-effect metric-backing check runs after disqualifiers,
+        preserving the pre-refactor fail-fast order — see helper docstrings)
+      * `_validate_falsification` (inline)
+
+    Fail-fast at the orchestrator level: first failing contract raises and
+    stops further checks. Within a contract, fail-fast is the helper's own
+    concern.
+    """
+    if not thesis.thesis_id.strip():
+        raise ThesisValidationError(
+            "Missing thesis_id", rejection_code="structural_missing_thesis_id"
+        )
+    if prior_theses:
+        _check_thesis_id_not_repeated(thesis, prior_theses)
+
+    if not thesis.hypothesis.strip():
+        raise ThesisValidationError(
+            "Missing hypothesis", rejection_code="structural_missing_hypothesis"
+        )
+
+    if not thesis.mechanism.strip():
+        raise ThesisValidationError(
+            "Missing mechanism", rejection_code="structural_missing_mechanism"
+        )
+
+    _validate_mechanism_dimension(thesis, prior_theses)
+    # Unified dimension_novelty contract: must be non-empty AND ≥30 chars.
+    # Was previously split into a structural empty-check (always) and a
+    # thesis_quality length-check (only when same-dim priors exist). The split
+    # let "x" pass when there were no same-dim priors — wrong. Merged here.
+    novelty_text = thesis.dimension_novelty.strip()
+    if not novelty_text or len(novelty_text) < _MIN_NOVELTY_EXPLANATION_CHARS:
+        raise ThesisValidationError(
+            f"dimension_novelty must be ≥{_MIN_NOVELTY_EXPLANATION_CHARS} chars "
+            f"explaining why this thesis is not a parameter variation of prior work. "
+            f"Got {len(novelty_text)} chars.",
+            rejection_code="structural_dimension_novelty_invalid",
             evidence={
-                "min_chars": _MIN_FALSIFICATION_CHARS,
+                "actual_chars": len(novelty_text),
+                "min_chars": _MIN_NOVELTY_EXPLANATION_CHARS,
+            },
+        )
+    if prior_theses:
+        if not thesis.causal_cluster.strip():
+            raise ThesisValidationError(
+                "causal_cluster is required when prior theses exist. "
+                "Name the causal family this thesis belongs to.",
+                rejection_code="structural_missing_causal_cluster",
+            )
+        _validate_underexplored_dimensions(thesis, prior_theses)
+        # Compute overlap from theme_keywords data rather than trust the
+        # LLM-volunteered dominant_cluster_overlap field. The field-self-report
+        # path lets the LLM evade the gate by setting "low" regardless of
+        # actual overlap. The computed value is deterministic and matches the
+        # validator's own theme-cluster fixation rule (which already counts
+        # shared keywords across recent priors).
+        computed_overlap = _computed_dominant_cluster_overlap(thesis, prior_theses)
+        if computed_overlap == "high" and (
+            len(thesis.novel_connection.strip()) < _MIN_NOVEL_CONNECTION_CHARS
+        ):
+            raise ThesisValidationError(
+                f"novel_connection must explain why a high-overlap thesis is "
+                f"materially new instead of another variation of the dominant cluster "
+                f"(computed overlap with prior theme_keywords: high). "
+                f"Required ≥{_MIN_NOVEL_CONNECTION_CHARS} chars in novel_connection.",
+                rejection_code="structural_novel_connection_too_short",
+                evidence={
+                    "min_chars": _MIN_NOVEL_CONNECTION_CHARS,
+                    "computed_overlap": computed_overlap,
+                },
+            )
+
+    _validate_thesis_specifies_change(thesis)
+
+    # The expected_effects contract is intentionally split across two helper
+    # calls bracketing the falsification + disqualifiers checks:
+    #   1. _validate_expected_effects_present (here) — presence-tier priority.
+    #   2. _validate_expected_effects_metrics_backed (below, after disqualifiers)
+    #      — per-element metric-backing check at its baseline position.
+    # The split preserves the pre-refactor fail-fast order: a thesis missing
+    # both disqualifiers AND a backed metric raises structural_missing_disqualifiers
+    # first (not structural_expected_effect_metric_unbacked). Bundling these
+    # two checks regresses that order — pinned by
+    # test_disqualifiers_fire_before_expected_effects_metric_unbacked.
+    _validate_expected_effects_present(thesis)
+
+    # falsification_or_alternative is unconditionally required: a thesis without
+    # a disconfirmer is decoration, per the prompt doctrine. The previous gate
+    # only enforced the length WHEN the field was set, which let the LLM omit
+    # the field entirely and pass — a documented but problematic loophole.
+    # Unified falsification contract: must be present AND ≥80 chars to count
+    # as a real disconfirmer. Empty (0 chars) is just one failure mode of <80.
+    falsification_text = (thesis.falsification_or_alternative or "").strip()
+    if len(falsification_text) < _MIN_FALSIFICATION_CHARS:
+        raise ThesisValidationError(
+            f"falsification_or_alternative must be ≥{_MIN_FALSIFICATION_CHARS} chars "
+            f"describing what data pattern would weaken this mechanism, independent "
+            f"of metric movement. Got {len(falsification_text)} chars.",
+            rejection_code="structural_falsification_invalid",
+            evidence={
                 "actual_chars": len(falsification_text),
+                "min_chars": _MIN_FALSIFICATION_CHARS,
             },
         )
 
@@ -1049,63 +1600,45 @@ def _validate_structural(
             rejection_code="structural_missing_disqualifiers",
         )
 
-    for effect in thesis.expected_effects:
-        if effect.metric not in BUILTIN_METRICS:
-            if effect.metric not in thesis.required_diagnostics:
-                raise ThesisValidationError(
-                    f"Expected effect metric '{effect.metric}' is not a builtin metric "
-                    f"and is not listed in required_diagnostics",
-                    rejection_code="structural_expected_effect_metric_unbacked",
-                    evidence={"metric": effect.metric},
-                )
+    _validate_expected_effects_metrics_backed(thesis)
 
 
 def _validate_thesis_quality(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Stage 1 sub-section: pattern-of-reasoning rules.
+    """Stage 1 sub-section: behavior-pattern detection + policy.
 
-    Owns the cross-thesis behavioral rules (B1 cluster fixation, B2 direction
-    whipsaw, B3 needs_code starvation, B5 qualitative disqualifier), the
-    banned-language regex (current-best / preserve / build-on), the
-    same-dimension novelty explanation requirement, and the don't-repeat-id rule.
+    Each behavior detector returns a BehaviorSignal | None. The signals
+    flow through the policy layer (behavior_signals.decide) which decides
+    whether to reject. A reject is translated back to ThesisValidationError
+    so external callers see the same API as before.
     """
-    if _requires_explicit_base_config(thesis):
+    signals: list[BehaviorSignal] = []
+
+    if prior_theses:
+        if (sig := _detect_theme_cluster_fixation(thesis, prior_theses)) is not None:
+            signals.append(sig)
+        if (sig := _detect_needs_code_starvation(thesis, prior_theses)) is not None:
+            signals.append(sig)
+        if (sig := _detect_direction_whipsaw(thesis, prior_theses)) is not None:
+            signals.append(sig)
+
+    if (sig := _detect_missing_mechanism_evidence_disqualifier(thesis)) is not None:
+        signals.append(sig)
+
+    decision = _policy_decide(signals)
+    if decision.action == "reject":
+        triggering = decision.triggering
+        assert triggering is not None, "reject decisions must carry a triggering signal"
         raise ThesisValidationError(
-            "Thesis references current-best/prior-winner inheritance. "
-            "That exploitation path is disabled; start from the family baseline.",
-            rejection_code="thesis_quality_prior_winner_inheritance_language",
+            triggering.summary,
+            rejection_code=triggering.code,
+            evidence=dict(triggering.evidence),
+            remediation_hint=_format_remediation(triggering.remediation),
         )
-
-    if prior_theses:
-        _check_theme_cluster_fixation(thesis, prior_theses)
-        _check_needs_code_starvation(thesis, prior_theses)
-        _check_direction_whipsaw(thesis, prior_theses)
-
-    _check_qualitative_disqualifier_present(thesis)
-
-    if prior_theses:
-        _check_thesis_id_not_repeated(thesis, prior_theses)
-
-    if prior_theses and thesis.mechanism_dimension:
-        same_dim = [
-            p for p in prior_theses if p.get("mechanism_dimension") == thesis.mechanism_dimension
-        ]
-        if same_dim:
-            prior_ids = [p["thesis_id"] for p in same_dim]
-            if len(thesis.dimension_novelty) < _MIN_NOVELTY_EXPLANATION_CHARS:
-                raise ThesisValidationError(
-                    f"Dimension '{thesis.mechanism_dimension}' was already explored "
-                    f"by {prior_ids}. dimension_novelty must explain (>30 chars) "
-                    f"what fundamentally new mechanism this tests within that dimension.",
-                    rejection_code="thesis_quality_dimension_novelty_too_short",
-                    evidence={
-                        "mechanism_dimension": thesis.mechanism_dimension,
-                        "prior_ids": prior_ids,
-                        "min_chars": _MIN_NOVELTY_EXPLANATION_CHARS,
-                    },
-                )
+    # accept and accept_with_warning paths: no raise. Warnings will be
+    # surfaced to the conductor in a future phase.
 
 
 def _validate_config_validity(
@@ -1135,6 +1668,17 @@ def _validate_config_validity(
             rejection_code="config_validity_base_config_path_inheritance_blocked",
             evidence={"baseline_path": baseline_path, "actual_path": thesis.base_config_path},
         )
+    # Design choice: this is enforced as a validator error rather than
+    # silently auto-corrected in normalize_thesis_payload. Two reasons to raise
+    # instead of normalize:
+    #   1. Teaching the conductor where these flags belong (rejection feedback
+    #      surfaces the right shape) is more durable than hiding the mistake.
+    #   2. Silent normalization can mask semantic confusion — e.g. an LLM
+    #      setting requires_code_change=False inside config_changes thinking it
+    #      overrides the top-level value would get silently "fixed" to a state
+    #      it didn't intend.
+    # See docs/superpowers/plans/2026-05-27-validator-gate-consolidation.md
+    # (Task 8) for the discussion.
     for key in sorted(CONFIG_CHANGES_METADATA_KEYS & set(thesis.config_changes)):
         raise ThesisValidationError(
             f"config_changes contains thesis metadata key '{key}'. "
@@ -1142,6 +1686,13 @@ def _validate_config_validity(
             rejection_code="config_validity_config_changes_metadata_leak",
             evidence={"leaked_key": key},
         )
+
+    # Order matters: neighboring-threshold is the more specific finding (same
+    # numeric key, value within 2x band). Run it before the broader Jaccard
+    # config-key overlap rule so single-key theses that violate both don't
+    # receive the less-actionable "100% key overlap" message.
+    if prior_theses:
+        _check_neighboring_threshold(thesis, prior_theses)
 
     if prior_theses and thesis.config_changes:
         is_dup, reason = config_key_overlap(thesis.config_changes, prior_theses)
@@ -1152,19 +1703,20 @@ def _validate_config_validity(
                 evidence={"reason": reason},
             )
 
-    if prior_theses:
-        _check_neighboring_threshold(thesis, prior_theses)
-
 
 def validate_research_thesis(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
+    *,
+    tools_called: set[str] | None = None,
 ) -> ResearchThesis:
     """Validate a research thesis. Raises ThesisValidationError if invalid.
 
-    Dispatches Stage 1 to three named sub-section helpers in fixed order:
-    structural → thesis_quality → config_validity.
+    Dispatches Stage 1 to four named sub-section helpers in fixed order:
+    process → structural → thesis_quality → config_validity.
     """
+    if tools_called is not None:
+        _validate_process(tools_called)
     _validate_structural(thesis, prior_theses)
     _validate_thesis_quality(thesis, prior_theses)
     _validate_config_validity(thesis, prior_theses)
@@ -1174,6 +1726,8 @@ def validate_research_thesis(
 def validate_thesis_dict(
     raw: dict,
     prior_theses: list[dict[str, Any]] | None = None,
+    *,
+    tools_called: set[str] | None = None,
 ) -> ResearchThesis:
     """Parse a raw dict into ResearchThesis and validate it.
 
@@ -1181,7 +1735,11 @@ def validate_thesis_dict(
     Raises ThesisValidationError or pydantic ValidationError.
     """
     thesis = ResearchThesis.model_validate(normalize_thesis_payload(raw))
-    return validate_research_thesis(thesis, prior_theses=prior_theses)
+    return validate_research_thesis(
+        thesis,
+        prior_theses=prior_theses,
+        tools_called=tools_called,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1251,9 +1809,24 @@ def validate_stage_2(contract: Any) -> Any:
     strategy_family = getattr(contract, "strategy_family", "") or ""
 
     if isinstance(runtime_config, dict) and runtime_config:
-        score, explanation = check_hypothesis_alignment(
-            hypothesis, mechanism, runtime_config, family_name=strategy_family
-        )
+        try:
+            score, explanation = check_hypothesis_alignment(
+                hypothesis, mechanism, runtime_config, family_name=strategy_family
+            )
+        except MissingFamilyKeyConceptsError as exc:
+            # Operator-visible configuration error, not a thesis-quality issue.
+            # Raised as a validation error so the harness halts the affected
+            # job loudly instead of silently letting every thesis pass.
+            raise ThesisValidationError(
+                f"Cannot enforce Stage 2 hypothesis-config alignment: {exc}. "
+                f"Populate FamilyResearchSpec.key_concepts for family "
+                f"'{strategy_family}' to enable alignment scoring.",
+                rejection_code="hypothesis_config_alignment_unconfigured",
+                evidence={
+                    "strategy_family": strategy_family,
+                    "reason": str(exc),
+                },
+            ) from exc
         if score < ALIGNMENT_THRESHOLD:
             raise ThesisValidationError(
                 f"Hypothesis-config misalignment (score={score:.2f}): {explanation}",

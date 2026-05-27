@@ -81,6 +81,19 @@ def _base_thesis(thesis_id: str, dimension: str = "signal_quality") -> dict:
                 "rationale": "Filtering low-volatility setups reduces but does not collapse counts.",
             },
         ],
+        # Required field post-refactor — see _validate_structural.
+        "falsification_or_alternative": (
+            "If low-volatility opens show the same PF as high-volatility opens, the "
+            "auction-noise mechanism does not hold and the filter is not the cause."
+        ),
+        # B1 setups have high theme-keyword overlap with priors → computed
+        # overlap = "high" → structural novel_connection gate would fire
+        # before the B1 quality gate. Provide substantive text so the gate
+        # under test is reachable.
+        "novel_connection": (
+            "Reframes the volatility floor as a session-conditioned signal, distinct "
+            "from prior theses that treated it as an absolute threshold."
+        ),
     }
 
 

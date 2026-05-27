@@ -19,6 +19,17 @@ from improvement_flags import reflexion_enabled
 from persistence_utils import safe_stat_mtime
 from reflexio_agent_reflections import build_agent_reflections
 
+
+def read_validation_failure_reason(reflection: dict[str, Any]) -> str:
+    """Read validation_failure_reason from a reflection dict, falling back
+    to the legacy ``rejection_reason`` key for exports written before the
+    field rename. Returns "" when neither is set.
+    """
+    return str(
+        reflection.get("validation_failure_reason") or reflection.get("rejection_reason") or ""
+    )
+
+
 log = get_logger(__name__)
 
 # Glob shape matches what `_write_adapter_exports` writes under the current
@@ -81,7 +92,7 @@ def _format_preamble(
             return ""
     outcome = episode.get("research_outcome") or episode.get("outcome", "?")
     reasoning = (reflection.get("reasoning") or "").strip()
-    rejection_reason = (reflection.get("rejection_reason") or "").strip()
+    validation_failure_reason = read_validation_failure_reason(reflection).strip()
     prev_round = source_round if source_round is not None else int(current_round or 1) - 1
     title = (
         f"PRIOR AGENT REFLEXION (round {prev_round}, agent {agent})"
@@ -100,8 +111,8 @@ def _format_preamble(
             "using trajectory only. Action: inspect Reflexio export generation.",
             agent,
         )
-    if rejection_reason:
-        body_lines.append(f"  why_it_failed: {rejection_reason}")
+    if validation_failure_reason:
+        body_lines.append(f"  why_it_failed: {validation_failure_reason}")
     if trajectory:
         body_lines.append("  prior_trajectory:")
         for item in trajectory[-8:]:

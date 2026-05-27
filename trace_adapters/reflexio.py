@@ -17,7 +17,7 @@ def build_reflexio_payload(
     outcome: str,
     family: str,
     reasoning: str = "",
-    rejection_reason: str = "",
+    validation_failure_reason: str = "",
     quality: dict[str, Any] | None = None,
     usage: dict[str, Any] | None = None,
     trajectory: list[dict[str, Any]] | None = None,
@@ -36,7 +36,7 @@ def build_reflexio_payload(
         },
         "reflection": {
             "reasoning": reasoning,
-            "rejection_reason": rejection_reason,
+            "validation_failure_reason": validation_failure_reason,
             "quality": deepcopy(quality or {}),
         },
         "agent_reflections": deepcopy(
@@ -48,7 +48,7 @@ def build_reflexio_payload(
         "feedback_signal": {
             "outcome": outcome,
             "research_outcome": outcome,
-            "rejection_reason": rejection_reason,
+            "validation_failure_reason": validation_failure_reason,
             "scope": "research_agents",
             "quality": deepcopy(quality or {}),
         },

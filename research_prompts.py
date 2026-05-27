@@ -58,6 +58,20 @@ TOOLS
 
 Tool descriptions specify when to use each. Use them.
 
+VALIDATOR GUARDRAILS
+Mechanical pre-emption of the most frequent rejections. Read once and apply.
+- Valid mechanism_dimension values: entry_timing, exit_mechanism, signal_quality,
+  regime_conditioning, portfolio_construction, risk_structure, market_microstructure,
+  execution_costs, universe_selection, alternative_data, alpha_decay, emergent
+- If an expected_effects.metric is not a builtin (profit_factor, max_drawdown,
+  trade_count, median_expectancy, pct_profitable_windows, avg_sharpe_across_windows),
+  list it in required_diagnostics
+- Theme-cluster fixation: at most 3 of the last 7 theses may share theme_keywords
+- Engine-change starvation: at most 2 consecutive theses may set
+  requires_code_change=true without a completed run in between
+- Stage 2 hypothesis-config alignment: config_changes keys must semantically relate
+  to the words in hypothesis/mechanism
+
 REFLEXION
 Prior-round critiques of analyst and web-researcher performance are passed
 automatically into their next call. You do not act on reflexions directly.
@@ -102,18 +116,30 @@ D2. If the same lever has been tested in both directions (tighten and loosen)
 
 OUTPUT
 Return ONE JSON object matching the thesis schema. Fields:
-  thesis_id              short stable identifier
+  thesis_id              short stable identifier (must not repeat any prior round)
   hypothesis             one-sentence claim
   mechanism              why this should work, in market terms
   mechanism_dimension    one of the known dimensions
   dimension_novelty      why this is not a parameter variation of prior work
-  config_changes         which keys change (delta against family baseline)
+  causal_cluster         human-phrased family name for this thesis's causal story
+                         (REQUIRED when prior theses exist; e.g. "opening-session
+                         adverse selection", NOT a config key like "min_stop_pct")
+  underexplored_dimensions_considered
+                         list of mechanism dimensions you compared before choosing
+                         this one (REQUIRED when prior theses exist; >=1 entry)
+  config_changes         which keys change (delta against family baseline);
+                         may be empty IF requires_code_change=true
+  requires_code_change   bool; set true only when this thesis needs new engine
+                         primitives that no existing config key can express
+  requested_primitives   list of new primitives needed (REQUIRED when
+                         requires_code_change=true; e.g. ["volatility_regime_filter"])
   expected_effects       per-metric prediction with direction and rationale
   disqualifiers          at least one with kind='mechanism_evidence'
   required_diagnostics   non-builtin metrics this thesis needs
   theme_keywords         2-3 noun phrases categorizing the cluster
   prior_lever_outcomes   citations of prior theses reusing the same lever concept
-  falsification_or_alternative   what would weaken this mechanism (>=80 chars)
+  falsification_or_alternative   REQUIRED — what data pattern would weaken this
+                                 mechanism independent of metric movement (>=80 chars)
 
 OPTIONAL: validator_challenge   if you believe a recent rejection was wrong,
                                 attach an object {{challenged_round, challenged_thesis_id,
