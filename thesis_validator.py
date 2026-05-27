@@ -170,7 +170,7 @@ def infer_rejection_code(message: str) -> str:
     if "needs_code starvation" in msg:
         return "thesis_quality_needs_code_starvation"
     if "has already been proposed" in msg:
-        return "thesis_quality_thesis_id_repeated"
+        return "structural_thesis_id_repeated"
     # Stage 2 (no section prefix; lives at the contract layer)
     if "hypothesis-config misalignment" in msg:
         return "hypothesis_config_misalignment"
@@ -535,7 +535,7 @@ def _check_thesis_id_not_repeated(
             f"thesis_id '{thesis.thesis_id}' has already been proposed in a prior "
             f"round. Each thesis must have a unique thesis_id (do not repeat or "
             f"resubmit prior names).",
-            rejection_code="thesis_quality_thesis_id_repeated",
+            rejection_code="structural_thesis_id_repeated",
             evidence={"thesis_id": thesis.thesis_id},
         )
 
@@ -1179,6 +1179,8 @@ def _validate_structural(
         raise ThesisValidationError(
             "Missing thesis_id", rejection_code="structural_missing_thesis_id"
         )
+    if prior_theses:
+        _check_thesis_id_not_repeated(thesis, prior_theses)
 
     if not thesis.hypothesis.strip():
         raise ThesisValidationError(
@@ -1322,9 +1324,6 @@ def _validate_thesis_quality(
         _check_direction_whipsaw(thesis, prior_theses)
 
     _check_qualitative_disqualifier_present(thesis)
-
-    if prior_theses:
-        _check_thesis_id_not_repeated(thesis, prior_theses)
 
 
 

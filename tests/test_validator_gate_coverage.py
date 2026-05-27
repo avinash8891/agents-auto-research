@@ -452,7 +452,7 @@ def test_gate_thesis_quality_missing_mechanism_evidence_disqualifier() -> None:
     )
 
 
-def test_gate_thesis_quality_thesis_id_repeated() -> None:
+def test_gate_structural_thesis_id_repeated() -> None:
     thesis = _minimal_valid_thesis(
         causal_cluster="opening-session noise",
         underexplored_dimensions_considered=["risk_structure"],
@@ -463,7 +463,7 @@ def test_gate_thesis_quality_thesis_id_repeated() -> None:
             config_changes={"some_other_key": 10},
         ),
     ]
-    _expect_rejection(thesis, priors, "thesis_quality_thesis_id_repeated")
+    _expect_rejection(thesis, priors, "structural_thesis_id_repeated")
 
 
 def test_gate_structural_dimension_novelty_too_short_with_same_dim_priors() -> None:
