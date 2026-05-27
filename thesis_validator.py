@@ -146,6 +146,8 @@ def infer_rejection_code(message: str) -> str:
         return "config_validity_config_changes_metadata_leak"
     if "falsification_or_alternative" in msg:
         return "structural_falsification_invalid"
+    if "underexplored_dimensions_considered" in msg:
+        return "structural_underexplored_dimensions_invalid"
     if "emergent" in msg and (
         "malformed" in msg or "new_dimension_name" in msg or "duplicates a core" in msg
     ):
@@ -1051,6 +1053,59 @@ def generate_variants(
 # ---------------------------------------------------------------------------
 
 
+def _validate_underexplored_dimensions(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]],
+) -> None:
+    """Enforce the underexplored_dimensions_considered contract:
+
+      * Non-empty list (required when prior theses exist).
+      * Every entry is a known mechanism dimension.
+      * Chosen mechanism_dimension is NOT in the list.
+
+    All failure modes share one rejection_code with structured evidence so
+    the LLM sees every issue at once instead of one per retry.
+    """
+    issues: list[dict[str, Any]] = []
+    items = thesis.underexplored_dimensions_considered
+
+    if not items:
+        issues.append({"kind": "empty"})
+    else:
+        known = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
+        invalid = [d for d in items if d not in known]
+        if invalid:
+            issues.append(
+                {"kind": "invalid_values", "invalid": invalid, "valid": sorted(known)}
+            )
+        if thesis.mechanism_dimension in items:
+            issues.append(
+                {"kind": "includes_chosen", "chosen": thesis.mechanism_dimension}
+            )
+
+    if not issues:
+        return
+
+    descriptions = []
+    for issue in issues:
+        if issue["kind"] == "empty":
+            descriptions.append("must be non-empty when prior theses exist")
+        elif issue["kind"] == "invalid_values":
+            descriptions.append(
+                f"contains invalid mechanism dimensions: {issue['invalid']}"
+            )
+        elif issue["kind"] == "includes_chosen":
+            descriptions.append(
+                f"must not include the chosen dimension '{issue['chosen']}'"
+            )
+
+    raise ThesisValidationError(
+        f"underexplored_dimensions_considered invalid: {'; '.join(descriptions)}",
+        rejection_code="structural_underexplored_dimensions_invalid",
+        evidence={"issues": issues},
+    )
+
+
 def _validate_emergent_dimension(thesis: ResearchThesis) -> None:
     """Validate the rare emergent-dimension path with a single rejection code.
 
@@ -1176,31 +1231,7 @@ def _validate_structural(
                 "Name the causal family this thesis belongs to.",
                 rejection_code="structural_missing_causal_cluster",
             )
-        if not thesis.underexplored_dimensions_considered:
-            raise ThesisValidationError(
-                "underexplored_dimensions_considered is required when prior theses exist. "
-                "Compare at least two underexplored dimensions before proposing.",
-                rejection_code="structural_missing_underexplored_dimensions",
-            )
-        known_dimensions = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
-        invalid_dims = [
-            d for d in thesis.underexplored_dimensions_considered if d not in known_dimensions
-        ]
-        if invalid_dims:
-            raise ThesisValidationError(
-                f"underexplored_dimensions_considered contains values that are not valid "
-                f"mechanism dimensions: {invalid_dims}. Valid values: {sorted(known_dimensions)}.",
-                rejection_code="structural_underexplored_dimensions_invalid",
-                evidence={"invalid": invalid_dims, "valid": sorted(known_dimensions)},
-            )
-        if thesis.mechanism_dimension in thesis.underexplored_dimensions_considered:
-            raise ThesisValidationError(
-                f"underexplored_dimensions_considered must list dimensions you considered "
-                f"before choosing '{thesis.mechanism_dimension}'. Remove '{thesis.mechanism_dimension}' "
-                f"from the list — it is the dimension this thesis explores, not an alternative.",
-                rejection_code="structural_underexplored_dimensions_includes_chosen",
-                evidence={"chosen_dimension": thesis.mechanism_dimension},
-            )
+        _validate_underexplored_dimensions(thesis, prior_theses)
         # Compute overlap from theme_keywords data rather than trust the
         # LLM-volunteered dominant_cluster_overlap field. The field-self-report
         # path lets the LLM evade the gate by setting "low" regardless of

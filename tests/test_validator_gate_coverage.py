@@ -205,16 +205,16 @@ def test_gate_structural_missing_causal_cluster_when_priors_exist() -> None:
     _expect_rejection(thesis, priors, "structural_missing_causal_cluster")
 
 
-def test_gate_structural_missing_underexplored_dimensions_when_priors_exist() -> None:
+def test_gate_structural_underexplored_dimensions_invalid_empty() -> None:
     thesis = _minimal_valid_thesis(
         causal_cluster="opening-session noise",
         underexplored_dimensions_considered=[],
     )
     priors = [_prior("ema-prior-1", config_changes={"some_other_key": 10})]
-    _expect_rejection(thesis, priors, "structural_missing_underexplored_dimensions")
+    _expect_rejection(thesis, priors, "structural_underexplored_dimensions_invalid")
 
 
-def test_gate_structural_underexplored_dimensions_invalid_values() -> None:
+def test_gate_structural_underexplored_dimensions_invalid_garbage_value() -> None:
     """List must contain only valid mechanism dimensions, not arbitrary strings."""
     thesis = _minimal_valid_thesis(
         causal_cluster="opening-session noise",
@@ -224,7 +224,7 @@ def test_gate_structural_underexplored_dimensions_invalid_values() -> None:
     _expect_rejection(thesis, priors, "structural_underexplored_dimensions_invalid")
 
 
-def test_gate_structural_underexplored_dimensions_includes_chosen() -> None:
+def test_gate_structural_underexplored_dimensions_invalid_includes_chosen() -> None:
     """The chosen mechanism_dimension cannot be in the underexplored list — that
     would be self-contradictory (it's the dimension being used)."""
     thesis = _minimal_valid_thesis(
@@ -232,9 +232,7 @@ def test_gate_structural_underexplored_dimensions_includes_chosen() -> None:
         underexplored_dimensions_considered=[SAMPLE_MECHANISM_DIMENSION, "risk_structure"],
     )
     priors = [_prior("ema-prior-1", config_changes={"some_other_key": 10})]
-    _expect_rejection(
-        thesis, priors, "structural_underexplored_dimensions_includes_chosen"
-    )
+    _expect_rejection(thesis, priors, "structural_underexplored_dimensions_invalid")
 
 
 def test_gate_structural_novel_connection_too_short_when_computed_overlap_high() -> None:
