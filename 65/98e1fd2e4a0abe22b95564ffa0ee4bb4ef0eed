@@ -1,0 +1,19 @@
+research_conductor.py
+  s_eeaca68b53c0c2::t_126a707d58935b 950-953
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6598e1fd2e4a0abe22b95564ffa0ee4bb4ef0eed",
+  "prompts": {},
+  "sessions": {
+    "s_eeaca68b53c0c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e73224a3-7aac-4c74-95d7-b5f5193ba7f4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
