@@ -1,0 +1,22 @@
+tests/test_behavior_signals.py
+  s_757c0ad0f54aeb::t_dd6c74a52eab45 209-245
+thesis_validator.py
+  s_757c0ad0f54aeb::t_dfb4137ea83cbe 1465-1466
+  s_757c0ad0f54aeb::t_b6f4c2ff010224 684-687,689-693,696-697,702-714,717,719-721
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "303f02f65996b5baa952c88e6f4469a7b5ae0868",
+  "prompts": {},
+  "sessions": {
+    "s_757c0ad0f54aeb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e93ab1b2-a46f-4c88-9533-f61a81a67dff",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
