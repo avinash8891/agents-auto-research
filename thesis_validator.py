@@ -707,13 +707,18 @@ def _check_qualitative_disqualifier_present(thesis: ResearchThesis) -> None:
     )
 
 
-def _check_needs_code_starvation(
+def _detect_needs_code_starvation(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]],
-) -> None:
+) -> "BehaviorSignal | None":
+    """Detect when the conductor is queueing engine work without progress.
+
+    Fires when 3+ consecutive most-recent priors required code changes
+    without a completed run between them, and this thesis also requires
+    a code change. Returns None otherwise.
+    """
     if not thesis.requires_code_change:
-        return
-    # Walk priors most-recent-first; count consecutive needs_code + requires_code_change.
+        return None
     streak = 0
     for prior in reversed(prior_theses):
         if _prior_was_run(prior):
@@ -721,18 +726,25 @@ def _check_needs_code_starvation(
         if _prior_required_code_change(prior):
             streak += 1
         else:
-            # Non-code prior breaks the streak even if it didn't run.
             break
         if streak >= B3_NEEDS_CODE_STARVATION_LIMIT:
             break
-    if streak >= B3_NEEDS_CODE_STARVATION_LIMIT:
-        raise ThesisValidationError(
+    if streak < B3_NEEDS_CODE_STARVATION_LIMIT:
+        return None
+    return BehaviorSignal(
+        code="thesis_quality_needs_code_starvation",
+        confidence=1.0,
+        severity="block",
+        summary=(
             f"needs_code starvation: {streak} consecutive prior theses required "
             f"engine changes without running. Propose a non-code thesis to break "
-            f"the queue (set requires_code_change=false and operate on existing config keys).",
-            rejection_code="thesis_quality_needs_code_starvation",
-            evidence={"streak": streak, "limit": B3_NEEDS_CODE_STARVATION_LIMIT},
-        )
+            f"the queue (set requires_code_change=false and operate on existing config keys)."
+        ),
+        evidence={"streak": streak, "limit": B3_NEEDS_CODE_STARVATION_LIMIT},
+        remediation=(
+            "Set requires_code_change=false and use existing config keys",
+        ),
+    )
 
 
 def _slugify(text: str, max_words: int = 8) -> str:
@@ -1430,7 +1442,8 @@ def _validate_thesis_quality(
     if prior_theses:
         if (sig := _detect_theme_cluster_fixation(thesis, prior_theses)) is not None:
             signals.append(sig)
-        _check_needs_code_starvation(thesis, prior_theses)
+        if (sig := _detect_needs_code_starvation(thesis, prior_theses)) is not None:
+            signals.append(sig)
         _check_direction_whipsaw(thesis, prior_theses)
 
     _check_qualitative_disqualifier_present(thesis)

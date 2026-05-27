@@ -136,3 +136,37 @@ def test_theme_cluster_fixation_detector_returns_none_when_pattern_absent() -> N
     )
     priors = [{"thesis_id": "p1", "config_changes": {}, "thesis_details": {"theme_keywords": ["other"]}}]
     assert _detect_theme_cluster_fixation(proposal, priors) is None
+
+
+def test_needs_code_starvation_detector_returns_signal_at_streak_3() -> None:
+    """Three consecutive priors with requires_code_change=true and no run
+    in between → signal fired."""
+    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
+    from thesis_validator import _detect_needs_code_starvation
+
+    proposal = ResearchThesis(
+        thesis_id="ema-new-v1",
+        strategy_family="ema",
+        hypothesis="x", mechanism="x",
+        mechanism_dimension="entry_timing",
+        dimension_novelty="x" * 50,
+        config_changes={},
+        requires_code_change=True,
+        requested_primitives=["new_primitive"],
+        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
+        disqualifiers=[Disqualifier(name="x", condition="y", kind="mechanism_evidence")],
+        falsification_or_alternative="z" * 100,
+    )
+    def code_prior(thesis_id: str) -> dict:
+        return {
+            "thesis_id": thesis_id,
+            "config_changes": {f"k_{thesis_id}": 1},
+            "outcome": "needs_code",
+            "thesis_details": {"requires_code_change": True},
+        }
+    priors = [code_prior("p1"), code_prior("p2"), code_prior("p3")]
+    sig = _detect_needs_code_starvation(proposal, priors)
+    assert sig is not None
+    assert sig.code == "thesis_quality_needs_code_starvation"
+    assert sig.severity == "block"
+    assert sig.confidence == 1.0
