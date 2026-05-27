@@ -100,9 +100,7 @@ The proxy reads an OAuth token from (in order):
 2. `~/.openai_oauth_token` (on the machine running the research process)
 3. `~/.claude_oauth_token` (legacy fallback)
 
-If you bypass `vps_runner.py` and SSH into the VPS manually, the token lives at `/home/researcher/.openai_oauth_token`. Copy it to `/root/.openai_oauth_token` before running as root, or run the process as the `researcher` user.
-
-> **Do not bypass `vps_runner.py` for VPS deploys.** It creates a fresh venv with all required dependencies (including `numba`, `tzdata`), copies `.env`, and manages job state. Manual cloning reuses a stale venv and skips these steps, causing hard-to-diagnose import and timezone errors.
+If you need to run manually on the VPS as root, the token lives at `/home/researcher/.openai_oauth_token`. Copy it to `/root/.openai_oauth_token` first.
 
 ## Development
 
