@@ -94,18 +94,9 @@ _EMERGENT_REQUIRED_FIELDS = (
 )
 _ALLOWED_BASE_CONFIG_PREFIXES = ("configs/",)
 
-# NOTE — removed gate: the prior-winner inheritance language regex (formerly
-# `_PRIOR_BASE_LANGUAGE_PATTERNS`) was deleted. Reasoning:
-#   * It was a behavioral-text detector with high false-negative rate (the LLM
-#     could trivially paraphrase around the patterns).
-#   * The actual enforcement against inheritance lives in gates
-#     `config_validity_base_contract_id_not_allowed` and
-#     `config_validity_base_config_path_inheritance_blocked`, which check the
-#     structured fields the conductor sets to actually inherit. Those gates
-#     are deterministic and unevadable.
-#   * Maintaining the regex was an arms race against paraphrasing — the wrong
-#     approach for harness code.
-# The prompt's ANCHORING section continues to teach the principle.
+# Removed gate: prior-winner inheritance language regex.
+# See docs/superpowers/plans/2026-05-27-validator-gate-consolidation.md
+# ("Removed gates" section) for the rationale.
 
 
 class ThesisValidationError(ValueError):
