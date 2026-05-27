@@ -178,6 +178,12 @@ def infer_rejection_code(message: str) -> str:
     explicitly. Add new patterns as new rules land.
     """
     msg = message.lower()
+    if (
+        "process gate failed" in msg
+        or "call web_search at least once before analyze_trades" in msg
+        or "call list_experiment_results at least once before proposing a thesis" in msg
+    ):
+        return "process_required_tools_not_called"
     # config_validity_*
     if "config-key overlap" in msg:
         return "config_validity_config_key_overlap_real"
@@ -333,6 +339,21 @@ def _known_emergent_dimension_names(prior_theses: list[dict[str, Any]] | None) -
         if isinstance(name, str) and name.strip():
             known.add(_dimension_slug(name))
     return known
+
+
+def _validate_process(_thesis: ResearchThesis, tools_called: set[str]) -> None:
+    required_tools = {
+        "list_experiment_results": "must understand prior experiment outcomes",
+        "web_search": "must be grounded in external evidence",
+    }
+    missing = [tool for tool in required_tools if tool not in tools_called]
+    if not missing:
+        return
+    raise ThesisValidationError(
+        f"Process gate failed: required tools not called: {missing}",
+        rejection_code="process_required_tools_not_called",
+        evidence={"missing_tools": missing, "tools_called": sorted(tools_called)},
+    )
 
 
 def _prior_thesis_entry(row: dict[str, Any]) -> dict[str, Any]:
@@ -1682,12 +1703,16 @@ def _validate_config_validity(
 def validate_research_thesis(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
+    *,
+    tools_called: set[str] | None = None,
 ) -> ResearchThesis:
     """Validate a research thesis. Raises ThesisValidationError if invalid.
 
-    Dispatches Stage 1 to three named sub-section helpers in fixed order:
-    structural → thesis_quality → config_validity.
+    Dispatches Stage 1 to four named sub-section helpers in fixed order:
+    process → structural → thesis_quality → config_validity.
     """
+    if tools_called is not None:
+        _validate_process(thesis, tools_called)
     _validate_structural(thesis, prior_theses)
     _validate_thesis_quality(thesis, prior_theses)
     _validate_config_validity(thesis, prior_theses)
@@ -1697,6 +1722,8 @@ def validate_research_thesis(
 def validate_thesis_dict(
     raw: dict,
     prior_theses: list[dict[str, Any]] | None = None,
+    *,
+    tools_called: set[str] | None = None,
 ) -> ResearchThesis:
     """Parse a raw dict into ResearchThesis and validate it.
 
@@ -1704,7 +1731,11 @@ def validate_thesis_dict(
     Raises ThesisValidationError or pydantic ValidationError.
     """
     thesis = ResearchThesis.model_validate(normalize_thesis_payload(raw))
-    return validate_research_thesis(thesis, prior_theses=prior_theses)
+    return validate_research_thesis(
+        thesis,
+        prior_theses=prior_theses,
+        tools_called=tools_called,
+    )
 
 
 # ---------------------------------------------------------------------------

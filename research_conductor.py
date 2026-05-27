@@ -90,37 +90,6 @@ def _render_resolution_context(resolution_context: dict[str, Any] | None) -> str
     return "\n".join(lines)
 
 
-def _check_web_search_called_first(tools_called: set[str]) -> str | None:
-    """L6: return an error message if web_search has not been called yet; else None.
-
-    Recovers legacy §13.3 hard gate: external evidence must be consulted before
-    asking the analyst, so the analyst arrives at a specific hypothesis instead
-    of fishing.
-    """
-    if "web_search" in tools_called:
-        return None
-    return (
-        "ERROR: HARD GATE — call web_search at least once before analyze_trades. "
-        "You must arrive at the analyst with a specific hypothesis grounded in "
-        "external evidence, not use the analyst to discover one."
-    )
-
-
-def _check_experiment_results_consulted(tools_called: set[str]) -> str | None:
-    """L7: return an error message if list_experiment_results has not been called; else None.
-
-    Recovers legacy §7 requirement that the conductor consult the full experiment
-    history (not just the prompt's small summary) before proposing.
-    """
-    if "list_experiment_results" in tools_called:
-        return None
-    return (
-        "ERROR: HARD GATE — call list_experiment_results at least once before "
-        "proposing a thesis. The user prompt only contains a small experiment "
-        "summary; the tools are the source of truth for complete experiment history."
-    )
-
-
 def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     """Extract single thesis dict from conductor response. Returns (thesis, validation_error).
 
@@ -259,8 +228,8 @@ async def run_research_conductor(
     )
     result_text = ""
     session_finished = False
-    # L6/L7: track which tools have been called so we can enforce the
-    # web_search-before-analyze_trades and "consult experiment results" gates.
+    # Track which tools have been called so the thesis validator can enforce
+    # per-thesis process requirements after the conductor proposes a thesis.
     tools_called_this_round: set[str] = set()
     try:
         _ensure_oauth_proxy()
@@ -285,11 +254,7 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-            # L6: web_search must be called before analyze_trades.
-            gate_error = _check_web_search_called_first(tools_called_this_round)
-            if gate_error is not None:
-                output = gate_error
-            elif not trades_file:
+            if not trades_file:
                 output = "ERROR: No trades file available for this round."
             else:
                 tools_called_this_round.add("analyze_trades")
@@ -958,26 +923,6 @@ async def run_research_conductor(
     )
 
     if parsed:
-        gate_error = _check_experiment_results_consulted(tools_called_this_round)
-        if gate_error is not None and not parsed.get("should_stop"):
-            trace(
-                "CONDUCTOR",
-                "validate failed: experiment results gate not satisfied",
-                model_provider="openai",
-                model_name=_CONDUCTOR_MODEL,
-            )
-            _REFINEMENT_RECORDER.finish_session(
-                session_id=refinement_session["session_id"],
-                stopping_reason="invalid_output",
-                final_outcome="retry_required",
-            )
-            session_finished = True
-            return ConductorResult(
-                status="conductor_error",
-                error="experiment_results_not_consulted",
-                validation_reason=gate_error,
-                reasoning=parsed.get("reasoning", ""),
-            )
         if parsed.get("should_stop"):
             trace(
                 "CONDUCTOR",
@@ -1008,7 +953,7 @@ async def run_research_conductor(
             candidate = dict(thesis)
             candidate["strategy_family"] = family_name
             try:
-                validate_thesis_dict(candidate)
+                validate_thesis_dict(candidate, tools_called=tools_called_this_round)
             except Exception as exc:
                 validation_reason = str(exc)
                 trace(

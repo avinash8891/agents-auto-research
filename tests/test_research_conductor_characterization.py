@@ -272,30 +272,11 @@ def test_conductor_prompt_without_trades_uses_latest_outcome_without_analyst(
     assert "Strategy family: unknown-family" not in prompts[0]
 
 
-def test_conductor_rejects_thesis_when_experiment_results_tool_was_not_called(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_conductor_runner(
-        monkeypatch,
-        {
-            "reasoning": "try a new entry timing mechanism",
-            "suggested_theses": [{"thesis_id": "entry_timing"}],
-            "should_stop": False,
-        },
-    )
-
-    out = conductor.run_research_conductor_sync(
-        "",
-        "small prompt summary",
-        {"status": "keep"},
-        research_round=6,
-        family_name="ema",
-    )
-
-    assert out is not None
-    assert out.status == "conductor_error"
-    assert out.error == "experiment_results_not_consulted"
-    assert "list_experiment_results" in out.validation_reason
+# REMOVED: test_conductor_rejects_thesis_when_experiment_results_tool_was_not_called
+# The L7 inline conductor gate that this test exercised has been moved to the
+# validator as part of the process_validator refactor. Equivalent coverage now
+# lives in tests/test_validator_process_gate.py
+# (test_process_gate_rejects_when_experiment_results_not_called).
 
 
 def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
@@ -378,7 +359,10 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
     assert out.should_stop is True
     output_by_tool = dict(tool_outputs)
     assert output_by_tool["analyze_trades"] == "analyst found baseline rejection concentration"
-    assert "call web_search at least once" in tool_outputs[0][1]
+    # NOTE: removed assertion `"call web_search at least once" in tool_outputs[0][1]`.
+    # The L6 inline order gate on analyze_trades has been removed — analyze_trades
+    # now dispatches unconditionally. Per-thesis web_search enforcement moved to
+    # the validator (see _validate_process / tests/test_validator_process_gate.py).
     assert output_by_tool["web_search"] == "web evidence for EMA opening gap filters"
     assert output_by_tool["save_finding"] == "saved finding"
     assert "opening gap failures cluster" in output_by_tool["search_findings"]
@@ -626,7 +610,11 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
         "mechanism_dimension": "signal_quality",
         "config_changes": {"entry_delay_minutes": 15},
     }
-    monkeypatch.setattr(conductor, "validate_thesis_dict", lambda candidate: candidate)
+    monkeypatch.setattr(
+        conductor,
+        "validate_thesis_dict",
+        lambda candidate, tools_called=None: candidate,
+    )
     _patch_conductor_runner(
         monkeypatch,
         {
@@ -663,7 +651,9 @@ def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
     monkeypatch.setattr(
         conductor,
         "validate_thesis_dict",
-        lambda candidate: (_ for _ in ()).throw(ValueError("mechanism_dimension is stale")),
+        lambda candidate, tools_called=None: (_ for _ in ()).throw(
+            ValueError("mechanism_dimension is stale")
+        ),
     )
     _patch_conductor_runner(
         monkeypatch,
@@ -721,7 +711,11 @@ def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wra
         "mechanism_dimension": "time_regime_microstructure",
         "config_changes": {"min_alert_time": "09:40"},
     }
-    monkeypatch.setattr(conductor, "validate_thesis_dict", lambda candidate: candidate)
+    monkeypatch.setattr(
+        conductor,
+        "validate_thesis_dict",
+        lambda candidate, tools_called=None: candidate,
+    )
     # Conductor returns thesis directly — NO suggested_theses wrapper (v3 prompt contract)
     _patch_conductor_runner(
         monkeypatch,

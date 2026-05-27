@@ -75,6 +75,12 @@ def _base_thesis(thesis_id: str, config_changes: dict) -> dict:
             "strategies/ema/signals.py:detect_pullback applies gap_exclude_pct as "
             "a top-of-day filter; tighter values reduce the included population."
         ),
+        # Required post-refactor: falsification_or_alternative must be
+        # present and ≥80 chars. Was previously optional.
+        "falsification_or_alternative": (
+            "If quintile PF spread by gap magnitude is below 0.2 across the train and "
+            "validation samples, the gap-regime mechanism does not hold."
+        ),
     }
 
 

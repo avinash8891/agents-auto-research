@@ -136,18 +136,21 @@ def test_check_hypothesis_alignment_uses_family_specific_concepts() -> None:
     assert score == 1.0
 
 
-def test_check_hypothesis_alignment_unknown_family_fails_open() -> None:
-    """An unregistered family has no concept map → every key is unknown →
-    score is 1.0 (benefit of doubt)."""
-    score, explanation = check_hypothesis_alignment(
-        hypothesis="Anything",
-        mechanism="Anything",
-        config_changes={"some_key": 1, "other_key": 2},
-        family_name="nonexistent_family",
-    )
-    assert score == 1.0
-    # Surface the fail-open behavior explicitly so operators notice unwired families.
-    assert "concept" in explanation.lower() or "no" in explanation.lower()
+def test_check_hypothesis_alignment_unknown_family_now_fails_loud() -> None:
+    """An unregistered family has no concept map → previously fell open silently
+    (returning score 1.0). That let entire families skip Stage 2 alignment
+    enforcement undetected. The validator now raises
+    `MissingFamilyKeyConceptsError` so operators see the gap rather than ignore it.
+    """
+    from thesis_validator import MissingFamilyKeyConceptsError
+
+    with pytest.raises(MissingFamilyKeyConceptsError, match="nonexistent_family"):
+        check_hypothesis_alignment(
+            hypothesis="Anything",
+            mechanism="Anything",
+            config_changes={"some_key": 1, "other_key": 2},
+            family_name="nonexistent_family",
+        )
 
 
 def test_check_hypothesis_alignment_orb_family_fails_open_for_uncatalogued_keys() -> None:
@@ -211,5 +214,9 @@ def test_validate_stage_2_passes_strategy_family_to_alignment() -> None:
         hypothesis="Filter setups by minimum opening volatility to avoid noise.",
         mechanism="Low-volatility opens have weaker microstructure signals.",
     )
-    # No raise: unregistered family has no concept map and the rule fails open.
-    validate_stage_2(unwired_contract)
+    # Unregistered family used to fall open silently; the harness now raises
+    # `hypothesis_config_alignment_unconfigured` so operators MUST populate
+    # FamilyResearchSpec.key_concepts for each family before Stage 2 runs.
+    with pytest.raises(ThesisValidationError) as unwired_exc:
+        validate_stage_2(unwired_contract)
+    assert unwired_exc.value.rejection_code == "hypothesis_config_alignment_unconfigured"

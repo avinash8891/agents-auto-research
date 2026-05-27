@@ -5,6 +5,11 @@ from pathlib import Path
 
 from agnost_mcp import config, track
 
+from rejection_artifact import (
+    get_rejection as _get_rejection,
+    list_rejections as _list_rejections,
+    rejection_pattern_summary as _rejection_pattern_summary,
+)
 from trace_sdk import trace
 
 
@@ -153,6 +158,12 @@ def _build_research_tools_mcp(
         Check this BEFORE proposing a new thesis. Use get_past_thesis for full
         details on relevant prior thesis IDs.
         """
+        if list_past_theses_for_root is None:
+            from research_memory import list_past_theses as _list_past_theses_for_root
+
+            return _list_past_theses_for_root(
+                root, job_id=current_job, offset=offset, limit=limit
+            )
         return list_past_theses_for_root(root, job_id=current_job, offset=offset, limit=limit)
 
     @mcp.tool()
@@ -191,6 +202,74 @@ def _build_research_tools_mcp(
 
             return _get_result_for_root(root, thesis_id, job_id=current_job, detail=detail)
         return get_experiment_result_for_root(root, thesis_id, job_id=current_job, detail=detail)
+
+    @mcp.tool()
+    async def list_rejections(
+        round_number: int | None = None,
+        rejection_code: str | None = None,
+        limit: int = 25,
+    ) -> str:
+        """List validator rejections persisted for this job's research rounds.
+
+        Read BEFORE proposing a thesis to avoid repeating a rejection class
+        that has already failed in this job. Results are most-recent-round
+        first.
+
+        Args:
+            round_number: scope to one round (None = all rounds).
+            rejection_code: filter by category (e.g. "thesis_quality_theme_cluster_fixation").
+            limit: cap result count (default 25).
+        """
+        if current_job is None:
+            return "ERROR: No active job; cannot list rejections."
+        rejections = _list_rejections(
+            root,
+            job=current_job,
+            round_number=round_number,
+            rejection_code=rejection_code,
+            limit=limit,
+        )
+        return json.dumps(
+            [r.model_dump() for r in rejections],
+            indent=2,
+            default=str,
+        )
+
+    @mcp.tool()
+    async def get_rejection(round_number: int, thesis_id: str) -> str:
+        """Fetch one rejection record by (round_number, thesis_id).
+
+        Use after list_rejections finds a relevant rejection_code to read the
+        full evidence and remediation_hint for that specific failure.
+        """
+        if current_job is None:
+            return "ERROR: No active job; cannot fetch rejection."
+        rejection = _get_rejection(
+            root,
+            job=current_job,
+            round_number=round_number,
+            thesis_id=thesis_id,
+        )
+        if rejection is None:
+            return f"ERROR: No rejection found for round={round_number} thesis_id={thesis_id}."
+        return rejection.model_dump_json(indent=2)
+
+    @mcp.tool()
+    async def rejection_pattern_summary(window_rounds: int = 10) -> str:
+        """Group rejections from the last N rounds by rejection_code with counts.
+
+        Use to spot patterns: if one code dominates, the conductor is
+        repeating a class of error and needs a different mechanism dimension.
+        Each entry: {rejection_code, count, example_thesis_ids}.
+        """
+        if current_job is None:
+            return "ERROR: No active job; cannot summarize rejections."
+        summary = _rejection_pattern_summary(
+            root,
+            job=current_job,
+            window_rounds=window_rounds,
+        )
+        return json.dumps(summary, indent=2, default=str)
 
     track(
         mcp,

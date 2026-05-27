@@ -1,33 +1,30 @@
-"""Tests for L6 (web_search before analyze_trades) and L7 (list_experiment_results required)."""
-
 from __future__ import annotations
 
-
-def test_l6_check_returns_error_when_web_search_not_called() -> None:
-    from research_conductor import _check_web_search_called_first
-
-    err = _check_web_search_called_first(set())
-    assert err is not None
-    assert "web_search" in err
+import research_conductor
+from thesis_validator import infer_rejection_code
 
 
-def test_l6_check_returns_none_after_web_search_called() -> None:
-    from research_conductor import _check_web_search_called_first
-
-    err = _check_web_search_called_first({"web_search"})
-    assert err is None
+def test_conductor_no_longer_exports_web_search_order_gate() -> None:
+    assert not hasattr(research_conductor, "_check_web_search_called_first")
 
 
-def test_l7_check_returns_error_when_experiment_results_not_called() -> None:
-    from research_conductor import _check_experiment_results_consulted
-
-    err = _check_experiment_results_consulted(set())
-    assert err is not None
-    assert "list_experiment_results" in err
+def test_conductor_no_longer_exports_experiment_results_gate() -> None:
+    assert not hasattr(research_conductor, "_check_experiment_results_consulted")
 
 
-def test_l7_check_returns_none_after_experiment_results_called() -> None:
-    from research_conductor import _check_experiment_results_consulted
+def test_legacy_l6_message_maps_to_process_required_tools_code() -> None:
+    assert (
+        infer_rejection_code(
+            "ERROR: HARD GATE — call web_search at least once before analyze_trades."
+        )
+        == "process_required_tools_not_called"
+    )
 
-    err = _check_experiment_results_consulted({"list_experiment_results"})
-    assert err is None
+
+def test_legacy_l7_message_maps_to_process_required_tools_code() -> None:
+    assert (
+        infer_rejection_code(
+            "ERROR: HARD GATE — call list_experiment_results at least once before proposing a thesis."
+        )
+        == "process_required_tools_not_called"
+    )

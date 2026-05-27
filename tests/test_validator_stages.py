@@ -81,6 +81,12 @@ def _base_thesis() -> dict:
                 "rationale": "Filtering low-volatility setups reduces but does not collapse counts.",
             },
         ],
+        # Required field post-refactor: doctrine was always to require a
+        # disconfirmer; the validator now enforces presence, not just length.
+        "falsification_or_alternative": (
+            "If high-volatility and low-volatility setups show the same PF distribution, "
+            "the volatility-quality mechanism does not hold."
+        ),
     }
 
 
