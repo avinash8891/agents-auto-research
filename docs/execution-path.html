@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Autoresearch Execution Path</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3250;
+      --accent: #5b6af0;
+      --accent2: #3ecf8e;
+      --accent3: #f0a050;
+      --accent4: #e05a7a;
+      --accent5: #a06af0;
+      --text: #e2e8f0;
+      --muted: #7a82a8;
+      --code-bg: #131625;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      line-height: 1.6;
+    }
+    a { color: var(--accent); text-decoration: none; }
+
+    /* ── Header ── */
+    .hero {
+      background: linear-gradient(135deg, #12152a 0%, #1a1d35 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 56px 48px 48px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -80px; right: -80px;
+      width: 360px; height: 360px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(91,106,240,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+    .hero h1 span { color: var(--accent); }
+    .hero p { color: var(--muted); margin-top: 10px; max-width: 640px; font-size: 0.95rem; }
+    .badge {
+      display: inline-block; font-size: 0.7rem; font-weight: 600;
+      padding: 2px 8px; border-radius: 99px; letter-spacing: 0.05em;
+      text-transform: uppercase; margin-left: 8px; vertical-align: middle;
+    }
+    .badge-blue { background: rgba(91,106,240,0.2); color: #8b9af7; border: 1px solid rgba(91,106,240,0.3); }
+    .badge-green { background: rgba(62,207,142,0.15); color: #5de0a6; border: 1px solid rgba(62,207,142,0.25); }
+    .badge-orange { background: rgba(240,160,80,0.15); color: #f4b86e; border: 1px solid rgba(240,160,80,0.25); }
+    .badge-red { background: rgba(224,90,122,0.15); color: #e87ea0; border: 1px solid rgba(224,90,122,0.25); }
+    .badge-purple { background: rgba(160,106,240,0.15); color: #b88af7; border: 1px solid rgba(160,106,240,0.25); }
+
+    /* ── Layout ── */
+    .page { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+
+    /* ── Section headings ── */
+    h2 {
+      font-size: 1.2rem; font-weight: 700; letter-spacing: -0.01em;
+      margin: 48px 0 20px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    h2::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    h3 { font-size: 0.95rem; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+
+    /* ── Top-level flow ── */
+    .flow-row {
+      display: flex; align-items: stretch; gap: 0;
+      overflow-x: auto; padding-bottom: 4px;
+    }
+    .flow-node {
+      flex: 1; min-width: 140px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 14px;
+      position: relative;
+    }
+    .flow-node .node-label {
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+    }
+    .flow-node .node-title {
+      font-size: 0.88rem; font-weight: 600; line-height: 1.3;
+    }
+    .flow-node .node-desc {
+      font-size: 0.75rem; color: var(--muted); margin-top: 6px; line-height: 1.4;
+    }
+    .flow-arrow {
+      display: flex; align-items: center; padding: 0 4px; color: var(--muted);
+      font-size: 1.2rem; flex-shrink: 0;
+    }
+    .border-blue { border-color: rgba(91,106,240,0.5); }
+    .border-green { border-color: rgba(62,207,142,0.4); }
+    .border-orange { border-color: rgba(240,160,80,0.4); }
+    .border-red { border-color: rgba(224,90,122,0.4); }
+    .border-purple { border-color: rgba(160,106,240,0.4); }
+
+    /* ── Code blocks ── */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      font-size: 0.78rem;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      overflow-x: auto;
+      color: #c5cef5;
+      line-height: 1.6;
+    }
+    .kw { color: #8b9af7; }
+    .fn { color: #5de0a6; }
+    .cm { color: #4a5280; font-style: italic; }
+    .st { color: #f4b86e; }
+    .nu { color: #e87ea0; }
+
+    /* ── Layer cards ── */
+    .layer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    .layer-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .layer-card .lc-header {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+    }
+    .layer-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .dot-blue { background: var(--accent); }
+    .dot-green { background: var(--accent2); }
+    .dot-orange { background: var(--accent3); }
+    .dot-red { background: var(--accent4); }
+    .dot-purple { background: var(--accent5); }
+    .lc-title { font-size: 0.85rem; font-weight: 700; }
+    .lc-file { font-size: 0.72rem; color: var(--muted); font-family: monospace; }
+    .fn-list { list-style: none; }
+    .fn-list li {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 6px 0;
+      border-top: 1px solid var(--border);
+      font-size: 0.78rem;
+    }
+    .fn-list li:first-child { border-top: none; }
+    .fn-name {
+      color: var(--accent2); font-family: monospace; font-size: 0.76rem;
+      flex-shrink: 0; padding-top: 1px;
+    }
+    .fn-desc { color: var(--muted); line-height: 1.4; }
+
+    /* ── State machine ── */
+    .state-machine {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+    }
+    .sm-row {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .sm-state {
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      font-family: monospace;
+      border: 1px solid;
+      white-space: nowrap;
+    }
+    .sm-state.s-running { background: rgba(62,207,142,0.1); border-color: rgba(62,207,142,0.35); color: #5de0a6; }
+    .sm-state.s-blocked { background: rgba(240,160,80,0.1); border-color: rgba(240,160,80,0.35); color: #f4b86e; }
+    .sm-state.s-halted { background: rgba(224,90,122,0.1); border-color: rgba(224,90,122,0.35); color: #e87ea0; }
+    .sm-state.s-finished { background: rgba(91,106,240,0.1); border-color: rgba(91,106,240,0.35); color: #8b9af7; }
+    .sm-state.s-interrupted { background: rgba(160,106,240,0.1); border-color: rgba(160,106,240,0.35); color: #b88af7; }
+    .sm-state.s-building { background: rgba(240,160,80,0.08); border-color: rgba(240,160,80,0.25); color: #d4a060; }
+    .sm-arrow { color: var(--muted); font-size: 1rem; }
+    .sm-label { font-size: 0.7rem; color: var(--muted); font-style: italic; }
+    .sm-branch { margin-left: 32px; border-left: 2px solid var(--border); padding-left: 20px; margin-top: 4px; margin-bottom: 8px; }
+
+    /* ── File I/O table ── */
+    table {
+      width: 100%; border-collapse: collapse; font-size: 0.78rem;
+    }
+    th {
+      text-align: left; padding: 10px 14px;
+      background: var(--surface2); color: var(--muted);
+      font-weight: 600; font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+    td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .td-mono { font-family: monospace; color: var(--accent2); font-size: 0.72rem; }
+    .td-layer { font-weight: 600; }
+
+    /* ── Agent subprocess cards ── */
+    .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+    .agent-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+    }
+    .agent-card h3 { font-size: 0.82rem; margin-bottom: 10px; color: var(--text); }
+    .kv-row { display: flex; gap: 8px; font-size: 0.75rem; margin-bottom: 5px; }
+    .kv-key { color: var(--muted); flex-shrink: 0; width: 68px; }
+    .kv-val { color: var(--text); font-family: monospace; }
+
+    /* ── Loop diagram ── */
+    .loop-diagram {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px 28px;
+      font-family: monospace;
+      font-size: 0.78rem;
+      color: #c5cef5;
+      line-height: 1.8;
+    }
+    .indent1 { padding-left: 20px; }
+    .indent2 { padding-left: 40px; }
+    .indent3 { padding-left: 60px; }
+    .lk { color: #8b9af7; }
+    .lf { color: #5de0a6; }
+    .ls { color: #f4b86e; }
+    .lc { color: #4a5280; font-style: italic; }
+
+    /* ── Tooltip note ── */
+    .note {
+      background: rgba(91,106,240,0.08);
+      border: 1px solid rgba(91,106,240,0.25);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 0.78rem;
+      color: #9aa3d4;
+      margin-top: 16px;
+    }
+    .note strong { color: var(--text); }
+  </style>
+  <link rel="stylesheet" href="/lib/feedback.css">
+</head>
+<body>
+
+<div class="hero">
+  <h1>Autoresearch <span>Execution Path</span></h1>
+  <p>End-to-end call graph from VPS runner → controller loop → research conductor → backtest experiment. Use this as your mental model when debugging or extending the system.</p>
+</div>
+
+<div class="page">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <h2>Top-Level Flow</h2>
+
+  <div class="flow-row">
+    <div class="flow-node border-orange">
+      <div class="node-label">Entry</div>
+      <div class="node-title">vps_runner.py</div>
+      <div class="node-desc">SSH deploy + env upload. Calls controller remotely via <code>--prepare-launch-state-only</code> then <code>--run-current-state</code>.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node border-blue">
+      <div class="node-label">Layer 1</div>
+      <div class="node-title">autoresearch_controller.py</div>
+      <div class="node-desc">Main state machine loop. Calls <code>execute_once()</code> repeatedly until terminal state.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node border-purple">
+      <div class="node-label">Layer 2A</div>
+      <div class="node-title">autoresearch_orchestration.py</div>
+      <div class="node-desc">Decides next action: baseline rerun, resume halted thesis, build, or reconcile.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node border-green">
+      <div class="node-label">Layer 2B/C</div>
+      <div class="node-title">research / experiment</div>
+      <div class="node-desc">Either runs a research conductor round or executes a backtest subprocess.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node border-red">
+      <div class="node-label">Layer 3+</div>
+      <div class="node-title">OpenAI Agents SDK + Backtest</div>
+      <div class="node-desc">Research conductor (max 50 turns, 7+ tools) or strategy-specific backtest binary.</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <h2>Controller Loop (Layer 1)</h2>
+
+  <div class="loop-diagram">
+    <div><span class="lk">def</span> <span class="lf">_run_controller_loop</span>(self):</div>
+    <div class="indent1"><span class="lk">while</span> <span class="lk">True</span>:</div>
+    <div class="indent2"><span class="lf">execute_once</span>()  <span class="lc"># one state-machine tick</span></div>
+    <div class="indent2">&nbsp;</div>
+    <div class="indent2"><span class="lk">if</span> state <span class="lk">in</span> (<span class="ls">'finished'</span>, <span class="ls">'interrupted'</span>, <span class="ls">'halted'</span>):</div>
+    <div class="indent3"><span class="lk">return</span> 0  <span class="lc"># terminal — stop looping</span></div>
+    <div class="indent2"><span class="lk">if</span> state == <span class="ls">'blocked'</span> <span class="lk">and</span> blocker == <span class="ls">'research_required'</span>:</div>
+    <div class="indent3"><span class="lk">continue</span>  <span class="lc"># research loop — go again</span></div>
+    <div class="indent2"><span class="lk">if</span> state == <span class="ls">'blocked'</span> (other):</div>
+    <div class="indent3"><span class="lk">return</span> 1  <span class="lc"># terminal blocker</span></div>
+    <div>&nbsp;</div>
+    <div><span class="lk">def</span> <span class="lf">execute_once</span>(self):</div>
+    <div class="indent1"><span class="lf">_ensure_job_metadata</span>()     <span class="lc"># validate/init job context</span></div>
+    <div class="indent1"><span class="lf">_resolve_next_action</span>()     <span class="lc"># → autoresearch_orchestration</span></div>
+    <div class="indent1"><span class="lk">if</span> state == <span class="ls">'blocked'</span> <span class="lk">and</span> research_required:</div>
+    <div class="indent2"><span class="lf">_run_research</span>()           <span class="lc"># → autoresearch_research</span></div>
+    <div class="indent2"><span class="lk">if</span> research ok: state = <span class="ls">'running'</span></div>
+    <div class="indent1"><span class="lk">if</span> state == <span class="ls">'running'</span>:</div>
+    <div class="indent2"><span class="lf">_run_experiment</span>()         <span class="lc"># → autoresearch_experiment</span></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <h2>State Machine</h2>
+
+  <div class="state-machine">
+    <div class="sm-row">
+      <span class="sm-state s-running">running</span>
+      <span class="sm-arrow">→ next=run_baseline →</span>
+      <span class="sm-state s-running">running</span>
+      <span class="sm-arrow">→ run_experiment (baseline)</span>
+    </div>
+    <div class="sm-row">
+      <span class="sm-arrow" style="margin-left:24px">↓ baseline done</span>
+    </div>
+    <div class="sm-row">
+      <span class="sm-state s-blocked">blocked</span>
+      <span class="sm-label">next=research (research_required blocker)</span>
+    </div>
+    <div class="sm-branch">
+      <div class="sm-row">
+        <span class="sm-arrow">↓</span>
+        <span class="sm-state s-running">running</span>
+        <span class="sm-label">research success → generated_config ready</span>
+      </div>
+      <div class="sm-row">
+        <span class="sm-arrow">↓</span>
+        <span class="sm-state s-halted">halted</span>
+        <span class="sm-label">needs_code → compiler_builder runs</span>
+      </div>
+      <div class="sm-branch">
+        <div class="sm-row">
+          <span class="sm-state s-building">building</span>
+          <span class="sm-arrow">→ builder success →</span>
+          <span class="sm-state s-running">running</span>
+        </div>
+        <div class="sm-row">
+          <span class="sm-state s-building">building</span>
+          <span class="sm-arrow">→ builder failure →</span>
+          <span class="sm-state s-halted">halted</span>
+          <span class="sm-label">(manual_review blocker)</span>
+        </div>
+      </div>
+      <div class="sm-row">
+        <span class="sm-arrow">↓</span>
+        <span class="sm-state s-finished">finished</span>
+        <span class="sm-label">should_stop=True from conductor</span>
+      </div>
+      <div class="sm-row">
+        <span class="sm-arrow">↓</span>
+        <span class="sm-state s-interrupted">interrupted</span>
+        <span class="sm-label">research failure / max retries</span>
+      </div>
+    </div>
+    <div class="sm-row" style="margin-top:8px">
+      <span class="sm-state s-running">running</span>
+      <span class="sm-arrow">→ run_experiment (thesis N) → reconcile → loop</span>
+    </div>
+
+    <div class="note" style="margin-top:20px">
+      <strong>Key invariant:</strong> The state file (<code>autoresearch.next.json</code>) is the single source of truth. The controller reads it at each tick — it can be safely killed and resumed at any boundary between <code>execute_once()</code> calls.
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <h2>Layer Detail — Functions</h2>
+
+  <div class="layer-grid">
+
+    <div class="layer-card">
+      <div class="lc-header">
+        <div class="layer-dot dot-orange"></div>
+        <div>
+          <div class="lc-title">VPS Runner <span class="badge badge-orange">Entry</span></div>
+          <div class="lc-file">vps_runner.py</div>
+        </div>
+      </div>
+      <ul class="fn-list">
+        <li><span class="fn-name">main()</span><span class="fn-desc">CLI entry. Loads .env, parses args, validates SSH config.</span></li>
+        <li><span class="fn-name">_activity_probe()</span><span class="fn-desc">Checks if another run is already active on VPS.</span></li>
+        <li><span class="fn-name">_git_prepare()</span><span class="fn-desc">Clone/fetch/checkout specified git ref on remote.</span></li>
+        <li><span class="fn-name">_upload_env()</span><span class="fn-desc">SFTP uploads .env.autoresearch + Codex auth bundle.</span></li>
+        <li><span class="fn-name">_invoke_remote()</span><span class="fn-desc">Runs controller with --prepare-launch-state-only then --run-current-state, streams stdout.</span></li>
+      </ul>
+    </div>
+
+    <div class="layer-card">
+      <div class="lc-header">
+        <div class="layer-dot dot-blue"></div>
+        <div>
+          <div class="lc-title">Controller <span class="badge badge-blue">State Machine</span></div>
+          <div class="lc-file">autoresearch_controller.py</div>
+        </div>
+      </div>
+      <ul class="fn-list">
+        <li><span class="fn-name">main()</span><span class="fn-desc">Instantiates controller, normalizes launch state, starts loop.</span></li>
+        <li><span class="fn-name">_run_controller_loop()</span><span class="fn-desc">While-loop calling execute_once() until terminal state.</span></li>
+        <li><span class="fn-name">execute_once()</span><span class="fn-desc">One tick: ensure job → resolve action → research or experiment.</span></li>
+        <li><span class="fn-name">_ensure_job_metadata()</span><span class="fn-desc">Validates and initializes job context in state file.</span></li>
+        <li><span class="fn-name">reconcile_state()</span><span class="fn-desc">Recomputes state from all experiment results after each run.</span></li>
+      </ul>
+    </div>
+
+    <div class="layer-card">
+      <div class="lc-header">
+        <div class="layer-dot dot-purple"></div>
+        <div>
+          <div class="lc-title">Orchestration <span class="badge badge-purple">Next Action</span></div>
+          <div class="lc-file">autoresearch_orchestration.py</div>
+        </div>
+      </div>
+      <ul class="fn-list">
+        <li><span class="fn-name">resolve_next_action()</span><span class="fn-desc">Waterfall: baseline rerun → resume halted → build → reconcile.</span></li>
+        <li><span class="fn-name">try_resume_halted_thesis()</span><span class="fn-desc">Materializes halted thesis runtime config and transitions to running.</span></li>
+        <li><span class="fn-name">build_missing_primitives_for_state()</span><span class="fn-desc">Marks state as building, invokes compiler_builder subprocess.</span></li>
+        <li><span class="fn-name">_activate_builder_config()</span><span class="fn-desc">On build success, sets up experiment with generated config.</span></li>
+        <li><span class="fn-name">_mark_builder_manual_review()</span><span class="fn-desc">On build failure, halts with manual_review blocker.</span></li>
+      </ul>
+    </div>
+
+    <div class="layer-card">
+      <div class="lc-header">
+        <div class="layer-dot dot-blue"></div>
+        <div>
+          <div class="lc-title">Planning <span class="badge badge-blue">What to Run</span></div>
+          <div class="lc-file">autoresearch_planning.py</div>
+        </div>
+      </div>
+      <ul class="fn-list">
+        <li><span class="fn-name">plan_next_action()</span><span class="fn-desc">Top-level planner: forced baseline → no results → research waterfall.</span></li>
+        <li><span class="fn-name">select_research_next_action()</span><span class="fn-desc">Baseline branch → check termination → return blocked_for_research.</span></li>
+        <li><span class="fn-name">should_terminate()</span><span class="fn-desc">Checks latest research artifact for a should_stop signal.</span></li>
+        <li><span class="fn-name">check_baseline_rerun()</span><span class="fn-desc">Forces baseline rerun when strategy code changes detected.</span></li>
+      </ul>
+    </div>
+
+    <div class="layer-card">
+      <div class="lc-header">
+        <div class="layer-dot dot-green"></div>
+        <div>
+          <div class="lc-title">Research <span class="badge badge-green">Conductor Round</span></div>
+          <div class="lc-file">autoresearch_research.py</div>
+        </div>
+      </div>
+      <ul class="fn-list">
+        <li><span class="fn-name">run_research()</span><span class="fn-desc">Increments research_round, invokes conductor, routes on result status.</span></li>
+        <li><span class="fn-name">_invoke_conductor_round()</span><span class="fn-desc">Calls execute_research_sdk(), accumulates token usage.</span></li>
+        <li><span class="fn-name">execute_research_sdk()</span><span class="fn-desc">Resolve inputs → validation retry loop → call conductor → dispatch result.</span></li>
+        <li><span class="fn-name">_try_one_validation_attempt()</span><span class="fn-desc">Stage1 validate → compile → stage2 validate → dispatch contract.</span></li>
+        <li><span class="fn-name">_handle_needs_code()</span><span class="fn-desc">Routes generated_config_needs_build → build_missing_primitives.</span></li>
+        <li><span class="fn-name">_handle_success()</span><span class="fn-desc">Sets state=running, next=run_experiment with validated config.</span></li>
+      </ul>
+    </div>
+
+    <div class="layer-card">
+      <div class="lc-header">
+        <div class="layer-dot dot-red"></div>
+        <div>
+          <div class="lc-title">Experiment <span class="badge badge-red">Backtest Run</span></div>
+          <div class="lc-file">autoresearch_experiment.py</div>
+        </div>
+      </div>
+      <ul class="fn-list">
+        <li><span class="fn-name">run_experiment()</span><span class="fn-desc">Full backtest lifecycle: setup → validate → run → parse → evaluate → log.</span></li>
+        <li><span class="fn-name">_setup_run()</span><span class="fn-desc">Compute output dir, copy config into place.</span></li>
+        <li><span class="fn-name">_validate_backtest_request()</span><span class="fn-desc">Check config path, thesis id, round/job context before running.</span></li>
+        <li><span class="fn-name">controller.run_command()</span><span class="fn-desc">Subprocess backtest with 600s timeout, streams output.</span></li>
+        <li><span class="fn-name">controller.evaluate_metric()</span><span class="fn-desc">Compare metric vs baseline; if contract exists, run experiment_evaluator.</span></li>
+        <li><span class="fn-name">_finalize_experiment()</span><span class="fn-desc">Reconcile state, send Discord notification, emit trace event.</span></li>
+      </ul>
+    </div>
+
+    <div class="layer-card">
+      <div class="lc-header">
+        <div class="layer-dot dot-blue"></div>
+        <div>
+          <div class="lc-title">Research Conductor <span class="badge badge-blue">OpenAI SDK</span></div>
+          <div class="lc-file">research_conductor.py</div>
+        </div>
+      </div>
+      <ul class="fn-list">
+        <li><span class="fn-name">run_research_conductor_sync()</span><span class="fn-desc">Sync wrapper around async conductor loop.</span></li>
+        <li><span class="fn-name">run_research_conductor()</span><span class="fn-desc">Build prompts → init agent with tools → run max 50 turns → parse JSON result.</span></li>
+        <li><span class="fn-name">analyze_trades()</span><span class="fn-desc">Tool: calls analyst subagent on trade data.</span></li>
+        <li><span class="fn-name">web_search()</span><span class="fn-desc">Tool: calls web-researcher subagent.</span></li>
+        <li><span class="fn-name">save_finding() / search_findings()</span><span class="fn-desc">Tool: persist/query MemPalace research memory.</span></li>
+        <li><span class="fn-name">list_experiment_results()</span><span class="fn-desc">Tool: query BacktestRunDB for past results (hard gate L7).</span></li>
+      </ul>
+    </div>
+
+    <div class="layer-card">
+      <div class="lc-header">
+        <div class="layer-dot dot-purple"></div>
+        <div>
+          <div class="lc-title">Compiler Pipeline <span class="badge badge-purple">Thesis → Config</span></div>
+          <div class="lc-file">compiler_pipeline.py</div>
+        </div>
+      </div>
+      <ul class="fn-list">
+        <li><span class="fn-name">compile_research_thesis()</span><span class="fn-desc">Facade → compiler_research. Converts validated thesis dict to config.</span></li>
+        <li><span class="fn-name">build_missing_primitives()</span><span class="fn-desc">Subprocess → compiler_builder. Generates missing strategy code.</span></li>
+        <li><span class="fn-name">operationalize_thesis()</span><span class="fn-desc">→ compiler_operationalize. Turns compiled thesis into runnable config.</span></li>
+        <li><span class="fn-name">validate_orb_runtime_config()</span><span class="fn-desc">Strategy-specific config validation before backtest.</span></li>
+      </ul>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <h2>Research Conductor Validation Gates</h2>
+
+  <div class="loop-diagram">
+    <div><span class="lc"># validation_retry_loop in execute_research_sdk()</span></div>
+    <div><span class="lk">while</span> stage_1_failures &lt; budget <span class="lk">and</span> compile_failures &lt; budget:</div>
+    <div class="indent1"><span class="lf">_call_conductor</span>()       <span class="lc"># OpenAI Agents SDK, max_turns=50</span></div>
+    <div class="indent1"><span class="lf">_check_parsed_for_terminal</span>()  <span class="lc"># exit on conductor_error|should_stop</span></div>
+    <div class="indent1"><span class="lc"># Hard gate L6: web_search must be called before analyze_trades</span></div>
+    <div class="indent1"><span class="lc"># Hard gate L7: experiment_results must be consulted</span></div>
+    <div class="indent1"><span class="lf">validate_thesis_dict</span>()  <span class="lc"># stage 1 — schema + semantic checks</span></div>
+    <div class="indent1"><span class="lf">compile_research_thesis</span>()  <span class="lc"># compiler_pipeline</span></div>
+    <div class="indent1"><span class="lf">validate_stage_2</span>(contract)  <span class="lc"># post-compile contract validation</span></div>
+    <div class="indent1"><span class="lf">_dispatch_compiled_contract</span>():  <span class="lc"># route by contract.status</span></div>
+    <div class="indent2"><span class="ls">'needs_code'</span>    → return generated_config_needs_build</div>
+    <div class="indent2"><span class="ls">'ready_to_run'</span> → return generated_config path</div>
+    <div class="indent2"><span class="ls">'error'</span>        → log rejection, increment failures, retry</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <h2>External Agents &amp; Subprocesses</h2>
+
+  <div class="agent-grid">
+
+    <div class="agent-card">
+      <h3>Research Conductor <span class="badge badge-blue">OpenAI Agents SDK</span></h3>
+      <div class="kv-row"><span class="kv-key">file</span><span class="kv-val">research_conductor.py</span></div>
+      <div class="kv-row"><span class="kv-key">max turns</span><span class="kv-val">50</span></div>
+      <div class="kv-row"><span class="kv-key">tools</span><span class="kv-val">analyze_trades, web_search, save/search_finding, list/get_past_thesis, list/get_experiment_result, list/get_rejection, rejection_pattern_summary, get_dimension_examples, get_tuning_examples</span></div>
+      <div class="kv-row"><span class="kv-key">output</span><span class="kv-val">JSON thesis proposal or should_stop</span></div>
+    </div>
+
+    <div class="agent-card">
+      <h3>Backtest Command <span class="badge badge-green">Subprocess</span></h3>
+      <div class="kv-row"><span class="kv-key">configured</span><span class="kv-val">per strategy family</span></div>
+      <div class="kv-row"><span class="kv-key">input</span><span class="kv-val">config.yaml path</span></div>
+      <div class="kv-row"><span class="kv-key">timeout</span><span class="kv-val">600s (COMMAND_TIMEOUT_SECONDS)</span></div>
+      <div class="kv-row"><span class="kv-key">output</span><span class="kv-val">stdout RESULT_JSON + trades.csv, diagnostics.json, metrics.json</span></div>
+    </div>
+
+    <div class="agent-card">
+      <h3>Compiler Builder <span class="badge badge-purple">Subprocess</span></h3>
+      <div class="kv-row"><span class="kv-key">file</span><span class="kv-val">compiler_builder.py</span></div>
+      <div class="kv-row"><span class="kv-key">input</span><span class="kv-val">thesis_id, artifact_root</span></div>
+      <div class="kv-row"><span class="kv-key">output</span><span class="kv-val">builder_result dict: status, generated_config, validation_passed</span></div>
+      <div class="kv-row"><span class="kv-key">on fail</span><span class="kv-val">state → halted (manual_review)</span></div>
+    </div>
+
+    <div class="agent-card">
+      <h3>Analyst Subagent <span class="badge badge-orange">Tool call</span></h3>
+      <div class="kv-row"><span class="kv-key">file</span><span class="kv-val">research_subagents.py</span></div>
+      <div class="kv-row"><span class="kv-key">trigger</span><span class="kv-val">analyze_trades tool inside conductor</span></div>
+      <div class="kv-row"><span class="kv-key">input</span><span class="kv-val">trades.csv + strategy_events.parquet</span></div>
+      <div class="kv-row"><span class="kv-key">output</span><span class="kv-val">Trade analysis findings text</span></div>
+    </div>
+
+    <div class="agent-card">
+      <h3>Web Researcher <span class="badge badge-orange">Tool call</span></h3>
+      <div class="kv-row"><span class="kv-key">file</span><span class="kv-val">research_subagents.py</span></div>
+      <div class="kv-row"><span class="kv-key">trigger</span><span class="kv-val">web_search tool inside conductor</span></div>
+      <div class="kv-row"><span class="kv-key">gate</span><span class="kv-val">Must be called BEFORE analyze_trades (hard gate L6)</span></div>
+      <div class="kv-row"><span class="kv-key">output</span><span class="kv-val">Web research summary for thesis grounding</span></div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <h2>File I/O &amp; Persistence</h2>
+
+  <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;">
+    <table>
+      <thead>
+        <tr>
+          <th>Layer</th>
+          <th>File / DB</th>
+          <th>Op</th>
+          <th>Path</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="td-layer">Controller</td>
+          <td>State JSON</td>
+          <td>R/W</td>
+          <td class="td-mono">runtime_root/{family}_autoresearch.next.json</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Controller</td>
+          <td>Markdown status</td>
+          <td>R/W</td>
+          <td class="td-mono">runtime_root/{family}_autoresearch.current.md</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Controller</td>
+          <td>BacktestRunDB</td>
+          <td>R/W</td>
+          <td class="td-mono">runtime_root/{family}_backtest_runs.db (SQLite)</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Controller</td>
+          <td>BaselineTracker</td>
+          <td>R/W</td>
+          <td class="td-mono">runtime_root/{family}_baseline_checkpoints.json</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Research</td>
+          <td>Round artifacts</td>
+          <td>W</td>
+          <td class="td-mono">runtime/jobs/job-{job}/research/round-{N}/</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Research</td>
+          <td>Trace exports</td>
+          <td>W</td>
+          <td class="td-mono">.../trace_exports/round-NNN-{thesis_id}/halo|reflexio|recursive_improve/</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Experiment</td>
+          <td>Backtest output</td>
+          <td>W</td>
+          <td class="td-mono">runtime/jobs/job-{job}/research/round-{N}/backtest/</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Orchestration</td>
+          <td>Contract / Thesis</td>
+          <td>W</td>
+          <td class="td-mono">.../round-{N}/selected_contract.json, selected_thesis.json</td>
+        </tr>
+        <tr>
+          <td class="td-layer">VPS Runner</td>
+          <td>Runtime env</td>
+          <td>W (SFTP)</td>
+          <td class="td-mono">{remote_dir}/.env.autoresearch</td>
+        </tr>
+        <tr>
+          <td class="td-layer">VPS Runner</td>
+          <td>Codex auth</td>
+          <td>W (SFTP)</td>
+          <td class="td-mono">{remote_codex_home}/auth.json</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Research Memory</td>
+          <td>Findings (MemPalace)</td>
+          <td>R/W</td>
+          <td class="td-mono">Research memory service (cross-session)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <h2>Key State Variables (autoresearch.next.json)</h2>
+
+  <pre><span class="kw">{</span>
+  <span class="st">"state"</span>:                     <span class="cm">// running | blocked | halted | finished | interrupted | building</span>
+  <span class="st">"job"</span>:                       <span class="cm">// current job ID</span>
+  <span class="st">"research_round"</span>:            <span class="cm">// latest completed research round</span>
+  <span class="st">"research_round_in_progress"</span>: <span class="cm">// round currently executing</span>
+  <span class="st">"current_best"</span>:              <span class="cm">// { config, metric, timestamp } — best result so far</span>
+  <span class="st">"blockers"</span>:                  <span class="cm">// list of { kind, detail } objects</span>
+  <span class="st">"next_action"</span>:               <span class="cm">// { type, config, reason } — what to do next</span>
+  <span class="st">"halted_thesis_id"</span>:          <span class="cm">// thesis awaiting code change or builder</span>
+  <span class="st">"halted_reason"</span>:             <span class="cm">// requires_code_change | manual_review | ...</span>
+  <span class="st">"manual_review_theses"</span>:      <span class="cm">// theses requiring operator action</span>
+  <span class="st">"builder_failed_theses"</span>:     <span class="cm">// theses that failed the builder</span>
+  <span class="st">"job_usage"</span>:                 <span class="cm">// { input_tokens, output_tokens, cost_usd }</span>
+  <span class="st">"heartbeat"</span>:                 <span class="cm">// latest run status for external monitoring</span>
+<span class="kw">}</span></pre>
+
+</div><!-- .page -->
+  <script src="/lib/feedback.js" defer></script>
+</body>
+</html>
