@@ -20,7 +20,7 @@ from collections.abc import Callable
 from typing import Any, Final
 
 from autoresearch_logging import get_logger
-from behavior_signals import BehaviorSignal, PolicyDecision, decide as _policy_decide
+from behavior_signals import BehaviorSignal, decide as _policy_decide
 from research_types import (
     CORE_MECHANISM_DIMENSIONS,
     EMERGENT_MECHANISM_DIMENSION,
