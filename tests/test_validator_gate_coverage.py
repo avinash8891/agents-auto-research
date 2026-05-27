@@ -320,6 +320,28 @@ def test_gate_structural_expected_effect_metric_unbacked() -> None:
     _expect_rejection(thesis, None, "structural_expected_effect_metric_unbacked")
 
 
+def test_disqualifiers_fire_before_expected_effects_metric_unbacked() -> None:
+    """Regression: a thesis missing disqualifiers AND with an unbacked
+    expected_effects metric must raise structural_missing_disqualifiers
+    first (presence-check priority), not metric_unbacked.
+
+    Pre-refactor order: presence → falsification → disqualifiers → metric_unbacked.
+    Pins the baseline fail-fast order so a future refactor cannot silently
+    re-bundle the two expected_effects checks into one helper (see commit
+    51a1d02 which introduced exactly that regression).
+    """
+    thesis = _minimal_valid_thesis(
+        expected_effects=[
+            ExpectedEffect(
+                metric="non_builtin_made_up_metric", direction="increase"
+            ),
+        ],
+        required_diagnostics=[],  # metric NOT backed
+        disqualifiers=[],  # also missing
+    )
+    _expect_rejection(thesis, None, "structural_missing_disqualifiers")
+
+
 # ===========================================================================
 # Stage 1B — Thesis quality (7 gates)
 # ===========================================================================

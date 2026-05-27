@@ -1370,22 +1370,31 @@ def _validate_thesis_specifies_change(thesis: ResearchThesis) -> None:
         )
 
 
-def _validate_expected_effects(thesis: ResearchThesis) -> None:
-    """Validate the expected_effects contract.
+def _validate_expected_effects_present(thesis: ResearchThesis) -> None:
+    """Validate that expected_effects is populated.
 
-    Two checks in dependency order:
-      1. List is non-empty (predictions exist).
-      2. Each effect's metric is either a builtin OR declared in
-         required_diagnostics (predictions can be measured).
-
-    Fail-fast within the contract: an empty list cannot have its metrics
-    inspected. Each gate's rejection_code is preserved.
+    The conductor must declare ≥1 prediction before a thesis can be
+    evaluated. Per-effect metric-backing validation happens later in
+    _validate_structural (see _validate_expected_effects_metrics_backed)
+    because it requires the per-effect data only after the disqualifiers
+    presence check has passed — preserving the baseline fail-fast order
+    that was in place before the contract-extraction refactor.
     """
     if not thesis.expected_effects:
         raise ThesisValidationError(
             "Thesis has no expected_effects — cannot evaluate without predictions",
             rejection_code="structural_missing_expected_effects",
         )
+
+
+def _validate_expected_effects_metrics_backed(thesis: ResearchThesis) -> None:
+    """Validate that every declared expected_effects metric is reachable.
+
+    Each effect's metric must be either a builtin OR declared in
+    required_diagnostics. Runs after the presence check and after
+    falsification/disqualifiers — see _validate_expected_effects_present
+    for why the two checks are not bundled.
+    """
     for effect in thesis.expected_effects:
         if effect.metric in BUILTIN_METRICS:
             continue
@@ -1477,7 +1486,7 @@ def _validate_structural(
 
     _validate_thesis_specifies_change(thesis)
 
-    _validate_expected_effects(thesis)
+    _validate_expected_effects_present(thesis)
 
     # falsification_or_alternative is unconditionally required: a thesis without
     # a disconfirmer is decoration, per the prompt doctrine. The previous gate
@@ -1503,6 +1512,8 @@ def _validate_structural(
             "Thesis has no disqualifiers — need at least one falsification condition",
             rejection_code="structural_missing_disqualifiers",
         )
+
+    _validate_expected_effects_metrics_backed(thesis)
 
 
 def _validate_thesis_quality(
