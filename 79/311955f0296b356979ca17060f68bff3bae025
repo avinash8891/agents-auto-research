@@ -1,0 +1,31 @@
+docs/superpowers/plans/2026-05-27-validator-contract-extraction.md
+  s_757c0ad0f54aeb::t_d1ca186c313e8c 1-382
+docs/superpowers/plans/2026-05-27-process-validator.md
+  s_309fa84322891e::t_50a17f27a0b52c 1-334
+docs/superpowers/plans/2026-05-27-behavior-signals-phase-abc.md
+  s_757c0ad0f54aeb::t_6ccada9ede4707 1-1026
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "79311955f0296b356979ca17060f68bff3bae025",
+  "prompts": {},
+  "sessions": {
+    "s_309fa84322891e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e69f6-193b-7dd3-969b-86fc40275216",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_757c0ad0f54aeb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e93ab1b2-a46f-4c88-9533-f61a81a67dff",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
