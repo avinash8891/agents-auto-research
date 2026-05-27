@@ -705,6 +705,39 @@ def test_conductor_reports_parse_failed_for_non_json_runner_output(
     assert out["error"] == "parse_failed"
 
 
+def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wrapper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """v3 prompt tells conductor 'Return ONLY the JSON object'; harness must handle
+    direct thesis response (no suggested_theses wrapper) — regression for bug introduced
+    in ccba643 (2026-05-10) when the 436-line prompt was replaced with v3."""
+    thesis = {
+        "thesis_id": "open_alert_regime_filter",
+        "hypothesis": "Early-open alerts (<=09:35) are dominated by adverse selection.",
+        "mechanism": "Opening auction noise causes systematic stop-outs in first two bars.",
+        "mechanism_dimension": "time_regime_microstructure",
+        "config_changes": {"min_alert_time": "09:40"},
+    }
+    monkeypatch.setattr(conductor, "validate_thesis_dict", lambda candidate: candidate)
+    # Conductor returns thesis directly — NO suggested_theses wrapper (v3 prompt contract)
+    _patch_conductor_runner(
+        monkeypatch,
+        thesis,
+        tool_calls=[("list_experiment_results", {"order": "latest", "offset": 0, "limit": 1})],
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "full experiment history consulted",
+        {"status": "keep"},
+        research_round=1,
+        family_name="ema",
+    )
+
+    assert out is not None
+    assert out["suggested_theses"][0]["thesis_id"] == "open_alert_regime_filter"
+
+
 def test_build_round_index_exposes_round_refs_and_latest_round(tmp_path: Path, monkeypatch) -> None:
     db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
     db.init_session(name="ema", metric_name="profit_factor", direction="higher")
