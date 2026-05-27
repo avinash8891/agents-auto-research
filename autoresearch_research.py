@@ -691,6 +691,12 @@ def _log_validation_rejection(
                 "why_existing_dimensions_do_not_fit",
                 "mechanism_family_definition",
                 "expected_reuse_across_future_theses",
+                # theme_keywords is read by _theme_keywords_from_prior to compute
+                # dominant-cluster overlap against future theses. Omitting it
+                # makes the computed-overlap gate silently fail-open in
+                # production (tests use hand-built priors so the bug doesn't
+                # surface). Persist it whenever the conductor proposes it.
+                "theme_keywords",
             )
             if key in raw_thesis
         }
@@ -1742,6 +1748,12 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
                 "why_existing_dimensions_do_not_fit",
                 "mechanism_family_definition",
                 "expected_reuse_across_future_theses",
+                # See companion comment in the rejection-path persistence:
+                # _theme_keywords_from_prior reads this field for the
+                # dominant-cluster overlap gate. Must round-trip through
+                # SQLite so accepted theses contribute to overlap detection
+                # for subsequent rounds.
+                "theme_keywords",
             )
             if key in thesis_meta
         },
