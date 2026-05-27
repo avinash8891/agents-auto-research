@@ -9,7 +9,7 @@ The evaluator checks the result against predictions and produces an BacktestVerd
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field

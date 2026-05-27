@@ -11,7 +11,7 @@ import research_conductor as conductor
 import research_subagents as subagents
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
 from rejection_artifact import write_rejection
-from research_types import ConductorResult, StructuredRejection
+from research_types import StructuredRejection
 
 
 def _record(

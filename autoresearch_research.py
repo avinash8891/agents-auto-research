@@ -690,7 +690,7 @@ def _on_ready_to_run(
     contract: Any,
     raw_thesis: dict[str, Any],
     thesis_id: str,
-    parsed: dict[str, Any],
+    conductor_result: "ConductorResult",
     should_stop: bool,
 ) -> dict[str, Any]:
     """Wire the selected round thesis into the controller."""
@@ -711,7 +711,7 @@ def _on_ready_to_run(
         "thesis_id": thesis_id,
         "thesis": raw_thesis,
         "should_stop": should_stop,
-        "reasoning": parsed.get("reasoning", ""),
+        "reasoning": conductor_result.reasoning,
     }
 
 
@@ -820,7 +820,7 @@ def _try_one_validation_attempt(
         return None, f"Thesis '{thesis_id}' rejected by stage_2 validator: {exc}", "stage_2"
 
     result, feedback = _dispatch_compiled_contract(
-        controller, research_round, attempt, parsed, raw_thesis, validated, contract, thesis_id
+        controller, research_round, attempt, conductor_result, raw_thesis, validated, contract, thesis_id
     )
     # _dispatch_compiled_contract handles the contract-status-not-ready case as
     # a "compile" rejection.
@@ -831,13 +831,13 @@ def _dispatch_compiled_contract(
     controller: "AutoresearchController",
     research_round: int,
     attempt: int,
-    parsed: dict[str, Any],
+    conductor_result: "ConductorResult",
     raw_thesis: dict[str, Any],
     validated: Any,
     contract: Any,
     thesis_id: str,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    should_stop = parsed.get("should_stop", False)
+    should_stop = conductor_result.should_stop
     if contract.status == "needs_code":
         return {
             "status": "completed",
@@ -846,13 +846,13 @@ def _dispatch_compiled_contract(
             "generated_thesis_id": thesis_id,
             "thesis_id": thesis_id,
             "should_stop": should_stop,
-            "reasoning": parsed.get("reasoning", ""),
+            "reasoning": conductor_result.reasoning,
             "thesis": raw_thesis,
         }, None
     if contract.status == "ready_to_run":
         return (
             _on_ready_to_run(
-                controller, research_round, contract, raw_thesis, thesis_id, parsed, should_stop
+                controller, research_round, contract, raw_thesis, thesis_id, conductor_result, should_stop
             ),
             None,
         )
