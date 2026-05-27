@@ -63,6 +63,7 @@ def test_decide_rejects_with_first_signal_code_when_multiple_present() -> None:
     decision = decide([first, second])
     assert decision.action == "reject"
     assert decision.rejection_code == "thesis_quality_theme_cluster_fixation"
+    assert decision.triggering == first
     assert decision.signals == (first, second)
 
 

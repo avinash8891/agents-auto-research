@@ -68,6 +68,10 @@ class PolicyDecision:
                     triggering signal's code so persisted rejection.json
                     records and downstream consumers see the same code
                     they did pre-refactor.
+    triggering      the single signal that caused a reject decision
+                    (None for accept / accept_with_warning). Lifted to
+                    its own field so callers do not need to know the
+                    policy's "first signal wins" implementation detail.
     signals         every signal considered (preserved for logging /
                     persistence / future calibration)
     warnings        signals that did NOT trigger reject but should be
@@ -77,6 +81,7 @@ class PolicyDecision:
 
     action: DecisionAction
     rejection_code: str = ""
+    triggering: BehaviorSignal | None = None
     signals: tuple[BehaviorSignal, ...] = ()
     warnings: tuple[BehaviorSignal, ...] = ()
 
@@ -107,10 +112,14 @@ def decide(signals: list[BehaviorSignal]) -> PolicyDecision:
         return PolicyDecision(
             action="reject",
             rejection_code=first.code,
+            triggering=first,
             signals=signal_tuple,
         )
-    # Reserved for future phases. Today this branch is unreachable
-    # because _BLOCK_ON_ANY_SIGNAL is True.
+    # Unreachable today because _BLOCK_ON_ANY_SIGNAL is True. Phase D
+    # will flip the constant to False and replace this branch with
+    # severity-routed decisions. See
+    # docs/superpowers/plans/2026-05-27-behavior-signals-phase-abc.md
+    # under "Out of scope (Phase D and beyond)".
     return PolicyDecision(
         action="accept_with_warning",
         signals=signal_tuple,

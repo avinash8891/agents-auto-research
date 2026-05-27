@@ -1467,7 +1467,8 @@ def _validate_thesis_quality(
 
     decision = _policy_decide(signals)
     if decision.action == "reject":
-        triggering = decision.signals[0]
+        triggering = decision.triggering
+        assert triggering is not None, "reject decisions must carry a triggering signal"
         raise ThesisValidationError(
             triggering.summary,
             rejection_code=triggering.code,
