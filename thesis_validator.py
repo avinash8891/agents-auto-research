@@ -1370,6 +1370,35 @@ def _validate_thesis_specifies_change(thesis: ResearchThesis) -> None:
         )
 
 
+def _validate_expected_effects(thesis: ResearchThesis) -> None:
+    """Validate the expected_effects contract.
+
+    Two checks in dependency order:
+      1. List is non-empty (predictions exist).
+      2. Each effect's metric is either a builtin OR declared in
+         required_diagnostics (predictions can be measured).
+
+    Fail-fast within the contract: an empty list cannot have its metrics
+    inspected. Each gate's rejection_code is preserved.
+    """
+    if not thesis.expected_effects:
+        raise ThesisValidationError(
+            "Thesis has no expected_effects — cannot evaluate without predictions",
+            rejection_code="structural_missing_expected_effects",
+        )
+    for effect in thesis.expected_effects:
+        if effect.metric in BUILTIN_METRICS:
+            continue
+        if effect.metric in thesis.required_diagnostics:
+            continue
+        raise ThesisValidationError(
+            f"Expected effect metric '{effect.metric}' is not a builtin metric "
+            f"and is not listed in required_diagnostics",
+            rejection_code="structural_expected_effect_metric_unbacked",
+            evidence={"metric": effect.metric},
+        )
+
+
 def _validate_structural(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
@@ -1448,11 +1477,7 @@ def _validate_structural(
 
     _validate_thesis_specifies_change(thesis)
 
-    if not thesis.expected_effects:
-        raise ThesisValidationError(
-            "Thesis has no expected_effects — cannot evaluate without predictions",
-            rejection_code="structural_missing_expected_effects",
-        )
+    _validate_expected_effects(thesis)
 
     # falsification_or_alternative is unconditionally required: a thesis without
     # a disconfirmer is decoration, per the prompt doctrine. The previous gate
@@ -1478,16 +1503,6 @@ def _validate_structural(
             "Thesis has no disqualifiers — need at least one falsification condition",
             rejection_code="structural_missing_disqualifiers",
         )
-
-    for effect in thesis.expected_effects:
-        if effect.metric not in BUILTIN_METRICS:
-            if effect.metric not in thesis.required_diagnostics:
-                raise ThesisValidationError(
-                    f"Expected effect metric '{effect.metric}' is not a builtin metric "
-                    f"and is not listed in required_diagnostics",
-                    rejection_code="structural_expected_effect_metric_unbacked",
-                    evidence={"metric": effect.metric},
-                )
 
 
 def _validate_thesis_quality(
