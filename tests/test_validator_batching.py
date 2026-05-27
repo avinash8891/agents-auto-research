@@ -349,3 +349,33 @@ def test_stage_2_misalignment_routes_through_behavior_signal_policy(
 
     assert exc_info.value.rejection_code == "hypothesis_config_misalignment"
     assert captured_codes == ["hypothesis_config_misalignment"]
+
+
+def test_stage_2_required_diagnostic_routes_through_mechanical_batch_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_codes: list[str] = []
+    original_raise = thesis_validator._raise_mechanical_batch
+
+    def spy_raise(failures: list[Any]) -> None:
+        captured_codes.extend(failure.code for failure in failures)
+        original_raise(failures)
+
+    monkeypatch.setattr(thesis_validator, "_raise_mechanical_batch", spy_raise)
+    contract = SimpleNamespace(
+        runtime_config={
+            "entry_cutoff_time": "10:00",
+            "max_trades_per_day": 1,
+        },
+        hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
+        mechanism="Capture the opening dislocation only.",
+        strategy_family="ema",
+        required_diagnostics=["volatility_quintile_pf_spread"],
+        required_diagnostic_specs=[],
+    )
+
+    with pytest.raises(ThesisValidationError) as exc_info:
+        validate_stage_2(contract)
+
+    assert exc_info.value.rejection_code == "required_diagnostic_missing_post_compile"
+    assert captured_codes == ["required_diagnostic_missing_post_compile"]
