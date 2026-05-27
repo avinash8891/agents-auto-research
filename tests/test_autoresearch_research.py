@@ -441,7 +441,7 @@ def test_resolve_conductor_inputs_injects_previous_thesis_from_db(tmp_path: Path
     from persistence_utils import utc_now_iso8601
 
     controller = _real_controller(tmp_path)
-    db = BacktestRunDB(controller.db_path)
+    db = BacktestRunDB(controller.backtest_run_db.path)
     write_state(controller.state_path, {"job": 1, "research_round": 2, "family": "ema"})
     db.add_research_thesis_attempt(
         {
@@ -609,13 +609,26 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
     }
 
 
+def _dict_to_conductor_result(d: dict) -> ConductorResult:
+    """Convert legacy test dict (suggested_theses wrapper) to ConductorResult."""
+    if d.get("should_stop"):
+        return ConductorResult(
+            status="should_stop", should_stop=True, reasoning=d.get("reasoning", "")
+        )
+    theses = d.get("suggested_theses") or []
+    return ConductorResult(
+        status="ok",
+        thesis=theses[0] if theses else None,
+        reasoning=d.get("reasoning", ""),
+    )
+
+
 def _patch_conductor_round(monkeypatch: pytest.MonkeyPatch, *outputs: dict) -> None:
     queue = list(outputs)
 
     def _run_conductor(*args, **kwargs):
-        if len(queue) > 1:
-            return queue.pop(0)
-        return dict(queue[0])
+        raw = queue.pop(0) if len(queue) > 1 else dict(queue[0])
+        return _dict_to_conductor_result(raw)
 
     monkeypatch.setattr("research_conductor.run_research_conductor_sync", _run_conductor)
 
@@ -831,35 +844,33 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
         _Controller(),
         2,
         0,
-        {
-            "reasoning": "code change thesis",
-            "suggested_theses": [
-                {
-                    "thesis_id": "opening_range_gate",
-                    "hypothesis": "need a new opening range gate",
-                    "mechanism": "gate post-open entries on opening range resolution",
-                    "mechanism_dimension": "signal_quality",
-                    "dimension_novelty": "new gate",
-                    "expected_effects": [
-                        {
-                            "metric": "profit_factor",
-                            "direction": "increase",
-                            "rationale": "better quality",
-                        }
-                    ],
-                    "disqualifiers": [
-                        {
-                            "name": "trade_count_collapse",
-                            "condition": "trade_count falls too much",
-                            "severity": "hard_fail",
-                        }
-                    ],
-                    "requires_code_change": True,
-                    "requested_primitives": [],
-                }
-            ],
-            "should_stop": False,
-        },
+        ConductorResult(
+            status="ok",
+            thesis={
+                "thesis_id": "opening_range_gate",
+                "hypothesis": "need a new opening range gate",
+                "mechanism": "gate post-open entries on opening range resolution",
+                "mechanism_dimension": "signal_quality",
+                "dimension_novelty": "new gate",
+                "expected_effects": [
+                    {
+                        "metric": "profit_factor",
+                        "direction": "increase",
+                        "rationale": "better quality",
+                    }
+                ],
+                "disqualifiers": [
+                    {
+                        "name": "trade_count_collapse",
+                        "condition": "trade_count falls too much",
+                        "severity": "hard_fail",
+                    }
+                ],
+                "requires_code_change": True,
+                "requested_primitives": [],
+            },
+            reasoning="code change thesis",
+        ),
         prior_theses=[],
     )
 
@@ -910,10 +921,13 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
     controller = _Controller()
     controller.backtest_run_db = type("DB", (), {"latest": lambda self, n: []})()
 
-    parsed = {
-        "reasoning": "candidate looks good",
-        "suggested_theses": [
-            {
+    result, retry_feedback, _stage = _try_one_validation_attempt(
+        controller,
+        8,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
                 "thesis_id": "symbol_day_gate",
                 "hypothesis": "gate later shorts on 09:30 raw setup presence",
                 "mechanism": "symbol-day setup gate",
@@ -929,16 +943,9 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
                 "config_changes": {"symbol_day_opening_setup_gate_enabled": True},
                 "expected_effects": [],
                 "disqualifiers": [],
-            }
-        ],
-        "should_stop": False,
-    }
-
-    result, retry_feedback, _stage = _try_one_validation_attempt(
-        controller,
-        8,
-        0,
-        parsed,
+            },
+            reasoning="candidate looks good",
+        ),
         prior_theses=[],
     )
 
@@ -972,35 +979,33 @@ def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_f
         _Controller(),
         2,
         0,
-        {
-            "reasoning": "code change thesis",
-            "suggested_theses": [
-                {
-                    "thesis_id": "opening_range_gate",
-                    "hypothesis": "need a new opening range gate",
-                    "mechanism": "gate post-open entries on opening range resolution",
-                    "mechanism_dimension": "signal_quality",
-                    "dimension_novelty": "new gate",
-                    "expected_effects": [
-                        {
-                            "metric": "profit_factor",
-                            "direction": "increase",
-                            "rationale": "better quality",
-                        }
-                    ],
-                    "disqualifiers": [
-                        {
-                            "name": "trade_count_collapse",
-                            "condition": "trade_count falls too much",
-                            "severity": "hard_fail",
-                        }
-                    ],
-                    "requires_code_change": True,
-                    "requested_primitives": [],
-                }
-            ],
-            "should_stop": False,
-        },
+        ConductorResult(
+            status="ok",
+            thesis={
+                "thesis_id": "opening_range_gate",
+                "hypothesis": "need a new opening range gate",
+                "mechanism": "gate post-open entries on opening range resolution",
+                "mechanism_dimension": "signal_quality",
+                "dimension_novelty": "new gate",
+                "expected_effects": [
+                    {
+                        "metric": "profit_factor",
+                        "direction": "increase",
+                        "rationale": "better quality",
+                    }
+                ],
+                "disqualifiers": [
+                    {
+                        "name": "trade_count_collapse",
+                        "condition": "trade_count falls too much",
+                        "severity": "hard_fail",
+                    }
+                ],
+                "requires_code_change": True,
+                "requested_primitives": [],
+            },
+            reasoning="code change thesis",
+        ),
         prior_theses=[],
     )
 
