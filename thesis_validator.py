@@ -1395,6 +1395,17 @@ def _validate_config_validity(
             rejection_code="config_validity_base_config_path_inheritance_blocked",
             evidence={"baseline_path": baseline_path, "actual_path": thesis.base_config_path},
         )
+    # Design choice: this is enforced as a validator error rather than
+    # silently auto-corrected in normalize_thesis_payload. Two reasons to raise
+    # instead of normalize:
+    #   1. Teaching the conductor where these flags belong (rejection feedback
+    #      surfaces the right shape) is more durable than hiding the mistake.
+    #   2. Silent normalization can mask semantic confusion — e.g. an LLM
+    #      setting requires_code_change=False inside config_changes thinking it
+    #      overrides the top-level value would get silently "fixed" to a state
+    #      it didn't intend.
+    # See docs/superpowers/plans/2026-05-27-validator-gate-consolidation.md
+    # (Task 8) for the discussion.
     for key in sorted(CONFIG_CHANGES_METADATA_KEYS & set(thesis.config_changes)):
         raise ThesisValidationError(
             f"config_changes contains thesis metadata key '{key}'. "
