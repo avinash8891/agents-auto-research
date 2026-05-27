@@ -666,9 +666,7 @@ def _dict_to_conductor_result(d: dict) -> ConductorResult:
         status="ok",
         thesis=theses[0] if theses else None,
         reasoning=d.get("reasoning", ""),
-        tools_called=frozenset(
-            d.get("tools_called", {"list_experiment_results", "web_search"})
-        ),
+        tools_called=frozenset(d.get("tools_called", {"list_experiment_results", "web_search"})),
     )
 
 
