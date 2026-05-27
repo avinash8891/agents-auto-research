@@ -503,6 +503,11 @@ def _proposed_direction(thesis: ResearchThesis, prior: dict[str, Any]) -> str | 
     Looks for a shared numeric config key with a known lever-name convention;
     if found, returns the data-derived direction. Otherwise falls back to
     word-boundary text match on thesis_id + hypothesis.
+
+    The asymmetry with _prior_direction is intentional: a prior thesis's
+    config_changes are accessible via the prior dict, but its BASELINE value
+    is not — without baseline, the prior's data-direction is unrecoverable.
+    Text matching on the prior's thesis_id is the only signal available there.
     """
     prior_changes = prior.get("config_changes") or {}
     for key, new_val in (thesis.config_changes or {}).items():
