@@ -338,7 +338,9 @@ def _index_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "selected_for_execution": bool(entry.get("selected_for_execution")),
         "config_change_keys": sorted(config_changes.keys()),
         "short_hypothesis": _short_text(entry.get("hypothesis", ""), 180),
-        "short_validation_failure_reason": _short_text(entry.get("validation_failure_reason", ""), 160),
+        "short_validation_failure_reason": _short_text(
+            entry.get("validation_failure_reason", ""), 160
+        ),
         "learning_signal": _learning_signal(entry),
     }
 
