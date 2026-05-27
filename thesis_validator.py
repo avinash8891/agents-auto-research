@@ -1346,6 +1346,30 @@ def _validate_mechanism_dimension(
         _validate_emergent_dimension(thesis)
 
 
+def _validate_thesis_specifies_change(thesis: ResearchThesis) -> None:
+    """Validate that the thesis declares WHAT it changes.
+
+    Two checks in dependency order:
+      1. At least one of config_changes / requires_code_change is set.
+      2. If requires_code_change=true, requested_primitives must be
+         non-empty.
+
+    Fail-fast within the contract: if neither change is specified, the
+    requested_primitives check is meaningless. Each gate's rejection_code
+    is preserved.
+    """
+    if not thesis.config_changes and not thesis.requires_code_change:
+        raise ThesisValidationError(
+            "Thesis has neither config_changes nor requires_code_change=true",
+            rejection_code="structural_missing_config_or_code_change",
+        )
+    if thesis.requires_code_change and not thesis.requested_primitives:
+        raise ThesisValidationError(
+            "requires_code_change theses must declare requested_primitives",
+            rejection_code="structural_missing_requested_primitives",
+        )
+
+
 def _validate_structural(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
@@ -1422,16 +1446,7 @@ def _validate_structural(
                 },
             )
 
-    if not thesis.config_changes and not thesis.requires_code_change:
-        raise ThesisValidationError(
-            "Thesis has neither config_changes nor requires_code_change=true",
-            rejection_code="structural_missing_config_or_code_change",
-        )
-    if thesis.requires_code_change and not thesis.requested_primitives:
-        raise ThesisValidationError(
-            "requires_code_change theses must declare requested_primitives",
-            rejection_code="structural_missing_requested_primitives",
-        )
+    _validate_thesis_specifies_change(thesis)
 
     if not thesis.expected_effects:
         raise ThesisValidationError(
