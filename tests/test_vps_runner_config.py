@@ -226,8 +226,15 @@ def test_remote_command_runs_controller_for_family() -> None:
     assert "deps_fingerprint=$(python3 -c" in command
     assert ".venv/.autoresearch-deps.sha256" in command
     assert 'if [ -f ".venv/.autoresearch-deps.sha256" ] && ' in command
-    assert "then rm -rf .venv; fi" in command
-    assert 'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi' in command
+    # Python 3.12 refuses to create venv at a symlink path. .venv is a symlink
+    # to the runtime root's real .venv directory; the venv must be created at
+    # the canonical path. See vps_runner.py:561-562 + commit 3efbae8 for
+    # the rationale. Tests assert the real-path commands.
+    assert 'then rm -rf "$AUTORESEARCH_RUNTIME_ROOT/.venv"; fi' in command
+    assert (
+        'if [ ! -x ".venv/bin/python" ]; then python3 -m venv '
+        '"$AUTORESEARCH_RUNTIME_ROOT/.venv"; fi'
+    ) in command
     assert "python_bin=.venv/bin/python" in command
     assert f"export AUTORESEARCH_RESOLVED_SHA={resolved_sha}" in command
     assert '"$python_bin" -m pip install -e .' in command
@@ -339,7 +346,10 @@ def test_remote_resume_command_can_skip_dependency_install_when_sha_is_current()
     )
 
     assert 'if [ ! -x ".venv/bin/python" ]; then' in command
-    assert "Existing checkout matches requested ref but .venv is missing" in command
+    # Fallback message updated to reflect the new fingerprint-check logic that
+    # also triggers when deps are stale, not just when .venv is missing.
+    # See vps_runner.py:581 + commit 3efbae8.
+    assert "Existing checkout missing venv or deps; installing." in command
     assert '"$python_bin" -m pip install -e .' in command
     assert "deps_fingerprint=$(python3 -c" in command
     assert 'test -x ".venv/bin/python"' not in command
