@@ -1383,11 +1383,12 @@ def _validate_expected_effects_present(thesis: ResearchThesis) -> None:
     """Validate that expected_effects is populated.
 
     The conductor must declare ≥1 prediction before a thesis can be
-    evaluated. Per-effect metric-backing validation happens later in
-    _validate_structural (see _validate_expected_effects_metrics_backed)
-    because it requires the per-effect data only after the disqualifiers
-    presence check has passed — preserving the baseline fail-fast order
-    that was in place before the contract-extraction refactor.
+    evaluated. Per-effect metric-backing validation lives in a separate
+    helper (_validate_expected_effects_metrics_backed) called later in
+    _validate_structural — that check must run only after the falsification
+    and disqualifiers presence checks have passed, preserving the baseline
+    fail-fast order that was in place before the contract-extraction
+    refactor.
     """
     if not thesis.expected_effects:
         raise ThesisValidationError(
@@ -1506,6 +1507,16 @@ def _validate_structural(
 
     _validate_thesis_specifies_change(thesis)
 
+    # The expected_effects contract is intentionally split across two helper
+    # calls bracketing the falsification + disqualifiers checks:
+    #   1. _validate_expected_effects_present (here) — presence-tier priority.
+    #   2. _validate_expected_effects_metrics_backed (below, after disqualifiers)
+    #      — per-element metric-backing check at its baseline position.
+    # The split preserves the pre-refactor fail-fast order: a thesis missing
+    # both disqualifiers AND a backed metric raises structural_missing_disqualifiers
+    # first (not structural_expected_effect_metric_unbacked). Bundling these
+    # two checks regresses that order — pinned by
+    # test_disqualifiers_fire_before_expected_effects_metric_unbacked.
     _validate_expected_effects_present(thesis)
 
     # falsification_or_alternative is unconditionally required: a thesis without
