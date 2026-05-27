@@ -9,6 +9,36 @@ Three guardrails inspired by AlphaAgent (arxiv 2502.16789v2):
    actually test the stated hypothesis (their c1/c2 consistency scoring).
 3. Duplicate/runtime-compatibility rejection — fail loudly on legacy inheritance
    paths or reused runtime shapes instead of probing extra variants.
+
+──────────────────────────────────────────────────────────────────────────────
+Contract-extraction rule (for maintainers adding or refactoring checks)
+──────────────────────────────────────────────────────────────────────────────
+
+Multi-check contracts (e.g. mechanism_dimension, emergent path,
+underexplored_dimensions, thesis_specifies_change, expected_effects) live in
+dedicated private `_validate_<contract>(...)` helpers placed adjacent to the
+`_validate_structural` orchestrator. The orchestrator stays a thin sequence
+of inline single-check raises + helper calls.
+
+When deciding whether to bundle two related checks into one helper, apply
+this test:
+
+    Do these checks have to run at different points in the
+    overall fail-fast sequence?
+
+If YES → split into separate helpers, called from the orchestrator at their
+respective positions. Example: `_validate_expected_effects_present` (early,
+presence-tier priority) and `_validate_expected_effects_metrics_backed`
+(late, after disqualifiers presence check). Bundling them regresses the
+global fail-fast order — pinned by the regression test
+`test_disqualifiers_fire_before_expected_effects_metric_unbacked`.
+
+If NO → one helper owning both checks is fine, with structured `evidence`
+when failure modes are independent. Example: `_validate_emergent_dimension`
+collects all emergent-path failures into one rejection.
+
+Single-check contracts (thesis_id presence, hypothesis presence, etc.) stay
+inline in the orchestrator — extracting them into one-line helpers is noise.
 """
 
 from __future__ import annotations
