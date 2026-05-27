@@ -76,7 +76,7 @@ _MIN_NOVEL_CONNECTION_CHARS = 40
 # A mechanism_evidence disqualifier's `condition` must be substantive — short
 # strings like "x" or "yes" satisfy the kind=mechanism_evidence check trivially
 # without describing any observable data pattern. 40 chars forces real content.
-_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS = 40
+_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS: Final[int] = 40
 # When falsification_or_alternative is set, it must be substantive — short text
 # is decoration, not a real disconfirmer. The field itself remains optional;
 # this rule only enforces quality when the agent does fill it in.
@@ -336,8 +336,8 @@ def _theme_keywords_from_prior(prior: dict[str, Any]) -> set[str]:
 # Thresholds for the computed dominant-cluster overlap. The cutoffs are tuned
 # to match operator intuition: "high" means more than half the recent priors
 # share a keyword with the proposed thesis.
-_OVERLAP_HIGH_RATIO = 0.5
-_OVERLAP_MEDIUM_RATIO = 0.25
+_OVERLAP_HIGH_RATIO: Final[float] = 0.5
+_OVERLAP_MEDIUM_RATIO: Final[float] = 0.25
 
 
 def _computed_dominant_cluster_overlap(
@@ -433,11 +433,30 @@ def _check_theme_cluster_fixation(
 #     hypothesis. Config-key prefixes are NOT direction tokens — that caused
 #     false-positives where `min_stop_distance_pct` (a config key) registered
 #     as a "tighten" direction word.
-_B2_DIRECTION_TIGHTEN_TOKENS = ("tighten", "tightening", "narrow", "narrowing", "shrink", "shrinking")
-_B2_DIRECTION_WIDEN_TOKENS = ("widen", "widening", "loosen", "loosening", "expand", "expanding")
+_B2_DIRECTION_TIGHTEN_TOKENS: Final[tuple[str, ...]] = (
+    "tighten",
+    "tightening",
+    "narrow",
+    "narrowing",
+    "shrink",
+    "shrinking",
+)
+_B2_DIRECTION_WIDEN_TOKENS: Final[tuple[str, ...]] = (
+    "widen",
+    "widening",
+    "loosen",
+    "loosening",
+    "expand",
+    "expanding",
+)
 
-_LEVER_PREFIX_TIGHTEN_ON_INCREASE = ("min_", "floor_", "minimum_")
-_LEVER_PREFIX_LOOSEN_ON_INCREASE = ("max_", "ceiling_", "maximum_", "cap_")
+_LEVER_PREFIX_TIGHTEN_ON_INCREASE: Final[tuple[str, ...]] = ("min_", "floor_", "minimum_")
+_LEVER_PREFIX_LOOSEN_ON_INCREASE: Final[tuple[str, ...]] = (
+    "max_",
+    "ceiling_",
+    "maximum_",
+    "cap_",
+)
 
 
 def _b2_direction_of(text: str) -> str | None:
