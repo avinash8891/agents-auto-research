@@ -291,17 +291,17 @@ def test_gate_structural_missing_expected_effects() -> None:
     _expect_rejection(thesis, None, "structural_missing_expected_effects")
 
 
-def test_gate_structural_missing_falsification() -> None:
-    """falsification_or_alternative is now unconditionally required."""
+def test_gate_structural_falsification_invalid_when_empty() -> None:
+    """falsification_or_alternative is unconditionally required."""
     thesis = _minimal_valid_thesis(falsification_or_alternative="")
-    _expect_rejection(thesis, None, "structural_missing_falsification")
+    _expect_rejection(thesis, None, "structural_falsification_invalid")
 
 
-def test_gate_structural_falsification_too_short() -> None:
+def test_gate_structural_falsification_invalid_when_too_short() -> None:
     thesis = _minimal_valid_thesis(
         falsification_or_alternative="short text",  # set but <80 chars
     )
-    _expect_rejection(thesis, None, "structural_falsification_too_short")
+    _expect_rejection(thesis, None, "structural_falsification_invalid")
 
 
 def test_gate_structural_missing_disqualifiers() -> None:

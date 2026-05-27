@@ -144,6 +144,8 @@ def infer_rejection_code(message: str) -> str:
         return "config_validity_base_config_path_invalid"
     if "config_changes contains thesis metadata key" in msg:
         return "config_validity_config_changes_metadata_leak"
+    if "falsification_or_alternative" in msg:
+        return "structural_falsification_invalid"
     if (
         "dimension_novelty must explain" in msg
         or "dimension_novelty is empty" in msg
@@ -1213,22 +1215,18 @@ def _validate_structural(
     # a disconfirmer is decoration, per the prompt doctrine. The previous gate
     # only enforced the length WHEN the field was set, which let the LLM omit
     # the field entirely and pass — a documented but problematic loophole.
+    # Unified falsification contract: must be present AND ≥80 chars to count
+    # as a real disconfirmer. Empty (0 chars) is just one failure mode of <80.
     falsification_text = (thesis.falsification_or_alternative or "").strip()
-    if not falsification_text:
-        raise ThesisValidationError(
-            "falsification_or_alternative is required. Describe what data pattern "
-            "would weaken this mechanism, independent of whether metrics improve.",
-            rejection_code="structural_missing_falsification",
-        )
     if len(falsification_text) < _MIN_FALSIFICATION_CHARS:
         raise ThesisValidationError(
-            f"falsification_or_alternative must be at least "
-            f"{_MIN_FALSIFICATION_CHARS} characters to count as a real disconfirmer; "
-            f"got {len(falsification_text)} characters.",
-            rejection_code="structural_falsification_too_short",
+            f"falsification_or_alternative must be ≥{_MIN_FALSIFICATION_CHARS} chars "
+            f"describing what data pattern would weaken this mechanism, independent "
+            f"of metric movement. Got {len(falsification_text)} chars.",
+            rejection_code="structural_falsification_invalid",
             evidence={
-                "min_chars": _MIN_FALSIFICATION_CHARS,
                 "actual_chars": len(falsification_text),
+                "min_chars": _MIN_FALSIFICATION_CHARS,
             },
         )
 
