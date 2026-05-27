@@ -124,6 +124,8 @@ Return ONE JSON object matching the thesis schema. Fields:
   causal_cluster         human-phrased family name for this thesis's causal story
                          (REQUIRED when prior theses exist; e.g. "opening-session
                          adverse selection", NOT a config key like "min_stop_pct")
+  novel_connection       why this is materially new when theme overlap with prior
+                         theses is high (REQUIRED for high overlap; >=40 chars)
   underexplored_dimensions_considered
                          list of mechanism dimensions you compared before choosing
                          this one (REQUIRED when prior theses exist; >=1 entry)

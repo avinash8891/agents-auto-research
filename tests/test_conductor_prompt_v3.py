@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from research_prompts import _build_conductor_system_prompt
+from scripts.check_prompt_drift import VALIDATOR_INSPECTED_FIELDS
 
 
 def test_v3_prompt_is_substantially_shorter_than_legacy() -> None:
@@ -66,7 +67,12 @@ def test_v3_prompt_lists_required_output_fields() -> None:
         "thesis_id",
         "hypothesis",
         "mechanism",
+        "novel_connection",
         "theme_keywords",
         "prior_lever_outcomes",
     ]:
         assert field in prompt, f"output schema field '{field}' missing from prompt"
+
+
+def test_prompt_drift_checker_tracks_novel_connection_gate() -> None:
+    assert "novel_connection" in VALIDATOR_INSPECTED_FIELDS

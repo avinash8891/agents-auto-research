@@ -661,7 +661,7 @@ async def run_research_conductor(
             )
             return output
 
-        @function_tool
+        @function_tool(name_override="list_rejections")
         async def list_rejections_tool(
             round_number: int | None = None,
             rejection_code: str | None = None,
@@ -713,7 +713,7 @@ async def run_research_conductor(
             )
             return output
 
-        @function_tool
+        @function_tool(name_override="get_rejection")
         async def get_rejection_tool(round_number: int, thesis_id: str) -> str:
             """Fetch the full rejection record for one (round, thesis_id)."""
             from rejection_artifact import get_rejection
@@ -748,7 +748,7 @@ async def run_research_conductor(
             )
             return output
 
-        @function_tool
+        @function_tool(name_override="rejection_pattern_summary")
         async def rejection_pattern_summary_tool(window_rounds: int = 10) -> str:
             """Group recent rejections by rejection_code and return counts.
 

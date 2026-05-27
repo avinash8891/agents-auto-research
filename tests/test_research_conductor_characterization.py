@@ -339,9 +339,9 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
             ("get_past_thesis", {"thesis_id": "missing"}),
             ("list_experiment_results", {"order": "latest", "offset": 0, "limit": 5}),
             ("get_experiment_result", {"thesis_id": "missing", "detail": True}),
-            ("list_rejections_tool", {"round_number": None, "rejection_code": None, "limit": 3}),
-            ("get_rejection_tool", {"round_number": 8, "thesis_id": "missing"}),
-            ("rejection_pattern_summary_tool", {"window_rounds": 4}),
+            ("list_rejections", {"round_number": None, "rejection_code": None, "limit": 3}),
+            ("get_rejection", {"round_number": 8, "thesis_id": "missing"}),
+            ("rejection_pattern_summary", {"window_rounds": 4}),
             ("get_dimension_examples_tool", {}),
             ("get_tuning_examples_tool", {}),
         ],
@@ -369,7 +369,7 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
     assert '"healthy": true' in output_by_tool["memory_status"]
     assert output_by_tool["list_experiment_results"] == "experiment list"
     assert "missing thesis" in output_by_tool["get_experiment_result"]
-    assert '"error": "no current job"' in output_by_tool["list_rejections_tool"]
+    assert '"error": "no current job"' in output_by_tool["list_rejections"]
     assert output_by_tool["get_dimension_examples_tool"]
     assert output_by_tool["get_tuning_examples_tool"]
 
@@ -416,16 +416,16 @@ def test_conductor_tools_read_current_job_rejections_and_error_statuses(
             ("get_past_thesis", {"thesis_id": "ema-gap-reject"}),
             ("get_experiment_result", {"thesis_id": "ema-gap-reject", "detail": False}),
             (
-                "list_rejections_tool",
+                "list_rejections",
                 {
                     "round_number": 8,
                     "rejection_code": "thesis_quality_theme_cluster_fixation",
                     "limit": 5,
                 },
             ),
-            ("get_rejection_tool", {"round_number": 8, "thesis_id": "ema-gap-reject"}),
-            ("get_rejection_tool", {"round_number": 8, "thesis_id": "missing"}),
-            ("rejection_pattern_summary_tool", {"window_rounds": 10}),
+            ("get_rejection", {"round_number": 8, "thesis_id": "ema-gap-reject"}),
+            ("get_rejection", {"round_number": 8, "thesis_id": "missing"}),
+            ("rejection_pattern_summary", {"window_rounds": 10}),
         ],
     )
 
@@ -444,15 +444,15 @@ def test_conductor_tools_read_current_job_rejections_and_error_statuses(
     assert output_by_tool["search_findings"] == "No findings found."
     assert output_by_tool["get_past_thesis"] == "not-json"
     assert output_by_tool["get_experiment_result"] == json.dumps({"status": "not_found"})
-    listed = json.loads(output_by_tool["list_rejections_tool"])
+    listed = json.loads(output_by_tool["list_rejections"])
     assert listed[0]["thesis_id"] == "ema-gap-reject"
     assert listed[0]["evidence"]["shared_keywords"] == ["gap", "open"]
-    fetched_outputs = [output for name, output in tool_outputs if name == "get_rejection_tool"]
+    fetched_outputs = [output for name, output in tool_outputs if name == "get_rejection"]
     assert (
         json.loads(fetched_outputs[0])["rejection_code"] == "thesis_quality_theme_cluster_fixation"
     )
     assert json.loads(fetched_outputs[1]) == {"status": "not_found"}
-    assert json.loads(output_by_tool["rejection_pattern_summary_tool"]) == [
+    assert json.loads(output_by_tool["rejection_pattern_summary"]) == [
         {
             "rejection_code": "thesis_quality_theme_cluster_fixation",
             "count": 1,

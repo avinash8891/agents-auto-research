@@ -48,6 +48,7 @@ VALIDATOR_INSPECTED_FIELDS: set[str] = {
     "mechanism_dimension",
     "dimension_novelty",
     "causal_cluster",
+    "novel_connection",
     "underexplored_dimensions_considered",
     "config_changes",
     "requires_code_change",
