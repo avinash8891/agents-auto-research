@@ -1,0 +1,27 @@
+autoresearch_research.py
+  s_eeaca68b53c0c2::t_cb84be3891d624 49,823-830,862-868,1624-1626,1722-1723
+tests/test_autoresearch_research.py
+  s_eeaca68b53c0c2::t_cb84be3891d624 23-24,40,756-758,1200-1202
+research_conductor.py
+  s_eeaca68b53c0c2::t_cb84be3891d624 952-954
+tests/test_autoresearch_research_helpers.py
+  s_eeaca68b53c0c2::t_cb84be3891d624 71-73
+tests/test_research_memory.py
+  s_eeaca68b53c0c2::t_25861cb32ab619 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "332a4adc39d20283523cf659f9d079c974160a16",
+  "prompts": {},
+  "sessions": {
+    "s_eeaca68b53c0c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e73224a3-7aac-4c74-95d7-b5f5193ba7f4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
