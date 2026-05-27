@@ -243,3 +243,44 @@ def test_missing_mechanism_evidence_disqualifier_detector_returns_none_when_subs
         falsification_or_alternative="z" * 100,
     )
     assert _detect_missing_mechanism_evidence_disqualifier(proposal) is None
+
+
+def test_validate_thesis_quality_translates_policy_reject_to_raise() -> None:
+    """End-to-end: when a detector fires, the validator raises with the
+    detector's code (mediated by the policy)."""
+    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
+    from thesis_validator import ThesisValidationError, _validate_thesis_quality
+
+    proposal = ResearchThesis(
+        thesis_id="ema-x", strategy_family="ema",
+        hypothesis="x", mechanism="x",
+        mechanism_dimension="entry_timing",
+        dimension_novelty="x" * 50,
+        config_changes={"k": 1},
+        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
+        # Only metric_threshold → mechanism_evidence detector fires
+        disqualifiers=[Disqualifier(name="x", condition="y" * 100, kind="metric_threshold")],
+        falsification_or_alternative="z" * 100,
+    )
+    import pytest
+    with pytest.raises(ThesisValidationError) as exc_info:
+        _validate_thesis_quality(proposal, prior_theses=[])
+    assert exc_info.value.rejection_code == "thesis_quality_missing_mechanism_evidence_disqualifier"
+
+
+def test_validate_thesis_quality_does_not_raise_when_no_signals_fire() -> None:
+    """End-to-end: with no signals, the validator returns without raising."""
+    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
+    from thesis_validator import _validate_thesis_quality
+
+    proposal = ResearchThesis(
+        thesis_id="ema-x", strategy_family="ema",
+        hypothesis="x", mechanism="x",
+        mechanism_dimension="entry_timing",
+        dimension_novelty="x" * 50,
+        config_changes={"k": 1},
+        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
+        disqualifiers=[Disqualifier(name="x", condition="z" * 50, kind="mechanism_evidence")],
+        falsification_or_alternative="z" * 100,
+    )
+    _validate_thesis_quality(proposal, prior_theses=[])  # no raise expected
