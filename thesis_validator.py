@@ -1272,17 +1272,26 @@ def _validate_emergent_dimension(thesis: ResearchThesis) -> None:
 
 def _validate_underexplored_dimensions(
     thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]],
+    prior_theses: list[dict[str, Any]] | None,
 ) -> None:
-    """Enforce the underexplored_dimensions_considered contract:
+    """Enforce the underexplored_dimensions_considered contract.
 
-      * Non-empty list (required when prior theses exist).
+    The contract only fires when prior theses exist (no priors = nothing to
+    have underexplored). The helper is self-guarding: it returns immediately
+    when prior_theses is None or empty, so callers don't need to wrap the
+    call in `if prior_theses:`. Signature matches its sibling
+    `_validate_mechanism_dimension` for consistency.
+
+    When priors exist, the contract requires:
+      * Non-empty list.
       * Every entry is a known mechanism dimension.
       * Chosen mechanism_dimension is NOT in the list.
 
     All failure modes share one rejection_code with structured evidence so
     the LLM sees every issue at once instead of one per retry.
     """
+    if not prior_theses:
+        return
     issues: list[dict[str, Any]] = []
     items = thesis.underexplored_dimensions_considered
 
@@ -1412,13 +1421,24 @@ def _validate_structural(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Stage 1 sub-section: schema / required-field invariants.
+    """Stage 1 sub-section: schema / required-field invariants — orchestrator.
 
-    Owns checks for missing/required fields, mechanism_dimension validity,
-    emergent-dimension required fields, requested_primitives presence, the
-    config_changes XOR requires_code_change consistency, and field-level
-    quality checks (expected_effects, disqualifiers, falsification length,
-    expected-effect metric backing).
+    Sequences simple presence checks (thesis_id, hypothesis, mechanism,
+    falsification, disqualifiers) inline with calls to dedicated contract
+    helpers for multi-check contracts:
+
+      * `_validate_mechanism_dimension` — missing + invalid + emergent path
+      * `_validate_dimension_novelty` (inline) — non-empty + ≥30 chars
+      * `_validate_underexplored_dimensions` (when priors exist)
+      * `_validate_thesis_specifies_change` — config_changes XOR + requested_primitives
+      * `_validate_expected_effects_present` and `_validate_expected_effects_metrics_backed`
+        (split so the per-effect metric-backing check runs after disqualifiers,
+        preserving the pre-refactor fail-fast order — see helper docstrings)
+      * `_validate_falsification` (inline)
+
+    Fail-fast at the orchestrator level: first failing contract raises and
+    stops further checks. Within a contract, fail-fast is the helper's own
+    concern.
     """
     if not thesis.thesis_id.strip():
         raise ThesisValidationError(
