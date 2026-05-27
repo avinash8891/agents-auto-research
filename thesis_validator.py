@@ -395,7 +395,7 @@ def _prior_was_run(prior: dict[str, Any]) -> bool:
 def _detect_theme_cluster_fixation(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]],
-) -> "BehaviorSignal | None":
+) -> BehaviorSignal | None:
     """Detect when the proposed thesis fixates on a theme cluster.
 
     Returns a BehaviorSignal when >=4 of the last 7 priors (including the
@@ -564,7 +564,7 @@ def _prior_direction(prior: dict[str, Any]) -> str | None:
 def _detect_direction_whipsaw(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]],
-) -> "BehaviorSignal | None":
+) -> BehaviorSignal | None:
     """Detect when the thesis flips the direction of a lever already tested
     by a prior thesis on the same theme, without citing it.
 
@@ -697,7 +697,7 @@ def _check_neighboring_threshold(
 
 def _detect_missing_mechanism_evidence_disqualifier(
     thesis: ResearchThesis,
-) -> "BehaviorSignal | None":
+) -> BehaviorSignal | None:
     """Detect when no substantive mechanism_evidence disqualifier is present.
 
     Requires at least one disqualifier with kind='mechanism_evidence' AND
@@ -739,7 +739,7 @@ def _detect_missing_mechanism_evidence_disqualifier(
 def _detect_needs_code_starvation(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]],
-) -> "BehaviorSignal | None":
+) -> BehaviorSignal | None:
     """Detect when the conductor is queueing engine work without progress.
 
     Fires when 3+ consecutive most-recent priors required code changes
