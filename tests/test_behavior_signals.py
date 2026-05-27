@@ -170,3 +170,39 @@ def test_needs_code_starvation_detector_returns_signal_at_streak_3() -> None:
     assert sig.code == "thesis_quality_needs_code_starvation"
     assert sig.severity == "block"
     assert sig.confidence == 1.0
+
+
+def test_direction_whipsaw_detector_returns_signal_on_flip() -> None:
+    """Prior tightened a theme; this thesis loosens it without citation."""
+    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
+    from thesis_validator import _detect_direction_whipsaw
+
+    proposal = ResearchThesis(
+        thesis_id="ema-loosen-stops-v1",
+        strategy_family="ema",
+        hypothesis="x", mechanism="x",
+        mechanism_dimension="entry_timing",
+        dimension_novelty="x" * 50,
+        theme_keywords=["stop_distance"],
+        prior_lever_outcomes=[],
+        config_changes={"different_key": 1},
+        novel_connection=(
+            "Stop-distance lever is approached as a regime-dependent floor "
+            "rather than an absolute threshold tested previously."
+        ),
+        causal_cluster="stop-distance",
+        underexplored_dimensions_considered=["risk_structure"],
+        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
+        disqualifiers=[Disqualifier(name="x", condition="y", kind="mechanism_evidence")],
+        falsification_or_alternative="z" * 100,
+    )
+    prior = {
+        "thesis_id": "ema-tighten-stops-v0",
+        "config_changes": {"some_other_key": 5},
+        "outcome": "compiled",
+        "thesis_details": {"theme_keywords": ["stop_distance"]},
+    }
+    sig = _detect_direction_whipsaw(proposal, [prior])
+    assert sig is not None
+    assert sig.code == "thesis_quality_direction_whipsaw"
+    assert sig.severity == "block"

@@ -547,21 +547,20 @@ def _prior_direction(prior: dict[str, Any]) -> str | None:
     return _b2_direction_of(str(prior.get("thesis_id") or ""))
 
 
-def _check_direction_whipsaw(
+def _detect_direction_whipsaw(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]],
-) -> None:
-    """Reject if the thesis flips the direction of a lever already tested by a prior
-    thesis on the same theme, unless prior_lever_outcomes cites that prior.
+) -> "BehaviorSignal | None":
+    """Detect when the thesis flips the direction of a lever already tested
+    by a prior thesis on the same theme, without citing it.
 
     Direction is determined per (current_thesis, prior) pair using the data
-    signal first (shared numeric key with lever-name convention), falling back
-    to word-boundary text matching on thesis_id + hypothesis when no data
-    signal is available.
+    signal first (shared numeric key with lever-name convention), falling
+    back to word-boundary text matching when no data signal is available.
     """
     proposed_kw = {kw.strip() for kw in thesis.theme_keywords if kw.strip()}
     if not proposed_kw:
-        return
+        return None
     cited_prior_ids = {p.prior_thesis_id for p in thesis.prior_lever_outcomes}
 
     for prior in prior_theses:
@@ -578,20 +577,29 @@ def _check_direction_whipsaw(
         opposing = "widen" if prior_dir == "tighten" else "tighten"
         if proposed_dir != opposing:
             continue
-        raise ThesisValidationError(
-            f"Direction whipsaw: prior thesis '{prior_id}' tested the {prior_dir} "
-            f"direction on lever theme {sorted(proposed_kw)}, and this thesis "
-            f"flips to {proposed_dir} without acknowledgment. Cite '{prior_id}' "
-            f"in prior_lever_outcomes (with direction_then, outcome, and why_retry) "
-            f"or propose from a different mechanism dimension.",
-            rejection_code="thesis_quality_direction_whipsaw",
+        return BehaviorSignal(
+            code="thesis_quality_direction_whipsaw",
+            confidence=1.0,
+            severity="block",
+            summary=(
+                f"Direction whipsaw: prior thesis '{prior_id}' tested the {prior_dir} "
+                f"direction on lever theme {sorted(proposed_kw)}, and this thesis "
+                f"flips to {proposed_dir} without acknowledgment. Cite '{prior_id}' "
+                f"in prior_lever_outcomes (with direction_then, outcome, and why_retry) "
+                f"or propose from a different mechanism dimension."
+            ),
             evidence={
                 "prior_thesis_id": prior_id,
                 "opposing_direction": opposing,
                 "proposed_direction": proposed_dir,
                 "lever_theme": sorted(proposed_kw),
             },
+            remediation=(
+                f"Cite '{prior_id}' in prior_lever_outcomes",
+                "Or propose from a different mechanism dimension",
+            ),
         )
+    return None
 
 
 def _check_thesis_id_not_repeated(
@@ -1444,7 +1452,8 @@ def _validate_thesis_quality(
             signals.append(sig)
         if (sig := _detect_needs_code_starvation(thesis, prior_theses)) is not None:
             signals.append(sig)
-        _check_direction_whipsaw(thesis, prior_theses)
+        if (sig := _detect_direction_whipsaw(thesis, prior_theses)) is not None:
+            signals.append(sig)
 
     _check_qualitative_disqualifier_present(thesis)
 
