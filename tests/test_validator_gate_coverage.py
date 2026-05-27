@@ -208,7 +208,14 @@ def test_gate_structural_dimension_novelty_too_short_without_priors() -> None:
 def test_gate_structural_missing_causal_cluster_when_priors_exist() -> None:
     thesis = _minimal_valid_thesis(causal_cluster="")
     priors = [_prior("ema-prior-1", config_changes={"some_other_key": 10})]
-    _expect_rejection(thesis, priors, "structural_missing_causal_cluster")
+    with pytest.raises(ThesisValidationError) as exc_info:
+        validate_research_thesis(thesis, prior_theses=priors)
+
+    assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
+    assert [failure["code"] for failure in exc_info.value.evidence["failures"]] == [
+        "structural_missing_causal_cluster",
+        "structural_underexplored_dimensions_invalid",
+    ]
 
 
 def test_gate_structural_underexplored_dimensions_invalid_empty() -> None:

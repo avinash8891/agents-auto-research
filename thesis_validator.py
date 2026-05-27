@@ -2026,7 +2026,7 @@ def _collect_mechanical_failures(
     failures.extend(
         _collect_from_validator(lambda: _validate_mechanism_dimension(thesis, prior_theses))
     )
-    if prior_theses and thesis.causal_cluster.strip():
+    if prior_theses:
         failures.extend(
             _collect_from_validator(
                 lambda: _validate_underexplored_dimensions(thesis, prior_theses)

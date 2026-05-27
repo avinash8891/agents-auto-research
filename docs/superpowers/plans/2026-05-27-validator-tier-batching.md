@@ -96,4 +96,5 @@ rg -n "theme_keywords|config_validity_config_key_overlap_real|config_validity_ne
 
 - [ ] **Step 3: Commit, push, PR**
 
-Commit only this PR’s files, push `codex/validator-tier-batching`, and open a PR against `avinash8891/install-make-pages-interactive-skill`.
+Commit only this PR's files, push `codex/validator-tier-batching`, and open a PR
+against the current validator prerequisite/base branch for the stack.

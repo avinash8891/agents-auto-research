@@ -150,6 +150,27 @@ def test_mechanical_batch_includes_disqualifiers_and_unbacked_effect_metrics() -
     assert failures[2]["evidence"] == {"metric": "made_up_metric_two"}
 
 
+def test_mechanical_batch_includes_underexplored_dimensions_when_cluster_missing() -> None:
+    thesis = _thesis(
+        causal_cluster="",
+        underexplored_dimensions_considered=[],
+    )
+
+    with pytest.raises(ThesisValidationError) as exc_info:
+        validate_research_thesis(
+            thesis,
+            prior_theses=[_prior("ema-prior-a")],
+            tools_called={"list_experiment_results", "web_search"},
+        )
+
+    assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
+    failures = exc_info.value.evidence["failures"]
+    assert [failure["code"] for failure in failures] == [
+        "structural_missing_causal_cluster",
+        "structural_underexplored_dimensions_invalid",
+    ]
+
+
 def test_mechanical_batch_with_single_failure_raises_original_code() -> None:
     thesis = _thesis(thesis_id="")
 
