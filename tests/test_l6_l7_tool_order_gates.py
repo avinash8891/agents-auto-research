@@ -4,7 +4,6 @@ from pathlib import Path
 
 from thesis_validator import infer_rejection_code
 
-
 _RESEARCH_CONDUCTOR_SOURCE = Path("research_conductor.py").read_text()
 
 
