@@ -70,3 +70,69 @@ def test_policy_decision_action_is_typed_literal() -> None:
     """A decision's action must be one of the three documented values."""
     decision = PolicyDecision(action="accept")
     assert decision.action in ("accept", "accept_with_warning", "reject")
+
+
+def test_theme_cluster_fixation_detector_returns_signal_when_pattern_fires() -> None:
+    """When 4 of last 7 priors share keywords with the proposal, the detector
+    returns a signal. Signal carries the same code that the pre-refactor
+    raise produced."""
+    from research_types import (
+        ExpectedEffect, Disqualifier, ResearchThesis,
+    )
+    from thesis_validator import _detect_theme_cluster_fixation
+
+    proposal = ResearchThesis(
+        thesis_id="ema-new-v1",
+        strategy_family="ema",
+        hypothesis="x", mechanism="x",
+        mechanism_dimension="entry_timing",
+        dimension_novelty="x" * 50,
+        theme_keywords=["opening", "stop_distance"],
+        config_changes={"some_key": 1},
+        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
+        disqualifiers=[Disqualifier(name="x", condition="y", kind="mechanism_evidence")],
+        falsification_or_alternative="z" * 100,
+    )
+    def prior(thesis_id: str, kw: list[str]) -> dict:
+        return {
+            "thesis_id": thesis_id,
+            "config_changes": {f"k_{thesis_id}": 1},
+            "outcome": "compiled",
+            "thesis_details": {"theme_keywords": kw},
+        }
+    priors = [
+        prior("p1", ["opening", "a"]),
+        prior("p2", ["opening", "b"]),
+        prior("p3", ["opening", "c"]),
+        prior("p4", ["d"]),
+    ]
+    sig = _detect_theme_cluster_fixation(proposal, priors)
+    assert sig is not None
+    assert sig.code == "thesis_quality_theme_cluster_fixation"
+    assert sig.severity == "block"
+    assert sig.confidence > 0.5  # >=4/7 overlap
+    assert "overlap_count" in sig.evidence
+    assert sig.evidence["overlap_count"] == 4
+
+
+def test_theme_cluster_fixation_detector_returns_none_when_pattern_absent() -> None:
+    """When fewer than 4 priors share keywords, the detector returns None."""
+    from research_types import (
+        ExpectedEffect, Disqualifier, ResearchThesis,
+    )
+    from thesis_validator import _detect_theme_cluster_fixation
+
+    proposal = ResearchThesis(
+        thesis_id="ema-new-v1",
+        strategy_family="ema",
+        hypothesis="x", mechanism="x",
+        mechanism_dimension="entry_timing",
+        dimension_novelty="x" * 50,
+        theme_keywords=["unique"],
+        config_changes={"some_key": 1},
+        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
+        disqualifiers=[Disqualifier(name="x", condition="y", kind="mechanism_evidence")],
+        falsification_or_alternative="z" * 100,
+    )
+    priors = [{"thesis_id": "p1", "config_changes": {}, "thesis_details": {"theme_keywords": ["other"]}}]
+    assert _detect_theme_cluster_fixation(proposal, priors) is None

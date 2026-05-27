@@ -20,6 +20,7 @@ from collections.abc import Callable
 from typing import Any, Final
 
 from autoresearch_logging import get_logger
+from behavior_signals import BehaviorSignal, PolicyDecision, decide as _policy_decide
 from research_types import (
     CORE_MECHANISM_DIMENSIONS,
     EMERGENT_MECHANISM_DIMENSION,
@@ -377,16 +378,26 @@ def _prior_was_run(prior: dict[str, Any]) -> bool:
     return True
 
 
-def _check_theme_cluster_fixation(
+def _detect_theme_cluster_fixation(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]],
-) -> None:
+) -> "BehaviorSignal | None":
+    """Detect when the proposed thesis fixates on a theme cluster.
+
+    Returns a BehaviorSignal when >=4 of the last 7 priors (including the
+    proposal itself) share at least one theme_keyword. Returns None when
+    the pattern is absent.
+
+    Confidence is proportional to the fraction of the window that overlaps:
+    4/7 -> 0.57, 7/7 -> 1.0. Severity is "block" in Phase C to match the
+    pre-refactor hard-block behavior.
+    """
     proposed_keywords = {kw.strip() for kw in thesis.theme_keywords if kw.strip()}
     if not proposed_keywords:
-        return
+        return None
     recent = prior_theses[-(B1_THEME_CLUSTER_WINDOW - 1) :]
     if not recent:
-        return
+        return None
     overlap_count = 1  # the new thesis itself
     overlapping_priors: list[str] = []
     for prior in recent:
@@ -394,20 +405,29 @@ def _check_theme_cluster_fixation(
         if prior_kw & proposed_keywords:
             overlap_count += 1
             overlapping_priors.append(str(prior.get("thesis_id") or "?"))
-    if overlap_count >= B1_THEME_CLUSTER_THRESHOLD:
-        raise ThesisValidationError(
+    if overlap_count < B1_THEME_CLUSTER_THRESHOLD:
+        return None
+    return BehaviorSignal(
+        code="thesis_quality_theme_cluster_fixation",
+        confidence=min(1.0, overlap_count / B1_THEME_CLUSTER_WINDOW),
+        severity="block",
+        summary=(
             f"Theme-cluster fixation: {overlap_count} of last "
             f"{B1_THEME_CLUSTER_WINDOW} theses share keywords {sorted(proposed_keywords)} "
             f"(overlapping priors: {overlapping_priors}). Propose from a different "
-            f"mechanism dimension, or justify novelty in dimension_novelty.",
-            rejection_code="thesis_quality_theme_cluster_fixation",
-            evidence={
-                "overlap_count": overlap_count,
-                "window": B1_THEME_CLUSTER_WINDOW,
-                "shared_keywords": sorted(proposed_keywords),
-                "overlapping_priors": overlapping_priors,
-            },
-        )
+            f"mechanism dimension, or justify novelty in dimension_novelty."
+        ),
+        evidence={
+            "overlap_count": overlap_count,
+            "window": B1_THEME_CLUSTER_WINDOW,
+            "shared_keywords": sorted(proposed_keywords),
+            "overlapping_priors": overlapping_priors,
+        },
+        remediation=(
+            "Propose from a different mechanism_dimension",
+            "If staying in this dimension, use distinct theme_keywords",
+        ),
+    )
 
 
 # B2 direction whipsaw: detection has two complementary signals.
@@ -1398,19 +1418,34 @@ def _validate_thesis_quality(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Stage 1 sub-section: pattern-of-reasoning rules.
+    """Stage 1 sub-section: behavior-pattern detection + policy.
 
-    Owns the cross-thesis behavioral rules (B1 cluster fixation, B2 direction
-    whipsaw, B3 needs_code starvation, B5 qualitative disqualifier), the
-    banned-language regex (current-best / preserve / build-on), the
-    same-dimension novelty explanation requirement, and the don't-repeat-id rule.
+    Each behavior detector returns a BehaviorSignal | None. The signals
+    flow through the policy layer (behavior_signals.decide) which decides
+    whether to reject. A reject is translated back to ThesisValidationError
+    so external callers see the same API as before.
     """
+    signals: list[BehaviorSignal] = []
+
     if prior_theses:
-        _check_theme_cluster_fixation(thesis, prior_theses)
+        if (sig := _detect_theme_cluster_fixation(thesis, prior_theses)) is not None:
+            signals.append(sig)
         _check_needs_code_starvation(thesis, prior_theses)
         _check_direction_whipsaw(thesis, prior_theses)
 
     _check_qualitative_disqualifier_present(thesis)
+
+    decision = _policy_decide(signals)
+    if decision.action == "reject":
+        triggering = decision.signals[0]
+        raise ThesisValidationError(
+            triggering.summary,
+            rejection_code=triggering.code,
+            evidence=dict(triggering.evidence),
+            remediation_hint=" / ".join(triggering.remediation) if triggering.remediation else "",
+        )
+    # accept and accept_with_warning paths: no raise. Warnings will be
+    # surfaced to the conductor in a future phase.
 
 
 
