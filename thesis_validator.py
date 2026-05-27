@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from autoresearch_logging import get_logger
 from research_types import (
@@ -128,6 +128,24 @@ class ThesisValidationError(ValueError):
         self.rejection_code = rejection_code
         self.evidence = dict(evidence or {})
         self.remediation_hint = remediation_hint
+
+
+# Renames from the 2026-05-27 validator consolidation. Listed explicitly so
+# downstream consumers (drift checker, analytics, prompt-rule mappings) can
+# detect the rename rather than silently encountering an "unknown" code.
+RETIRED_REJECTION_CODES: Final[dict[str, str]] = {
+    "structural_missing_dimension_novelty": "structural_dimension_novelty_invalid",
+    "thesis_quality_dimension_novelty_too_short": "structural_dimension_novelty_invalid",
+    "structural_missing_falsification": "structural_falsification_invalid",
+    "structural_falsification_too_short": "structural_falsification_invalid",
+    "structural_missing_new_dimension_name": "structural_emergent_thesis_malformed",
+    "structural_new_dimension_name_duplicates_core": "structural_emergent_thesis_malformed",
+    "structural_emergent_field_too_short": "structural_emergent_thesis_malformed",
+    "structural_missing_underexplored_dimensions": "structural_underexplored_dimensions_invalid",
+    "structural_underexplored_dimensions_includes_chosen": "structural_underexplored_dimensions_invalid",
+    "config_validity_base_config_path_legacy_experiments": "config_validity_base_config_path_inheritance_blocked",
+    "thesis_quality_thesis_id_repeated": "structural_thesis_id_repeated",
+}
 
 
 def infer_rejection_code(message: str) -> str:
