@@ -678,7 +678,8 @@ def _check_qualitative_disqualifier_present(thesis: ResearchThesis) -> None:
         "Need at least one disqualifier with kind='mechanism_evidence' AND a "
         f"condition ≥{_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS} chars describing "
         "an observable data pattern that would falsify the mechanism. "
-        "Short or metric-only conditions don't count as Popperian disconfirmers.",
+        "Pure kind='metric_threshold' disqualifiers ('PF must improve by 5%') "
+        "are pass/fail criteria, not Popperian disconfirmers.",
         rejection_code="thesis_quality_missing_mechanism_evidence_disqualifier",
         evidence={
             "min_condition_chars": _MIN_MECHANISM_EVIDENCE_CONDITION_CHARS,
