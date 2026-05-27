@@ -38,6 +38,12 @@ def write_all(
         validate_event_frame_schema(events_df)
         if events_df is not None and not events_df.empty:
             events_path = output_path / "strategy_events.parquet"
+            _FLOAT_EVENT_COLS = {"entry_price", "stop_price", "target_price", "stop_distance_pct"}
+            for _col in _FLOAT_EVENT_COLS:
+                if _col in events_df.columns and events_df[_col].dtype == object:
+                    events_df[_col] = events_df[_col].apply(
+                        lambda v: float(v) if v not in (None, "", "nan") else float("nan")
+                    )
             events_df.to_parquet(events_path, index=False)
 
     diagnostics_path = ""
