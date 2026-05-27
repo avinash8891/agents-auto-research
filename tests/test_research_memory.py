@@ -90,6 +90,38 @@ def test_latest_thesis_details_returns_last_attempt_when_multiple(tmp_path: Path
     assert result["hypothesis"] == "Second attempt"
 
 
+def test_theme_keywords_round_trip_through_persistence(tmp_path: Path) -> None:
+    """`_theme_keywords_from_prior` is the source of truth for the
+    dominant-cluster overlap gate. The keyword set MUST survive the
+    log_research_round → SQLite → _iter_thesis_attempts round trip, or
+    the gate silently fails-open in production (tests would still pass
+    because they build priors by hand).
+
+    Regression: the thesis_details whitelist in autoresearch_research.py
+    used to omit theme_keywords, so production rounds persisted priors
+    without keywords and the overlap gate could never fire on real data.
+    """
+    from research_memory import _iter_thesis_attempts
+    from thesis_validator import _theme_keywords_from_prior
+
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    _add_thesis_attempt(
+        db,
+        "ema-overlap-source",
+        thesis_details={
+            "theme_keywords": ["entry_timing", "morning_session", "opening_volatility"]
+        },
+    )
+
+    entries = _iter_thesis_attempts(tmp_path, thesis_id="ema-overlap-source")
+    assert entries, "persisted attempt must be readable back"
+    assert _theme_keywords_from_prior(entries[0]) == {
+        "entry_timing",
+        "morning_session",
+        "opening_volatility",
+    }
+
+
 def test_latest_thesis_details_picks_globally_latest_across_family_dbs(tmp_path: Path) -> None:
     """When two family DBs share a thesis_id, latest_thesis_details must return
     the globally most recent attempt — not whichever DB sorts first by filename.
