@@ -353,6 +353,29 @@ def test_ema_raw_setup_events_emit_standardized_event_columns() -> None:
     assert row["ema.alert_bar_timestamp"] == pd.Timestamp("2024-01-02 09:40")
 
 
+def test_strategy_event_logger_keeps_none_extra_open_for_later_text() -> None:
+    logger = StrategyEventLogger()
+
+    logger.log(event_type="diagnostic", custom_reason=None)
+    logger.log(event_type="diagnostic", custom_reason="later")
+    events = logger.to_dataframe()
+
+    assert pd.isna(events.loc[0, "custom_reason"])
+    assert events.loc[1, "custom_reason"] == "later"
+
+
+def test_strategy_event_logger_keeps_none_extra_numeric_friendly() -> None:
+    logger = StrategyEventLogger()
+
+    logger.log(event_type="diagnostic", numeric_score=None)
+    logger.log(event_type="diagnostic", numeric_score=1.25)
+    events = logger.to_dataframe()
+
+    assert pd.isna(events.loc[0, "numeric_score"])
+    assert events.loc[1, "numeric_score"] == 1.25
+    assert pd.api.types.is_float_dtype(events["numeric_score"])
+
+
 def test_event_diagnostics_derive_generic_cohorts_from_standardized_schema() -> None:
     event_frame = pd.DataFrame(
         [

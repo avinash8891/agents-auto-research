@@ -10,11 +10,25 @@ from research_types import BacktestContract, DiagnosticRequirementSpec
 from thesis_validator import (
     ALIGNMENT_THRESHOLD,
     ThesisValidationError,
-    validate_research_thesis,
+)
+from thesis_validator import validate_research_thesis as _validate_research_thesis
+from thesis_validator import (
     validate_stage_1,
     validate_stage_2,
-    validate_thesis_dict,
 )
+from thesis_validator import validate_thesis_dict as _validate_thesis_dict
+
+_VALID_PROCESS_TOOLS = {"list_experiment_results", "web_search"}
+
+
+def validate_research_thesis(*args: Any, **kwargs: Any) -> Any:
+    kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    return _validate_research_thesis(*args, **kwargs)
+
+
+def validate_thesis_dict(*args: Any, **kwargs: Any) -> Any:
+    kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    return _validate_thesis_dict(*args, **kwargs)
 
 
 def _base_thesis() -> dict:
@@ -116,7 +130,11 @@ def _make_contract(
 
 def test_validate_stage_1_accepts_well_formed_thesis() -> None:
     validated = validate_thesis_dict(_base_thesis())
-    out = validate_stage_1(validated, prior_theses=[])
+    out = validate_stage_1(
+        validated,
+        prior_theses=[],
+        tools_called=_VALID_PROCESS_TOOLS,
+    )
     assert out.thesis_id == "stage1_test_thesis"
 
 

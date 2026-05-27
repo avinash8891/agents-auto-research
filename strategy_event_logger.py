@@ -271,6 +271,12 @@ class StrategyEventLogger:
             return np.full(total, np.nan, dtype=np.float64)
         return np.full(total, "", dtype=object)
 
+    @staticmethod
+    def _merged_extra_kind(existing: str | None, current: str) -> str:
+        if existing is None or existing == current:
+            return current
+        return "object"
+
     def to_dataframe(self) -> pd.DataFrame:
         """Build one DataFrame from all accumulated batches. Single allocation."""
         if not self._batches:
@@ -287,7 +293,9 @@ class StrategyEventLogger:
         extra_kinds: dict[str, str] = {}
         for batch in self._batches:
             for key, values in batch.extras.items():
-                extra_kinds.setdefault(key, self._extra_kind(values))
+                extra_kinds[key] = self._merged_extra_kind(
+                    extra_kinds.get(key), self._extra_kind(values)
+                )
         extra_columns = {
             key: self._empty_extra_column(kind, total) for key, kind in extra_kinds.items()
         }

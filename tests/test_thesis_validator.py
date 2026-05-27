@@ -7,8 +7,15 @@ from thesis_validator import (
     check_hypothesis_alignment,
     config_key_overlap,
     generate_variants,
-    validate_thesis_dict,
 )
+from thesis_validator import validate_thesis_dict as _validate_thesis_dict
+
+_VALID_PROCESS_TOOLS = {"list_experiment_results", "web_search"}
+
+
+def validate_thesis_dict(*args: object, **kwargs: object) -> object:
+    kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    return _validate_thesis_dict(*args, **kwargs)
 
 
 def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:

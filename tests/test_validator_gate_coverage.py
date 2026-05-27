@@ -28,8 +28,8 @@ import pytest
 from research_types import Disqualifier, ExpectedEffect, ResearchThesis
 from thesis_validator import (
     ThesisValidationError,
-    validate_research_thesis,
 )
+from thesis_validator import validate_research_thesis as _validate_research_thesis
 
 # ---------------------------------------------------------------------------
 # Baselines: production-grade names (ema family), realistic values throughout.
@@ -38,6 +38,12 @@ from thesis_validator import (
 STRATEGY_FAMILY = "ema"
 SAMPLE_THESIS_ID = "ema-opening-noise-skip-v1"
 SAMPLE_MECHANISM_DIMENSION = "entry_timing"
+_VALID_PROCESS_TOOLS = {"list_experiment_results", "web_search"}
+
+
+def validate_research_thesis(*args: Any, **kwargs: Any) -> ResearchThesis:
+    kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    return _validate_research_thesis(*args, **kwargs)
 
 
 _VALID_FALSIFICATION_TEXT = (
@@ -202,7 +208,14 @@ def test_gate_structural_dimension_novelty_too_short_without_priors() -> None:
 def test_gate_structural_missing_causal_cluster_when_priors_exist() -> None:
     thesis = _minimal_valid_thesis(causal_cluster="")
     priors = [_prior("ema-prior-1", config_changes={"some_other_key": 10})]
-    _expect_rejection(thesis, priors, "structural_missing_causal_cluster")
+    with pytest.raises(ThesisValidationError) as exc_info:
+        validate_research_thesis(thesis, prior_theses=priors)
+
+    assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
+    assert [failure["code"] for failure in exc_info.value.evidence["failures"]] == [
+        "structural_missing_causal_cluster",
+        "structural_underexplored_dimensions_invalid",
+    ]
 
 
 def test_gate_structural_underexplored_dimensions_invalid_empty() -> None:
@@ -317,13 +330,11 @@ def test_gate_structural_expected_effect_metric_unbacked() -> None:
 
 def test_disqualifiers_fire_before_expected_effects_metric_unbacked() -> None:
     """Regression: a thesis missing disqualifiers AND with an unbacked
-    expected_effects metric must raise structural_missing_disqualifiers
-    first (presence-check priority), not metric_unbacked.
+    expected_effects metric must report both mechanical failures.
 
-    Pre-refactor order: presence → falsification → disqualifiers → metric_unbacked.
-    Pins the baseline fail-fast order so a future refactor cannot silently
-    re-bundle the two expected_effects checks into one helper (see commit
-    51a1d02 which introduced exactly that regression).
+    The current validator batches mechanical failures, so this pins the
+    non-process assertions inside the batch evidence rather than expecting a
+    process or fail-fast rejection code.
     """
     thesis = _minimal_valid_thesis(
         expected_effects=[
@@ -332,7 +343,15 @@ def test_disqualifiers_fire_before_expected_effects_metric_unbacked() -> None:
         required_diagnostics=[],  # metric NOT backed
         disqualifiers=[],  # also missing
     )
-    _expect_rejection(thesis, None, "structural_missing_disqualifiers")
+    with pytest.raises(ThesisValidationError) as exc_info:
+        validate_research_thesis(thesis)
+
+    assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
+    failure_codes = {failure["code"] for failure in exc_info.value.evidence["failures"]}
+    assert failure_codes == {
+        "structural_missing_disqualifiers",
+        "structural_expected_effect_metric_unbacked",
+    }
 
 
 # ===========================================================================
