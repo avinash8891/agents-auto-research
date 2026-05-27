@@ -297,8 +297,9 @@ class StructuredRejection(BaseModel):
 class ConductorResult:
     """Typed return from run_research_conductor.
 
-    Replaces the raw suggested_theses wrapper dict. The conductor always returns
-    exactly one thesis (v3 prompt contract) — no list wrapper needed.
+    The conductor returns one thesis directly (v3 prompt contract, thesis_id at top level).
+    status values: "ok" — thesis ready; "should_stop" — conductor decided to quit;
+    "conductor_error" — timeout, parse failure, gate violation, or validation failure.
     """
 
     status: Literal["ok", "should_stop", "conductor_error"]

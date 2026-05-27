@@ -558,8 +558,8 @@ def _build_remote_bootstrap_segments(
         "')",
         'if [ -f ".venv/.autoresearch-deps.sha256" ] && '
         '[ "$(cat .venv/.autoresearch-deps.sha256)" != "$deps_fingerprint" ]; '
-        "then rm -rf .venv; fi",
-        'if [ ! -x ".venv/bin/python" ]; then python3 -m venv .venv; fi',
+        'then rm -rf "$AUTORESEARCH_RUNTIME_ROOT/.venv"; fi',
+        'if [ ! -x ".venv/bin/python" ]; then python3 -m venv "$AUTORESEARCH_RUNTIME_ROOT/.venv"; fi',
         "python_bin=.venv/bin/python",
         'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
         'if [ ! -f ".venv/.autoresearch-deps.sha256" ] || '
@@ -571,9 +571,15 @@ def _build_remote_bootstrap_segments(
         fallback_install = " && ".join(dependency_install_segments)
         segments.extend(
             [
-                'if [ ! -x ".venv/bin/python" ]; then '
-                "echo 'Existing checkout matches requested ref but .venv is missing; "
-                f"installing dependencies.' && {fallback_install}; fi",
+                "deps_fingerprint=$(python3 -c 'import hashlib, pathlib; "
+                'p = pathlib.Path("pyproject.toml"); '
+                'print(hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else "missing")'
+                "')",
+                'if [ ! -x ".venv/bin/python" ] || '
+                '[ ! -f ".venv/.autoresearch-deps.sha256" ] || '
+                '[ "$(cat .venv/.autoresearch-deps.sha256)" != "$deps_fingerprint" ]; then '
+                "echo 'Existing checkout missing venv or deps; installing.' "
+                f"&& {fallback_install}; fi",
                 "python_bin=.venv/bin/python",
                 'export AUTORESEARCH_PYTHON_BIN="$python_bin"',
             ]

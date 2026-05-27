@@ -124,7 +124,8 @@ def _check_experiment_results_consulted(tools_called: set[str]) -> str | None:
 def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     """Extract single thesis dict from conductor response. Returns (thesis, validation_error).
 
-    Supports v3 direct format (thesis_id at top level) and legacy suggested_theses wrapper.
+    v3 prompt contract: conductor returns the thesis object directly (thesis_id at top level).
+    The suggested_theses wrapper path is kept for backward compatibility with test fixtures only.
     """
     if "thesis_id" in parsed:
         return parsed, ""
