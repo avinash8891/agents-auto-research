@@ -5,11 +5,9 @@ from pathlib import Path
 
 from agnost_mcp import config, track
 
-from rejection_artifact import (
-    get_rejection as _get_rejection,
-    list_rejections as _list_rejections,
-    rejection_pattern_summary as _rejection_pattern_summary,
-)
+from rejection_artifact import get_rejection as _get_rejection
+from rejection_artifact import list_rejections as _list_rejections
+from rejection_artifact import rejection_pattern_summary as _rejection_pattern_summary
 from trace_sdk import trace
 
 
@@ -161,9 +159,7 @@ def _build_research_tools_mcp(
         if list_past_theses_for_root is None:
             from research_memory import list_past_theses as _list_past_theses_for_root
 
-            return _list_past_theses_for_root(
-                root, job_id=current_job, offset=offset, limit=limit
-            )
+            return _list_past_theses_for_root(root, job_id=current_job, offset=offset, limit=limit)
         return list_past_theses_for_root(root, job_id=current_job, offset=offset, limit=limit)
 
     @mcp.tool()

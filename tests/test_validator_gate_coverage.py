@@ -56,15 +56,12 @@ def _minimal_valid_thesis(**overrides: Any) -> ResearchThesis:
         "mechanism_dimension": SAMPLE_MECHANISM_DIMENSION,
         "dimension_novelty": "Tests session-window conditioning, not threshold tuning.",
         "config_changes": {"opening_skip_minutes": 5},
-        "expected_effects": [
-            ExpectedEffect(metric="profit_factor", direction="increase")
-        ],
+        "expected_effects": [ExpectedEffect(metric="profit_factor", direction="increase")],
         "disqualifiers": [
             Disqualifier(
                 name="opening_loss_pattern",
                 condition=(
-                    "first-5min loss rate not concentrated in the opening "
-                    "auction window"
+                    "first-5min loss rate not concentrated in the opening " "auction window"
                 ),  # ≥40 chars to satisfy mechanism_evidence substantiveness gate
                 kind="mechanism_evidence",
             )
@@ -312,9 +309,7 @@ def test_gate_structural_missing_disqualifiers() -> None:
 
 def test_gate_structural_expected_effect_metric_unbacked() -> None:
     thesis = _minimal_valid_thesis(
-        expected_effects=[
-            ExpectedEffect(metric="totally_custom_metric", direction="increase")
-        ],
+        expected_effects=[ExpectedEffect(metric="totally_custom_metric", direction="increase")],
         required_diagnostics=[],  # custom metric not declared
     )
     _expect_rejection(thesis, None, "structural_expected_effect_metric_unbacked")
@@ -332,9 +327,7 @@ def test_disqualifiers_fire_before_expected_effects_metric_unbacked() -> None:
     """
     thesis = _minimal_valid_thesis(
         expected_effects=[
-            ExpectedEffect(
-                metric="non_builtin_made_up_metric", direction="increase"
-            ),
+            ExpectedEffect(metric="non_builtin_made_up_metric", direction="increase"),
         ],
         required_diagnostics=[],  # metric NOT backed
         disqualifiers=[],  # also missing
@@ -472,9 +465,7 @@ def test_gate_thesis_quality_missing_mechanism_evidence_disqualifier() -> None:
             )
         ],
     )
-    _expect_rejection(
-        thesis, None, "thesis_quality_missing_mechanism_evidence_disqualifier"
-    )
+    _expect_rejection(thesis, None, "thesis_quality_missing_mechanism_evidence_disqualifier")
 
 
 def test_gate_thesis_quality_mechanism_evidence_disqualifier_too_short() -> None:
@@ -490,9 +481,7 @@ def test_gate_thesis_quality_mechanism_evidence_disqualifier_too_short() -> None
             )
         ],
     )
-    _expect_rejection(
-        thesis, None, "thesis_quality_missing_mechanism_evidence_disqualifier"
-    )
+    _expect_rejection(thesis, None, "thesis_quality_missing_mechanism_evidence_disqualifier")
 
 
 def test_gate_structural_thesis_id_repeated() -> None:
@@ -544,18 +533,14 @@ def test_gate_config_validity_base_config_path_invalid_absolute() -> None:
 
 def test_gate_config_validity_base_config_path_runtime_construction() -> None:
     thesis = _minimal_valid_thesis(base_config_path="runtime/jobs/job-1/foo.json")
-    _expect_rejection(
-        thesis, None, "config_validity_base_config_path_runtime_construction"
-    )
+    _expect_rejection(thesis, None, "config_validity_base_config_path_runtime_construction")
 
 
 def test_gate_config_validity_experiments_path_routes_to_inheritance_blocked() -> None:
     """The `experiments/` path is no longer special-cased. It falls through
     to the general inheritance_blocked gate that rejects ANY non-baseline path."""
     thesis = _minimal_valid_thesis(base_config_path="experiments/foo.json")
-    _expect_rejection(
-        thesis, None, "config_validity_base_config_path_inheritance_blocked"
-    )
+    _expect_rejection(thesis, None, "config_validity_base_config_path_inheritance_blocked")
 
 
 def test_gate_config_validity_base_contract_id_not_allowed() -> None:
@@ -566,9 +551,7 @@ def test_gate_config_validity_base_contract_id_not_allowed() -> None:
 def test_gate_config_validity_base_config_path_inheritance_blocked() -> None:
     # A configs/-prefixed path that ISN'T the family baseline.
     thesis = _minimal_valid_thesis(base_config_path="configs/some_other_config.json")
-    _expect_rejection(
-        thesis, None, "config_validity_base_config_path_inheritance_blocked"
-    )
+    _expect_rejection(thesis, None, "config_validity_base_config_path_inheritance_blocked")
 
 
 def test_gate_config_validity_config_changes_metadata_leak() -> None:

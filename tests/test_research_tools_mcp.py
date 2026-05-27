@@ -121,9 +121,7 @@ def _seed_thesis_attempt(tmp_path: Path, *, thesis_id: str = SAMPLE_THESIS_ID) -
             "hypothesis": "Skipping the first 5 minutes avoids opening-auction noise",
             "mechanism": "Opening liquidity is thin; signals there are mostly noise",
             "thesis_details": {
-                "expected_effects": [
-                    {"metric": "profit_factor", "direction": "increase"}
-                ],
+                "expected_effects": [{"metric": "profit_factor", "direction": "increase"}],
                 "evidence": ["microstructure literature on opening volatility"],
                 "evidence_strength": "proxy",
             },
@@ -241,9 +239,7 @@ def test_analyze_trades_reaches_analyst_with_focus_question(tmp_path: Path) -> N
     analyst, calls = _make_spy("ANALYST_REPORT: losses cluster at session open")
     mcp = _build_mcp(tmp_path, trades_file="/tmp/trades.csv", call_analyst=analyst)
 
-    text = _invoke(
-        mcp, "analyze_trades", {"focus_question": "when do stops fire before targets?"}
-    )
+    text = _invoke(mcp, "analyze_trades", {"focus_question": "when do stops fire before targets?"})
 
     assert text == "ANALYST_REPORT: losses cluster at session open"
     assert len(calls) == 1

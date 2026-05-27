@@ -45,12 +45,13 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Final
 
 from autoresearch_logging import get_logger
-from behavior_signals import BehaviorSignal, decide as _policy_decide
+from behavior_signals import BehaviorSignal
+from behavior_signals import decide as _policy_decide
 from research_types import (
     CORE_MECHANISM_DIMENSIONS,
     EMERGENT_MECHANISM_DIMENSION,
@@ -821,9 +822,7 @@ def _detect_needs_code_starvation(
             f"the queue (set requires_code_change=false and operate on existing config keys)."
         ),
         evidence={"streak": streak, "limit": B3_NEEDS_CODE_STARVATION_LIMIT},
-        remediation=(
-            "Set requires_code_change=false and use existing config keys",
-        ),
+        remediation=("Set requires_code_change=false and use existing config keys",),
     )
 
 
@@ -1261,9 +1260,7 @@ def _describe_emergent_issue(issue: dict[str, Any]) -> str:
     if kind == "new_dimension_name_duplicates_core":
         return f"new_dimension_name '{issue['name']}' duplicates a core dimension"
     if kind == "short_fields":
-        field_list = ", ".join(
-            f"{f['field']} ({f['actual_chars']} chars)" for f in issue["fields"]
-        )
+        field_list = ", ".join(f"{f['field']} ({f['actual_chars']} chars)" for f in issue["fields"])
         return (
             f"emergent justification fields each need "
             f"≥{_MIN_EMERGENT_FIELD_CHARS} chars: {field_list}"
@@ -1352,13 +1349,9 @@ def _validate_underexplored_dimensions(
         known = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
         invalid = [d for d in items if d not in known]
         if invalid:
-            issues.append(
-                {"kind": "invalid_values", "invalid": invalid, "valid": sorted(known)}
-            )
+            issues.append({"kind": "invalid_values", "invalid": invalid, "valid": sorted(known)})
         if thesis.mechanism_dimension in items:
-            issues.append(
-                {"kind": "includes_chosen", "chosen": thesis.mechanism_dimension}
-            )
+            issues.append({"kind": "includes_chosen", "chosen": thesis.mechanism_dimension})
 
     # underexplored carries no extra_evidence: the valid-dimension list is
     # already embedded per-issue, and there is no global threshold to surface
@@ -1634,7 +1627,6 @@ def _validate_thesis_quality(
         )
     # accept and accept_with_warning paths: no raise. Warnings will be
     # surfaced to the conductor in a future phase.
-
 
 
 def _validate_config_validity(

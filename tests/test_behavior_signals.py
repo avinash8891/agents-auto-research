@@ -40,9 +40,7 @@ def _make_thesis(**overrides: Any) -> ResearchThesis:
         "dimension_novelty": "x" * 50,
         "config_changes": {"some_key": 1},
         "expected_effects": [ExpectedEffect(metric="profit_factor", direction="increase")],
-        "disqualifiers": [
-            Disqualifier(name="x", condition="y" * 50, kind="mechanism_evidence")
-        ],
+        "disqualifiers": [Disqualifier(name="x", condition="y" * 50, kind="mechanism_evidence")],
         "falsification_or_alternative": "z" * 100,
     }
     defaults.update(overrides)
@@ -64,6 +62,7 @@ def test_behavior_signal_is_frozen_and_carries_all_required_fields() -> None:
     assert sig.confidence == 0.83
     assert sig.severity == "block"
     import dataclasses
+
     # frozen=True: attempting to set must raise.
     try:
         sig.code = "different"
@@ -97,8 +96,12 @@ def test_decide_rejects_with_first_signal_code_when_multiple_present() -> None:
     """Default policy: first signal wins for the rejection_code so the
     behavior matches the pre-refactor validator (which raised on the first
     check that fired)."""
-    first = BehaviorSignal(code="thesis_quality_theme_cluster_fixation", confidence=1.0, severity="block", summary="")
-    second = BehaviorSignal(code="thesis_quality_direction_whipsaw", confidence=1.0, severity="block", summary="")
+    first = BehaviorSignal(
+        code="thesis_quality_theme_cluster_fixation", confidence=1.0, severity="block", summary=""
+    )
+    second = BehaviorSignal(
+        code="thesis_quality_direction_whipsaw", confidence=1.0, severity="block", summary=""
+    )
     decision = decide([first, second])
     assert decision.action == "reject"
     assert decision.rejection_code == "thesis_quality_theme_cluster_fixation"
@@ -150,7 +153,9 @@ def test_theme_cluster_fixation_detector_returns_none_when_pattern_absent() -> N
         thesis_id="ema-new-v1",
         theme_keywords=["unique"],
     )
-    priors = [{"thesis_id": "p1", "config_changes": {}, "thesis_details": {"theme_keywords": ["other"]}}]
+    priors = [
+        {"thesis_id": "p1", "config_changes": {}, "thesis_details": {"theme_keywords": ["other"]}}
+    ]
     assert _detect_theme_cluster_fixation(proposal, priors) is None
 
 
@@ -217,7 +222,9 @@ def test_missing_mechanism_evidence_disqualifier_detector_fires_when_all_metric_
     assert sig.severity == "block"
 
 
-def test_missing_mechanism_evidence_disqualifier_detector_returns_none_when_substantive_present() -> None:
+def test_missing_mechanism_evidence_disqualifier_detector_returns_none_when_substantive_present() -> (
+    None
+):
     proposal = _make_thesis(
         config_changes={"k": 1},
         disqualifiers=[Disqualifier(name="x", condition="z" * 50, kind="mechanism_evidence")],

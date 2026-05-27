@@ -464,9 +464,7 @@ def _refresh_reflexio_export_after_builder(
         # failure context with empty. Flagged in PR #57 review by
         # chatgpt-codex-connector.
         validation_failure_reason=str(
-            reflection.get("validation_failure_reason")
-            or reflection.get("rejection_reason")
-            or ""
+            reflection.get("validation_failure_reason") or reflection.get("rejection_reason") or ""
         ),
         quality=reflection.get("quality") if isinstance(reflection.get("quality"), dict) else {},
         usage=resources.get("usage") if isinstance(resources.get("usage"), dict) else {},
