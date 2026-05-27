@@ -342,12 +342,14 @@ def _known_emergent_dimension_names(prior_theses: list[dict[str, Any]] | None) -
     return known
 
 
+_REQUIRED_PROCESS_TOOLS: Final[tuple[str, ...]] = (
+    "list_experiment_results",
+    "web_search",
+)
+
+
 def _validate_process(_thesis: ResearchThesis, tools_called: set[str]) -> None:
-    required_tools = {
-        "list_experiment_results": "must understand prior experiment outcomes",
-        "web_search": "must be grounded in external evidence",
-    }
-    missing = [tool for tool in required_tools if tool not in tools_called]
+    missing = [tool for tool in _REQUIRED_PROCESS_TOOLS if tool not in tools_called]
     if not missing:
         return
     raise ThesisValidationError(
@@ -1074,16 +1076,10 @@ def _load_family_key_concepts(family_name: str) -> dict[str, tuple[str, ...]]:
         ) from exc
     key_concepts = dict(getattr(spec, "key_concepts", {}) or {})
     if not key_concepts:
-        # Documented fail-open per FamilyResearchSpec default (key_concepts
-        # field defaults to empty dict). Families opt INTO Stage 2 alignment
-        # enforcement by populating key_concepts; they opt OUT by leaving it
-        # empty. Log loudly so operators can see when a family is opting out
-        # without breaking the documented contract.
-        #
-        # The earlier hard-fail behavior broke the `_demo` skeleton (which
-        # uses the default) and any newly scaffolded family that hadn't yet
-        # opted into alignment scoring. Flagged in PR #57 review by
-        # chatgpt-codex-connector.
+        # Documented fail-open: FamilyResearchSpec.key_concepts defaults to
+        # empty. Families opt INTO Stage 2 alignment by populating it. Log
+        # so operators can see opt-outs without breaking valid families
+        # (e.g. the _demo skeleton, newly scaffolded families).
         log.warning(
             "family %r has empty FamilyResearchSpec.key_concepts — Stage 2 "
             "hypothesis-config alignment will fail-open. Populate key_concepts "

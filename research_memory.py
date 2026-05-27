@@ -461,14 +461,10 @@ def latest_thesis_details(
 
     Pass ``job_id`` to scope the lookup to one job — without it, the same
     thesis_id used in multiple jobs returns the most-recent match across
-    ALL jobs, which can surface unrelated prior predictions and steer the
-    conductor wrong. Flagged in PR #57 review by chatgpt-codex-connector.
+    ALL jobs, which surfaces unrelated prior predictions.
 
-    Empty/whitespace-only ``thesis_id`` returns {} immediately rather than
-    falling through to a query that would return the most-recent unrelated
-    thesis. Flagged in PR #57 review by cubic-dev-ai.
-
-    Returns {} when the thesis has no saved attempt records.
+    Returns {} for empty/whitespace ``thesis_id`` or when the thesis has
+    no saved attempt records.
     """
     requested_id = str(thesis_id or "").strip()
     if not requested_id:

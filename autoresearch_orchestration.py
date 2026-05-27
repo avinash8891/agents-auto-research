@@ -9,6 +9,7 @@ _log = logging.getLogger(__name__)
 
 from autoresearch_paths import serialize_config_path
 from autoresearch_runtime_paths import research_round_root
+from improvement_reflexion import read_validation_failure_reason
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from strategies import STRATEGIES
@@ -458,14 +459,7 @@ def _refresh_reflexio_export_after_builder(
         outcome=outcome,
         family=str(episode.get("family") or family),
         reasoning=str(reflection.get("reasoning") or ""),
-        # Fall back to the legacy `rejection_reason` field when refreshing
-        # exports written before the validation_failure_reason rename.
-        # Without this, the refresh would permanently overwrite the prior
-        # failure context with empty. Flagged in PR #57 review by
-        # chatgpt-codex-connector.
-        validation_failure_reason=str(
-            reflection.get("validation_failure_reason") or reflection.get("rejection_reason") or ""
-        ),
+        validation_failure_reason=read_validation_failure_reason(reflection),
         quality=reflection.get("quality") if isinstance(reflection.get("quality"), dict) else {},
         usage=resources.get("usage") if isinstance(resources.get("usage"), dict) else {},
         canonical_trace_path=trace_path,

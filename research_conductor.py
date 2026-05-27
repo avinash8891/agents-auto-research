@@ -975,13 +975,9 @@ async def run_research_conductor(
                     final_outcome="accepted",
                 )
                 session_finished = True
-                # Preserve top-level `reasoning` on success — downstream
-                # _dispatch_compiled_contract / _on_ready_to_run read it
-                # for the round result, artifacts, and trace/reflexion
-                # payloads. Without it, accepted theses lose the
-                # conductor's explanation that the previous raw-dict
-                # return preserved. Flagged in PR #57 review by
-                # chatgpt-codex-connector.
+                # Preserve reasoning on success — downstream readers
+                # (_dispatch_compiled_contract, _on_ready_to_run) use it
+                # for round result, artifacts, and trace/reflexion payloads.
                 return ConductorResult(
                     status="ok",
                     thesis=thesis,

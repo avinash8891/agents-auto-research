@@ -499,14 +499,8 @@ def _resolve_conductor_inputs(
     if latest_outcome:
         thesis_id = latest_outcome.get("thesis_id")
         if thesis_id:
-            # Fail-open: this lookup enriches the prompt with previous-thesis
-            # context but is not required for the round to proceed. A DB read
-            # error must not abort the round. Flagged in PR #57 review by
-            # cubic-dev-ai.
-            # Job-scoped: without current_job the same thesis_id used in
-            # multiple jobs would return the most-recent unrelated match and
-            # steer the conductor with the wrong prior. Flagged by
-            # chatgpt-codex-connector.
+            # Fail-open: enrichment, not required. Job-scoped: same thesis_id
+            # can recur across jobs and would surface unrelated priors.
             try:
                 prior = _latest_thesis_details(
                     controller.runtime_root, str(thesis_id), job_id=current_job

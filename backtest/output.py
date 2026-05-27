@@ -43,14 +43,9 @@ def write_all(
             _FLOAT_EVENT_COLS = {"entry_price", "stop_price", "target_price", "stop_distance_pct"}
             for _col in _FLOAT_EVENT_COLS:
                 if _col in events_df.columns and events_df[_col].dtype == object:
-                    # Coerce object-dtype columns to float64. Using
-                    # pd.to_numeric(..., errors="coerce") correctly handles
-                    # pandas nullable values (pd.NA, NaT, etc.) — the
-                    # previous `v not in (None, "", "nan")` membership test
-                    # raised `TypeError: boolean value of NA is ambiguous`
-                    # when an event row carried pd.NA from upstream nullable
-                    # dtype operations. Flagged in PR #57 review by
-                    # chatgpt-codex-connector.
+                    # Coerce object-dtype to float; pd.to_numeric handles
+                    # pd.NA / NaT correctly (plain float() raises on them).
+                    # errors="coerce" turns non-numerics into NaN.
                     events_df[_col] = pd.to_numeric(events_df[_col], errors="coerce")
             events_df.to_parquet(events_path, index=False)
 
