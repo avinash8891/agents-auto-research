@@ -9,7 +9,7 @@ The evaluator checks the result against predictions and produces an BacktestVerd
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -311,7 +311,10 @@ class ConductorResult:
     # Tools the conductor invoked during this attempt. Surfaced so the outer
     # validator can enforce process-tier gates (e.g. web_search required) on
     # a retry-eligible basis instead of short-circuiting through conductor_error.
-    tools_called: frozenset[str] = field(default_factory=frozenset)
+    # None = caller did not observe tools (e.g. tests constructing the result
+    # by hand); the outer validator should skip the process gate. An empty
+    # frozenset = the conductor ran and called no tools — gate must fire.
+    tools_called: frozenset[str] | None = None
 
 
 class BacktestVerdict(BaseModel):
