@@ -948,9 +948,11 @@ async def run_research_conductor(
     if parsed:
         theses = parsed.get("suggested_theses", [])
         # v3 prompt says "Return ONLY the JSON object" — conductor returns the thesis
-        # directly without a suggested_theses wrapper. Auto-detect and normalize.
+        # directly without a suggested_theses wrapper. Normalize to the wrapped shape
+        # so all callers (autoresearch_research.py) see a consistent structure.
         if not theses and parsed.get("thesis_id"):
-            theses = [parsed]
+            parsed = {"suggested_theses": [parsed], "should_stop": False}
+            theses = parsed["suggested_theses"]
         gate_error = _check_experiment_results_consulted(tools_called_this_round)
         if gate_error is not None and not parsed.get("should_stop"):
             trace(
