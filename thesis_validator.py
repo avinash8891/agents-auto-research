@@ -174,6 +174,11 @@ def infer_rejection_code(message: str) -> str:
         "malformed" in msg or "new_dimension_name" in msg or "duplicates a core" in msg
     ):
         return "structural_emergent_thesis_malformed"
+    # Each branch below maps EITHER the current message OR a legacy message
+    # from a renamed gate to the canonical rejection_code. The retired
+    # codes themselves are listed in RETIRED_REJECTION_CODES above; this
+    # function is the parallel back-compat layer for persisted rejection.json
+    # records whose `message` field was written before the rename.
     if (
         "dimension_novelty must explain" in msg
         or "dimension_novelty is empty" in msg
