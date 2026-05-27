@@ -90,6 +90,36 @@ def test_latest_thesis_details_returns_last_attempt_when_multiple(tmp_path: Path
     assert result["hypothesis"] == "Second attempt"
 
 
+def test_latest_thesis_details_picks_globally_latest_across_family_dbs(tmp_path: Path) -> None:
+    """When two family DBs share a thesis_id, latest_thesis_details must return
+    the globally most recent attempt — not whichever DB sorts first by filename.
+
+    Regression: _iter_thesis_attempts concatenated per-DB results in filename
+    order ('ema_*' before 'orb_*'), so an older EMA attempt would shadow a newer
+    ORB attempt and steer the next conductor prompt with unrelated predictions.
+    """
+    ema_db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    orb_db = BacktestRunDB(tmp_path / "orb_backtest_runs.db")
+    _add_thesis_attempt(
+        ema_db,
+        "shared-thesis-id",
+        hypothesis="Older EMA attempt",
+        attempt_number=1,
+        created_at_utc="2026-01-01T00:00:00+00:00",
+    )
+    _add_thesis_attempt(
+        orb_db,
+        "shared-thesis-id",
+        hypothesis="Newer ORB attempt",
+        attempt_number=1,
+        created_at_utc="2026-05-01T00:00:00+00:00",
+    )
+
+    result = latest_thesis_details(tmp_path, "shared-thesis-id")
+
+    assert result["hypothesis"] == "Newer ORB attempt"
+
+
 # ── _experiment_index_entry hypothesis/mechanism enrichment ──────
 
 

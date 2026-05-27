@@ -390,7 +390,22 @@ def _iter_thesis_attempts(
 
         db = BacktestRunDB(db_path)
         entries.extend(db.list_research_thesis_attempts(job_id=job_id, thesis_id=thesis_id))
+    # Per-DB rows arrive sorted, but concatenating across multiple family DBs
+    # leaves the combined list ordered by filename, not by recency. Re-sort with
+    # the same key BacktestRunDB.list_research_thesis_attempts uses so callers
+    # like latest_thesis_details get the globally most recent attempt regardless
+    # of which family DB it lives in.
+    entries.sort(key=_thesis_attempt_sort_key, reverse=True)
     return entries
+
+
+def _thesis_attempt_sort_key(entry: dict[str, Any]) -> tuple[int, int, str, int]:
+    return (
+        int(entry.get("job_id") or 0),
+        int(entry.get("round_number") or 0),
+        str(entry.get("created_at_utc") or ""),
+        int(entry.get("attempt_number") or 0),
+    )
 
 
 def list_past_theses(
