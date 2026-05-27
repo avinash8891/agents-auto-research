@@ -180,6 +180,12 @@ def infer_rejection_code(message: str) -> str:
     explicitly. Add new patterns as new rules land.
     """
     msg = message.lower()
+    if (
+        "process gate failed" in msg
+        or "call web_search at least once before analyze_trades" in msg
+        or "call list_experiment_results at least once before proposing a thesis" in msg
+    ):
+        return "process_required_tools_not_called"
     # config_validity_*
     if "config-key overlap" in msg:
         return "config_validity_config_key_overlap_real"
