@@ -139,7 +139,7 @@ def infer_rejection_code(message: str) -> str:
     if "do not construct" in msg or "points into runtime/" in msg:
         return "config_validity_base_config_path_runtime_construction"
     if "legacy experiments/ inheritance" in msg or "must be under configs/" in msg:
-        return "config_validity_base_config_path_legacy_experiments"
+        return "config_validity_base_config_path_inheritance_blocked"
     if "must point to a json or yaml" in msg or "must be a relative repo path" in msg:
         return "config_validity_base_config_path_invalid"
     if "config_changes contains thesis metadata key" in msg:
@@ -236,12 +236,10 @@ def _validate_base_config_path(path: str) -> None:
                 rejection_code="config_validity_base_config_path_runtime_construction",
                 evidence={"path": path},
             )
-        raise ThesisValidationError(
-            f"base_config_path '{path}' must be under configs/ only; "
-            "legacy experiments/ inheritance paths are not allowed",
-            rejection_code="config_validity_base_config_path_legacy_experiments",
-            evidence={"path": path},
-        )
+        # Other non-configs/ paths (including legacy experiments/) fall through
+        # to the inheritance_blocked check in _validate_config_validity, which
+        # rejects ANY path that isn't the family baseline. That gate is the
+        # authoritative inheritance check; this specific subcase was redundant.
 
 
 def _family_baseline_path(thesis: ResearchThesis) -> str:

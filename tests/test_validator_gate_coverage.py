@@ -506,10 +506,12 @@ def test_gate_config_validity_base_config_path_runtime_construction() -> None:
     )
 
 
-def test_gate_config_validity_base_config_path_legacy_experiments() -> None:
+def test_gate_config_validity_experiments_path_routes_to_inheritance_blocked() -> None:
+    """The `experiments/` path is no longer special-cased. It falls through
+    to the general inheritance_blocked gate that rejects ANY non-baseline path."""
     thesis = _minimal_valid_thesis(base_config_path="experiments/foo.json")
     _expect_rejection(
-        thesis, None, "config_validity_base_config_path_legacy_experiments"
+        thesis, None, "config_validity_base_config_path_inheritance_blocked"
     )
 
 
