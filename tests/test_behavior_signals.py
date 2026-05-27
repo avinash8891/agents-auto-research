@@ -7,7 +7,46 @@ and policy decision-making in isolation.
 
 from __future__ import annotations
 
+from typing import Any
+
+import pytest
+
 from behavior_signals import BehaviorSignal, PolicyDecision, decide
+from research_types import Disqualifier, ExpectedEffect, ResearchThesis
+from thesis_validator import (
+    ThesisValidationError,
+    _detect_direction_whipsaw,
+    _detect_missing_mechanism_evidence_disqualifier,
+    _detect_needs_code_starvation,
+    _detect_theme_cluster_fixation,
+    _validate_thesis_quality,
+)
+
+
+def _make_thesis(**overrides: Any) -> ResearchThesis:
+    """Construct a minimal valid ResearchThesis with overrides for the
+    field(s) under test. Reduces duplication across detector tests.
+
+    Defaults are chosen to satisfy all structural validators so the
+    behavioral detectors (which are what these tests exercise) can be
+    isolated.
+    """
+    defaults: dict[str, Any] = {
+        "thesis_id": "ema-x",
+        "strategy_family": "ema",
+        "hypothesis": "Hypothesis text long enough to satisfy any future length check.",
+        "mechanism": "Mechanism text long enough to satisfy any future length check.",
+        "mechanism_dimension": "entry_timing",
+        "dimension_novelty": "x" * 50,
+        "config_changes": {"some_key": 1},
+        "expected_effects": [ExpectedEffect(metric="profit_factor", direction="increase")],
+        "disqualifiers": [
+            Disqualifier(name="x", condition="y" * 50, kind="mechanism_evidence")
+        ],
+        "falsification_or_alternative": "z" * 100,
+    }
+    defaults.update(overrides)
+    return ResearchThesis(**defaults)
 
 
 def test_behavior_signal_is_frozen_and_carries_all_required_fields() -> None:
@@ -77,23 +116,11 @@ def test_theme_cluster_fixation_detector_returns_signal_when_pattern_fires() -> 
     """When 4 of last 7 priors share keywords with the proposal, the detector
     returns a signal. Signal carries the same code that the pre-refactor
     raise produced."""
-    from research_types import (
-        ExpectedEffect, Disqualifier, ResearchThesis,
-    )
-    from thesis_validator import _detect_theme_cluster_fixation
-
-    proposal = ResearchThesis(
+    proposal = _make_thesis(
         thesis_id="ema-new-v1",
-        strategy_family="ema",
-        hypothesis="x", mechanism="x",
-        mechanism_dimension="entry_timing",
-        dimension_novelty="x" * 50,
         theme_keywords=["opening", "stop_distance"],
-        config_changes={"some_key": 1},
-        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
-        disqualifiers=[Disqualifier(name="x", condition="y", kind="mechanism_evidence")],
-        falsification_or_alternative="z" * 100,
     )
+
     def prior(thesis_id: str, kw: list[str]) -> dict:
         return {
             "thesis_id": thesis_id,
@@ -101,6 +128,7 @@ def test_theme_cluster_fixation_detector_returns_signal_when_pattern_fires() -> 
             "outcome": "compiled",
             "thesis_details": {"theme_keywords": kw},
         }
+
     priors = [
         prior("p1", ["opening", "a"]),
         prior("p2", ["opening", "b"]),
@@ -118,22 +146,9 @@ def test_theme_cluster_fixation_detector_returns_signal_when_pattern_fires() -> 
 
 def test_theme_cluster_fixation_detector_returns_none_when_pattern_absent() -> None:
     """When fewer than 4 priors share keywords, the detector returns None."""
-    from research_types import (
-        ExpectedEffect, Disqualifier, ResearchThesis,
-    )
-    from thesis_validator import _detect_theme_cluster_fixation
-
-    proposal = ResearchThesis(
+    proposal = _make_thesis(
         thesis_id="ema-new-v1",
-        strategy_family="ema",
-        hypothesis="x", mechanism="x",
-        mechanism_dimension="entry_timing",
-        dimension_novelty="x" * 50,
         theme_keywords=["unique"],
-        config_changes={"some_key": 1},
-        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
-        disqualifiers=[Disqualifier(name="x", condition="y", kind="mechanism_evidence")],
-        falsification_or_alternative="z" * 100,
     )
     priors = [{"thesis_id": "p1", "config_changes": {}, "thesis_details": {"theme_keywords": ["other"]}}]
     assert _detect_theme_cluster_fixation(proposal, priors) is None
@@ -142,22 +157,13 @@ def test_theme_cluster_fixation_detector_returns_none_when_pattern_absent() -> N
 def test_needs_code_starvation_detector_returns_signal_at_streak_3() -> None:
     """Three consecutive priors with requires_code_change=true and no run
     in between → signal fired."""
-    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
-    from thesis_validator import _detect_needs_code_starvation
-
-    proposal = ResearchThesis(
+    proposal = _make_thesis(
         thesis_id="ema-new-v1",
-        strategy_family="ema",
-        hypothesis="x", mechanism="x",
-        mechanism_dimension="entry_timing",
-        dimension_novelty="x" * 50,
         config_changes={},
         requires_code_change=True,
         requested_primitives=["new_primitive"],
-        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
-        disqualifiers=[Disqualifier(name="x", condition="y", kind="mechanism_evidence")],
-        falsification_or_alternative="z" * 100,
     )
+
     def code_prior(thesis_id: str) -> dict:
         return {
             "thesis_id": thesis_id,
@@ -165,6 +171,7 @@ def test_needs_code_starvation_detector_returns_signal_at_streak_3() -> None:
             "outcome": "needs_code",
             "thesis_details": {"requires_code_change": True},
         }
+
     priors = [code_prior("p1"), code_prior("p2"), code_prior("p3")]
     sig = _detect_needs_code_starvation(proposal, priors)
     assert sig is not None
@@ -175,15 +182,8 @@ def test_needs_code_starvation_detector_returns_signal_at_streak_3() -> None:
 
 def test_direction_whipsaw_detector_returns_signal_on_flip() -> None:
     """Prior tightened a theme; this thesis loosens it without citation."""
-    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
-    from thesis_validator import _detect_direction_whipsaw
-
-    proposal = ResearchThesis(
+    proposal = _make_thesis(
         thesis_id="ema-loosen-stops-v1",
-        strategy_family="ema",
-        hypothesis="x", mechanism="x",
-        mechanism_dimension="entry_timing",
-        dimension_novelty="x" * 50,
         theme_keywords=["stop_distance"],
         prior_lever_outcomes=[],
         config_changes={"different_key": 1},
@@ -193,9 +193,6 @@ def test_direction_whipsaw_detector_returns_signal_on_flip() -> None:
         ),
         causal_cluster="stop-distance",
         underexplored_dimensions_considered=["risk_structure"],
-        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
-        disqualifiers=[Disqualifier(name="x", condition="y", kind="mechanism_evidence")],
-        falsification_or_alternative="z" * 100,
     )
     prior = {
         "thesis_id": "ema-tighten-stops-v0",
@@ -210,18 +207,9 @@ def test_direction_whipsaw_detector_returns_signal_on_flip() -> None:
 
 
 def test_missing_mechanism_evidence_disqualifier_detector_fires_when_all_metric_threshold() -> None:
-    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
-    from thesis_validator import _detect_missing_mechanism_evidence_disqualifier
-
-    proposal = ResearchThesis(
-        thesis_id="ema-x", strategy_family="ema",
-        hypothesis="x", mechanism="x",
-        mechanism_dimension="entry_timing",
-        dimension_novelty="x" * 50,
+    proposal = _make_thesis(
         config_changes={"k": 1},
-        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
         disqualifiers=[Disqualifier(name="x", condition="y" * 100, kind="metric_threshold")],
-        falsification_or_alternative="z" * 100,
     )
     sig = _detect_missing_mechanism_evidence_disqualifier(proposal)
     assert sig is not None
@@ -230,18 +218,9 @@ def test_missing_mechanism_evidence_disqualifier_detector_fires_when_all_metric_
 
 
 def test_missing_mechanism_evidence_disqualifier_detector_returns_none_when_substantive_present() -> None:
-    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
-    from thesis_validator import _detect_missing_mechanism_evidence_disqualifier
-
-    proposal = ResearchThesis(
-        thesis_id="ema-x", strategy_family="ema",
-        hypothesis="x", mechanism="x",
-        mechanism_dimension="entry_timing",
-        dimension_novelty="x" * 50,
+    proposal = _make_thesis(
         config_changes={"k": 1},
-        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
         disqualifiers=[Disqualifier(name="x", condition="z" * 50, kind="mechanism_evidence")],
-        falsification_or_alternative="z" * 100,
     )
     assert _detect_missing_mechanism_evidence_disqualifier(proposal) is None
 
@@ -249,21 +228,11 @@ def test_missing_mechanism_evidence_disqualifier_detector_returns_none_when_subs
 def test_validate_thesis_quality_translates_policy_reject_to_raise() -> None:
     """End-to-end: when a detector fires, the validator raises with the
     detector's code (mediated by the policy)."""
-    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
-    from thesis_validator import ThesisValidationError, _validate_thesis_quality
-
-    proposal = ResearchThesis(
-        thesis_id="ema-x", strategy_family="ema",
-        hypothesis="x", mechanism="x",
-        mechanism_dimension="entry_timing",
-        dimension_novelty="x" * 50,
+    proposal = _make_thesis(
         config_changes={"k": 1},
-        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
         # Only metric_threshold → mechanism_evidence detector fires
         disqualifiers=[Disqualifier(name="x", condition="y" * 100, kind="metric_threshold")],
-        falsification_or_alternative="z" * 100,
     )
-    import pytest
     with pytest.raises(ThesisValidationError) as exc_info:
         _validate_thesis_quality(proposal, prior_theses=[])
     assert exc_info.value.rejection_code == "thesis_quality_missing_mechanism_evidence_disqualifier"
@@ -271,17 +240,8 @@ def test_validate_thesis_quality_translates_policy_reject_to_raise() -> None:
 
 def test_validate_thesis_quality_does_not_raise_when_no_signals_fire() -> None:
     """End-to-end: with no signals, the validator returns without raising."""
-    from research_types import ExpectedEffect, Disqualifier, ResearchThesis
-    from thesis_validator import _validate_thesis_quality
-
-    proposal = ResearchThesis(
-        thesis_id="ema-x", strategy_family="ema",
-        hypothesis="x", mechanism="x",
-        mechanism_dimension="entry_timing",
-        dimension_novelty="x" * 50,
+    proposal = _make_thesis(
         config_changes={"k": 1},
-        expected_effects=[ExpectedEffect(metric="profit_factor", direction="increase")],
         disqualifiers=[Disqualifier(name="x", condition="z" * 50, kind="mechanism_evidence")],
-        falsification_or_alternative="z" * 100,
     )
     _validate_thesis_quality(proposal, prior_theses=[])  # no raise expected
