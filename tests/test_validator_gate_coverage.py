@@ -159,23 +159,23 @@ def test_gate_structural_mechanism_dimension_invalid() -> None:
     _expect_rejection(thesis, None, "structural_mechanism_dimension_invalid")
 
 
-def test_gate_structural_missing_new_dimension_name() -> None:
+def test_gate_structural_emergent_malformed_missing_new_dimension_name() -> None:
     thesis = _minimal_valid_thesis(
         mechanism_dimension="emergent",
         new_dimension_name="",
     )
-    _expect_rejection(thesis, None, "structural_missing_new_dimension_name")
+    _expect_rejection(thesis, None, "structural_emergent_thesis_malformed")
 
 
-def test_gate_structural_new_dimension_name_duplicates_core() -> None:
+def test_gate_structural_emergent_malformed_duplicates_core() -> None:
     thesis = _minimal_valid_thesis(
         mechanism_dimension="emergent",
         new_dimension_name="entry_timing",  # a core dimension
     )
-    _expect_rejection(thesis, None, "structural_new_dimension_name_duplicates_core")
+    _expect_rejection(thesis, None, "structural_emergent_thesis_malformed")
 
 
-def test_gate_structural_emergent_field_too_short() -> None:
+def test_gate_structural_emergent_malformed_short_fields() -> None:
     # All three emergent justification fields must be ≥40 chars when dimension is emergent.
     thesis = _minimal_valid_thesis(
         mechanism_dimension="emergent",
@@ -184,7 +184,7 @@ def test_gate_structural_emergent_field_too_short() -> None:
         mechanism_family_definition="x" * 50,
         expected_reuse_across_future_theses="x" * 50,
     )
-    _expect_rejection(thesis, None, "structural_emergent_field_too_short")
+    _expect_rejection(thesis, None, "structural_emergent_thesis_malformed")
 
 
 def test_gate_structural_dimension_novelty_empty() -> None:

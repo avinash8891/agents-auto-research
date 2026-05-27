@@ -146,6 +146,10 @@ def infer_rejection_code(message: str) -> str:
         return "config_validity_config_changes_metadata_leak"
     if "falsification_or_alternative" in msg:
         return "structural_falsification_invalid"
+    if "emergent" in msg and (
+        "malformed" in msg or "new_dimension_name" in msg or "duplicates a core" in msg
+    ):
+        return "structural_emergent_thesis_malformed"
     if (
         "dimension_novelty must explain" in msg
         or "dimension_novelty is empty" in msg
@@ -1047,6 +1051,65 @@ def generate_variants(
 # ---------------------------------------------------------------------------
 
 
+def _validate_emergent_dimension(thesis: ResearchThesis) -> None:
+    """Validate the rare emergent-dimension path with a single rejection code.
+
+    All emergent-path failures roll up to ``structural_emergent_thesis_malformed``
+    with structured evidence describing every issue found. One rejection per
+    attempt (since emergent fields are interdependent and the LLM should fix
+    them all together).
+    """
+    issues: list[dict[str, Any]] = []
+
+    new_dimension_name = _dimension_slug(thesis.new_dimension_name)
+    if not new_dimension_name:
+        issues.append({"kind": "missing_new_dimension_name"})
+    elif new_dimension_name in CORE_MECHANISM_DIMENSIONS:
+        issues.append(
+            {
+                "kind": "new_dimension_name_duplicates_core",
+                "name": thesis.new_dimension_name,
+            }
+        )
+
+    short_fields = [
+        {"field": field, "actual_chars": len(getattr(thesis, field).strip())}
+        for field in _EMERGENT_REQUIRED_FIELDS
+        if len(getattr(thesis, field).strip()) < _MIN_EMERGENT_FIELD_CHARS
+    ]
+    if short_fields:
+        issues.append({"kind": "short_fields", "fields": short_fields})
+
+    if not issues:
+        return
+
+    issue_descriptions = []
+    for issue in issues:
+        if issue["kind"] == "missing_new_dimension_name":
+            issue_descriptions.append("new_dimension_name is empty")
+        elif issue["kind"] == "new_dimension_name_duplicates_core":
+            issue_descriptions.append(
+                f"new_dimension_name '{issue['name']}' duplicates a core dimension"
+            )
+        elif issue["kind"] == "short_fields":
+            field_list = ", ".join(
+                f"{f['field']} ({f['actual_chars']} chars)" for f in issue["fields"]
+            )
+            issue_descriptions.append(
+                f"emergent justification fields each need "
+                f"≥{_MIN_EMERGENT_FIELD_CHARS} chars: {field_list}"
+            )
+
+    raise ThesisValidationError(
+        f"Emergent thesis malformed: {'; '.join(issue_descriptions)}",
+        rejection_code="structural_emergent_thesis_malformed",
+        evidence={
+            "issues": issues,
+            "min_emergent_field_chars": _MIN_EMERGENT_FIELD_CHARS,
+        },
+    )
+
+
 def _validate_structural(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
@@ -1089,41 +1152,7 @@ def _validate_structural(
             evidence={"mechanism_dimension": thesis.mechanism_dimension},
         )
     if thesis.mechanism_dimension == EMERGENT_MECHANISM_DIMENSION:
-        new_dimension_name = _dimension_slug(thesis.new_dimension_name)
-        if not new_dimension_name:
-            raise ThesisValidationError(
-                "new_dimension_name is required when mechanism_dimension is emergent",
-                rejection_code="structural_missing_new_dimension_name",
-            )
-        if new_dimension_name in CORE_MECHANISM_DIMENSIONS:
-            raise ThesisValidationError(
-                f"new_dimension_name '{thesis.new_dimension_name}' duplicates a core "
-                "mechanism dimension; use the core dimension instead",
-                rejection_code="structural_new_dimension_name_duplicates_core",
-                evidence={"new_dimension_name": thesis.new_dimension_name},
-            )
-        # Batch all short emergent fields into a single rejection so the LLM
-        # learns about all of them in one attempt instead of one per retry.
-        # All three fields are required jointly, so the LLM needs to write all
-        # three at once anyway — fail-fast per field is pure waste here.
-        short_fields = [
-            {"field": field, "actual_chars": len(getattr(thesis, field).strip())}
-            for field in _EMERGENT_REQUIRED_FIELDS
-            if len(getattr(thesis, field).strip()) < _MIN_EMERGENT_FIELD_CHARS
-        ]
-        if short_fields:
-            field_list = ", ".join(
-                f"{f['field']} ({f['actual_chars']} chars)" for f in short_fields
-            )
-            raise ThesisValidationError(
-                f"Emergent dimension requires these fields to each be "
-                f"≥{_MIN_EMERGENT_FIELD_CHARS} chars: {field_list}",
-                rejection_code="structural_emergent_field_too_short",
-                evidence={
-                    "short_fields": short_fields,
-                    "min_chars": _MIN_EMERGENT_FIELD_CHARS,
-                },
-            )
+        _validate_emergent_dimension(thesis)
     # Unified dimension_novelty contract: must be non-empty AND ≥30 chars.
     # Was previously split into a structural empty-check (always) and a
     # thesis_quality length-check (only when same-dim priors exist). The split
