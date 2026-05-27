@@ -1311,6 +1311,41 @@ def _validate_underexplored_dimensions(
     )
 
 
+def _validate_mechanism_dimension(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None,
+) -> None:
+    """Validate the mechanism_dimension contract.
+
+    Three checks in dependency order:
+      1. Field is non-empty.
+      2. Value is a known dimension (core set OR a prior-emergent name).
+      3. If "emergent", delegate to _validate_emergent_dimension for the
+         conditional sub-contract (new_dimension_name + 3 emergent fields).
+
+    Fail-fast within the contract: a missing-field failure does not check
+    the value-validity rule, since the latter would fire a meaningless
+    "'' is not a valid mechanism_dimension" rejection. Each gate's
+    rejection_code is preserved from its pre-refactor identity.
+    """
+    if not thesis.mechanism_dimension.strip():
+        raise ThesisValidationError(
+            "Missing mechanism_dimension. Every thesis must declare which "
+            "dimension it explores: " + ", ".join(sorted(MECHANISM_DIMENSIONS)),
+            rejection_code="structural_missing_mechanism_dimension",
+        )
+    known_dimensions = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
+    if thesis.mechanism_dimension not in known_dimensions:
+        raise ThesisValidationError(
+            f"Invalid mechanism_dimension '{thesis.mechanism_dimension}'. "
+            f"Must be one of: {sorted(known_dimensions)}",
+            rejection_code="structural_mechanism_dimension_invalid",
+            evidence={"mechanism_dimension": thesis.mechanism_dimension},
+        )
+    if thesis.mechanism_dimension == EMERGENT_MECHANISM_DIMENSION:
+        _validate_emergent_dimension(thesis)
+
+
 def _validate_structural(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
@@ -1340,22 +1375,7 @@ def _validate_structural(
             "Missing mechanism", rejection_code="structural_missing_mechanism"
         )
 
-    if not thesis.mechanism_dimension.strip():
-        raise ThesisValidationError(
-            "Missing mechanism_dimension. Every thesis must declare which "
-            "dimension it explores: " + ", ".join(sorted(MECHANISM_DIMENSIONS)),
-            rejection_code="structural_missing_mechanism_dimension",
-        )
-    known_dimensions = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
-    if thesis.mechanism_dimension not in known_dimensions:
-        raise ThesisValidationError(
-            f"Invalid mechanism_dimension '{thesis.mechanism_dimension}'. "
-            f"Must be one of: {sorted(known_dimensions)}",
-            rejection_code="structural_mechanism_dimension_invalid",
-            evidence={"mechanism_dimension": thesis.mechanism_dimension},
-        )
-    if thesis.mechanism_dimension == EMERGENT_MECHANISM_DIMENSION:
-        _validate_emergent_dimension(thesis)
+    _validate_mechanism_dimension(thesis, prior_theses)
     # Unified dimension_novelty contract: must be non-empty AND ≥30 chars.
     # Was previously split into a structural empty-check (always) and a
     # thesis_quality length-check (only when same-dim priors exist). The split
