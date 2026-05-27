@@ -9,6 +9,7 @@ The evaluator checks the result against predictions and produces an BacktestVerd
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field as dc_field
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -290,6 +291,22 @@ class StructuredRejection(BaseModel):
     evidence: dict[str, Any] = Field(default_factory=dict)
     remediation_hint: str = ""
     validator_version: str = ""
+
+
+@dataclass
+class ConductorResult:
+    """Typed return from run_research_conductor.
+
+    Replaces the raw suggested_theses wrapper dict. The conductor always returns
+    exactly one thesis (v3 prompt contract) — no list wrapper needed.
+    """
+
+    status: Literal["ok", "should_stop", "conductor_error"]
+    thesis: dict[str, Any] | None = None
+    error: str = ""
+    validation_reason: str = ""
+    reasoning: str = ""
+    should_stop: bool = False
 
 
 class BacktestVerdict(BaseModel):

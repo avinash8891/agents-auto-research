@@ -19,7 +19,7 @@ import pytest
 from autoresearch_constants import MAX_RESEARCH_ROUNDS
 from autoresearch_controller import AutoresearchController
 from autoresearch_research import (
-    _check_parsed_for_terminal,
+    _check_parsed_for_terminal,  # keep for backward-compat callers in integration tests
     _handle_needs_code,
     _handle_round_failure,
     _handle_success,
@@ -33,6 +33,7 @@ from autoresearch_research import (
     results_to_dicts,
     run_research,
 )
+from research_types import ConductorResult
 from autoresearch_state import BacktestResultRecord, write_state
 from backtest_run_db import BacktestRunDB
 from strategies import STRATEGIES
@@ -167,13 +168,11 @@ def test_accumulate_job_usage_handles_missing_total_block(tmp_path: Path) -> Non
 
 def test_check_parsed_for_terminal_preserves_conductor_validation_reason() -> None:
     result = _check_parsed_for_terminal(
-        {
-            "status": "conductor_error",
-            "error": "validation_failed",
-            "validation_reason": "expected exactly one thesis, got 2",
-            "suggested_theses": [],
-            "should_stop": False,
-        }
+        ConductorResult(
+            status="conductor_error",
+            error="validation_failed",
+            validation_reason="expected exactly one thesis, got 2",
+        )
     )
 
     assert result == {
@@ -1194,11 +1193,11 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
     monkeypatch.setattr("improvement_flags.reflexion_enabled", lambda: False)
     monkeypatch.setattr(
         "autoresearch_research._call_conductor",
-        lambda *args, **kwargs: {"status": "completed", "reasoning": "done"},
+        lambda *args, **kwargs: ConductorResult(status="should_stop", should_stop=True, reasoning="done"),
     )
     monkeypatch.setattr(
         "autoresearch_research._check_parsed_for_terminal",
-        lambda parsed: {
+        lambda result: {
             "status": "completed",
             "generated_config": "runtime/jobs/job-26/research/round-8/selected_config.json",
             "should_stop": False,

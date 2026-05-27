@@ -11,7 +11,7 @@ import research_conductor as conductor
 import research_subagents as subagents
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
 from rejection_artifact import write_rejection
-from research_types import StructuredRejection
+from research_types import ConductorResult, StructuredRejection
 
 
 def _record(
@@ -206,7 +206,7 @@ def test_conductor_prompt_includes_trade_artifacts_and_returns_stop(
     )
 
     assert out is not None
-    assert out["should_stop"] is True
+    assert out.should_stop is True
     assert f"Trades file for analysis: {trades_file}" in prompts[0]
     assert f"Strategy events file: {events_file}" in prompts[0]
     assert f"Diagnostics file: {diagnostics_file}" in prompts[0]
@@ -230,8 +230,8 @@ def test_conductor_returns_timeout_error_when_runner_times_out(
     out = conductor.run_research_conductor_sync("", "", {}, 1, "ema")
 
     assert out is not None
-    assert out["status"] == "conductor_error"
-    assert out["error"] == "timeout"
+    assert out.status == "conductor_error"
+    assert out.error == "timeout"
 
 
 def test_conductor_marks_oauth_proxy_failure_as_proxy_unavailable(
@@ -246,8 +246,8 @@ def test_conductor_marks_oauth_proxy_failure_as_proxy_unavailable(
     out = conductor.run_research_conductor_sync("", "", {}, 1, "ema")
 
     assert out is not None
-    assert out["status"] == "conductor_error"
-    assert out["error"] == "proxy_unavailable"
+    assert out.status == "conductor_error"
+    assert out.error == "proxy_unavailable"
 
 
 def test_conductor_prompt_without_trades_uses_latest_outcome_without_analyst(
@@ -267,7 +267,7 @@ def test_conductor_prompt_without_trades_uses_latest_outcome_without_analyst(
     )
 
     assert out is not None
-    assert out["should_stop"] is True
+    assert out.should_stop is True
     assert "No trades file is available for the latest/current experiment" in prompts[0]
     assert "Strategy family: unknown-family" not in prompts[0]
 
@@ -293,9 +293,9 @@ def test_conductor_rejects_thesis_when_experiment_results_tool_was_not_called(
     )
 
     assert out is not None
-    assert out["status"] == "conductor_error"
-    assert out["error"] == "experiment_results_not_consulted"
-    assert "list_experiment_results" in out["validation_reason"]
+    assert out.status == "conductor_error"
+    assert out.error == "experiment_results_not_consulted"
+    assert "list_experiment_results" in out.validation_reason
 
 
 def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
@@ -375,7 +375,7 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
     )
 
     assert out is not None
-    assert out["should_stop"] is True
+    assert out.should_stop is True
     output_by_tool = dict(tool_outputs)
     assert output_by_tool["analyze_trades"] == "analyst found baseline rejection concentration"
     assert "call web_search at least once" in tool_outputs[0][1]
@@ -455,7 +455,7 @@ def test_conductor_tools_read_current_job_rejections_and_error_statuses(
     )
 
     assert out is not None
-    assert out["should_stop"] is True
+    assert out.should_stop is True
     output_by_tool = dict(tool_outputs)
     assert output_by_tool["search_findings"] == "No findings found."
     assert output_by_tool["get_past_thesis"] == "not-json"
@@ -523,7 +523,9 @@ def test_conductor_tool_errors_and_final_output_fallback_are_reported(
         family_name="ema",
     )
 
-    assert out == final_payload
+    assert out is not None
+    assert out.should_stop is True
+    assert out.reasoning == "tool errors observed; stop"
     output_by_tool = dict(tool_outputs)
     assert output_by_tool["web_search"] == "web evidence for EMA gap failures"
     assert output_by_tool["analyze_trades"] == "ERROR: No trades file available for this round."
@@ -569,7 +571,7 @@ def test_conductor_tolerates_rejection_prompt_failure_and_memory_status_error(
     )
 
     assert out is not None
-    assert out["should_stop"] is True
+    assert out.should_stop is True
     assert dict(tool_outputs)["memory_status"] == "STATUS ERROR: palace offline"
 
 
@@ -609,9 +611,9 @@ def test_conductor_reports_structural_validation_failures_after_required_tool_ga
     )
 
     assert out is not None
-    assert out["status"] == "conductor_error"
-    assert out["error"] == "validation_failed"
-    assert out["validation_reason"] == validation_reason
+    assert out.status == "conductor_error"
+    assert out.error == "validation_failed"
+    assert out.validation_reason == validation_reason
 
 
 def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
@@ -644,7 +646,8 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
     )
 
     assert out is not None
-    assert out["suggested_theses"][0]["thesis_id"] == "gap_rejection_timing"
+    assert out.thesis is not None
+    assert out.thesis["thesis_id"] == "gap_rejection_timing"
 
 
 def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
@@ -681,10 +684,10 @@ def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
     )
 
     assert out is not None
-    assert out["status"] == "conductor_error"
-    assert out["error"] == "validation_failed"
-    assert out["validation_reason"] == "mechanism_dimension is stale"
-    assert out["suggested_theses"] == []
+    assert out.status == "conductor_error"
+    assert out.error == "validation_failed"
+    assert out.validation_reason == "mechanism_dimension is stale"
+    assert out.thesis is None
 
 
 def test_conductor_reports_parse_failed_for_non_json_runner_output(
@@ -701,8 +704,8 @@ def test_conductor_reports_parse_failed_for_non_json_runner_output(
     )
 
     assert out is not None
-    assert out["status"] == "conductor_error"
-    assert out["error"] == "parse_failed"
+    assert out.status == "conductor_error"
+    assert out.error == "parse_failed"
 
 
 def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wrapper(
@@ -735,7 +738,8 @@ def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wra
     )
 
     assert out is not None
-    assert out["suggested_theses"][0]["thesis_id"] == "open_alert_regime_filter"
+    assert out.thesis is not None
+    assert out.thesis["thesis_id"] == "open_alert_regime_filter"
 
 
 def test_build_round_index_exposes_round_refs_and_latest_round(tmp_path: Path, monkeypatch) -> None:

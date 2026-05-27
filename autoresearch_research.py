@@ -47,7 +47,7 @@ from family_research_spec import resolve_research_resolution_context
 from research_memory import latest_thesis_details as _latest_thesis_details
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
-from research_types import ResearchThesis
+from research_types import ConductorResult, ResearchThesis
 from strategy_family import StrategyFamily
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
 from trace_adapters.halo import build_halo_export_package, build_halo_payload
@@ -521,31 +521,32 @@ def _research_feedback_from_verdict(verdict_status: str, verdict_summary: str) -
     return feedback
 
 
-def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Inspect the conductor response for terminal conditions before any
-    thesis validation. Returns a result dict if the response should
-    short-circuit out of the validation-retry loop, else None."""
-    if not parsed:
+def _check_parsed_for_terminal(result: ConductorResult | None) -> dict[str, Any] | None:
+    """Inspect the conductor result for terminal conditions before thesis validation.
+
+    Returns an outer result dict to short-circuit the validation-retry loop, or None
+    to continue to validation.
+    """
+    if result is None:
         return {
             "status": "parse_failed",
             "generated_config": None,
             "should_stop": False,
             "validation_failure_reason": "research conductor returned no parseable thesis",
         }
-    if parsed.get("status") == "conductor_error":
-        error = parsed.get("error") or parsed.get("reasoning") or "unknown conductor error"
-        validation_reason = str(parsed.get("validation_reason") or "")
+    if result.status == "conductor_error":
+        error = result.error or result.reasoning or "unknown conductor error"
         validation_failure_reason = f"research conductor failed: {error}"
-        if validation_reason:
-            validation_failure_reason = f"{validation_failure_reason}: {validation_reason}"
-        result = {
+        if result.validation_reason:
+            validation_failure_reason = f"{validation_failure_reason}: {result.validation_reason}"
+        outer: dict[str, Any] = {
             "status": "conductor_error",
             "generated_config": None,
             "should_stop": False,
             "validation_failure_reason": validation_failure_reason,
         }
-        if validation_reason:
-            result["validation_reason"] = validation_reason
+        if result.validation_reason:
+            outer["validation_reason"] = result.validation_reason
         _record_event_fail_open(
             source_module="autoresearch_research",
             category="conductor",
@@ -554,16 +555,16 @@ def _check_parsed_for_terminal(parsed: dict[str, Any] | None) -> dict[str, Any] 
             payload={
                 "error_code": "conductor_error",
                 "error": str(error),
-                "validation_reason": validation_reason,
+                "validation_reason": result.validation_reason,
             },
         )
-        return result
-    if not parsed.get("suggested_theses"):
-        reasoning = parsed.get("reasoning") or "research conductor returned no suggested_theses"
+        return outer
+    if result.status == "should_stop":
+        reasoning = result.reasoning or "research conductor recommends stopping"
         return {
             "status": "completed",
             "generated_config": None,
-            "should_stop": parsed.get("should_stop", False),
+            "should_stop": True,
             "reasoning": reasoning,
         }
     return None
@@ -727,7 +728,7 @@ def _try_one_validation_attempt(
     controller: "AutoresearchController",
     research_round: int,
     attempt: int,
-    parsed: dict[str, Any],
+    conductor_result: ConductorResult,
     prior_theses: Any,
 ) -> tuple[dict[str, Any] | None, str | None, str]:
     """One pass of the conductor-validate-compile retry loop.
@@ -740,7 +741,8 @@ def _try_one_validation_attempt(
     from compiler_pipeline import compile_research_thesis
     from thesis_validator import ThesisValidationError, validate_stage_2
 
-    raw_thesis = parsed["suggested_theses"][0]
+    assert conductor_result.thesis is not None
+    raw_thesis = conductor_result.thesis
     thesis_id = raw_thesis.get("thesis_id", "unknown")
 
     # If the conductor attached a validator_challenge, persist it before any
@@ -884,11 +886,11 @@ def _dispatch_compiled_contract(
 
 
 def _exhausted_retries_result(
-    parsed: dict[str, Any] | None, rejection_feedback: str
+    conductor_result: ConductorResult | None, rejection_feedback: str
 ) -> dict[str, Any]:
     thesis_id = (
-        parsed["suggested_theses"][0].get("thesis_id", "unknown")
-        if parsed and parsed.get("suggested_theses")
+        conductor_result.thesis.get("thesis_id", "unknown")
+        if conductor_result and conductor_result.thesis
         else "unknown"
     )
     log.error(
@@ -908,7 +910,7 @@ def _exhausted_retries_result(
         "generated_thesis_id": thesis_id,
         "validation_failure_reason": rejection_feedback,
         "should_stop": False,
-        "reasoning": parsed.get("reasoning", "") if parsed else "",
+        "reasoning": conductor_result.reasoning if conductor_result else "",
     }
 
 
@@ -925,7 +927,7 @@ def _call_conductor(
     rejection_feedback: str,
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
-) -> dict[str, Any] | None:
+) -> ConductorResult | None:
     """One conductor HTTP/SDK call with the per-attempt log preamble."""
     from research_conductor import run_research_conductor_sync
 
@@ -1009,14 +1011,14 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             for agent in ("analyst", "web-researcher")
             if (feedback := build_reflexion_feedback(controller, research_round, agent=agent))
         }
-    parsed: dict[str, Any] | None = None
+    conductor_result: ConductorResult | None = None
     # Per-stage failure counters. Loop exits when any stage's budget is hit.
     stage_1_failures = 0
     stage_2_failures = 0
     compile_failures = 0
     attempt = 0
     while not _per_stage_budget_exhausted(stage_1_failures, stage_2_failures, compile_failures):
-        parsed = _call_conductor(
+        conductor_result = _call_conductor(
             research_round,
             attempt,
             trades_file=trades_file,
@@ -1029,11 +1031,11 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             agent_reflexions=agent_reflexions,
             current_job=current_job,
         )
-        terminal = _check_parsed_for_terminal(parsed)
+        terminal = _check_parsed_for_terminal(conductor_result)
         if terminal is not None:
             return terminal
         result, retry_feedback, failed_stage = _try_one_validation_attempt(
-            controller, research_round, attempt, parsed, prior_theses
+            controller, research_round, attempt, conductor_result, prior_theses
         )
         if result is not None:
             return result
@@ -1045,7 +1047,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             compile_failures += 1
         rejection_feedback = retry_feedback or rejection_feedback
         attempt += 1
-    return _exhausted_retries_result(parsed, rejection_feedback)
+    return _exhausted_retries_result(conductor_result, rejection_feedback)
 
 
 def execute_research_one(controller: "AutoresearchController") -> dict[str, Any]:

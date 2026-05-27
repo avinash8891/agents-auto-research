@@ -32,6 +32,7 @@ from research_paths import (
 )
 from research_prompts import _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
+from research_types import ConductorResult
 from strategy_family import load_family
 from thesis_validator import validate_thesis_dict
 from trace_refinement import RefinementRecorder
@@ -120,6 +121,25 @@ def _check_experiment_results_consulted(tools_called: set[str]) -> str | None:
     )
 
 
+def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    """Extract single thesis dict from conductor response. Returns (thesis, validation_error).
+
+    Supports v3 direct format (thesis_id at top level) and legacy suggested_theses wrapper.
+    """
+    if "thesis_id" in parsed:
+        return parsed, ""
+    theses = parsed.get("suggested_theses")
+    if theses is None:
+        return None, "no thesis returned"
+    if not isinstance(theses, list):
+        return None, "suggested_theses must be a list"
+    if len(theses) != 1:
+        return None, f"expected exactly one thesis, got {len(theses)}"
+    if not isinstance(theses[0], dict):
+        return None, "suggested_theses[0] must be an object"
+    return theses[0], ""
+
+
 async def run_research_conductor(
     trades_file: str,
     experiment_results: str,
@@ -131,7 +151,7 @@ async def run_research_conductor(
     rejection_feedback: str = "",
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
-) -> dict[str, Any] | None:
+) -> ConductorResult:
     strategy_desc = _strategy_description_for(family_name)
     resolution_context = latest_outcome.get("resolution_context")
 
@@ -890,12 +910,7 @@ async def run_research_conductor(
             final_outcome="conductor_error",
         )
         session_finished = True
-        return {
-            "status": "conductor_error",
-            "error": "timeout",
-            "suggested_theses": [],
-            "should_stop": False,
-        }
+        return ConductorResult(status="conductor_error", error="timeout")
     except Exception as exc:
         error_text = str(exc)
         error_kind = "proxy_unavailable" if "openai-oauth proxy" in error_text else "exception"
@@ -911,13 +926,7 @@ async def run_research_conductor(
             final_outcome="conductor_error",
         )
         session_finished = True
-        return {
-            "status": "conductor_error",
-            "error": error_kind,
-            "details": exc.__class__.__name__,
-            "suggested_theses": [],
-            "should_stop": False,
-        }
+        return ConductorResult(status="conductor_error", error=error_kind)
 
     parsed = _parse_json(result_text)
     trace_agent_response(
@@ -940,19 +949,14 @@ async def run_research_conductor(
         revise={"used_feedback_retry": bool(rejection_feedback)},
         evaluate={
             "parsed": bool(parsed),
-            "suggested_theses": len(parsed.get("suggested_theses", [])) if parsed else 0,
+            "has_thesis": bool(
+                parsed.get("thesis_id") or parsed.get("suggested_theses")
+            ) if parsed else False,
             "should_stop": bool(parsed.get("should_stop")) if parsed else False,
         },
     )
 
     if parsed:
-        theses = parsed.get("suggested_theses", [])
-        # v3 prompt says "Return ONLY the JSON object" — conductor returns the thesis
-        # directly without a suggested_theses wrapper. Normalize to the wrapped shape
-        # so all callers (autoresearch_research.py) see a consistent structure.
-        if not theses and parsed.get("thesis_id"):
-            parsed = {"suggested_theses": [parsed], "should_stop": False}
-            theses = parsed["suggested_theses"]
         gate_error = _check_experiment_results_consulted(tools_called_this_round)
         if gate_error is not None and not parsed.get("should_stop"):
             trace(
@@ -967,14 +971,12 @@ async def run_research_conductor(
                 final_outcome="retry_required",
             )
             session_finished = True
-            return {
-                "status": "conductor_error",
-                "error": "experiment_results_not_consulted",
-                "validation_reason": gate_error,
-                "reasoning": parsed.get("reasoning", ""),
-                "suggested_theses": [],
-                "should_stop": False,
-            }
+            return ConductorResult(
+                status="conductor_error",
+                error="experiment_results_not_consulted",
+                validation_reason=gate_error,
+                reasoning=parsed.get("reasoning", ""),
+            )
         if parsed.get("should_stop"):
             trace(
                 "CONDUCTOR",
@@ -988,14 +990,12 @@ async def run_research_conductor(
                 final_outcome="stop",
             )
             session_finished = True
-            return parsed
-        validation_reason = ""
-        if not isinstance(theses, list):
-            validation_reason = "suggested_theses must be a list"
-        elif len(theses) != 1:
-            validation_reason = f"expected exactly one thesis, got {len(theses)}"
-        elif not isinstance(theses[0], dict):
-            validation_reason = "suggested_theses[0] must be an object"
+            return ConductorResult(
+                status="should_stop",
+                should_stop=True,
+                reasoning=parsed.get("reasoning", ""),
+            )
+        thesis, validation_reason = _extract_thesis(parsed)
         if validation_reason:
             trace(
                 "CONDUCTOR",
@@ -1003,9 +1003,8 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-        elif theses:
-            t = theses[0]
-            candidate = dict(t)
+        elif thesis is not None:
+            candidate = dict(thesis)
             candidate["strategy_family"] = family_name
             try:
                 validate_thesis_dict(candidate)
@@ -1013,14 +1012,14 @@ async def run_research_conductor(
                 validation_reason = str(exc)
                 trace(
                     "CONDUCTOR",
-                    f"validate failed thesis={t.get('thesis_id', 'unknown')}: {exc}",
+                    f"validate failed thesis={thesis.get('thesis_id', 'unknown')}: {exc}",
                     model_provider="openai",
                     model_name=_CONDUCTOR_MODEL,
                 )
             else:
                 trace(
                     "CONDUCTOR",
-                    f"OK thesis={t['thesis_id']}",
+                    f"OK thesis={thesis['thesis_id']}",
                     model_provider="openai",
                     model_name=_CONDUCTOR_MODEL,
                 )
@@ -1030,21 +1029,19 @@ async def run_research_conductor(
                     final_outcome="accepted",
                 )
                 session_finished = True
-                return parsed
+                return ConductorResult(status="ok", thesis=thesis)
         trace(
             "CONDUCTOR",
             f"validate failed (len={len(result_text)})",
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
-        failure = {
-            "status": "conductor_error",
-            "error": "validation_failed",
-            "validation_reason": validation_reason,
-            "reasoning": parsed.get("reasoning", ""),
-            "suggested_theses": [],
-            "should_stop": False,
-        }
+        failure = ConductorResult(
+            status="conductor_error",
+            error="validation_failed",
+            validation_reason=validation_reason,
+            reasoning=parsed.get("reasoning", ""),
+        )
     else:
         trace(
             "CONDUCTOR",
@@ -1052,13 +1049,7 @@ async def run_research_conductor(
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
-        failure = {
-            "status": "conductor_error",
-            "error": "parse_failed",
-            "reasoning": "",
-            "suggested_theses": [],
-            "should_stop": False,
-        }
+        failure = ConductorResult(status="conductor_error", error="parse_failed")
 
     if not session_finished:
         _REFINEMENT_RECORDER.finish_session(
@@ -1081,7 +1072,7 @@ def run_research_conductor_sync(
     rejection_feedback: str = "",
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
-) -> dict[str, Any] | None:
+) -> ConductorResult | None:
     return _run_coroutine_sync(
         run_research_conductor(
             trades_file,
