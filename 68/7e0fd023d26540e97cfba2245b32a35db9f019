@@ -1,0 +1,23 @@
+thesis_validator.py
+  s_757c0ad0f54aeb::t_90ca1beddd15aa 1489
+  s_757c0ad0f54aeb::t_48997c0b26bc92 1373-1381,1388-1397
+  s_757c0ad0f54aeb::t_6008874debb34d 1516-1517
+tests/test_validator_gate_coverage.py
+  s_757c0ad0f54aeb::t_948569ce390c58 323-344
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "687e0fd023d26540e97cfba2245b32a35db9f019",
+  "prompts": {},
+  "sessions": {
+    "s_757c0ad0f54aeb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e93ab1b2-a46f-4c88-9533-f61a81a67dff",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
