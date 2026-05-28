@@ -1654,7 +1654,7 @@ def _handle_success(
     state["research_round"] = research_round
     state.pop("research_round_in_progress", None)
     state["activity"] = {
-        "type": "experiment",
+        "type": "round",
         "phase": "pending_backtest",
         "round": research_round,
         "config": gen_config,
@@ -1671,7 +1671,7 @@ def _handle_success(
         f"runtime/jobs/job-{state.get('job')}/research/round-{research_round}/backtest"
     )
     state["next_action"] = {
-        "type": "run_experiment",
+        "type": "run_round",
         "config": gen_config,
         "benchmark_command": controller.family.benchmark_command(gen_config),
         "requires_trade_analysis": True,

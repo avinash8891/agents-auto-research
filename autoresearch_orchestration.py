@@ -117,7 +117,7 @@ def _activate_builder_config(
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
     state["activity"] = {
-        "type": "experiment",
+        "type": "round",
         "phase": "pending_backtest",
         "round": research_round,
         "config": generated_config,
@@ -137,7 +137,7 @@ def _activate_builder_config(
     if execution_root:
         state["current_thesis"]["execution_root"] = execution_root
     state["next_action"] = {
-        "type": "run_experiment",
+        "type": "run_round",
         "config": generated_config,
         "benchmark_command": controller.family.benchmark_command(generated_config),
         "requires_trade_analysis": True,
@@ -713,7 +713,7 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
     controller.clear_terminal_metadata(state)
     state["current_thesis"] = {"config": config_path, "status": "ready_to_run"}
     state["next_action"] = {
-        "type": "run_experiment",
+        "type": "run_round",
         "config": config_path,
         "benchmark_command": controller.family.benchmark_command(config_path),
         "requires_trade_analysis": True,

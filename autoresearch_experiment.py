@@ -1329,7 +1329,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     execution_root_value = next_action.get("execution_root")
     controller.ctx.execution_root = _validated_execution_root(controller, execution_root_value)
     state["activity"] = {
-        "type": "experiment",
+        "type": "round",
         "phase": "backtest_running",
         "config": config,
         "source": next_action.get("source"),

@@ -468,7 +468,7 @@ def test_activity_probe_command_targets_family_state_and_process() -> None:
     assert "AUTORESEARCH_ACTIVE_RUN" in command
     assert "research_round_in_progress" in command
     assert "builder_running" in command
-    assert "run_experiment" in command
+    assert "run_round" in command
     assert "controller_process_running_without_active_state" in command
     assert "state_error" in command
 

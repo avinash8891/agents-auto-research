@@ -444,7 +444,7 @@ def test_apply_forced_baseline_rerun_archives_existing_blocker(tmp_path: Path) -
     }
     ctrl, written, _ = _controller(state, tmp_path)
     baseline_action = {
-        "type": "run_experiment",
+        "type": "run_round",
         "config": "configs/ema_base.yaml",
         "source": "baseline",
         "baseline_rerun_for_commit": "abc1234",
@@ -467,7 +467,7 @@ def test_resolve_next_action_prioritizes_baseline_rerun_before_state_reconcile(
     tmp_path: Path,
 ) -> None:
     baseline_action = {
-        "type": "run_experiment",
+        "type": "run_round",
         "config": "configs/ema_base.yaml",
         "source": "baseline",
     }

@@ -1314,7 +1314,7 @@ def test_handle_success_sets_pending_experiment_activity(tmp_path: Path) -> None
 
     assert updated["state"] == "running"
     assert updated["activity"] == {
-        "type": "experiment",
+        "type": "round",
         "phase": "pending_backtest",
         "round": 8,
         "config": "runtime/jobs/job-26/research/round-8/selected_config.json",

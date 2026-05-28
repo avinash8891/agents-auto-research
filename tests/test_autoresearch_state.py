@@ -44,7 +44,7 @@ def test_state_round_trip_preserves_payload_atomically(tmp_path: Path) -> None:
         "state": "running",
         "job": 7,
         "research_round": 3,
-        "next_action": {"type": "run_experiment", "config": "configs/ema_base.yaml"},
+        "next_action": {"type": "run_round", "config": "configs/ema_base.yaml"},
     }
     write_state(state_path, payload)
     assert state_path.exists()
@@ -260,7 +260,7 @@ def test_render_current_md_includes_best_and_latest_when_present() -> None:
     state = {
         "state": "running",
         "current_best": {"config": "configs/variants/ema_a.yaml", "metric": 1.5},
-        "next_action": {"type": "run_experiment", "config": "configs/variants/ema_b.yaml"},
+        "next_action": {"type": "run_round", "config": "configs/variants/ema_b.yaml"},
         "pending_configs": [],
         "thesis_statuses": {},
         "blockers": [],
