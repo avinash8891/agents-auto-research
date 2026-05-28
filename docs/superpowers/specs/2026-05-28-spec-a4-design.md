@@ -55,7 +55,6 @@ Every field in the spec's §4 follows this fixed template.
     Required:    <Always | Conditional on <X> | Optional>
     Meaning:     <one sentence — what this field captures>
     Producer guidance: <one or two sentences — how the LLM should think about producing it>
-    Validator rule:    <SPEC-ONLY — see §3.1 below>
     Example:     <concrete value the LLM can pattern-match against>
 ```
 
@@ -285,7 +284,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
     Producer guidance: State the mechanism, not the parameter. "Tighter stops
                        reduce wick-stops in high-vol regimes" is a mechanism;
                        "Set min_stop_distance_pct=0.0035" is a parameter tweak.
-    Validator rule:    Non-empty. Rejection code: structural_missing_hypothesis.
     Example:     "Adding a 1-hour direction gate filters out counter-trend
                   5-min pullbacks that drove the strategy's drawdown floor."
 ```
@@ -303,7 +301,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        that explains WHY the hypothesis should be true. Avoid
                        restating the hypothesis in different words; avoid
                        academic prose and math-speak.
-    Validator rule:    Non-empty. Rejection code: structural_missing_mechanism.
     Example:     "HTF direction acts as a regime overlay — when 1h trend is up,
                   only long 5-min pullbacks fire. Reduces signal count by ~40%
                   but surviving signals have better edge because they align
@@ -331,9 +328,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        emergent. Only set "emergent" when you can pass §4.6's
                        three conditional checks; the LLM's incentive is to
                        look novel, but the spec asks for accuracy.
-    Validator rule:    Must be a member of MECHANISM_DIMENSIONS or a value
-                       in ROUND CONTEXT `emergent_dimensions_in_use`.
-                       Rejection code: structural_invalid_mechanism_dimension.
     Example:     "regime_conditioning"
 ```
 
@@ -352,11 +346,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        DIFFERENT facets — the lever you're touching AND the
                        regime/timeframe/context it applies in. Two near-
                        synonyms waste a slot and weaken the cluster signal.
-    Validator rule:    Non-empty list. Cluster-fixation gate uses these against
-                       prior rounds (max 3 of last 7 share a keyword).
-                       Rejection codes:
-                         structural_theme_keywords_empty
-                         thesis_quality_theme_cluster_fixation
     Example:     ["htf_gate", "high_vol_regime"]
 ```
 
@@ -377,8 +366,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                      prior round's contested finding.
     Producer guidance: Pick the role that fits BEFORE you finalize the thesis;
                        if you can't pick, your hypothesis is probably unfocused.
-    Validator rule:    Non-empty + Literal restricts to the three values.
-                       Rejection code: structural_thesis_role_required.
     Example:     "orthogonal_discovery"
 ```
 
@@ -399,11 +386,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        contrast. "This moves from signal_quality (where prior
                        trend_filter_v2 lived) to regime_conditioning — a
                        different lever family."
-    Validator rule:    Length ≥30 chars + must mention ≥2 distinct dimension
-                       names from MECHANISM_DIMENSIONS (forces contrast).
-                       Rejection codes:
-                         structural_dimension_novelty_too_short
-                         thesis_quality_dimension_novelty_not_grounded
     Example:     "Moves from signal_quality threshold tweaking to
                   regime_conditioning by overlaying a 1h direction gate."
 ```
@@ -430,10 +412,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        OR you reuse any keyword from `theme_keywords_in_use`.
                        Over-populating is cheap; mispredicting the post-emit
                        gate is a rejection.
-    Validator rule:    Conditional gate; length + grounded-mention.
-                       Rejection codes:
-                         structural_novel_connection_too_short
-                         thesis_quality_novel_connection_not_grounded
     Example:     "Recasts stop_distance as a regime-detection signal rather
                   than an absolute threshold — distinct from prior
                   stop_distance theses that all tested fixed thresholds."
@@ -452,11 +430,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        include the dimension you chose. A soft warn fires if
                        the chosen dimension has more attempts than every
                        dimension you list here.
-    Validator rule:    Each entry must be present in ROUND CONTEXT
-                       `dimensions_unexplored` AND must not equal this
-                       thesis's `mechanism_dimension`. Rejection codes:
-                         structural_underexplored_dimensions_invalid
-                         structural_underexplored_includes_chosen
     Example:     ["portfolio_construction", "alpha_decay"]
                  # NB: must NOT include the dimension you chose; pick from
                  # ROUND CONTEXT `dimensions_unexplored` only.
@@ -495,10 +468,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        OR a `mechanism_dimension` from the enum. The why_rejected
                        prose can paraphrase; the tiebreaker must resolve by
                        exact match.
-    Validator rule:    tiebreaker.value resolves by exact match against the
-                       referenced target. Rejection codes:
-                         structural_deepest_alternative_missing
-                         structural_deepest_alternative_tiebreaker_unresolved
     Example:     {"mechanism": "ADX>30 entry filter",
                   "why_rejected": "Too strict in low-vol regimes per round-3
                                    analyst evidence (citation_2) — would
@@ -544,12 +513,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
     Producer guidance: Each entry is a DIFFERENT mechanism, not a parameter
                        variant. why_rejected must be substantively distinct
                        from deepest_alternative.why_rejected.
-    Validator rule:    ≥1 entry; each why_rejected ≥40 chars. When
-                       lighter_tiebreaker is non-null, it resolves by the
-                       same rules as deepest_alternative.tiebreaker.
-                       Rejection codes:
-                         structural_other_alternatives_too_few
-                         structural_lighter_tiebreaker_unresolved
     Example:     [{"mechanism": "session-time entry filter",
                    "why_rejected": "Proxy for the regime problem rather than
                                     the structural fix; cannot distinguish
@@ -600,10 +563,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        lever-concept name from prior_lever_history, not the
                        config-key name) + direction_then + outcome + why_retry.
                        `direction_then` is free text; use a past-tense verb.
-    Validator rule:    Whipsaw rule + prior_thesis_id must exist in snapshot.
-                       Rejection codes:
-                         structural_direction_whipsaw_uncited
-                         structural_prior_lever_outcomes_unknown_id
     Example:     [{"prior_thesis_id": "job-11-round-2-attempt-1",
                    "lever": "stop_distance",
                    "direction_then": "tightened",
@@ -632,9 +591,6 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        an emergent definition to fit your thesis, prefer an
                        existing core dimension — the LLM's incentive is to
                        look novel; the spec asks for accuracy.
-    Validator rule:    When emergent: non-empty + not in MECHANISM_DIMENSIONS
-                       + not in emergent_dimensions_in_use. Rejection code:
-                       structural_new_dimension_name_duplicates_existing.
     Example:     "open_drive_asymmetry"
                  # NB: must not appear in ROUND CONTEXT
                  # `emergent_dimensions_in_use` (which the §3.2 sample
@@ -651,8 +607,6 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
     Meaning:     Why none of the core dimensions could host this thesis.
     Producer guidance: Address each adjacent core dimension explicitly — name
                        it and say why it doesn't fit.
-    Validator rule:    When emergent: non-empty. Rejection code:
-                       structural_emergent_thesis_malformed.
     Example:     "Not market_microstructure because the mechanism is about
                   session-edge behavior, not order-flow imbalance. Not
                   regime_conditioning because regime is a longer-horizon
@@ -670,8 +624,6 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                  Future theses pattern-match against this.
     Producer guidance: Write the definition as if onboarding a future research
                        round. Abstract — describe the family, not this thesis.
-    Validator rule:    When emergent: non-empty. Rejection code:
-                       structural_emergent_thesis_malformed.
     Example:     "Theses in this dimension address asymmetric liquidity or
                   volatility behavior in a specific session window (open,
                   close, lunch). Distinct from market_microstructure
@@ -703,10 +655,6 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        trade-level evidence from the strategy's own diagnostics.
                        Other source values are accepted but don't count toward
                        the diversity gate.
-    Validator rule:    ≥1 web_search + ≥1 analyst; each citation ≥30 chars.
-                       Rejection codes:
-                         structural_evidence_citations_missing_source_diversity
-                         structural_evidence_citation_too_short
     Example:     [{"source": "web_search",
                    "citation": "Cont et al. on order-flow regime persistence (Journal of Finance, 2021)"},
                   {"source": "analyst",
@@ -751,14 +699,6 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        mechanism check) so the mechanism is testable, not
                        just lucky. Wide magnitude_range signals low confidence;
                        tight range signals a specific quantitative claim.
-    Validator rule:    Non-empty list; magnitude_range[0] < magnitude_range[1]
-                       when set; unit must be a member of EXPECTED_EFFECT_UNITS
-                       when set. Rejection codes:
-                         structural_missing_expected_effects
-                         structural_expected_effect_magnitude_missing
-                         structural_expected_effect_magnitude_range_invalid
-                         structural_expected_effect_unit_invalid
-                         structural_expected_effect_rationale_required
     Example:     [{"metric": "profit_factor", "direction": "increase",
                    "magnitude_range": [0.05, 0.20], "unit": "ratio",
                    "rationale": "HTF gate filters counter-trend chop, raising win rate by a measurable margin."},
@@ -797,13 +737,6 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        satisfy both requirements (e.g. kind="mechanism_evidence"
                        AND name="regime_specific_overfit"); you then need only
                        one more entry to hit the ≥2 minimum.
-    Validator rule:    ≥2 entries; ≥1 with kind="mechanism_evidence";
-                       ≥1 entry whose `name` is in OVERFIT_DISQUALIFIER_MARKERS
-                       OR whose `condition` (lowercased) contains a member of
-                       OVERFIT_KEYWORD_HINTS. Rejection codes:
-                         structural_disqualifiers_too_few
-                         structural_disqualifiers_no_mechanism_evidence
-                         structural_disqualifiers_no_overfit_address
     Example:     [{"name": "trade_count_collapse",
                    "condition": "trade_count decreases by more than 50%",
                    "severity": "hard_fail", "kind": "metric_threshold"},
@@ -829,10 +762,6 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        CONTEXT `strategy_config_keys`; unknown keys are
                        rejected (set requires_code_change=true and request
                        a new primitive instead).
-    Validator rule:    Non-empty OR requires_code_change=true; each key must
-                       appear in `strategy_config_keys`. Rejection codes:
-                         structural_config_changes_required
-                         structural_config_changes_unknown_key
     Example:     {"ema_length": 21,
                   "rr_ratio": 2.5,
                   "gap_filter": true}
@@ -852,8 +781,6 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                  existing config key can express.
     Producer guidance: Set true ONLY when no combination of existing config
                        keys would test the mechanism. Most theses are false.
-    Validator rule:    When true, requested_primitives must be non-empty.
-                       Rejection code: structural_engine_change_request_malformed.
     Example:     false
 ```
 
@@ -867,8 +794,6 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
     Meaning:     Names of new primitive functions/filters the engine needs.
     Producer guidance: Use the same name a strategy developer would pick:
                        "close_confirmed_entry_gate", not "gate_for_my_thesis".
-    Validator rule:    Non-empty pair with requires_code_change=true. Same
-                       rejection code as above.
     Example:     ["close_confirmed_entry_gate"]
 ```
 
@@ -887,13 +812,6 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        BEFORE proposing this thesis. Cite the exact path you
                        read; the validator checks the read trace and rejects
                        if the cited path was never opened during this attempt.
-    Validator rule:    Length ≥40 chars; format matches "<path>:<symbol> — <prose>";
-                       the cited <path> must appear in the conductor's
-                       read-paths trace for this attempt. Rejection codes:
-                         structural_source_code_verification_too_short
-                         structural_source_code_verification_malformed
-                         process_source_code_not_read
-                         process_source_code_path_not_read
     Example:     "strategies/ema/signals.py:apply_htf_gate — gate evaluated
                   before stop_distance check; placing here ensures the
                   filter sees the raw signal."
@@ -917,7 +835,6 @@ unblocker.
     Producer guidance: Use sparingly. Most "the validator was wrong" feelings
                        are actually "the validator surfaced something I didn't
                        want to address."
-    Validator rule:    No rule — accepts any object.
     Example:     {"challenged_round": 3,
                   "challenged_thesis_id": "job-1-round-3-attempt-2",
                   "challenged_rejection_code": "structural_other_alternatives_too_few",
@@ -956,9 +873,6 @@ Four new top-level fields. The inner-shape extension to `expected_effects`
                        predict that trend_filter_rejected share rises in
                        trending regimes — the outcome evaluator checks this
                        directly against the diagnostics file.
-    Validator rule:    event_path must resolve in the prior round's diagnostics
-                       JSON. Rejection code:
-                       thesis_quality_expected_runtime_signal_path_unknown.
     Example:     [{"event_path": "rejection_breakdown.trend_filter_rejected",
                    "expected_relation": ">", "lower": 0.3, "upper": null,
                    "condition": "in trending regimes"},
@@ -984,12 +898,6 @@ Four new top-level fields. The inner-shape extension to `expected_effects`
     Producer guidance: List ONLY the predecessor theses this thesis directly
                        evolves from. Don't list theses that just happen to be
                        in the same dimension.
-    Validator rule:    With ≥3 ancestors sharing the same mechanism_dimension,
-                       require either (a) a different mechanism_dimension on
-                       this thesis, or (b) a disqualifier with
-                       kind="mechanism_evidence" that distinguishes this thesis
-                       from the lineage's prior failures. Rejection code:
-                       thesis_quality_lineage_no_structural_pivot.
     Example:     ["job-12-round-3-attempt-1", "job-12-round-1-attempt-2"]
                  # At ≥3 ancestors all in the same mechanism_dimension, the
                  # pivot rule fires: either set a different mechanism_dimension
@@ -1013,10 +921,6 @@ Four new top-level fields. The inner-shape extension to `expected_effects`
                        different mechanism_dimension OR the mechanism named
                        in deepest_alternative — this is a hard validator gate,
                        not a stylistic preference.
-    Validator rule:    Non-empty + must reference either a specific
-                       mechanism_dimension (different from current) OR the
-                       `mechanism` text of deepest_alternative. Rejection code:
-                       thesis_quality_next_thesis_not_pre_committed.
     Example:     "If this kills, next round tests an ATR-based dynamic stop
                   in signal_quality dimension (deepest_alternative.mechanism).
                   Drops the regime-overlay theme; switches to volatility-
@@ -1048,17 +952,105 @@ Four new top-level fields. The inner-shape extension to `expected_effects`
                        is the data, weakest is literature. Avoid
                        all-three="direct" — that signals motivated reasoning,
                        not strong evidence.
-    Validator rule:    At least one of {data, literature} must be "direct" or
-                       "mixed". Theses with all three "speculative" require
-                       an explicit disqualifier with kind="mechanism_evidence"
-                       acknowledging the weak-evidence basis. Greenfield
-                       exemption: when ROUND CONTEXT `dimensions_already_explored`
-                       is empty (first thesis in family), precedent="speculative"
-                       is not counted against the gate. Rejection codes:
-                         thesis_quality_confidence_distribution_too_weak
-                         thesis_quality_confidence_distribution_missing
     Example:     {"data": "direct", "literature": "speculative", "precedent": "proxy"}
 ```
+
+---
+
+## 4.13 Validator rules — consolidated
+
+All validator rules for the §4 fields, in one place. This section is the
+authoritative human-readable source; `prompts/conductor_output_rules.json`
+(§6.2) is the machine-readable derivation. Per §3.0.1, none of this content
+renders into the LLM-facing prompt.
+
+### 4.13.1 §4.2 Core description
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `hypothesis` | Non-empty. | `structural_missing_hypothesis` |
+| `mechanism` | Non-empty. | `structural_missing_mechanism` |
+
+### 4.13.2 §4.3 Positioning + classification
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `mechanism_dimension` | Must be a member of `MECHANISM_DIMENSIONS` or a value in ROUND CONTEXT `emergent_dimensions_in_use`. | `structural_invalid_mechanism_dimension` |
+| `theme_keywords` | Non-empty list. Cluster-fixation gate: max 3 of last 7 prior theses share any one of these keywords. | `structural_theme_keywords_empty`, `thesis_quality_theme_cluster_fixation` |
+| `thesis_role` | Non-empty; Literal restricts to the three role values. | `structural_thesis_role_required` |
+
+### 4.13.3 §4.4 Novelty justification
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `dimension_novelty` | Length ≥30 chars AND must mention ≥2 distinct dimension names from `MECHANISM_DIMENSIONS` (forces contrast — own choice + prior dimension). | `structural_dimension_novelty_too_short`, `thesis_quality_dimension_novelty_not_grounded` |
+| `novel_connection` | Post-emit conditional: required when ≥1 emitted `theme_keywords` entry appears in ROUND CONTEXT `theme_keywords_in_use`. When required: length ≥120 chars AND must mention a shared keyword by name OR a structurally-distinct `mechanism_dimension`. | `structural_novel_connection_too_short`, `thesis_quality_novel_connection_not_grounded` |
+| `underexplored_dimensions_considered` | Required when ROUND CONTEXT `dimensions_unexplored` is non-empty. Each entry must be present in `dimensions_unexplored` AND must not equal this thesis's `mechanism_dimension`. | `structural_underexplored_dimensions_invalid`, `structural_underexplored_includes_chosen` |
+
+### 4.13.4 §4.5 Alternatives + prior-work
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `deepest_alternative` | Required, non-null. `tiebreaker.value` resolves by exact match: `kind="evidence_citation"` → `citation_N` where `1 ≤ N ≤ len(evidence_citations)`; `kind="disqualifier"` → must equal a `disqualifiers[i].name`; `kind="mechanism_dimension"` → must be a member of `MECHANISM_DIMENSIONS`. | `structural_deepest_alternative_missing`, `structural_deepest_alternative_tiebreaker_unresolved` |
+| `other_alternatives` | ≥1 entry; each `why_rejected` ≥40 chars. When `lighter_tiebreaker` is non-null, it resolves by the same rules as `deepest_alternative.tiebreaker`. | `structural_other_alternatives_too_few`, `structural_lighter_tiebreaker_unresolved` |
+| `prior_lever_outcomes` | Required when ANY key in `config_changes` appears in any `prior_lever_history[i].config_keys` AND your derived direction differs from `prior_lever_history[i].direction`. `prior_thesis_id` values must exist in ROUND CONTEXT `prior_theses_snapshot`. | `structural_direction_whipsaw_uncited`, `structural_prior_lever_outcomes_unknown_id` |
+
+### 4.13.5 §4.6 Emergent-dimension contract
+
+All three conditional on `mechanism_dimension == "emergent"`.
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `new_dimension_name` | When emergent: non-empty; not in `MECHANISM_DIMENSIONS`; not in ROUND CONTEXT `emergent_dimensions_in_use`. | `structural_new_dimension_name_duplicates_existing` |
+| `why_existing_dimensions_do_not_fit` | When emergent: non-empty (length ≥80 chars). | `structural_emergent_thesis_malformed` |
+| `mechanism_family_definition` | When emergent: non-empty (length ≥80 chars). | `structural_emergent_thesis_malformed` |
+
+### 4.13.6 §4.7 Evidence
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `evidence_citations` | ≥2 entries; ≤6 entries; ≥1 with `source="web_search"` AND ≥1 with `source="analyst"`; each `citation` ≥30 chars. | `structural_evidence_citations_missing_source_diversity`, `structural_evidence_citation_too_short` |
+
+### 4.13.7 §4.8 Predictions + falsification
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `expected_effects` | Non-empty list (≥2 entries recommended); `magnitude_range` required when `direction in {"increase","decrease"}`; `unit` required and must be a member of `EXPECTED_EFFECT_UNITS` when `magnitude_range` is set; `rationale` required (≥40 chars) when `direction in {"increase","decrease"}`. `magnitude_range[0] < magnitude_range[1]` when set. | `structural_missing_expected_effects`, `structural_expected_effect_magnitude_missing`, `structural_expected_effect_magnitude_range_invalid`, `structural_expected_effect_unit_invalid`, `structural_expected_effect_rationale_required` |
+| `disqualifiers` | ≥2 entries; ≥1 with `kind="mechanism_evidence"`; ≥1 entry whose `name` is in `OVERFIT_DISQUALIFIER_MARKERS` OR whose `condition` (lowercased) contains a member of `OVERFIT_KEYWORD_HINTS`. A single entry may satisfy both `mechanism_evidence` and overfit requirements. | `structural_disqualifiers_too_few`, `structural_disqualifiers_no_mechanism_evidence`, `structural_disqualifiers_no_overfit_address` |
+
+### 4.13.8 §4.9 Config + engine
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `config_changes` | Non-empty OR `requires_code_change=true`. Each key must appear in ROUND CONTEXT `strategy_config_keys`. | `structural_config_changes_required`, `structural_config_changes_unknown_key` |
+| `requires_code_change` | When `true`, `requested_primitives` must be non-empty. | `structural_engine_change_request_malformed` |
+| `requested_primitives` | Non-empty paired with `requires_code_change=true`. | `structural_engine_change_request_malformed` |
+
+### 4.13.9 §4.10 Diagnostics + code grounding
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `source_code_verification` | Length ≥40 chars; format matches `"<path>:<symbol> — <prose>"`; the cited `<path>` must appear in the conductor attempt's read-paths trace (captured from `read_strategy_source` invocations). | `structural_source_code_verification_too_short`, `structural_source_code_verification_malformed`, `process_source_code_not_read`, `process_source_code_path_not_read` |
+
+### 4.13.10 §4.11 Escape hatch
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `validator_challenge` | No rule; accepts any object. Logged for human review only. | none |
+
+### 4.13.11 §4.12 Proposed additions
+
+| Field | Rule | Rejection code(s) |
+|---|---|---|
+| `expected_runtime_signal` | Each `event_path` must resolve in ROUND CONTEXT `diagnostic_event_paths`. `lower` set when `expected_relation in {">", ">=", "==", "in_range"}`; `upper` set when `expected_relation in {"<", "<=", "==", "in_range"}`. | `thesis_quality_expected_runtime_signal_path_unknown` |
+| `mechanism_lineage` | `thesis_id` entries must appear in ROUND CONTEXT `prior_theses_snapshot`. With ≥3 ancestors sharing the same `mechanism_dimension`, require either (a) a different `mechanism_dimension` on this thesis, OR (b) a `disqualifiers` entry with `kind="mechanism_evidence"` that distinguishes this thesis from the lineage's prior failures. | `thesis_quality_lineage_no_structural_pivot` |
+| `if_this_fails_next_thesis` | Non-empty; must reference either a specific `mechanism_dimension` (different from current) OR the `mechanism` text of `deepest_alternative`. | `thesis_quality_next_thesis_not_pre_committed` |
+| `confidence_distribution` | At least one of `{data, literature}` must be `"direct"` or `"mixed"`. Theses with all three `"speculative"` require a `disqualifiers` entry with `kind="mechanism_evidence"` acknowledging the weak-evidence basis. Greenfield exemption: when ROUND CONTEXT `dimensions_already_explored` is empty, `precedent="speculative"` is not counted against the gate. | `thesis_quality_confidence_distribution_too_weak`, `thesis_quality_confidence_distribution_missing` |
+
+### 4.13.12 Notes for the implementer
+
+- `prompts/conductor_output_rules.json` is generated from this section + §6.2.1's `predicate_kind` mapping. Every rule above maps to one or more `predicate_kind` rows in §6.2.1.
+- The `_PROMPT_OMITTED_RULES` set in `check_prompt_drift.py` covers any rejection code the validator emits internally that isn't in this section (e.g. duplicate-thesis-id checks across rounds — system-level, not field-level).
 
 ---
 
