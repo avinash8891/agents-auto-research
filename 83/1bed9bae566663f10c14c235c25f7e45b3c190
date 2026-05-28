@@ -1,0 +1,67 @@
+tests/test_l5_neighboring_threshold.py
+  ai_agent 11,19-21,152,168,188
+tests/test_thesis_id_assignment.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 1-70,72-112
+  s_1dc1911c45a5a7::t_38c3a6a71d255e 71
+tests/test_autoresearch_research.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 25-26,213-240,765,853,855,1058,1255,1263-1320
+  s_1dc1911c45a5a7::t_d01d068bab2fca 1059
+autoresearch_state.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 129,151,211
+research_prompts.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 123-124
+backtest_run_db.py
+  s_1dc1911c45a5a7::t_46b80b9fe54706 52-53,320,690-692,706,710,752
+  s_1dc1911c45a5a7::t_6848f9c9d0bf44 41
+  s_1dc1911c45a5a7::t_46481e51accc69 27-39
+tests/test_stage1_rules.py
+  ai_agent 11,19-21,165,176,185,216,231
+scripts/check_prompt_drift.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 149
+tests/test_validator_stages.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 9,33-35,143,170,173
+tests/test_schema_additions.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 8,21-23,195
+tests/test_validator_subsections.py
+  ai_agent 21,38-40,175,178-179,224,231-232
+tests/test_thesis_validator.py
+  ai_agent 5,18-20,302
+autoresearch_controller.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 70
+tests/test_validator_process_gate.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 5-14,81,135
+autoresearch_research.py
+  s_1dc1911c45a5a7::t_21653214f83488 39
+tests/test_agent_orchestrator_characterization.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 396,444-445
+tests/test_research_conductor_characterization.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 619,667,774-776
+research_conductor.py
+  s_1dc1911c45a5a7::t_46b80b9fe54706 19-20,112-113,117-118,947,983,985-987,1000,1007
+research_types.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 142,144-148,306
+tests/test_stage1_rules_part2.py
+  ai_agent 7,15-17,136,158-180,204,216,229
+tests/test_validator_gate_coverage.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 676,687-688
+thesis_validator.py
+  s_1dc1911c45a5a7::t_2c2e2c5633c01e 370-373,378,380-386,632-642,2393-2395,2406-2408
+agent_prompts.py
+  ai_agent 99,102-104,123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "831bed9bae566663f10c14c235c25f7e45b3c190",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
