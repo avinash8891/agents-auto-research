@@ -953,7 +953,11 @@ async def run_research_conductor(
             candidate = dict(thesis)
             candidate["strategy_family"] = family_name
             try:
-                validate_thesis_dict(candidate, tools_called=tools_called_this_round)
+                validate_thesis_dict(
+                    candidate,
+                    tools_called=tools_called_this_round,
+                    require_analyst_evidence=bool(trades_file),
+                )
             except Exception as exc:
                 # Capture failure so the outer retry loop can re-validate and
                 # consume one of its Stage 1 attempts, instead of being

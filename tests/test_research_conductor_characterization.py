@@ -603,6 +603,7 @@ def test_conductor_reports_structural_validation_failures_after_required_tool_ga
 def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    captured: dict[str, object] = {}
     thesis = {
         "thesis_id": "gap_rejection_timing",
         "hypothesis": "Delaying entries after opening gap failures improves signal quality.",
@@ -610,10 +611,15 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
         "mechanism_dimension": "signal_quality",
         "config_changes": {"entry_delay_minutes": 15},
     }
+
+    def fake_validate(candidate, tools_called=None, **kwargs):
+        captured["require_analyst_evidence"] = kwargs.get("require_analyst_evidence")
+        return candidate
+
     monkeypatch.setattr(
         conductor,
         "validate_thesis_dict",
-        lambda candidate, tools_called=None: candidate,
+        fake_validate,
     )
     _patch_conductor_runner(
         monkeypatch,
@@ -636,6 +642,7 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
     assert out is not None
     assert out.thesis is not None
     assert out.thesis["thesis_id"] == "gap_rejection_timing"
+    assert captured["require_analyst_evidence"] is False
 
 
 def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
@@ -651,7 +658,7 @@ def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
     monkeypatch.setattr(
         conductor,
         "validate_thesis_dict",
-        lambda candidate, tools_called=None: (_ for _ in ()).throw(
+        lambda candidate, tools_called=None, **kwargs: (_ for _ in ()).throw(
             ValueError("mechanism_dimension is stale")
         ),
     )
@@ -718,7 +725,7 @@ def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wra
     monkeypatch.setattr(
         conductor,
         "validate_thesis_dict",
-        lambda candidate, tools_called=None: candidate,
+        lambda candidate, tools_called=None, **kwargs: candidate,
     )
     # Conductor returns thesis directly — NO suggested_theses wrapper (v3 prompt contract)
     _patch_conductor_runner(

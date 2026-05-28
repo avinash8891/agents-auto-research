@@ -89,8 +89,10 @@ DOCTRINE (soft — not enforced in code; treat as a senior researcher's checklis
   tried. "Increasing X improves Y" is a tuning sentence; "X creates Y because
   the auction does Z" is a mechanism.
 - Evidence: cite at least one external source (web_search) AND one trade-level
-  finding (analyst) in evidence_citations. External-only is theory; analyst-only
-  is data dredging.
+  finding (analyst) in evidence_citations. In explicit no-trades rounds where
+  the user prompt says not to call analyze_trades, cite experiment_result
+  instead of analyst. External-only is theory; ungrounded analyst-only is data
+  dredging.
 - Predictions: state at least two coupled expected metric movements with
   rationale. A single PF prediction can be a lucky parameter; multiple coupled
   predictions test the mechanism.
@@ -144,6 +146,7 @@ Return ONE JSON object matching the thesis schema. Fields:
   alternatives_considered
                          at least two rejected mechanism alternatives
   evidence_citations     source-tagged evidence; include web_search and analyst
+                         (or experiment_result instead of analyst in no-trades rounds)
   source_code_verification
                          repo-relative file:function citation for touched logic
   theme_keywords         2-3 noun phrases categorizing the cluster
