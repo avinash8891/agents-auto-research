@@ -100,7 +100,7 @@ WORKFLOW:
   Before proposing, mentally compute the full config and check it differs from all prior backtests.
 - Do NOT propose vague ideas. Every thesis must map to exact parameter values.
 - Do NOT repeat a thesis_id that appears in PRIOR THESES.
-- (Informational) Each research round has a unique research_round_id by construction — backtests of the same thesis_id across rounds produce distinct rounds.
+- Note: each research round has a unique research_round_id by construction — backtests of the same thesis_id across rounds produce distinct rounds.
 - If the diagnostic data shows a clear pattern (e.g., only 09:00 hour is profitable),
   propose the most direct structural change to exploit it.
 - If a thesis requires functionality not available in the config schema, set

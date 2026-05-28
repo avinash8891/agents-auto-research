@@ -989,7 +989,7 @@ def _call_conductor(
     trades_file: str,
     strategy_events_file: str,
     diagnostics_file: str,
-    experiment_results: Any,
+    round_results: Any,
     latest_outcome: dict[str, Any],
     family_name: str,
     rejection_feedback: str,
@@ -1015,7 +1015,7 @@ def _call_conductor(
     trace("CONDUCTOR", f"START {label}")
     return run_research_conductor_sync(
         trades_file=trades_file,
-        experiment_results=experiment_results,
+        round_results=round_results,
         latest_outcome=latest_outcome,
         research_round=research_round,
         family_name=family_name,
@@ -1062,7 +1062,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     result_dicts = results_to_dicts(results)
     if current_job is not None:
         result_dicts = [result for result in result_dicts if result.get("job") == current_job]
-    experiment_results = format_round_results_summary(result_dicts)
+    round_results = format_round_results_summary(result_dicts)
     prior_theses = load_prior_theses(controller.root)
     trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
     trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
@@ -1101,7 +1101,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             trades_file=trades_file,
             strategy_events_file=strategy_events_file,
             diagnostics_file=diagnostics_file,
-            experiment_results=experiment_results,
+            round_results=round_results,
             latest_outcome=latest_outcome,
             family_name=controller.family.name,
             rejection_feedback=rejection_feedback,
