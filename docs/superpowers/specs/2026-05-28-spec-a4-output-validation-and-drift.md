@@ -64,13 +64,13 @@ runtime predictions actually occurred.
 | `evidence_citations` count, citation length, source diversity | `mechanical` | `_collect_research_contract_failures` or generated predicates | Evidence-source diversity is deterministic. |
 | `confidence_distribution` object/enum completeness | `mechanical` | Pydantic plus generated predicate sidecar | Shape only. |
 | `confidence_distribution` strength floor / speculative-basis handling | `research_policy` | new behavior signal | Epistemic-quality policy. Replaces the deleted `evidence_strength` gate. |
-| `expected_effects` presence, metric backing, magnitude/unit/rationale conditionals | `mechanical` | `_validate_expected_effects_present`, metric-backing loop, new predicates | Metric backing may read `required_diagnostic_specs`; do not reintroduce deleted `required_diagnostics` as an LLM field. |
+| `expected_effects` presence, metric backing, magnitude/unit/rationale conditionals | `mechanical` | `_validate_expected_effects_present`, metric-backing loop, new predicates | Metric backing reads `required_diagnostic_specs[*].key`; do not reintroduce deleted `required_diagnostics` as an LLM field. |
 | `expected_runtime_signal` shape and event-path resolution | `mechanical` | new A4 predicate implementation | Validates declared path/relation only. |
 | Whether `expected_runtime_signal` happened | post-run evaluator | evaluator, not Stage 1 validator | Do not reject a thesis before runtime for an outcome that cannot exist yet. |
 | `disqualifiers` count/kind/overfit marker | `mechanical` | existing disqualifier checks plus new count predicate | Replaces the deleted `falsification_or_alternative` gate. |
 | Missing mechanism-evidence disqualifier quality | `research_policy` | `_detect_missing_mechanism_evidence_disqualifier` | Behavioral/quality signal. |
 | `config_changes` non-empty-or-code-change and unknown keys | `mechanical` / `config_validity` | `_validate_thesis_specifies_change`; new A4b key predicate | Deterministic config contract. |
-| Config metadata leak, base path, base contract inheritance | `config_validity` mechanical | `_collect_mechanical_config_validity_failures` | Artifact/config-shape failures. |
+| Config metadata leak | `config_validity` mechanical | `_collect_mechanical_config_validity_failures` | Deterministic config-shape failure on `config_changes`; base path/base contract inheritance belongs to Stage 2/compiler-contract validation, not Stage 1 thesis JSON. |
 | Config-key overlap and neighboring threshold repetition | `research_policy` with `config_validity_*` codes | `_detect_config_key_overlap`, `_detect_neighboring_threshold` | Current redesign routes these through behavior policy. |
 | `requires_code_change` / `requested_primitives` shape | `mechanical` | `_validate_thesis_specifies_change` | Deterministic pair contract. |
 | Needs-code starvation over prior rounds | `research_policy` | `_detect_needs_code_starvation` | Behavioral pattern gate. |
@@ -93,6 +93,7 @@ replace them with the A4 field that owns the same meaning:
 | `dominant_cluster_overlap` | computed overlap from prior `theme_keywords`; never trust LLM self-report |
 | `orthogonality_defense` / closest-prior prose fields | `dimension_novelty`, `underexplored_dimensions_considered`, and `mechanism_lineage` |
 | `expected_reuse_across_future_theses` | `mechanism_family_definition` for emergent dimensions only |
+| `base_config_path` / `base_contract_id` as Stage 1 thesis fields | Stage 2/compiler-contract validation may still validate compiled contract inheritance; do not keep these as `ResearchThesis` gates |
 | `required_diagnostics` as LLM OUTPUT | `required_diagnostic_specs` remains system/compiler-side; Stage 2 may still validate compiled contract diagnostics |
 
 Do not remove `required_diagnostic_specs` or Stage 2 diagnostic validation as
@@ -153,14 +154,14 @@ All three conditional on `mechanism_dimension == "emergent"`.
 
 | Field | Rule | Rejection code(s) |
 |---|---|---|
-| `evidence_citations` | ≥2 entries; ≤6 entries; ≥1 with `source="web_search"` AND ≥1 with `source="analyst"`; each `citation` ≥30 chars. | `structural_evidence_citations_missing_source_diversity`, `structural_evidence_citation_too_short`, `structural_evidence_citations_too_many` |
+| `evidence_citations` | ≥2 entries; ≤6 entries; required source coverage depends on evidence context: trades → `web_search` + `analyst`; no-trades → `web_search` + `experiment_result`; cold-start → `web_search`. Each `citation` ≥30 chars. | `structural_evidence_citations_missing_source_diversity`, `structural_evidence_citation_too_short`, `structural_evidence_citations_too_many` |
 | `confidence_distribution` | Required object with `data`, `literature`, and `precedent`. At least one of `{data, literature}` must be `"direct"` or `"mixed"`. Theses with all three `"speculative"` require a `disqualifiers` entry with `kind="mechanism_evidence"` acknowledging the weak-evidence basis. Greenfield exemption: when ROUND CONTEXT `dimensions_already_explored` is empty, `precedent="speculative"` is not counted against the gate. | `structural_confidence_distribution_missing`, `structural_confidence_distribution_invalid`, `thesis_quality_confidence_distribution_too_weak` |
 
 ### 4.7 Predictions + Falsification
 
 | Field | Rule | Rejection code(s) |
 |---|---|---|
-| `expected_effects` | Non-empty list with ≥2 distinct metrics. Each non-builtin metric must resolve through `required_diagnostic_specs`. `magnitude_range` required when `direction in {"increase","decrease"}`; `unit` required and must be a member of `EXPECTED_EFFECT_UNITS` when `magnitude_range` is set; `rationale` required (≥40 chars) when `direction in {"increase","decrease"}`. `magnitude_range[0] < magnitude_range[1]` when set. | `structural_missing_expected_effects`, `structural_expected_effects_not_coupled`, `structural_expected_effect_metric_unbacked`, `structural_expected_effect_magnitude_missing`, `structural_expected_effect_magnitude_range_invalid`, `structural_expected_effect_unit_invalid`, `structural_expected_effect_rationale_required` |
+| `expected_effects` | Non-empty list with ≥2 distinct metrics. Each non-builtin metric must resolve through `required_diagnostic_specs[*].key`. `magnitude_range` required when `direction in {"increase","decrease"}`; `unit` required and must be a member of `EXPECTED_EFFECT_UNITS` when `magnitude_range` is set; `rationale` required (≥40 chars) when `direction in {"increase","decrease"}`. `magnitude_range[0] < magnitude_range[1]` when set. | `structural_missing_expected_effects`, `structural_expected_effects_not_coupled`, `structural_expected_effect_metric_unbacked`, `structural_expected_effect_magnitude_missing`, `structural_expected_effect_magnitude_range_invalid`, `structural_expected_effect_unit_invalid`, `structural_expected_effect_rationale_required` |
 | `expected_runtime_signal` | Each `event_path` must resolve in ROUND CONTEXT `diagnostic_event_paths`. `lower` set when `expected_relation in {">", ">=", "==", "in_range"}`; `upper` set when `expected_relation in {"<", "<=", "==", "in_range"}`. | `structural_expected_runtime_signal_invalid` |
 | `disqualifiers` | ≥2 entries; ≥1 with `kind="mechanism_evidence"`; ≥1 entry whose `name` is in `OVERFIT_DISQUALIFIER_MARKERS` OR whose `condition` (lowercased) contains a member of `OVERFIT_KEYWORD_HINTS`. A single entry may satisfy both `mechanism_evidence` and overfit requirements. | `structural_disqualifiers_too_few`, `structural_disqualifiers_no_mechanism_evidence`, `structural_disqualifiers_no_overfit_address` |
 
@@ -248,16 +249,16 @@ The renderer fails if a §4 rule cannot be expressed in this set.
 | `required_object` | `{field}` | thesis | structural_deepest_alternative_missing, structural_confidence_distribution_missing |
 | `min_length` | `{field, min}` | thesis | _too_short codes |
 | `nested_min_length` | `{field, nested_field, min}` | thesis | structural_evidence_citation_too_short |
-| `literal_membership` | `{field, constant_name}` | thesis + constant import | structural_mechanism_dimension_invalid, structural_expected_effect_unit_invalid |
+| `literal_membership` | `{field, constant_name}` | thesis + constant import | structural_mechanism_dimension_invalid, structural_thesis_role_required, structural_expected_effect_unit_invalid |
 | `tiebreaker_resolves` | `{field, lookup_tables}` | thesis | structural_deepest_alternative_tiebreaker_unresolved, structural_lighter_tiebreaker_unresolved |
 | `list_min_length` | `{field, min}` | thesis | structural_other_alternatives_too_few, structural_disqualifiers_too_few |
 | `list_max_length` | `{field, max}` | thesis | structural_evidence_citations_too_many |
 | `list_min_with_kind` | `{field, kind_field, kind_value, min}` | thesis | structural_disqualifiers_no_mechanism_evidence |
 | `list_any_matches_marker_or_keyword` | `{field, name_field, condition_field, markers_constant, keywords_constant}` | thesis + constants | structural_disqualifiers_no_overfit_address |
-| `list_source_diversity` | `{field, source_field, required_sources}` | thesis | structural_evidence_citations_missing_source_diversity |
+| `list_source_diversity_by_context` | `{field, source_field, evidence_context_field, required_sources_by_context}` | thesis + evidence_context | structural_evidence_citations_missing_source_diversity |
 | `list_members_in_round_context_set` | `{field, round_context_key}` | thesis + round_context | structural_underexplored_dimensions_invalid |
 | `list_members_not_equal` | `{field, ref_field}` | thesis | structural_underexplored_includes_chosen |
-| `grounded_mention_distinct_count` | `{field, constant_name, min_distinct}` | thesis + constant | dimension_novelty ≥2-mention rule |
+| `grounded_mention_distinct_count` | `{field, constant_name, min_distinct}` | thesis + constant | structural_dimension_novelty_not_grounded |
 | `theme_keyword_overlap_triggers_field` | `{trigger_field, target_field, round_context_key}` | thesis + round_context | structural_novel_connection_too_short, structural_novel_connection_not_grounded |
 | `whipsaw_from_prior_lever_history` | `{config_changes_field, target_field, round_context_key}` | thesis + round_context | thesis_quality_direction_whipsaw |
 | `prior_thesis_ids_in_snapshot` | `{field, round_context_key}` | thesis + round_context | structural_prior_lever_outcomes_unknown_id, structural_mechanism_lineage_unknown_id |
@@ -319,6 +320,11 @@ code.
 - Implement all rejection codes listed in §4.
 - Remove Stage 1 validator references to deleted LLM OUTPUT fields listed in
   §3.2 and replace them with the A4 replacement-owner gates.
+- Move any remaining `base_config_path` / `base_contract_id` inheritance checks
+  out of Stage 1 `ResearchThesis` validation and into Stage 2/compiler-contract
+  validation.
+- Align evidence-context source names with `EvidenceSource`; no-trades evidence
+  uses `experiment_result`, not `round_result`.
 - Generate and commit `prompts/conductor_output_rules.json`.
 - Add `prompt_rules.py` exposing `iter_prompt_declared_rules()`.
 - Extend `scripts/check_prompt_drift.py` for schema-prompt parity,
