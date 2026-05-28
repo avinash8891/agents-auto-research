@@ -32,6 +32,10 @@ INVALID_RESULT_VERDICTS = frozenset(
 BACKTEST_RUNS_TABLE = "backtest_runs"
 
 
+def _research_thesis_attempt_id(research_round_id: str, attempt_number: int) -> str:
+    return f"{research_round_id}-attempt-{attempt_number}"
+
+
 def _coerce_metric_float(value: Any, *, default: float = 0.0) -> float:
     try:
         return float(value)
@@ -205,6 +209,7 @@ class BacktestRunDB:
                 """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS research_thesis_attempts (
+                    thesis_attempt_id TEXT PRIMARY KEY,
                     research_round_id TEXT NOT NULL,
                     attempt_number INTEGER NOT NULL,
                     thesis_id TEXT NOT NULL,
@@ -218,9 +223,15 @@ class BacktestRunDB:
                     validation_failure_reason TEXT NOT NULL,
                     selected_for_execution INTEGER NOT NULL,
                     created_at_utc TEXT NOT NULL,
-                    PRIMARY KEY (research_round_id, attempt_number)
+                    UNIQUE (research_round_id, attempt_number)
                 )
                 """)
+            self._ensure_column(
+                conn,
+                "research_thesis_attempts",
+                "thesis_attempt_id",
+                "TEXT NOT NULL DEFAULT ''",
+            )
             self._ensure_column(
                 conn,
                 "research_thesis_attempts",
@@ -230,6 +241,27 @@ class BacktestRunDB:
             self._ensure_column_renamed(
                 conn, "research_thesis_attempts", "rejection_reason", "validation_failure_reason"
             )
+            self._backfill_research_thesis_attempt_ids(conn)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_research_rounds_job_round
+                ON research_rounds (job_id, round_number)
+                """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_research_rounds_outcome
+                ON research_rounds (outcome)
+                """)
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_research_thesis_attempts_attempt_id
+                ON research_thesis_attempts (thesis_attempt_id)
+                """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_research_thesis_attempts_round_attempt
+                ON research_thesis_attempts (research_round_id, attempt_number)
+                """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_research_thesis_attempts_validator_status
+                ON research_thesis_attempts (validator_status)
+                """)
             self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "backtest_run_id", "TEXT NOT NULL DEFAULT ''"
             )
@@ -253,6 +285,27 @@ class BacktestRunDB:
         columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def _backfill_research_thesis_attempt_ids(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute("""
+            SELECT rowid, research_round_id, attempt_number, thesis_attempt_id
+            FROM research_thesis_attempts
+            WHERE thesis_attempt_id = ''
+            """).fetchall()
+        for row in rows:
+            conn.execute(
+                """
+                UPDATE research_thesis_attempts
+                SET thesis_attempt_id = ?
+                WHERE rowid = ?
+                """,
+                (
+                    _research_thesis_attempt_id(
+                        row["research_round_id"], int(row["attempt_number"])
+                    ),
+                    row["rowid"],
+                ),
+            )
 
     def _ensure_column_renamed(
         self, conn: sqlite3.Connection, table: str, old: str, new: str
@@ -520,7 +573,7 @@ class BacktestRunDB:
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT a.research_round_id, a.attempt_number, a.thesis_id,
+                SELECT a.thesis_attempt_id, a.research_round_id, a.attempt_number, a.thesis_id,
                        a.strategy_family, a.config_changes_json, a.validator_status,
                        a.mechanism_dimension, a.hypothesis, a.mechanism,
                        a.thesis_details_json, a.validation_failure_reason, a.selected_for_execution,
@@ -553,6 +606,7 @@ class BacktestRunDB:
             except Exception:
                 thesis_details = {}
             record = {
+                "thesis_attempt_id": row["thesis_attempt_id"],
                 "research_round_id": row["research_round_id"],
                 "attempt_number": row["attempt_number"],
                 "thesis_id": row["thesis_id"],
@@ -579,20 +633,38 @@ class BacktestRunDB:
             result.append(record)
         return result
 
+    def next_research_thesis_attempt_number(self, research_round_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(MAX(attempt_number), 0) + 1 AS next_attempt_number
+                FROM research_thesis_attempts
+                WHERE research_round_id = ?
+                """,
+                (research_round_id,),
+            ).fetchone()
+        return int(row["next_attempt_number"])
+
     def add_research_thesis_attempt(self, row: dict[str, Any]) -> None:
+        research_round_id = row["research_round_id"]
+        attempt_number = int(row["attempt_number"])
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO research_thesis_attempts (
-                    research_round_id, attempt_number, thesis_id, strategy_family,
+                    thesis_attempt_id, research_round_id, attempt_number, thesis_id, strategy_family,
                     config_changes_json, validator_status, mechanism_dimension,
                     hypothesis, mechanism, thesis_details_json, validation_failure_reason, selected_for_execution,
                     created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    row["research_round_id"],
-                    row["attempt_number"],
+                    row.get(
+                        "thesis_attempt_id",
+                        _research_thesis_attempt_id(research_round_id, attempt_number),
+                    ),
+                    research_round_id,
+                    attempt_number,
                     row["thesis_id"],
                     row.get("strategy_family", ""),
                     json_dumps_strict(row.get("config_changes", {})),
@@ -615,6 +687,8 @@ class BacktestRunDB:
                 invalid = not isinstance(row, dict) or "thesis_id" not in row
                 r = row if isinstance(row, dict) else {}
                 thesis_id = "" if invalid else r.get("thesis_id", "")
+                research_round_id = r.get("research_round_id", "")
+                attempt_number = int(r.get("attempt_number", 0))
                 config_changes = (
                     json_dumps_strict(row)
                     if invalid
@@ -624,15 +698,19 @@ class BacktestRunDB:
                 conn.execute(
                     """
                     INSERT INTO research_thesis_attempts (
-                        research_round_id, attempt_number, thesis_id, strategy_family,
+                        thesis_attempt_id, research_round_id, attempt_number, thesis_id, strategy_family,
                         config_changes_json, validator_status, mechanism_dimension,
                         hypothesis, mechanism, thesis_details_json, validation_failure_reason, selected_for_execution,
                         created_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        r.get("research_round_id", ""),
-                        r.get("attempt_number", 0),
+                        r.get(
+                            "thesis_attempt_id",
+                            _research_thesis_attempt_id(research_round_id, attempt_number),
+                        ),
+                        research_round_id,
+                        attempt_number,
                         thesis_id,
                         r.get("strategy_family", ""),
                         config_changes,

@@ -67,10 +67,7 @@ Current persisted fields from `log_research_round()`:
 | `outcome` | `research_rounds.outcome` | direct | |
 | `timestamp` | `research_rounds.created_at_utc` | direct | |
 
-### Missing from current persisted research-round rows
-| Canonical target | Status | Why |
-|---|---|---|
-| `research_rounds.research_round_id` | NO_CURRENT_WRITE_PATH | no id generator exists |
+`research_rounds.research_round_id` is generated as `job-{job}-round-{round}`.
 
 ---
 
@@ -79,23 +76,27 @@ Current persisted fields from `log_research_round()`:
 Current behavior:
 - one research round may retry multiple times
 - each retry may propose a different thesis
-- current durable persistence does not store each attempt as a separate record
+- current durable persistence stores each attempt as a separate
+  `research_thesis_attempts` row
 
 Canonical consequence:
-- `research_thesis_attempts` must be added with a new write path
+- `research_thesis_attempts` is the canonical durable attempt history
+- rejection JSON remains an artifact; SQLite stores attempt-level status and
+  failure summary only
 
 | Canonical target | Status | Notes |
 |---|---|---|
-| `research_thesis_attempts.thesis_attempt_id` | NO_CURRENT_WRITE_PATH | synthetic id required |
-| `research_thesis_attempts.research_round_id` | NO_CURRENT_WRITE_PATH | round FK required |
-| `research_thesis_attempts.attempt_number` | NO_CURRENT_WRITE_PATH | retry ordinal required |
+| `research_thesis_attempts.thesis_attempt_id` | direct | `job-{job}-round-{round}-attempt-{attempt}` |
+| `research_thesis_attempts.research_round_id` | direct | deterministic round id |
+| `research_thesis_attempts.attempt_number` | direct | retry ordinal |
 | `research_thesis_attempts.strategy_family` | available_per_attempt | thesis metadata/runtime has it |
-| `research_thesis_attempts.validator_status` | NO_CURRENT_WRITE_PATH | not durably persisted today |
-| `research_thesis_attempts.selected_for_execution` | NO_CURRENT_WRITE_PATH | not durably persisted today |
-| `research_thesis_attempts.created_at_utc` | NO_CURRENT_WRITE_PATH | attempt timestamp not durably persisted today |
+| `research_thesis_attempts.validator_status` | direct | outcome/status persisted per attempt |
+| `research_thesis_attempts.selected_for_execution` | direct | `1` only for compiled selected attempt |
+| `research_thesis_attempts.created_at_utc` | direct | attempt timestamp |
 
 ### Historical limitation
-Current historical data cannot fully recover every rejected thesis attempt inside a round, because the code does not durably store each retry attempt separately.
+Older historical data written before this table was populated cannot fully
+recover every rejected thesis attempt inside a round.
 
 ---
 
