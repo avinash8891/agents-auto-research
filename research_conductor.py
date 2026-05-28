@@ -650,7 +650,11 @@ async def run_research_conductor(
             tools_called_this_round.add("get_round_result")
             try:
                 output = get_round_result_for_root(
-                    _ROOT, research_round_id=research_round_id, detail=detail
+                    _ROOT,
+                    research_round_id=research_round_id,
+                    detail=detail,
+                    job_id=current_job,
+                    family=family_name,
                 )
             except KeyError as exc:
                 output = round_result_not_found_envelope(research_round_id, exc)

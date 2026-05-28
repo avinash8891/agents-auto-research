@@ -329,3 +329,203 @@ def test_round_index_entry_hypothesis_empty_when_not_set() -> None:
 
     assert entry["hypothesis"] == ""
     assert entry["mechanism"] == ""
+
+
+# ── J/K/L: scoped lookup + empty-rrid fallback ─────────────────────
+
+
+def _add_backtest_record_family(
+    db: BacktestRunDB,
+    *,
+    research_round_id_value: str,
+    family: str,
+    thesis_id: str,
+    job: int,
+    run_id: str | None = None,
+    profit_factor: float = 1.6,
+) -> BacktestRunRecord:
+    """Variant of _add_backtest_record that lets the caller set family/job freely."""
+    record = BacktestRunRecord(
+        run_id=run_id or f"run-{family}-{research_round_id_value}",
+        thesis_id=thesis_id,
+        config_path=f"runtime/jobs/job-{job}/research/selected_config.json",
+        runtime_config={"length": 12},
+        code_commit="abc1234",
+        data_hash="datahash",
+        train_metrics={"profit_factor": profit_factor, "max_drawdown": -0.15},
+        validation_metrics={"pct_profitable_windows": 0.62},
+        trade_count=84,
+        trades_file="trades.csv",
+        strategy_events_file="events.csv",
+        diagnostics_file="diagnostics.json",
+        strategy_diagnostics={},
+        accepted=True,
+        rejection_reason="",
+        verdict_status="accepted",
+        verdict_summary="ok",
+        family=family,
+        hypothesis="h",
+        mechanism="m",
+        job=job,
+        research_round_id=research_round_id_value,
+        timestamp=utc_now_iso8601(),
+    )
+    db.add(record)
+    return record
+
+
+def test_get_round_result_scopes_by_job_id(tmp_path: Path) -> None:
+    """Finding J: same rrid across two jobs must not collide when job_id is passed."""
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    rrid = research_round_id(1, 1)  # "job-1-round-1"
+    _add_backtest_record_family(
+        db,
+        research_round_id_value=rrid,
+        family="ema",
+        thesis_id="job-1-thesis",
+        job=1,
+        run_id="run-job1",
+        profit_factor=1.7,
+    )
+    _add_backtest_record_family(
+        db,
+        research_round_id_value=rrid,
+        family="ema",
+        thesis_id="job-2-thesis",
+        job=2,
+        run_id="run-job2",
+        profit_factor=2.5,
+    )
+
+    import json as _json
+
+    payload_j1 = _json.loads(
+        get_round_result(tmp_path, research_round_id=rrid, job_id=1)
+    )
+    payload_j2 = _json.loads(
+        get_round_result(tmp_path, research_round_id=rrid, job_id=2)
+    )
+
+    assert payload_j1["result"]["thesis_id"] == "job-1-thesis"
+    assert payload_j2["result"]["thesis_id"] == "job-2-thesis"
+
+
+def test_get_round_result_scopes_by_family(tmp_path: Path) -> None:
+    """Finding L: same rrid across per-family DBs must filter on family."""
+    ema_db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    ema_db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    orb_db = BacktestRunDB(tmp_path / "orb_backtest_runs.db")
+    orb_db.init_session(name="orb", metric_name="profit_factor", direction="higher")
+
+    rrid = research_round_id(1, 1)
+    _add_backtest_record_family(
+        ema_db,
+        research_round_id_value=rrid,
+        family="ema",
+        thesis_id="ema-thesis",
+        job=1,
+        run_id="run-ema",
+        profit_factor=1.1,
+    )
+    _add_backtest_record_family(
+        orb_db,
+        research_round_id_value=rrid,
+        family="orb",
+        thesis_id="orb-thesis",
+        job=1,
+        run_id="run-orb",
+        profit_factor=3.3,
+    )
+
+    import json as _json
+
+    payload_ema = _json.loads(
+        get_round_result(tmp_path, research_round_id=rrid, family="ema")
+    )
+    payload_orb = _json.loads(
+        get_round_result(tmp_path, research_round_id=rrid, family="orb")
+    )
+
+    assert payload_ema["family"] == "ema"
+    assert payload_ema["result"]["thesis_id"] == "ema-thesis"
+    assert payload_orb["family"] == "orb"
+    assert payload_orb["result"]["thesis_id"] == "orb-thesis"
+
+
+def test_get_round_result_payload_includes_family(tmp_path: Path) -> None:
+    """Finding L: payload exposes family so callers can verify the chosen record."""
+    rrid = research_round_id(1, 1)
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    _add_backtest_record_family(
+        db,
+        research_round_id_value=rrid,
+        family="ema",
+        thesis_id="ema-thesis",
+        job=1,
+    )
+
+    import json as _json
+
+    payload = _json.loads(get_round_result(tmp_path, research_round_id=rrid))
+
+    assert payload["family"] == "ema"
+
+
+def test_get_round_result_falls_back_to_run_id_for_empty_rrid(
+    tmp_path: Path,
+) -> None:
+    """Finding K: rows with empty research_round_id are recoverable via run_id."""
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    # Legacy / autoresearch_cli-style row: no research_round_id, has run_id.
+    _add_backtest_record_family(
+        db,
+        research_round_id_value="",
+        family="ema",
+        thesis_id="legacy-thesis",
+        job=1,
+        run_id="run-legacy-7",
+    )
+
+    import json as _json
+
+    payload = _json.loads(
+        get_round_result(tmp_path, research_round_id="run-legacy-7")
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["result"]["run_id"] == "run-legacy-7"
+    assert payload["result"]["thesis_id"] == "legacy-thesis"
+
+
+def test_get_round_result_run_id_fallback_skips_rows_with_non_empty_rrid(
+    tmp_path: Path,
+) -> None:
+    """Finding K: fallback must NOT match run_id on rows that already have an rrid.
+
+    Otherwise a run_id query could shadow a different rrid'd row sharing the value.
+    """
+    rrid = research_round_id(1, 1)
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    _add_backtest_record_family(
+        db,
+        research_round_id_value=rrid,
+        family="ema",
+        thesis_id="ema-thesis",
+        job=1,
+        run_id="run-collision",
+    )
+
+    import json as _json
+    import pytest as _pytest
+
+    # Asking by the run_id value as research_round_id must NOT find the row,
+    # because the row has a non-empty research_round_id.
+    with _pytest.raises(KeyError):
+        _json.loads(
+            get_round_result(tmp_path, research_round_id="run-collision")
+        )

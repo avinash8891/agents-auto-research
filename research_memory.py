@@ -526,7 +526,12 @@ def _metric_for_record(record: Any, metric_name: str) -> float | int | None:
     return None
 
 
-def _iter_round_records(root: Path, *, job_id: int | None = None) -> list[dict[str, Any]]:
+def _iter_round_records(
+    root: Path,
+    *,
+    job_id: int | None = None,
+    family: str | None = None,
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for db_path in sorted(root.glob("*_backtest_runs.db")):
         from backtest_run_db import (
@@ -541,6 +546,8 @@ def _iter_round_records(root: Path, *, job_id: int | None = None) -> list[dict[s
         for record in db.all():
             record_job = _record_job_id(record)
             if job_id is not None and record_job != job_id:
+                continue
+            if family is not None and getattr(record, "family", "") != family:
                 continue
             records.append(
                 {
@@ -720,6 +727,8 @@ def get_round_result(
     *,
     research_round_id: str,
     detail: bool = False,
+    job_id: int | None = None,
+    family: str | None = None,
 ) -> str:
     """Return backtest result for a specific research round.
 
@@ -727,15 +736,43 @@ def get_round_result(
     unique per backtest). Raises ``KeyError`` if the round id doesn't
     resolve to a backtest record — callers must pass a valid id (no
     fallback resolution from thesis_id).
+
+    Scoping (callers should pass when known to avoid cross-scope
+    collisions across per-family backtest DBs and rerun job numbering):
+
+    * ``job_id`` — only consider records from the given job. Two jobs
+      across families can share the same ``research_round_id`` value
+      (e.g. ``"job-1-round-5"``) so without this filter the wrong
+      record can be returned.
+    * ``family`` — only consider records from the given strategy
+      family's DB.
+
+    Fallback: rows with empty ``research_round_id`` (legacy /
+    ``autoresearch_cli log`` rows) are recoverable by passing the
+    ``run_id`` value as ``research_round_id`` — when no record matches
+    by ``research_round_id``, we match by ``run_id`` over rows whose
+    ``research_round_id`` is empty. ``run_id`` is unique by
+    construction in ``backtest_runs``.
     """
     requested_id = str(research_round_id or "").strip()
     if not requested_id:
         raise KeyError("research_round_id is required")
+    candidates = _iter_round_records(root, job_id=job_id, family=family)
     matches = [
         item
-        for item in _iter_round_records(root)
+        for item in candidates
         if getattr(item["record"], "research_round_id", "") == requested_id
     ]
+    if not matches:
+        # Fallback path for empty-rrid rows: match by run_id so callers
+        # can fetch rows surfaced by list_round_results that have no
+        # research_round_id (legacy / autoresearch_cli rows).
+        matches = [
+            item
+            for item in candidates
+            if not getattr(item["record"], "research_round_id", "")
+            and getattr(item["record"], "run_id", "") == requested_id
+        ]
     if not matches:
         raise KeyError(f"no round result for {requested_id!r}")
     sorted_matches = _sort_round_records(matches, "latest")
@@ -744,6 +781,7 @@ def get_round_result(
     payload = {
         "status": "ok",
         "research_round_id": requested_id,
+        "family": getattr(chosen["record"], "family", ""),
         "detail": "full" if detail else "compact",
         "full_result_available": not detail,
         "result": result,

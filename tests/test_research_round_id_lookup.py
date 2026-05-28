@@ -94,6 +94,40 @@ def test_get_round_result_returns_record_for_seeded_research_round_id(
     assert result["metric"] == 1.72
 
 
+def test_get_round_result_job_scope_filter_passes_through(
+    tmp_path: Path,
+) -> None:
+    """Finding J: passing job_id only returns records for that job.
+
+    Within a single per-family DB, the rrid encodes (job, round) and is unique
+    (enforced by the DB add validator). The job_id parameter is therefore a
+    no-op for same-DB lookups but is required so wrappers can pass current_job
+    defensively — and so this filter applies across multiple per-family DBs
+    that may share a job numbering.
+    """
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    rrid_j1 = research_round_id(1, 1)
+    _seed_backtest(
+        db,
+        research_round_id_value=rrid_j1,
+        thesis_id="ema_breakout_v1",
+        job=1,
+        round_number=1,
+        profit_factor=1.10,
+    )
+
+    # job_id=1 finds it; job_id=2 must not.
+    payload = json.loads(
+        get_round_result(tmp_path, research_round_id=rrid_j1, job_id=1)
+    )
+    assert payload["result"]["thesis_id"] == "ema_breakout_v1"
+
+    with pytest.raises(KeyError):
+        get_round_result(tmp_path, research_round_id=rrid_j1, job_id=2)
+
+
 def test_get_round_result_raises_keyerror_for_unknown_research_round_id(
     tmp_path: Path,
 ) -> None:
