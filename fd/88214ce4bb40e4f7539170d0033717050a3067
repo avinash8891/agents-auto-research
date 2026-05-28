@@ -1,0 +1,31 @@
+thesis_validator.py
+  s_1dc1911c45a5a7::t_69661598975bd6 1003-1012
+tests/test_migrate_experiment_dirs.py
+  s_1dc1911c45a5a7::t_47e7c378c1cdae 43-46
+  s_1dc1911c45a5a7::t_baac98d55923f1 223-318
+research_types.py
+  s_1dc1911c45a5a7::t_f2b2828a5f5566 72-76
+tests/test_agent_orchestrator_characterization.py
+  s_1dc1911c45a5a7::t_a20d280c17af59 495-517
+scripts/migrate_experiment_dirs.py
+  s_1dc1911c45a5a7::t_8df85a0481db29 421-422
+  s_1dc1911c45a5a7::t_b004f2d93c2542 287-289,291-326
+  s_1dc1911c45a5a7::t_eb603f7f7a847d 85-90
+  s_1dc1911c45a5a7::t_572080f3e12208 290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fd88214ce4bb40e4f7539170d0033717050a3067",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
