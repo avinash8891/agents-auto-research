@@ -1,0 +1,34 @@
+tests/test_migrate_experiment_dirs.py
+  s_1dc1911c45a5a7::t_e03c52d993f054 319-349,351-393,395-459
+  s_1dc1911c45a5a7::t_4e1f0fe8a55e57 350,394
+compiler_builder.py
+  s_1dc1911c45a5a7::t_4e1f0fe8a55e57 597
+  s_1dc1911c45a5a7::t_73b9d000605e47 591-596,598-599
+tests/test_compiler_pipeline_characterization.py
+  s_1dc1911c45a5a7::t_30bb8587dee104 211-242
+scripts/migrate_experiment_dirs.py
+  s_1dc1911c45a5a7::t_ae6b8b95406afe 324-327,338-349
+  s_1dc1911c45a5a7::t_66d18a381638c6 250-255,257-258
+  s_1dc1911c45a5a7::t_ef3554cfda1a04 235-240
+  s_1dc1911c45a5a7::t_4e1f0fe8a55e57 337
+  s_1dc1911c45a5a7::t_73ec9d8d7e4b9e 415
+  s_1dc1911c45a5a7::t_6f87cbdf1c3ac2 450-462
+  s_1dc1911c45a5a7::t_5aa1796ff72d76 279-281,283-290,300-308
+  s_1dc1911c45a5a7::t_d5a494be728c58 430
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a05d870ecffb6c53c25ea4666e7b7dc97e83f14c",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
