@@ -401,12 +401,8 @@ def test_get_round_result_scopes_by_job_id(tmp_path: Path) -> None:
 
     import json as _json
 
-    payload_j1 = _json.loads(
-        get_round_result(tmp_path, research_round_id=rrid, job_id=1)
-    )
-    payload_j2 = _json.loads(
-        get_round_result(tmp_path, research_round_id=rrid, job_id=2)
-    )
+    payload_j1 = _json.loads(get_round_result(tmp_path, research_round_id=rrid, job_id=1))
+    payload_j2 = _json.loads(get_round_result(tmp_path, research_round_id=rrid, job_id=2))
 
     assert payload_j1["result"]["thesis_id"] == "job-1-thesis"
     assert payload_j2["result"]["thesis_id"] == "job-2-thesis"
@@ -441,12 +437,8 @@ def test_get_round_result_scopes_by_family(tmp_path: Path) -> None:
 
     import json as _json
 
-    payload_ema = _json.loads(
-        get_round_result(tmp_path, research_round_id=rrid, family="ema")
-    )
-    payload_orb = _json.loads(
-        get_round_result(tmp_path, research_round_id=rrid, family="orb")
-    )
+    payload_ema = _json.loads(get_round_result(tmp_path, research_round_id=rrid, family="ema"))
+    payload_orb = _json.loads(get_round_result(tmp_path, research_round_id=rrid, family="orb"))
 
     assert payload_ema["family"] == "ema"
     assert payload_ema["result"]["thesis_id"] == "ema-thesis"
@@ -492,9 +484,7 @@ def test_get_round_result_falls_back_to_run_id_for_empty_rrid(
 
     import json as _json
 
-    payload = _json.loads(
-        get_round_result(tmp_path, research_round_id="run-legacy-7")
-    )
+    payload = _json.loads(get_round_result(tmp_path, research_round_id="run-legacy-7"))
 
     assert payload["status"] == "ok"
     assert payload["result"]["run_id"] == "run-legacy-7"
@@ -521,11 +511,10 @@ def test_get_round_result_run_id_fallback_skips_rows_with_non_empty_rrid(
     )
 
     import json as _json
+
     import pytest as _pytest
 
     # Asking by the run_id value as research_round_id must NOT find the row,
     # because the row has a non-empty research_round_id.
     with _pytest.raises(KeyError):
-        _json.loads(
-            get_round_result(tmp_path, research_round_id="run-collision")
-        )
+        _json.loads(get_round_result(tmp_path, research_round_id="run-collision"))

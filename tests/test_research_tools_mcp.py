@@ -420,18 +420,14 @@ def test_list_round_results_offset_paginates_over_seeded_rows(tmp_path: Path) ->
     # Seed 5 rounds with strictly-increasing timestamps so "latest" ordering
     # is deterministic: round-5 newest, round-1 oldest.
     seeded = [
-        _seed_backtest_round(
-            db, round_no=n, timestamp=f"2026-01-0{n}T00:00:00+00:00"
-        )
+        _seed_backtest_round(db, round_no=n, timestamp=f"2026-01-0{n}T00:00:00+00:00")
         for n in range(1, 6)
     ]
     newest_first = list(reversed(seeded))  # round-5 .. round-1
 
     mcp = _build_mcp(tmp_path, current_job=JOB_ID)
 
-    page1 = json.loads(
-        _invoke(mcp, "list_round_results", {"order": "latest", "limit": 2})
-    )
+    page1 = json.loads(_invoke(mcp, "list_round_results", {"order": "latest", "limit": 2}))
     assert page1["total"] == 5
     assert page1["offset"] == 0
     assert page1["has_more"] is True

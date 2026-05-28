@@ -119,9 +119,7 @@ def test_get_round_result_job_scope_filter_passes_through(
     )
 
     # job_id=1 finds it; job_id=2 must not.
-    payload = json.loads(
-        get_round_result(tmp_path, research_round_id=rrid_j1, job_id=1)
-    )
+    payload = json.loads(get_round_result(tmp_path, research_round_id=rrid_j1, job_id=1))
     assert payload["result"]["thesis_id"] == "ema_breakout_v1"
 
     with pytest.raises(KeyError):
