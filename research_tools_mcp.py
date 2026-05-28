@@ -9,18 +9,18 @@ from pydantic import BaseModel, ValidationError
 from rejection_artifact import get_rejection as _get_rejection
 from rejection_artifact import list_rejections as _list_rejections
 from rejection_artifact import rejection_pattern_summary as _rejection_pattern_summary
-from research_memory import get_experiment_result as _get_result_for_root
 from research_memory import get_past_thesis as _get_past_thesis_for_root
-from research_memory import list_experiment_results as _list_results_for_root
+from research_memory import get_round_result as _get_round_result_for_root
 from research_memory import list_past_theses as _list_past_theses_for_root
+from research_memory import list_round_results as _list_round_results_for_root
 from research_tools_schema import (
     AnalyzeTradesArgs,
-    GetExperimentResultArgs,
     GetPastThesisArgs,
     GetRejectionArgs,
-    ListExperimentResultsArgs,
+    GetRoundResultArgs,
     ListPastThesesArgs,
     ListRejectionsArgs,
+    ListRoundResultsArgs,
     MemoryStatusArgs,
     RejectionPatternSummaryArgs,
     SaveFindingArgs,
@@ -37,8 +37,8 @@ _TOOL_MODELS: dict[str, type[BaseModel]] = {
     "memory_status": MemoryStatusArgs,
     "list_past_theses": ListPastThesesArgs,
     "get_past_thesis": GetPastThesisArgs,
-    "list_experiment_results": ListExperimentResultsArgs,
-    "get_experiment_result": GetExperimentResultArgs,
+    "list_round_results": ListRoundResultsArgs,
+    "get_round_result": GetRoundResultArgs,
     "list_rejections": ListRejectionsArgs,
     "get_rejection": GetRejectionArgs,
     "rejection_pattern_summary": RejectionPatternSummaryArgs,
@@ -93,8 +93,8 @@ def _build_research_tools_mcp(
     current_job: int | None = None,
     list_past_theses_for_root,
     get_past_thesis_for_root=None,
-    list_experiment_results_for_root=None,
-    get_experiment_result_for_root=None,
+    list_round_results_for_root=None,
+    get_round_result_for_root=None,
 ):
     """Create an in-process MCP server with research tools."""
     from mcp.server.fastmcp import FastMCP
@@ -159,7 +159,7 @@ def _build_research_tools_mcp(
             finding: The factual observation (e.g. "Tuesdays have PF=1.7 vs Friday PF=2.7 across 3017 trades")
             finding_type: One of: observation, hypothesis, validated_finding, rejected_finding, open_question, implementation_note
             status: One of: unvalidated, validated, rejected, stale
-            evidence: Which round/experiment produced this (e.g. "round_003, thesis entry_window_test")
+            evidence: Which round produced this (e.g. "round_003 / research_round_id job-1-round-3")
             scope: What data this applies to (e.g. "train_2020-2023", "full_sample", "SPY_only")
             expires_if: Condition that invalidates this (e.g. "fails on validation split", "baseline drift >5%")
         """
@@ -267,36 +267,44 @@ def _build_research_tools_mcp(
         return get_past_thesis_for_root(root, thesis_id, job_id=current_job)
 
     @mcp.tool()
-    async def list_experiment_results(
-        order: str = "latest", offset: int = 0, limit: int = 10
+    async def list_round_results(
+        order: str = "latest", limit: int = 10, job_id: int | None = None
     ) -> str:
-        """List a bounded index of experiment/backtest outcomes."""
+        """List a bounded index of round (= backtest) outcomes."""
         err = _dispatch(
-            ListExperimentResultsArgs, {"order": order, "offset": offset, "limit": limit}
+            ListRoundResultsArgs, {"order": order, "limit": limit, "job_id": job_id}
         )
         if err:
             return err
-        if list_experiment_results_for_root is None:
-            return _list_results_for_root(
-                root, job_id=current_job, order=order, offset=offset, limit=limit
+        effective_job = job_id if job_id is not None else current_job
+        if list_round_results_for_root is None:
+            return _list_round_results_for_root(
+                root, job_id=effective_job, order=order, limit=limit
             )
-        return list_experiment_results_for_root(
-            root, job_id=current_job, order=order, offset=offset, limit=limit
+        return list_round_results_for_root(
+            root, job_id=effective_job, order=order, limit=limit
         )
 
     @mcp.tool()
-    async def get_experiment_result(thesis_id: str, detail: bool = False) -> str:
-        """Fetch stored details for one experiment/thesis result.
+    async def get_round_result(research_round_id: str, detail: bool = False) -> str:
+        """Fetch stored details for one round result by research_round_id.
 
         Defaults to a compact result for context efficiency. Pass detail=true
         only when the compact result is insufficient for the current decision.
         """
-        err = _dispatch(GetExperimentResultArgs, {"thesis_id": thesis_id, "detail": detail})
+        err = _dispatch(
+            GetRoundResultArgs,
+            {"research_round_id": research_round_id, "detail": detail},
+        )
         if err:
             return err
-        if get_experiment_result_for_root is None:
-            return _get_result_for_root(root, thesis_id, job_id=current_job, detail=detail)
-        return get_experiment_result_for_root(root, thesis_id, job_id=current_job, detail=detail)
+        if get_round_result_for_root is None:
+            return _get_round_result_for_root(
+                root, research_round_id=research_round_id, detail=detail
+            )
+        return get_round_result_for_root(
+            root, research_round_id=research_round_id, detail=detail
+        )
 
     @mcp.tool()
     async def list_rejections(

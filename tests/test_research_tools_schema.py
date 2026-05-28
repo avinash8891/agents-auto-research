@@ -5,12 +5,12 @@ from research_tools_schema import (
     FINDING_STATUSES,
     FINDING_TYPES,
     AnalyzeTradesArgs,
-    GetExperimentResultArgs,
     GetPastThesisArgs,
     GetRejectionArgs,
-    ListExperimentResultsArgs,
+    GetRoundResultArgs,
     ListPastThesesArgs,
     ListRejectionsArgs,
+    ListRoundResultsArgs,
     MemoryStatusArgs,
     RejectionPatternSummaryArgs,
     SaveFindingArgs,
@@ -34,8 +34,8 @@ def test_all_models_instantiate_with_minimal_valid_args():
     SearchFindingsArgs(query="ema crossover")
     ListPastThesesArgs()
     GetPastThesisArgs(thesis_id="ema_crossover_baseline")
-    ListExperimentResultsArgs()
-    GetExperimentResultArgs(thesis_id="ema_crossover_baseline")
+    ListRoundResultsArgs()
+    GetRoundResultArgs(research_round_id="job-1-round-3")
     ListRejectionsArgs()
     GetRejectionArgs(round_number=1, thesis_id="ema_crossover_baseline")
     RejectionPatternSummaryArgs()
@@ -191,42 +191,42 @@ def test_get_past_thesis_empty_id():
         GetPastThesisArgs(thesis_id="")
 
 
-def test_list_experiment_results_defaults():
-    args = ListExperimentResultsArgs()
+def test_list_round_results_defaults():
+    args = ListRoundResultsArgs()
     assert args.order == "latest"
-    assert args.offset == 0
     assert args.limit == 10
+    assert args.job_id is None
 
 
-def test_list_experiment_results_valid():
-    ListExperimentResultsArgs(order="best", offset=5, limit=20)
+def test_list_round_results_valid():
+    ListRoundResultsArgs(order="best", limit=20, job_id=7)
 
 
-def test_list_experiment_results_worst_order():
-    ListExperimentResultsArgs(order="worst")
+def test_list_round_results_worst_order():
+    ListRoundResultsArgs(order="worst")
 
 
-def test_list_experiment_results_invalid_order():
+def test_list_round_results_invalid_order():
     with pytest.raises(ValidationError, match="order"):
-        ListExperimentResultsArgs(order="random")
+        ListRoundResultsArgs(order="random")
 
 
-def test_list_experiment_results_limit_over_max():
+def test_list_round_results_limit_over_max():
     with pytest.raises(ValidationError, match="limit"):
-        ListExperimentResultsArgs(limit=51)
+        ListRoundResultsArgs(limit=101)
 
 
-def test_get_experiment_result_valid():
-    GetExperimentResultArgs(thesis_id="ema_gap_filter_v2")
+def test_get_round_result_valid():
+    GetRoundResultArgs(research_round_id="job-1-round-3")
 
 
-def test_get_experiment_result_with_detail():
-    GetExperimentResultArgs(thesis_id="ema_gap_filter_v2", detail=True)
+def test_get_round_result_with_detail():
+    GetRoundResultArgs(research_round_id="job-1-round-3", detail=True)
 
 
-def test_get_experiment_result_empty_id():
-    with pytest.raises(ValidationError, match="thesis_id"):
-        GetExperimentResultArgs(thesis_id="")
+def test_get_round_result_empty_id():
+    with pytest.raises(ValidationError, match="research_round_id"):
+        GetRoundResultArgs(research_round_id="")
 
 
 def test_list_rejections_defaults():

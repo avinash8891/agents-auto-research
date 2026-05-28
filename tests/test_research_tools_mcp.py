@@ -185,8 +185,8 @@ def _build_mcp(
         # Same code path a lightweight caller would hit.
         list_past_theses_for_root=None,
         get_past_thesis_for_root=None,
-        list_experiment_results_for_root=None,
-        get_experiment_result_for_root=None,
+        list_round_results_for_root=None,
+        get_round_result_for_root=None,
     )
 
 
@@ -214,8 +214,8 @@ EXPECTED_TOOL_NAMES = {
     "memory_status",
     "list_past_theses",
     "get_past_thesis",
-    "list_experiment_results",
-    "get_experiment_result",
+    "list_round_results",
+    "get_round_result",
     "list_rejections",
     "get_rejection",
     "rejection_pattern_summary",
@@ -368,23 +368,23 @@ def test_get_past_thesis_returns_full_record_from_sqlite(tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-def test_list_experiment_results_handles_empty_db_without_crashing(tmp_path: Path) -> None:
+def test_list_round_results_handles_empty_db_without_crashing(tmp_path: Path) -> None:
     BacktestRunDB(tmp_path / f"{STRATEGY_FAMILY}_backtest_runs.db")
     mcp = _build_mcp(tmp_path)
 
-    text = _invoke(mcp, "list_experiment_results", {"order": "latest", "limit": 5})
+    text = _invoke(mcp, "list_round_results", {"order": "latest", "limit": 5})
 
     assert text  # non-empty string (either JSON payload or "no results" message)
 
 
-def test_get_experiment_result_returns_message_when_thesis_unknown(tmp_path: Path) -> None:
+def test_get_round_result_returns_message_when_round_unknown(tmp_path: Path) -> None:
     BacktestRunDB(tmp_path / f"{STRATEGY_FAMILY}_backtest_runs.db")
     mcp = _build_mcp(tmp_path)
 
     text = _invoke(
         mcp,
-        "get_experiment_result",
-        {"thesis_id": "thesis-that-does-not-exist", "detail": False},
+        "get_round_result",
+        {"research_round_id": "job-1-round-3", "detail": False},
     )
 
     assert text  # tool returns a string; the test that asserts content needs a seeded run
