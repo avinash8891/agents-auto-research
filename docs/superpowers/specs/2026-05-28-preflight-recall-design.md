@@ -1,8 +1,20 @@
-# Pre-Flight Recall, Corpus Synthesis, Semantic Dedup, and Schema Refactor
+# Pre-Flight Recall, Corpus Synthesis, Semantic Dedup, and Schema Refactor — REFERENCE
 
 **Date:** 2026-05-28
-**Status:** Design — grounded against actual code (`research_prompts.py`, `research_conductor.py`, `thesis_validator.py`, `research_memory.py`, `research_types.py`, `backtest_run_db.py`, `autoresearch_research.py`, `strategies/ema/prompt.py`, `diagnostic_contracts.py`).
-**Scope:** Conductor's thesis-creation path only. Research subagent integration deferred.
+**Status:** **DECOMPOSED into four shippable specs.** This document remains as the unified long-form reference; do not implement directly from it.
+
+**Decomposition:**
+
+| Spec | File | Ships when |
+|---|---|---|
+| **A. Conductor Context Snapshot v1** (deterministic SQL-only context enrichment + landscape + pairs + tool-desc reword) | `2026-05-28-spec-a-context-snapshot-design.md` | First, unconditional |
+| **B. OUTPUT Schema Refactor** (`required_diagnostic_specs`, `evidence_citations`, validator migration) | `2026-05-28-spec-b-output-schema-refactor-design.md` | Parallel with A |
+| **C. Semantic Retrieval + Dedup** (Chroma `thesis_corpus`, two-pass MMR, dedup gate, override) | `2026-05-28-spec-c-semantic-retrieval-dedup-design.md` | After A ships AND telemetry shows the deterministic snapshot doesn't suppress re-litigation |
+| **D. Synthesis Turn** (two-turn flow, lateral-thinking LLM call) | `2026-05-28-spec-d-synthesis-turn-design.md` | After C ships AND telemetry shows the agent still anchors on most-recent prior |
+
+**Why decomposed (after codex agent review):** the unified spec bundled 8+ workstreams. CLAUDE.md rule **E** (one commit, one deliverable). Each shippable spec now has its own success criteria + telemetry contract that determines whether the next spec is justified.
+
+**Scope of this reference:** unchanged. Conductor's thesis-creation path only. Research subagent integration deferred to a future wave.
 
 ---
 
