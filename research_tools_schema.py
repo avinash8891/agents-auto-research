@@ -16,7 +16,7 @@ FINDING_TYPES = (
 
 FINDING_STATUSES = ("unvalidated", "validated", "rejected", "stale")
 
-RESULT_ORDER_VALUES = ("latest", "best")
+RESULT_ORDER_VALUES = ("latest", "best", "worst")
 
 FindingType = Literal[
     "observation",
@@ -29,7 +29,7 @@ FindingType = Literal[
 
 FindingStatus = Literal["unvalidated", "validated", "rejected", "stale"]
 
-ResultOrder = Literal["latest", "best"]
+ResultOrder = Literal["latest", "best", "worst"]
 
 FindingTypeFilter = Literal[
     "",

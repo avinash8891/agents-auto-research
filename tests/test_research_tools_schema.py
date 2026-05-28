@@ -202,9 +202,13 @@ def test_list_experiment_results_valid():
     ListExperimentResultsArgs(order="best", offset=5, limit=20)
 
 
+def test_list_experiment_results_worst_order():
+    ListExperimentResultsArgs(order="worst")
+
+
 def test_list_experiment_results_invalid_order():
     with pytest.raises(ValidationError, match="order"):
-        ListExperimentResultsArgs(order="worst")
+        ListExperimentResultsArgs(order="random")
 
 
 def test_list_experiment_results_limit_over_max():

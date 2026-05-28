@@ -62,7 +62,13 @@ def _dispatch(model_cls: type[BaseModel], kwargs: dict[str, Any]) -> str | None:
 
 
 def _enforce_tool_models(mcp: Any, tool_models: dict[str, type[BaseModel]]) -> None:
-    """Raise TypeError if any registered tool lacks an entry in tool_models."""
+    """Raise TypeError if any registered tool lacks an entry in tool_models.
+
+    Uses mcp._tool_manager._tools (FastMCP internal) because list_tools() is
+    async and cannot be called from a sync build-time check without risking
+    event-loop conflicts. If FastMCP removes this internal, the test suite will
+    catch it immediately via test_enforce_tool_models_raises_for_unregistered_tool.
+    """
     registered = set(mcp._tool_manager._tools.keys())
     modeled = set(tool_models.keys())
     missing = registered - modeled
