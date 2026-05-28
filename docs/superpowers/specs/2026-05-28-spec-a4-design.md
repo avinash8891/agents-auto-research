@@ -121,26 +121,43 @@ theme_keywords_in_use: (top 12 by attempt count; tail summarized)
   (and N more)
 
 prior_lever_history: (top 12 by recency; structured for overlap detection)
-  - lever: stop_distance
-    config_keys: [min_stop_distance_pct, max_stop_distance_pct]
-    direction: tightened
+  - config_keys: [ema_length]
+    direction: tighten          # derived by validator from key prefix
+                                # convention + value-change sign (see
+                                # `_direction_from_value_change` in
+                                # thesis_validator.py:576)
     prior_thesis_id: job-11-round-2-attempt-1
     outcome: killed
-  - lever: stop_distance
-    config_keys: [min_stop_distance_pct]
-    direction: loosened
+  - config_keys: [rr_ratio]
+    direction: widen
     prior_thesis_id: job-9-round-4-attempt-2
     outcome: kept
   (and N more)
-  # Overlap check: if any key in your config_changes intersects a
-  # `config_keys` entry above AND your direction differs, populate
-  # `prior_lever_outcomes` citing that prior_thesis_id.
+  # Overlap check: if any key in your config_changes appears in a
+  # `config_keys` entry above AND your direction (derived from your
+  # value vs family-baseline) differs from the prior's `direction`,
+  # populate `prior_lever_outcomes` citing that `prior_thesis_id`.
+  # No "lever concept" mapping is needed — the config key IS the
+  # canonical identifier; `direction` is derived deterministically
+  # from key naming convention (min_/max_/floor_/ceiling_/cap_) plus
+  # value-change sign, falling back to text tokens.
 
-strategy_config_keys: (valid keys for config_changes; family-baseline schema)
-  - min_stop_distance_pct (float)
-  - use_htf_direction_gate (bool)
-  - htf_timeframe_minutes (int)
-  (and N more)
+strategy_config_keys: (the family's `allowed_config_keys` frozenset
+                      — for EMA, source: strategies/ema/research.py:63)
+  - ema_length (int)
+  - timeframe_long (str)
+  - timeframe_short (str)
+  - rr_ratio (float)
+  - direction_bias (str)
+  - entry_cutoff_time (str)
+  - max_trades_per_day (int)
+  - gap_filter (bool)
+  - gap_pct (float)
+  - use_range_shift (bool)
+  - range_shift_lookback (int)
+  # Keys reachable only via the compiler's primitive-injection layer
+  # (e.g. min_stop_distance_pct, trail_after_r) are NOT in this set —
+  # use requires_code_change=true + requested_primitives for those.
 
 prior_theses_snapshot: (top 20 by recency; for mechanism_lineage references)
   - thesis_id: job-12-round-3-attempt-1
@@ -187,7 +204,20 @@ No LLM bookkeeping.
 
 ## 4. Field-by-field OUTPUT entries
 
-23 schema fields + 4 proposed additions + 1 inner-shape extension.
+**Field accounting** (post-A4 schema, verified against
+`ResearchThesis.model_fields` enumeration on 2026-05-28):
+
+- 35 pre-A4 schema fields
+- − 13 deletions (12 A4a-consolidation drops + `alternatives_considered` replaced; see §9.1)
+- + 2 replacements (`deepest_alternative`, `other_alternatives`)
+- + 4 proposed additions (§4.12)
+- + 1 inner-shape extension to `ExpectedEffect` (§4.8)
+- = **28 fields in the post-A4 schema**
+
+Of those 28:
+- 25 render in §4 as LLM-facing OUTPUT entries.
+- 3 omitted into `_PROMPT_OMITTED_FIELDS`: `thesis_id` (§4.1), `strategy_family` (§4.1), `required_diagnostic_specs` (§4.10).
+- §4.11 `validator_challenge` is a meta-field outside the `ResearchThesis` schema.
 
 ### 4.1 Identity — system-injected, omitted from OUTPUT
 
@@ -758,12 +788,14 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        appear in `strategy_config_keys`. Rejection codes:
                          structural_config_changes_required
                          structural_config_changes_unknown_key
-    Example:     {"min_stop_distance_pct": 0.0035,
-                  "use_htf_direction_gate": true,
-                  "htf_timeframe_minutes": 60}
+    Example:     {"ema_length": 21,
+                  "rr_ratio": 2.5,
+                  "gap_filter": true}
                  # All three keys are from the §3.2 ROUND CONTEXT
-                 # `strategy_config_keys` sample — keys outside that list
-                 # are rejected.
+                 # `strategy_config_keys` sample (EMA's `allowed_config_keys`).
+                 # Keys reachable only via primitive injection (e.g.
+                 # min_stop_distance_pct, trail_after_r) require
+                 # requires_code_change=true + requested_primitives.
 ```
 
 ```
@@ -995,7 +1027,9 @@ the live `validate_thesis_dict(...)` call, and every rule declared in
 A negative-fixture directory `tests/fixtures/conductor_prompt_rejections/`
 holds one fixture per rejection code, each minimally violating one rule.
 
-Canonical positive fixture shape:
+Canonical positive fixture shape — note `requires_code_change: true` with
+empty `config_changes`, since HTF gating is a new primitive (not in EMA's
+`allowed_config_keys`):
 
 ```json
 {
@@ -1046,9 +1080,9 @@ Canonical positive fixture shape:
   ],
   "prior_lever_outcomes": [],
   "mechanism_lineage": [],
-  "config_changes": {"use_htf_direction_gate": true, "htf_timeframe_minutes": 60},
-  "requires_code_change": false,
-  "requested_primitives": [],
+  "config_changes": {},
+  "requires_code_change": true,
+  "requested_primitives": ["htf_direction_gate"],
   "source_code_verification": "strategies/ema/signals.py:apply_htf_gate — gate evaluated before stop_distance check; placing here ensures filter sees raw signal.",
   "if_this_fails_next_thesis": "If this kills, next round tests ADX>30 entry filter in signal_quality dimension (deepest_alternative.mechanism). Drops the regime-overlay theme; switches to threshold-based filtering.",
   "confidence_distribution": {"data": "direct", "literature": "speculative", "precedent": "proxy"}
@@ -1170,8 +1204,22 @@ Checks in CI via `scripts/check_prompt_drift.py`:
 ## 9. Migration plan — single PR
 
 1. **`research_types.py`**:
+   - **Schema deletions** (per A4a consolidation; no backcompat). Remove from `ResearchThesis`:
+     - `causal_cluster`
+     - `dominant_cluster_overlap`
+     - `closest_prior_theses_considered`   (intent absorbed by new `mechanism_lineage`)
+     - `orthogonality_defense`             (intent absorbed by strengthened `deepest_alternative.tiebreaker`)
+     - `evidence_strength`                 (superseded by new `confidence_distribution`)
+     - `falsification_or_alternative`      (intent absorbed by strengthened `disqualifiers` contract)
+     - `expected_reuse_across_future_theses`
+     - `evidence`                          (legacy list[str]; replaced by `evidence_citations`)
+     - `base_contract_id`                  (legacy compat)
+     - `base_config_path`                  (legacy compat)
+     - `required_diagnostics`              (legacy untyped; replaced by `required_diagnostic_specs`)
+     - `why_not_overfit`                   (intent absorbed by strengthened `disqualifiers` overfit-marker rule)
+     - `alternatives_considered`           (replaced by `deepest_alternative` + `other_alternatives`)
    - Add `TiebreakerRef`, `DeepestAlternative` models; extend `Alternative` with `lighter_tiebreaker: TiebreakerRef | None`.
-   - Add `deepest_alternative` and `other_alternatives` to `ResearchThesis`; delete `alternatives_considered`.
+   - Add `deepest_alternative` and `other_alternatives` to `ResearchThesis`.
    - Add `ExpectedRuntimeSignal`, `ConfidenceDistribution` models.
    - Add fields `expected_runtime_signal`, `mechanism_lineage`, `if_this_fails_next_thesis`, `confidence_distribution`.
    - Redesign `ExpectedEffect`: replace `threshold` with `magnitude_range: tuple[float,float] | None`; keep `unit`; conditional rules per §4.8.
@@ -1189,8 +1237,26 @@ Checks in CI via `scripts/check_prompt_drift.py`:
    - `confidence_distribution` greenfield exemption when `dimensions_already_explored` is empty.
    - Replace all hardcoded marker/enum prose-references with imports from the new constants.
 3. **`research_tools_mcp.py`**:
-   - Add `read_strategy_source(path: str) -> str` MCP tool exposing read access to the strategy source tree under a path-prefix allowlist (`strategies/`, `engine/`, `indicators/`).
-   - Every call appends the resolved absolute path to a per-attempt `read_paths` set captured by the conductor runner.
+   - Add `read_strategy_source(path: str) -> str` MCP tool. Sandbox policy:
+     - **Path-prefix allowlist** (relative to repo root, resolved before
+       comparison): `strategies/`, `compiler_*.py`, `research_types.py`,
+       `trace_sdk.py`. Anything outside this set returns
+       `"error: path not in allowlist"` without disclosing whether the path
+       exists.
+     - **Path resolution**: `pathlib.Path(repo_root / path).resolve(strict=True)`.
+       The resolved path must be `is_relative_to(repo_root)` AND start with
+       one of the allowlist prefixes. Rejects `../` traversal and symlinks
+       escaping the repo by construction (resolve + relative-to check).
+     - **Symlink handling**: `strict=True` resolves symlinks; the target
+       (post-resolution) must satisfy the allowlist. Symlinks pointing
+       outside the repo or into non-allowlisted prefixes fail closed.
+     - **Size cap**: reject files >200 KB with `"error: file exceeds size cap"`.
+     - **Output**: the file contents as UTF-8 string; non-text files (binary
+       sniff via NUL byte check in first 8 KB) return `"error: binary file"`.
+   - Every successful call appends the resolved relative path (string) to a
+     per-attempt `read_paths` set captured by the conductor runner (§4 below).
+   - The tool emits structured trace events `{tool: "read_strategy_source",
+     path: "...", bytes: N}` for audit.
 4. **Trace plumbing** for §4.10 path-level gate:
    - `research_types.py`: extend `ConductorResult` with `read_paths: frozenset[str] = frozenset()`.
    - `research_conductor.py` (or wherever the MCP tool-call observer lives): capture every `read_strategy_source` invocation's `path` argument into the conductor's per-attempt accumulator; emit it into `ConductorResult.read_paths` on return.
