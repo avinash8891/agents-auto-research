@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-05-28-mcp-tool-arg-validation-design.md
+  s_0f03028903c317::t_683d5db7c5970e 1-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "03caa36c04d1dd7f45d34a5b1c9a3a1cefc96292",
+  "prompts": {},
+  "sessions": {
+    "s_0f03028903c317": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "120fd87e-e766-437f-b6ab-cb4825eafbf0",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
