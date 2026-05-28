@@ -228,14 +228,16 @@ def _build_lookups(
 def _plan_renames(
     root: Path,
     mapping: dict[tuple[str, int, int], set[str]],
-    all_round_ids: set[str],
     reverse: bool,
 ) -> tuple[list[tuple[Path, Path]], list[Path]]:
     """Return ``(planned_renames, unknown_dirs)``.
 
-    Idempotency:
-    - Forward: if subdir already equals a known round_id, skip.
-    - Reverse: if subdir already equals a known thesis_id for that (job, round), skip.
+    Idempotency is scoped to the directory's own ``(job, round)``: forward
+    skips when the subdir already equals ``job-{job}-round-{round}``; reverse
+    skips when it equals a thesis_id known for that ``(job, round)``. Global
+    membership in ``all_round_ids`` is intentionally NOT a skip signal — a
+    thesis_id literally named ``job-1-round-1`` appearing under
+    ``job-2/round-3`` must still migrate.
     """
     forward_lookup, reverse_lookup = _build_lookups(mapping)
 
@@ -245,9 +247,15 @@ def _plan_renames(
 
     for job_id, round_number, sub in _iter_experiment_subdirs(root):
         name = sub.name
+        # The expected canonical round-id for THIS directory's parent
+        # (job, round). Used to detect "already migrated" without misfiring
+        # on a thesis_id that happens to look like another round's id (e.g.
+        # thesis_id "job-1-round-1" appearing under job-2/round-3 would
+        # otherwise be globally-skipped and never migrated).
+        expected_round_id = f"job-{job_id}-round-{round_number}"
         if not reverse:
-            if name in all_round_ids:
-                continue  # already migrated
+            if name == expected_round_id:
+                continue  # already migrated for this (job, round)
             target_round_id = forward_lookup.get((name, job_id, round_number))
             if target_round_id is None:
                 unknowns.append(sub)
@@ -268,8 +276,18 @@ def _plan_renames(
     return renames, unknowns
 
 
+_MIGRATION_MARKER_PREFIX = ".migrated_from_thesis_id__"
+
+
 def _execute_renames(renames: list[tuple[Path, Path]]) -> int:
-    """Apply renames. Returns count actually renamed. Raises OSError on failure."""
+    """Apply renames. Returns count actually renamed. Raises OSError on failure.
+
+    Drops a ``.migrated_from_thesis_id__{old_name}`` marker file in each
+    renamed directory so downstream code (compiler_builder's legacy-dir
+    guardrail) can distinguish a migration-touched dir — which may
+    legitimately contain a thesis.json carried over from the legacy
+    layout — from an actually-stale builder artifact dir.
+    """
     applied = 0
     for old, new in renames:
         if not old.exists():
@@ -279,6 +297,15 @@ def _execute_renames(renames: list[tuple[Path, Path]]) -> int:
             logger.error("refusing to rename %s -> %s: target already exists", old, new)
             raise OSError(f"target exists: {new}")
         old.rename(new)
+        marker = new / f"{_MIGRATION_MARKER_PREFIX}{old.name}"
+        try:
+            marker.touch(exist_ok=True)
+        except OSError:
+            # Marker is advisory — failure to drop it shouldn't undo the
+            # successful rename. compiler_builder's guardrail will then
+            # treat the dir as legacy-with-builder-artifacts (loud failure),
+            # which is the safer fallback.
+            pass
         applied += 1
         print(f"RENAMED {old} -> {new}")
     return applied
@@ -294,6 +321,10 @@ def _rewrite_db_paths(db_paths: list[Path], renames: list[tuple[Path, Path]]) ->
     after rename, and BacktestRunDB._load → _existing_artifact_file rejects
     them as missing — losing trade/diagnostic artifacts post-migration.
     Returns the number of rows updated (sum across columns).
+
+    Match is performed in Python (not SQL LIKE) so directory names containing
+    ``_`` or ``%`` cannot accidentally rewrite unrelated rows via the SQL
+    wildcard expansion.
     """
     if not renames:
         return 0
@@ -303,21 +334,19 @@ def _rewrite_db_paths(db_paths: list[Path], renames: list[tuple[Path, Path]]) ->
         conn = sqlite3.connect(db_path)
         try:
             for col in _ARTIFACT_PATH_COLUMNS:
-                for old_str, new_str in substitutions:
-                    like = f"{old_str}%"
-                    rows = list(
-                        conn.execute(
-                            f"SELECT run_id, {col} FROM backtest_runs WHERE {col} LIKE ?",  # noqa: S608
-                            (like,),
-                        )
-                    )
-                    for run_id, existing in rows:
-                        rewritten = new_str + existing[len(old_str) :]
-                        conn.execute(
-                            f"UPDATE backtest_runs SET {col} = ? WHERE run_id = ?",  # noqa: S608
-                            (rewritten, run_id),
-                        )
-                        updated += 1
+                rows = list(conn.execute(f"SELECT run_id, {col} FROM backtest_runs"))  # noqa: S608
+                for run_id, existing in rows:
+                    if not isinstance(existing, str) or not existing:
+                        continue
+                    for old_str, new_str in substitutions:
+                        if existing == old_str or existing.startswith(old_str + "/"):
+                            rewritten = new_str + existing[len(old_str) :]
+                            conn.execute(
+                                f"UPDATE backtest_runs SET {col} = ? WHERE run_id = ?",  # noqa: S608
+                                (rewritten, run_id),
+                            )
+                            updated += 1
+                            break
             conn.commit()
         finally:
             conn.close()
@@ -383,7 +412,7 @@ def main(argv: list[str] | None = None) -> int:
 
     logger.info("using DB(s): %s", ", ".join(str(p) for p in db_paths))
 
-    mapping, all_round_ids = _load_mapping(db_paths)
+    mapping, _all_round_ids = _load_mapping(db_paths)
     collisions = _detect_collisions(mapping)
     if collisions:
         print(
@@ -398,7 +427,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        renames, unknowns = _plan_renames(root, mapping, all_round_ids, args.reverse)
+        renames, unknowns = _plan_renames(root, mapping, args.reverse)
     except ValueError as exc:
         # Reverse-lookup duplicate — distinct thesis_ids share the same
         # (research_round_id, job_id, round_number) target.
@@ -418,7 +447,19 @@ def main(argv: list[str] | None = None) -> int:
         except OSError as exc:
             logger.error("rename failed: %s", exc)
             return 2
-        rewritten = _rewrite_db_paths(db_paths, renames)
+        try:
+            rewritten = _rewrite_db_paths(db_paths, renames)
+        except sqlite3.Error as exc:
+            # State is now half-migrated: directories renamed, DB columns
+            # still pointing at old paths. Surface the failure loudly so the
+            # operator can fix the DB (or reverse the migration) instead of
+            # discovering missing artifacts at backtest-load time.
+            logger.error(
+                "DB artifact-path rewrite failed after %d rename(s): %s",
+                applied,
+                exc,
+            )
+            return 2
         print(f"applied {applied} rename(s); rewrote {rewritten} DB artifact path(s)")
         return 0
 

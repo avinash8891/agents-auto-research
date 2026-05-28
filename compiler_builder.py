@@ -588,7 +588,15 @@ def _load_structured_thesis_artifacts(
             has_legacy_builder_artifact = (legacy_dir / "thesis.json").exists() or (
                 legacy_dir / "contract.json"
             ).exists()
-            if has_legacy_builder_artifact:
+            # A dir carrying a migration marker was renamed by
+            # scripts/migrate_experiment_dirs.py and may legitimately contain
+            # thesis.json carried over from the legacy experiments/{thesis_id}/
+            # layout. Such dirs are backtest artifacts, not stale builder
+            # state, so the guardrail must NOT raise on them.
+            migration_marker = any(
+                p.name.startswith(".migrated_from_thesis_id__") for p in legacy_dir.iterdir()
+            )
+            if has_legacy_builder_artifact and not migration_marker:
                 raise RuntimeError(
                     "legacy builder experiment directory is not supported — "
                     f"found `experiments/{research_round_id}/` at {legacy_dir} "

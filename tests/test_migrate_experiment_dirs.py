@@ -316,6 +316,147 @@ class TestCliSmoke:
         assert THESIS_ID_A not in row[2]
         assert round_id in row[2]
 
+    def test_apply_drops_migration_marker_in_renamed_dir(self, tmp_path: Path) -> None:
+        """Each renamed dir must contain a ``.migrated_from_thesis_id__{old}``
+        marker so compiler_builder's legacy-dir guardrail can distinguish a
+        migration-touched dir from stale builder state."""
+        root = tmp_path / "runtime_root"
+        root.mkdir()
+        db_path = tmp_path / "ema_backtest_runs.db"
+        conn = _make_db(db_path)
+        round_id = "job-12-round-1"
+        _seed(conn, THESIS_ID_A, JOB_ID, round_id, "run-001", round_number=1)
+        conn.close()
+        legacy_dir = _make_experiments_dir(root, JOB_ID, 1, THESIS_ID_A)
+
+        rc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--root",
+                str(root),
+                "--db",
+                str(db_path),
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert rc.returncode == 0
+        new_dir = legacy_dir.parent / round_id
+        assert (new_dir / f".migrated_from_thesis_id__{THESIS_ID_A}").exists()
+
+    def test_thesis_id_named_like_other_round_id_still_migrates(self, tmp_path: Path) -> None:
+        """A thesis_id literally named like another (job, round)'s
+        research_round_id must still migrate when it lives under a different
+        (job, round). Global all_round_ids membership is NOT a skip signal."""
+        root = tmp_path / "runtime_root"
+        root.mkdir()
+        db_path = tmp_path / "ema_backtest_runs.db"
+        conn = _make_db(db_path)
+        # Round 1 of job 1 has a real round_id "job-1-round-1".
+        _seed(conn, "real_thesis_v1", 1, "job-1-round-1", "run-001", round_number=1)
+        # Round 3 of job 2 has a thesis_id that LOOKS like job-1-round-1.
+        round_id_for_collider = "job-2-round-3"
+        _seed(
+            conn,
+            "job-1-round-1",
+            2,
+            round_id_for_collider,
+            "run-002",
+            round_number=3,
+        )
+        conn.close()
+        # Create the colliding-named thesis dir under job-2/round-3.
+        collider_dir = _make_experiments_dir(root, 2, 3, "job-1-round-1")
+
+        rc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--root",
+                str(root),
+                "--db",
+                str(db_path),
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert rc.returncode == 0
+        # The dir should be planned for rename, NOT silently skipped.
+        assert "WOULD RENAME" in rc.stdout
+        assert str(collider_dir) in rc.stdout
+        assert round_id_for_collider in rc.stdout
+
+    def test_paths_with_sql_wildcards_do_not_corrupt_unrelated_rows(self, tmp_path: Path) -> None:
+        """A thesis_id containing ``_`` (SQL LIKE wildcard) must not match
+        unrelated artifact-path rows. Rewrite uses Python prefix match, not
+        SQL LIKE, so the wildcard hazard cannot fire."""
+        root = tmp_path / "runtime_root"
+        root.mkdir()
+        db_path = tmp_path / "ema_backtest_runs.db"
+        conn = _make_db(db_path)
+        thesis_with_underscore = "foo_bar"  # underscore is SQL LIKE wildcard.
+        round_id = "job-12-round-1"
+        legacy_dir = _make_experiments_dir(root, JOB_ID, 1, thesis_with_underscore)
+        trades_path = str(legacy_dir / "trades.csv")
+        # Row that SHOULD be rewritten.
+        conn.execute(
+            "INSERT INTO backtest_runs (run_id, thesis_id, job, "
+            "research_round_id, research_round_number, trades_file) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("run-001", thesis_with_underscore, JOB_ID, round_id, 1, trades_path),
+        )
+        # Sibling path that LIKE-prefix would have falsely matched
+        # (replace the `_` with any other char and the SQL LIKE pattern
+        # `.../experiments/foo_bar%` matches `.../experiments/fooXbar/...`).
+        sibling_path = str(legacy_dir.parent / "fooXbar" / "trades.csv")
+        conn.execute(
+            "INSERT INTO backtest_runs (run_id, thesis_id, job, "
+            "research_round_id, research_round_number, trades_file) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("run-sibling", "fooXbar", 99, "job-99-round-7", 7, sibling_path),
+        )
+        conn.commit()
+        conn.close()
+
+        rc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--root",
+                str(root),
+                "--db",
+                str(db_path),
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert rc.returncode == 0
+
+        conn = sqlite3.connect(db_path)
+        try:
+            target = conn.execute(
+                "SELECT trades_file FROM backtest_runs WHERE run_id = ?",
+                ("run-001",),
+            ).fetchone()
+            sibling = conn.execute(
+                "SELECT trades_file FROM backtest_runs WHERE run_id = ?",
+                ("run-sibling",),
+            ).fetchone()
+        finally:
+            conn.close()
+        # Target row was rewritten.
+        assert round_id in target[0]
+        assert thesis_with_underscore not in target[0]
+        # Sibling row was NOT touched (no wildcard expansion bleed-through).
+        assert sibling[0] == sibling_path
+
     def test_typo_root_exits_3(self, tmp_path: Path) -> None:
         """An explicit --root pointing at a nonexistent path is an operator
         typo, not "nothing to migrate" — exit 3 like the --db typo case."""

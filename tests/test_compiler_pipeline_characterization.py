@@ -208,6 +208,38 @@ def test_build_missing_primitives_ignores_benign_backtest_artifacts(tmp_path: Pa
     assert result["error_code"] == "builder_missing_round_artifacts"
 
 
+def test_build_missing_primitives_ignores_migrated_dir_with_marker(tmp_path: Path) -> None:
+    """When scripts/migrate_experiment_dirs.py renames a legacy
+    experiments/{thesis_id}/ dir to experiments/{research_round_id}/, the
+    thesis.json carried over is a backtest artifact, not stale builder state.
+    The migration drops a .migrated_from_thesis_id__* marker; the guardrail
+    must honor it and NOT raise."""
+    research_round_id = "job-1-round-5"
+    legacy_dir = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-5"
+        / "experiments"
+        / research_round_id
+    )
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    (legacy_dir / "thesis.json").write_text("{}\n")
+    (legacy_dir / ".migrated_from_thesis_id__ema_breakout_v1").touch()
+
+    result = build_missing_primitives(
+        tmp_path,
+        "any-thesis-id",
+        artifact_root=tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-5",
+        research_round_id=research_round_id,
+    )
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "builder_missing_round_artifacts"
+
+
 def test_build_missing_primitives_rejects_unknown_structured_family(tmp_path: Path) -> None:
     round_root = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-6"
     _write_builder_request(round_root, "unknown", family="not-a-real-family")
