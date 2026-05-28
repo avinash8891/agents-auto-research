@@ -442,7 +442,7 @@ def test_build_db_record_sets_round_and_backtest_run_metadata(tmp_path: Path) ->
         details={"profit_factor": 1.4, "trade_count": 12},
         analysis={"trade_analysis": {"verdict": {"status": "accepted", "summary": "ok"}}},
         runtime_config={"ema_length": 7},
-        fallback_experiment_id="fallback",
+        fallback_run_id="fallback",
         state=state,
     )
 
@@ -508,7 +508,7 @@ def test_build_db_record_marks_duplicate_artifacts_invalid(tmp_path: Path) -> No
         },
         analysis={"trade_analysis": {"verdict": {"status": "accepted", "summary": "ok"}}},
         runtime_config={"ema_length": 7},
-        fallback_experiment_id="fallback",
+        fallback_run_id="fallback",
         state=state,
     )
 
@@ -630,7 +630,7 @@ def test_build_db_record_preserves_round_zero_baseline_identity(tmp_path: Path) 
         details={"profit_factor": 1.4, "trade_count": 12},
         analysis={"trade_analysis": {"verdict": {"status": "accepted", "summary": "ok"}}},
         runtime_config={"ema_length": 7},
-        fallback_experiment_id="fallback",
+        fallback_run_id="fallback",
         state=state,
     )
 

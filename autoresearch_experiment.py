@@ -667,7 +667,7 @@ def _build_db_record(
     details: dict[str, Any],
     analysis: dict[str, Any],
     runtime_config: dict[str, Any] | None = None,
-    fallback_experiment_id: str,
+    fallback_run_id: str,
     state: dict[str, Any],
 ) -> BacktestRunRecord:
     contract = _contract_from_sidecar(controller, config)
@@ -706,9 +706,9 @@ def _build_db_record(
     round_id = research_round_id_or_empty(state.get("job", 0), round_number)
     is_baseline = round_number == 0
     backtest_run_id = (
-        f"{round_id}-backtest" if round_id else fallback_experiment_id
+        f"{round_id}-backtest" if round_id else fallback_run_id
     )
-    record_run_id = backtest_run_id or fallback_experiment_id
+    record_run_id = backtest_run_id or fallback_run_id
     record = BacktestRunRecord(
         run_id=record_run_id,
         thesis_id=contract.thesis_id if contract else Path(config).stem,
@@ -957,7 +957,7 @@ def log_experiment_result(
         details=details,
         analysis=analysis,
         runtime_config=runtime_config,
-        fallback_experiment_id=entry["run_id"],
+        fallback_run_id=entry["run_id"],
         state=state,
     )
     setattr(record, "_asi_export", asi)
@@ -1421,7 +1421,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             if not isinstance(runtime_config, dict) or not runtime_config:
                 runtime_config = getattr(controller.ctx, "latest_config_contents", {}) or {}
             _record_baseline_checkpoint(controller, details, runtime_config)
-        _finalize_experiment(controller, config, metric, decision, verdict)
+        _finalize_round(controller, config, metric, decision, verdict)
         return 0
     finally:
         controller.clear_transient_context()
@@ -1431,7 +1431,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             controller.write_state(state)
 
 
-def _finalize_experiment(
+def _finalize_round(
     controller: "AutoresearchController",
     config: str,
     metric: float,
