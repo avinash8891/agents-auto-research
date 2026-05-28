@@ -1,0 +1,25 @@
+tests/test_migrate_experiment_dirs.py
+  s_1dc1911c45a5a7::t_33f8578c32b954 509
+  s_1dc1911c45a5a7::t_339ed3184fb420 519-521
+  s_1dc1911c45a5a7::t_de64a100d283c7 460-508,510-518,522-548
+scripts/migrate_experiment_dirs.py
+  s_1dc1911c45a5a7::t_5121231d3ee731 343-345,360-364
+  s_1dc1911c45a5a7::t_561b1ff91564f8 468
+  s_1dc1911c45a5a7::t_e75c7d42596733 282,285-295,305-313,315-324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ce96722af5a8dfef13364b349bfd1e744bfb20b5",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
