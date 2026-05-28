@@ -272,9 +272,7 @@ def _build_research_tools_mcp(
         order: str = "latest", limit: int = 10, job_id: int | None = None
     ) -> str:
         """List a bounded index of round (= backtest) outcomes."""
-        err = _dispatch(
-            ListRoundResultsArgs, {"order": order, "limit": limit, "job_id": job_id}
-        )
+        err = _dispatch(ListRoundResultsArgs, {"order": order, "limit": limit, "job_id": job_id})
         if err:
             return err
         effective_job = job_id if job_id is not None else current_job
@@ -282,9 +280,7 @@ def _build_research_tools_mcp(
             return _list_round_results_for_root(
                 root, job_id=effective_job, order=order, limit=limit
             )
-        return list_round_results_for_root(
-            root, job_id=effective_job, order=order, limit=limit
-        )
+        return list_round_results_for_root(root, job_id=effective_job, order=order, limit=limit)
 
     @mcp.tool()
     async def get_round_result(research_round_id: str, detail: bool = False) -> str:

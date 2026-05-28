@@ -16,13 +16,18 @@ from agent_infra import _run_coroutine_sync
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import get_round_usage, reset_round_usage
 from autoresearch_logging import get_logger
-from research_memory import _palace_status
+from research_memory import (
+    _palace_status,
+)
 from research_memory import get_past_thesis as get_past_thesis_for_root
 from research_memory import get_round_result as get_round_result_for_root
 from research_memory import list_past_theses as list_past_theses_for_root
 from research_memory import list_round_results as list_round_results_for_root
-from research_memory import round_result_not_found_envelope
-from research_memory import save_research_finding, search_research_findings
+from research_memory import (
+    round_result_not_found_envelope,
+    save_research_finding,
+    search_research_findings,
+)
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,

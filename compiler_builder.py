@@ -585,10 +585,9 @@ def _load_structured_thesis_artifacts(
                 return thesis, contract, thesis_path, contract_path
         legacy_dir = current_root / "experiments" / research_round_id
         if legacy_dir.exists():
-            has_legacy_builder_artifact = (
-                (legacy_dir / "thesis.json").exists()
-                or (legacy_dir / "contract.json").exists()
-            )
+            has_legacy_builder_artifact = (legacy_dir / "thesis.json").exists() or (
+                legacy_dir / "contract.json"
+            ).exists()
             if has_legacy_builder_artifact:
                 raise RuntimeError(
                     "legacy builder experiment directory is not supported — "

@@ -31,18 +31,14 @@ def _seed_backtest(
     record = BacktestRunRecord(
         run_id=f"run-{research_round_id_value}",
         thesis_id=thesis_id,
-        config_path=(
-            f"runtime/jobs/job-{job}/research/round-{round_number}/selected_config.json"
-        ),
+        config_path=(f"runtime/jobs/job-{job}/research/round-{round_number}/selected_config.json"),
         runtime_config={"ema_length": 12},
         code_commit="abc1234",
         data_hash="datahash",
         train_metrics={"sharpe": 1.3, "profit_factor": profit_factor, "max_drawdown": -0.15},
         validation_metrics={"profit_factor": profit_factor, "pct_profitable_windows": 0.62},
         trade_count=84,
-        trades_file=(
-            f"runtime/jobs/job-{job}/research/round-{round_number}/backtest/trades.csv"
-        ),
+        trades_file=(f"runtime/jobs/job-{job}/research/round-{round_number}/backtest/trades.csv"),
         strategy_events_file=(
             f"runtime/jobs/job-{job}/research/round-{round_number}/backtest/"
             "strategy_events.parquet"
@@ -183,22 +179,10 @@ def test_same_thesis_id_across_rounds_produces_distinct_artifact_dirs(
     # production constructs the post-migration canonical path, not the legacy
     # thesis_id-keyed path that would collide across rounds sharing a thesis.
     exp_root_round_1 = (
-        tmp_path
-        / "runtime"
-        / "jobs"
-        / "job-1"
-        / "research"
-        / "round-1"
-        / "experiments"
+        tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-1" / "experiments"
     )
     exp_root_round_2 = (
-        tmp_path
-        / "runtime"
-        / "jobs"
-        / "job-1"
-        / "research"
-        / "round-2"
-        / "experiments"
+        tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-2" / "experiments"
     )
     experiment_dir_1 = exp_root_round_1 / rrid_1
     experiment_dir_2 = exp_root_round_2 / rrid_2

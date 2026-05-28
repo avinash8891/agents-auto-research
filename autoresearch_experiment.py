@@ -33,8 +33,7 @@ from autoresearch_constants import (
 from autoresearch_logging import get_logger
 from autoresearch_paths import path_within_allowed_roots, resolve_config_path
 from autoresearch_planning import build_research_failure_state
-from autoresearch_runtime_paths import research_round_backtest_root
-from autoresearch_runtime_paths import research_round_id_or_empty
+from autoresearch_runtime_paths import research_round_backtest_root, research_round_id_or_empty
 from autoresearch_state import (
     read_state,
     write_state,
@@ -705,9 +704,7 @@ def _build_db_record(
     round_number = _coerce_research_round_number(state)
     round_id = research_round_id_or_empty(state.get("job", 0), round_number)
     is_baseline = round_number == 0
-    backtest_run_id = (
-        f"{round_id}-backtest" if round_id else fallback_run_id
-    )
+    backtest_run_id = f"{round_id}-backtest" if round_id else fallback_run_id
     record_run_id = backtest_run_id or fallback_run_id
     record = BacktestRunRecord(
         run_id=record_run_id,

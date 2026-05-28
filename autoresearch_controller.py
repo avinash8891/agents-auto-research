@@ -33,9 +33,7 @@ from autoresearch_experiment import parse_metric as _round_parse_metric
 from autoresearch_experiment import parse_result_json as _round_parse_result_json
 from autoresearch_experiment import run_command as _round_run_command
 from autoresearch_experiment import run_experiment as _round_run_experiment
-from autoresearch_experiment import (
-    sanitize_duplicate_entries as _round_sanitize_duplicate_entries,
-)
+from autoresearch_experiment import sanitize_duplicate_entries as _round_sanitize_duplicate_entries
 from autoresearch_logging import get_logger
 from autoresearch_orchestration import (
     apply_forced_baseline_rerun as _orchestration_apply_forced_baseline_rerun,

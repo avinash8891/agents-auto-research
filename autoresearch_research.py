@@ -36,8 +36,7 @@ from autoresearch_orchestration import (
 )
 from autoresearch_paths import resolve_config_path
 from autoresearch_planning import build_research_failure_state
-from autoresearch_runtime_paths import research_round_id_or_empty
-from autoresearch_runtime_paths import research_round_root
+from autoresearch_runtime_paths import research_round_id_or_empty, research_round_root
 from autoresearch_state import (
     BacktestResultRecord,
     read_state,
