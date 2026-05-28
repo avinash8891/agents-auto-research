@@ -36,7 +36,9 @@ OUTPUT section. No deprecation, no A/B rendering.
 
 ## 3. Per-field entry template
 
-Every field in the spec's §4 follows this fixed template.
+Every field in the spec's §4 follows this fixed authoring template. The spec
+keeps the long labels for reviewability; the LLM-facing renderer compresses
+them using the §3.4 compact syntax.
 
 ```
 - <field_name>
@@ -85,6 +87,57 @@ needed by OUTPUT fields.
 The LLM does not emit IDs inside `evidence_citations`. When a tiebreaker needs
 to cite evidence, use positional references: `citation_1`, `citation_2`, etc.,
 matching the order of `evidence_citations` in this same JSON object.
+
+## 3.4 Compact LLM Rendering Syntax
+
+The rendered OUTPUT prompt uses compact labels, not the long authoring labels.
+This compresses repeated syntax without dropping guidance. Label mapping:
+
+```text
+T=Type
+F=Format
+S=Source set
+Cap=Token cap
+Req=Required
+M=Meaning
+G=Producer guidance
+Ex=Example
+Shape=Inner shape
+```
+
+Each rendered field MUST include `T`, `F`, `S`, `Cap`, `Req`, `M`, `G`, and
+`Ex`. Typed-object fields MUST also include `Shape`. `G` is mandatory; do not
+drop producer guidance to save tokens.
+
+Rendered form:
+
+```text
+field_name
+T=...; F=...; S=...; Cap=...; Req=...
+Shape={...}  # typed-object fields only
+M=...
+G=...
+Ex=...
+```
+
+Example compact render:
+
+```text
+hypothesis
+T=str; F=one sentence; S=free; Cap<=40 words/300 chars; Req=always.
+M=Core claim: what should happen and under what conditions.
+G=State the mechanism, not the parameter; avoid pure config-tuning claims.
+Ex="Adding a 1-hour direction gate filters out counter-trend 5-min pullbacks."
+```
+
+Compression rules:
+
+- Remove repeated prose scaffolding, not field semantics.
+- Keep one concrete example per field.
+- Keep every producer-guidance sentence that changes how the LLM should think.
+- Deduplicate only globally shared instructions already stated in §3.1-§3.3.
+- Do not render field accounting, migration items, success criteria, validator
+  rules, rejection codes, or implementation notes.
 
 ---
 
@@ -848,9 +901,10 @@ Producer guidance: ≥1 web_search entry... (DOCTRINE: Evidence)
 ## 7. Programmatic Rendering Contract
 
 The renderer emits `prompts/conductor_output_section.md` from this spec's field
-entries and `ResearchThesis.model_fields`. It omits validator rule prose and
-round-specific context blocks. Rejection codes never render in this OUTPUT
-section; A4c owns the validation sidecar.
+entries and `ResearchThesis.model_fields`, using the compact LLM syntax in
+§3.4. The authoring template remains verbose; the rendered prompt is compact.
+It omits validator rule prose and round-specific context blocks. Rejection
+codes never render in this OUTPUT section; A4c owns the validation sidecar.
 
 ## 8. Migration Items Owned Here
 
@@ -867,6 +921,10 @@ section; A4c owns the validation sidecar.
 ## 9. Success Criteria
 
 - Every LLM-facing `ResearchThesis` field has a complete template entry.
+- Every rendered field has compact labels `T/F/S/Cap/Req/M/G/Ex`; typed-object
+  fields also have `Shape`.
+- Every rendered field preserves producer guidance (`G`) and one concrete
+  example (`Ex`).
 - Every typed-object field has an `Inner shape:` slot.
 - The worked example includes every always-required field and every conditional
   field that fires for the fixture context.

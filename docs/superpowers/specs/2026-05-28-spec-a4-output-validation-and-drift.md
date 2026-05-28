@@ -203,8 +203,9 @@ script `scripts/render_output_schema.py`. The script:
 
 - Introspects `ResearchThesis.model_fields`.
 - For each field, reads the Pydantic type annotation, default, and `Field(description=...)`.
-- Renders each field per A4a's template and category order, omitting validator
-  rule prose from the LLM-facing prompt.
+- Renders each field per A4a's compact LLM syntax (`T/F/S/Cap/Req/M/G/Ex`,
+  plus `Shape` for typed objects) and category order, omitting validator rule
+  prose from the LLM-facing prompt.
 - Renders `EVIDENCE_SOURCES` (full enum) and `EVIDENCE_SOURCES_FOR_DIVERSITY_GATE` (subset) as two distinct lines under `evidence_citations`.
 - Resolves enum/marker lists by importing constants (`PRIOR_LEVER_OUTCOMES`, `OVERFIT_DISQUALIFIER_MARKERS`, etc.) — never inlines them in prose.
 - Emits `prompts/conductor_output_section.md` (LLM-facing) and `prompts/conductor_output_rules.json` (validator/test machine source). Rejection codes appear in the sidecar only.
@@ -231,7 +232,8 @@ code.
 - Add `prompt_rules.py` exposing `iter_prompt_declared_rules()`.
 - Extend `scripts/check_prompt_drift.py` for schema-prompt parity,
   validator-sidecar parity, no-rule-leakage-in-prompt, category ordering,
-  constants-in-prompt, schema-version stamp, and sidecar freshness.
+  compact-slot completeness, constants-in-prompt, schema-version stamp, and
+  sidecar freshness.
 - Add positive and negative prompt fixtures; each negative fixture trips exactly
   its named rejection code.
 - Thread attempt trace data needed by process-tier predicates, including
@@ -248,12 +250,16 @@ Checks in CI via `scripts/check_prompt_drift.py`:
 3. The rendered OUTPUT prompt contains no `Validator rule:` lines and no
    rejection-code catalogue.
 4. Referenced-field categories render before referencing-field categories.
-5. Every enum/marker list rendered in OUTPUT comes from a tuple/frozenset
+5. Every rendered field contains compact slots `T`, `F`, `S`, `Cap`, `Req`,
+   `M`, `G`, and `Ex`; every typed-object field also contains `Shape`.
+6. Every rendered field preserves producer guidance in `G`; empty or
+   title-only guidance fails drift.
+7. Every enum/marker list rendered in OUTPUT comes from a tuple/frozenset
    constant, not prose-only duplication.
-6. `_build_conductor_system_prompt` includes a schema-version stamp computed
+8. `_build_conductor_system_prompt` includes a schema-version stamp computed
    from `ResearchThesis.model_fields` and the rules sidecar hash.
-7. The checked-in rules sidecar matches fresh regeneration.
-8. DOCTRINE prose contains no `ResearchThesis.model_fields` names and no
+9. The checked-in rules sidecar matches fresh regeneration.
+10. DOCTRINE prose contains no `ResearchThesis.model_fields` names and no
    `-> see <field>` / `→ see <field>` references.
 
 ## 8. Success Criteria
