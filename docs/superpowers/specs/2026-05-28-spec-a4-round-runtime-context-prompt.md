@@ -20,7 +20,7 @@ This spec owns:
 - `ROUND CONTEXT`
 - `RECENT REJECTIONS`
 - Runtime sources for prior theses, prior lever history, diagnostics paths,
-  theme-keyword overlap signals, and citation-id conventions.
+  and theme-keyword overlap signals.
 
 This spec does not own JSON field shapes or validator rejection codes.
 
@@ -107,13 +107,6 @@ theme_keywords_overlap_signal:
   # Self-check: emit your theme_keywords; if ANY token matches an entry in
   # `theme_keywords_in_use` above, `novel_connection` is REQUIRED at emit.
   # The validator runs this same check post-emit using the rendered list.
-
-citation_id_convention:
-  # The validator assigns positional ids citation_1, citation_2, ... to
-  # entries of `evidence_citations` by array position. Reference these in
-  # `deepest_alternative.tiebreaker.value` (and other tiebreakers). No
-  # ROUND CONTEXT key carries them — they are determined by your own
-  # emission order.
 ```
 
 Size caps are hard. The renderer sorts each list by attempt count (or

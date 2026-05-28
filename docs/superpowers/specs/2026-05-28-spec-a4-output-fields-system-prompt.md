@@ -81,12 +81,11 @@ Some `Required:` and `Source set:` lines refer to runtime keys such as
 Their rendered prompt shape is specified in A4b. This file only names the keys
 needed by OUTPUT fields.
 
-## 3.3 Tiebreaker id strategy
+## 3.3 Tiebreaker ID Convention
 
-`evidence_citations` is rendered without an LLM-emitted `id` field. The
-validator assigns positional ids `citation_{i+1}` to each entry by array
-position. `deepest_alternative.tiebreaker.value` references these ids.
-No LLM bookkeeping.
+The LLM does not emit IDs inside `evidence_citations`. When a tiebreaker needs
+to cite evidence, use positional references: `citation_1`, `citation_2`, etc.,
+matching the order of `evidence_citations` in this same JSON object.
 
 ---
 
@@ -307,8 +306,8 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        tiebreaker must reference a target you committed to in
                        this same thesis: a citation by positional id
                        (`citation_1`, `citation_2`, ... corresponding to the
-                       order you emit `evidence_citations` — see ROUND CONTEXT
-                       `citation_id_convention`), OR a `disqualifiers[i].name`,
+                       order you emit `evidence_citations`), OR a
+                       `disqualifiers[i].name`,
                        OR a `mechanism_dimension` from the enum. The why_rejected
                        prose can paraphrase; the tiebreaker must resolve by
                        exact match.
