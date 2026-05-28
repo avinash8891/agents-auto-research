@@ -1,0 +1,22 @@
+docs/superpowers/specs/2026-05-28-spec-a4-round-runtime-context-prompt.md
+  s_8fcfc7baeb3c2c::t_3a8091be9ff53c 23
+docs/superpowers/specs/2026-05-28-spec-a4-output-fields-system-prompt.md
+  s_8fcfc7baeb3c2c::t_bedb561c8ba908 84,86-88
+  s_8fcfc7baeb3c2c::t_d4ee43b2979f06 309-310
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c559139d7f416e64751745ead0a64796aec7d479",
+  "prompts": {},
+  "sessions": {
+    "s_8fcfc7baeb3c2c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6f7f-f4de-7711-97d9-cb7f3b8bf716",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
