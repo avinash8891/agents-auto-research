@@ -1,0 +1,24 @@
+autoresearch_research.py
+  s_1dc1911c45a5a7::t_39752053dd829a 1018
+  s_1dc1911c45a5a7::t_11662567ec910c 1065
+  s_1dc1911c45a5a7::t_28147cb041bd11 992
+  s_1dc1911c45a5a7::t_c2abb9b8eeae63 1104
+agent_prompts.py
+  s_1dc1911c45a5a7::t_ba69f525ce99a2 103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b85259b54af0c2e245296390a0dfd3e772422eb5",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
