@@ -152,9 +152,16 @@ def test_build_missing_primitives_requires_round_builder_request_artifacts(tmp_p
 
 
 def test_build_missing_primitives_rejects_legacy_experiment_artifacts(tmp_path: Path) -> None:
-    thesis_id = "legacy"
+    research_round_id = "job-1-round-5"
     legacy_dir = (
-        tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-5" / "experiments" / thesis_id
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-5"
+        / "experiments"
+        / research_round_id
     )
     legacy_dir.mkdir(parents=True, exist_ok=True)
     (legacy_dir / "thesis.json").write_text("{}\n")
@@ -163,8 +170,9 @@ def test_build_missing_primitives_rejects_legacy_experiment_artifacts(tmp_path: 
     with pytest.raises(RuntimeError, match="legacy builder experiment directory"):
         build_missing_primitives(
             tmp_path,
-            thesis_id,
+            "any-thesis-id",
             artifact_root=tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-5",
+            research_round_id=research_round_id,
         )
 
 
