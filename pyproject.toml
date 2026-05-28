@@ -59,6 +59,7 @@ py-modules = [
     "research_prompts",
     "research_subagents",
     "research_tools_mcp",
+    "research_tools_schema",
     "research_types",
     "strategy_event_logger",
     "strategy_family",
