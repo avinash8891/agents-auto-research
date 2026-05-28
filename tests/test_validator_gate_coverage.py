@@ -380,6 +380,29 @@ def test_gate_structural_missing_alternatives_considered() -> None:
     _expect_rejection(thesis, None, "structural_alternatives_considered_invalid")
 
 
+def test_gate_structural_alternatives_considered_rejects_blank_mechanisms() -> None:
+    thesis = _minimal_valid_thesis(
+        alternatives_considered=[
+            {
+                "mechanism": " ",
+                "why_rejected": (
+                    "This is not a real named alternative mechanism and should not "
+                    "satisfy the multi-candidate gate."
+                ),
+            },
+            {
+                "mechanism": "",
+                "why_rejected": (
+                    "This also omits the rejected mechanism name while padding the "
+                    "rejection explanation enough to pass schema length checks."
+                ),
+            },
+        ]
+    )
+
+    _expect_rejection(thesis, None, "structural_alternatives_considered_invalid")
+
+
 def test_gate_structural_missing_evidence_citations() -> None:
     thesis = _minimal_valid_thesis(evidence_citations=[])
     _expect_rejection(thesis, None, "structural_evidence_citations_invalid")
@@ -411,7 +434,7 @@ def test_gate_structural_evidence_citations_allow_experiment_result_when_no_trad
         ]
     )
 
-    validate_research_thesis(thesis, require_analyst_evidence=False)
+    validate_research_thesis(thesis, evidence_context="no_trades")
 
 
 def test_gate_structural_evidence_citations_no_trades_still_requires_experiment_result() -> None:
@@ -425,10 +448,23 @@ def test_gate_structural_evidence_citations_no_trades_still_requires_experiment_
     )
 
     with pytest.raises(ThesisValidationError) as excinfo:
-        validate_research_thesis(thesis, require_analyst_evidence=False)
+        validate_research_thesis(thesis, evidence_context="no_trades")
 
     assert excinfo.value.rejection_code == "structural_evidence_citations_invalid"
     assert excinfo.value.evidence["missing_sources"] == ["experiment_result"]
+
+
+def test_gate_structural_evidence_citations_cold_start_allows_web_only() -> None:
+    thesis = _minimal_valid_thesis(
+        evidence_citations=[
+            EvidenceCitation(
+                source="web_search",
+                citation="Market microstructure literature links opening auctions with wider spreads.",
+            )
+        ]
+    )
+
+    validate_research_thesis(thesis, evidence_context="cold_start")
 
 
 def test_gate_structural_source_code_verification_requires_real_file_and_symbol() -> None:

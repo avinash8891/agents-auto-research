@@ -118,10 +118,14 @@ _MIN_FALSIFICATION_CHARS = 80
 _MIN_ALTERNATIVES_CONSIDERED = 2
 _MIN_EXPECTED_EFFECTS = 2
 _MIN_EFFECT_RATIONALE_CHARS = 20
-_REQUIRED_EVIDENCE_SOURCES: Final[frozenset[str]] = frozenset({"web_search", "analyst"})
-_NO_TRADES_REQUIRED_EVIDENCE_SOURCES: Final[frozenset[str]] = frozenset(
-    {"web_search", "experiment_result"}
-)
+_EVIDENCE_CONTEXT_TRADES: Final[str] = "trades"
+_EVIDENCE_CONTEXT_NO_TRADES: Final[str] = "no_trades"
+_EVIDENCE_CONTEXT_COLD_START: Final[str] = "cold_start"
+_EVIDENCE_SOURCES_BY_CONTEXT: Final[dict[str, frozenset[str]]] = {
+    _EVIDENCE_CONTEXT_TRADES: frozenset({"web_search", "analyst"}),
+    _EVIDENCE_CONTEXT_NO_TRADES: frozenset({"web_search", "experiment_result"}),
+    _EVIDENCE_CONTEXT_COLD_START: frozenset({"web_search"}),
+}
 _EMERGENT_REQUIRED_FIELDS = (
     "why_existing_dimensions_do_not_fit",
     "mechanism_family_definition",
@@ -345,8 +349,12 @@ _REQUIRED_PROCESS_TOOLS: Final[tuple[str, ...]] = (
 )
 
 
-def _validate_process(tools_called: set[str] | frozenset[str]) -> None:
+def _validate_process(
+    tools_called: set[str] | frozenset[str], *, require_analyst_tool: bool = False
+) -> None:
     missing = [tool for tool in _REQUIRED_PROCESS_TOOLS if tool not in tools_called]
+    if require_analyst_tool and "analyze_trades" not in tools_called:
+        missing.append("analyze_trades")
     if not missing:
         return
     raise ThesisValidationError(
@@ -1676,8 +1684,21 @@ def _collect_source_code_verification_failures(thesis: ResearchThesis) -> list[B
     return failures
 
 
+def _resolve_evidence_context(
+    *, require_analyst_evidence: bool, evidence_context: str | None
+) -> str:
+    if evidence_context is None:
+        return _EVIDENCE_CONTEXT_TRADES if require_analyst_evidence else _EVIDENCE_CONTEXT_NO_TRADES
+    if evidence_context not in _EVIDENCE_SOURCES_BY_CONTEXT:
+        allowed = ", ".join(sorted(_EVIDENCE_SOURCES_BY_CONTEXT))
+        raise ValueError(
+            f"Unknown evidence_context '{evidence_context}'; expected one of {allowed}"
+        )
+    return evidence_context
+
+
 def _collect_research_contract_failures(
-    thesis: ResearchThesis, *, require_analyst_evidence: bool
+    thesis: ResearchThesis, *, evidence_context: str
 ) -> list[BehaviorSignal]:
     failures: list[BehaviorSignal] = []
 
@@ -1694,7 +1715,15 @@ def _collect_research_contract_failures(
             )
         )
 
-    if len(thesis.alternatives_considered) < _MIN_ALTERNATIVES_CONSIDERED:
+    blank_alternative_mechanisms = [
+        index
+        for index, alternative in enumerate(thesis.alternatives_considered)
+        if not alternative.mechanism.strip()
+    ]
+    if (
+        len(thesis.alternatives_considered) < _MIN_ALTERNATIVES_CONSIDERED
+        or blank_alternative_mechanisms
+    ):
         failures.append(
             BehaviorSignal(
                 code="structural_alternatives_considered_invalid",
@@ -1707,6 +1736,7 @@ def _collect_research_contract_failures(
                 evidence={
                     "actual_count": len(thesis.alternatives_considered),
                     "min_count": _MIN_ALTERNATIVES_CONSIDERED,
+                    "blank_mechanism_indexes": blank_alternative_mechanisms,
                 },
             )
         )
@@ -1715,11 +1745,7 @@ def _collect_research_contract_failures(
     empty_citations = [
         citation.source for citation in thesis.evidence_citations if not citation.citation.strip()
     ]
-    required_sources = (
-        _REQUIRED_EVIDENCE_SOURCES
-        if require_analyst_evidence
-        else _NO_TRADES_REQUIRED_EVIDENCE_SOURCES
-    )
+    required_sources = _EVIDENCE_SOURCES_BY_CONTEXT[evidence_context]
     missing_sources = sorted(required_sources - sources)
     if missing_sources or empty_citations:
         failures.append(
@@ -1736,7 +1762,7 @@ def _collect_research_contract_failures(
                     "missing_sources": missing_sources,
                     "empty_citation_sources": empty_citations,
                     "observed_sources": sorted(sources),
-                    "require_analyst_evidence": require_analyst_evidence,
+                    "evidence_context": evidence_context,
                 },
             )
         )
@@ -2268,7 +2294,7 @@ def _collect_mechanical_failures(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
     *,
-    require_analyst_evidence: bool = True,
+    evidence_context: str = _EVIDENCE_CONTEXT_TRADES,
 ) -> list[BehaviorSignal]:
     failures = _collect_inline_structural_failures(thesis, prior_theses)
     failures.extend(
@@ -2285,7 +2311,7 @@ def _collect_mechanical_failures(
     failures.extend(
         _collect_research_contract_failures(
             thesis,
-            require_analyst_evidence=require_analyst_evidence,
+            evidence_context=evidence_context,
         )
     )
     for effect in thesis.expected_effects:
@@ -2336,19 +2362,25 @@ def validate_research_thesis(
     *,
     tools_called: set[str] | None = None,
     require_analyst_evidence: bool = True,
+    evidence_context: str | None = None,
+    require_analyst_tool: bool = False,
 ) -> ResearchThesis:
     """Validate a research thesis. Raises ThesisValidationError if invalid.
 
     Dispatches Stage 1 to four named sub-section helpers in fixed order:
     process → behavioral → mechanical.
     """
+    resolved_evidence_context = _resolve_evidence_context(
+        require_analyst_evidence=require_analyst_evidence,
+        evidence_context=evidence_context,
+    )
     if tools_called is not None:
-        _validate_process(tools_called)
+        _validate_process(tools_called, require_analyst_tool=require_analyst_tool)
     _run_behavioral_pass(thesis, prior_theses)
     mechanical_failures = _collect_mechanical_failures(
         thesis,
         prior_theses,
-        require_analyst_evidence=require_analyst_evidence,
+        evidence_context=resolved_evidence_context,
     )
     _raise_mechanical_batch(mechanical_failures)
     return thesis
@@ -2360,6 +2392,8 @@ def validate_thesis_dict(
     *,
     tools_called: set[str] | None = None,
     require_analyst_evidence: bool = True,
+    evidence_context: str | None = None,
+    require_analyst_tool: bool = False,
 ) -> ResearchThesis:
     """Parse a raw dict into ResearchThesis and validate it.
 
@@ -2372,6 +2406,8 @@ def validate_thesis_dict(
         prior_theses=prior_theses,
         tools_called=tools_called,
         require_analyst_evidence=require_analyst_evidence,
+        evidence_context=evidence_context,
+        require_analyst_tool=require_analyst_tool,
     )
 
 
@@ -2395,6 +2431,8 @@ def validate_stage_1(
     *,
     tools_called: set[str] | None = None,
     require_analyst_evidence: bool = True,
+    evidence_context: str | None = None,
+    require_analyst_tool: bool = False,
 ) -> ResearchThesis:
     """Stage 1: pre-compile validator. Alias for `validate_research_thesis`."""
     return validate_research_thesis(
@@ -2402,6 +2440,8 @@ def validate_stage_1(
         prior_theses=prior_theses,
         tools_called=tools_called,
         require_analyst_evidence=require_analyst_evidence,
+        evidence_context=evidence_context,
+        require_analyst_tool=require_analyst_tool,
     )
 
 

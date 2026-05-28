@@ -89,6 +89,8 @@ def _prepare_thesis_for_validation(
     allow_schema_only_code_change_fallback: bool = False,
     tools_called: frozenset[str] | set[str] | None = None,
     require_analyst_evidence: bool = True,
+    evidence_context: str | None = None,
+    require_analyst_tool: bool = False,
 ):
     from compiler_pipeline import operationalize_thesis
     from thesis_validator import (
@@ -111,6 +113,8 @@ def _prepare_thesis_for_validation(
             prior_theses=prior_theses,
             tools_called=tools_called,
             require_analyst_evidence=require_analyst_evidence,
+            evidence_context=evidence_context,
+            require_analyst_tool=require_analyst_tool,
         )
     except ThesisValidationError:
         if not (allow_schema_only_code_change_fallback and raw_thesis.get("requires_code_change")):
@@ -766,6 +770,8 @@ def _try_one_validation_attempt(
     prior_theses: Any,
     *,
     require_analyst_evidence: bool = True,
+    evidence_context: str | None = None,
+    require_analyst_tool: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None, str]:
     """One pass of the conductor-validate-compile retry loop.
 
@@ -804,6 +810,8 @@ def _try_one_validation_attempt(
             prior_theses=prior_theses,
             tools_called=tools_called,
             require_analyst_evidence=require_analyst_evidence,
+            evidence_context=evidence_context,
+            require_analyst_tool=require_analyst_tool,
         )
         thesis_id = raw_thesis.get("thesis_id", "unknown")
         log.info(
@@ -1011,6 +1019,14 @@ def _call_conductor(
     )
 
 
+def _evidence_context_for_round(trades_file: str, latest_outcome: dict[str, Any]) -> str:
+    if trades_file:
+        return "trades"
+    if latest_outcome:
+        return "no_trades"
+    return "cold_start"
+
+
 def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]:
     """Drive research using the research conductor.
 
@@ -1046,6 +1062,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         results,
         current_job=current_job,
     )
+    evidence_context = _evidence_context_for_round(trades_file, latest_outcome)
     state["research_round_in_progress"] = research_round
     state["activity"] = _research_activity(research_round=research_round, phase="conductor_running")
     controller.write_state(state)
@@ -1093,6 +1110,8 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             conductor_result,
             prior_theses,
             require_analyst_evidence=bool(trades_file),
+            evidence_context=evidence_context,
+            require_analyst_tool=bool(trades_file),
         )
         if result is not None:
             return result
