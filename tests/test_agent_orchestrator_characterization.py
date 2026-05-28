@@ -492,6 +492,29 @@ def test_normalize_thesis_payload_treats_none_lists_as_empty():
     assert normalized["disqualifiers"] == []
 
 
+def test_normalize_thesis_payload_rewrites_legacy_experiment_result_citation():
+    """Theses persisted before the experiment→round rename still carry
+    source='experiment_result' in evidence_citations. Normalization rewrites
+    that to 'round_result' so ResearchThesis.model_validate accepts it."""
+    from thesis_validator import normalize_thesis_payload
+
+    normalized = normalize_thesis_payload(
+        {
+            "thesis_id": "x",
+            "hypothesis": "y",
+            "mechanism": "z",
+            "evidence_citations": [
+                {"source": "experiment_result", "citation": "round 3 PF=1.7"},
+                {"source": "web_search", "citation": "external evidence"},
+            ],
+        }
+    )
+
+    assert normalized["evidence_citations"][0]["source"] == "round_result"
+    assert normalized["evidence_citations"][0]["citation"] == "round 3 PF=1.7"
+    assert normalized["evidence_citations"][1]["source"] == "web_search"
+
+
 def test_run_single_agent_returns_structured_parse_error_without_stdout(monkeypatch, capsys):
     import trace_sdk
 

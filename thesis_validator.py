@@ -1000,6 +1000,16 @@ def normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
         _normalize_disqualifier(disqualifier)
         for disqualifier in (normalized.get("disqualifiers") or [])
     ]
+    citations = normalized.get("evidence_citations")
+    if isinstance(citations, list):
+        normalized["evidence_citations"] = [
+            (
+                {**c, "source": "round_result"}
+                if isinstance(c, dict) and c.get("source") == "experiment_result"
+                else c
+            )
+            for c in citations
+        ]
     return normalized
 
 

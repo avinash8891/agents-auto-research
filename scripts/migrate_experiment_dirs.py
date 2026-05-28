@@ -82,14 +82,17 @@ def _discover_db_paths(root: Path, explicit: str | None) -> list[Path]:
       script latch onto a sibling checkout's DB when invoked from an unrelated
       CWD. Operators wanting a DB outside ``--root`` must pass ``--db`` directly.
     """
+    # --root must exist regardless of --db, because the directory walk that
+    # actually renames artifacts uses --root. An explicit --db with a mistyped
+    # --root would otherwise silently scan a nonexistent tree and exit 0.
+    if not root.exists():
+        raise ExplicitDbMissingError(f"--root path does not exist: {root}")
+
     if explicit:
         p = Path(explicit).expanduser().resolve()
         if not p.exists():
             raise ExplicitDbMissingError(f"--db path does not exist: {p}")
         return [p]
-
-    if not root.exists():
-        raise ExplicitDbMissingError(f"--root path does not exist: {root}")
 
     candidates: list[Path] = []
     seen: set[Path] = set()
@@ -281,6 +284,46 @@ def _execute_renames(renames: list[tuple[Path, Path]]) -> int:
     return applied
 
 
+_ARTIFACT_PATH_COLUMNS = ("trades_file", "strategy_events_file", "diagnostics_file")
+
+
+def _rewrite_db_paths(db_paths: list[Path], renames: list[tuple[Path, Path]]) -> int:
+    """Rewrite backtest_runs artifact-path columns to match renamed dirs.
+
+    Without this, the DB still points at old experiments/{thesis_id}/ paths
+    after rename, and BacktestRunDB._load → _existing_artifact_file rejects
+    them as missing — losing trade/diagnostic artifacts post-migration.
+    Returns the number of rows updated (sum across columns).
+    """
+    if not renames:
+        return 0
+    updated = 0
+    substitutions = [(str(old), str(new)) for old, new in renames]
+    for db_path in db_paths:
+        conn = sqlite3.connect(db_path)
+        try:
+            for col in _ARTIFACT_PATH_COLUMNS:
+                for old_str, new_str in substitutions:
+                    like = f"{old_str}%"
+                    rows = list(
+                        conn.execute(
+                            f"SELECT run_id, {col} FROM backtest_runs WHERE {col} LIKE ?",  # noqa: S608
+                            (like,),
+                        )
+                    )
+                    for run_id, existing in rows:
+                        rewritten = new_str + existing[len(old_str) :]
+                        conn.execute(
+                            f"UPDATE backtest_runs SET {col} = ? WHERE run_id = ?",  # noqa: S608
+                            (rewritten, run_id),
+                        )
+                        updated += 1
+            conn.commit()
+        finally:
+            conn.close()
+    return updated
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(
@@ -375,7 +418,8 @@ def main(argv: list[str] | None = None) -> int:
         except OSError as exc:
             logger.error("rename failed: %s", exc)
             return 2
-        print(f"applied {applied} rename(s)")
+        rewritten = _rewrite_db_paths(db_paths, renames)
+        print(f"applied {applied} rename(s); rewrote {rewritten} DB artifact path(s)")
         return 0
 
     for old, new in renames:

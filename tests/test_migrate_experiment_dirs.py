@@ -40,7 +40,10 @@ def _make_db(path: Path) -> sqlite3.Connection:
             thesis_id TEXT NOT NULL,
             job INTEGER NOT NULL,
             research_round_id TEXT NOT NULL DEFAULT '',
-            research_round_number INTEGER NOT NULL DEFAULT -1
+            research_round_number INTEGER NOT NULL DEFAULT -1,
+            trades_file TEXT NOT NULL DEFAULT '',
+            strategy_events_file TEXT NOT NULL DEFAULT '',
+            diagnostics_file TEXT NOT NULL DEFAULT ''
         )
         """)
     return conn
@@ -216,6 +219,102 @@ class TestCliSmoke:
         )
         assert result.returncode != 0
         assert "--root" in (result.stderr + result.stdout)
+
+    def test_root_validated_even_with_explicit_db(self, tmp_path: Path) -> None:
+        """When --db is explicit AND valid, a typo --root must still exit 3.
+        Without this check the script silently scans a nonexistent tree and
+        appears to succeed."""
+        good_db = tmp_path / "ema_backtest_runs.db"
+        good_db.touch()
+        bogus_root = tmp_path / "does_not_exist"
+        assert not bogus_root.exists()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--root",
+                str(bogus_root),
+                "--db",
+                str(good_db),
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 3
+        assert "--root path does not exist" in (result.stderr + result.stdout)
+
+    def test_apply_rewrites_db_artifact_paths(self, tmp_path: Path) -> None:
+        """When a legacy dir contains files referenced by backtest_runs columns,
+        --apply must rewrite those columns so the conductor doesn't lose
+        access to trades.csv/diagnostics.json/etc. after the rename."""
+        root = tmp_path / "runtime_root"
+        root.mkdir()
+        db_path = tmp_path / "ema_backtest_runs.db"
+        conn = _make_db(db_path)
+        round_id = "job-12-round-1"
+        legacy_dir = _make_experiments_dir(root, JOB_ID, 1, THESIS_ID_A)
+        trades_old = str(legacy_dir / "trades.csv")
+        events_old = str(legacy_dir / "strategy_events.parquet")
+        diag_old = str(legacy_dir / "diagnostics.json")
+        # Seed a row that points at the legacy paths.
+        conn.execute(
+            "INSERT INTO backtest_runs (run_id, thesis_id, job, "
+            "research_round_id, research_round_number, "
+            "trades_file, strategy_events_file, diagnostics_file) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "run-001",
+                THESIS_ID_A,
+                JOB_ID,
+                round_id,
+                1,
+                trades_old,
+                events_old,
+                diag_old,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        rc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--root",
+                str(root),
+                "--db",
+                str(db_path),
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert rc.returncode == 0, f"stdout={rc.stdout!r} stderr={rc.stderr!r}"
+
+        # The dir was renamed.
+        new_dir = legacy_dir.parent / round_id
+        assert new_dir.is_dir()
+        assert not legacy_dir.exists()
+
+        # And the DB columns now point at the new location.
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT trades_file, strategy_events_file, diagnostics_file "
+                "FROM backtest_runs WHERE run_id = ?",
+                ("run-001",),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert THESIS_ID_A not in row[0]
+        assert round_id in row[0]
+        assert THESIS_ID_A not in row[1]
+        assert round_id in row[1]
+        assert THESIS_ID_A not in row[2]
+        assert round_id in row[2]
 
     def test_typo_root_exits_3(self, tmp_path: Path) -> None:
         """An explicit --root pointing at a nonexistent path is an operator
