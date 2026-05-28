@@ -760,7 +760,7 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
     Example:     {"ema_length": 21,
                   "rr_ratio": 2.5,
                   "gap_filter": true}
-                 # All three keys are from the §3.2 ROUND CONTEXT
+                 # All three keys are from A4b's ROUND CONTEXT
                  # `strategy_config_keys` sample (EMA's `allowed_config_keys`).
                  # Keys reachable only via primitive injection (e.g.
                  # min_stop_distance_pct, trail_after_r) require
@@ -824,6 +824,10 @@ are separately defined. It remains listed in `_PROMPT_OMITTED_FIELDS`.
 
 The worked example lives at `tests/fixtures/conductor_prompt_worked_example.json`
 (not inline). Canonical positive fixture shape:
+
+Fixture context assumes no `theme_keywords_in_use` overlap with `trend_filter`
+or `orb_regime`, `dimensions_unexplored` is non-empty, and
+`mechanism_dimension != "emergent"`.
 
 ```json
 {
