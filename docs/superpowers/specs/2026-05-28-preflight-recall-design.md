@@ -1,210 +1,211 @@
-# Pre-Flight Recall, Corpus Synthesis, and Semantic Dedup for Thesis Planning
+# Pre-Flight Recall, Corpus Synthesis, Semantic Dedup, and Schema Refactor
 
 **Date:** 2026-05-28
-**Status:** Design (final — grounded against `research_prompts.py`, `research_conductor.py`, `thesis_validator.py`, `research_memory.py`)
+**Status:** Design — grounded against actual code (`research_prompts.py`, `research_conductor.py`, `thesis_validator.py`, `research_memory.py`, `research_types.py`, `backtest_run_db.py`, `autoresearch_research.py`, `strategies/ema/prompt.py`, `diagnostic_contracts.py`).
 **Scope:** Conductor's thesis-creation path only. Research subagent integration deferred.
+
+---
 
 ## 1. Goal
 
-When the conductor builds the **per-round user prompt** for thesis creation, the agent must enter the LLM call with:
+When the conductor enters thesis creation, the agent must already have — in its context, every round, without on-demand tool calls — the structured information it needs to:
 
-1. **Recall** — top-K most-relevant prior theses + outcomes (Level 1).
-2. **Pattern surfacing** — mechanism landscape (saturated vs active vs unexplored dimensions) (Level 2).
-3. **Synthesis substrate** — killed/kept pairs grouped by dimension, ready for hybrid proposals (Level 3).
-4. **Synthesis turn** — explicit lateral-thinking LLM turn before drafting, asked to find combinations / contradictions / gaps (Level 3).
-5. **Post-draft semantic dedup** — soft-gate against near-duplicates with auditable override.
+1. **See what just happened.** Last-experiment parameters, diagnostics summary, in-round rejected attempts, and the prior thesis's structured reasoning.
+2. **See the arc.** Where each dimension stands (saturated / active / unexplored) and what killed/kept pairs exist per dimension.
+3. **Diverge before drafting.** A retrieval layer that surfaces both relevance-similar priors and cross-dimension priors, then a synthesis LLM turn that explicitly looks for combinations and gaps.
+4. **Avoid re-litigation.** Semantic dedup of the drafted thesis against the prior corpus, with a soft-gate override path.
 
-The user-visible win is the elimination of re-litigation ("`EMA crossover 9/21` proposed again three jobs after being killed") and the explicit invitation for lateral thinking across kept/killed priors — without inventing a new retrieval system, since the primitives already exist in `research_memory.py`.
+The user-visible problem this solves: re-litigation ("EMA crossover 9/21 proposed again three jobs after being killed"), unstructured awareness of the search landscape, and the agent paying analyst tokens for value reads that already exist in the DB.
 
-## 2. Non-Goals
+A secondary, coupled fix: the OUTPUT schema currently asks for free-form fields (`required_diagnostics`, `evidence`) while their structured siblings (`required_diagnostic_specs`, `evidence_citations`) exist in the schema and were designed to be canonical. The schema-author comments call this out explicitly. This spec finishes that migration, because consumer-side surfacing (§5.7) only delivers value when the producer-side populates the structured fields.
 
-- Unified prompt assembler / `ContextAssembler` for all agent roles. Pre-flight needs exactly one injection point in `research_conductor.py`'s user-prompt construction. A full assembly refactor is a separate spec and conflicts with the in-flight `docs/superpowers/plans/2026-05-04-prompt-variant-framework.md` work.
+---
+
+## 2. Non-goals
+
+- Unified prompt assembler / `ContextAssembler` covering all agent roles. We touch exactly two prompt-construction sites (the user-prompt path in `research_conductor.py:131–175` and the OUTPUT block in `research_prompts.py`). A full assembly refactor is a separate spec and conflicts with the in-flight `docs/superpowers/plans/2026-05-04-prompt-variant-framework.md`.
 - Per-role token budgets / working-memory window enforcement.
 - Wave 2: applying pre-flight to the research subagent's hypothesis-suggestion path. Same primitive, different injection point.
-- Level 4 — latent dimension discovery via clustering / density estimation over the embedding space.
-- A new vector store. ChromaDB is already in use via MemPalace (`research_memory._resolve_palace_dir`); a second store violates rule **B** (One home per concept).
-- Retiring `_validate_process`'s `_REQUIRED_PROCESS_TOOLS`. That list is `("list_experiment_results", "web_search")` — `list_past_theses` was never in it. Nothing to retire.
+- Latent dimension discovery via clustering / density estimation over the embedding space (Level 4).
+- Periodic insight curation in the `research_findings` MemPalace wing (QuantEvolve every-50-generations pattern). Deferred to future work.
+- A new vector store. ChromaDB is already in use via MemPalace; a second store violates rule **B** (One home per concept).
+- Retiring `_validate_process`'s `_REQUIRED_PROCESS_TOOLS` (`("list_experiment_results", "web_search")`). `list_past_theses` was never in it — nothing to retire.
+- A "selection turn" between synthesis and drafting (Phase 4 converge — see §4). Deliberately deferred until telemetry shows synthesis outputs need explicit ranking.
+
+---
 
 ## 3. Background — ground truth from code
 
-### 3.1 Where the system prompt and user prompt are built
+### 3.1 System prompt vs user prompt today
 
-**System prompt — static per family.** `research_prompts._build_conductor_system_prompt(strategy_description)` (line 18) takes a single argument: the static per-family description. It contains identity, tools list, schema, doctrine. It does **not** vary round-to-round.
+**System prompt** is static per family. Built by `research_prompts._build_conductor_system_prompt(strategy_description)`. Contains identity, strategy mechanics, tool list, doctrine, validator guardrails, OUTPUT schema. **Not** updated per round.
 
-**User prompt — round-specific.** Built inline in `research_conductor.py:131–175`. Composed from:
-- `research_round` (number)
-- `_render_resolution_context(resolution_context)`
-- `LATEST EXPERIMENT OUTCOME:` — full `latest_outcome` JSON
-- `EXPERIMENT RESULTS SUMMARY:` — `experiment_results` string
-- Trades / events / diagnostics file paths
-- `rejection_feedback` (when set)
-- `rejection_artifact.render_rejection_block` + `compute_escalation_directive` (current-job context)
+**User prompt** is round-specific. Built inline at `research_conductor.py:131–175`. Composed from `research_round`, `_render_resolution_context`, `LATEST EXPERIMENT OUTCOME` (full `latest_outcome` JSON dump), `EXPERIMENT RESULTS SUMMARY`, three file paths (trades / events / diagnostics), optional `rejection_feedback`, and `rejection_block` + `escalation_directive`.
 
-**There is no `round_goal_text` or `round_intent` field.** The "goal" is implicit: "propose the next thesis." Round-specific intent is carried by `latest_outcome`, `rejection_feedback`, and the rejection-pattern block.
+**Implication:** pre-flight injection point is the **user prompt**.
 
-**Implication:** pre-flight's injection point is the **user prompt**, not the system prompt.
+### 3.2 What's stored about an experiment today
 
-### 3.2 What's already in `research_memory.py`
+**`backtest_runs` table** (per-run): `run_id`, `thesis_id`, `config_path`, `runtime_config_json` (full params used), `code_commit`, `data_hash`, `train_metrics_json`, `validation_metrics_json`, `trade_count`, `trades_file`, `strategy_events_file`, `diagnostics_file`, `strategy_diagnostics_json` (event counts, rejection breakdown, trade analysis, verdict), `accepted`, `rejection_reason`, `verdict_status`, `verdict_summary`, `parent_backtest_run_id`, `timestamp`, `family`, `hypothesis`, `mechanism`, `job`, `usage_json`, `asi_json`.
 
-| Function | Purpose | Source |
-| --- | --- | --- |
-| `list_past_theses(root, …)` | Paginated prior thesis attempts | `*_backtest_runs.db` via `BacktestRunDB.list_research_thesis_attempts` |
-| `get_past_thesis(root, thesis_id, …)` | Full attempt detail | Same |
-| `list_experiment_results(root, …)` | Paginated outcomes | Same |
-| `get_experiment_result(root, thesis_id, …)` | Compact + detail tiers | Same |
-| `search_research_findings(query, …)` | Vector search over saved findings | MemPalace ChromaDB `wing="research_findings"` + `research_findings.jsonl` fallback |
-| `save_research_finding(…)` | Adds a drawer | MemPalace ChromaDB |
-| `latest_thesis_details(root, thesis_id, …)` | Compact dict of the most-recent attempt | `*_backtest_runs.db` |
+**`research_thesis_attempts` table** (per attempt, including rejected): `research_round_id`, `attempt_number`, `thesis_id`, `strategy_family`, `config_changes_json` (delta from baseline), `validator_status` (accepted/rejected), `mechanism_dimension`, `hypothesis`, `mechanism`, `thesis_details_json` (full thesis structured reasoning), `validation_failure_reason`, `selected_for_execution`, `created_at_utc`.
 
-All wired into `research_tools_mcp.py` and exposed to the conductor as MCP tools.
+**`research_rounds` table** (per round): `research_round_id`, `job_id`, `round_number`, `run_id`, `hypothesis_id`, `selected_thesis_id`, `outcome`, `created_at_utc`, `usage_json`.
 
-### 3.3 What `thesis_validator.py` already enforces
+### 3.3 What's surfaced today vs stored (gap table)
 
-Rules that touch prior theses and novelty (line numbers from `thesis_validator.py`):
+| Stored | In today's user prompt | This spec |
+|---|---|---|
+| Last run's metrics (PF, drawdown, etc.) | ✓ | unchanged |
+| Decision / verdict | ✓ | unchanged |
+| Prior thesis's hypothesis, mechanism, config_changes, expected_effects, evidence, disqualifiers, evidence_strength, closest_prior_theses_considered, orthogonality_defense, falsification_or_alternative, why_not_overfit (~11 of ~30 fields) | ✓ | unchanged; **expanded** (§5.7.4) |
+| 3 file paths (trades / events / diagnostics) | ✓ paths only | unchanged |
+| **Full `runtime_config` values** | ✗ | ✓ inlined (§5.7.1) |
+| **`strategy_diagnostics_json` summary** | ✗ (path only) | ✓ inlined (§5.7.2) |
+| **In-round rejected attempts as structured data** | ✗ (flattened text only) | ✓ structured (§5.7.3) |
+| **`mechanism_dimension`, `theme_keywords`, `causal_cluster`, `alternatives_considered`, `prior_lever_outcomes`, `source_code_verification`, `thesis_role`, `requires_code_change`+`requested_primitives` from prior thesis** | ✗ | ✓ expanded (§5.7.4) |
+| Cross-job validator-rejected attempts | ✗ | ✓ via pre-flight block (§5.2) |
+| Landscape / dimension counts | ✗ | ✓ landscape block (§5.3) |
+| Killed/kept pairs by dimension | ✗ | ✓ pairs block (§5.4) |
 
-| Rule | Function | What it checks |
-| --- | --- | --- |
-| Process gate | `_validate_process` (340) | Required tools called: **`list_experiment_results`**, **`web_search`**. (NOT `list_past_theses`.) |
-| Thesis ID uniqueness | `_check_thesis_id_not_repeated` (668) | New `thesis_id` not in any prior attempt |
-| Underexplored dimensions | `_validate_underexplored_dimensions` (1417) | When priors exist: list non-empty, all values are known dimensions, chosen dim not in list |
-| Direction whipsaw | (615) | When a prior tested the same `theme_keywords` in the opposite numeric direction, new thesis must cite it in `prior_lever_outcomes` |
-| Theme-overlap → novel_connection | (1634) | When proposed `theme_keywords` intersect prior `theme_keywords` heavily, `novel_connection` ≥ `_MIN_NOVEL_CONNECTION_CHARS` |
-| Dimension novelty | `_validate_dimension_novelty` (~1602) | `dimension_novelty` ≥30 chars |
-| Causal cluster | (1619) | `causal_cluster` non-empty when priors exist |
+### 3.4 Existing retrieval primitives (we compose, not replace)
 
-These rules are **structural**: they check field shapes and theme intersections. None of them can verify that **content** values (`prior_thesis_id` strings, `underexplored_dimensions_considered` choices) actually correspond to the real prior corpus. Pre-flight is what unlocks that check.
+`research_memory.py` already exposes:
+- `list_past_theses` / `get_past_thesis` — paginated and detail views over `*_backtest_runs.db`
+- `list_experiment_results` / `get_experiment_result` — outcome views
+- `search_research_findings` / `save_research_finding` — vector search over MemPalace ChromaDB `wing="research_findings"` with `research_findings.jsonl` fallback
+- `latest_thesis_details` — compact dict for the most recent attempt of one thesis_id
 
-### 3.4 Why "tools-list-in-prompt + process validator" is not enough
+These are wired into `research_tools_mcp.py` as MCP tools.
 
-The current setup tells the agent what tools exist and asserts post-hoc that `list_experiment_results` and `web_search` were called. This does not address:
+### 3.5 Existing validator rules around prior theses and novelty
 
-- **Query quality.** Even if the agent called retrieval tools, `search_research_findings("EMA crossover")` passes the validator but misses a prior phrased "fast/slow MA cross 9-21" — keyword overlap is low while semantic similarity is high.
+From `thesis_validator.py`:
+- `_validate_process` (line 340) — required tools `("list_experiment_results", "web_search")`.
+- `_check_thesis_id_not_repeated` (line 668) — exact ID-collision rejection.
+- `_validate_underexplored_dimensions` (line 1417) — when priors exist: list non-empty, valid dimensions, chosen-dim-not-in-list.
+- Direction-whipsaw (line 615) — when a prior tested the same `theme_keywords` in the opposite direction, new thesis must cite it in `prior_lever_outcomes`.
+- Theme-overlap → `novel_connection` ≥40 chars (line 1634).
+- `_validate_dimension_novelty` — `dimension_novelty` ≥30 chars.
+- `causal_cluster` required when priors exist (line 1619).
+
+These rules are **structural** — they check field shapes and computed theme intersections. None can verify that **content** values (`prior_thesis_id` strings, "underexplored" dimension choices) actually correspond to the real corpus. Pre-flight is what makes those content checks tractable.
+
+### 3.6 Why "tools-list + process validator" isn't enough
+
+The current setup tells the agent what tools exist and asserts post-hoc that two required tools were called. This does not address:
+
+- **Query quality.** `search_research_findings("EMA crossover")` passes the validator but misses a prior phrased "fast/slow MA cross 9-21" — keyword overlap is low while semantic similarity is high.
 - **Engagement.** The agent may call a tool, read the result, and propose the same idea anyway.
-- **Dedup.** Eyeballing 25 hypotheses for "is mine ~90% the same?" is unreliable.
-- **Landscape awareness.** Tools surface instances. They don't surface the shape of the search space.
-- **Synthesis.** No tool nudges the agent to *combine* a killed prior with a kept one to generate something new.
+- **Dedup.** Eyeballing 25 hypotheses for "is mine ~90% the same?" is unreliable for humans and LLMs alike.
+- **Landscape awareness.** Tools surface instances; they don't surface the shape of the search space.
+- **Synthesis.** No tool nudges the agent to *combine* a killed prior with a kept one.
 - **Content checks on novelty fields.** The validator can't assert `prior_lever_outcomes[].prior_thesis_id` resolves to a real prior without a canonical "what was in front of the planner" set.
 
-## 4. Architecture
+---
 
-### 4.1 Module layout
+## 4. The first-principles flow this spec serves
+
+Six phases. Each is either covered by what's in the codebase today, covered by this spec, or explicitly deferred.
+
+| Phase | Today | After this spec |
+|---|---|---|
+| **1a. Look back — last run** | `LATEST EXPERIMENT OUTCOME` + analyst on demand for params/diagnostics/prior reasoning | + inline `runtime_config` values, diagnostics summary, in-round rejected attempts, expanded previous_thesis (§5.7) |
+| **1b. Look back — the arc** | analyst on demand only | landscape + pairs blocks every round (§5.3, §5.4) |
+| **2. Orient** | agent guesses | landscape + pairs blocks (same source, positioning role) |
+| **3. Diverge** | single-turn, anchors on most-recent | synthesis turn (§5.5) + two-pass MMR retrieval (§5.2) |
+| **4. Converge** | implicit | still implicit — deferred (see §11) |
+| **5. Substantiate** | analyst + web_search on demand | same tools; far fewer calls because §5.7 already inlines routine reads |
+| **6. Draft + self-check** | partial (validator post-hoc) | pre-loaded priors with concrete `config_changes` values, semantic dedup with override, content-check validator rules (§6) |
+
+Mapping to the literature: best practices from QuantEvolve, FunSearch/AlphaEvolve, AI Scientist v1's failure mode, NoveltyAgent, MMR/RAG-diversity research, and the 94%-architecture/6%-hyperparam finding all map cleanly to these phases. The mapping table appears in §11.
+
+---
+
+## 5. Architecture
+
+### 5.1 Module layout
 
 ```
 preflight_recall.py              ← new
   ├─ PreflightIntent             dataclass
-  ├─ build_prior_attempts_block  → str  (Level 1: top-K)
-  ├─ build_landscape_block       → str  (Level 2: dimension/status counts + adjacency gaps)
-  ├─ build_dimension_pairs_block → str  (Level 3: killed/kept pairs by dimension)
-  ├─ dedup_check                 → DedupResult  (Level 1 verification, post-draft)
+  ├─ build_prior_attempts_block  → str  (Level 1: top-K, two-pass MMR + diversity)
+  ├─ build_landscape_block       → str  (Level 2: counts + adjacency)
+  ├─ build_dimension_pairs_block → str  (Level 3: killed/kept pairs)
+  ├─ dedup_check                 → DedupResult  (post-draft, soft-gate)
   └─ _thesis_corpus_index        internal: lazy ChromaDB collection accessor
 
 preflight_synthesis_turn.py      ← new
-  └─ build_synthesis_user_prompt → str  (Level 3: lateral-thinking LLM turn instructions)
+  └─ build_synthesis_user_prompt → str  (Level 3: lateral-thinking turn instructions)
 
 backtest_run_db.py               ← edited
-  ├─ list_dimension_summary(family)   aggregations for landscape block
-  ├─ list_killed_kept_pairs(family)   per-dimension killed/kept pair lookup
-  └─ list_round_attempts(research_round_id)
-                                       structured rejected-attempt rows for §5.8.3
+  ├─ list_dimension_summary(family)         landscape aggregations
+  ├─ list_killed_kept_pairs(family)         per-dimension pair lookup
+  └─ list_round_attempts(research_round_id) structured rejected-attempts (§5.7.3)
+
+research_memory.py               ← edited
+  └─ latest_thesis_details expanded to surface the 7 + 1 load-bearing
+     schema fields (§5.7.4)
 
 autoresearch_research.py         ← edited
   └─ _resolve_conductor_inputs (line 435): enrich latest_outcome with
-       runtime_config (§5.8.1), diagnostics_summary (§5.8.2), and
-       this_round_rejected_attempts (§5.8.3).
+       runtime_config, diagnostics_summary, this_round_rejected_attempts,
+       expanded previous_thesis (§5.7.1–.4)
+
+research_prompts.py              ← edited (small, but real)
+  ├─ Tool-description block (lines 50–58): rewording per §5.6
+  └─ OUTPUT schema instructions: refactor per §5.8
+       - required_diagnostics → required_diagnostic_specs (structured)
+       - evidence (legacy) → evidence_citations (typed)
 
 research_conductor.py            ← edited
-  ├─ user-prompt construction (lines 131-175): append pre-flight blocks
-  │  AND new last-experiment enrichment blocks (§5.8.1, §5.8.2, §5.8.3)
-  ├─ optional synthesis-turn LLM call before the existing drafting LLM call
-  └─ post-draft dedup_check; on trigger, return to agent with match for revision/override
-
-thesis_validator.py              ← edited (extension, not retire)
-  ├─ Extend prior_lever_outcomes validation: cited prior_thesis_id values
-  │  must resolve to corpus entries (content check, not just structural)
-  └─ Extend underexplored_dimensions_considered validation: when corpus stats
-     are available, soft-warn if the chosen dimension has FEWER prior attempts
-     than ALL of the dimensions the agent listed as underexplored
-     (i.e. the agent labeled its own choice as underexplored without warrant)
+  ├─ user-prompt construction (lines 131–175): append pre-flight blocks
+  │  AND new last-experiment enrichment blocks
+  ├─ two-turn flow: synthesis turn (Turn 1) → drafting turn (Turn 2)
+  └─ post-draft dedup_check; on trigger, return to agent with match for revise/override
 
 research_types.py                ← edited (small)
   ├─ Add ResearchThesis.dedup_override_justification: DedupOverride | None
-  └─ Add DedupOverride dataclass: matched_thesis_id, similarity, load_bearing_difference
+  └─ Add DedupOverride dataclass
 
-research_prompts.py              ← edited (small static reword)
-  └─ Tool-list description block (lines 50-58): reword two lines to clarify
-     that pre-flight pre-loads top-K relevant priors in the user prompt;
-     list_past_theses / list_experiment_results remain available for deep
-     follow-up only. Prevents the agent from redundantly fetching context
-     it already has.
+diagnostic_contracts.py          ← edited
+  └─ build_required_diagnostic_specs: prefer structured input from the
+     conductor; legacy prose normalization retained as fallback for
+     DB-loaded historical attempts (§5.8.A)
+
+thesis_validator.py              ← edited
+  ├─ §6.1 prior_lever_outcomes content check (hard reject on unknown id)
+  ├─ §6.2 underexplored_dimensions_considered misclassification (soft warn)
+  ├─ §6.3 dedup-override well-formedness
+  ├─ §6.4 migrate diagnostics-related rules to read required_diagnostic_specs
+  └─ §6.5 new evidence_citations source-coverage rule with cold-start waiver
 ```
 
 No new dependency. ChromaDB and MemPalace are already in the import graph via `research_memory.py`.
 
-### 4.2 Three retrievals: relevance half, diversity half, dedup
-
-Pre-flight is **two-pass** (not single-pass) to avoid the well-documented retrieval-homogeneity problem: pure cosine top-K concentrated near the just-failed direction inadvertently nudges the agent toward more-of-the-same proposals that dedup then rejects. The standard fixes are MMR within a relevance pass plus an explicit diversity pass; we apply both.
-
-| Pass | When | Query input | Returns | Used for |
-| --- | --- | --- | --- | --- |
-| **Relevance half** | User-prompt build, every round | `family + latest_outcome[mechanism, validator_status, validation_failure_reason] + rejection_feedback` | Top `K/2` via cosine, re-ranked with **MMR** (`lambda_mult` default 0.5) | What's near what just happened, with redundancy removed |
-| **Diversity half** | Same | `family + theme_keywords_of_latest_outcome` | Top `K/2` from corpus filtered by `where_not={"mechanism_dimension": <just_failed_dim>}`, ranked by cosine | Guaranteed cross-dimension priors so the agent sees somewhere to go |
-| **Dedup (narrow)** | After agent emits draft thesis | Draft `hypothesis + mechanism` text | Top-1 prior + cosine score | Soft-gate against near-duplicates |
-
-All three share the same `thesis_corpus` ChromaDB wing.
-
-**Outcome-balance floor** applies to the **union** of relevance + diversity halves: at least 2 KEPT and at least 2 KILLED in the returned K, when both exist in the corpus. Backfill from the runner-up bucket if a half can't meet its share.
-
-**Cold-path for diversity half.** When the just-failed dimension is the only populated dimension in the family corpus, `where_not` returns nothing — the diversity half degrades to empty and the relevance half is allowed to fill the full K. Logged as `PREFLIGHT_DIVERSITY_DEGRADED`.
-
-### 4.3 The synthesis turn
-
-In the thesis-creation stage, the conductor runs **two LLM turns** instead of one:
-
-1. **Synthesis turn.** User prompt = existing per-round context **+** prior-attempts block **+** landscape block **+** dimension-pairs block **+** synthesis instruction:
-   > "Given the priors, landscape, and dimension pairs above, identify 2–3 unexploited combinations, contradictions, or gaps you notice in the corpus. Output a JSON array of `{observation, supporting_thesis_ids[]}`. Do not draft a thesis yet."
-
-   Output: `synthesis_observations`, persisted to the round artifact and forwarded into Turn 2.
-
-2. **Drafting turn.** Same context, plus the synthesis output appended. Existing drafting instruction.
-
-The split forces lateral consideration before commitment. Single-turn prompting anchors the agent on the most-recent prior; two-turn splits that anchoring.
-
-Cost: ~1.3× the round's planning-LLM tokens. The synthesis turn produces a small structured output (not a thesis), so its output tokens are bounded.
-
-Kill switch: `AUTORESEARCH_SYNTHESIS_TURN_ENABLED` (default `true`). When `false`, the blocks still get injected but no separate turn runs.
-
-### 4.4 Thesis corpus indexing
-
-On first access per process, `preflight_recall._thesis_corpus_index()`:
-
-1. Reads all rows from `*_backtest_runs.db` via existing `BacktestRunDB.list_research_thesis_attempts`.
-2. For each row, upserts a drawer into ChromaDB `wing="thesis_corpus"` with id `f"thesis_{thesis_id}_attempt_{attempt_number}"`. Document text: `f"{hypothesis}\n\n{mechanism}"`. Metadata: `thesis_id, attempt_number, job_id, strategy_family, validator_status, mechanism_dimension, dimension_novelty, theme_keywords (list), created_at_utc, run_id, validation_failure_reason`.
-3. Uses ChromaDB's default embedder (sentence-transformers all-MiniLM-L6-v2). No new dependency, no API cost.
-
-Subsequent calls within a process: compare row count in `*_backtest_runs.db` vs the count of drawers in `thesis_corpus`. If equal, skip; if delta, upsert only new rows (ids are deterministic).
-
-**Cold start.** If `thesis_corpus` filtered by `strategy_family` has fewer than `_cold_start_threshold()` (default 5) entries, `build_prior_attempts_block` returns an empty block, `build_landscape_block` returns "no prior runs for this family", `build_dimension_pairs_block` returns empty, and `dedup_check` returns `DedupResult.skipped(reason="cold_start")`. A structured `PREFLIGHT_COLD_START` log line is emitted (rule **H**). No errors propagated.
-
-### 4.5 Data flow
+### 5.2 Data flow
 
 ```
 [conductor builds user prompt for round N]
         │
         ▼
    intent = PreflightIntent(family, latest_outcome, rejection_feedback)
+   latest_outcome enriched (§5.7): runtime_config, diagnostics_summary,
+                                   this_round_rejected_attempts,
+                                   expanded previous_thesis
         │
         ▼
-   prior_attempts_block ──┐
-   landscape_block        │── appended to user_prompt
-   dimension_pairs_block ─┘
+   prior_attempts_block (two-pass: MMR-relevance + cross-dim diversity) ──┐
+   landscape_block                                                         │── appended
+   dimension_pairs_block                                                   │── to user_prompt
         │
         ▼
-[Turn 1: synthesis] ─────► synthesis_observations
+[Turn 1: synthesis] ─────► synthesis_observations (JSON list)
    user_prompt + synthesis_instruction
         │
         ▼
-[Turn 2: drafting]  ─────► draft thesis
-   user_prompt + synthesis_observations + drafting_instruction
+[Turn 2: drafting]  ─────► draft thesis (with structured required_diagnostic_specs
+   user_prompt + synthesis_observations + drafting_instruction          and evidence_citations per §5.8)
         │
         ▼
    dedup_check(draft.hypothesis + draft.mechanism)
@@ -222,29 +223,31 @@ Subsequent calls within a process: compare row count in `*_backtest_runs.db` vs 
    └─────────┘
         │
         ▼
-   thesis_validator (existing rules + 2 extensions)
+   thesis_validator (existing rules + §6.1–6.5)
         │
         ▼
    [thesis enters run queue]
 ```
 
-## 5. Components
+---
 
-### 5.1 `PreflightIntent`
+## 6. Components
+
+### 6.1 `PreflightIntent`
 
 ```python
 @dataclass(frozen=True)
 class PreflightIntent:
     family: str
     latest_outcome: dict          # already in scope in run_conductor()
-    rejection_feedback: str = ""  # already in scope in run_conductor()
+    rejection_feedback: str = ""  # already in scope
     draft_hypothesis: str = ""    # filled only for dedup
-    draft_mechanism: str = ""     # filled only for dedup
+    draft_mechanism: str = ""     # same
 ```
 
 All upstream data is already passed to the conductor. No changes required to `autoresearch_controller.py` or `autoresearch_orchestration.py`.
 
-Query string for pre-flight is built inside `preflight_recall` from this intent. Helper:
+Query strings are built inside `preflight_recall`:
 
 ```python
 def _query_text_for_recall(intent: PreflightIntent) -> str:
@@ -261,49 +264,53 @@ def _query_text_for_recall(intent: PreflightIntent) -> str:
     return "; ".join(parts)
 ```
 
-On round 0 (no `latest_outcome`), the query is just `f"family={intent.family}"` — wide net, expected.
+On round 0 (no `latest_outcome`), the query is just `f"family={intent.family}"`.
 
-### 5.2 `build_prior_attempts_block(intent, *, k=None) -> str`
+### 6.2 `build_prior_attempts_block(intent, *, k=None) -> str`
 
-Two-pass retrieval with MMR re-ranking on the relevance half. Concretely:
+Two-pass retrieval (relevance + diversity), MMR re-ranking on the relevance half, outcome-balance floor on the union.
 
-1. **`k` defaults to `_preflight_k()`** (env `AUTORESEARCH_PREFLIGHT_K`, default 8). Lazy accessor.
+**Why two-pass:** pure cosine top-K concentrates near the just-failed direction, which inadvertently nudges the agent toward more-of-the-same proposals that dedup then rejects. MMR within the relevance pass + an explicit cross-dimension pass solves this. Both techniques are production-default in RAG (LangChain, LlamaIndex, Azure AI Search, Elastic).
 
-2. **Split.** `relevance_share = k // 2`; `diversity_share = k - relevance_share`. Tunable via `_preflight_relevance_share()` (env `AUTORESEARCH_PREFLIGHT_RELEVANCE_SHARE`, default `0.5`).
+**Algorithm:**
 
-3. **Relevance half (with MMR).**
-   - ChromaDB query with `where={"strategy_family": intent.family}`, `n_results=relevance_share * 3` (over-fetch by 3x to give MMR room to re-rank).
-   - Compute pairwise cosine among the over-fetched candidates.
-   - Greedy MMR selection: start with the highest cosine-to-query. For each subsequent pick `c`, score:
-     `mmr(c) = lambda_mult * cos(c, query) - (1 - lambda_mult) * max(cos(c, s) for s in selected)`
-     Pick `argmax`. `lambda_mult` from `_preflight_mmr_lambda()` (env `AUTORESEARCH_PREFLIGHT_MMR_LAMBDA`, default `0.5`; 1.0 = pure relevance, 0.0 = pure diversity).
+1. `k = _preflight_k()` (default 8). `relevance_share = k * _preflight_relevance_share()` (default 0.5).
+
+2. **Relevance half — with MMR:**
+   - ChromaDB `query` with `where={"strategy_family": intent.family}`, `n_results = relevance_share * 3` (over-fetch to give MMR room).
+   - Greedy MMR selection: first pick = argmax cosine to query. For subsequent picks `c`, score is `lambda_mult * cos(c, query) - (1 - lambda_mult) * max(cos(c, s) for s in selected)`. `lambda_mult = _preflight_mmr_lambda()` (default 0.5).
    - Stop at `relevance_share` selections.
 
-4. **Diversity half (cross-dimension).**
-   - Determine `just_failed_dim = intent.latest_outcome.get("mechanism_dimension")`.
-   - When set: ChromaDB query with `where={"strategy_family": intent.family, "$and": [{"mechanism_dimension": {"$ne": just_failed_dim}}]}`, `n_results=diversity_share * 2`. Query text: `f"family={family}; explore mechanisms different from {just_failed_dim}"` (when present, append `theme_keywords` of latest_outcome). Greedy top by cosine, no MMR (the dimension-exclusion already enforces diversity).
-   - When `just_failed_dim` is unset or empty (round 0): diversity half degrades — pull `diversity_share` random non-overlapping picks from the full family corpus.
+3. **Diversity half — cross-dimension:**
+   - When `latest_outcome.mechanism_dimension` is set: ChromaDB query with `where={"strategy_family": intent.family, "mechanism_dimension": {"$ne": just_failed_dim}}`, ranked by cosine. Query text appends `theme_keywords` of latest_outcome.
+   - When `just_failed_dim` is unset (round 0): random non-overlapping picks from the family corpus.
+   - No MMR here — `where_not` already enforces diversity.
 
-5. **Union + outcome-balance floor.** Combine the two halves (deduplicate by `thesis_id+attempt_number`). From the union, enforce "≥2 KEPT and ≥2 KILLED" by demoting and replacing if needed:
-   - If KEPT < 2 in union but ≥2 in family corpus: pull the next-best KEPT (by cosine to relevance query) and swap out the lowest-MMR-score KILLED.
-   - Mirror for KILLED.
-   - If a half can't meet its share (e.g. diversity returned 0 because corpus is single-dim), the other half backfills, capped at `k` total.
+4. **Union + outcome-balance floor:**
+   - Deduplicate by `(thesis_id, attempt_number)`.
+   - Enforce ≥2 KEPT and ≥2 KILLED when both exist in the family corpus. Swap lowest-scoring entries to meet the floor.
+   - Floors from `_kept_floor()` / `_killed_floor()` (default 2 each).
 
-6. **Cold-path logging.** When the diversity half degrades (returned 0 cross-dim entries) emit `PREFLIGHT_DIVERSITY_DEGRADED` with reason; when MMR is short-circuited (relevance candidates < relevance_share) emit `PREFLIGHT_MMR_DEGRADED`.
+5. **Cold-path logging:**
+   - Diversity half returned 0 entries → log `PREFLIGHT_DIVERSITY_DEGRADED`, fill relevance half up to `k`.
+   - Relevance candidates < `relevance_share` → log `PREFLIGHT_MMR_DEGRADED`.
 
-7. **Render.** Markdown sections, one per entry: `thesis_id`, `outcome`, `mechanism_dimension`, `hypothesis` (≤180 chars), `mechanism` (≤180 chars), `validation_failure_reason` (≤160 chars), `job_id`, `round_number`, **`config_changes`** (key→value pairs from `config_changes_json` stored per attempt). Config-changes rendering: up to `_preflight_config_changes_max_keys()` (env `AUTORESEARCH_PREFLIGHT_CONFIG_CHANGES_MAX_KEYS`, default `5`) key→value pairs shown verbatim; if more keys exist, append `"+{N} more keys: [k1, k2, ...]"` listing only the additional key names. Long string values truncated to 60 chars. Without the actual values, the agent can spot which knobs were touched but not whether a specific value (e.g. `ema_period=8`) has already been tried — surfacing values closes that gap. Sections grouped by half — relevance entries first under "## Closest priors", then diversity entries under "## Cross-dimension priors (for synthesis)".
+6. **Render.** Sections grouped: "## Closest priors" (relevance half) and "## Cross-dimension priors (for synthesis)" (diversity half). Per entry:
+   - `thesis_id`, outcome, `mechanism_dimension`
+   - `hypothesis` ≤180 chars, `mechanism` ≤180 chars
+   - `validation_failure_reason` ≤160 chars
+   - `job_id`, `round_number`
+   - **`config_changes` key→value pairs** (up to `_preflight_config_changes_max_keys()`, default 5). Long string values truncated to 60 chars. Overflow: `"+{N} more keys: [...]"`. Surfacing values (not just keys) is how the agent can spot that a specific value like `ema_period=8` was already tried.
 
-This design is grounded in the well-established RAG-diversity literature: MMR (`lambda_mult`) is the production-default for retrieval diversity (LangChain, LlamaIndex, Azure AI Search, Elastic, Bigtable), and two-pass relevance+diversity hybridization is the standard agentic-context-engineering pattern (Elastic Search Labs, multi-stage RAG pipelines). The dimension-exclusion technique in the diversity half is borrowed from MAP-Elites style structured exploration used by QuantEvolve, FunSearch, and AlphaEvolve — adapted to our schema by using `mechanism_dimension` as the structured axis.
+### 6.3 `build_landscape_block(family) -> str`
 
-### 5.3 `build_landscape_block(family) -> str`
+Aggregations over `*_backtest_runs.db` for the family. Two SQL queries on `BacktestRunDB`:
 
-Aggregates `*_backtest_runs.db` rows for the family. Two queries on `BacktestRunDB`:
+1. **`list_dimension_summary(family)`** → groups by `mechanism_dimension`, returns `(dimension, total, kept, killed)`. Classifies each as **saturated** (total ≥ `_landscape_saturated_at()`, default 8), **active** (1 ≤ total < threshold), or **unexplored** (total = 0 — only listed when the dimension exists in `MECHANISM_DIMENSIONS` but has no attempts).
 
-1. **`list_dimension_summary(family)`** → groups by `mechanism_dimension`, returns `(dimension, total, kept, killed)` per row. Classifies each as **saturated** (`total ≥ _landscape_saturated_at()`, default 8), **active** (1 ≤ total < threshold), or **unexplored** (total = 0 — only listed when the dimension appears in `MECHANISM_DIMENSIONS` constant but has no attempts).
+2. **Adjacency gaps:** for every dimension pair `(A, B)` where each individually has ≥3 attempts, count theses whose `theme_keywords` cross both dimensions (any prior in A whose theme_keywords intersect priors in B). Zero count → surface as "adjacent pair never combined: A × B".
 
-2. **Adjacency gaps**: defined concretely via `theme_keywords`. For every pair of dimensions `(A, B)` where each individually has ≥3 attempts, count theses whose `theme_keywords` cross both dimensions (any prior in dim A whose theme_keywords intersect priors in dim B). If the count is 0, surface as "**adjacent pair never combined: A × B**".
-
-Renders:
+**Render:**
 
 ```markdown
 ## Mechanism landscape (family=ema)
@@ -314,20 +321,24 @@ Dimensions explored:
 - exit_management       →  3 attempts, 0 kept,  3 killed   (active)
 
 Adjacent pairs never combined:
-- trend_filters × vol_regime_filter (each has attempts; no thesis spans both)
+- trend_filters × vol_regime_filter
 - exit_management × regime_conditioning
 
 Unexplored dimensions (zero attempts):
 - universe_selection, alternative_data
 ```
 
-### 5.4 `build_dimension_pairs_block(family) -> str`
+### 6.4 `build_dimension_pairs_block(family) -> str`
 
-**(Level 3 closure.)** For each `mechanism_dimension` with at least 1 KILLED **and** at least 1 KEPT in the corpus:
+For each `mechanism_dimension` with ≥1 KILLED and ≥1 KEPT in the corpus:
 
-1. Pick the most-recent KILLED entry for that dimension.
-2. Pick the KEPT entry for that dimension with the largest validation-metric improvement vs baseline (fallback: most-recent KEPT).
-3. Render as a pair with an empty "Possible hybrid:" slot for the synthesis turn to populate.
+1. Most-recent KILLED.
+2. KEPT with the largest validation-metric improvement vs baseline (fallback: most-recent KEPT).
+3. Render as a pair.
+
+Capped at `_pairs_block_max_dimensions()` (default 5), sorted by total attempt count descending.
+
+**Render:**
 
 ```markdown
 ## Killed/kept pairs by dimension (synthesis substrate)
@@ -341,21 +352,25 @@ Unexplored dimensions (zero attempts):
 - KEPT:   ema_vol_regime_v1 (job=11, round=6) — overnight-ATR multiple skip; PF 1.10 → 1.41
 ```
 
-Limit: at most `_pairs_block_max_dimensions()` (default 5) dimensions rendered — sorted by total attempt count descending. Synthesis-turn output writes one observation per pair it deems worth hybridizing.
-
 Helper: `BacktestRunDB.list_killed_kept_pairs(family)`.
 
-### 5.5 `build_synthesis_user_prompt() -> str`
+### 6.5 Synthesis turn
 
-Stateless string returning the synthesis-turn user-prompt instruction (Turn 1 wrapping). One home for the exact wording. Includes the JSON output schema:
+The conductor runs **two LLM turns** instead of one.
 
-```json
-{"synthesis_observations": [
-  {"observation": "string ≥80 chars", "supporting_thesis_ids": ["..."]}
-]}
-```
+**Turn 1 — synthesis.** User prompt = round context + pre-flight blocks + this instruction:
 
-### 5.6 `dedup_check(intent) -> DedupResult`
+> "Given the priors, landscape, and dimension pairs above, identify 2–3 unexploited combinations, contradictions, or gaps you notice in the corpus. Output a JSON array of `{observation, supporting_thesis_ids[]}`. Do not draft a thesis yet."
+
+Output schema: `{"synthesis_observations": [{"observation": ≥80 chars, "supporting_thesis_ids": [...]}]}`. Persisted to the round artifact.
+
+**Turn 2 — drafting.** Same context + synthesis output appended + existing drafting instruction.
+
+The split is the well-documented "deliberation before decision" pattern. Single-turn prompts anchor agents on the most-recent prior; two turns split the anchor.
+
+Kill switch: `_synthesis_enabled()` (default `true`). When `false`, the blocks still get injected but only one turn runs.
+
+### 6.6 `dedup_check(intent)` and `DedupOverride`
 
 ```python
 @dataclass(frozen=True)
@@ -368,15 +383,7 @@ class DedupResult:
     similarity: float = 0.0
     matched_outcome: str = ""
     matched_summary: str = ""
-```
 
-- Query: `f"{intent.draft_hypothesis}\n\n{intent.draft_mechanism}"`.
-- `n_results=1`. Threshold from `_dedup_threshold()` (env: `AUTORESEARCH_DEDUP_THRESHOLD`, default 0.88).
-- On trigger, conductor surfaces the result to the agent as a structured rejection. Agent must either revise OR populate `ResearchThesis.dedup_override_justification`.
-
-### 5.7 `DedupOverride` (new field on `ResearchThesis`)
-
-```python
 @dataclass
 class DedupOverride:
     matched_thesis_id: str
@@ -384,319 +391,350 @@ class DedupOverride:
     load_bearing_difference: str   # ≥60 chars, validator-enforced
 ```
 
-Validator rejects when:
-- `load_bearing_difference` is missing or < 60 chars.
-- `matched_thesis_id` doesn't resolve to a real prior in the corpus.
-- A round has more than 1 override attempt (capped per round).
+- Query: `f"{intent.draft_hypothesis}\n\n{intent.draft_mechanism}"`.
+- `n_results=1`. Threshold from `_dedup_threshold()` (default 0.88).
+- On trigger, conductor returns the result to the agent. Agent must revise OR set `ResearchThesis.dedup_override_justification`.
+- Cap: 1 override per round. Second override attempt → hard reject (`structural_dedup_override_invalid`).
 
-### 5.8 Last-experiment context enrichment in the user prompt
+This is the AI Scientist v1 lesson operationalized: soft-gate with explicit override, not hard novelty rejection. False positives are handled at the agent + validator boundary, not by relaxing the threshold.
 
-The current user prompt surfaces metrics + verdict + `previous_thesis` for the last experiment, but leaves three first-principles gaps. Each is a small, in-scope edit on top of the same user-prompt construction we're already changing.
+### 6.7 Last-experiment context enrichment in the user prompt
 
-#### 5.9.1 `runtime_config` values inline
+The current user prompt has gaps in "what just happened." All four items below close them. All data is already stored in `*_backtest_runs.db` and `research_thesis_attempts`; we only surface it.
 
-**Today:** user prompt shows `config_path` (file path), not the values.
-**Gap:** the agent has to call the analyst (or read the YAML) to know "last run used `ema_period=5, atr_multiple=1.5`." Cheap info, paid for expensively.
-**Change:** in `_resolve_conductor_inputs` (`autoresearch_research.py:435`), add `latest_outcome["runtime_config"] = _resolve_runtime_config_for_record(...)` (the function already exists and is already called — its return value is currently used only for resolution context).
-**Render in user prompt:** new block `LATEST EXPERIMENT CONFIG (values used):` printing key→value pairs from `runtime_config`, capped at `_last_run_config_max_keys()` (env `AUTORESEARCH_LAST_RUN_CONFIG_MAX_KEYS`, default 20). Overflow: `"+{N} more: [k1, k2, ...]"` listing remaining key names. Long values truncated to 80 chars.
-**Cost:** ~10–30 extra tokens per round. Eliminates a class of analyst calls.
+#### 6.7.1 `runtime_config` values inline
 
-#### 5.9.2 `strategy_diagnostics_json` summary inline
+**Today:** user prompt shows `config_path` (file path), not values.
+**Change:** `_resolve_conductor_inputs` (line 435) attaches `latest_outcome["runtime_config"] = _resolve_runtime_config_for_record(...)` (the function already exists and is already called for resolution context — its return is currently used for one thing).
+**Render:** `LATEST EXPERIMENT CONFIG (values used):` block printing key→value pairs from `runtime_config`, capped at `_last_run_config_max_keys()` (default 20). Overflow → `"+{N} more: [...]"`. Long values truncated to 80 chars.
+**Cost:** ~10–30 tokens. Eliminates a class of analyst calls.
 
-**Today:** user prompt shows `diagnostics_file` path. The diagnostics JSON itself contains a compact summary (event counts, rejection breakdown, trade analysis verdict) that the conductor's analyst already reads on every round.
-**Gap:** the agent must spend an `analyze_trades` call to surface ~30 lines of structured data that could ride the user prompt for ~free.
-**Change:** `_resolve_conductor_inputs` reads the diagnostics file (with try/except + fail-open per rule **H**) and extracts the existing summary shape used elsewhere in `research_memory._experiment_compact_detail` — specifically `event_counts`, `rejection_breakdown`, `trade_analysis`, `verdict` subfields. Stored as `latest_outcome["diagnostics_summary"]`.
-**Render in user prompt:** new block `LATEST EXPERIMENT DIAGNOSTICS (summary):` showing the four subfields verbatim (JSON-formatted). The full diagnostics file path remains available for deep dives.
-**Failure mode:** file unreadable or schema unexpected → block omitted, `LATEST_DIAGNOSTICS_DEGRADED` logged. Round proceeds.
-**Cost:** ~200–500 tokens per round. Removes ~1 analyst call per round on average.
+#### 6.7.2 `strategy_diagnostics_json` summary inline
 
-#### 5.9.3 In-round rejected thesis attempts as structured data
+**Today:** user prompt shows `diagnostics_file` path. The agent must call analyze_trades to read the JSON.
+**Change:** `_resolve_conductor_inputs` reads the diagnostics file (try/except + fail-open) and extracts the same summary shape used in `research_memory._experiment_compact_detail`: `event_counts`, `rejection_breakdown`, `trade_analysis`, `verdict` subfields. Stored as `latest_outcome["diagnostics_summary"]`.
+**Render:** `LATEST EXPERIMENT DIAGNOSTICS (summary):` block showing the four subfields verbatim. Full diagnostics file path remains available for deep dives.
+**Failure mode:** file unreadable → block omitted, `LATEST_DIAGNOSTICS_DEGRADED` logged.
+**Cost:** ~200–500 tokens. Removes ~1 analyst call per round on average.
 
-**Today:** when a round had multiple validator-rejected attempts before one succeeded, the rejections are flattened into `rejection_block` text via `rejection_artifact.render_rejection_block`. The conductor sees the rejection text but not the structured `(attempt_number, validator_status, validation_failure_reason, hypothesis, mechanism)` per rejected attempt.
-**Gap:** the synthesis turn (§4.3) benefits significantly from seeing "round 7 attempt 1 was rejected for X with hypothesis Y; attempt 2 was rejected for Z; attempt 3 succeeded." That's substrate for lateral thinking the current text block doesn't deliver.
-**Change:** new helper `BacktestRunDB.list_round_attempts(research_round_id)` returning the rejected attempts for the *most recent completed round of the current job*. Called inside `_resolve_conductor_inputs`; result attached as `latest_outcome["this_round_rejected_attempts"]`. Empty list when no rejections.
-**Render in user prompt:** new block `THIS ROUND'S REJECTED ATTEMPTS (structured):` rendering each rejected attempt as `attempt_number, validator_status, validation_failure_reason, hypothesis (≤180 chars), mechanism_dimension`. Capped at `_max_round_rejected_attempts()` (env `AUTORESEARCH_MAX_ROUND_REJECTED_ATTEMPTS`, default 5). Older rejections accessible via existing `list_rejections` MCP tool.
-**Interaction with §11.1 reflexion:** this is structured data, not LLM-summarized reflexion. Reflexion stays as-is (separate channel).
-**Cost:** ~50–300 tokens depending on rejection count. Reduces analyst calls and improves synthesis-turn quality.
+#### 6.7.3 In-round rejected thesis attempts as structured data
 
-#### 5.8.4 Expand `previous_thesis` to surface load-bearing schema fields
+**Today:** rejections are flattened into `rejection_block` text. The agent sees rejection text but not the structured `(attempt_number, validator_status, validation_failure_reason, hypothesis, mechanism)` per attempt.
+**Change:** new helper `BacktestRunDB.list_round_attempts(research_round_id)` returning rejected attempts for the most recent completed round of the current job. Called inside `_resolve_conductor_inputs`; attached as `latest_outcome["this_round_rejected_attempts"]`.
+**Render:** `THIS ROUND'S REJECTED ATTEMPTS (structured):` block: `attempt_number`, `validator_status`, `validation_failure_reason`, `hypothesis` (≤180 chars), `mechanism_dimension` per attempt. Capped at `_max_round_rejected_attempts()` (default 5).
+**Cost:** ~50–300 tokens.
 
-**Today:** `latest_thesis_details` (`research_memory.py:465`) returns 11 fields out of ~30 in the `ResearchThesis` schema (`research_types.py:139`). The conductor sees only ~37% of the prior round's structured reasoning.
+#### 6.7.4 Expanded `previous_thesis` — surface the load-bearing schema fields
 
-**Gap:** the missing fields include the ones the validator and the synthesis turn depend on most. After grading every field on "diagnostic value × forward-reasoning value" and inspecting real fixture values to confirm signal density, the **7 + 1 load-bearing fields** to add are:
+**Today:** `latest_thesis_details` returns 11 of the ~30 `ResearchThesis` fields — about 37% of the prior round's structured reasoning.
+**Change:** extend `latest_thesis_details` to also return the 7 + 1 load-bearing fields below. They're already stored (in `thesis_details_json` in `research_thesis_attempts`). Render in the existing `previous_thesis` block.
 
-| Field | Value shape from fixtures | Why it matters next round |
+| Field | Value shape (from real fixtures) | Why next round needs it |
 |---|---|---|
-| `mechanism_dimension` | one-token enum (`"signal_quality"` etc.) | Anchors landscape positioning |
+| `mechanism_dimension` | one-token enum (`"signal_quality"`) | Anchors landscape positioning |
 | `theme_keywords` | 2–3 short noun phrases | Cluster-fixation rule depends on this |
-| `causal_cluster` | human-phrased family (`"opening-session adverse selection"`) | Adds human framing complementary to `theme_keywords` |
-| `alternatives_considered` | list of `{mechanism, why_rejected ≥40 chars}`, ≥2 entries | The richest field of the lot — the prior conductor's pre-vetted alternatives that *did not get picked* are natural next candidates when the picked angle failed |
+| `causal_cluster` | human-phrased family (`"opening-session adverse selection"`) | Human framing complementary to `theme_keywords` |
+| `alternatives_considered` | list of `{mechanism, why_rejected ≥40 chars}`, ≥2 entries | Highest forward-reasoning value of the lot — the prior's pre-vetted rejected angles are natural next candidates |
 | `prior_lever_outcomes` | list of `{prior_thesis_id, lever, direction_then, outcome, why_retry ≥40 chars}` | Direct anti-whipsaw substrate |
-| `source_code_verification` | rich string (e.g. `"strategies/ema/signals.py:detect_alert_candle is where the volatility floor on the alert candle would gate entries by ATR-percent."`) | Tells the next round exactly where the prior connected to code |
-| `thesis_role` | 3-state enum (`orthogonal_discovery` / `implementation_unlock` / `cleanup_validation_follow_up`) | Shapes what kind of next thesis makes sense |
+| `source_code_verification` | rich string with file:function + explanation, ~100 chars | Tells next round where the prior connected to code |
+| `thesis_role` | 3-state enum (`orthogonal_discovery` / `implementation_unlock` / `cleanup_validation_follow_up`) | Shapes the kind of next thesis that fits |
 | `engine_change_request` (paired render of `requires_code_change` + `requested_primitives`) | `{requires: bool, primitives: ["volatility_regime_filter", ...]}` | Engine-starvation rule depends on this; only meaningful as a pair |
 
 **Deliberately not added** (verified against real fixtures + redundancy check):
-- `dimension_novelty`, `novel_connection` — defensive text from the prior; outcome supersedes
-- `dominant_cluster_overlap` — implied by landscape block counts
-- `underexplored_dimensions_considered` — stale by definition (landscape block has fresher data)
-- `evidence_citations` typed — empty today because the OUTPUT prompt doesn't ask for it (see §5.10 Refactor B; once populated, surface it instead of legacy `evidence`)
-- `required_diagnostics` — values are inconsistent (prose vs key); see §5.10 Refactor A for the producer-side fix
+- `dimension_novelty`, `novel_connection` — defensive text from the prior; outcome supersedes.
+- `dominant_cluster_overlap` — implied by landscape block counts.
+- `underexplored_dimensions_considered` — stale by definition; landscape block has fresher data.
+- `evidence_citations` (typed) — empty today because OUTPUT prompt doesn't ask for it. After §5.8 fixes that, this will start populating; surface it then instead of legacy `evidence`.
+- `required_diagnostics` (legacy prose) — values are inconsistent; §5.8 refactor produces structured `required_diagnostic_specs` going forward.
+
+**Truncation budgets:** mechanism_dimension / thesis_role / source_code_verification untruncated; alternatives_considered up to 4 entries with `why_rejected` ≤200 chars each; prior_lever_outcomes up to 4 entries; `theme_keywords` full list. Missing/empty fields omitted from rendering (no empty placeholders).
+
+**Cost:** ~200–600 tokens depending on richness.
+
+### 6.8 Tool-description edit in `research_prompts.py`
+
+The system prompt's tool-list block (lines 50–58) advertises `list_past_theses` / `get_past_thesis` / `list_experiment_results` / `get_experiment_result` as if they were the primary path to prior context. Once pre-flight pre-loads the top-K, they become **follow-up tools**. Without rewording, the agent will sometimes call them redundantly for context already in front of it.
+
+**Change.** Replace the description text only:
+
+```
+- list_past_theses / get_past_thesis     Deep follow-up on a specific prior.
+                                          Top-K relevant priors are already
+                                          pre-loaded in this round's user prompt.
+                                          Use this tool only when you need
+                                          details on a thesis NOT in that block,
+                                          or full attempt detail beyond the
+                                          summary you were shown.
+- list_experiment_results / get_*        Same — for backtest outcomes.
+```
+
+Tool signatures and MCP wiring unchanged.
+
+### 6.9 OUTPUT schema refactor — structured fields
+
+The OUTPUT block in `research_prompts.py` asks for two **legacy free-form** fields whose **structured** siblings exist in the schema and were explicitly designed as canonical. The schema-author comments in `research_types.py` say so directly. The structured fields sit empty in real outputs because the prompt doesn't ask for them.
+
+#### 6.9.A Refactor — `required_diagnostics` → `required_diagnostic_specs`
+
+**Today:** OUTPUT asks for `required_diagnostics: list[str]`. Real values vary from descriptive sentences ("Max_drawdown and pct_profitable_windows vs base") to terse keys ("regime_breakdown"). The helper `diagnostic_contracts.build_required_diagnostic_specs` normalizes each into a `DiagnosticRequirementSpec` — for prose strings, the result is a mangled key with the prose as `description`.
 
 **Change:**
-- Extend `latest_thesis_details` to also return the 8 fields above (loading from `thesis_details_json` in `research_thesis_attempts` table — already stored).
-- Render each as part of `previous_thesis` in the user prompt. Truncation budgets per field (mechanism_dimension/thesis_role/source_code_verification untruncated; alternatives_considered up to 4 entries each with ≤200-char `why_rejected`; prior_lever_outcomes up to 4 entries; `theme_keywords` full list).
-- For each field, if the stored value is empty or missing (legacy attempts), the field is omitted from the rendered block rather than emitting an empty placeholder.
+- **OUTPUT prompt:** ask for `required_diagnostic_specs: list[{key, surface, description, payload_fields?}]`. `key` must be snake_case (registered or stable identifier the agent commits to). `surface ∈ {metrics, strategy_diagnostics, experiment_evaluation, any}`.
+- **`diagnostic_contracts.build_required_diagnostic_specs`:** when structured input is provided, use it as-is. Prose-to-specs derivation retained as legacy fallback for DB-loaded historical attempts.
+- **Validator (§6.4):** existing rules that read `required_diagnostics` (prose) migrate to read `[spec.key for spec in required_diagnostic_specs]`. Full enumeration during writing-plans via grep.
 
-**Cost:** ~200–600 tokens per round depending on richness of the prior thesis. Removes a class of analyst calls that today ask "what alternatives did the prior consider?" or "what code did it touch?"
+#### 6.9.B Refactor — `evidence: list[str]` → `evidence_citations`
 
-### 5.9 Tool-description edit in `research_prompts.py`
-
-The conductor's system prompt currently advertises `list_past_theses` / `get_past_thesis` / `list_experiment_results` / `get_experiment_result` as if they were the primary path to prior context. Once pre-flight pre-loads the top-K relevant priors in the user prompt, those tools become **follow-up tools**, not primary-context tools. Without an edit, the agent will sometimes call them redundantly, wasting tokens and round-trips.
-
-**Change.** Replace lines 50–58 of `research_prompts.py` with reworded text that:
-- States explicitly that the round's user prompt already contains top-K relevant priors + landscape + dimension pairs.
-- Repositions the tools as for deep follow-up: "use only when you need a thesis NOT in the pre-flight block, or a level of detail beyond the summary."
-- Leaves the tool signatures unchanged — only the description text changes. No tool registration touched.
-
-This is a static reword. It does not change MCP wiring or `research_tools_mcp.py`. The tools remain fully available; their advertised purpose is sharpened.
-
-Test: a unit test on `_build_conductor_system_prompt` asserts the new wording is present, mentions "pre-loaded", and removes the impression that calling these tools is the agent's primary path to context.
-
-### 5.10 Refactor conductor OUTPUT schema to structured fields
-
-The `ResearchThesis` schema has two pairs of (legacy free-form, structured) fields. The OUTPUT block in `research_prompts.py` currently asks for the **legacy** form in each pair, leaving the structured forms empty. Schema-author comments in `research_types.py` explicitly say the structured forms were intended as the canonical machine contract — they're aspirational, not retired.
-
-Two refactors close this gap.
-
-#### 5.10.A Refactor — `required_diagnostics` → `required_diagnostic_specs`
-
-**Today:** OUTPUT prompt asks for `required_diagnostics: list[str]`. Real fixture values vary from descriptive sentences (`"Max_drawdown and pct_profitable_windows vs base"`) to terse keys (`"regime_breakdown"`). The downstream helper `diagnostic_contracts.build_required_diagnostic_specs` normalizes each string into a `DiagnosticRequirementSpec` — for prose strings, the result is a mangled key with the prose as `description`.
+**Today:** OUTPUT asks for `evidence: list[str]`. The typed `evidence_citations` (with `source ∈ {web_search, analyst, source_code, experiment_result, memory}`) exists in the schema but is empty because the prompt doesn't ask for it. The schema comment says the validator was *intended* to require ≥1 `web_search` + ≥1 `analyst` — that rule is **aspirational, not enforced today** because the field is empty.
 
 **Change:**
-- **OUTPUT prompt edit (`research_prompts.py`):** replace the `required_diagnostics` field instruction with a structured `required_diagnostic_specs` field instruction. Each entry must be `{key: snake_case_str, surface: enum, description: str, payload_fields?: [str]}`. `key` MUST be either a registered diagnostic key (list provided inline in the prompt or referenced via tool) or a stable snake_case identifier the agent commits to.
-- **Helper update (`diagnostic_contracts.build_required_diagnostic_specs`):** when the conductor outputs structured specs directly, the helper uses them as-is. The prose-to-specs derivation path is retained as a fallback for legacy attempts read from the DB but is no longer the primary path.
-- **Validator update (`thesis_validator.py`):** any rule that today reads from `required_diagnostics` (prose) must be migrated to read from `required_diagnostic_specs` (e.g. `[spec.key for spec in required_diagnostic_specs]`). The full list of affected rules is enumerated during writing-plans by grepping for `required_diagnostics` in `thesis_validator.py`.
+- **OUTPUT prompt:** ask for `evidence_citations: list[{source, citation}]`. List source enum values explicitly. Drop legacy `evidence` from instructions (field remains in `ResearchThesis` for backward-compat on DB reads).
+- **New validator rule (§6.5):** activate the aspirational coverage rule. ≥1 `web_search` AND ≥1 `analyst`, with cold-start waiver (no trades file → analyst requirement waived; matches `research_conductor.py:162–168` `no_trades_instruction` path).
 
-#### 5.10.B Refactor — `evidence: list[str]` → `evidence_citations` (typed)
+**Coupling:** consumer-side surfacing in §6.7.4 (`evidence_citations` mention) only delivers value once these refactors land. Bundled in this spec rather than split, so producer + consumer align from day one.
 
-**Today:** OUTPUT prompt asks for `evidence: list[str]`. The typed `evidence_citations` (with `source ∈ {web_search, analyst, source_code, experiment_result, memory}` and `citation`) exists in the schema but is empty in real outputs because the prompt doesn't ask for it. The schema comment says *"Validator requires at least one with source='web_search' AND one with source='analyst' (when applicable)"* — that rule is **aspirational, not yet enforced** (would silently pass today because the field is empty).
+---
 
-**Change:**
-- **OUTPUT prompt edit (`research_prompts.py`):** replace the legacy `evidence` field instruction with `evidence_citations: list[{source, citation}]`. List the source enum values explicitly. Drop the legacy `evidence` from the schema instructions (the field remains in `ResearchThesis` for backward-compat on DB reads but is no longer requested).
-- **Validator rule (new):** activate the aspirational rule. When `evidence_citations` is provided, require at least one entry with `source="web_search"` AND at least one with `source="analyst"`. Hard reject on violation with code `structural_evidence_citations_coverage_insufficient`. Exception: when `latest_outcome` indicates no trades file was available (cold start, etc.), the `analyst` requirement is waived — matches the existing `no_trades_instruction` path in `research_conductor.py:162-168`.
-- **Legacy `evidence: list[str]` handling:** read-only for DB-loaded historical attempts. No new conductor output populates it.
+## 7. Validator changes
 
-#### Blast radius and ordering
+No retires. Extensions and one new rule, plus the schema-refactor-driven migrations.
 
-These refactors touch three files: `research_prompts.py` (OUTPUT block), `thesis_validator.py` (rules that read these fields), and downstream consumers (`diagnostic_contracts.py` and any compiler-side code that reads diagnostics). All three must move together in the same PR.
+### 7.1 `prior_lever_outcomes` content check
 
-**Conflict with `prompt-variant-framework`:** the existing plan doc (`docs/superpowers/plans/2026-05-04-prompt-variant-framework.md`) anticipates registering multiple prompt variants on the conductor. These refactors edit the *default* variant. The variant-framework work, when it lands, should respect this updated default. Worth a heads-up in that plan's next revision, not a blocker.
+When `prior_lever_outcomes` is non-empty, every `prior_thesis_id` must exist in the corpus snapshot the pre-flight block was built from.
 
-**Why we ship this with pre-flight rather than as its own spec:** §5.8.4 consumer-side surfacing (typed `evidence_citations`, structured `required_diagnostic_specs`) only delivers value if the producer side actually populates them. Splitting the refactor out would mean §5.8.4 falls back to legacy fields for an unknown amount of time. Bundling keeps the surfacing useful from day one.
-
-**Test surface:**
-- `_build_conductor_system_prompt` output asserts the new field instructions are present and the legacy ones are gone.
-- A captured-fixture conductor run produces a `ResearchThesis` whose `required_diagnostic_specs` and `evidence_citations` are non-empty.
-- Validator rejects a thesis whose `evidence_citations` lacks the required source coverage (with the cold-start waiver tested separately).
-- `build_required_diagnostic_specs` returns the structured input verbatim when provided (no normalization) and falls back to prose normalization only when structured input is empty.
-
-## 6. Validator changes
-
-**No retires.** Two extensions of existing rules (§6.1, §6.2); one new field-level rule for the dedup override (§6.3); rule migration + one new rule riding §5.10 schema refactor (§6.4–§6.5).
-
-### 6.1 Extension: `prior_lever_outcomes` content check
-
-Current state: direction-whipsaw check (line 615) requires `prior_lever_outcomes` to cite an opposite-direction prior when applicable, but only checks that the cited `prior_thesis_id` is referenced by string — it never asserts the id resolves to a real prior.
-
-**New check:** when `prior_lever_outcomes` is non-empty, every `prior_thesis_id` must exist in the corpus snapshot the pre-flight block was built from. The corpus snapshot's `thesis_id` set is passed to the validator alongside `prior_theses` (already passed today).
-
-- **Severity:** hard reject. A hallucinated `prior_thesis_id` is the same class of error as a hallucinated function name.
+- **Severity:** hard reject.
 - **Rejection code:** `structural_prior_lever_outcomes_unknown_id`.
-- **Evidence:** the unknown ids; the set of valid ids (truncated).
+- **Evidence:** unknown ids; truncated set of valid ids.
 
-### 6.2 Extension: `underexplored_dimensions_considered` content check (soft-warn)
+### 7.2 `underexplored_dimensions_considered` misclassification (soft-warn)
 
-Current state: `_validate_underexplored_dimensions` (line 1417) checks non-empty, valid values, chosen-dim-not-in-list. It does **not** check whether the listed underexplored dimensions are actually less-explored than the chosen one.
+When corpus stats exist, emit a `BehaviorSignal` (`severity="warn"`) when the chosen `mechanism_dimension` has **strictly more** prior attempts than **every** dimension in `underexplored_dimensions_considered`. The agent labeled its own choice as underexplored without warrant.
 
-**New check (soft-warn, not reject):** when corpus stats exist, emit a `BehaviorSignal` (severity="warn") when the chosen `mechanism_dimension` has **strictly more** prior attempts than **every** dimension in `underexplored_dimensions_considered`. This means the agent labeled its own choice as underexplored without warrant.
-
-- **Severity:** warn (`severity="warn"`, not "block"). Surfaces in reflexion, doesn't kill the round.
+- **Severity:** warn (not block). Surfaces in reflexion.
 - **Behavior code:** `thesis_quality_underexplored_misclassification`.
-- **Rationale for soft, not hard:** there are legitimate reasons a more-explored dimension still wins (recent kept result, new variant); blocking would be too aggressive. The warn forces the agent to acknowledge it in the next round.
+- **Rationale for soft:** legitimate cases exist (recent kept result, new variant). Blocking would over-fire.
 
-### 6.3 New rule: dedup override well-formedness
+### 7.3 Dedup-override well-formedness
 
-Already covered in §5.7. Rejection code `structural_dedup_override_invalid` when the override fails its content rules.
+Validator rejects (`structural_dedup_override_invalid`) when:
+- `dedup_override_justification.load_bearing_difference` missing or <60 chars.
+- `matched_thesis_id` doesn't resolve to a real prior.
+- More than 1 override attempt in the same round.
 
-### 6.4 Migration: read from structured `required_diagnostic_specs` instead of legacy `required_diagnostics`
+### 7.4 Migrate diagnostic-spec consumers
 
-Rides §5.10.A. Any rule in `thesis_validator.py` that reads `required_diagnostics` (prose) is migrated to read `[spec.key for spec in required_diagnostic_specs]` (or the full spec where the description matters). The legacy field remains in the schema for backward-compat on DB-loaded historical attempts; validator rules running on new conductor outputs source from the structured field.
+Rides §6.9.A. Any rule in `thesis_validator.py` reading `required_diagnostics` (prose) migrates to read from `required_diagnostic_specs`. The legacy field remains for backward-compat on DB-loaded attempts; validator rules see a consistent shape via the fallback normalization.
 
-- **Affected rules:** enumerated during writing-plans by grepping `required_diagnostics` in `thesis_validator.py`.
-- **Behavior change:** none for new outputs (the structured field is the canonical source). For old DB-loaded attempts, the legacy field is mirrored into a synthetic `required_diagnostic_specs` view via `build_required_diagnostic_specs` so rules see a consistent shape.
-- **Rejection codes:** unchanged.
+- **Affected rules:** enumerated during writing-plans by grep.
+- **Behavior change:** none for new outputs. Rejection codes unchanged.
 
-### 6.5 New rule: `evidence_citations` source coverage
+### 7.5 New rule: `evidence_citations` source coverage
 
-Activates the aspirational rule referenced in `research_types.py` and rides §5.10.B.
+Activates the aspirational rule referenced in `research_types.py`. Rides §6.9.B.
 
-- **Check:** when `evidence_citations` is non-empty, require ≥1 entry with `source="web_search"` AND ≥1 with `source="analyst"`.
-- **Cold-start waiver:** the `analyst` requirement is waived when `latest_outcome` indicates no trades file was available (matches the existing `no_trades_instruction` path in `research_conductor.py:162–168`). The `web_search` requirement is not waived.
+- **Check:** when `evidence_citations` is non-empty, require ≥1 `source="web_search"` AND ≥1 `source="analyst"`.
+- **Cold-start waiver:** `analyst` requirement waived when `latest_outcome` indicates no trades file (matches `no_trades_instruction` path).
 - **Severity:** hard reject.
 - **Rejection code:** `structural_evidence_citations_coverage_insufficient`.
-- **Evidence in rejection:** present sources, required sources, missing sources, waiver-applied flag.
+- **Evidence:** present sources, required sources, missing sources, waiver flag.
 
-### 6.6 Rules explicitly preserved unchanged
+### 7.6 Rules explicitly preserved unchanged
 
-- `_validate_process` and `_REQUIRED_PROCESS_TOOLS` — unchanged.
-- `_check_thesis_id_not_repeated` — unchanged.
-- Theme-overlap / `novel_connection` — unchanged.
-- Direction-whipsaw structural check — unchanged.
-- `causal_cluster` requirement — unchanged.
-- `dimension_novelty` ≥30 chars — unchanged.
-- L6/L7 tool-order gates — unchanged.
-- All other rules — unchanged.
+- `_validate_process` and `_REQUIRED_PROCESS_TOOLS`.
+- `_check_thesis_id_not_repeated`.
+- Theme-overlap / `novel_connection`.
+- Direction-whipsaw structural check.
+- `causal_cluster` requirement when priors exist.
+- `dimension_novelty` ≥30 chars.
+- L6/L7 tool-order gates.
+- All other rules.
 
-## 7. Configuration
+---
 
-Lazy accessor functions, **not module-level constants** (CLAUDE.md hygiene rule):
+## 8. Configuration
+
+Lazy accessor functions — **not** module-level constants (CLAUDE.md hygiene rule).
 
 | Function | Env var | Default | Purpose |
-| --- | --- | --- | --- |
-| `_preflight_k()` | `AUTORESEARCH_PREFLIGHT_K` | `8` | Top-K size for pre-flight block (union of halves) |
-| `_preflight_relevance_share()` | `AUTORESEARCH_PREFLIGHT_RELEVANCE_SHARE` | `0.5` | Fraction of K spent on relevance half; rest on diversity half |
-| `_preflight_mmr_lambda()` | `AUTORESEARCH_PREFLIGHT_MMR_LAMBDA` | `0.5` | MMR `lambda_mult` in relevance half (1.0=pure relevance, 0.0=pure diversity) |
-| `_dedup_threshold()` | `AUTORESEARCH_DEDUP_THRESHOLD` | `0.88` | Cosine cutoff for dedup trigger |
+|---|---|---|---|
+| `_preflight_k()` | `AUTORESEARCH_PREFLIGHT_K` | `8` | Total top-K (union of halves) |
+| `_preflight_relevance_share()` | `AUTORESEARCH_PREFLIGHT_RELEVANCE_SHARE` | `0.5` | Fraction of K spent on relevance half |
+| `_preflight_mmr_lambda()` | `AUTORESEARCH_PREFLIGHT_MMR_LAMBDA` | `0.5` | MMR `lambda_mult` |
+| `_dedup_threshold()` | `AUTORESEARCH_DEDUP_THRESHOLD` | `0.88` | Cosine cutoff for dedup |
 | `_cold_start_threshold()` | `AUTORESEARCH_PREFLIGHT_COLD_START_THRESHOLD` | `5` | Min per-family corpus size to enable pre-flight |
-| `_landscape_saturated_at()` | `AUTORESEARCH_LANDSCAPE_SATURATED_AT` | `8` | Attempt count above which a dimension is "saturated" |
+| `_landscape_saturated_at()` | `AUTORESEARCH_LANDSCAPE_SATURATED_AT` | `8` | Threshold for "saturated" |
 | `_pairs_block_max_dimensions()` | `AUTORESEARCH_PAIRS_BLOCK_MAX_DIMENSIONS` | `5` | Cap on pairs rendered |
 | `_synthesis_enabled()` | `AUTORESEARCH_SYNTHESIS_TURN_ENABLED` | `true` | Kill switch for the synthesis turn |
-| `_kept_floor()`, `_killed_floor()` | `AUTORESEARCH_PREFLIGHT_KEPT_FLOOR`, `..._KILLED_FLOOR` | `2`, `2` | Outcome-balance floors in the union |
-| `_preflight_config_changes_max_keys()` | `AUTORESEARCH_PREFLIGHT_CONFIG_CHANGES_MAX_KEYS` | `5` | Max config_changes key→value pairs rendered per prior |
-| `_last_run_config_max_keys()` | `AUTORESEARCH_LAST_RUN_CONFIG_MAX_KEYS` | `20` | Max runtime_config keys inlined for the last experiment (§5.8.1) |
-| `_max_round_rejected_attempts()` | `AUTORESEARCH_MAX_ROUND_REJECTED_ATTEMPTS` | `5` | Max rejected-attempt entries rendered for the current round (§5.8.3) |
+| `_kept_floor()`, `_killed_floor()` | `AUTORESEARCH_PREFLIGHT_KEPT_FLOOR`, `..._KILLED_FLOOR` | `2`, `2` | Outcome-balance floors |
+| `_preflight_config_changes_max_keys()` | `AUTORESEARCH_PREFLIGHT_CONFIG_CHANGES_MAX_KEYS` | `5` | Max config_changes key→value pairs per prior |
+| `_last_run_config_max_keys()` | `AUTORESEARCH_LAST_RUN_CONFIG_MAX_KEYS` | `20` | Max runtime_config keys for the last experiment |
+| `_max_round_rejected_attempts()` | `AUTORESEARCH_MAX_ROUND_REJECTED_ATTEMPTS` | `5` | Max rejected-attempt entries rendered |
 
-Each accessor validates its env var (int parse, range check) and raises with the named env var on bad input.
+Each accessor validates its env var (int/float parse, range check) and raises with the named env var on bad input.
 
-## 8. Error handling
+### 8.1 Thesis corpus indexing
+
+On first access per process, `preflight_recall._thesis_corpus_index()`:
+
+1. Reads all rows from `*_backtest_runs.db` via `BacktestRunDB.list_research_thesis_attempts`.
+2. For each row, upserts a drawer into ChromaDB `wing="thesis_corpus"` with id `f"thesis_{thesis_id}_attempt_{attempt_number}"`. Document text: `f"{hypothesis}\n\n{mechanism}"`. Metadata: `thesis_id, attempt_number, job_id, strategy_family, validator_status, mechanism_dimension, dimension_novelty, theme_keywords, created_at_utc, run_id, validation_failure_reason`.
+3. ChromaDB's default embedder (sentence-transformers all-MiniLM-L6-v2). No new dependency.
+
+Subsequent calls within a process: count delta vs `thesis_corpus` drawer count — if equal, skip; if delta, upsert only new rows (ids are deterministic).
+
+### 8.2 Cold start
+
+When `thesis_corpus` filtered by `strategy_family` has fewer than `_cold_start_threshold()` (default 5) entries:
+
+- `build_prior_attempts_block`, `build_landscape_block`, `build_dimension_pairs_block` return empty blocks.
+- `dedup_check` returns `DedupResult.skipped(reason="cold_start")`.
+- `PREFLIGHT_COLD_START` logged.
+- No errors propagated.
+
+---
+
+## 9. Error handling
+
+Fail-open for retrieval; fail-loud for validator rules.
 
 | Failure | Behavior |
-| --- | --- |
-| ChromaDB unavailable / `_resolve_palace_dir` fails | All blocks return empty strings; `dedup_check` returns `skipped(reason="palace_unavailable")`. Structured log line. Round proceeds. |
-| Corpus empty for family | Cold-start path (§4.4). |
+|---|---|
+| ChromaDB unavailable / palace path fails | All blocks empty; `dedup_check` skipped; structured log; round proceeds. |
+| Corpus empty for family | Cold-start path (§8.2). |
 | Embedding call fails | Same as ChromaDB-unavailable. |
-| Dedup overrides itself recursively (agent keeps overriding) | Per-round override count capped at 1. Second override attempt → hard-reject (`structural_dedup_override_invalid`, evidence `{"reason": "more_than_one_override_in_round"}`). |
-| Synthesis turn produces malformed JSON | One retry. On second failure: skip synthesis output, proceed to drafting with pure context blocks. Log `SYNTHESIS_TURN_DEGRADED`. |
-| `mechanism_dimension` missing on a prior | Bucketed as `unknown_dimension` in landscape; not silently dropped. |
-| Corpus snapshot not passed to validator | Soft-skip the `prior_lever_outcomes` content check; structural check still runs. |
+| Recursive override (agent keeps overriding) | Capped at 1/round. Second → hard-reject. |
+| Synthesis turn produces malformed JSON | One retry. Second failure → skip synthesis output, proceed to drafting. `SYNTHESIS_TURN_DEGRADED` logged. |
+| `mechanism_dimension` missing on a prior | Bucketed as `unknown_dimension` in landscape; not dropped. |
+| Diagnostics file unreadable | `diagnostics_summary` block omitted; `LATEST_DIAGNOSTICS_DEGRADED` logged. |
+| Corpus snapshot not passed to validator | Soft-skip `prior_lever_outcomes` content check; structural check still runs. |
+| OUTPUT schema field missing on a new thesis (e.g. empty `required_diagnostic_specs`) | Standard schema-validation rejection; consistent with existing schema validation. |
 
-**Fail-open for retrieval** (no recall ≠ broken run). **Fail-loud for validator rules** (a hallucinated `prior_thesis_id` is a real rejection).
+---
 
-## 9. Testing strategy
+## 10. Testing strategy
 
-Real data from `*_backtest_runs.db`. No toy thesis names. No mocked internals. (CLAUDE.md testing rules.)
+Real data from `*_backtest_runs.db`. No toy thesis names. No mocked internals.
 
-### 9.1 Unit (per module)
+### 10.1 Unit
 
 - `preflight_recall`:
   - `_query_text_for_recall` builds expected string for cold-start, normal, and rejection-feedback cases.
-  - `build_prior_attempts_block` respects the outcome-balance floor; returns ≤K entries; handles family with all-killed corpus.
-  - `build_landscape_block` aggregations match a fixture-DB hand-computed table; adjacency-pair detection via `theme_keywords` is correct.
-  - `build_dimension_pairs_block` picks most-recent killed + best-improvement kept per dimension; honors max-dimensions cap.
-  - `dedup_check` triggers on a known near-duplicate (re-embed a real prior with paraphrased wording).
+  - `build_prior_attempts_block` respects the outcome-balance floor; honors MMR demotion (synthetic 5-clones + 5-spread test fixture at `lambda_mult=0.5` → ≤1 clone in first 3).
+  - Two-pass union: when corpus has theses in multiple dimensions, returned K contains entries from both halves; when single-dim corpus, diversity half empty and relevance half fills (no exception).
+  - `build_landscape_block` aggregations match fixture-DB hand-computed table; adjacency detection via `theme_keywords` correct.
+  - `build_dimension_pairs_block` picks most-recent killed + best-improvement kept per dimension; honors cap.
+  - `dedup_check` triggers on a re-embedded paraphrase of a known prior.
   - Cold start: empty blocks + skipped result + structured log.
-  - Each lazy accessor reads env at call time.
-  - **MMR behavior:** with `lambda_mult=1.0`, relevance half matches pure-cosine ordering. With `lambda_mult=0.0`, second pick is the furthest candidate from the first regardless of relevance. With `lambda_mult=0.5`, candidates that are near-duplicates of the first pick are demoted. Tested with a synthetic case: 5 near-clones + 5 spread-out candidates → at `0.5`, relevance half returns ≤1 clone in the first 3.
-  - **Two-pass union:** when corpus has theses in both `just_failed_dim` and other dimensions, the returned K block contains entries from both halves; when corpus is single-dim, diversity half is empty and relevance half fills K (no exception).
+  - Each lazy accessor reads env at call time, not at import.
 
-- `preflight_synthesis_turn`: prompt assembly stable; malformed-output retry+degradation.
+- `preflight_synthesis_turn`: prompt assembly stable; malformed-output retry + degradation.
 
-- `BacktestRunDB.list_dimension_summary` and `list_killed_kept_pairs`: aggregations match hand-computed expectations against a real fixture.
+- `BacktestRunDB.list_dimension_summary`, `list_killed_kept_pairs`, `list_round_attempts`: aggregations match hand-computed expectations.
 
-### 9.2 Integration
+- `latest_thesis_details` expansion: returns all 7 + 1 fields when populated; omits missing fields cleanly.
 
-- End-to-end conductor round with a populated corpus → user prompt contains all three blocks and the synthesis instruction. Assertions check counts and content (`assert "ema_pullback_v3" in user_prompt`), not just non-null (rule **G**).
-- Dedup trigger → agent override path → validator accepts override only when `load_bearing_difference ≥ 60` and `matched_thesis_id` resolves.
+### 10.2 Integration
+
+- End-to-end conductor round with a populated corpus → user prompt contains all rendered blocks (closest priors, cross-dimension priors, landscape, pairs, synthesis instruction, all four §6.7 enrichments).
+- Dedup trigger → override path → validator accepts override only when `load_bearing_difference ≥ 60` and `matched_thesis_id` resolves.
 - Dedup trigger → agent revises → second draft passes.
-- Validator extension §6.1: thesis with `prior_lever_outcomes[].prior_thesis_id="ghost_id"` → hard reject.
-- Validator extension §6.2: thesis whose chosen dimension has more attempts than every "underexplored" one → warn behavior signal (not reject).
-- Cold start: brand-new family, empty DB → round runs cleanly, empty blocks, no errors.
+- Validator §7.1: thesis with `prior_lever_outcomes[].prior_thesis_id="ghost_id"` → hard reject.
+- Validator §7.2: chosen dimension has more attempts than every "underexplored" alternative → warn signal (not reject).
+- Validator §7.5: `evidence_citations` missing `web_search` → hard reject; cold-start path → only `analyst` waived; `web_search` still required.
+- Schema refactor (§6.9): fresh conductor run produces non-empty `required_diagnostic_specs` and `evidence_citations`; legacy fields empty on new outputs.
+- Validator §7.4 migration: existing diagnostics-related rules still produce the same rejection codes after sourcing from `required_diagnostic_specs`.
+- Cold start: new family, empty DB → round runs cleanly, empty blocks, no errors.
+- Tool-description (§6.8): `_build_conductor_system_prompt` output contains the new wording, mentions "pre-loaded".
 
-### 9.3 Rerun & state-transition
+### 10.3 Rerun & state-transition
 
-- Second run after first populates corpus: incremental upsert into `thesis_corpus`, no duplicates, no full rebuild.
+- Second run after first populates corpus: incremental upsert; no duplicate drawers.
 - Manual deletion of a row from `*_backtest_runs.db` → drawer stays (documented limitation).
 
-## 10. Migration plan
+### 10.4 Behavior assertions, not structural
+
+All test assertions check counts, scores, and content (`assert "ema_pullback_v3" in user_prompt`), never just non-null (CLAUDE.md rule **G**).
+
+---
+
+## 11. Migration plan
 
 One PR, one deliverable, in this order:
 
-1. `preflight_recall.py` (with MMR + two-pass retrieval) + `preflight_synthesis_turn.py` modules with full test coverage.
+1. `preflight_recall.py` (MMR + two-pass) + `preflight_synthesis_turn.py` modules with full test coverage.
 2. `BacktestRunDB.list_dimension_summary` + `list_killed_kept_pairs` + `list_round_attempts` helpers.
 3. `research_types.ResearchThesis.dedup_override_justification` field (Pydantic optional).
-4. `research_memory.latest_thesis_details` expansion to surface the 7 + 1 load-bearing schema fields (§5.8.4).
-5. `research_prompts.py` two edits in one PR: tool-description reword (§5.9) + OUTPUT schema refactor for diagnostics and evidence (§5.10).
-6. `diagnostic_contracts.build_required_diagnostic_specs` update: prefer structured input, retain prose-derivation as legacy fallback (§5.10.A).
-7. `autoresearch_research.py` `_resolve_conductor_inputs` enrichments (§5.8): runtime_config, diagnostics_summary, this_round_rejected_attempts, expanded previous_thesis attached to `latest_outcome`.
-8. `research_conductor.py` user-prompt augmentation (pre-flight blocks + new last-experiment blocks + expanded previous_thesis render) + two-turn flow + dedup call site.
-9. `thesis_validator.py` two extensions (§6.1, §6.2) + dedup-override rule (§6.3) + diagnostic-spec migration (§6.4) + new evidence-citations coverage rule with cold-start waiver (§6.5).
+4. `research_memory.latest_thesis_details` expansion (§6.7.4).
+5. `research_prompts.py`: tool-description reword (§6.8) + OUTPUT schema refactor (§6.9.A + §6.9.B). One file, two textual changes, one PR step.
+6. `diagnostic_contracts.build_required_diagnostic_specs` update: structured input preferred; prose normalization is legacy fallback.
+7. `autoresearch_research.py` `_resolve_conductor_inputs` enrichments (§6.7.1–.4): attach `runtime_config`, `diagnostics_summary`, `this_round_rejected_attempts`, expanded `previous_thesis` to `latest_outcome`.
+8. `research_conductor.py` user-prompt augmentation (pre-flight blocks + last-experiment blocks + expanded previous_thesis render) + two-turn flow (synthesis → drafting) + post-draft dedup call site.
+9. `thesis_validator.py` §7.1, §7.2, §7.3, §7.4 migration, §7.5 new rule.
 10. End-to-end test against a real fixture DB; commit per CLAUDE.md verification rules.
 
 No staged rollout flag. Behavior change is contained to thesis-creation rounds; cold-start path covers new families.
 
-## 11. Open considerations (deliberately not in scope)
+---
 
-- **Model routing within the synthesis turn.** The synthesis turn is a meta-reasoning task that doesn't need Opus tokens. Route to a cheaper tier when a model router exists. For now: same model as drafting.
+## 12. Open considerations (deliberately out of scope) and related work
+
+### 12.1 Future work
+
+- **Model routing within the synthesis turn.** Synthesis is meta-reasoning that doesn't need Opus tokens. Route to cheaper tier when a model router exists.
 - **Wave 2: research subagent integration.** Same `preflight_recall` module; second injection point in the subagent prompt path.
 - **Level 4: latent dimension discovery.** Clustering / density estimation over embedding space. Earn the right by measuring whether Levels 1–3 hit a ceiling.
 - **Cross-family pre-flight.** Currently `where={"strategy_family": ...}`. A future spec could add controlled cross-family recall for genuinely orthogonal mechanisms.
-- **Reconciliation with `prompt-variant-framework`.** Touched in §2.
-- **Deprecation of `list_past_theses` MCP tool.** Pre-flight + the §5.8 description edit make the tool largely redundant for primary context. Leave the tool available (deep follow-up is still useful); revisit deprecation after one quarter of telemetry on call frequency post-pre-flight.
-- **Periodic insight curation (QuantEvolve-style).** QuantEvolve (arxiv:2510.18569) re-curates accumulated insights every 50 generations — filter redundancy, consolidate findings, document failed approaches. Our `research_findings` MemPalace wing grows continuously without re-curation; over many jobs it will drift toward redundancy. A future spec could add a scheduled curation pass that re-embeds and de-duplicates findings, with consolidated meta-findings replacing clusters of near-identical entries. Out of scope for v1 but a natural extension once we have telemetry on findings-wing growth rate.
-- **Field-wise / point-wise novelty (NoveltyAgent-style).** Current dedup embeds `hypothesis + mechanism` as one document. NoveltyAgent (arxiv:2603.20884) decomposes manuscripts into discrete novelty points and checks each independently. For us this could mean separate embeddings for `hypothesis`, `mechanism`, `theme_keywords` — with dedup firing only when multiple fields match. More expressive; not required for v1.
-- **MAP-Elites grid maintenance.** QuantEvolve, FunSearch, AlphaEvolve all organize their populations into a feature-space grid (one elite per niche). We use `mechanism_dimension` as a structured axis only in retrieval — never as a hard population constraint. Whether to enforce a "one accepted thesis per (family, dimension, theme_cluster) cell" rule is a meaningful future paradigm choice; defer until we have evidence the current soft approach insufficiently diversifies the accepted-thesis stream.
+- **Reconciliation with `prompt-variant-framework`.** The default variant being edited here should be respected by the variant-framework work when it lands. Worth a heads-up in that plan's next revision.
+- **Periodic insight curation (QuantEvolve every-50-generations pattern).** Our `research_findings` MemPalace wing grows continuously without re-curation; over many jobs it will drift toward redundancy.
+- **Field-wise / point-wise novelty (NoveltyAgent pattern).** Current dedup embeds `hypothesis + mechanism` as one document. Separate embeddings per field with dedup firing only on multi-field matches is more expressive.
+- **MAP-Elites grid maintenance.** QuantEvolve / FunSearch / AlphaEvolve enforce "one elite per niche." Whether to add `(family, mechanism_dimension, theme_cluster)` grid constraints is a paradigm choice.
+- **Selection turn between synthesis and drafting (Phase 4 converge).** Ranks synthesis-turn angles on disconfirmer strength × evidence availability × novelty. ~+30% tokens; deferred until telemetry justifies.
+- **Deprecation of `list_past_theses` MCP tool.** Pre-flight + the §6.8 description edit make the tool largely redundant for primary context. Revisit deprecation after one quarter of telemetry.
 
-### 11.1 Related work informing this design
+### 12.2 Related work
 
 | Source | What we adopted | What we deliberately did not |
-| --- | --- | --- |
-| [MMR / LangChain / Azure / Elastic](https://www.elastic.co/search-labs/blog/maximum-marginal-relevance-diversify-results) | `lambda_mult`-based re-ranking in relevance half (§5.2) | Hybrid lexical+semantic (BM25+vec) — not needed; corpus is small + homogeneous |
-| [QuantEvolve (arxiv:2510.18569)](https://arxiv.org/html/2510.18569v1) | Dimension-axis structured exploration (mapped to `mechanism_dimension`); landscape view | Full MAP-Elites grid + island model + α exploit/explore parameter — we're rounds-based, not evolutionary |
-| [FunSearch / AlphaEvolve / OpenEvolve](https://github.com/codelion/openevolve) | Past attempts (kept + killed) injected into LLM context | Behavioral hash dedup; embedding cosine is the right signal for thesis text |
-| [AI Scientist v1 critical eval (arxiv:2502.14297)](https://arxiv.org/abs/2502.14297) | Cautionary tale → embeddings over keyword search; soft-gate dedup with override path | Keyword-only novelty (their documented failure mode) |
-| [NoveltyAgent (arxiv:2603.20884)](https://arxiv.org/pdf/2603.20884) | Self-validation as a pattern: dedup result goes back to agent for revise-or-override | Point-wise novelty per field — possible v2 refinement (see above) |
-| [Auto Researching convergence (arxiv:2603.15916)](https://arxiv.org/pdf/2603.15916) | Empirical justification for prioritizing dimension-switching over hyperparameter tuning (Level 2 landscape block) | Cross-architecture meta-search — out of our scope |
-| [Memory Management Impact on LLM Agents (arxiv:2505.16067)](https://arxiv.org/pdf/2505.16067) | Selective addition: validator gates what enters the corpus; misaligned-experience risk acknowledged | Two-tier memory hierarchy — overkill for current corpus size |
+|---|---|---|
+| [QuantEvolve (arxiv:2510.18569)](https://arxiv.org/html/2510.18569v1) | Dimension-axis structured exploration; landscape view | Full MAP-Elites grid + island model + α exploit/explore parameter |
+| [FunSearch / AlphaEvolve / OpenEvolve](https://github.com/codelion/openevolve) | Past attempts (kept + killed) injected into LLM context | Behavioral-hash dedup |
+| [MMR / LangChain / Azure / Elastic](https://www.elastic.co/search-labs/blog/maximum-marginal-relevance-diversify-results) | `lambda_mult`-based MMR in relevance half | Hybrid BM25+vec (corpus small + homogeneous) |
+| [AI Scientist v1 critical eval (arxiv:2502.14297)](https://arxiv.org/abs/2502.14297) | Cautionary tale → embeddings over keyword search; soft-gate with override | Keyword-only novelty |
+| [NoveltyAgent (arxiv:2603.20884)](https://arxiv.org/pdf/2603.20884) | Self-validation pattern: dedup result back to agent for revise-or-override | Point-wise per-field novelty (deferred) |
+| [Auto Researching convergence (arxiv:2603.15916)](https://arxiv.org/pdf/2603.15916) | Empirical justification for dimension-switching over hyperparameter tuning (landscape block) | Cross-architecture meta-search |
+| [Memory Management Impact (arxiv:2505.16067)](https://arxiv.org/pdf/2505.16067) | Selective addition: validator gates what enters the corpus | Two-tier constant-size memory |
 
-## 12. Success criteria
+---
 
-- A planning round on a populated `ema_backtest_runs.db` shows the prior-attempts block (with explicit "Closest priors" + "Cross-dimension priors" sub-sections), landscape block, dimension-pairs block, and synthesis observations in its user prompt and round artifact.
-- The top-K block contains at least 2 KEPT and 2 KILLED entries when both exist in the corpus.
-- When the corpus has theses in multiple dimensions, at least one entry in the returned K is from a dimension **other than** `latest_outcome.mechanism_dimension`. (Two-pass retrieval working.)
-- MMR re-ranking demoted at least one near-clone in a synthetic 5-clones + 5-spread test fixture at `lambda_mult=0.5`.
-- Rendered prior-attempts entries show `config_changes` key→value pairs (up to the cap), not just key names — verified by asserting a specific value (e.g. `"ema_period": 8`) appears in the block for a fixture prior known to have changed that key.
-- User prompt contains a `LATEST EXPERIMENT CONFIG (values used):` block with concrete key→value pairs from the prior round's `runtime_config` (§5.8.1).
-- User prompt contains a `LATEST EXPERIMENT DIAGNOSTICS (summary):` block with `event_counts`, `rejection_breakdown`, `trade_analysis`, `verdict` subfields when the diagnostics file is readable; block omitted with a `LATEST_DIAGNOSTICS_DEGRADED` log when not (§5.8.2).
-- User prompt contains a `THIS ROUND'S REJECTED ATTEMPTS (structured):` block listing rejected attempts of the most recent completed round of the current job — `attempt_number`, `validator_status`, `validation_failure_reason`, truncated `hypothesis`, `mechanism_dimension` (§5.8.3). Empty list when no rejections; block omitted in that case.
-- The rendered `previous_thesis` block in the user prompt contains the 7 + 1 expanded fields when populated (§5.8.4): `mechanism_dimension`, `theme_keywords`, `causal_cluster`, `alternatives_considered`, `prior_lever_outcomes`, `source_code_verification`, `thesis_role`, and a paired `engine_change_request` block. Verified by asserting that a fixture prior with non-trivial `alternatives_considered` produces a block containing one of its `why_rejected` substrings.
-- A fresh conductor run produces a `ResearchThesis` whose `required_diagnostic_specs` is non-empty and whose entries pass JSON-schema validation (`key` snake_case, `surface` ∈ enum). The legacy `required_diagnostics` field is empty for new outputs (§5.10.A).
-- A fresh conductor run produces a `ResearchThesis` whose `evidence_citations` contains at least one entry with `source="web_search"` and at least one with `source="analyst"` — unless the round is in cold-start path (no trades file), in which case the `analyst` requirement is waived (§5.10.B / §6.5).
-- A thesis with `evidence_citations` missing `web_search` coverage is rejected with `structural_evidence_citations_coverage_insufficient` (§6.5).
-- Pre-existing validator rules previously sourced from `required_diagnostics` (prose) now read from `required_diagnostic_specs` and produce the same rejection codes as before (§6.4).
-- Updated system-prompt tool description (§5.8) is detectable in `_build_conductor_system_prompt` output and references "pre-loaded".
-- A near-duplicate proposed thesis (paraphrased version of a known prior) is caught by dedup, with the matched `thesis_id` and similarity surfaced to the agent.
-- A thesis with a hallucinated `prior_lever_outcomes[].prior_thesis_id` is hard-rejected by the validator.
-- A thesis whose chosen dimension has more attempts than every "underexplored" alternative receives a `thesis_quality_underexplored_misclassification` warn signal (not a reject).
-- A cold-start run (new family, empty corpus) completes without errors and produces a thesis.
+## 13. Success criteria
+
+- A planning round on a populated `ema_backtest_runs.db` shows: prior-attempts block (with both "Closest priors" and "Cross-dimension priors" sub-sections), landscape block, dimension-pairs block, and synthesis observations in its user prompt and round artifact.
+- The top-K block contains ≥2 KEPT and ≥2 KILLED when both exist in the corpus.
+- When the corpus has theses in multiple dimensions, ≥1 entry in the returned K is from a dimension other than `latest_outcome.mechanism_dimension` (two-pass working).
+- MMR re-ranking demoted ≥1 near-clone in the synthetic 5-clones + 5-spread test fixture at `lambda_mult=0.5`.
+- Rendered prior-attempts entries show `config_changes` key→value pairs (up to the cap), not just key names — verified by asserting a specific value (e.g. `"ema_period": 8`) appears in the block.
+- User prompt contains `LATEST EXPERIMENT CONFIG (values used):` block (§6.7.1).
+- User prompt contains `LATEST EXPERIMENT DIAGNOSTICS (summary):` block when readable; omitted with `LATEST_DIAGNOSTICS_DEGRADED` log when not (§6.7.2).
+- User prompt contains `THIS ROUND'S REJECTED ATTEMPTS (structured):` block when present; omitted when empty (§6.7.3).
+- The rendered `previous_thesis` block contains the 7 + 1 expanded fields when populated (§6.7.4), verified by asserting a fixture prior's `alternatives_considered` `why_rejected` substring appears.
+- A fresh conductor run produces non-empty structured `required_diagnostic_specs` and `evidence_citations`; legacy `required_diagnostics` and `evidence` are empty on new outputs (§6.9).
+- A thesis with `evidence_citations` missing `web_search` is rejected with `structural_evidence_citations_coverage_insufficient` (§7.5).
+- A cold-start `web_search`-only round (no trades file) accepts the thesis when `analyst` is missing but `web_search` is present (§7.5 waiver).
+- Validator rules that previously sourced from `required_diagnostics` produce the same rejection codes after migration (§7.4).
+- A near-duplicate proposed thesis (paraphrased version of a known prior) is caught by dedup; matched `thesis_id` + similarity surfaced.
+- A thesis with hallucinated `prior_lever_outcomes[].prior_thesis_id` is hard-rejected (§7.1).
+- A thesis whose chosen dimension has more attempts than every "underexplored" alternative receives a `thesis_quality_underexplored_misclassification` warn (not reject) (§7.2).
+- Cold-start run (new family, empty corpus) completes cleanly with empty blocks.
 - Two consecutive runs against the same `*_backtest_runs.db` do not produce duplicate ChromaDB drawers.
-- Token cost per planning round is at most ~1.5× the pre-change baseline (two-turn flow + injected blocks). Documented in the run artifact's usage block.
+- Token cost per planning round at most ~1.5× the pre-change baseline (synthesis turn + injected blocks). Documented in the run artifact's usage block.
 
-## 13. Levels coverage scorecard
+---
+
+## 14. Levels coverage scorecard
 
 | Level | Goal | How this spec delivers it |
 |---|---|---|
-| 1 — Awareness | Agent sees relevant priors | `build_prior_attempts_block` with outcome-balance floor (§5.2) |
-| 2 — Pattern surfacing | Saturated vs unexplored dimensions | `build_landscape_block` + `list_dimension_summary` + adjacency-pair detection via `theme_keywords` (§5.3) |
-| 3 — Cross-thesis synthesis | Killed/kept pairs + lateral-thinking turn | `build_dimension_pairs_block` (§5.4) + synthesis turn (§4.3, §5.5) |
-| 4 — Latent dimension discovery | Clustering / density on embedding space | Out of scope (§2, §11) |
+| 1 — Awareness | Agent sees relevant priors | `build_prior_attempts_block` with two-pass + MMR + outcome-balance floor (§6.2); enriched `previous_thesis` (§6.7.4) |
+| 2 — Pattern surfacing | Saturated vs unexplored dimensions | `build_landscape_block` + `list_dimension_summary` + adjacency via `theme_keywords` (§6.3) |
+| 3 — Cross-thesis synthesis | Killed/kept pairs + lateral-thinking turn | `build_dimension_pairs_block` (§6.4) + synthesis turn (§6.5) + two-pass retrieval (§6.2) |
+| 4 — Latent dimension discovery | Clustering / density on embedding space | Out of scope (§2, §12.1) |
