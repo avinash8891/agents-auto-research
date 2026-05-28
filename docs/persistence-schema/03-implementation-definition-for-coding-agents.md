@@ -70,10 +70,15 @@ Implement these tables only:
 
 When a research round starts:
 1. create a `research_rounds` row
-2. if conductor proposes a thesis, persist a `research_thesis_attempts` row immediately
-3. if validator rejects it, update that attempt row with `validator_status = rejected`
-4. if conductor retries with a new thesis in the same round, create a new attempt row
-5. if one thesis is accepted for execution, mark that attempt row with `selected_for_execution = 1`
+2. if conductor proposes a thesis that is rejected, persist a
+   `research_thesis_attempts` row for that retry with `validator_status`
+   recording the rejected attempt outcome
+3. if conductor retries with a new thesis in the same round, create a new
+   attempt row with the next `attempt_number`
+4. if one thesis is accepted for execution, persist that attempt row with
+   `selected_for_execution = 1`
+5. keep rejection JSON as an artifact; SQLite stores attempt-level status and
+   failure summary only
 6. only then create a `backtest_runs` row when a backtest actually runs
 
 This preserves the real workflow:

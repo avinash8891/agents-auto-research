@@ -102,6 +102,113 @@ def test_list_research_rounds_keeps_round_zero_baseline(tmp_path: Path) -> None:
     assert rows[0]["selected_thesis_id"] == "baseline"
 
 
+def test_research_thesis_attempt_schema_has_attempt_id_and_required_indexes(
+    tmp_path: Path,
+) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+
+    with sqlite3.connect(db.path) as conn:
+        attempt_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(research_thesis_attempts)")
+        }
+        attempt_index_names = {
+            row[1] for row in conn.execute("PRAGMA index_list(research_thesis_attempts)")
+        }
+        round_index_names = {row[1] for row in conn.execute("PRAGMA index_list(research_rounds)")}
+
+    assert "thesis_attempt_id" in attempt_columns
+    assert "idx_research_rounds_job_round" in round_index_names
+    assert "idx_research_rounds_outcome" in round_index_names
+    assert "idx_research_thesis_attempts_round_attempt" in attempt_index_names
+    assert "idx_research_thesis_attempts_validator_status" in attempt_index_names
+
+
+def test_research_round_retry_attempts_remain_first_class_rows(
+    tmp_path: Path,
+) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    with sqlite3.connect(db.path) as conn:
+        conn.execute(
+            """
+            INSERT INTO research_rounds (
+                research_round_id, job_id, round_number, run_id, hypothesis_id,
+                selected_thesis_id, outcome, created_at_utc, usage_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "job-17-round-2",
+                17,
+                2,
+                "run-17",
+                "ema-tight-entry",
+                "ema-tight-entry",
+                "compiled",
+                "2026-05-28T00:00:00+00:00",
+                "{}",
+            ),
+        )
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-17-round-2",
+            "attempt_number": 1,
+            "thesis_id": "ema-duplicate",
+            "strategy_family": "ema",
+            "config_changes": {"ema_length": 8},
+            "validator_status": "rejected_attempt_1",
+            "validation_failure_reason": "duplicate mechanism",
+            "selected_for_execution": 0,
+            "created_at_utc": "2026-05-28T00:00:01+00:00",
+        }
+    )
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-17-round-2",
+            "attempt_number": 2,
+            "thesis_id": "ema-metadata-leak",
+            "strategy_family": "ema",
+            "config_changes": {"ema_length": 13},
+            "validator_status": "rejected_attempt_2",
+            "validation_failure_reason": "config_changes contains thesis metadata key",
+            "selected_for_execution": 0,
+            "created_at_utc": "2026-05-28T00:00:02+00:00",
+        }
+    )
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-17-round-2",
+            "attempt_number": 3,
+            "thesis_id": "ema-tight-entry",
+            "strategy_family": "ema",
+            "config_changes": {"ema_length": 21},
+            "validator_status": "compiled",
+            "hypothesis": "tighten entry after weak crosses",
+            "mechanism": "avoid low-conviction crosses",
+            "selected_for_execution": 1,
+            "created_at_utc": "2026-05-28T00:00:03+00:00",
+        }
+    )
+
+    attempts = db.list_research_thesis_attempts(job_id=17)
+    by_attempt = {attempt["attempt_number"]: attempt for attempt in attempts}
+
+    assert sorted(by_attempt) == [1, 2, 3]
+    assert by_attempt[1]["thesis_attempt_id"] == "job-17-round-2-attempt-1"
+    assert by_attempt[1]["validator_status"] == "rejected_attempt_1"
+    assert by_attempt[1]["selected_for_execution"] == 0
+    assert by_attempt[2]["thesis_attempt_id"] == "job-17-round-2-attempt-2"
+    assert by_attempt[2]["validator_status"] == "rejected_attempt_2"
+    assert by_attempt[2]["validation_failure_reason"] == (
+        "config_changes contains thesis metadata key"
+    )
+    assert by_attempt[2]["selected_for_execution"] == 0
+    assert by_attempt[3]["thesis_attempt_id"] == "job-17-round-2-attempt-3"
+    assert by_attempt[3]["validator_status"] == "compiled"
+    assert by_attempt[3]["selected_for_execution"] == 1
+    assert by_attempt[3]["hypothesis"] == "tighten entry after weak crosses"
+    assert by_attempt[3]["mechanism"] == "avoid low-conviction crosses"
+    assert by_attempt[3]["created_at_utc"] == "2026-05-28T00:00:03+00:00"
+
+
 def test_best_by_metric_ignores_malformed_metric_values(tmp_path: Path) -> None:
     db = BacktestRunDB(tmp_path / "backtest_runs.db")
     db.init_session(name="ema", metric_name="profit_factor", direction="higher")

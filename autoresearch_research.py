@@ -213,12 +213,19 @@ def log_research_round(
 
     db = BacktestRunDB(db_path)
     state = read_state(state_path)
+    try:
+        job_id = int(state.get("job", 0))
+    except (TypeError, ValueError):
+        job_id = 0
+    research_round_id = f"job-{job_id}-round-{round_number}"
     attempt_number = 1
     if outcome.startswith("rejected_attempt_"):
         try:
             attempt_number = int(outcome.rsplit("_", 1)[-1])
         except ValueError:
             attempt_number = 1
+    else:
+        attempt_number = db.next_research_thesis_attempt_number(research_round_id)
     db.log_research_round(
         state_path,
         round_number=round_number,
@@ -229,7 +236,7 @@ def log_research_round(
     )
     db.add_research_thesis_attempt(
         {
-            "research_round_id": f"job-{state.get('job', 0)}-round-{round_number}",
+            "research_round_id": research_round_id,
             "attempt_number": attempt_number,
             "thesis_id": thesis_id,
             "strategy_family": state.get("family", ""),

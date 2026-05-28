@@ -57,7 +57,7 @@ A round is the container for one or more thesis attempts.
 
 | Column | Type | Source today | Notes |
 |---|---|---|---|
-| `research_round_id` | TEXT PRIMARY KEY | NEW_WRITE_PATH_REQUIRED | no synthetic id exists today |
+| `research_round_id` | TEXT PRIMARY KEY | existing | deterministic `job-{job}-round-{round}` id |
 | `job_id` | INTEGER | existing | current `job` |
 | `round_number` | INTEGER | existing | current `round` |
 | `run_id` | TEXT | existing | trace/session run id |
@@ -77,13 +77,13 @@ This is required because validator retries can produce multiple theses in the sa
 
 | Column | Type | Source today | Notes |
 |---|---|---|---|
-| `thesis_attempt_id` | TEXT PRIMARY KEY | NEW_WRITE_PATH_REQUIRED | synthetic id required |
-| `research_round_id` | TEXT | NEW_WRITE_PATH_REQUIRED | FK to research_rounds |
-| `attempt_number` | INTEGER | NEW_WRITE_PATH_REQUIRED | 1, 2, 3... within a round |
+| `thesis_attempt_id` | TEXT PRIMARY KEY | existing | deterministic `{research_round_id}-attempt-{attempt}` id |
+| `research_round_id` | TEXT | existing | FK to research_rounds |
+| `attempt_number` | INTEGER | existing | 1, 2, 3... within a round |
 | `strategy_family` | TEXT | existing | from controller family / thesis metadata |
-| `validator_status` | TEXT | NEW_WRITE_PATH_REQUIRED | rejected / accepted / needs_code / compiled |
-| `selected_for_execution` | INTEGER | NEW_WRITE_PATH_REQUIRED | 0/1 flag |
-| `created_at_utc` | TEXT | NEW_WRITE_PATH_REQUIRED | attempt timestamp |
+| `validator_status` | TEXT | existing | rejected / accepted / needs_code / compiled |
+| `selected_for_execution` | INTEGER | existing | 0/1 flag |
+| `created_at_utc` | TEXT | existing | attempt timestamp |
 
 ### Required indexes
 - `idx_research_thesis_attempts_round_attempt`
