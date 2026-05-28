@@ -624,7 +624,8 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
             {"source": "analyst", "citation": "Analyst found weak crosses cluster in losses."},
         ],
         "source_code_verification": (
-            "strategies/ema/signals.py uses ema_length in EMA signal construction."
+            "strategies/ema/signals.py:generate_signals_for_frame uses ema_length "
+            "in EMA signal construction."
         ),
         "config_changes": {"ema_length": ema_length},
         "expected_effects": [
@@ -632,7 +633,12 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
                 "metric": "profit_factor",
                 "direction": "increase",
                 "rationale": "Filtering weak crosses should improve realized edge.",
-            }
+            },
+            {
+                "metric": "trade_count",
+                "direction": "decrease",
+                "rationale": "A smoother EMA should reject some marginal cross signals.",
+            },
         ],
         "disqualifiers": [
             {
