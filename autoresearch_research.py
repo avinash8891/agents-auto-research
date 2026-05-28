@@ -47,6 +47,7 @@ from family_research_spec import resolve_research_resolution_context
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_memory import latest_thesis_details as _latest_thesis_details
+from research_thesis_ids import research_thesis_attempt_id
 from research_types import ConductorResult, ResearchThesis
 from strategy_family import StrategyFamily
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
@@ -85,6 +86,8 @@ def _prepare_thesis_for_validation(
     thesis: dict[str, Any],
     *,
     strategy_family: str,
+    research_round_id: str,
+    attempt_number: int,
     prior_theses: list[dict[str, Any]] | None = None,
     allow_schema_only_code_change_fallback: bool = False,
     tools_called: frozenset[str] | set[str] | None = None,
@@ -111,14 +114,20 @@ def _prepare_thesis_for_validation(
         validated = validate_thesis_dict(
             raw_thesis,
             prior_theses=prior_theses,
+            research_round_id=research_round_id,
+            attempt_number=attempt_number,
             tools_called=tools_called,
             require_analyst_evidence=require_analyst_evidence,
             evidence_context=evidence_context,
             require_analyst_tool=require_analyst_tool,
         )
+        raw_thesis["thesis_id"] = validated.thesis_id
     except ThesisValidationError:
         if not (allow_schema_only_code_change_fallback and raw_thesis.get("requires_code_change")):
             raise
+        raw_thesis["thesis_id"] = research_thesis_attempt_id(
+            research_round_id, attempt_number
+        )
         validated = ResearchThesis.model_validate(normalize_thesis_payload(raw_thesis))
     return raw_thesis, validated
 
@@ -793,7 +802,15 @@ def _try_one_validation_attempt(
     assert conductor_result.thesis is not None
     raw_thesis = conductor_result.thesis
     tools_called = conductor_result.tools_called
-    thesis_id = raw_thesis.get("thesis_id", "unknown")
+    state = controller.read_state()
+    raw_job = state.get("job") if isinstance(state, dict) else None
+    try:
+        job_id = int(raw_job) if raw_job is not None else 0
+    except (TypeError, ValueError):
+        job_id = 0
+    research_round_id = f"job-{job_id}-round-{research_round}"
+    attempt_number = attempt + 1
+    thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
 
     # If the conductor attached a validator_challenge, persist it before any
     # validation work. Logged for human review; does not alter the decision.
@@ -814,13 +831,15 @@ def _try_one_validation_attempt(
         raw_thesis, validated = _prepare_thesis_for_validation(
             raw_thesis,
             strategy_family=controller.family.name,
+            research_round_id=research_round_id,
+            attempt_number=attempt_number,
             prior_theses=prior_theses,
             tools_called=tools_called,
             require_analyst_evidence=require_analyst_evidence,
             evidence_context=evidence_context,
             require_analyst_tool=require_analyst_tool,
         )
-        thesis_id = raw_thesis.get("thesis_id", "unknown")
+        thesis_id = validated.thesis_id
         log.info(
             f"RESEARCH_RAW thesis_id={thesis_id} "
             f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
@@ -881,7 +900,7 @@ def _try_one_validation_attempt(
         raw_thesis,
         validated,
         contract,
-        thesis_id,
+        validated.thesis_id,
     )
     # _dispatch_compiled_contract handles the contract-status-not-ready case as
     # a "compile" rejection.
@@ -1145,8 +1164,12 @@ def _research_activity(*, research_round: int, phase: str) -> dict[str, Any]:
     return {"type": "research", "phase": phase, "round": research_round}
 
 
+def _result_thesis_id(result: dict[str, Any], fallback: str = "unknown") -> str:
+    return str(result.get("generated_thesis_id") or result.get("thesis_id") or fallback)
+
+
 def _thesis_meta_from_result(result: dict[str, Any], family_name: str) -> dict[str, Any]:
-    thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
+    thesis_id = _result_thesis_id(result)
     thesis_meta = result.get("thesis")
     if isinstance(thesis_meta, dict):
         return thesis_meta
@@ -1220,7 +1243,7 @@ def _record_round_quality_and_bridges(
     round_usage: dict[str, Any],
 ) -> None:
     outcome = _classify_round_outcome(result)
-    thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
+    thesis_id = _result_thesis_id(result)
     thesis_meta = _thesis_meta_from_result(result, controller.family.name)
     reasoning = result.get("reasoning", "")
     validation_failure_reason = result.get("validation_failure_reason", "")
@@ -1511,7 +1534,7 @@ def _record_rejection_rule_if_needed(research_round: int, result: dict[str, Any]
     validation_failure_reason = result.get("validation_failure_reason")
     if not validation_failure_reason:
         return
-    thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
+    thesis_id = _result_thesis_id(result)
     _RULE_PROPOSALS.create_proposal(
         title=f"Round {research_round} rejected thesis {thesis_id}",
         rationale=validation_failure_reason,
@@ -1599,9 +1622,17 @@ def _handle_needs_code(
     state["halted_thesis_id"] = thesis_id
     state["halted_thesis"] = thesis
     try:
+        raw_job = state.get("job")
+        try:
+            job_id = int(raw_job) if raw_job is not None else 0
+        except (TypeError, ValueError):
+            job_id = 0
+        halt_round = int(state.get("research_round", result.get("research_round", 0)) or 0)
         _, validated = _prepare_thesis_for_validation(
             thesis_payload,
             strategy_family=controller.family.name,
+            research_round_id=f"job-{job_id}-round-{halt_round}",
+            attempt_number=1,
             prior_theses=None,
             allow_schema_only_code_change_fallback=True,
         )
@@ -1754,7 +1785,7 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         round_usage=round_usage,
     )
 
-    thesis_id = result.get("generated_thesis_id") or result.get("thesis_id") or "none"
+    thesis_id = _result_thesis_id(result)
     thesis_meta = _thesis_meta_from_result(result, controller.family.name)
     controller.log_research_round(
         round_number=research_round,

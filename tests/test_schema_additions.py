@@ -18,6 +18,8 @@ _VALID_PROCESS_TOOLS = {"list_experiment_results", "web_search"}
 
 def validate_thesis_dict(*args: object, **kwargs: object) -> object:
     kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    kwargs.setdefault("research_round_id", "job-test-round-1")
+    kwargs.setdefault("attempt_number", 1)
     return _validate_thesis_dict(*args, **kwargs)
 
 
@@ -189,4 +191,4 @@ def test_validator_accepts_substantive_falsification_or_alternative() -> None:
         "improvement is likely a regime artifact rather than a real edge."
     )
     obj = validate_thesis_dict(payload)
-    assert obj.thesis_id == "t6"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"

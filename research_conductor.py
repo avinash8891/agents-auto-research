@@ -101,13 +101,13 @@ def _evidence_context_for_round(trades_file: str, latest_outcome: dict[str, Any]
 def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     """Extract single thesis dict from conductor response. Returns (thesis, validation_error).
 
-    v3 prompt contract: conductor returns the thesis object directly (thesis_id at top level).
-    The suggested_theses wrapper path is kept for backward compatibility with test fixtures only.
+    v3 prompt contract: conductor returns exactly one thesis in suggested_theses.
+    The direct thesis-object path is kept for backward compatibility with older fixtures only.
     """
-    if "thesis_id" in parsed:
-        return parsed, ""
     theses = parsed.get("suggested_theses")
     if theses is None:
+        if "hypothesis" in parsed or "config_changes" in parsed:
+            return parsed, ""
         return None, "no thesis returned"
     if not isinstance(theses, list):
         return None, "suggested_theses must be a list"
@@ -923,9 +923,7 @@ async def run_research_conductor(
         revise={"used_feedback_retry": bool(rejection_feedback)},
         evaluate={
             "parsed": bool(parsed),
-            "has_thesis": (
-                bool(parsed.get("thesis_id") or parsed.get("suggested_theses")) if parsed else False
-            ),
+            "has_thesis": bool(parsed.get("suggested_theses")) if parsed else False,
             "should_stop": bool(parsed.get("should_stop")) if parsed else False,
         },
     )
@@ -961,8 +959,10 @@ async def run_research_conductor(
             candidate = dict(thesis)
             candidate["strategy_family"] = family_name
             try:
-                validate_thesis_dict(
+                validated = validate_thesis_dict(
                     candidate,
+                    research_round_id=f"job-{current_job or 0}-round-{research_round}",
+                    attempt_number=1,
                     tools_called=tools_called_this_round,
                     require_analyst_evidence=bool(trades_file),
                     evidence_context=_evidence_context_for_round(trades_file, latest_outcome),
@@ -975,14 +975,14 @@ async def run_research_conductor(
                 validation_reason = str(exc)
                 trace(
                     "CONDUCTOR",
-                    f"validate failed thesis={thesis.get('thesis_id', 'unknown')}: {exc}",
+                    f"validate failed proposal={thesis.get('proposal_label', 'unknown')}: {exc}",
                     model_provider="openai",
                     model_name=_CONDUCTOR_MODEL,
                 )
             else:
                 trace(
                     "CONDUCTOR",
-                    f"OK thesis={thesis['thesis_id']}",
+                    f"OK thesis={validated.thesis_id}",
                     model_provider="openai",
                     model_name=_CONDUCTOR_MODEL,
                 )

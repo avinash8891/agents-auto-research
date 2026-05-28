@@ -19,6 +19,7 @@ from persistence_utils import utc_now_iso8601 as _iso8601_utc_now
 from persistence_utils import (
     write_text_atomic,
 )
+from research_thesis_ids import research_thesis_attempt_id
 
 log = get_logger(__name__)
 
@@ -33,7 +34,7 @@ BACKTEST_RUNS_TABLE = "backtest_runs"
 
 
 def _research_thesis_attempt_id(research_round_id: str, attempt_number: int) -> str:
-    return f"{research_round_id}-attempt-{attempt_number}"
+    return research_thesis_attempt_id(research_round_id, attempt_number)
 
 
 def _coerce_metric_float(value: Any, *, default: float = 0.0) -> float:
@@ -648,6 +649,9 @@ class BacktestRunDB:
     def add_research_thesis_attempt(self, row: dict[str, Any]) -> None:
         research_round_id = row["research_round_id"]
         attempt_number = int(row["attempt_number"])
+        thesis_id = row.get("thesis_id") or research_thesis_attempt_id(
+            research_round_id, attempt_number
+        )
         with self._connect() as conn:
             conn.execute(
                 """
@@ -665,7 +669,7 @@ class BacktestRunDB:
                     ),
                     research_round_id,
                     attempt_number,
-                    row["thesis_id"],
+                    thesis_id,
                     row.get("strategy_family", ""),
                     json_dumps_strict(row.get("config_changes", {})),
                     row.get("validator_status", ""),
