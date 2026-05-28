@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
@@ -44,7 +45,7 @@ _TOOL_MODELS: dict[str, type[BaseModel]] = {
 }
 
 
-def _dispatch(model_cls: type[BaseModel], kwargs: dict) -> str | None:
+def _dispatch(model_cls: type[BaseModel], kwargs: dict[str, Any]) -> str | None:
     """Validate kwargs against model_cls. Returns error string on failure, None on success."""
     try:
         model_cls(**kwargs)
@@ -56,9 +57,11 @@ def _dispatch(model_cls: type[BaseModel], kwargs: dict) -> str | None:
             loc = ".".join(str(x) for x in e["loc"]) if e["loc"] else "input"
             parts.append(f"{loc}: {e['msg']}")
         return "VALIDATION ERROR: " + "; ".join(parts)
+    except Exception as exc:  # noqa: BLE001
+        return f"VALIDATION ERROR: unexpected error validating args: {exc}"
 
 
-def _enforce_tool_models(mcp, tool_models: dict[str, type[BaseModel]]) -> None:
+def _enforce_tool_models(mcp: Any, tool_models: dict[str, type[BaseModel]]) -> None:
     """Raise TypeError if any registered tool lacks an entry in tool_models."""
     registered = set(mcp._tool_manager._tools.keys())
     modeled = set(tool_models.keys())
