@@ -457,6 +457,95 @@ class TestCliSmoke:
         # Sibling row was NOT touched (no wildcard expansion bleed-through).
         assert sibling[0] == sibling_path
 
+    def test_reverse_removes_migration_marker(self, staged_runtime) -> None:
+        """Rollback must remove the migration marker; otherwise the
+        compiler_builder guardrail stays silently suppressed on a dir that
+        is no longer migration-touched."""
+        root, db_path, legacy_dir, round_id = staged_runtime
+        target_dir = legacy_dir.parent / round_id
+
+        forward = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--root",
+                str(root),
+                "--db",
+                str(db_path),
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert forward.returncode == 0
+        marker_name = f".migrated_from_thesis_id__{legacy_dir.name}"
+        assert (target_dir / marker_name).exists()
+
+        reverse = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--root",
+                str(root),
+                "--db",
+                str(db_path),
+                "--reverse",
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert reverse.returncode == 0
+        # The legacy dir is restored, and the marker is GONE from inside it.
+        assert legacy_dir.is_dir()
+        assert not (legacy_dir / marker_name).exists()
+
+    def test_rewrite_db_paths_handles_windows_separator(self, tmp_path: Path) -> None:
+        """A row whose path was persisted with backslashes (e.g. originating
+        from a Windows agent) must still be rewritten when the dir it points
+        into is migrated."""
+        _rewrite_db_paths = migrate_experiment_dirs._rewrite_db_paths
+
+        root = tmp_path / "runtime_root"
+        root.mkdir()
+        db_path = tmp_path / "ema_backtest_runs.db"
+        conn = _make_db(db_path)
+        # Build literal Windows-style paths (using \ even on POSIX hosts);
+        # _rewrite_db_paths must accept either separator when comparing the
+        # column value to the rename's `old` prefix.
+        old_dir_str = str(root) + "\\runtime\\jobs\\job-12\\research\\round-1\\experiments\\foo"
+        new_dir_str = (
+            str(root) + "\\runtime\\jobs\\job-12\\research\\round-1\\experiments\\job-12-round-1"
+        )
+        trades_old = old_dir_str + "\\trades.csv"
+        conn.execute(
+            "INSERT INTO backtest_runs (run_id, thesis_id, job, "
+            "research_round_id, research_round_number, trades_file) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("run-win", "foo", 12, "job-12-round-1", 1, trades_old),
+        )
+        conn.commit()
+        conn.close()
+
+        updated = _rewrite_db_paths(
+            [db_path],
+            [(Path(old_dir_str), Path(new_dir_str))],
+        )
+
+        assert updated == 1
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT trades_file FROM backtest_runs WHERE run_id = ?",
+                ("run-win",),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert "foo" not in row[0].rsplit("\\", 1)[0]
+        assert "job-12-round-1" in row[0]
+
     def test_typo_root_exits_3(self, tmp_path: Path) -> None:
         """An explicit --root pointing at a nonexistent path is an operator
         typo, not "nothing to migrate" — exit 3 like the --db typo case."""

@@ -279,14 +279,20 @@ def _plan_renames(
 _MIGRATION_MARKER_PREFIX = ".migrated_from_thesis_id__"
 
 
-def _execute_renames(renames: list[tuple[Path, Path]]) -> int:
+def _execute_renames(renames: list[tuple[Path, Path]], *, reverse: bool = False) -> int:
     """Apply renames. Returns count actually renamed. Raises OSError on failure.
 
-    Drops a ``.migrated_from_thesis_id__{old_name}`` marker file in each
-    renamed directory so downstream code (compiler_builder's legacy-dir
-    guardrail) can distinguish a migration-touched dir — which may
-    legitimately contain a thesis.json carried over from the legacy
-    layout — from an actually-stale builder artifact dir.
+    Forward (``reverse=False``): drops a ``.migrated_from_thesis_id__{old_name}``
+    marker file in each renamed directory so downstream code
+    (compiler_builder's legacy-dir guardrail) can distinguish a
+    migration-touched dir — which may legitimately contain a thesis.json
+    carried over from the legacy layout — from an actually-stale builder
+    artifact dir.
+
+    Reverse: BEFORE renaming back, remove any migration marker(s) inside
+    the dir. Leaving them in place after rollback would keep the
+    guardrail silently suppressed on a dir that's no longer migration-
+    touched, which would mask a real stale-builder regression next time.
     """
     applied = 0
     for old, new in renames:
@@ -296,16 +302,26 @@ def _execute_renames(renames: list[tuple[Path, Path]]) -> int:
         if new.exists():
             logger.error("refusing to rename %s -> %s: target already exists", old, new)
             raise OSError(f"target exists: {new}")
+        if reverse:
+            for marker_path in old.iterdir():
+                if marker_path.name.startswith(_MIGRATION_MARKER_PREFIX):
+                    try:
+                        marker_path.unlink()
+                    except OSError:
+                        # Best-effort: a leftover marker is preferable to
+                        # failing the rollback.
+                        pass
         old.rename(new)
-        marker = new / f"{_MIGRATION_MARKER_PREFIX}{old.name}"
-        try:
-            marker.touch(exist_ok=True)
-        except OSError:
-            # Marker is advisory — failure to drop it shouldn't undo the
-            # successful rename. compiler_builder's guardrail will then
-            # treat the dir as legacy-with-builder-artifacts (loud failure),
-            # which is the safer fallback.
-            pass
+        if not reverse:
+            marker = new / f"{_MIGRATION_MARKER_PREFIX}{old.name}"
+            try:
+                marker.touch(exist_ok=True)
+            except OSError:
+                # Marker is advisory — failure to drop it shouldn't undo
+                # the successful rename. compiler_builder's guardrail will
+                # then treat the dir as legacy-with-builder-artifacts (loud
+                # failure), which is the safer fallback.
+                pass
         applied += 1
         print(f"RENAMED {old} -> {new}")
     return applied
@@ -324,7 +340,9 @@ def _rewrite_db_paths(db_paths: list[Path], renames: list[tuple[Path, Path]]) ->
 
     Match is performed in Python (not SQL LIKE) so directory names containing
     ``_`` or ``%`` cannot accidentally rewrite unrelated rows via the SQL
-    wildcard expansion.
+    wildcard expansion. The prefix check accepts both POSIX (``/``) and
+    Windows (``\\``) separators so rows persisted on either OS migrate
+    correctly.
     """
     if not renames:
         return 0
@@ -339,7 +357,11 @@ def _rewrite_db_paths(db_paths: list[Path], renames: list[tuple[Path, Path]]) ->
                     if not isinstance(existing, str) or not existing:
                         continue
                     for old_str, new_str in substitutions:
-                        if existing == old_str or existing.startswith(old_str + "/"):
+                        if (
+                            existing == old_str
+                            or existing.startswith(old_str + "/")
+                            or existing.startswith(old_str + "\\")
+                        ):
                             rewritten = new_str + existing[len(old_str) :]
                             conn.execute(
                                 f"UPDATE backtest_runs SET {col} = ? WHERE run_id = ?",  # noqa: S608
@@ -443,7 +465,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.apply:
         try:
-            applied = _execute_renames(renames)
+            applied = _execute_renames(renames, reverse=args.reverse)
         except OSError as exc:
             logger.error("rename failed: %s", exc)
             return 2
