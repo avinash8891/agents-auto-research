@@ -209,14 +209,11 @@ def log_research_round(
     usage: dict[str, Any] | None = None,
 ) -> None:
     """Log every research round outcome to canonical persistence."""
-    from backtest_run_db import BacktestRunDB
+    from backtest_run_db import BacktestRunDB, coerce_research_job_id
 
     db = BacktestRunDB(db_path)
     state = read_state(state_path)
-    try:
-        job_id = int(state.get("job", 0))
-    except (TypeError, ValueError):
-        job_id = 0
+    job_id = coerce_research_job_id(state.get("job"))
     research_round_id = f"job-{job_id}-round-{round_number}"
     attempt_number = 1
     if outcome.startswith("rejected_attempt_"):

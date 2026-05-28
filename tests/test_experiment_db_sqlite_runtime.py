@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
+import types
 from pathlib import Path
 
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
@@ -83,11 +85,16 @@ def test_export_entries_use_backtest_run_type(tmp_path: Path) -> None:
     assert entries[0]["research_round_number"] == 0
 
 
-def test_list_research_rounds_keeps_round_zero_baseline(tmp_path: Path) -> None:
+def test_list_research_rounds_keeps_round_zero_baseline(tmp_path: Path, monkeypatch) -> None:
     db = BacktestRunDB(tmp_path / "backtest_runs.db")
     db.init_session(name="ema", metric_name="profit_factor", direction="higher")
     state_path = tmp_path / "state.json"
     state_path.write_text('{"job": 3}\n')
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_sdk",
+        types.SimpleNamespace(current_hypothesis_id=lambda: None, get_run_id=lambda: "run-3"),
+    )
     db.log_research_round(
         state_path,
         round_number=0,
@@ -207,6 +214,51 @@ def test_research_round_retry_attempts_remain_first_class_rows(
     assert by_attempt[3]["hypothesis"] == "tighten entry after weak crosses"
     assert by_attempt[3]["mechanism"] == "avoid low-conviction crosses"
     assert by_attempt[3]["created_at_utc"] == "2026-05-28T00:00:03+00:00"
+
+
+def test_log_research_round_rejects_invalid_job_id(tmp_path: Path, monkeypatch) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    state_path = tmp_path / "state.json"
+    state_path.write_text('{"job": "not-an-int"}\n')
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_sdk",
+        types.SimpleNamespace(current_hypothesis_id=lambda: None, get_run_id=lambda: "run-17"),
+    )
+
+    try:
+        db.log_research_round(
+            state_path,
+            round_number=2,
+            thesis_id="ema-tight-entry",
+            outcome="compiled",
+        )
+    except ValueError as exc:
+        assert "job id is required for research round persistence" in str(exc)
+    else:
+        raise AssertionError("invalid job id must not silently persist as job 0")
+
+    assert db.list_research_rounds() == []
+
+
+def test_blank_thesis_attempt_id_is_canonicalized(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+
+    db.add_research_thesis_attempt(
+        {
+            "thesis_attempt_id": "",
+            "research_round_id": "job-17-round-2",
+            "attempt_number": 1,
+            "thesis_id": "ema-duplicate",
+            "strategy_family": "ema",
+            "config_changes": {"ema_length": 8},
+            "validator_status": "rejected_attempt_1",
+        }
+    )
+
+    attempts = db.list_research_thesis_attempts()
+
+    assert attempts[0]["thesis_attempt_id"] == "job-17-round-2-attempt-1"
 
 
 def test_best_by_metric_ignores_malformed_metric_values(tmp_path: Path) -> None:

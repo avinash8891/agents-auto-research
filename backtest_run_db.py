@@ -36,6 +36,18 @@ def _research_thesis_attempt_id(research_round_id: str, attempt_number: int) -> 
     return f"{research_round_id}-attempt-{attempt_number}"
 
 
+def coerce_research_job_id(raw_job: Any) -> int:
+    try:
+        job_id = int(raw_job)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"job id is required for research round persistence; got {raw_job!r}"
+        ) from exc
+    if job_id < 1:
+        raise ValueError(f"job id is required for research round persistence; got {raw_job!r}")
+    return job_id
+
+
 def _coerce_metric_float(value: Any, *, default: float = 0.0) -> float:
     try:
         return float(value)
@@ -499,11 +511,7 @@ class BacktestRunDB:
         from trace_sdk import current_hypothesis_id, get_run_id
 
         state = read_state(state_path)
-        raw_job = state.get("job")
-        try:
-            job_id = int(raw_job)
-        except (TypeError, ValueError):
-            job_id = 0
+        job_id = coerce_research_job_id(state.get("job"))
         resolved_hypothesis_id = hypothesis_id or current_hypothesis_id() or thesis_id
         with self._connect() as conn:
             conn.execute(
@@ -648,6 +656,9 @@ class BacktestRunDB:
     def add_research_thesis_attempt(self, row: dict[str, Any]) -> None:
         research_round_id = row["research_round_id"]
         attempt_number = int(row["attempt_number"])
+        thesis_attempt_id = row.get("thesis_attempt_id") or _research_thesis_attempt_id(
+            research_round_id, attempt_number
+        )
         with self._connect() as conn:
             conn.execute(
                 """
@@ -659,10 +670,7 @@ class BacktestRunDB:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    row.get(
-                        "thesis_attempt_id",
-                        _research_thesis_attempt_id(research_round_id, attempt_number),
-                    ),
+                    thesis_attempt_id,
                     research_round_id,
                     attempt_number,
                     row["thesis_id"],
@@ -689,6 +697,9 @@ class BacktestRunDB:
                 thesis_id = "" if invalid else r.get("thesis_id", "")
                 research_round_id = r.get("research_round_id", "")
                 attempt_number = int(r.get("attempt_number", 0))
+                thesis_attempt_id = r.get("thesis_attempt_id") or _research_thesis_attempt_id(
+                    research_round_id, attempt_number
+                )
                 config_changes = (
                     json_dumps_strict(row)
                     if invalid
@@ -705,10 +716,7 @@ class BacktestRunDB:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        r.get(
-                            "thesis_attempt_id",
-                            _research_thesis_attempt_id(research_round_id, attempt_number),
-                        ),
+                        thesis_attempt_id,
                         research_round_id,
                         attempt_number,
                         thesis_id,
