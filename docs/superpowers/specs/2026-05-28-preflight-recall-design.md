@@ -122,20 +122,31 @@ research_types.py                ← edited (small)
   ├─ Add ResearchThesis.dedup_override_justification: DedupOverride | None
   └─ Add DedupOverride dataclass: matched_thesis_id, similarity, load_bearing_difference
 
-research_prompts.py              ← NOT EDITED
-  System prompt stays static. All round-specific blocks go in the user prompt.
+research_prompts.py              ← edited (small static reword)
+  └─ Tool-list description block (lines 50-58): reword two lines to clarify
+     that pre-flight pre-loads top-K relevant priors in the user prompt;
+     list_past_theses / list_experiment_results remain available for deep
+     follow-up only. Prevents the agent from redundantly fetching context
+     it already has.
 ```
 
 No new dependency. ChromaDB and MemPalace are already in the import graph via `research_memory.py`.
 
-### 4.2 Two retrieval queries, two purposes
+### 4.2 Three retrievals: relevance half, diversity half, dedup
+
+Pre-flight is **two-pass** (not single-pass) to avoid the well-documented retrieval-homogeneity problem: pure cosine top-K concentrated near the just-failed direction inadvertently nudges the agent toward more-of-the-same proposals that dedup then rejects. The standard fixes are MMR within a relevance pass plus an explicit diversity pass; we apply both.
 
 | Pass | When | Query input | Returns | Used for |
 | --- | --- | --- | --- | --- |
-| **Pre-flight (broad)** | User-prompt build, every round | `family + latest_outcome[mechanism, validator_status, validation_failure_reason] + rejection_feedback` | Top-K (default 8) priors with outcomes, outcome-balanced | Prime user prompt with relevant priors + landscape + pairs |
+| **Relevance half** | User-prompt build, every round | `family + latest_outcome[mechanism, validator_status, validation_failure_reason] + rejection_feedback` | Top `K/2` via cosine, re-ranked with **MMR** (`lambda_mult` default 0.5) | What's near what just happened, with redundancy removed |
+| **Diversity half** | Same | `family + theme_keywords_of_latest_outcome` | Top `K/2` from corpus filtered by `where_not={"mechanism_dimension": <just_failed_dim>}`, ranked by cosine | Guaranteed cross-dimension priors so the agent sees somewhere to go |
 | **Dedup (narrow)** | After agent emits draft thesis | Draft `hypothesis + mechanism` text | Top-1 prior + cosine score | Soft-gate against near-duplicates |
 
-Both share the same `thesis_corpus` ChromaDB wing.
+All three share the same `thesis_corpus` ChromaDB wing.
+
+**Outcome-balance floor** applies to the **union** of relevance + diversity halves: at least 2 KEPT and at least 2 KILLED in the returned K, when both exist in the corpus. Backfill from the runner-up bucket if a half can't meet its share.
+
+**Cold-path for diversity half.** When the just-failed dimension is the only populated dimension in the family corpus, `where_not` returns nothing — the diversity half degrades to empty and the relevance half is allowed to fill the full K. Logged as `PREFLIGHT_DIVERSITY_DEGRADED`.
 
 ### 4.3 The synthesis turn
 
@@ -246,13 +257,35 @@ On round 0 (no `latest_outcome`), the query is just `f"family={intent.family}"` 
 
 ### 5.2 `build_prior_attempts_block(intent, *, k=None) -> str`
 
-- `k` defaults to `_preflight_k()` (env: `AUTORESEARCH_PREFLIGHT_K`, default 8). Lazy accessor.
-- ChromaDB query with `where={"strategy_family": intent.family}` and `n_results=k*2` (over-fetch to allow outcome-balance enforcement).
-- **Outcome-balance floor**: from the top `k*2`, select to satisfy "at least 2 KEPT + at least 2 KILLED in the returned top-K, when both exist in the corpus." Algorithm:
-  1. Take top 2 KEPT by cosine; top 2 KILLED by cosine.
-  2. Backfill the remaining `k-4` slots from the next-best by cosine across both buckets.
-  3. If KEPT or KILLED has fewer than 2 in the corpus, just take what exists; no padding.
-- Renders as markdown (one section per entry, with `thesis_id`, `outcome`, `mechanism_dimension`, `hypothesis` (≤180 chars), `mechanism` (≤180 chars), `validation_failure_reason` (≤160 chars), `job_id`, `round_number`).
+Two-pass retrieval with MMR re-ranking on the relevance half. Concretely:
+
+1. **`k` defaults to `_preflight_k()`** (env `AUTORESEARCH_PREFLIGHT_K`, default 8). Lazy accessor.
+
+2. **Split.** `relevance_share = k // 2`; `diversity_share = k - relevance_share`. Tunable via `_preflight_relevance_share()` (env `AUTORESEARCH_PREFLIGHT_RELEVANCE_SHARE`, default `0.5`).
+
+3. **Relevance half (with MMR).**
+   - ChromaDB query with `where={"strategy_family": intent.family}`, `n_results=relevance_share * 3` (over-fetch by 3x to give MMR room to re-rank).
+   - Compute pairwise cosine among the over-fetched candidates.
+   - Greedy MMR selection: start with the highest cosine-to-query. For each subsequent pick `c`, score:
+     `mmr(c) = lambda_mult * cos(c, query) - (1 - lambda_mult) * max(cos(c, s) for s in selected)`
+     Pick `argmax`. `lambda_mult` from `_preflight_mmr_lambda()` (env `AUTORESEARCH_PREFLIGHT_MMR_LAMBDA`, default `0.5`; 1.0 = pure relevance, 0.0 = pure diversity).
+   - Stop at `relevance_share` selections.
+
+4. **Diversity half (cross-dimension).**
+   - Determine `just_failed_dim = intent.latest_outcome.get("mechanism_dimension")`.
+   - When set: ChromaDB query with `where={"strategy_family": intent.family, "$and": [{"mechanism_dimension": {"$ne": just_failed_dim}}]}`, `n_results=diversity_share * 2`. Query text: `f"family={family}; explore mechanisms different from {just_failed_dim}"` (when present, append `theme_keywords` of latest_outcome). Greedy top by cosine, no MMR (the dimension-exclusion already enforces diversity).
+   - When `just_failed_dim` is unset or empty (round 0): diversity half degrades — pull `diversity_share` random non-overlapping picks from the full family corpus.
+
+5. **Union + outcome-balance floor.** Combine the two halves (deduplicate by `thesis_id+attempt_number`). From the union, enforce "≥2 KEPT and ≥2 KILLED" by demoting and replacing if needed:
+   - If KEPT < 2 in union but ≥2 in family corpus: pull the next-best KEPT (by cosine to relevance query) and swap out the lowest-MMR-score KILLED.
+   - Mirror for KILLED.
+   - If a half can't meet its share (e.g. diversity returned 0 because corpus is single-dim), the other half backfills, capped at `k` total.
+
+6. **Cold-path logging.** When the diversity half degrades (returned 0 cross-dim entries) emit `PREFLIGHT_DIVERSITY_DEGRADED` with reason; when MMR is short-circuited (relevance candidates < relevance_share) emit `PREFLIGHT_MMR_DEGRADED`.
+
+7. **Render.** Markdown sections, one per entry: `thesis_id`, `outcome`, `mechanism_dimension`, `hypothesis` (≤180 chars), `mechanism` (≤180 chars), `validation_failure_reason` (≤160 chars), `job_id`, `round_number`. Sections grouped by half — relevance entries first under "## Closest priors", then diversity entries under "## Cross-dimension priors (for synthesis)".
+
+This design is grounded in the well-established RAG-diversity literature: MMR (`lambda_mult`) is the production-default for retrieval diversity (LangChain, LlamaIndex, Azure AI Search, Elastic, Bigtable), and two-pass relevance+diversity hybridization is the standard agentic-context-engineering pattern (Elastic Search Labs, multi-stage RAG pipelines). The dimension-exclusion technique in the diversity half is borrowed from MAP-Elites style structured exploration used by QuantEvolve, FunSearch, and AlphaEvolve — adapted to our schema by using `mechanism_dimension` as the structured axis.
 
 ### 5.3 `build_landscape_block(family) -> str`
 
@@ -348,6 +381,19 @@ Validator rejects when:
 - `matched_thesis_id` doesn't resolve to a real prior in the corpus.
 - A round has more than 1 override attempt (capped per round).
 
+### 5.8 Tool-description edit in `research_prompts.py`
+
+The conductor's system prompt currently advertises `list_past_theses` / `get_past_thesis` / `list_experiment_results` / `get_experiment_result` as if they were the primary path to prior context. Once pre-flight pre-loads the top-K relevant priors in the user prompt, those tools become **follow-up tools**, not primary-context tools. Without an edit, the agent will sometimes call them redundantly, wasting tokens and round-trips.
+
+**Change.** Replace lines 50–58 of `research_prompts.py` with reworded text that:
+- States explicitly that the round's user prompt already contains top-K relevant priors + landscape + dimension pairs.
+- Repositions the tools as for deep follow-up: "use only when you need a thesis NOT in the pre-flight block, or a level of detail beyond the summary."
+- Leaves the tool signatures unchanged — only the description text changes. No tool registration touched.
+
+This is a static reword. It does not change MCP wiring or `research_tools_mcp.py`. The tools remain fully available; their advertised purpose is sharpened.
+
+Test: a unit test on `_build_conductor_system_prompt` asserts the new wording is present, mentions "pre-loaded", and removes the impression that calling these tools is the agent's primary path to context.
+
 ## 6. Validator changes
 
 **No retires.** Two extensions of existing rules; one new field-level rule for the dedup override.
@@ -393,13 +439,15 @@ Lazy accessor functions, **not module-level constants** (CLAUDE.md hygiene rule)
 
 | Function | Env var | Default | Purpose |
 | --- | --- | --- | --- |
-| `_preflight_k()` | `AUTORESEARCH_PREFLIGHT_K` | `8` | Top-K size for pre-flight block |
+| `_preflight_k()` | `AUTORESEARCH_PREFLIGHT_K` | `8` | Top-K size for pre-flight block (union of halves) |
+| `_preflight_relevance_share()` | `AUTORESEARCH_PREFLIGHT_RELEVANCE_SHARE` | `0.5` | Fraction of K spent on relevance half; rest on diversity half |
+| `_preflight_mmr_lambda()` | `AUTORESEARCH_PREFLIGHT_MMR_LAMBDA` | `0.5` | MMR `lambda_mult` in relevance half (1.0=pure relevance, 0.0=pure diversity) |
 | `_dedup_threshold()` | `AUTORESEARCH_DEDUP_THRESHOLD` | `0.88` | Cosine cutoff for dedup trigger |
 | `_cold_start_threshold()` | `AUTORESEARCH_PREFLIGHT_COLD_START_THRESHOLD` | `5` | Min per-family corpus size to enable pre-flight |
 | `_landscape_saturated_at()` | `AUTORESEARCH_LANDSCAPE_SATURATED_AT` | `8` | Attempt count above which a dimension is "saturated" |
 | `_pairs_block_max_dimensions()` | `AUTORESEARCH_PAIRS_BLOCK_MAX_DIMENSIONS` | `5` | Cap on pairs rendered |
 | `_synthesis_enabled()` | `AUTORESEARCH_SYNTHESIS_TURN_ENABLED` | `true` | Kill switch for the synthesis turn |
-| `_kept_floor()`, `_killed_floor()` | `AUTORESEARCH_PREFLIGHT_KEPT_FLOOR`, `..._KILLED_FLOOR` | `2`, `2` | Outcome-balance floors in the top-K |
+| `_kept_floor()`, `_killed_floor()` | `AUTORESEARCH_PREFLIGHT_KEPT_FLOOR`, `..._KILLED_FLOOR` | `2`, `2` | Outcome-balance floors in the union |
 
 Each accessor validates its env var (int parse, range check) and raises with the named env var on bad input.
 
@@ -431,6 +479,8 @@ Real data from `*_backtest_runs.db`. No toy thesis names. No mocked internals. (
   - `dedup_check` triggers on a known near-duplicate (re-embed a real prior with paraphrased wording).
   - Cold start: empty blocks + skipped result + structured log.
   - Each lazy accessor reads env at call time.
+  - **MMR behavior:** with `lambda_mult=1.0`, relevance half matches pure-cosine ordering. With `lambda_mult=0.0`, second pick is the furthest candidate from the first regardless of relevance. With `lambda_mult=0.5`, candidates that are near-duplicates of the first pick are demoted. Tested with a synthetic case: 5 near-clones + 5 spread-out candidates → at `0.5`, relevance half returns ≤1 clone in the first 3.
+  - **Two-pass union:** when corpus has theses in both `just_failed_dim` and other dimensions, the returned K block contains entries from both halves; when corpus is single-dim, diversity half is empty and relevance half fills K (no exception).
 
 - `preflight_synthesis_turn`: prompt assembly stable; malformed-output retry+degradation.
 
@@ -454,12 +504,13 @@ Real data from `*_backtest_runs.db`. No toy thesis names. No mocked internals. (
 
 One PR, one deliverable, in this order:
 
-1. `preflight_recall.py` + `preflight_synthesis_turn.py` modules with full test coverage.
+1. `preflight_recall.py` (with MMR + two-pass retrieval) + `preflight_synthesis_turn.py` modules with full test coverage.
 2. `BacktestRunDB.list_dimension_summary` + `list_killed_kept_pairs` helpers.
 3. `research_types.ResearchThesis.dedup_override_justification` field (Pydantic optional).
-4. `research_conductor.py` user-prompt augmentation + two-turn flow + dedup call site.
-5. `thesis_validator.py` two extensions (§6.1, §6.2) + dedup-override well-formedness rule (§6.3).
-6. End-to-end test against a real fixture DB; commit per CLAUDE.md verification rules.
+4. `research_prompts.py` tool-description reword (§5.8).
+5. `research_conductor.py` user-prompt augmentation + two-turn flow + dedup call site.
+6. `thesis_validator.py` two extensions (§6.1, §6.2) + dedup-override well-formedness rule (§6.3).
+7. End-to-end test against a real fixture DB; commit per CLAUDE.md verification rules.
 
 No staged rollout flag. Behavior change is contained to thesis-creation rounds; cold-start path covers new families.
 
@@ -470,12 +521,30 @@ No staged rollout flag. Behavior change is contained to thesis-creation rounds; 
 - **Level 4: latent dimension discovery.** Clustering / density estimation over embedding space. Earn the right by measuring whether Levels 1–3 hit a ceiling.
 - **Cross-family pre-flight.** Currently `where={"strategy_family": ...}`. A future spec could add controlled cross-family recall for genuinely orthogonal mechanisms.
 - **Reconciliation with `prompt-variant-framework`.** Touched in §2.
-- **Deprecation of `list_past_theses` MCP tool.** Pre-flight makes the tool largely redundant for the conductor. Leave the tool available (deep follow-up is still useful); revisit deprecation after one quarter of telemetry.
+- **Deprecation of `list_past_theses` MCP tool.** Pre-flight + the §5.8 description edit make the tool largely redundant for primary context. Leave the tool available (deep follow-up is still useful); revisit deprecation after one quarter of telemetry on call frequency post-pre-flight.
+- **Periodic insight curation (QuantEvolve-style).** QuantEvolve (arxiv:2510.18569) re-curates accumulated insights every 50 generations — filter redundancy, consolidate findings, document failed approaches. Our `research_findings` MemPalace wing grows continuously without re-curation; over many jobs it will drift toward redundancy. A future spec could add a scheduled curation pass that re-embeds and de-duplicates findings, with consolidated meta-findings replacing clusters of near-identical entries. Out of scope for v1 but a natural extension once we have telemetry on findings-wing growth rate.
+- **Field-wise / point-wise novelty (NoveltyAgent-style).** Current dedup embeds `hypothesis + mechanism` as one document. NoveltyAgent (arxiv:2603.20884) decomposes manuscripts into discrete novelty points and checks each independently. For us this could mean separate embeddings for `hypothesis`, `mechanism`, `theme_keywords` — with dedup firing only when multiple fields match. More expressive; not required for v1.
+- **MAP-Elites grid maintenance.** QuantEvolve, FunSearch, AlphaEvolve all organize their populations into a feature-space grid (one elite per niche). We use `mechanism_dimension` as a structured axis only in retrieval — never as a hard population constraint. Whether to enforce a "one accepted thesis per (family, dimension, theme_cluster) cell" rule is a meaningful future paradigm choice; defer until we have evidence the current soft approach insufficiently diversifies the accepted-thesis stream.
+
+### 11.1 Related work informing this design
+
+| Source | What we adopted | What we deliberately did not |
+| --- | --- | --- |
+| [MMR / LangChain / Azure / Elastic](https://www.elastic.co/search-labs/blog/maximum-marginal-relevance-diversify-results) | `lambda_mult`-based re-ranking in relevance half (§5.2) | Hybrid lexical+semantic (BM25+vec) — not needed; corpus is small + homogeneous |
+| [QuantEvolve (arxiv:2510.18569)](https://arxiv.org/html/2510.18569v1) | Dimension-axis structured exploration (mapped to `mechanism_dimension`); landscape view | Full MAP-Elites grid + island model + α exploit/explore parameter — we're rounds-based, not evolutionary |
+| [FunSearch / AlphaEvolve / OpenEvolve](https://github.com/codelion/openevolve) | Past attempts (kept + killed) injected into LLM context | Behavioral hash dedup; embedding cosine is the right signal for thesis text |
+| [AI Scientist v1 critical eval (arxiv:2502.14297)](https://arxiv.org/abs/2502.14297) | Cautionary tale → embeddings over keyword search; soft-gate dedup with override path | Keyword-only novelty (their documented failure mode) |
+| [NoveltyAgent (arxiv:2603.20884)](https://arxiv.org/pdf/2603.20884) | Self-validation as a pattern: dedup result goes back to agent for revise-or-override | Point-wise novelty per field — possible v2 refinement (see above) |
+| [Auto Researching convergence (arxiv:2603.15916)](https://arxiv.org/pdf/2603.15916) | Empirical justification for prioritizing dimension-switching over hyperparameter tuning (Level 2 landscape block) | Cross-architecture meta-search — out of our scope |
+| [Memory Management Impact on LLM Agents (arxiv:2505.16067)](https://arxiv.org/pdf/2505.16067) | Selective addition: validator gates what enters the corpus; misaligned-experience risk acknowledged | Two-tier memory hierarchy — overkill for current corpus size |
 
 ## 12. Success criteria
 
-- A planning round on a populated `ema_backtest_runs.db` shows the prior-attempts block, landscape block, dimension-pairs block, and synthesis observations in its user prompt and round artifact.
+- A planning round on a populated `ema_backtest_runs.db` shows the prior-attempts block (with explicit "Closest priors" + "Cross-dimension priors" sub-sections), landscape block, dimension-pairs block, and synthesis observations in its user prompt and round artifact.
 - The top-K block contains at least 2 KEPT and 2 KILLED entries when both exist in the corpus.
+- When the corpus has theses in multiple dimensions, at least one entry in the returned K is from a dimension **other than** `latest_outcome.mechanism_dimension`. (Two-pass retrieval working.)
+- MMR re-ranking demoted at least one near-clone in a synthetic 5-clones + 5-spread test fixture at `lambda_mult=0.5`.
+- Updated system-prompt tool description (§5.8) is detectable in `_build_conductor_system_prompt` output and references "pre-loaded".
 - A near-duplicate proposed thesis (paraphrased version of a known prior) is caught by dedup, with the matched `thesis_id` and similarity surfaced to the agent.
 - A thesis with a hallucinated `prior_lever_outcomes[].prior_thesis_id` is hard-rejected by the validator.
 - A thesis whose chosen dimension has more attempts than every "underexplored" alternative receives a `thesis_quality_underexplored_misclassification` warn signal (not a reject).
