@@ -134,11 +134,13 @@ Applicability values:
 
 ### 3.4 Per-Attempt Gate Persistence
 
-The database is the authoritative audit trail for validator decisions. Files
-such as `runtime/jobs/job-N/research/round-M/theses/<thesis_id>/rejection.json`
-are derived read artifacts for prompt rendering and debugging; they must not be
-the only durable place where rejection gates, acceptance gates, or retry
-feedback live.
+The database is the authoritative audit trail for validator decisions and
+validator challenges. Files such as
+`runtime/jobs/job-N/research/round-M/theses/<thesis_id>/rejection.json` and
+`runtime/jobs/job-N/research/round-M/theses/<thesis_id>/challenge.json` are
+derived read artifacts for prompt rendering and debugging; they must not be the
+only durable place where rejection gates, acceptance gates, retry feedback, or
+challenge claims live.
 
 Persist one DB row per validator gate per thesis attempt. The storage contract
 must answer, for every attempt:
@@ -168,6 +170,20 @@ CREATE TABLE IF NOT EXISTS research_thesis_attempt_gate_results (
     evidence_json TEXT NOT NULL,
     created_at_utc TEXT NOT NULL,
     PRIMARY KEY (thesis_attempt_id, gate_id)
+);
+
+CREATE TABLE IF NOT EXISTS research_thesis_attempt_challenges (
+    challenge_id TEXT PRIMARY KEY,
+    thesis_attempt_id TEXT NOT NULL,
+    research_round_id TEXT NOT NULL,
+    attempt_number INTEGER NOT NULL,
+    thesis_id TEXT NOT NULL,
+    challenged_round INTEGER NOT NULL,
+    challenged_thesis_id TEXT NOT NULL,
+    challenged_rejection_code TEXT NOT NULL,
+    claim TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    created_at_utc TEXT NOT NULL
 );
 ```
 
@@ -235,6 +251,14 @@ each failing gate as `reject`; the top-level `validation_failure_reason` is the
 conductor-facing aggregate feedback. If a fail-fast policy gate rejects before
 mechanical validation, persist later gates as `not_evaluated` so analytics can
 distinguish "passed" from "never checked."
+
+Challenge persistence: when a thesis attempt includes `validator_challenge`,
+persist it to `research_thesis_attempt_challenges` before validation mutates or
+rejects the thesis. A challenge never changes the validator decision and never
+satisfies a gate; it is an operator-review record that says the conductor
+believes a prior rejection may be wrong. `challenge.json` is derived from this
+DB row for compatibility with prompt/debug tooling and must not be the only
+source of the challenge claim.
 
 #### Process Validators
 
@@ -425,7 +449,9 @@ All three conditional on `mechanism_dimension == "emergent"`.
 | `validator_challenge` | No rule; accepts any object. Logged for human review only. | none |
 
 `validator_challenge` is a meta-field outside `ResearchThesis`, used only when
-the LLM believes a recent rejection was wrong. It has this shape:
+the LLM believes a recent rejection was wrong. It is persisted in
+`research_thesis_attempt_challenges`; `challenge.json` is a derived read
+artifact next to `rejection.json`, not the source of truth. It has this shape:
 
 ```json
 {
@@ -437,8 +463,8 @@ the LLM believes a recent rejection was wrong. It has this shape:
 }
 ```
 
-Guidance: use sparingly. It is logged for human review and does not alter the
-validator's decision.
+Guidance: use sparingly. It is logged for human review, persisted in DB, and
+does not alter the validator's decision.
 
 ### 4.11 Notes For The Implementer
 
@@ -580,9 +606,17 @@ code.
   accepted attempts must save pass/skip/not-evaluated rows so `compiled` is not
   the only acceptance signal. Each row must also persist the gate's
   `Applicability` value from §3.3.
+- Add DB persistence for `validator_challenge` using
+  `research_thesis_attempt_challenges`. The row must be written before
+  validation can reject the thesis and must include the challenged round,
+  challenged thesis id, challenged rejection code, claim, evidence, and
+  attempt linkage.
 - Keep `rejection.json` generation as a read artifact sourced from the same
   validator result data that writes the DB rows. Do not let filesystem artifact
   persistence become the only source of gate-code truth.
+- Keep `challenge.json` generation as a read artifact sourced from
+  `research_thesis_attempt_challenges`. Do not let filesystem artifact
+  persistence become the only source of validator-challenge truth.
 
 ## 8. CI Drift Detection
 
@@ -623,6 +657,9 @@ Checks in CI via `scripts/check_prompt_drift.py`:
 - A rejected-attempt integration test proves `validation_failure_reason` stores
   the exact conductor retry feedback and the gate-results table stores the
   rejecting `gate_id`, `rejection_code`, `feedback_message`, and `evidence_json`.
+- A validator-challenge integration test proves a challenge is persisted in
+  `research_thesis_attempt_challenges` with attempt linkage and that
+  `challenge.json` can be regenerated from the DB row.
 - An accepted-attempt integration test proves a `compiled` thesis has persisted
   passing/skipped gate rows, not only `selected_for_execution=1`.
 - `python scripts/check_prompt_drift.py` exits 0.
