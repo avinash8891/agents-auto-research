@@ -58,7 +58,6 @@ def _validate_output(agent_name: str, parsed: dict[str, Any]) -> bool:
             return False
         candidate = normalize_thesis_payload(dict(t))
         required_scalar_fields = (
-            "thesis_id",
             "hypothesis",
             "mechanism",
             "mechanism_dimension",

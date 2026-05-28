@@ -616,7 +616,7 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
         captured["require_analyst_evidence"] = kwargs.get("require_analyst_evidence")
         captured["evidence_context"] = kwargs.get("evidence_context")
         captured["require_analyst_tool"] = kwargs.get("require_analyst_tool")
-        return candidate
+        return type("Validated", (), {"thesis_id": candidate["thesis_id"]})()
 
     monkeypatch.setattr(
         conductor,
@@ -664,7 +664,7 @@ def test_conductor_marks_cold_start_evidence_context_without_latest_outcome(
     def fake_validate(candidate, tools_called=None, **kwargs):
         captured["evidence_context"] = kwargs.get("evidence_context")
         captured["require_analyst_tool"] = kwargs.get("require_analyst_tool")
-        return candidate
+        return type("Validated", (), {"thesis_id": candidate["thesis_id"]})()
 
     monkeypatch.setattr(conductor, "validate_thesis_dict", fake_validate)
     _patch_conductor_runner(
@@ -771,7 +771,9 @@ def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wra
     monkeypatch.setattr(
         conductor,
         "validate_thesis_dict",
-        lambda candidate, tools_called=None, **kwargs: candidate,
+        lambda candidate, tools_called=None, **kwargs: type(
+            "Validated", (), {"thesis_id": candidate["thesis_id"]}
+        )(),
     )
     # Conductor returns thesis directly — NO suggested_theses wrapper (v3 prompt contract)
     _patch_conductor_runner(

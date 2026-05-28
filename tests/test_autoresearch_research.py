@@ -732,7 +732,7 @@ def test_run_research_success_persists_round_artifacts_and_next_action(
     assert links["generated_config_path"] == generated_config
     attempts = controller.backtest_run_db.list_research_thesis_attempts(
         job_id=12,
-        thesis_id="ema-tight-entry",
+        thesis_id="job-12-round-1-attempt-1",
     )
     assert attempts[0]["validator_status"] == "compiled"
     assert attempts[0]["thesis_details"]["closest_prior_theses_considered"] == ["ema-baseline"]
@@ -820,9 +820,9 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
     assert json.loads((round_root / "round.json").read_text())["outcome"] == "rejected"
     attempts = controller.backtest_run_db.list_research_thesis_attempts(
         job_id=14,
-        thesis_id="ema-duplicate",
+        thesis_id="job-14-round-3-attempt-1",
     )
-    assert attempts[0]["validator_status"] == "rejected"
+    assert attempts[0]["validator_status"] == "rejected_attempt_1"
     assert (
         "config_changes contains thesis metadata key" in attempts[-1]["validation_failure_reason"]
     )
@@ -1025,6 +1025,9 @@ def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_f
         family = type("Family", (), {"name": "ema"})()
         rejected: list[tuple[str, str]] = []
 
+        def read_state(self):
+            return {"job": 0}
+
         def log_research_round(self, *args, **kwargs):
             self.rejected.append((args, kwargs))
 
@@ -1219,12 +1222,72 @@ def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_ch
         "buffered_trailing_stop_rule"
     ]
     assert captured["compiled"] == {
-        "thesis_id": "buffered_trailing",
+        "thesis_id": "job-26-round-6-attempt-1",
         "root": tmp_path,
         "artifact_root": tmp_path,
         "mechanism_dimension": "",
         "requested_primitives": ["buffered_trailing_stop_rule"],
     }
+
+
+def test_handle_needs_code_preserves_retry_attempt_id_for_schema_only_fallback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _Controller:
+        root = tmp_path
+        job_runtime_root = tmp_path
+        family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
+
+    def fake_operationalize(thesis):
+        updated = dict(thesis)
+        updated["requested_primitives"] = ["buffered_trailing_stop_rule"]
+        updated["config_changes"] = {"buffered_trailing_stop_rule": True}
+        return updated
+
+    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
+        raise ThesisValidationError("Missing mechanism_dimension")
+
+    def fake_compile(validated, root, artifact_root=None):
+        captured["thesis_id"] = validated.thesis_id
+        return None
+
+    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
+    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
+    monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
+    monkeypatch.setattr("autoresearch_research._close_run", lambda *args, **kwargs: None)
+
+    state = {"state": "running", "job": 26, "research_round_in_progress": 6}
+    result = {
+        "generated_thesis_id": "job-26-round-6-attempt-2",
+        "research_round": 6,
+        "thesis": {
+            "hypothesis": "buffered trailing should reduce premature exits",
+            "mechanism": "trailing rule needs a code primitive",
+            "dimension_novelty": "new trailing rule shape",
+            "expected_effects": [
+                {
+                    "metric": "profit_factor",
+                    "direction": "increase",
+                    "rationale": "fewer premature trail exits",
+                }
+            ],
+            "disqualifiers": [
+                {
+                    "name": "trade_count_collapse",
+                    "condition": "trade_count falls too much",
+                    "severity": "hard_fail",
+                }
+            ],
+            "requires_code_change": True,
+            "requested_primitives": [],
+        },
+    }
+
+    _handle_needs_code(_Controller(), state, result)
+
+    assert captured["thesis_id"] == "job-26-round-6-attempt-2"
 
 
 def test_execute_research_sdk_persists_research_activity_before_conductor_call(
