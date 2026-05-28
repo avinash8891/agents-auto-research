@@ -1,0 +1,24 @@
+backtest_run_db.py
+  s_bd3278d580648b::t_c1a36b0ffacd1a 39-50,514,659-661,673,700-702,719
+tests/test_experiment_db_sqlite_runtime.py
+  s_bd3278d580648b::t_8a1a4908357f78 4-5,220-222,227-261
+  s_bd3278d580648b::t_c46f67ce9b57c0 88,93-97,219,223-226
+autoresearch_research.py
+  s_bd3278d580648b::t_d55ee5635181e8 212,216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9fcc38fe522e868b54627debd195a8661293d55b",
+  "prompts": {},
+  "sessions": {
+    "s_bd3278d580648b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6d32-a586-76c1-803e-10a504fd9191",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
