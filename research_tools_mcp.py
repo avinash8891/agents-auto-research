@@ -157,14 +157,17 @@ def _build_research_tools_mcp(
             scope: What data this applies to (e.g. "train_2020-2023", "full_sample", "SPY_only")
             expires_if: Condition that invalidates this (e.g. "fails on validation split", "baseline drift >5%")
         """
-        err = _dispatch(SaveFindingArgs, {
-            "finding": finding,
-            "finding_type": finding_type,
-            "status": status,
-            "evidence": evidence,
-            "scope": scope,
-            "expires_if": expires_if,
-        })
+        err = _dispatch(
+            SaveFindingArgs,
+            {
+                "finding": finding,
+                "finding_type": finding_type,
+                "status": status,
+                "evidence": evidence,
+                "scope": scope,
+                "expires_if": expires_if,
+            },
+        )
         if err:
             return err
         trace(
@@ -262,7 +265,9 @@ def _build_research_tools_mcp(
         order: str = "latest", offset: int = 0, limit: int = 10
     ) -> str:
         """List a bounded index of experiment/backtest outcomes."""
-        err = _dispatch(ListExperimentResultsArgs, {"order": order, "offset": offset, "limit": limit})
+        err = _dispatch(
+            ListExperimentResultsArgs, {"order": order, "offset": offset, "limit": limit}
+        )
         if err:
             return err
         if list_experiment_results_for_root is None:
@@ -304,11 +309,14 @@ def _build_research_tools_mcp(
             rejection_code: filter by category (e.g. "thesis_quality_theme_cluster_fixation").
             limit: cap result count (default 25).
         """
-        err = _dispatch(ListRejectionsArgs, {
-            "round_number": round_number,
-            "rejection_code": rejection_code,
-            "limit": limit,
-        })
+        err = _dispatch(
+            ListRejectionsArgs,
+            {
+                "round_number": round_number,
+                "rejection_code": rejection_code,
+                "limit": limit,
+            },
+        )
         if err:
             return err
         if current_job is None:
