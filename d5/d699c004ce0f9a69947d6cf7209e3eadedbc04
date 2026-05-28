@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-05-28-spec-a4-revisions-design.md
+  s_d2b4c2b9f356b1::t_c614364d6bf43d 1-316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d5d699c004ce0f9a69947d6cf7209e3eadedbc04",
+  "prompts": {},
+  "sessions": {
+    "s_d2b4c2b9f356b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7b8e3f64-be70-4e0b-af64-2c0def2c17b7",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
