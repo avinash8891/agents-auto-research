@@ -1,0 +1,20 @@
+tests/test_autoresearch_research.py
+  s_6c679bbe02c14f::t_7abe5dcdaa3f37 641
+  s_6c679bbe02c14f::t_3215e1b3e393a6 627-628,636-640
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6269d9dc4142938ba09b6a8916bacac40b265473",
+  "prompts": {},
+  "sessions": {
+    "s_6c679bbe02c14f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6cb5-a417-72a3-83ad-c70f9103d198",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
