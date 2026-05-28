@@ -1,0 +1,45 @@
+autoresearch_orchestration.py
+  s_1dc1911c45a5a7::t_8c6c28f75334cc 140
+  s_1dc1911c45a5a7::t_ff5bffc98da1f9 120
+  s_1dc1911c45a5a7::t_0d571b68e55216 716
+autoresearch_experiment.py
+  s_1dc1911c45a5a7::t_0c316f1e95b1e6 1332
+tests/test_autoresearch_planning.py
+  s_1dc1911c45a5a7::t_3e6e0335c9b4e5 207
+  s_1dc1911c45a5a7::t_261b33617036c8 356
+autoresearch_research.py
+  s_1dc1911c45a5a7::t_99148172c68d79 1657
+  s_1dc1911c45a5a7::t_f18e3ffbc54ce7 1674
+tests/test_autoresearch_state.py
+  s_1dc1911c45a5a7::t_665984bc4c3c40 47,263
+tests/test_autoresearch_orchestration.py
+  s_1dc1911c45a5a7::t_77de84c9b507b6 447,470
+vps_runner.py
+  s_1dc1911c45a5a7::t_8e317664598f8a 464-465
+  s_1dc1911c45a5a7::t_0e1e46318d9ecc 457
+autoresearch_planning.py
+  s_1dc1911c45a5a7::t_c6984281fb433c 372
+  s_1dc1911c45a5a7::t_55e67e262ee0be 164
+tests/test_autoresearch_research.py
+  s_1dc1911c45a5a7::t_ae03548f3bd5dd 1317
+tests/test_vps_runner_config.py
+  s_1dc1911c45a5a7::t_c1de57ff533438 471
+tests/test_autoresearch_experiment.py
+  s_1dc1911c45a5a7::t_45aca79860f71e 1033,1095,1203,1242,1273,1336,1394,1425
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1b355480392d23d4a12aac2a252a865ebddda6ea",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
