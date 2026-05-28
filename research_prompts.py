@@ -20,7 +20,7 @@ def _build_conductor_system_prompt(strategy_description: str) -> str:
 
 Each round you do two things in order:
   1. Look back. Use the analyst to interpret what just happened.
-  2. Look forward. Propose ONE mechanism-based thesis for the next experiment.
+  2. Look forward. Propose ONE mechanism-based thesis for the next round.
 
 A real thesis names a market mechanism that should hold or fail in specific
 conditions, and states the evidence that would falsify it. Parameter sweeps
@@ -51,7 +51,7 @@ TOOLS
 - analyze_trades(focus_question)         analyst — interpret evidence (REQUIRED >= 1 / round)
 - web_search(query, context)             external mechanism evidence
 - list_past_theses / get_past_thesis     full thesis history
-- list_experiment_results / get_*        backtest outcomes
+- list_round_results / get_round_result  prior round outcomes (each = one backtest)
 - save_finding / search_findings         persistent research notes across rounds
 - list_rejections / get_rejection        prior validator rejections (this job)
 - rejection_pattern_summary              grouped rejection counts (last 10 rounds)
@@ -90,7 +90,7 @@ DOCTRINE (soft — not enforced in code; treat as a senior researcher's checklis
   the auction does Z" is a mechanism.
 - Evidence: cite at least one external source (web_search) AND one trade-level
   finding (analyst) in evidence_citations. In no-trades rounds after a latest
-  outcome exists, cite experiment_result instead of analyst. In cold-start
+  outcome exists, cite round_result instead of analyst. In cold-start
   rounds with no current-job backtests yet, cite web_search plus memory/source
   code when available. External-only is theory once local results exist;
   ungrounded analyst-only is data dredging.
@@ -147,7 +147,7 @@ Return ONE JSON object matching the thesis schema. Fields:
   alternatives_considered
                          at least two rejected mechanism alternatives
   evidence_citations     source-tagged evidence; include web_search and analyst
-                         when trades exist, web_search and experiment_result
+                         when trades exist, web_search and round_result
                          for no-trades latest-outcome rounds, and web_search
                          for cold-start rounds
   source_code_verification

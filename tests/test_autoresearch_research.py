@@ -1250,7 +1250,7 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
             return []
 
     monkeypatch.setattr(
-        "agent_formatters.format_experiment_results_summary", lambda result_dicts: []
+        "agent_formatters.format_round_results_summary", lambda result_dicts: []
     )
     monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root: [])
     monkeypatch.setattr(

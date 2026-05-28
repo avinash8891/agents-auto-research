@@ -222,7 +222,7 @@ def _accumulate_usage(
     """Accumulate token usage for the current round.
 
     Two consumers from this single entry point:
-    - in-memory ``_ROUND_USAGE`` -> per-round/per-experiment DB rollup via ``get_round_usage``
+    - in-memory ``_ROUND_USAGE`` -> per-round DB rollup via ``get_round_usage``
     - per-call trace event (category=usage) -> trace-events.jsonl, carrying
       provider/model and full run_id/hypothesis_id correlation
     """

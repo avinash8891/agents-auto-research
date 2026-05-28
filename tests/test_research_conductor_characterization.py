@@ -127,7 +127,7 @@ def _patch_conductor_runner(
         assert {tool.name for tool in agent.tools} >= {
             "analyze_trades",
             "web_search",
-            "list_experiment_results",
+            "list_round_results",
         }
         assert run_config.tracing_disabled is True
         assert run_config.model_settings.store is False
@@ -268,7 +268,7 @@ def test_conductor_prompt_without_trades_uses_latest_outcome_without_analyst(
 
     assert out is not None
     assert out.should_stop is True
-    assert "No trades file is available for the latest/current experiment" in prompts[0]
+    assert "No trades file is available for the latest/current round" in prompts[0]
     assert "Strategy family: unknown-family" not in prompts[0]
 
 
@@ -305,12 +305,12 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
     )
     monkeypatch.setattr(
         conductor,
-        "list_experiment_results_for_root",
+        "list_round_results_for_root",
         lambda *args, **kwargs: "experiment list",
     )
     monkeypatch.setattr(
         conductor,
-        "get_experiment_result_for_root",
+        "get_round_result_for_root",
         lambda *args, **kwargs: json.dumps({"status": "error", "error": "missing thesis"}),
     )
     tool_outputs: list[tuple[str, str]] = []
@@ -337,8 +337,8 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
             ("memory_status", {}),
             ("list_past_theses", {"offset": 0, "limit": 5}),
             ("get_past_thesis", {"thesis_id": "missing"}),
-            ("list_experiment_results", {"order": "latest", "offset": 0, "limit": 5}),
-            ("get_experiment_result", {"thesis_id": "missing", "detail": True}),
+            ("list_round_results", {"order": "latest", "offset": 0, "limit": 5}),
+            ("get_round_result", {"research_round_id": "job-12-round-8", "detail": True}),
             ("list_rejections", {"round_number": None, "rejection_code": None, "limit": 3}),
             ("get_rejection", {"round_number": 8, "thesis_id": "missing"}),
             ("rejection_pattern_summary", {"window_rounds": 4}),
@@ -367,8 +367,8 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
     assert output_by_tool["save_finding"] == "saved finding"
     assert "opening gap failures cluster" in output_by_tool["search_findings"]
     assert '"healthy": true' in output_by_tool["memory_status"]
-    assert output_by_tool["list_experiment_results"] == "experiment list"
-    assert "missing thesis" in output_by_tool["get_experiment_result"]
+    assert output_by_tool["list_round_results"] == "experiment list"
+    assert "missing thesis" in output_by_tool["get_round_result"]
     assert '"error": "no current job"' in output_by_tool["list_rejections"]
     assert output_by_tool["get_dimension_examples_tool"]
     assert output_by_tool["get_tuning_examples_tool"]
@@ -402,7 +402,7 @@ def test_conductor_tools_read_current_job_rejections_and_error_statuses(
     )
     monkeypatch.setattr(
         conductor,
-        "get_experiment_result_for_root",
+        "get_round_result_for_root",
         lambda *args, **kwargs: json.dumps({"status": "not_found"}),
     )
 
@@ -414,7 +414,7 @@ def test_conductor_tools_read_current_job_rejections_and_error_statuses(
         tool_calls=[
             ("search_findings", {"query": "gap", "finding_type": "observation"}),
             ("get_past_thesis", {"thesis_id": "ema-gap-reject"}),
-            ("get_experiment_result", {"thesis_id": "ema-gap-reject", "detail": False}),
+            ("get_round_result", {"research_round_id": "job-12-round-8", "detail": False}),
             (
                 "list_rejections",
                 {
@@ -443,7 +443,7 @@ def test_conductor_tools_read_current_job_rejections_and_error_statuses(
     output_by_tool = dict(tool_outputs)
     assert output_by_tool["search_findings"] == "No findings found."
     assert output_by_tool["get_past_thesis"] == "not-json"
-    assert output_by_tool["get_experiment_result"] == json.dumps({"status": "not_found"})
+    assert output_by_tool["get_round_result"] == json.dumps({"status": "not_found"})
     listed = json.loads(output_by_tool["list_rejections"])
     assert listed[0]["thesis_id"] == "ema-gap-reject"
     assert listed[0]["evidence"]["shared_keywords"] == ["gap", "open"]
@@ -475,7 +475,7 @@ def test_conductor_tool_errors_and_final_output_fallback_are_reported(
     )
     monkeypatch.setattr(
         conductor,
-        "get_experiment_result_for_root",
+        "get_round_result_for_root",
         lambda *args, **kwargs: "not-json",
     )
     tool_outputs: list[tuple[str, str]] = []
@@ -492,7 +492,7 @@ def test_conductor_tool_errors_and_final_output_fallback_are_reported(
             ("web_search", {"query": "EMA gap failures", "context": ""}),
             ("analyze_trades", {"focus_question": "after web but no trades"}),
             ("search_findings", {"query": "gap", "finding_type": "observation"}),
-            ("get_experiment_result", {"thesis_id": "missing", "detail": False}),
+            ("get_round_result", {"research_round_id": "job-1-round-10", "detail": False}),
         ],
         final_output=final_payload,
         final_output_as_error=True,
@@ -514,7 +514,7 @@ def test_conductor_tool_errors_and_final_output_fallback_are_reported(
     assert output_by_tool["web_search"] == "web evidence for EMA gap failures"
     assert output_by_tool["analyze_trades"] == "ERROR: No trades file available for this round."
     assert output_by_tool["search_findings"] == "SEARCH ERROR: palace unavailable"
-    assert output_by_tool["get_experiment_result"] == "not-json"
+    assert output_by_tool["get_round_result"] == "not-json"
 
 
 def test_conductor_tolerates_rejection_prompt_failure_and_memory_status_error(
@@ -583,7 +583,7 @@ def test_conductor_reports_structural_validation_failures_after_required_tool_ga
     _patch_conductor_runner(
         monkeypatch,
         runner_output,
-        tool_calls=[("list_experiment_results", {"order": "latest", "offset": 0, "limit": 1})],
+        tool_calls=[("list_round_results", {"order": "latest", "offset": 0, "limit": 1})],
     )
 
     out = conductor.run_research_conductor_sync(
@@ -630,7 +630,7 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
             "suggested_theses": [thesis],
             "should_stop": False,
         },
-        tool_calls=[("list_experiment_results", {"order": "latest", "offset": 0, "limit": 1})],
+        tool_calls=[("list_round_results", {"order": "latest", "offset": 0, "limit": 1})],
     )
 
     out = conductor.run_research_conductor_sync(
@@ -674,7 +674,7 @@ def test_conductor_marks_cold_start_evidence_context_without_latest_outcome(
             "suggested_theses": [thesis],
             "should_stop": False,
         },
-        tool_calls=[("list_experiment_results", {"order": "latest", "offset": 0, "limit": 1})],
+        tool_calls=[("list_round_results", {"order": "latest", "offset": 0, "limit": 1})],
     )
 
     out = conductor.run_research_conductor_sync(
@@ -715,7 +715,7 @@ def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
             "suggested_theses": [thesis],
             "should_stop": False,
         },
-        tool_calls=[("list_experiment_results", {"order": "latest", "offset": 0, "limit": 1})],
+        tool_calls=[("list_round_results", {"order": "latest", "offset": 0, "limit": 1})],
     )
 
     out = conductor.run_research_conductor_sync(
@@ -777,7 +777,7 @@ def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wra
     _patch_conductor_runner(
         monkeypatch,
         thesis,
-        tool_calls=[("list_experiment_results", {"order": "latest", "offset": 0, "limit": 1})],
+        tool_calls=[("list_round_results", {"order": "latest", "offset": 0, "limit": 1})],
     )
 
     out = conductor.run_research_conductor_sync(

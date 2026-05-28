@@ -1042,7 +1042,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     If validation rejects the thesis, calls the conductor AGAIN with
     the rejection reason so it can propose something different.
     """
-    from agent_formatters import format_experiment_results_summary
+    from agent_formatters import format_round_results_summary
     from thesis_validator import load_prior_theses
 
     state = controller.read_state()
@@ -1062,7 +1062,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     result_dicts = results_to_dicts(results)
     if current_job is not None:
         result_dicts = [result for result in result_dicts if result.get("job") == current_job]
-    experiment_results = format_experiment_results_summary(result_dicts)
+    experiment_results = format_round_results_summary(result_dicts)
     prior_theses = load_prior_theses(controller.root)
     trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
     trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
