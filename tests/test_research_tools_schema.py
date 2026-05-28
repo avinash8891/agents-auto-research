@@ -1,20 +1,21 @@
-from pydantic import ValidationError
 import pytest
+from pydantic import ValidationError
+
 from research_tools_schema import (
+    FINDING_STATUSES,
+    FINDING_TYPES,
     AnalyzeTradesArgs,
-    WebSearchArgs,
+    GetExperimentResultArgs,
+    GetPastThesisArgs,
+    GetRejectionArgs,
+    ListExperimentResultsArgs,
+    ListPastThesesArgs,
+    ListRejectionsArgs,
+    MemoryStatusArgs,
+    RejectionPatternSummaryArgs,
     SaveFindingArgs,
     SearchFindingsArgs,
-    ListPastThesesArgs,
-    GetPastThesisArgs,
-    ListExperimentResultsArgs,
-    GetExperimentResultArgs,
-    ListRejectionsArgs,
-    GetRejectionArgs,
-    RejectionPatternSummaryArgs,
-    MemoryStatusArgs,
-    FINDING_TYPES,
-    FINDING_STATUSES,
+    WebSearchArgs,
 )
 
 
@@ -232,7 +233,9 @@ def test_list_rejections_defaults():
 
 
 def test_list_rejections_valid():
-    ListRejectionsArgs(round_number=3, rejection_code="thesis_quality_theme_cluster_fixation", limit=10)
+    ListRejectionsArgs(
+        round_number=3, rejection_code="thesis_quality_theme_cluster_fixation", limit=10
+    )
 
 
 def test_list_rejections_empty_rejection_code():
@@ -291,7 +294,7 @@ def test_memory_status_no_args():
 
 
 def test_dispatch_valid_returns_none():
-    from research_tools_mcp import _dispatch, _TOOL_MODELS  # noqa: F401
+    from research_tools_mcp import _TOOL_MODELS, _dispatch  # noqa: F401
     from research_tools_schema import WebSearchArgs as _WebSearchArgs
 
     result = _dispatch(_WebSearchArgs, {"query": "ORB gap filter on Tuesday open"})
@@ -320,7 +323,7 @@ def test_enforce_tool_models_raises_for_unregistered_tool():
     """A tool registered via @mcp.tool() but absent from _TOOL_MODELS raises TypeError."""
     from mcp.server.fastmcp import FastMCP
 
-    from research_tools_mcp import _enforce_tool_models, _TOOL_MODELS
+    from research_tools_mcp import _TOOL_MODELS, _enforce_tool_models
 
     mcp = FastMCP("test-enforcement")
 
@@ -336,7 +339,7 @@ def test_enforce_tool_models_passes_for_empty_mcp():
     """An MCP with no tools registered passes enforcement with any tool_models dict."""
     from mcp.server.fastmcp import FastMCP
 
-    from research_tools_mcp import _enforce_tool_models, _TOOL_MODELS
+    from research_tools_mcp import _TOOL_MODELS, _enforce_tool_models
 
     mcp = FastMCP("test-empty")
     _enforce_tool_models(mcp, _TOOL_MODELS)  # no tools registered, nothing to check

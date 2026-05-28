@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from pydantic import BaseModel, ValidationError
+
 from rejection_artifact import get_rejection as _get_rejection
 from rejection_artifact import list_rejections as _list_rejections
 from rejection_artifact import rejection_pattern_summary as _rejection_pattern_summary
@@ -10,10 +12,6 @@ from research_memory import get_experiment_result as _get_result_for_root
 from research_memory import get_past_thesis as _get_past_thesis_for_root
 from research_memory import list_experiment_results as _list_results_for_root
 from research_memory import list_past_theses as _list_past_theses_for_root
-from trace_sdk import trace
-
-from pydantic import BaseModel, ValidationError
-
 from research_tools_schema import (
     AnalyzeTradesArgs,
     GetExperimentResultArgs,
@@ -28,6 +26,7 @@ from research_tools_schema import (
     SearchFindingsArgs,
     WebSearchArgs,
 )
+from trace_sdk import trace
 
 _TOOL_MODELS: dict[str, type[BaseModel]] = {
     "analyze_trades": AnalyzeTradesArgs,
