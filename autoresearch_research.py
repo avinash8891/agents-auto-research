@@ -983,12 +983,15 @@ def _exhausted_retries_result(
     conductor_result: ConductorResult | None,
     rejection_feedback: str,
     *,
-    research_round_id: str,
-    attempt_number: int,
+    research_round_id: str = "",
+    attempt_number: int = 0,
 ) -> dict[str, Any]:
-    thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
     thesis = dict(conductor_result.thesis or {}) if conductor_result else {}
-    thesis["thesis_id"] = thesis_id
+    if research_round_id and attempt_number:
+        thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
+        thesis["thesis_id"] = thesis_id
+    else:
+        thesis_id = thesis.get("thesis_id", "unknown")
     log.error(
         f"THESIS REJECTED after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback} "
         f"| hint=the conductor produced a thesis that failed validation 3 times in a row; "
@@ -999,18 +1002,21 @@ def _exhausted_retries_result(
         "LOOP",
         f"thesis rejected after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback}",
     )
-    return {
+    result = {
         "status": "thesis_rejected",
         "generated_config": None,
         "generated_config_needs_build": False,
         "generated_thesis_id": thesis_id,
-        "research_round_id": research_round_id,
-        "attempt_number": attempt_number,
         "validation_failure_reason": rejection_feedback,
         "should_stop": False,
         "reasoning": conductor_result.reasoning if conductor_result else "",
         "thesis": thesis,
     }
+    if research_round_id:
+        result["research_round_id"] = research_round_id
+    if attempt_number:
+        result["attempt_number"] = attempt_number
+    return result
 
 
 def _call_conductor(

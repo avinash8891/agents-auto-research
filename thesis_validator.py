@@ -368,15 +368,20 @@ def _prior_thesis_entry(row: dict[str, Any]) -> dict[str, Any]:
     details = row.get("thesis_details", {})
     if not isinstance(details, dict):
         details = {}
-    return {
+    entry = {
         "thesis_id": row.get("thesis_id", "unknown"),
         "config_changes": row.get("config_changes") or {},
         "outcome": row.get("validator_status", "unknown"),
         "mechanism_dimension": row.get("mechanism_dimension", ""),
-        "proposal_label": row.get("proposal_label") or details.get("proposal_label", ""),
-        "hypothesis": row.get("hypothesis") or details.get("hypothesis", ""),
         "thesis_details": details,
     }
+    proposal_label = row.get("proposal_label") or details.get("proposal_label")
+    if proposal_label:
+        entry["proposal_label"] = proposal_label
+    hypothesis = row.get("hypothesis") or details.get("hypothesis")
+    if hypothesis:
+        entry["hypothesis"] = hypothesis
+    return entry
 
 
 # ---------------------------------------------------------------------------
