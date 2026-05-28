@@ -63,7 +63,7 @@ def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
             },
         ],
         "source_code_verification": (
-            "strategies/ema/signals.py:detect_pullback contains the entry filter; "
+            "strategies/ema/signals.py:generate_signals_for_frame contains the entry filter; "
             "the close-confirmation gate would be added here as an additional check."
         ),
         "config_changes": {"requires_engine_change": True},

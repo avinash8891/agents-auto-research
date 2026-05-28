@@ -43,6 +43,7 @@ inline in the orchestrator — extracting them into one-line helpers is noise.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from collections.abc import Callable
@@ -114,12 +115,10 @@ _MIN_MECHANISM_EVIDENCE_CONDITION_CHARS: Final[int] = 40
 # is decoration, not a real disconfirmer. The field itself remains optional;
 # this rule only enforces quality when the agent does fill it in.
 _MIN_FALSIFICATION_CHARS = 80
-# (Constants for L3/L4/L8/L11 enforcement removed during rollback. The doctrine
-#  they encoded — "≥2 alternatives", "≥2 expected_effects", "evidence_strength
-#  required", "causal_cluster must look human", "source_code_verification ≥40
-#  chars", "evidence_citations need ≥1 web + ≥1 analyst", "LLM judge for
-#  mechanism vs param-value" — now lives as soft prompt doctrine in
-#  research_prompts.py. Cherry-pick commit `da2a7eb` to restore.)
+_MIN_ALTERNATIVES_CONSIDERED = 2
+_MIN_EXPECTED_EFFECTS = 2
+_MIN_EFFECT_RATIONALE_CHARS = 20
+_REQUIRED_EVIDENCE_SOURCES: Final[frozenset[str]] = frozenset({"web_search", "analyst"})
 _EMERGENT_REQUIRED_FIELDS = (
     "why_existing_dimensions_do_not_fit",
     "mechanism_family_definition",
@@ -1558,6 +1557,231 @@ def _validate_expected_effects_metrics_backed(thesis: ResearchThesis) -> None:
         )
 
 
+def _source_code_symbols(path: Path) -> set[str]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as exc:
+        raise ThesisValidationError(
+            f"source_code_verification cannot read or parse '{path}': {exc}",
+            rejection_code="structural_source_code_verification_invalid",
+            evidence={"path": str(path), "error": str(exc)},
+        ) from exc
+    return {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    }
+
+
+def _collect_source_code_verification_failures(thesis: ResearchThesis) -> list[BehaviorSignal]:
+    text = thesis.source_code_verification.strip()
+    if not text:
+        return [
+            BehaviorSignal(
+                code="structural_source_code_verification_invalid",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    "source_code_verification must cite a real repo-relative Python "
+                    "file and symbol, for example strategies/ema/signals.py:generate_signals_for_frame"
+                ),
+            )
+        ]
+
+    matches = re.findall(r"([A-Za-z0-9_./-]+\.py):([A-Za-z_][A-Za-z0-9_]*)", text)
+    if not matches:
+        return [
+            BehaviorSignal(
+                code="structural_source_code_verification_invalid",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    "source_code_verification must include at least one "
+                    "repo-relative path:symbol reference"
+                ),
+                evidence={"source_code_verification": text},
+            )
+        ]
+
+    repo_root = Path(__file__).resolve().parent
+    failures: list[BehaviorSignal] = []
+    family_prefix = ""
+    try:
+        family_prefix = f"strategies/{load_family(thesis.strategy_family).name}/"
+    except ValueError:
+        # Unknown-family failures are reported by the config-validity layer.
+        family_prefix = ""
+    has_family_reference = False
+    for raw_path, symbol in matches:
+        path = Path(raw_path)
+        if path.is_absolute() or ".." in path.parts:
+            failures.append(
+                BehaviorSignal(
+                    code="structural_source_code_verification_invalid",
+                    confidence=1.0,
+                    severity="block",
+                    summary=f"source_code_verification path '{raw_path}' must be repo-relative",
+                    evidence={"path": raw_path, "symbol": symbol},
+                )
+            )
+            continue
+        if family_prefix and path.as_posix().startswith(family_prefix):
+            has_family_reference = True
+        full_path = repo_root / path
+        if not full_path.exists() or not full_path.is_file():
+            failures.append(
+                BehaviorSignal(
+                    code="structural_source_code_verification_invalid",
+                    confidence=1.0,
+                    severity="block",
+                    summary=f"source_code_verification file '{raw_path}' does not exist",
+                    evidence={"path": raw_path, "symbol": symbol},
+                )
+            )
+            continue
+        try:
+            symbols = _source_code_symbols(full_path)
+        except ThesisValidationError as exc:
+            failures.append(_signal_from_validation_error(exc))
+            continue
+        if symbol not in symbols:
+            failures.append(
+                BehaviorSignal(
+                    code="structural_source_code_verification_invalid",
+                    confidence=1.0,
+                    severity="block",
+                    summary=(
+                        f"source_code_verification symbol '{symbol}' was not found "
+                        f"in '{raw_path}'"
+                    ),
+                    evidence={"path": raw_path, "symbol": symbol},
+                )
+            )
+    if family_prefix and not has_family_reference:
+        failures.append(
+            BehaviorSignal(
+                code="structural_source_code_verification_invalid",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    "source_code_verification must cite at least one source file "
+                    f"under '{family_prefix}'"
+                ),
+                evidence={"required_prefix": family_prefix},
+            )
+        )
+    return failures
+
+
+def _collect_research_contract_failures(thesis: ResearchThesis) -> list[BehaviorSignal]:
+    failures: list[BehaviorSignal] = []
+
+    if not thesis.evidence_strength:
+        failures.append(
+            BehaviorSignal(
+                code="structural_missing_evidence_strength",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    "evidence_strength is required; classify evidence as direct, "
+                    "proxy, mixed, or speculative"
+                ),
+            )
+        )
+
+    if len(thesis.alternatives_considered) < _MIN_ALTERNATIVES_CONSIDERED:
+        failures.append(
+            BehaviorSignal(
+                code="structural_alternatives_considered_invalid",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    f"alternatives_considered must contain at least "
+                    f"{_MIN_ALTERNATIVES_CONSIDERED} rejected mechanisms"
+                ),
+                evidence={
+                    "actual_count": len(thesis.alternatives_considered),
+                    "min_count": _MIN_ALTERNATIVES_CONSIDERED,
+                },
+            )
+        )
+
+    sources = {citation.source for citation in thesis.evidence_citations}
+    empty_citations = [
+        citation.source for citation in thesis.evidence_citations if not citation.citation.strip()
+    ]
+    missing_sources = sorted(_REQUIRED_EVIDENCE_SOURCES - sources)
+    if missing_sources or empty_citations:
+        failures.append(
+            BehaviorSignal(
+                code="structural_evidence_citations_invalid",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    "evidence_citations must include non-empty web_search and "
+                    "analyst citations"
+                ),
+                evidence={
+                    "missing_sources": missing_sources,
+                    "empty_citation_sources": empty_citations,
+                    "observed_sources": sorted(sources),
+                },
+            )
+        )
+
+    effect_metrics_are_backed = all(
+        effect.metric in BUILTIN_METRICS or effect.metric in thesis.required_diagnostics
+        for effect in thesis.expected_effects
+    )
+    if not thesis.expected_effects:
+        pass
+    elif not effect_metrics_are_backed:
+        pass
+    elif len(thesis.expected_effects) < _MIN_EXPECTED_EFFECTS:
+        failures.append(
+            BehaviorSignal(
+                code="structural_expected_effects_not_coupled",
+                confidence=1.0,
+                severity="block",
+                summary=(
+                    f"expected_effects must contain at least {_MIN_EXPECTED_EFFECTS} "
+                    "coupled metric predictions"
+                ),
+                evidence={
+                    "actual_count": len(thesis.expected_effects),
+                    "min_count": _MIN_EXPECTED_EFFECTS,
+                },
+            )
+        )
+    else:
+        metrics = {effect.metric for effect in thesis.expected_effects}
+        short_rationales = [
+            effect.metric
+            for effect in thesis.expected_effects
+            if len((effect.rationale or "").strip()) < _MIN_EFFECT_RATIONALE_CHARS
+        ]
+        if len(metrics) < _MIN_EXPECTED_EFFECTS or short_rationales:
+            failures.append(
+                BehaviorSignal(
+                    code="structural_expected_effects_not_coupled",
+                    confidence=1.0,
+                    severity="block",
+                    summary=(
+                        "expected_effects must use at least two distinct metrics and "
+                        "each prediction must include a substantive rationale"
+                    ),
+                    evidence={
+                        "distinct_metrics": sorted(metrics),
+                        "short_rationale_metrics": short_rationales,
+                        "min_rationale_chars": _MIN_EFFECT_RATIONALE_CHARS,
+                    },
+                )
+            )
+
+    failures.extend(_collect_source_code_verification_failures(thesis))
+    return failures
+
+
 def _validate_structural(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
@@ -2044,6 +2268,7 @@ def _collect_mechanical_failures(
         )
     failures.extend(_collect_from_validator(lambda: _validate_thesis_specifies_change(thesis)))
     failures.extend(_collect_from_validator(lambda: _validate_expected_effects_present(thesis)))
+    failures.extend(_collect_research_contract_failures(thesis))
     for effect in thesis.expected_effects:
         if effect.metric in BUILTIN_METRICS:
             continue

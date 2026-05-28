@@ -86,6 +86,30 @@ def _base_thesis(thesis_id: str = "subsection_test") -> dict:
             "If high-volatility setups do not show higher PF than low-volatility ones, "
             "the volatility-quality mechanism does not hold."
         ),
+        "evidence_strength": "mixed",
+        "alternatives_considered": [
+            {
+                "mechanism": "wider stop-distance cap",
+                "why_rejected": (
+                    "This would change risk after entry rather than test whether "
+                    "opening volatility separates signal quality."
+                ),
+            },
+            {
+                "mechanism": "later session entry filter",
+                "why_rejected": (
+                    "This would test time-of-day effects rather than the volatility "
+                    "quality mechanism."
+                ),
+            },
+        ],
+        "evidence_citations": [
+            {"source": "web_search", "citation": "Volatility filters are common in entries."},
+            {"source": "analyst", "citation": "round-1 analyst found PF varied by volatility."},
+        ],
+        "source_code_verification": (
+            "strategies/ema/signals.py:generate_signals_for_frame builds EMA entry signals."
+        ),
     }
 
 

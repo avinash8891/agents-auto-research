@@ -39,9 +39,38 @@ def _make_thesis(**overrides: Any) -> ResearchThesis:
         "mechanism_dimension": "entry_timing",
         "dimension_novelty": "x" * 50,
         "config_changes": {"some_key": 1},
-        "expected_effects": [ExpectedEffect(metric="profit_factor", direction="increase")],
+        "expected_effects": [
+            ExpectedEffect(
+                metric="profit_factor",
+                direction="increase",
+                rationale="The mechanism should improve realized edge.",
+            ),
+            ExpectedEffect(
+                metric="trade_count",
+                direction="decrease_or_same",
+                rationale="The filter should reduce but not collapse trade activity.",
+            ),
+        ],
         "disqualifiers": [Disqualifier(name="x", condition="y" * 50, kind="mechanism_evidence")],
         "falsification_or_alternative": "z" * 100,
+        "evidence_strength": "mixed",
+        "alternatives_considered": [
+            {
+                "mechanism": "alternative one",
+                "why_rejected": "This alternative is less directly tied to the tested mechanism.",
+            },
+            {
+                "mechanism": "alternative two",
+                "why_rejected": "This alternative is useful but weaker for this specific test.",
+            },
+        ],
+        "evidence_citations": [
+            {"source": "web_search", "citation": "external mechanism context"},
+            {"source": "analyst", "citation": "trade-level analyst context"},
+        ],
+        "source_code_verification": (
+            "strategies/ema/signals.py:generate_signals_for_frame builds EMA entry signals."
+        ),
     }
     defaults.update(overrides)
     return ResearchThesis(**defaults)

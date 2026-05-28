@@ -25,7 +25,7 @@ from typing import Any
 
 import pytest
 
-from research_types import Disqualifier, ExpectedEffect, ResearchThesis
+from research_types import Disqualifier, EvidenceCitation, ExpectedEffect, ResearchThesis
 from thesis_validator import (
     ThesisValidationError,
 )
@@ -62,7 +62,18 @@ def _minimal_valid_thesis(**overrides: Any) -> ResearchThesis:
         "mechanism_dimension": SAMPLE_MECHANISM_DIMENSION,
         "dimension_novelty": "Tests session-window conditioning, not threshold tuning.",
         "config_changes": {"opening_skip_minutes": 5},
-        "expected_effects": [ExpectedEffect(metric="profit_factor", direction="increase")],
+        "expected_effects": [
+            ExpectedEffect(
+                metric="profit_factor",
+                direction="increase",
+                rationale="Avoiding opening-auction noise should improve realized edge.",
+            ),
+            ExpectedEffect(
+                metric="trade_count",
+                direction="decrease_or_same",
+                rationale="The timing filter should remove noisy trades without collapsing activity.",
+            ),
+        ],
         "disqualifiers": [
             Disqualifier(
                 name="opening_loss_pattern",
@@ -76,6 +87,37 @@ def _minimal_valid_thesis(**overrides: Any) -> ResearchThesis:
         # used to be optional, which let the doctrine ("every thesis needs a
         # disconfirmer") go unenforced. The valid baseline must include it.
         "falsification_or_alternative": _VALID_FALSIFICATION_TEXT,
+        "evidence_strength": "mixed",
+        "alternatives_considered": [
+            {
+                "mechanism": "wider stop-distance cap",
+                "why_rejected": (
+                    "Would retune risk after entry instead of testing whether entry timing "
+                    "is the root cause of noisy opening losses."
+                ),
+            },
+            {
+                "mechanism": "trend-strength filter",
+                "why_rejected": (
+                    "Would filter for directional continuation but would not isolate the "
+                    "opening-auction liquidity mechanism."
+                ),
+            },
+        ],
+        "evidence_citations": [
+            EvidenceCitation(
+                source="web_search",
+                citation="Market microstructure literature links opening auctions with wider spreads.",
+            ),
+            EvidenceCitation(
+                source="analyst",
+                citation="round-1 analyst: losses cluster in the first five regular-session minutes.",
+            ),
+        ],
+        "source_code_verification": (
+            "strategies/ema/signals.py:generate_signals_for_frame builds the EMA entry "
+            "signals that the opening-skip thesis modifies."
+        ),
     }
     base.update(overrides)
     return ResearchThesis(**base)
@@ -326,6 +368,64 @@ def test_gate_structural_expected_effect_metric_unbacked() -> None:
         required_diagnostics=[],  # custom metric not declared
     )
     _expect_rejection(thesis, None, "structural_expected_effect_metric_unbacked")
+
+
+def test_gate_structural_missing_evidence_strength() -> None:
+    thesis = _minimal_valid_thesis(evidence_strength="")
+    _expect_rejection(thesis, None, "structural_missing_evidence_strength")
+
+
+def test_gate_structural_missing_alternatives_considered() -> None:
+    thesis = _minimal_valid_thesis(alternatives_considered=[])
+    _expect_rejection(thesis, None, "structural_alternatives_considered_invalid")
+
+
+def test_gate_structural_missing_evidence_citations() -> None:
+    thesis = _minimal_valid_thesis(evidence_citations=[])
+    _expect_rejection(thesis, None, "structural_evidence_citations_invalid")
+
+
+def test_gate_structural_evidence_citations_need_web_and_analyst_sources() -> None:
+    thesis = _minimal_valid_thesis(
+        evidence_citations=[
+            EvidenceCitation(
+                source="web_search",
+                citation="Market microstructure literature links opening auctions with wider spreads.",
+            )
+        ]
+    )
+    _expect_rejection(thesis, None, "structural_evidence_citations_invalid")
+
+
+def test_gate_structural_source_code_verification_requires_real_file_and_symbol() -> None:
+    thesis = _minimal_valid_thesis(
+        source_code_verification=(
+            "strategies/ema/signals.py:not_a_real_symbol allegedly contains the entry filter."
+        )
+    )
+    _expect_rejection(thesis, None, "structural_source_code_verification_invalid")
+
+
+def test_gate_structural_source_code_verification_requires_strategy_family_file() -> None:
+    thesis = _minimal_valid_thesis(
+        source_code_verification=(
+            "strategies/orb/signals.py:generate_orb_signals belongs to a different family."
+        )
+    )
+    _expect_rejection(thesis, None, "structural_source_code_verification_invalid")
+
+
+def test_gate_structural_expected_effects_need_coupled_predictions() -> None:
+    thesis = _minimal_valid_thesis(
+        expected_effects=[
+            ExpectedEffect(
+                metric="profit_factor",
+                direction="increase",
+                rationale="Avoiding opening-auction noise should improve realized edge.",
+            )
+        ]
+    )
+    _expect_rejection(thesis, None, "structural_expected_effects_not_coupled")
 
 
 def test_disqualifiers_fire_before_expected_effects_metric_unbacked() -> None:

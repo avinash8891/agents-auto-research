@@ -64,7 +64,7 @@ def _base_thesis(thesis_id: str) -> dict:
             {"source": "analyst", "citation": "round-3 analyst: low-vol opens have weaker PF"},
         ],
         "source_code_verification": (
-            "strategies/ema/signals.py:detect_alert_candle is where the volatility "
+            "strategies/ema/signals.py:generate_signals_for_frame is where the volatility "
             "floor on the alert candle would gate entries by ATR-percent."
         ),
         "expected_effects": [

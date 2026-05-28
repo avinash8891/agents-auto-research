@@ -14,7 +14,18 @@ def _valid_thesis() -> dict:
         "mechanism_dimension": "entry_timing",
         "dimension_novelty": "Tests session timing instead of threshold tuning.",
         "config_changes": {"opening_skip_minutes": 5},
-        "expected_effects": [{"metric": "profit_factor", "direction": "increase"}],
+        "expected_effects": [
+            {
+                "metric": "profit_factor",
+                "direction": "increase",
+                "rationale": "Skipping noisy opening entries should improve realized edge.",
+            },
+            {
+                "metric": "trade_count",
+                "direction": "decrease_or_same",
+                "rationale": "The entry filter should reduce but not collapse trade activity.",
+            },
+        ],
         "disqualifiers": [
             {
                 "name": "opening_noise_not_concentrated",
@@ -25,6 +36,30 @@ def _valid_thesis() -> dict:
         "falsification_or_alternative": (
             "If first-five-minute losses are not worse than later-session losses, "
             "the auction-noise mechanism is false."
+        ),
+        "evidence_strength": "mixed",
+        "alternatives_considered": [
+            {
+                "mechanism": "wider stop-distance cap",
+                "why_rejected": (
+                    "This would tune risk after entry rather than test whether opening "
+                    "entry timing is the noisy mechanism."
+                ),
+            },
+            {
+                "mechanism": "trend-strength filter",
+                "why_rejected": (
+                    "This would test directional continuation rather than isolate the "
+                    "opening liquidity mechanism."
+                ),
+            },
+        ],
+        "evidence_citations": [
+            {"source": "web_search", "citation": "Opening auctions can have wider spreads."},
+            {"source": "analyst", "citation": "round-1 analyst found opening loss clustering."},
+        ],
+        "source_code_verification": (
+            "strategies/ema/signals.py:generate_signals_for_frame builds the EMA entries."
         ),
     }
 
