@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-05-28-experiment-round-cleanup.md
+  s_1dc1911c45a5a7::t_80d78b3984ee45 1-834
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "79aab91ad9255c1ff11f621e4ed515fbbc3af25e",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
