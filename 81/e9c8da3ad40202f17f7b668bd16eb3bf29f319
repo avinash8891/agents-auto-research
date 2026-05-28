@@ -1,0 +1,23 @@
+tests/test_research_tools_mcp.py
+  s_1dc1911c45a5a7::t_d688c4d41ddc05 423,430
+tests/test_research_memory.py
+  s_1dc1911c45a5a7::t_d688c4d41ddc05 404-405,440-441,487,514,520
+tests/test_research_round_id_lookup.py
+  s_1dc1911c45a5a7::t_d688c4d41ddc05 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "81e9c8da3ad40202f17f7b668bd16eb3bf29f319",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
