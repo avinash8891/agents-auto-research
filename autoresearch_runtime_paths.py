@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 
 def job_runtime_root(root: Path, job: int) -> Path:
@@ -29,6 +30,22 @@ def research_round_id(job: int, round_number: int) -> str:
     if round_number < 0:
         raise ValueError(f"round number must be >= 0; got {round_number}")
     return f"job-{job}-round-{round_number}"
+
+
+def research_round_id_or_empty(job: int | Any, round_number: int) -> str:
+    """Best-effort round id; returns "" when inputs cannot produce a valid id.
+
+    Use ONLY at boundaries where state may be partially populated
+    (controller bootstrap, sqlite int-coercion failures). New code should
+    prefer research_round_id(...) and surface bad inputs as ValueError.
+    """
+    try:
+        j = int(job)
+    except (TypeError, ValueError):
+        return ""
+    if j < 1 or round_number < 0:
+        return ""
+    return research_round_id(j, round_number)
 
 
 def research_round_root(root: Path, job: int, round_number: int) -> Path:

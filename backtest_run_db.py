@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_logging import get_logger
-from autoresearch_runtime_paths import research_round_id as _build_research_round_id
+from autoresearch_runtime_paths import research_round_id_or_empty
 from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
 from config_hash import _config_hash
 from persistence_utils import (
@@ -506,10 +506,7 @@ class BacktestRunDB:
         except (TypeError, ValueError):
             job_id = 0
         resolved_hypothesis_id = hypothesis_id or current_hypothesis_id() or thesis_id
-        if job_id >= 1 and round_number >= 0:
-            round_id = _build_research_round_id(job_id, round_number)
-        else:
-            round_id = f"job-{job_id}-round-{round_number}"
+        round_id = research_round_id_or_empty(job_id, round_number)
         with self._connect() as conn:
             conn.execute(
                 """

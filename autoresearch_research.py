@@ -36,7 +36,7 @@ from autoresearch_orchestration import (
 )
 from autoresearch_paths import resolve_config_path
 from autoresearch_planning import build_research_failure_state
-from autoresearch_runtime_paths import research_round_id as _build_research_round_id
+from autoresearch_runtime_paths import research_round_id_or_empty
 from autoresearch_runtime_paths import research_round_root
 from autoresearch_state import (
     BacktestResultRecord,
@@ -226,10 +226,7 @@ def log_research_round(
         job_id = int(state.get("job", 0))
     except (TypeError, ValueError):
         job_id = 0
-    if job_id >= 1 and round_number >= 0:
-        research_round_id = _build_research_round_id(job_id, round_number)
-    else:
-        research_round_id = f"job-{job_id}-round-{round_number}"
+    round_id = research_round_id_or_empty(job_id, round_number)
     attempt_number = 1
     if outcome.startswith("rejected_attempt_"):
         try:
@@ -237,7 +234,7 @@ def log_research_round(
         except ValueError:
             attempt_number = 1
     else:
-        attempt_number = db.next_research_thesis_attempt_number(research_round_id)
+        attempt_number = db.next_research_thesis_attempt_number(round_id)
     db.log_research_round(
         state_path,
         round_number=round_number,
@@ -248,7 +245,7 @@ def log_research_round(
     )
     db.add_research_thesis_attempt(
         {
-            "research_round_id": research_round_id,
+            "research_round_id": round_id,
             "attempt_number": attempt_number,
             "thesis_id": thesis_id,
             "strategy_family": state.get("family", ""),

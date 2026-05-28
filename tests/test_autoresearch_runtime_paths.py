@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from autoresearch_runtime_paths import research_round_id
+from autoresearch_runtime_paths import research_round_id, research_round_id_or_empty
 
 
 class TestResearchRoundId:
@@ -19,3 +19,20 @@ class TestResearchRoundId:
     def test_negative_round_rejected(self) -> None:
         with pytest.raises(ValueError, match="round number must be >= 0"):
             research_round_id(1, -1)
+
+
+class TestResearchRoundIdOrEmpty:
+    def test_valid_inputs_return_helper_result(self) -> None:
+        assert research_round_id_or_empty(7, 3) == "job-7-round-3"
+
+    def test_job_zero_returns_empty(self) -> None:
+        assert research_round_id_or_empty(0, 1) == ""
+
+    def test_negative_round_returns_empty(self) -> None:
+        assert research_round_id_or_empty(1, -1) == ""
+
+    def test_non_int_job_returns_empty(self) -> None:
+        assert research_round_id_or_empty("not-a-number", 1) == ""
+
+    def test_none_job_returns_empty(self) -> None:
+        assert research_round_id_or_empty(None, 1) == ""
