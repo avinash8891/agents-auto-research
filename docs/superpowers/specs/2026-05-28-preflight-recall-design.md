@@ -283,7 +283,7 @@ Two-pass retrieval with MMR re-ranking on the relevance half. Concretely:
 
 6. **Cold-path logging.** When the diversity half degrades (returned 0 cross-dim entries) emit `PREFLIGHT_DIVERSITY_DEGRADED` with reason; when MMR is short-circuited (relevance candidates < relevance_share) emit `PREFLIGHT_MMR_DEGRADED`.
 
-7. **Render.** Markdown sections, one per entry: `thesis_id`, `outcome`, `mechanism_dimension`, `hypothesis` (≤180 chars), `mechanism` (≤180 chars), `validation_failure_reason` (≤160 chars), `job_id`, `round_number`. Sections grouped by half — relevance entries first under "## Closest priors", then diversity entries under "## Cross-dimension priors (for synthesis)".
+7. **Render.** Markdown sections, one per entry: `thesis_id`, `outcome`, `mechanism_dimension`, `hypothesis` (≤180 chars), `mechanism` (≤180 chars), `validation_failure_reason` (≤160 chars), `job_id`, `round_number`, **`config_changes`** (key→value pairs from `config_changes_json` stored per attempt). Config-changes rendering: up to `_preflight_config_changes_max_keys()` (env `AUTORESEARCH_PREFLIGHT_CONFIG_CHANGES_MAX_KEYS`, default `5`) key→value pairs shown verbatim; if more keys exist, append `"+{N} more keys: [k1, k2, ...]"` listing only the additional key names. Long string values truncated to 60 chars. Without the actual values, the agent can spot which knobs were touched but not whether a specific value (e.g. `ema_period=8`) has already been tried — surfacing values closes that gap. Sections grouped by half — relevance entries first under "## Closest priors", then diversity entries under "## Cross-dimension priors (for synthesis)".
 
 This design is grounded in the well-established RAG-diversity literature: MMR (`lambda_mult`) is the production-default for retrieval diversity (LangChain, LlamaIndex, Azure AI Search, Elastic, Bigtable), and two-pass relevance+diversity hybridization is the standard agentic-context-engineering pattern (Elastic Search Labs, multi-stage RAG pipelines). The dimension-exclusion technique in the diversity half is borrowed from MAP-Elites style structured exploration used by QuantEvolve, FunSearch, and AlphaEvolve — adapted to our schema by using `mechanism_dimension` as the structured axis.
 
@@ -448,6 +448,7 @@ Lazy accessor functions, **not module-level constants** (CLAUDE.md hygiene rule)
 | `_pairs_block_max_dimensions()` | `AUTORESEARCH_PAIRS_BLOCK_MAX_DIMENSIONS` | `5` | Cap on pairs rendered |
 | `_synthesis_enabled()` | `AUTORESEARCH_SYNTHESIS_TURN_ENABLED` | `true` | Kill switch for the synthesis turn |
 | `_kept_floor()`, `_killed_floor()` | `AUTORESEARCH_PREFLIGHT_KEPT_FLOOR`, `..._KILLED_FLOOR` | `2`, `2` | Outcome-balance floors in the union |
+| `_preflight_config_changes_max_keys()` | `AUTORESEARCH_PREFLIGHT_CONFIG_CHANGES_MAX_KEYS` | `5` | Max config_changes key→value pairs rendered per prior |
 
 Each accessor validates its env var (int parse, range check) and raises with the named env var on bad input.
 
@@ -544,6 +545,7 @@ No staged rollout flag. Behavior change is contained to thesis-creation rounds; 
 - The top-K block contains at least 2 KEPT and 2 KILLED entries when both exist in the corpus.
 - When the corpus has theses in multiple dimensions, at least one entry in the returned K is from a dimension **other than** `latest_outcome.mechanism_dimension`. (Two-pass retrieval working.)
 - MMR re-ranking demoted at least one near-clone in a synthetic 5-clones + 5-spread test fixture at `lambda_mult=0.5`.
+- Rendered prior-attempts entries show `config_changes` key→value pairs (up to the cap), not just key names — verified by asserting a specific value (e.g. `"ema_period": 8`) appears in the block for a fixture prior known to have changed that key.
 - Updated system-prompt tool description (§5.8) is detectable in `_build_conductor_system_prompt` output and references "pre-loaded".
 - A near-duplicate proposed thesis (paraphrased version of a known prior) is caught by dedup, with the matched `thesis_id` and similarity surfaced to the agent.
 - A thesis with a hallucinated `prior_lever_outcomes[].prior_thesis_id` is hard-rejected by the validator.
