@@ -1,0 +1,54 @@
+tests/test_validator_batching.py
+  s_1dc1911c45a5a7::t_4dae1663f13098 129,154,162,180,204,225,241,254,291,306,320,341,351
+tests/test_thesis_validator.py
+  s_1dc1911c45a5a7::t_bc5bb7e4cf1d95 13
+tests/test_validator_gate_coverage.py
+  s_1dc1911c45a5a7::t_bc5bb7e4cf1d95 41
+  s_1dc1911c45a5a7::t_d4e83db1473f51 431,454
+thesis_validator.py
+  s_1dc1911c45a5a7::t_3fd2ca0b1da192 346-350,357
+  s_1dc1911c45a5a7::t_e1799d0b1fe24f 126
+tests/test_l5_neighboring_threshold.py
+  s_1dc1911c45a5a7::t_bc5bb7e4cf1d95 14
+tests/test_schema_additions.py
+  s_1dc1911c45a5a7::t_bc5bb7e4cf1d95 16
+tests/test_stage1_rules_part2.py
+  s_1dc1911c45a5a7::t_bc5bb7e4cf1d95 10
+tests/test_validator_stages.py
+  s_1dc1911c45a5a7::t_bc5bb7e4cf1d95 21
+tests/test_validator_process_gate.py
+  s_1dc1911c45a5a7::t_4dae1663f13098 70,77,86,94,102,111,122
+tests/test_l6_l7_tool_order_gates.py
+  s_1dc1911c45a5a7::t_4dae1663f13098 30
+research_types.py
+  s_1dc1911c45a5a7::t_8c0e7ca9a97297 71
+tests/test_validator_subsections.py
+  s_1dc1911c45a5a7::t_bc5bb7e4cf1d95 28
+tests/test_legacy_recovery_schema.py
+  s_1dc1911c45a5a7::t_d4e83db1473f51 45
+tests/test_stage1_rules.py
+  s_1dc1911c45a5a7::t_bc5bb7e4cf1d95 14
+agent_prompts.py
+  s_1dc1911c45a5a7::t_10cee4c7143683 85
+  s_1dc1911c45a5a7::t_3785c5825e2d67 119
+  s_1dc1911c45a5a7::t_796d20096f838f 102-103
+tests/test_autoresearch_research.py
+  s_1dc1911c45a5a7::t_d4e83db1473f51 626
+  s_1dc1911c45a5a7::t_4dae1663f13098 204,679
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ddf6b13a18ce4e4537419b52029dd5ed9a450d5c",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
