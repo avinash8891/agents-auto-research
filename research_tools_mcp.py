@@ -269,26 +269,18 @@ def _build_research_tools_mcp(
 
     @mcp.tool()
     async def list_round_results(
-        order: str = "latest",
-        offset: int = 0,
-        limit: int = 10,
-        job_id: int | None = None,
+        order: str = "latest", limit: int = 10, job_id: int | None = None
     ) -> str:
         """List a bounded index of round (= backtest) outcomes."""
-        err = _dispatch(
-            ListRoundResultsArgs,
-            {"order": order, "offset": offset, "limit": limit, "job_id": job_id},
-        )
+        err = _dispatch(ListRoundResultsArgs, {"order": order, "limit": limit, "job_id": job_id})
         if err:
             return err
         effective_job = job_id if job_id is not None else current_job
         if list_round_results_for_root is None:
             return _list_round_results_for_root(
-                root, job_id=effective_job, order=order, offset=offset, limit=limit
+                root, job_id=effective_job, order=order, limit=limit
             )
-        return list_round_results_for_root(
-            root, job_id=effective_job, order=order, offset=offset, limit=limit
-        )
+        return list_round_results_for_root(root, job_id=effective_job, order=order, limit=limit)
 
     @mcp.tool()
     async def get_round_result(research_round_id: str, detail: bool = False) -> str:
@@ -306,16 +298,10 @@ def _build_research_tools_mcp(
         try:
             if get_round_result_for_root is None:
                 return _get_round_result_for_root(
-                    root,
-                    research_round_id=research_round_id,
-                    detail=detail,
-                    job_id=current_job,
+                    root, research_round_id=research_round_id, detail=detail
                 )
             return get_round_result_for_root(
-                root,
-                research_round_id=research_round_id,
-                detail=detail,
-                job_id=current_job,
+                root, research_round_id=research_round_id, detail=detail
             )
         except KeyError as exc:
             return round_result_not_found_envelope(research_round_id, exc)
