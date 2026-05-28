@@ -120,11 +120,21 @@ theme_keywords_in_use: (top 12 by attempt count; tail summarized)
   - htf_gate (2)
   (and N more)
 
-prior_lever_history: (top 12 by recency)
-  - stop_distance: tightened (job-11-round-2-attempt-1, killed)
-  - stop_distance: loosened (job-9-round-4-attempt-2, kept)
-  - entry_trigger: added_close_confirm (job-10-round-3-attempt-1, killed)
+prior_lever_history: (top 12 by recency; structured for overlap detection)
+  - lever: stop_distance
+    config_keys: [min_stop_distance_pct, max_stop_distance_pct]
+    direction: tightened
+    prior_thesis_id: job-11-round-2-attempt-1
+    outcome: killed
+  - lever: stop_distance
+    config_keys: [min_stop_distance_pct]
+    direction: loosened
+    prior_thesis_id: job-9-round-4-attempt-2
+    outcome: kept
   (and N more)
+  # Overlap check: if any key in your config_changes intersects a
+  # `config_keys` entry above AND your direction differs, populate
+  # `prior_lever_outcomes` citing that prior_thesis_id.
 
 strategy_config_keys: (valid keys for config_changes; family-baseline schema)
   - min_stop_distance_pct (float)
@@ -132,9 +142,34 @@ strategy_config_keys: (valid keys for config_changes; family-baseline schema)
   - htf_timeframe_minutes (int)
   (and N more)
 
-evidence_citations_available_ids: citation_1, citation_2, ...
-  (assigned positionally by the validator once you commit your
-   evidence_citations list; reference them in deepest_alternative.tiebreaker)
+prior_theses_snapshot: (top 20 by recency; for mechanism_lineage references)
+  - thesis_id: job-12-round-3-attempt-1
+    mechanism_dimension: regime_conditioning
+    outcome: killed
+  - thesis_id: job-12-round-1-attempt-2
+    mechanism_dimension: regime_conditioning
+    outcome: killed
+  (and N more)
+
+diagnostic_event_paths: (paths that resolve in the prior round's diagnostics JSON)
+  - rejection_breakdown.trend_filter_rejected
+  - rejection_breakdown.stop_hit_rejected
+  - event_counts.signals_generated
+  - event_counts.entries_taken
+  (and N more)
+  # Use only paths from this list in `expected_runtime_signal.event_path`.
+
+theme_keywords_overlap_signal:
+  # Self-check: emit your theme_keywords; if ANY token matches an entry in
+  # `theme_keywords_in_use` above, `novel_connection` is REQUIRED at emit.
+  # The validator runs this same check post-emit using the rendered list.
+
+citation_id_convention:
+  # The validator assigns positional ids citation_1, citation_2, ... to
+  # entries of `evidence_citations` by array position. Reference these in
+  # `deepest_alternative.tiebreaker.value` (and other tiebreakers). No
+  # ROUND CONTEXT key carries them — they are determined by your own
+  # emission order.
 ```
 
 Size caps are hard. The renderer sorts each list by attempt count (or
@@ -307,8 +342,10 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
     Token cap:   ≥120 chars (hard, when required)
     Required:    Pre-emit warn: ROUND CONTEXT `family_cluster_density == "high"`
                  signals you must work harder. Hard validator gate fires
-                 post-emit: required when ≥1 of your `theme_keywords` overlaps
-                 a prior thesis's keywords in the last 7 rounds.
+                 post-emit: required when ≥1 of your emitted `theme_keywords`
+                 appears in ROUND CONTEXT `theme_keywords_in_use`. The validator
+                 runs exactly this check using the same list rendered to you —
+                 deterministic, not a fuzzy "last 7 rounds" inference.
     Meaning:     Why this thesis is materially new despite keyword overlap
                  with priors (not just another variation of the dominant cluster).
     Producer guidance: Reference the shared keyword by name and explain the
@@ -341,8 +378,10 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        the chosen dimension has more attempts than every
                        dimension you list here.
     Validator rule:    Each entry must be present in ROUND CONTEXT
-                       `dimensions_unexplored`. Rejection code:
-                       structural_underexplored_dimensions_invalid.
+                       `dimensions_unexplored` AND must not equal this
+                       thesis's `mechanism_dimension`. Rejection codes:
+                         structural_underexplored_dimensions_invalid
+                         structural_underexplored_includes_chosen
     Example:     ["portfolio_construction", "alpha_decay"]
                  # NB: must NOT include the dimension you chose; pick from
                  # ROUND CONTEXT `dimensions_unexplored` only.
@@ -374,9 +413,10 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
     Producer guidance: Pick the alternative that, if you reversed the decision,
                        would produce a roughly equally strong thesis. The
                        tiebreaker must reference a target you committed to in
-                       this same thesis: a citation by id (`citation_N`, shown
-                       in ROUND CONTEXT `evidence_citations_available_ids` once
-                       you commit `evidence_citations`), OR a `disqualifiers[i].name`,
+                       this same thesis: a citation by positional id
+                       (`citation_1`, `citation_2`, ... corresponding to the
+                       order you emit `evidence_citations` — see ROUND CONTEXT
+                       `citation_id_convention`), OR a `disqualifiers[i].name`,
                        OR a `mechanism_dimension` from the enum. The why_rejected
                        prose can paraphrase; the tiebreaker must resolve by
                        exact match.
@@ -468,18 +508,23 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                    filtered_in, filtered_out, added, removed
     Source set:  Free; prior_thesis_id constrained by snapshot
     Token cap:   ≤4 entries
-    Required:    Required when the new thesis touches a lever that appears
-                 in ROUND CONTEXT `prior_lever_history` AND your direction
-                 differs from the prior's direction (direction-whipsaw rule).
-                 Otherwise optional.
+    Required:    Required when ANY key in your `config_changes` appears in
+                 the `config_keys` field of a `prior_lever_history` entry AND
+                 your direction (derived from the value vs family-baseline)
+                 differs from the prior's `direction`. The structured
+                 prior_lever_history makes this a config-key-set intersection,
+                 not a prose inference.
     Meaning:     Citations of prior theses that tested the same lever in a
                  different direction — and why this round is justified in
                  retrying it.
-    Producer guidance: Check ROUND CONTEXT `prior_lever_history` for any lever
-                       that appears in your config_changes. If the prior tested
-                       it in a different direction, cite that prior here with
-                       direction_then + outcome + why_retry. `direction_then`
-                       is free text; use a past-tense verb that names the change.
+    Producer guidance: For each key in your `config_changes`, scan
+                       `prior_lever_history` entries for any whose `config_keys`
+                       list contains that key. If found AND the prior's
+                       `direction` differs from yours, cite that prior here with
+                       its `prior_thesis_id` + the shared `lever` (use the
+                       lever-concept name from prior_lever_history, not the
+                       config-key name) + direction_then + outcome + why_retry.
+                       `direction_then` is free text; use a past-tense verb.
     Validator rule:    Whipsaw rule + prior_thesis_id must exist in snapshot.
                        Rejection codes:
                          structural_direction_whipsaw_uncited
@@ -515,7 +560,10 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
     Validator rule:    When emergent: non-empty + not in MECHANISM_DIMENSIONS
                        + not in emergent_dimensions_in_use. Rejection code:
                        structural_new_dimension_name_duplicates_existing.
-    Example:     "session_microstructure"
+    Example:     "open_drive_asymmetry"
+                 # NB: must not appear in ROUND CONTEXT
+                 # `emergent_dimensions_in_use` (which the §3.2 sample
+                 # shows includes `session_microstructure`).
 ```
 
 ```
@@ -710,8 +758,12 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        appear in `strategy_config_keys`. Rejection codes:
                          structural_config_changes_required
                          structural_config_changes_unknown_key
-    Example:     {"min_stop_distance_pct": 0.0035, "gap_filter": true,
-                  "trail_after_r": 3.0}
+    Example:     {"min_stop_distance_pct": 0.0035,
+                  "use_htf_direction_gate": true,
+                  "htf_timeframe_minutes": 60}
+                 # All three keys are from the §3.2 ROUND CONTEXT
+                 # `strategy_config_keys` sample — keys outside that list
+                 # are rejected.
 ```
 
 ```
@@ -1006,8 +1058,11 @@ Canonical positive fixture shape:
 ## 6. DOCTRINE ↔ OUTPUT cross-references
 
 Each DOCTRINE principle that implies a field gets an inline `→ see <field>`
-reference. Each OUTPUT entry's `Producer guidance` line references the
-relevant DOCTRINE principle by name.
+reference. The reverse direction (per-field DOCTRINE backref) is **added
+by the §7 renderer** from a `_DOCTRINE_BACKREFS: dict[field, principle]`
+mapping — not hand-written in this spec's §4 entries. The §4 entries
+above are the authoring source; the rendered prompt carries the
+`(DOCTRINE: <principle>)` annotations.
 
 DOCTRINE:
 ```
@@ -1049,6 +1104,42 @@ Iterable[(rule_id, predicate_callable)]` by mapping `predicate_kind` values
 to predicate functions. The validator imports the same mapping. The test
 suite uses it directly to assert the positive fixture passes every predicate
 and each negative fixture trips exactly its one named rule.
+
+### 6.2.1 Predicate kinds — full enumeration
+
+Every `Validator rule:` line in §4 reduces to a `predicate_kind` from this
+table. The renderer fails if a §4 rule cannot be expressed in this set.
+
+| predicate_kind | required_args | data_dependencies | covers |
+|---|---|---|---|
+| `non_empty` | `{field}` | thesis | structural_missing_* |
+| `min_length` | `{field, min}` | thesis | _too_short codes |
+| `literal_membership` | `{field, constant_name}` | thesis + constant import | structural_invalid_mechanism_dimension, structural_evidence_citation_too_short, etc. |
+| `tiebreaker_resolves` | `{field, lookup_tables}` | thesis | structural_deepest_alternative_tiebreaker_unresolved, structural_lighter_tiebreaker_unresolved |
+| `list_min_length` | `{field, min}` | thesis | structural_other_alternatives_too_few, structural_disqualifiers_too_few |
+| `list_min_with_kind` | `{field, kind_field, kind_value, min}` | thesis | structural_disqualifiers_no_mechanism_evidence |
+| `list_any_matches_marker_or_keyword` | `{field, name_field, condition_field, markers_constant, keywords_constant}` | thesis + constants | structural_disqualifiers_no_overfit_address |
+| `list_members_in_round_context_set` | `{field, round_context_key}` | thesis + round_context | structural_underexplored_dimensions_invalid |
+| `list_members_not_equal` | `{field, ref_field}` | thesis | structural_underexplored_includes_chosen |
+| `grounded_mention_distinct_count` | `{field, constant_name, min_distinct}` | thesis + constant | dimension_novelty ≥2-mention rule |
+| `theme_keyword_overlap_triggers_field` | `{trigger_field, target_field, round_context_key}` | thesis + round_context | structural_novel_connection_too_short, thesis_quality_novel_connection_not_grounded |
+| `whipsaw_from_prior_lever_history` | `{config_changes_field, target_field, round_context_key}` | thesis + round_context | structural_direction_whipsaw_uncited |
+| `prior_thesis_ids_in_snapshot` | `{field, round_context_key}` | thesis + round_context | structural_prior_lever_outcomes_unknown_id, thesis_quality_lineage_no_structural_pivot (id check) |
+| `lineage_pivot_required` | `{lineage_field, dimension_field, ancestors_round_context_key, disqualifiers_field, min_ancestors}` | thesis + round_context | thesis_quality_lineage_no_structural_pivot (pivot check) |
+| `event_path_resolves` | `{field, round_context_key}` | thesis + round_context | thesis_quality_expected_runtime_signal_path_unknown |
+| `config_keys_in_round_context_set` | `{field, round_context_key}` | thesis + round_context | structural_config_changes_unknown_key |
+| `magnitude_range_required_for_direction` | `{effects_field, direction_values_requiring_range}` | thesis | structural_expected_effect_magnitude_missing |
+| `magnitude_range_well_formed` | `{effects_field}` | thesis | structural_expected_effect_magnitude_range_invalid |
+| `unit_required_when_magnitude_set` | `{effects_field, unit_constant}` | thesis + constant | structural_expected_effect_unit_invalid |
+| `rationale_required_for_directional` | `{effects_field, direction_values_requiring_rationale, min_len}` | thesis | structural_expected_effect_rationale_required |
+| `confidence_strength_floor` | `{confidence_field, strong_values, greenfield_round_context_key}` | thesis + round_context | thesis_quality_confidence_distribution_too_weak |
+| `next_thesis_references_pivot_or_deepest` | `{field, dimension_field, deepest_alternative_field}` | thesis | thesis_quality_next_thesis_not_pre_committed |
+| `path_in_read_trace` | `{field, attempt_trace_key, path_extractor}` | thesis + attempt_trace | process_source_code_path_not_read |
+| `tool_invoked_in_trace` | `{tool_name, attempt_trace_key}` | attempt_trace | process_source_code_not_read |
+
+Process-tier predicates (`path_in_read_trace`, `tool_invoked_in_trace`)
+require the validator to receive the attempt's tool-call trace alongside
+the thesis — see §9 plumbing items for `ConductorResult.read_paths`.
 
 ## 7. Programmatic regeneration
 
@@ -1098,26 +1189,36 @@ Checks in CI via `scripts/check_prompt_drift.py`:
    - `confidence_distribution` greenfield exemption when `dimensions_already_explored` is empty.
    - Replace all hardcoded marker/enum prose-references with imports from the new constants.
 3. **`research_tools_mcp.py`**:
-   - Add `read_strategy_source(path: str)` MCP tool exposing read access to the strategy source tree, recording every read into the conductor's trace so the validator can enforce §4.10's path-level gate.
-4. **`research_prompts.py`** (or `autoresearch_research.py`):
-   - Build the `## ROUND CONTEXT` block with size caps per §3.2, including the new `prior_lever_history` and `strategy_config_keys` sub-blocks.
+   - Add `read_strategy_source(path: str) -> str` MCP tool exposing read access to the strategy source tree under a path-prefix allowlist (`strategies/`, `engine/`, `indicators/`).
+   - Every call appends the resolved absolute path to a per-attempt `read_paths` set captured by the conductor runner.
+4. **Trace plumbing** for §4.10 path-level gate:
+   - `research_types.py`: extend `ConductorResult` with `read_paths: frozenset[str] = frozenset()`.
+   - `research_conductor.py` (or wherever the MCP tool-call observer lives): capture every `read_strategy_source` invocation's `path` argument into the conductor's per-attempt accumulator; emit it into `ConductorResult.read_paths` on return.
+   - `autoresearch_research.py`: thread `read_paths` through to `validate_thesis_dict(thesis, round_context=..., attempt_trace=...)` as part of the `attempt_trace` object alongside `tools_called`.
+   - `thesis_validator.py`: accept the new `attempt_trace` kwarg; the `path_in_read_trace` predicate (per §6.2.1) consumes it.
+5. **`research_prompts.py`** (or `autoresearch_research.py`):
+   - Build the `## ROUND CONTEXT` block with size caps per §3.2, including the new `prior_lever_history` (structured), `strategy_config_keys`, `prior_theses_snapshot`, `diagnostic_event_paths`, `theme_keywords_overlap_signal`, and `citation_id_convention` sub-blocks.
    - Add `## SYSTEM-INJECTED FIELDS (do not emit)` appendix for `thesis_id`, `strategy_family`.
    - `_build_conductor_system_prompt` reads `prompts/conductor_output_section.md` and interpolates.
    - DOCTRINE updated with §6 cross-references; old OUTPUT prose deleted.
-5. **`scripts/render_output_schema.py`** (new): per §7.
-6. **`prompts/conductor_output_section.md`** (new, generated): committed.
-7. **`prompts/conductor_output_rules.json`** (new, generated): committed.
-8. **`prompt_rules.py`** (new): exposes `iter_prompt_declared_rules()`.
-9. **`scripts/check_prompt_drift.py`** (extended): per §8.
-10. **`tests/fixtures/conductor_prompt_worked_example.json`** (new).
-11. **`tests/fixtures/conductor_prompt_rejections/`** (new dir): one fixture per rejection code, each marked with `__expected_rejection_code__`.
-12. **`tests/test_conductor_prompt_v3.py`**:
+6. **DOCTRINE backref mapping** (per §6):
+   - `prompts/_doctrine_backrefs.py` (or a dict in the renderer) holds `{field_name: doctrine_principle}` mappings; the §7 renderer annotates each `Producer guidance` line with `(DOCTRINE: <principle>)` where a mapping exists.
+   - CI gate: every key in the backref mapping must be a real field; every field referenced by a `→ see` line in DOCTRINE must appear in the backref mapping (drift detection extension to §8).
+7. **`scripts/render_output_schema.py`** (new): per §7.
+8. **`prompts/conductor_output_section.md`** (new, generated): committed.
+9. **`prompts/conductor_output_rules.json`** (new, generated): committed.
+10. **`prompt_rules.py`** (new): exposes `iter_prompt_declared_rules()` per §6.2.1.
+11. **`scripts/check_prompt_drift.py`** (extended): per §8.
+12. **`tests/fixtures/conductor_prompt_worked_example.json`** (new).
+13. **`tests/fixtures/conductor_prompt_rejections/`** (new dir): one fixture per rejection code, each marked with `__expected_rejection_code__`.
+14. **`tests/test_conductor_prompt_v3.py`**:
     - Positive fixture passes Pydantic + live validator + every prompt-declared rule.
     - Each negative fixture trips exactly its named rejection code.
-    - `## ROUND CONTEXT` present with all required keys including `prior_lever_history` and `strategy_config_keys`.
+    - `## ROUND CONTEXT` present with all required keys: `prior_lever_history` (structured), `strategy_config_keys`, `prior_theses_snapshot`, `diagnostic_event_paths`, `theme_keywords_overlap_signal`, `citation_id_convention`.
     - Category ordering verified.
     - No hardcoded enum/marker strings in the rendered prompt.
-13. **Final grep gate** (PR not mergeable until all pass):
+    - DOCTRINE backref mapping covers every field whose Producer guidance has a DOCTRINE relation.
+15. **Final grep gate** (PR not mergeable until all pass):
     - `grep -n 'OUTPUT$' research_prompts.py` returns a single match (the interpolated section).
     - `pytest tests/test_conductor_prompt_v3.py` passes.
     - `python scripts/check_prompt_drift.py` exits 0.
