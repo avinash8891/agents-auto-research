@@ -55,19 +55,19 @@ class as `{key: type, ...}` so the LLM doesn't guess at nesting.
 
 ## 3.1 Category ordering
 
-OUTPUT fields render in this order. Referenced fields come before fields that
-reference them, so the LLM emits targets before references:
+OUTPUT fields render in this category order, independent of the §4 heading
+order. Referenced fields come before fields that reference them, so the LLM
+emits targets before references:
 
-1. Core description (§4.2)
-2. Positioning + classification (§4.3)
-3. Novelty justification (§4.4)
-4. Evidence (§4.7)
-5. Predictions + falsification (§4.8)
-6. Alternatives + prior-work (§4.5)
-7. Emergent-dimension contract (§4.6)
-8. Config + engine (§4.9)
-9. Diagnostics + code grounding (§4.10)
-10. Optional escape hatch (§4.11)
+1. Core description
+2. Positioning + classification
+3. Novelty justification
+4. Evidence
+5. Predictions + falsification
+6. Config + engine
+7. Alternatives + prior-work
+8. Emergent-dimension contract
+9. Diagnostics + code grounding
 
 §4.1 Identity is omitted from LLM-facing OUTPUT and documented in a separate
 `## SYSTEM-INJECTED FIELDS (do not emit)` appendix above OUTPUT.
@@ -103,15 +103,14 @@ matching the order of `evidence_citations` in this same JSON object.
 Of those 28:
 - 25 render in §4 as LLM-facing OUTPUT entries.
 - 3 omitted into `_PROMPT_OMITTED_FIELDS`: `thesis_id` (§4.1), `strategy_family` (§4.1), `required_diagnostic_specs` (§4.10).
-- §4.11 `validator_challenge` is a meta-field outside the `ResearchThesis` schema.
 
 ### 4.1 Identity — system-injected, omitted from OUTPUT
 
 `thesis_id` and `strategy_family` are documented in a `## SYSTEM-INJECTED
 FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
 
-- `thesis_id`: assigned by the validator as `f"{research_round_id}-attempt-{N}"`.
-- `strategy_family`: assigned by `_prepare_thesis_for_validation` at `autoresearch_research.py:100` based on the active job's family.
+- `thesis_id`: assigned by the system as `f"{research_round_id}-attempt-{N}"`.
+- `strategy_family`: assigned by the system from the active job's family.
 
 ### 4.2 Core description
 
@@ -153,7 +152,7 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
 
 ```
 - mechanism_dimension
-    Type:        Literal[*MECHANISM_DIMENSIONS]
+    Type:        Literal[*MECHANISM_DIMENSIONS] | runtime emergent dimension name
     Format:      enum value
     Source set:  One-of: entry_timing | exit_mechanism | signal_quality |
                  regime_conditioning | portfolio_construction | risk_structure |
@@ -167,9 +166,8 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        changing, not the category you wish to explore. Prefer
                        an existing core dimension or an entry from
                        `emergent_dimensions_in_use` over inventing a new
-                       emergent. Only set "emergent" when you can pass §4.6's
-                       three conditional checks; the LLM's incentive is to
-                       look novel, but the spec asks for accuracy.
+                       emergent. Only set "emergent" when no existing or
+                       already-emergent dimension fits.
     Example:     "regime_conditioning"
 ```
 
@@ -181,7 +179,7 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
     Token cap:   2-3 entries, each ≤20 chars
     Required:    Always (≥1 entry; ≥2 strongly recommended)
     Meaning:     Lever-theme tokens identifying the specific knob this thesis
-                 touches. Used by cluster-fixation and direction-whipsaw rules.
+                 touches.
     Producer guidance: Reuse a token from ROUND CONTEXT `theme_keywords_in_use`
                        if your thesis touches the same lever. Only invent a new
                        token for a genuinely new lever. Use the two slots for
@@ -199,7 +197,7 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
     Format:      single enum label
     Source set:  One-of (above)
     Token cap:   single label
-    Required:    Always — empty value rejected.
+    Required:    Always
     Meaning:     Categorical commitment about what kind of work this thesis represents.
                    - orthogonal_discovery: tests a lever family that has not
                      been previously explored in this family's history.
@@ -223,11 +221,8 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
     Meaning:     Why your chosen mechanism_dimension is structurally novel
                  (not a parameter tweak of prior work in the same dimension).
     Producer guidance: Name the PRIOR dimension you're moving away from, not
-                       (or not only) the dimension you chose. The validator
-                       counts any dimension mention; the prompt asks for the
-                       contrast. "This moves from signal_quality (where prior
-                       trend_filter_v2 lived) to regime_conditioning — a
-                       different lever family."
+                       (or not only) the dimension you chose. The contrast is
+                       what makes the novelty claim useful.
     Example:     "Moves from signal_quality threshold tweaking to
                   regime_conditioning by overlaying a 1h direction gate."
 ```
@@ -239,21 +234,16 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
     Source set:  Free, but MUST mention a specific shared theme_keyword or
                  a structurally-distinct mechanism_dimension
     Token cap:   ≥120 chars (hard, when required)
-    Required:    Pre-emit warn: ROUND CONTEXT `family_cluster_density == "high"`
-                 signals you must work harder. Hard validator gate fires
-                 post-emit: required when ≥1 of your emitted `theme_keywords`
-                 appears in ROUND CONTEXT `theme_keywords_in_use`. The validator
-                 runs exactly this check using the same list rendered to you —
-                 deterministic, not a fuzzy "last 7 rounds" inference.
+    Required:    Required when any emitted `theme_keywords` entry appears in
+                 ROUND CONTEXT `theme_keywords_in_use`; recommended whenever
+                 ROUND CONTEXT `family_cluster_density == "high"`.
     Meaning:     Why this thesis is materially new despite keyword overlap
                  with priors (not just another variation of the dominant cluster).
     Producer guidance: Reference the shared keyword by name and explain the
                        structural difference. Length without grounded mention
-                       is rejected. Belt-and-suspenders: populate this field
-                       whenever ROUND CONTEXT `family_cluster_density == "high"`
-                       OR you reuse any keyword from `theme_keywords_in_use`.
-                       Over-populating is cheap; mispredicting the post-emit
-                       gate is a rejection.
+                       is not useful. Populate this field whenever ROUND
+                       CONTEXT `family_cluster_density == "high"` OR you reuse
+                       any keyword from `theme_keywords_in_use`.
     Example:     "Recasts stop_distance as a regime-detection signal rather
                   than an absolute threshold — distinct from prior
                   stop_distance theses that all tested fixed thresholds."
@@ -269,9 +259,7 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
     Meaning:     The dimensions you considered as alternatives before picking
                  the one you chose.
     Producer guidance: Pick from ROUND CONTEXT `dimensions_unexplored`. Do NOT
-                       include the dimension you chose. A soft warn fires if
-                       the chosen dimension has more attempts than every
-                       dimension you list here.
+                       include the dimension you chose.
     Example:     ["portfolio_construction", "alpha_decay"]
                  # NB: must NOT include the dimension you chose; pick from
                  # ROUND CONTEXT `dimensions_unexplored` only.
@@ -350,10 +338,9 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
     Producer guidance: State the CONCRETE next thesis you would propose if
                        this round's backtest kills the current thesis. Vague
                        answers ("retry with different parameters") indicate
-                       shallow forward planning. Must reference either a
-                       different mechanism_dimension OR the mechanism named
-                       in deepest_alternative — this is a hard validator gate,
-                       not a stylistic preference.
+                       shallow forward planning. Prefer either a different
+                       mechanism_dimension or the mechanism named in
+                       deepest_alternative.
     Example:     "If this kills, next round tests ADX>30 entry filter
                   (deepest_alternative.mechanism) in signal_quality dimension.
                   Drops the regime-overlay theme; switches to threshold-based
@@ -389,8 +376,8 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                                     killed — see citation_2 analyst evidence.",
                    "lighter_tiebreaker": {"kind": "mechanism_dimension",
                                           "value": "signal_quality"}}]
-                 # Populating lighter_tiebreaker is optional but signals
-                 # deeper vetting — reviewers grade it favorably.
+                 # Populating lighter_tiebreaker is optional but helps make
+                 # the comparison concrete.
 ```
 
 ```
@@ -450,10 +437,6 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                        evolves from. Don't list theses that just happen to be
                        in the same dimension.
     Example:     ["job-12-round-3-attempt-1", "job-12-round-1-attempt-2"]
-                 # At ≥3 ancestors all in the same mechanism_dimension, the
-                 # pivot rule fires: either set a different mechanism_dimension
-                 # on this thesis, OR add a disqualifier with
-                 # kind="mechanism_evidence" naming the structural pivot.
 ```
 
 ### 4.6 Emergent-dimension contract
@@ -477,8 +460,8 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        look novel; the spec asks for accuracy.
     Example:     "open_drive_asymmetry"
                  # NB: must not appear in ROUND CONTEXT
-                 # `emergent_dimensions_in_use` (which the §3.2 sample
-                 # shows includes `session_microstructure`).
+                 # `emergent_dimensions_in_use`; A4b owns the rendered
+                 # runtime list.
 ```
 
 ```
@@ -526,7 +509,8 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                                   # experiment_result | memory
                      citation: str (≥30 chars)
                  }
-                 Diversity gate counts: web_search, analyst (subset of source enum).
+                 Diversity requirement counts: web_search, analyst
+                 (subset of source enum).
     Source set:  Free
     Token cap:   ≥2 entries; ≤6 entries
     Required:    Always; MUST contain ≥1 with source="web_search" AND
@@ -538,21 +522,22 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        (paper/source/precedent); ≥1 analyst entry citing
                        trade-level evidence from the strategy's own diagnostics.
                        Other source values are accepted but don't count toward
-                       the diversity gate.
+                       the diversity requirement.
     Example:     [{"source": "web_search",
                    "citation": "Cont et al. on order-flow regime persistence (Journal of Finance, 2021)"},
                   {"source": "analyst",
                    "citation": "round-3 analyst found 62% of stops occur in counter-HTF-trend setups"},
                   {"source": "source_code",
-                   "citation": "strategies/ema/signals.py:apply_htf_gate references higher-timeframe trend, confirming gate exists"}]
-                 # Non-gate sources (source_code, experiment_result, memory)
-                 # don't satisfy the web_search/analyst diversity gate but
-                 # are accepted as supporting evidence.
+                   "citation": "strategies/orb/signals.py:generate_signals applies use_trend_filter after raw OR breakout conditions"}]
+                 # Other sources (source_code, experiment_result, memory)
+                 # don't satisfy the web_search/analyst diversity requirement
+                 # but are accepted as supporting evidence.
 ```
 
 ```
 - confidence_distribution
     Type:        object — see Inner shape
+    Format:      typed object — see Inner shape
     Inner shape: ConfidenceDistribution = {
                      data:        Literal["direct", "proxy", "mixed", "speculative"],
                      literature:  Literal["direct", "proxy", "mixed", "speculative"],
@@ -562,6 +547,7 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                  The four values cover the full epistemic spectrum; "" was
                  a soft path the LLM defaulted to under uncertainty.
     Source set:  One-of per dimension
+    Token cap:   single object with 3 enum values
     Required:    Always; all three dimensions must be set.
     Meaning:     Per-dimension confidence rating:
                    - data:       analyst-grade evidence in this strategy's diagnostics
@@ -643,8 +629,7 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
     Producer guidance: Predict the SIGNAL-FLOW behavior the mechanism implies,
                        not the metric movement. A regime-overlay thesis should
                        predict that trend_filter_rejected share rises in
-                       trending regimes — the outcome evaluator checks this
-                       directly against the diagnostics file.
+                       trending regimes.
     Example:     [{"event_path": "rejection_breakdown.trend_filter_rejected",
                    "expected_relation": ">", "lower": 0.3, "upper": null,
                    "condition": "in trending regimes"},
@@ -679,14 +664,11 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                        that catches per-symbol or regime-specific overfit.
     Producer guidance: At least one disqualifier must test the MECHANISM
                        (kind="mechanism_evidence"). At least one must address
-                       OVERFIT — either name it from OVERFIT_DISQUALIFIER_MARKERS
-                       (trade_count_collapse, cross_symbol_divergence,
-                       regime_specific_overfit) OR write a condition mentioning
-                       an overfit keyword (overfit, lookahead, regime_specific,
-                       symbol_specific, etc.). A single disqualifier may
-                       satisfy both requirements (e.g. kind="mechanism_evidence"
-                       AND name="regime_specific_overfit"); you then need only
-                       one more entry to hit the ≥2 minimum.
+                       OVERFIT, using a concrete risk name such as
+                       trade_count_collapse, cross_symbol_divergence, or
+                       regime_specific_overfit. A single disqualifier may
+                       cover both roles; include another entry to keep the
+                       falsification set plural.
     Example:     [{"name": "trade_count_collapse",
                    "condition": "trade_count decreases by more than 50%",
                    "severity": "hard_fail", "kind": "metric_threshold"},
@@ -709,9 +691,9 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
     Producer guidance: Include EVERY key you want set. Keys you omit remain
                        at family-baseline default — they do NOT inherit from
                        prior rounds' configs. Only use keys shown in ROUND
-                       CONTEXT `strategy_config_keys`; unknown keys are
-                       rejected (set requires_code_change=true and request
-                       a new primitive instead).
+                       CONTEXT `strategy_config_keys`; if no shown key can
+                       express the mechanism, set requires_code_change=true
+                       and request a new primitive instead.
     Example:     {"ema_length": 21,
                   "rr_ratio": 2.5,
                   "gap_filter": true}
@@ -726,7 +708,9 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
 - requires_code_change
     Type:        bool
     Format:      true | false
-    Required:    Always (defaults to false if omitted)
+    Source set:  One-of: true | false
+    Token cap:   single boolean
+    Required:    Always
     Meaning:     Whether this thesis needs new engine primitives that no
                  existing config key can express.
     Producer guidance: Set true ONLY when no combination of existing config
@@ -755,80 +739,48 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
 - source_code_verification
     Type:        str
     Format:      "<repo path>:<function or symbol> — <explanation>"
-    Source set:  Free, but the cited path must have been read during this attempt.
+    Source set:  Free, but cite a strategy source path relevant to the thesis.
     Token cap:   ≥40 chars; ≤200 chars
     Required:    Always
     Meaning:     Citation of the strategy source file and function whose
                  behavior the proposed change touches.
-    Producer guidance: Call the `read_strategy_source` MCP tool on the path
-                       BEFORE proposing this thesis. Cite the exact path you
-                       read; the validator checks the read trace and rejects
-                       if the cited path was never opened during this attempt.
-    Example:     "strategies/ema/signals.py:apply_htf_gate — gate evaluated
-                  before stop_distance check; placing here ensures the
-                  filter sees the raw signal."
+    Producer guidance: Cite the concrete strategy file and symbol that would
+                       implement, configure, or constrain the proposed change.
+                       Use this to ground the thesis in code, not just prose.
+    Example:     "strategies/orb/signals.py:generate_signals — trend filter
+                  gates breakouts after raw OR conditions and before final
+                  entries are returned."
 ```
 
-`required_diagnostic_specs` is omitted from OUTPUT until Spec B lands.
-Listed in `_PROMPT_OMITTED_FIELDS` with a comment naming Spec B as the
-unblocker.
-
-### 4.11 Optional escape hatch — meta-field, not part of `ResearchThesis` schema
-
-```
-- validator_challenge  (OPTIONAL)
-    Type:        object
-    Format:      {challenged_round, challenged_thesis_id,
-                  challenged_rejection_code, claim, evidence}
-    Token cap:   ≤200 words total
-    Required:    Optional. Use only if you believe a recent rejection was wrong.
-    Meaning:     A formal challenge to a prior rejection. Logged for human
-                 review; does NOT alter the validator's decision.
-    Producer guidance: Use sparingly. Most "the validator was wrong" feelings
-                       are actually "the validator surfaced something I didn't
-                       want to address."
-    Example:     {"challenged_round": 3,
-                  "challenged_thesis_id": "job-1-round-3-attempt-2",
-                  "challenged_rejection_code": "structural_other_alternatives_too_few",
-                  "claim": "The 1-entry minimum should not apply when the rejected thesis already had a deepest_alternative with a resolving tiebreaker.",
-                  "evidence": "The rejected payload included deepest_alternative.tiebreaker={kind: 'mechanism_dimension', value: 'signal_quality'} and no other unresolved references."}
-```
-
+`required_diagnostic_specs` is omitted from OUTPUT until diagnostic-spec fields
+are separately defined. It remains listed in `_PROMPT_OMITTED_FIELDS`.
 
 ---
 
 ## 5. Worked example — fixture
 
 The worked example lives at `tests/fixtures/conductor_prompt_worked_example.json`
-(not inline). The test suite asserts the fixture passes Pydantic validation,
-the live `validate_thesis_dict(...)` call, and every rule declared in
-`prompts/conductor_output_rules.json` (A4c).
-
-A negative-fixture directory `tests/fixtures/conductor_prompt_rejections/`
-holds one fixture per rejection code, each minimally violating one rule.
-
-Canonical positive fixture shape — note `requires_code_change: true` with
-empty `config_changes`, since HTF gating is a new primitive (not in EMA's
-`allowed_config_keys`):
+(not inline). Canonical positive fixture shape:
 
 ```json
 {
-  "hypothesis": "Adding a 1-hour direction gate filters out counter-trend 5-min pullbacks that drove the strategy's drawdown floor.",
-  "mechanism": "HTF direction acts as a regime overlay — when 1h trend is up, only long 5-min pullbacks fire; when down, only shorts. Reduces signal count by ~40% but surviving signals have better edge.",
+  "hypothesis": "Enabling the ORB trend filter removes counter-trend breakouts that drove failed continuation trades.",
+  "mechanism": "The ORB setup has edge when opening-range breaks continue with the broader daily move. Requiring price to align with the prior-day EMA removes breakouts fighting the prevailing trend, reducing trade count while improving signal quality.",
   "mechanism_dimension": "regime_conditioning",
-  "theme_keywords": ["htf_gate", "trend_overlay"],
+  "theme_keywords": ["trend_filter", "orb_regime"],
   "thesis_role": "orthogonal_discovery",
-  "dimension_novelty": "Moves from signal_quality threshold tweaking (where prior trend_filter_v2 lived) to regime_conditioning by overlaying a 1h direction gate.",
+  "dimension_novelty": "Moves from signal_quality breakout-threshold tuning to regime_conditioning by filtering ORB entries with prior-day trend alignment.",
   "underexplored_dimensions_considered": ["portfolio_construction", "alpha_decay"],
   "evidence_citations": [
     {"source": "web_search", "citation": "Cont et al. on order-flow regime persistence (Journal of Finance, 2021)"},
-    {"source": "analyst",    "citation": "round-3 analyst found 62% of stops occur in counter-HTF-trend setups"},
-    {"source": "source_code", "citation": "strategies/ema/signals.py:apply_htf_gate confirms gate placement before stop_distance check"}
+    {"source": "analyst",    "citation": "round-3 analyst found counter-trend ORB breakouts had materially worse continuation than trend-aligned breakouts"},
+    {"source": "source_code", "citation": "strategies/orb/signals.py:generate_signals applies use_trend_filter after raw OR breakout conditions"}
   ],
+  "confidence_distribution": {"data": "direct", "literature": "speculative", "precedent": "proxy"},
   "expected_effects": [
     {"metric": "profit_factor", "direction": "increase",
      "magnitude_range": [0.05, 0.20], "unit": "ratio",
-     "rationale": "HTF gate filters counter-trend chop, raising win rate by a measurable margin."},
+     "rationale": "Trend alignment removes lower-quality counter-trend breakouts, raising win rate by a measurable margin."},
     {"metric": "trade_count", "direction": "decrease_or_same",
      "magnitude_range": null, "unit": null,
      "rationale": null}
@@ -845,11 +797,15 @@ empty `config_changes`, since HTF gating is a new primitive (not in EMA's
      "condition": "PF in up-regime not >1.2× PF in down-regime",
      "severity": "hard_fail", "kind": "mechanism_evidence"}
   ],
+  "config_changes": {"use_trend_filter": true, "trend_ema_period": 20},
+  "requires_code_change": false,
+  "requested_primitives": [],
   "deepest_alternative": {
     "mechanism": "ADX>30 entry filter",
-    "why_rejected": "Too strict in low-vol regimes per round-3 analyst evidence (citation_2) — would suppress signals where the HTF gate still admits them, costing trade frequency without addressing the wick-only stop-out mechanism.",
+    "why_rejected": "Too strict in low-vol regimes per round-3 analyst evidence (citation_2) — would suppress signals where trend alignment still admits continuation trades, costing trade frequency without addressing counter-trend breakouts directly.",
     "tiebreaker": {"kind": "evidence_citation", "value": "citation_2"}
   },
+  "if_this_fails_next_thesis": "If this kills, next round tests ADX>30 entry filter in signal_quality dimension (deepest_alternative.mechanism). Drops the trend-filter theme; switches to threshold-based filtering.",
   "other_alternatives": [
     {"mechanism": "session-time entry filter",
      "why_rejected": "Proxy for the regime problem rather than the structural fix; cannot distinguish high-vol from low-vol opens within the same session.",
@@ -860,12 +816,7 @@ empty `config_changes`, since HTF gating is a new primitive (not in EMA's
   ],
   "prior_lever_outcomes": [],
   "mechanism_lineage": [],
-  "config_changes": {},
-  "requires_code_change": true,
-  "requested_primitives": ["htf_direction_gate"],
-  "source_code_verification": "strategies/ema/signals.py:apply_htf_gate — gate evaluated before stop_distance check; placing here ensures filter sees raw signal.",
-  "if_this_fails_next_thesis": "If this kills, next round tests ADX>30 entry filter in signal_quality dimension (deepest_alternative.mechanism). Drops the regime-overlay theme; switches to threshold-based filtering.",
-  "confidence_distribution": {"data": "direct", "literature": "speculative", "precedent": "proxy"}
+  "source_code_verification": "strategies/orb/signals.py:generate_signals — trend filter gates breakouts after raw OR conditions and before final entries are returned."
 }
 ```
 
@@ -919,5 +870,6 @@ section; A4c owns the validation sidecar.
 - Every typed-object field has an `Inner shape:` slot.
 - The worked example includes every always-required field and every conditional
   field that fires for the fixture context.
-- The rendered OUTPUT section contains no `ROUND CONTEXT`, `RECENT REJECTIONS`,
-  rejection-code catalogue, validator predicate table, or implementation notes.
+- The rendered OUTPUT section contains no round-specific context blocks,
+  recent-rejection block, rejection-code catalogue, validator predicate table,
+  or implementation notes.
