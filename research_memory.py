@@ -769,6 +769,19 @@ def get_round_result(
         for item in candidates
         if getattr(item["record"], "research_round_id", "") == requested_id
     ]
+    if len(matches) > 1 and family is None:
+        # research_round_id like "job-1-round-5" can collide across per-family
+        # DBs. Without an explicit family the lookup would silently pick the
+        # latest-timestamp row, which may belong to a different strategy. Fail
+        # loudly so the caller passes family= to disambiguate. (When family is
+        # already pinned, multiple matches indicate within-family duplication,
+        # which the latest-sorted fallback handles correctly.)
+        match_families = sorted({getattr(item["record"], "family", "") for item in matches})
+        if len(match_families) > 1:
+            raise KeyError(
+                f"ambiguous research_round_id {requested_id!r}: matches in "
+                f"multiple families {match_families}; pass family= to disambiguate"
+            )
     if not matches:
         # Fallback path for empty-rrid rows: match by run_id so callers
         # can fetch rows surfaced by list_round_results that have no

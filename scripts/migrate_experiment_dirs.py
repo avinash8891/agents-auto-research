@@ -57,7 +57,11 @@ from pathlib import Path
 DEFAULT_DB_GLOB = "*_backtest_runs.db"
 
 JOB_DIR_RE = re.compile(r"^job-(\d+)$")
-ROUND_DIR_RE = re.compile(r"^round-(\d+)$")
+# autoresearch_runtime_paths.research_round_root() emits "round-{N}" for
+# non-baseline rounds and the literal "round-0-baseline" for round 0. Both
+# layouts can host legacy experiments/{thesis_id}/ dirs, so the walker has
+# to accept either spelling and emit round_number=0 for the baseline form.
+ROUND_DIR_RE = re.compile(r"^round-(\d+)(?:-baseline)?$")
 
 logger = logging.getLogger("migrate_experiment_dirs")
 

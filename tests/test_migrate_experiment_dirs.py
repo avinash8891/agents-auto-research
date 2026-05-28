@@ -546,6 +546,57 @@ class TestCliSmoke:
         assert "foo" not in row[0].rsplit("\\", 1)[0]
         assert "job-12-round-1" in row[0]
 
+    def test_migration_visits_round_0_baseline_directories(self, tmp_path: Path) -> None:
+        """autoresearch_runtime_paths emits 'round-0-baseline' (not 'round-0')
+        for the baseline-round directory. The walker must accept the
+        '-baseline' suffix or baseline artifacts stay in the legacy layout."""
+        root = tmp_path / "runtime_root"
+        root.mkdir()
+        db_path = tmp_path / "ema_backtest_runs.db"
+        conn = _make_db(db_path)
+        baseline_round_id = "job-12-round-0"
+        # Seed a baseline row.
+        conn.execute(
+            "INSERT INTO backtest_runs (run_id, thesis_id, job, "
+            "research_round_id, research_round_number) VALUES (?, ?, ?, ?, ?)",
+            ("run-baseline", "baseline_ema", JOB_ID, baseline_round_id, 0),
+        )
+        conn.commit()
+        conn.close()
+        # Stage the legacy baseline dir under the round-0-baseline path.
+        baseline_legacy_dir = (
+            root
+            / "runtime"
+            / "jobs"
+            / f"job-{JOB_ID}"
+            / "research"
+            / "round-0-baseline"
+            / "experiments"
+            / "baseline_ema"
+        )
+        baseline_legacy_dir.mkdir(parents=True, exist_ok=True)
+        (baseline_legacy_dir / "thesis.json").write_text('{"thesis_id": "baseline_ema"}')
+
+        rc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--root",
+                str(root),
+                "--db",
+                str(db_path),
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert rc.returncode == 0
+        assert "WOULD RENAME" in rc.stdout
+        assert str(baseline_legacy_dir) in rc.stdout
+        assert baseline_round_id in rc.stdout
+
     def test_typo_root_exits_3(self, tmp_path: Path) -> None:
         """An explicit --root pointing at a nonexistent path is an operator
         typo, not "nothing to migrate" — exit 3 like the --db typo case."""

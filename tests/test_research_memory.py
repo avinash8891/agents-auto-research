@@ -446,6 +446,42 @@ def test_get_round_result_scopes_by_family(tmp_path: Path) -> None:
     assert payload_orb["result"]["thesis_id"] == "orb-thesis"
 
 
+def test_get_round_result_raises_on_cross_family_ambiguity_without_filter(
+    tmp_path: Path,
+) -> None:
+    """Same research_round_id present in two family DBs must NOT be silently
+    resolved to whichever timestamp sorts latest when the caller didn't pin
+    family — that would route the conductor to a different strategy's
+    backtest details. Raise so the caller passes family= explicitly."""
+    ema_db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    ema_db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    orb_db = BacktestRunDB(tmp_path / "orb_backtest_runs.db")
+    orb_db.init_session(name="orb", metric_name="profit_factor", direction="higher")
+
+    rrid = research_round_id(1, 1)
+    _add_backtest_record_family(
+        ema_db,
+        research_round_id_value=rrid,
+        family="ema",
+        thesis_id="ema-thesis",
+        job=1,
+        run_id="run-ema",
+    )
+    _add_backtest_record_family(
+        orb_db,
+        research_round_id_value=rrid,
+        family="orb",
+        thesis_id="orb-thesis",
+        job=1,
+        run_id="run-orb",
+    )
+
+    import pytest as _pytest
+
+    with _pytest.raises(KeyError, match="multiple families"):
+        get_round_result(tmp_path, research_round_id=rrid)
+
+
 def test_get_round_result_payload_includes_family(tmp_path: Path) -> None:
     """Finding L: payload exposes family so callers can verify the chosen record."""
     rrid = research_round_id(1, 1)
