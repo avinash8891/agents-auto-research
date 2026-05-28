@@ -571,7 +571,7 @@ def _load_structured_thesis_artifacts(
     thesis_id: str,
     *,
     artifact_root: Path | None = None,
-    research_round_id: str | None = None,
+    research_round_id: str,
 ) -> tuple[dict[str, Any], dict[str, Any], Path, Path] | None:
     roots = [artifact_root] if artifact_root is not None else []
     roots.append(root)
@@ -583,14 +583,13 @@ def _load_structured_thesis_artifacts(
             contract = _read_json_artifact(contract_path)
             if thesis is not None and contract is not None:
                 return thesis, contract, thesis_path, contract_path
-        if research_round_id:
-            legacy_dir = current_root / "experiments" / research_round_id
-            if legacy_dir.exists():
-                raise RuntimeError(
-                    "legacy builder experiment directory is not supported — "
-                    f"found `experiments/{research_round_id}/` at {legacy_dir}; "
-                    "new layout uses `builder_request/`"
-                )
+        legacy_dir = current_root / "experiments" / research_round_id
+        if legacy_dir.exists():
+            raise RuntimeError(
+                "legacy builder experiment directory is not supported — "
+                f"found `experiments/{research_round_id}/` at {legacy_dir}; "
+                "new layout uses `builder_request/`"
+            )
     return None
 
 
@@ -1309,7 +1308,7 @@ def build_missing_primitives(
     thesis_id: str,
     *,
     artifact_root: Path | None = None,
-    research_round_id: str | None = None,
+    research_round_id: str,
 ) -> dict[str, Any]:
     """Dispatch CLI builder to implement missing primitives for a thesis."""
     started_at = time.monotonic()

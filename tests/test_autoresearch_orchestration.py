@@ -222,7 +222,7 @@ def test_build_missing_primitives_for_state_uses_round_root(tmp_path: Path, monk
     ctrl, written, _ = _controller(state, tmp_path)
     monkeypatch.setattr(
         "compiler_pipeline.build_missing_primitives",
-        lambda root, thesis_id, artifact_root=None: {
+        lambda root, thesis_id, artifact_root=None, research_round_id=None: {
             "status": "completed",
             "generated_config": "runtime/jobs/job-6/research/round-2/selected_config.json",
             "validation_passed": True,
@@ -281,7 +281,7 @@ def test_build_missing_primitives_for_state_uses_runtime_root_when_split(
     ctrl, written, _ = _controller(state, code_root, runtime_root)
     monkeypatch.setattr(
         "compiler_pipeline.build_missing_primitives",
-        lambda root, thesis_id, artifact_root=None: {
+        lambda root, thesis_id, artifact_root=None, research_round_id=None: {
             "status": "completed",
             "generated_config": "runtime/jobs/job-6/research/round-2/selected_config.json",
             "validation_passed": True,
@@ -337,7 +337,7 @@ def test_build_missing_primitives_routes_retryable_builder_failure_to_research(
     ctrl.research_dir = tmp_path / "runtime" / "jobs" / "job-8" / "research"
     monkeypatch.setattr(
         "compiler_pipeline.build_missing_primitives",
-        lambda root, thesis_id, artifact_root=None: {
+        lambda root, thesis_id, artifact_root=None, research_round_id=None: {
             "status": "error",
             "error_code": "builder_missing_primitive_contract",
             "reason": "primitive sidecar missing required fields",
@@ -370,7 +370,7 @@ def test_build_missing_primitives_records_deterministic_builder_failure(
     ctrl, written, current_md = _controller(state, tmp_path)
     monkeypatch.setattr(
         "compiler_pipeline.build_missing_primitives",
-        lambda root, thesis_id, artifact_root=None: {
+        lambda root, thesis_id, artifact_root=None, research_round_id=None: {
             "status": "error",
             "error_code": "builder_timeout",
             "reason": "builder exceeded its runtime budget",
@@ -403,7 +403,7 @@ def test_build_missing_primitives_marks_unknown_builder_error_manual_review(
     ctrl, written, current_md = _controller(state, tmp_path)
     monkeypatch.setattr(
         "compiler_pipeline.build_missing_primitives",
-        lambda root, thesis_id, artifact_root=None: {
+        lambda root, thesis_id, artifact_root=None, research_round_id=None: {
             "status": "error",
             "error_code": "unexpected_builder_shape",
             "reason": "builder returned an unclassified result",
@@ -582,7 +582,7 @@ def test_resolve_next_action_builds_halted_thesis_when_resume_cannot_materialize
         }
     )
 
-    def _builder(root, thesis_id, artifact_root=None):
+    def _builder(root, thesis_id, artifact_root=None, research_round_id=None):
         assert thesis_id == "needs-code"
         assert artifact_root == (tmp_path / "runtime" / "jobs" / "job-3" / "research" / "round-2")
         return {

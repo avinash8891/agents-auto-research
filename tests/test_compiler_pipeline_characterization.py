@@ -145,7 +145,12 @@ def test_create_executable_artifact_returns_round_selected_config_path(tmp_path:
 def test_build_missing_primitives_requires_round_builder_request_artifacts(tmp_path: Path) -> None:
     round_root = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-4"
 
-    result = build_missing_primitives(tmp_path, "missing", artifact_root=round_root)
+    result = build_missing_primitives(
+        tmp_path,
+        "missing",
+        artifact_root=round_root,
+        research_round_id="job-1-round-4",
+    )
 
     assert result["status"] == "error"
     assert result["error_code"] == "builder_missing_round_artifacts"
@@ -180,7 +185,12 @@ def test_build_missing_primitives_rejects_unknown_structured_family(tmp_path: Pa
     round_root = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-6"
     _write_builder_request(round_root, "unknown", family="not-a-real-family")
 
-    result = build_missing_primitives(tmp_path, "unknown", artifact_root=round_root)
+    result = build_missing_primitives(
+        tmp_path,
+        "unknown",
+        artifact_root=round_root,
+        research_round_id="job-1-round-6",
+    )
 
     assert result["status"] == "error"
     assert result["error_code"] == "builder_unknown_strategy_family"
@@ -230,7 +240,12 @@ print("generated")
         },
     )
 
-    result = build_missing_primitives(tmp_path, thesis_id, artifact_root=round_root)
+    result = build_missing_primitives(
+        tmp_path,
+        thesis_id,
+        artifact_root=round_root,
+        research_round_id="job-1-round-7",
+    )
 
     assert result["status"] == "completed"
     assert result["generated_config"] == "runtime/jobs/job-1/research/round-7/selected_config.json"
@@ -270,7 +285,12 @@ def test_build_missing_primitives_marks_missing_builder_report_but_completes(
         },
     )
 
-    result = build_missing_primitives(tmp_path, thesis_id, artifact_root=round_root)
+    result = build_missing_primitives(
+        tmp_path,
+        thesis_id,
+        artifact_root=round_root,
+        research_round_id="job-1-round-8",
+    )
 
     assert result["status"] == "completed"
     assert result["builder_self_check"]["notes"] == ["builder_final_report_missing_or_malformed"]
@@ -312,7 +332,12 @@ def test_build_missing_primitives_reports_invalid_generated_config(
         },
     )
 
-    result = build_missing_primitives(tmp_path, thesis_id, artifact_root=round_root)
+    result = build_missing_primitives(
+        tmp_path,
+        thesis_id,
+        artifact_root=round_root,
+        research_round_id="job-1-round-9",
+    )
 
     assert result["status"] == "error"
     assert result["error_code"] == "builder_config_validation_failed"

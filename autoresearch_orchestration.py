@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, Any
 _log = logging.getLogger(__name__)
 
 from autoresearch_paths import serialize_config_path
-from autoresearch_runtime_paths import research_round_id_or_empty, research_round_root
+from autoresearch_runtime_paths import (
+    research_round_id,
+    research_round_root,
+)
 from improvement_reflexion import read_validation_failure_reason
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
@@ -542,16 +545,17 @@ def build_missing_primitives_for_state(
     try:
         import compiler_pipeline
 
-        round_id = (
-            research_round_id_or_empty(job, int(research_round))
-            if research_round is not None and job is not None
-            else ""
-        )
+        if job is None or research_round is None:
+            raise ValueError(
+                "build_missing_primitives dispatch requires job and research_round; "
+                f"got job={raw_job!r}, research_round={research_round!r}"
+            )
+        round_id = research_round_id(int(job), int(research_round))
         builder_result = compiler_pipeline.build_missing_primitives(
             controller.root,
             thesis_id,
             artifact_root=round_root,
-            research_round_id=round_id or None,
+            research_round_id=round_id,
         )
     except (
         Exception
