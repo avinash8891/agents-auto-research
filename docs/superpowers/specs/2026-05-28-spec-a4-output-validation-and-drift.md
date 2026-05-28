@@ -114,6 +114,88 @@ Every validator gate in this inventory must define:
   `RECENT REJECTIONS`. Feedback must name the field or process behavior to fix,
   but must not dump internal stack traces or validator implementation details.
 
+### 3.4 Per-Attempt Gate Persistence
+
+The database is the authoritative audit trail for validator decisions. Files
+such as `runtime/jobs/job-N/research/round-M/theses/<thesis_id>/rejection.json`
+are derived read artifacts for prompt rendering and debugging; they must not be
+the only durable place where rejection gates, acceptance gates, or retry
+feedback live.
+
+Persist one DB row per validator gate per thesis attempt. The storage contract
+must answer, for every attempt:
+
+- which validator gates were evaluated;
+- which gates passed, warned, rejected, were skipped as not applicable, or were
+  not reached because an earlier gate rejected;
+- which gate or gates caused the final rejection;
+- the exact feedback string sent back to the research conductor for rejected
+  attempts.
+
+Required DB shape:
+
+```sql
+CREATE TABLE IF NOT EXISTS research_thesis_attempt_gate_results (
+    thesis_attempt_id TEXT NOT NULL,
+    research_round_id TEXT NOT NULL,
+    attempt_number INTEGER NOT NULL,
+    thesis_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    validator_tier TEXT NOT NULL,
+    gate_id TEXT NOT NULL,
+    rejection_code TEXT NOT NULL,
+    status TEXT NOT NULL,
+    feedback_message TEXT NOT NULL,
+    evidence_json TEXT NOT NULL,
+    created_at_utc TEXT NOT NULL,
+    PRIMARY KEY (thesis_attempt_id, gate_id)
+);
+```
+
+`status` is one of:
+
+- `pass` — gate evaluated and accepted the thesis.
+- `warn` — gate evaluated and emitted a non-blocking policy warning.
+- `reject` — gate evaluated and blocked the attempt.
+- `skipped_not_applicable` — gate's condition did not apply to this thesis.
+- `not_evaluated` — gate was not reached because an earlier blocking gate ended
+  validation.
+
+`gate_id` must match the rule id from `prompts/conductor_output_rules.json` for
+generated/prompt-declared gates, or the explicit inventory name in §3.3 for
+process, compiler-contract, and post-run gates. `rejection_code` is empty for
+passing gates that do not have a code; for reject/warn rows it must match the
+validator's emitted code. `feedback_message` is empty for pass and inapplicable
+rows; for reject/warn rows it stores the conductor-facing message, not a stack
+trace. `evidence_json` stores structured evidence used by the gate, redacted of
+secrets and raw payloads.
+
+The existing `research_thesis_attempts` row remains the attempt summary. It
+must keep:
+
+- `validator_status` / outcome summary, e.g. `compiled` or
+  `rejected_attempt_N`;
+- `selected_for_execution`;
+- `validation_failure_reason` as the exact top-level feedback returned to the
+  next conductor retry for rejected attempts.
+
+Do not duplicate full gate state into `thesis_details_json`. That field may
+keep a compact compatibility summary such as the first rejection code, but the
+complete gate audit lives in `research_thesis_attempt_gate_results`.
+
+Acceptance persistence: a thesis that reaches `compiled` must still have gate
+rows. Passing accepted attempts should show `pass` or `skipped_not_applicable`
+for every gate evaluated by that validation path, plus `not_evaluated` for any
+later-stage gates that truly did not run. This prevents "compiled" from being a
+black box.
+
+Rejection persistence: when validation rejects, insert rows for all gates whose
+outcome is known. If a batched mechanical pass finds multiple failures, persist
+each failing gate as `reject`; the top-level `validation_failure_reason` is the
+conductor-facing aggregate feedback. If a fail-fast policy gate rejects before
+mechanical validation, persist later gates as `not_evaluated` so analytics can
+distinguish "passed" from "never checked."
+
 #### Process Validators
 
 | Gate | Scope | Owner | Rejection code(s) | Status | Logic | Feedback to research conductor |
@@ -452,6 +534,14 @@ code.
   its named rejection code.
 - Thread attempt trace data needed by process-tier predicates, including
   `read_strategy_source` paths, into validator calls.
+- Add DB persistence for per-attempt gate outcomes using
+  `research_thesis_attempt_gate_results`. Rejected attempts must save every
+  known rejecting gate and the exact feedback returned to the conductor;
+  accepted attempts must save pass/skip/not-evaluated rows so `compiled` is not
+  the only acceptance signal.
+- Keep `rejection.json` generation as a read artifact sourced from the same
+  validator result data that writes the DB rows. Do not let filesystem artifact
+  persistence become the only source of gate-code truth.
 
 ## 8. CI Drift Detection
 
@@ -485,5 +575,13 @@ Checks in CI via `scripts/check_prompt_drift.py`:
 - Positive fixture passes Pydantic, live `validate_thesis_dict(...)`, and every
   prompt-declared predicate.
 - Each negative fixture trips exactly its expected rejection code.
+- DB tests prove `research_thesis_attempt_gate_results` records per-gate
+  `pass`, `warn`, `reject`, `skipped_not_applicable`, and `not_evaluated`
+  outcomes for every attempt.
+- A rejected-attempt integration test proves `validation_failure_reason` stores
+  the exact conductor retry feedback and the gate-results table stores the
+  rejecting `gate_id`, `rejection_code`, `feedback_message`, and `evidence_json`.
+- An accepted-attempt integration test proves a `compiled` thesis has persisted
+  passing/skipped gate rows, not only `selected_for_execution=1`.
 - `python scripts/check_prompt_drift.py` exits 0.
 - Rejection codes never appear in the rendered LLM-facing OUTPUT section.
