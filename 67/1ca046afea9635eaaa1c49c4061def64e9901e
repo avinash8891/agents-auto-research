@@ -1,0 +1,39 @@
+autoresearch_constants.py
+  s_1dc1911c45a5a7::t_c0661bad7cae0f 3
+autoresearch_state.py
+  s_1dc1911c45a5a7::t_a2b871c0327c02 311
+  s_1dc1911c45a5a7::t_df6d629c094812 87
+  s_1dc1911c45a5a7::t_cd59b6e8e077be 200,204,209,218
+autoresearch_cli.py
+  s_1dc1911c45a5a7::t_f68e8a15940595 156
+  s_1dc1911c45a5a7::t_efa7b109cd328d 373
+  s_1dc1911c45a5a7::t_3100cd73786683 475
+  s_1dc1911c45a5a7::t_5cf44d88ce4e1e 196
+  s_1dc1911c45a5a7::t_f840354658de50 444
+  s_1dc1911c45a5a7::t_65c11db8926005 2-8
+  s_1dc1911c45a5a7::t_937ddd0a3eb761 348
+  s_1dc1911c45a5a7::t_7a310bf2bc6f12 440
+  s_1dc1911c45a5a7::t_e3ea39febf8480 452
+  s_1dc1911c45a5a7::t_283abb5be4e5cf 314
+  s_1dc1911c45a5a7::t_44e3769cd93fe1 425
+tests/test_autoresearch_state.py
+  s_1dc1911c45a5a7::t_87c5726414015e 243
+eval_cli.py
+  s_1dc1911c45a5a7::t_e2879ec2845892 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "671ca046afea9635eaaa1c49c4061def64e9901e",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
