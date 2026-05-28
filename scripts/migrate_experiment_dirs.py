@@ -22,11 +22,15 @@ The script:
 
 Stdlib-only.
 
+``--root`` is the directory CONTAINING ``runtime/`` (typically the repo
+root), not ``runtime/`` itself — the script appends ``runtime/jobs`` to
+``--root`` when walking job dirs.
+
 Usage::
 
-    python scripts/migrate_experiment_dirs.py --root runtime/
-    python scripts/migrate_experiment_dirs.py --root runtime/ --apply
-    python scripts/migrate_experiment_dirs.py --root runtime/ --reverse --apply
+    python scripts/migrate_experiment_dirs.py --root .
+    python scripts/migrate_experiment_dirs.py --root . --apply
+    python scripts/migrate_experiment_dirs.py --root . --reverse --apply
 
 Exit codes:
     0  success / dry-run completed / nothing to do
@@ -240,8 +244,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--root",
-        default="runtime/",
-        help="autoresearch runtime root containing runtime/jobs/job-*/ (default: runtime/)",
+        default=".",
+        help=(
+            "directory CONTAINING runtime/ (typically the repo root). The "
+            "script walks {root}/runtime/jobs/job-*/research/round-*/"
+            "experiments/. Do NOT pass runtime/ here — pass its parent. "
+            "Default: ."
+        ),
     )
     parser.add_argument(
         "--db",

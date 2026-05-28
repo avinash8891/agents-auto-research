@@ -585,11 +585,18 @@ def _load_structured_thesis_artifacts(
                 return thesis, contract, thesis_path, contract_path
         legacy_dir = current_root / "experiments" / research_round_id
         if legacy_dir.exists():
-            raise RuntimeError(
-                "legacy builder experiment directory is not supported — "
-                f"found `experiments/{research_round_id}/` at {legacy_dir}; "
-                "new layout uses `builder_request/`"
+            has_legacy_builder_artifact = (
+                (legacy_dir / "thesis.json").exists()
+                or (legacy_dir / "contract.json").exists()
             )
+            if has_legacy_builder_artifact:
+                raise RuntimeError(
+                    "legacy builder experiment directory is not supported — "
+                    f"found `experiments/{research_round_id}/` at {legacy_dir} "
+                    "with thesis.json or contract.json; new layout uses "
+                    "`builder_request/`. Move builder artifacts there; "
+                    "backtest artifacts in experiments/{rrid}/ are fine."
+                )
     return None
 
 

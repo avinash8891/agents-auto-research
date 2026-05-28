@@ -181,6 +181,35 @@ def test_build_missing_primitives_rejects_legacy_experiment_artifacts(tmp_path: 
         )
 
 
+def test_build_missing_primitives_ignores_benign_backtest_artifacts(tmp_path: Path) -> None:
+    research_round_id = "job-1-round-5"
+    legacy_dir = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-5"
+        / "experiments"
+        / research_round_id
+    )
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    (legacy_dir / "trades.csv").write_text("ts,symbol,qty\n")
+
+    # No builder artifacts (thesis.json / contract.json) present, so the
+    # guardrail must not fire. The call should fall through to the normal
+    # missing-builder-request error path.
+    result = build_missing_primitives(
+        tmp_path,
+        "any-thesis-id",
+        artifact_root=tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-5",
+        research_round_id=research_round_id,
+    )
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "builder_missing_round_artifacts"
+
+
 def test_build_missing_primitives_rejects_unknown_structured_family(tmp_path: Path) -> None:
     round_root = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-6"
     _write_builder_request(round_root, "unknown", family="not-a-real-family")

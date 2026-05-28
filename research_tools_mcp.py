@@ -298,13 +298,22 @@ def _build_research_tools_mcp(
         )
         if err:
             return err
-        if get_round_result_for_root is None:
-            return _get_round_result_for_root(
+        try:
+            if get_round_result_for_root is None:
+                return _get_round_result_for_root(
+                    root, research_round_id=research_round_id, detail=detail
+                )
+            return get_round_result_for_root(
                 root, research_round_id=research_round_id, detail=detail
             )
-        return get_round_result_for_root(
-            root, research_round_id=research_round_id, detail=detail
-        )
+        except KeyError as exc:
+            return json.dumps(
+                {
+                    "status": "not_found",
+                    "research_round_id": research_round_id,
+                    "error": str(exc).strip("'\""),
+                }
+            )
 
     @mcp.tool()
     async def list_rejections(
