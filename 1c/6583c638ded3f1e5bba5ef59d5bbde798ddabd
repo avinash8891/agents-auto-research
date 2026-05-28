@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-05-28-spec-a4-design.md
+  s_8fcfc7baeb3c2c::t_8b8ead4af7e469 21,35,1131,1133-1142,1146-1148,1151,1313,1316,1330-1331,1371-1372,1391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1c6583c638ded3f1e5bba5ef59d5bbde798ddabd",
+  "prompts": {},
+  "sessions": {
+    "s_8fcfc7baeb3c2c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6f7f-f4de-7711-97d9-cb7f3b8bf716",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
