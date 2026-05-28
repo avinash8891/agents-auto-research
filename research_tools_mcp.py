@@ -110,6 +110,9 @@ def _build_research_tools_mcp(
         Args:
             focus_question: What specific pattern to investigate.
         """
+        err = _dispatch(AnalyzeTradesArgs, {"focus_question": focus_question})
+        if err:
+            return err
         if not trades_file:
             return "ERROR: No trades file available for this round."
         return await call_analyst(
@@ -127,6 +130,9 @@ def _build_research_tools_mcp(
             query: Specific search query.
             context: Brief context about why you're searching.
         """
+        err = _dispatch(WebSearchArgs, {"query": query, "context": context})
+        if err:
+            return err
         return await call_web_researcher(query, context)
 
     @mcp.tool()
@@ -151,6 +157,16 @@ def _build_research_tools_mcp(
             scope: What data this applies to (e.g. "train_2020-2023", "full_sample", "SPY_only")
             expires_if: Condition that invalidates this (e.g. "fails on validation split", "baseline drift >5%")
         """
+        err = _dispatch(SaveFindingArgs, {
+            "finding": finding,
+            "finding_type": finding_type,
+            "status": status,
+            "evidence": evidence,
+            "scope": scope,
+            "expires_if": expires_if,
+        })
+        if err:
+            return err
         trace(
             "CONDUCTOR",
             f"save_finding type={finding_type} status={status} finding='{finding[:80]}'",
@@ -186,6 +202,9 @@ def _build_research_tools_mcp(
             query: What to search for (e.g. "gap filter", "Tuesday PF").
             finding_type: Optional filter by type (observation, validated_finding, etc.).
         """
+        err = _dispatch(SearchFindingsArgs, {"query": query, "finding_type": finding_type})
+        if err:
+            return err
         results = search_research_findings(
             query=query,
             n_results=10,
@@ -206,6 +225,9 @@ def _build_research_tools_mcp(
     @mcp.tool()
     async def memory_status() -> str:
         """Get an overview of the persistent memory palace."""
+        err = _dispatch(MemoryStatusArgs, {})
+        if err:
+            return err
         info = palace_status()
         if "error" in info:
             return f"STATUS ERROR: {info['error']}"
@@ -218,6 +240,9 @@ def _build_research_tools_mcp(
         Check this BEFORE proposing a new thesis. Use get_past_thesis for full
         details on relevant prior thesis IDs.
         """
+        err = _dispatch(ListPastThesesArgs, {"offset": offset, "limit": limit})
+        if err:
+            return err
         if list_past_theses_for_root is None:
             return _list_past_theses_for_root(root, job_id=current_job, offset=offset, limit=limit)
         return list_past_theses_for_root(root, job_id=current_job, offset=offset, limit=limit)
@@ -225,6 +250,9 @@ def _build_research_tools_mcp(
     @mcp.tool()
     async def get_past_thesis(thesis_id: str) -> str:
         """Fetch full stored details for one prior thesis ID."""
+        err = _dispatch(GetPastThesisArgs, {"thesis_id": thesis_id})
+        if err:
+            return err
         if get_past_thesis_for_root is None:
             return _get_past_thesis_for_root(root, thesis_id, job_id=current_job)
         return get_past_thesis_for_root(root, thesis_id, job_id=current_job)
@@ -234,6 +262,9 @@ def _build_research_tools_mcp(
         order: str = "latest", offset: int = 0, limit: int = 10
     ) -> str:
         """List a bounded index of experiment/backtest outcomes."""
+        err = _dispatch(ListExperimentResultsArgs, {"order": order, "offset": offset, "limit": limit})
+        if err:
+            return err
         if list_experiment_results_for_root is None:
             return _list_results_for_root(
                 root, job_id=current_job, order=order, offset=offset, limit=limit
@@ -249,6 +280,9 @@ def _build_research_tools_mcp(
         Defaults to a compact result for context efficiency. Pass detail=true
         only when the compact result is insufficient for the current decision.
         """
+        err = _dispatch(GetExperimentResultArgs, {"thesis_id": thesis_id, "detail": detail})
+        if err:
+            return err
         if get_experiment_result_for_root is None:
             return _get_result_for_root(root, thesis_id, job_id=current_job, detail=detail)
         return get_experiment_result_for_root(root, thesis_id, job_id=current_job, detail=detail)
@@ -270,6 +304,13 @@ def _build_research_tools_mcp(
             rejection_code: filter by category (e.g. "thesis_quality_theme_cluster_fixation").
             limit: cap result count (default 25).
         """
+        err = _dispatch(ListRejectionsArgs, {
+            "round_number": round_number,
+            "rejection_code": rejection_code,
+            "limit": limit,
+        })
+        if err:
+            return err
         if current_job is None:
             return "ERROR: No active job; cannot list rejections."
         rejections = _list_rejections(
@@ -292,6 +333,9 @@ def _build_research_tools_mcp(
         Use after list_rejections finds a relevant rejection_code to read the
         full evidence and remediation_hint for that specific failure.
         """
+        err = _dispatch(GetRejectionArgs, {"round_number": round_number, "thesis_id": thesis_id})
+        if err:
+            return err
         if current_job is None:
             return "ERROR: No active job; cannot fetch rejection."
         rejection = _get_rejection(
@@ -312,6 +356,9 @@ def _build_research_tools_mcp(
         repeating a class of error and needs a different mechanism dimension.
         Each entry: {rejection_code, count, example_thesis_ids}.
         """
+        err = _dispatch(RejectionPatternSummaryArgs, {"window_rounds": window_rounds})
+        if err:
+            return err
         if current_job is None:
             return "ERROR: No active job; cannot summarize rejections."
         summary = _rejection_pattern_summary(
@@ -363,5 +410,7 @@ def _build_research_tools_mcp(
             ),
         ),
     )
+
+    _enforce_tool_models(mcp, _TOOL_MODELS)
 
     return mcp
