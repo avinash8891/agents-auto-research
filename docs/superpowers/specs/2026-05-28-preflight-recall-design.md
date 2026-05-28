@@ -102,11 +102,19 @@ preflight_synthesis_turn.py      ← new
   └─ build_synthesis_user_prompt → str  (Level 3: lateral-thinking LLM turn instructions)
 
 backtest_run_db.py               ← edited
-  ├─ list_dimension_summary(family)  aggregations for landscape block
-  └─ list_killed_kept_pairs(family)  per-dimension killed/kept pair lookup
+  ├─ list_dimension_summary(family)   aggregations for landscape block
+  ├─ list_killed_kept_pairs(family)   per-dimension killed/kept pair lookup
+  └─ list_round_attempts(research_round_id)
+                                       structured rejected-attempt rows for §5.8.3
+
+autoresearch_research.py         ← edited
+  └─ _resolve_conductor_inputs (line 435): enrich latest_outcome with
+       runtime_config (§5.8.1), diagnostics_summary (§5.8.2), and
+       this_round_rejected_attempts (§5.8.3).
 
 research_conductor.py            ← edited
   ├─ user-prompt construction (lines 131-175): append pre-flight blocks
+  │  AND new last-experiment enrichment blocks (§5.8.1, §5.8.2, §5.8.3)
   ├─ optional synthesis-turn LLM call before the existing drafting LLM call
   └─ post-draft dedup_check; on trigger, return to agent with match for revision/override
 
@@ -381,7 +389,37 @@ Validator rejects when:
 - `matched_thesis_id` doesn't resolve to a real prior in the corpus.
 - A round has more than 1 override attempt (capped per round).
 
-### 5.8 Tool-description edit in `research_prompts.py`
+### 5.8 Last-experiment context enrichment in the user prompt
+
+The current user prompt surfaces metrics + verdict + `previous_thesis` for the last experiment, but leaves three first-principles gaps. Each is a small, in-scope edit on top of the same user-prompt construction we're already changing.
+
+#### 5.9.1 `runtime_config` values inline
+
+**Today:** user prompt shows `config_path` (file path), not the values.
+**Gap:** the agent has to call the analyst (or read the YAML) to know "last run used `ema_period=5, atr_multiple=1.5`." Cheap info, paid for expensively.
+**Change:** in `_resolve_conductor_inputs` (`autoresearch_research.py:435`), add `latest_outcome["runtime_config"] = _resolve_runtime_config_for_record(...)` (the function already exists and is already called — its return value is currently used only for resolution context).
+**Render in user prompt:** new block `LATEST EXPERIMENT CONFIG (values used):` printing key→value pairs from `runtime_config`, capped at `_last_run_config_max_keys()` (env `AUTORESEARCH_LAST_RUN_CONFIG_MAX_KEYS`, default 20). Overflow: `"+{N} more: [k1, k2, ...]"` listing remaining key names. Long values truncated to 80 chars.
+**Cost:** ~10–30 extra tokens per round. Eliminates a class of analyst calls.
+
+#### 5.9.2 `strategy_diagnostics_json` summary inline
+
+**Today:** user prompt shows `diagnostics_file` path. The diagnostics JSON itself contains a compact summary (event counts, rejection breakdown, trade analysis verdict) that the conductor's analyst already reads on every round.
+**Gap:** the agent must spend an `analyze_trades` call to surface ~30 lines of structured data that could ride the user prompt for ~free.
+**Change:** `_resolve_conductor_inputs` reads the diagnostics file (with try/except + fail-open per rule **H**) and extracts the existing summary shape used elsewhere in `research_memory._experiment_compact_detail` — specifically `event_counts`, `rejection_breakdown`, `trade_analysis`, `verdict` subfields. Stored as `latest_outcome["diagnostics_summary"]`.
+**Render in user prompt:** new block `LATEST EXPERIMENT DIAGNOSTICS (summary):` showing the four subfields verbatim (JSON-formatted). The full diagnostics file path remains available for deep dives.
+**Failure mode:** file unreadable or schema unexpected → block omitted, `LATEST_DIAGNOSTICS_DEGRADED` logged. Round proceeds.
+**Cost:** ~200–500 tokens per round. Removes ~1 analyst call per round on average.
+
+#### 5.9.3 In-round rejected thesis attempts as structured data
+
+**Today:** when a round had multiple validator-rejected attempts before one succeeded, the rejections are flattened into `rejection_block` text via `rejection_artifact.render_rejection_block`. The conductor sees the rejection text but not the structured `(attempt_number, validator_status, validation_failure_reason, hypothesis, mechanism)` per rejected attempt.
+**Gap:** the synthesis turn (§4.3) benefits significantly from seeing "round 7 attempt 1 was rejected for X with hypothesis Y; attempt 2 was rejected for Z; attempt 3 succeeded." That's substrate for lateral thinking the current text block doesn't deliver.
+**Change:** new helper `BacktestRunDB.list_round_attempts(research_round_id)` returning the rejected attempts for the *most recent completed round of the current job*. Called inside `_resolve_conductor_inputs`; result attached as `latest_outcome["this_round_rejected_attempts"]`. Empty list when no rejections.
+**Render in user prompt:** new block `THIS ROUND'S REJECTED ATTEMPTS (structured):` rendering each rejected attempt as `attempt_number, validator_status, validation_failure_reason, hypothesis (≤180 chars), mechanism_dimension`. Capped at `_max_round_rejected_attempts()` (env `AUTORESEARCH_MAX_ROUND_REJECTED_ATTEMPTS`, default 5). Older rejections accessible via existing `list_rejections` MCP tool.
+**Interaction with §11.1 reflexion:** this is structured data, not LLM-summarized reflexion. Reflexion stays as-is (separate channel).
+**Cost:** ~50–300 tokens depending on rejection count. Reduces analyst calls and improves synthesis-turn quality.
+
+### 5.9 Tool-description edit in `research_prompts.py`
 
 The conductor's system prompt currently advertises `list_past_theses` / `get_past_thesis` / `list_experiment_results` / `get_experiment_result` as if they were the primary path to prior context. Once pre-flight pre-loads the top-K relevant priors in the user prompt, those tools become **follow-up tools**, not primary-context tools. Without an edit, the agent will sometimes call them redundantly, wasting tokens and round-trips.
 
@@ -449,6 +487,8 @@ Lazy accessor functions, **not module-level constants** (CLAUDE.md hygiene rule)
 | `_synthesis_enabled()` | `AUTORESEARCH_SYNTHESIS_TURN_ENABLED` | `true` | Kill switch for the synthesis turn |
 | `_kept_floor()`, `_killed_floor()` | `AUTORESEARCH_PREFLIGHT_KEPT_FLOOR`, `..._KILLED_FLOOR` | `2`, `2` | Outcome-balance floors in the union |
 | `_preflight_config_changes_max_keys()` | `AUTORESEARCH_PREFLIGHT_CONFIG_CHANGES_MAX_KEYS` | `5` | Max config_changes key→value pairs rendered per prior |
+| `_last_run_config_max_keys()` | `AUTORESEARCH_LAST_RUN_CONFIG_MAX_KEYS` | `20` | Max runtime_config keys inlined for the last experiment (§5.8.1) |
+| `_max_round_rejected_attempts()` | `AUTORESEARCH_MAX_ROUND_REJECTED_ATTEMPTS` | `5` | Max rejected-attempt entries rendered for the current round (§5.8.3) |
 
 Each accessor validates its env var (int parse, range check) and raises with the named env var on bad input.
 
@@ -506,12 +546,13 @@ Real data from `*_backtest_runs.db`. No toy thesis names. No mocked internals. (
 One PR, one deliverable, in this order:
 
 1. `preflight_recall.py` (with MMR + two-pass retrieval) + `preflight_synthesis_turn.py` modules with full test coverage.
-2. `BacktestRunDB.list_dimension_summary` + `list_killed_kept_pairs` helpers.
+2. `BacktestRunDB.list_dimension_summary` + `list_killed_kept_pairs` + `list_round_attempts` helpers.
 3. `research_types.ResearchThesis.dedup_override_justification` field (Pydantic optional).
-4. `research_prompts.py` tool-description reword (§5.8).
-5. `research_conductor.py` user-prompt augmentation + two-turn flow + dedup call site.
-6. `thesis_validator.py` two extensions (§6.1, §6.2) + dedup-override well-formedness rule (§6.3).
-7. End-to-end test against a real fixture DB; commit per CLAUDE.md verification rules.
+4. `research_prompts.py` tool-description reword (§5.9).
+5. `autoresearch_research.py` `_resolve_conductor_inputs` enrichments (§5.8): runtime_config, diagnostics_summary, this_round_rejected_attempts attached to `latest_outcome`.
+6. `research_conductor.py` user-prompt augmentation (pre-flight blocks + new last-experiment blocks) + two-turn flow + dedup call site.
+7. `thesis_validator.py` two extensions (§6.1, §6.2) + dedup-override well-formedness rule (§6.3).
+8. End-to-end test against a real fixture DB; commit per CLAUDE.md verification rules.
 
 No staged rollout flag. Behavior change is contained to thesis-creation rounds; cold-start path covers new families.
 
@@ -546,6 +587,9 @@ No staged rollout flag. Behavior change is contained to thesis-creation rounds; 
 - When the corpus has theses in multiple dimensions, at least one entry in the returned K is from a dimension **other than** `latest_outcome.mechanism_dimension`. (Two-pass retrieval working.)
 - MMR re-ranking demoted at least one near-clone in a synthetic 5-clones + 5-spread test fixture at `lambda_mult=0.5`.
 - Rendered prior-attempts entries show `config_changes` key→value pairs (up to the cap), not just key names — verified by asserting a specific value (e.g. `"ema_period": 8`) appears in the block for a fixture prior known to have changed that key.
+- User prompt contains a `LATEST EXPERIMENT CONFIG (values used):` block with concrete key→value pairs from the prior round's `runtime_config` (§5.8.1).
+- User prompt contains a `LATEST EXPERIMENT DIAGNOSTICS (summary):` block with `event_counts`, `rejection_breakdown`, `trade_analysis`, `verdict` subfields when the diagnostics file is readable; block omitted with a `LATEST_DIAGNOSTICS_DEGRADED` log when not (§5.8.2).
+- User prompt contains a `THIS ROUND'S REJECTED ATTEMPTS (structured):` block listing rejected attempts of the most recent completed round of the current job — `attempt_number`, `validator_status`, `validation_failure_reason`, truncated `hypothesis`, `mechanism_dimension` (§5.8.3). Empty list when no rejections; block omitted in that case.
 - Updated system-prompt tool description (§5.8) is detectable in `_build_conductor_system_prompt` output and references "pre-loaded".
 - A near-duplicate proposed thesis (paraphrased version of a known prior) is caught by dedup, with the matched `thesis_id` and similarity surfaced to the agent.
 - A thesis with a hallucinated `prior_lever_outcomes[].prior_thesis_id` is hard-rejected by the validator.
