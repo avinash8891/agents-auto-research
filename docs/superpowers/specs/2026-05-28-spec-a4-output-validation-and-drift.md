@@ -122,7 +122,7 @@ All three conditional on `mechanism_dimension == "emergent"`.
 
 ## 4. Structured Rule Metadata
 
-The §7 renderer emits, alongside `prompts/conductor_output_section.md`, a
+The OUTPUT renderer emits, alongside `prompts/conductor_output_section.md`, a
 sidecar file `prompts/conductor_output_rules.json` with the shape:
 
 ```json
