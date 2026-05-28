@@ -603,6 +603,7 @@ def test_conductor_reports_structural_validation_failures_after_required_tool_ga
 def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    captured: dict[str, object] = {}
     thesis = {
         "thesis_id": "gap_rejection_timing",
         "hypothesis": "Delaying entries after opening gap failures improves signal quality.",
@@ -610,10 +611,17 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
         "mechanism_dimension": "signal_quality",
         "config_changes": {"entry_delay_minutes": 15},
     }
+
+    def fake_validate(candidate, tools_called=None, **kwargs):
+        captured["require_analyst_evidence"] = kwargs.get("require_analyst_evidence")
+        captured["evidence_context"] = kwargs.get("evidence_context")
+        captured["require_analyst_tool"] = kwargs.get("require_analyst_tool")
+        return candidate
+
     monkeypatch.setattr(
         conductor,
         "validate_thesis_dict",
-        lambda candidate, tools_called=None: candidate,
+        fake_validate,
     )
     _patch_conductor_runner(
         monkeypatch,
@@ -636,6 +644,51 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
     assert out is not None
     assert out.thesis is not None
     assert out.thesis["thesis_id"] == "gap_rejection_timing"
+    assert captured["require_analyst_evidence"] is False
+    assert captured["evidence_context"] == "no_trades"
+    assert captured["require_analyst_tool"] is False
+
+
+def test_conductor_marks_cold_start_evidence_context_without_latest_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    thesis = {
+        "thesis_id": "first_web_grounded_thesis",
+        "hypothesis": "First-round web evidence supports testing EMA smoothing.",
+        "mechanism": "EMA smoothing filters noisy first-round entry signals.",
+        "mechanism_dimension": "signal_quality",
+        "config_changes": {"ema_length": 8},
+    }
+
+    def fake_validate(candidate, tools_called=None, **kwargs):
+        captured["evidence_context"] = kwargs.get("evidence_context")
+        captured["require_analyst_tool"] = kwargs.get("require_analyst_tool")
+        return candidate
+
+    monkeypatch.setattr(conductor, "validate_thesis_dict", fake_validate)
+    _patch_conductor_runner(
+        monkeypatch,
+        {
+            "reasoning": "cold-start web evidence supports a first thesis",
+            "suggested_theses": [thesis],
+            "should_stop": False,
+        },
+        tool_calls=[("list_experiment_results", {"order": "latest", "offset": 0, "limit": 1})],
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "",
+        {},
+        research_round=1,
+        family_name="ema",
+    )
+
+    assert out is not None
+    assert out.thesis is not None
+    assert captured["evidence_context"] == "cold_start"
+    assert captured["require_analyst_tool"] is False
 
 
 def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
@@ -651,7 +704,7 @@ def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
     monkeypatch.setattr(
         conductor,
         "validate_thesis_dict",
-        lambda candidate, tools_called=None: (_ for _ in ()).throw(
+        lambda candidate, tools_called=None, **kwargs: (_ for _ in ()).throw(
             ValueError("mechanism_dimension is stale")
         ),
     )
@@ -718,7 +771,7 @@ def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wra
     monkeypatch.setattr(
         conductor,
         "validate_thesis_dict",
-        lambda candidate, tools_called=None: candidate,
+        lambda candidate, tools_called=None, **kwargs: candidate,
     )
     # Conductor returns thesis directly — NO suggested_theses wrapper (v3 prompt contract)
     _patch_conductor_runner(

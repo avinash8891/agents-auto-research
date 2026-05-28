@@ -89,15 +89,19 @@ DOCTRINE (soft — not enforced in code; treat as a senior researcher's checklis
   tried. "Increasing X improves Y" is a tuning sentence; "X creates Y because
   the auction does Z" is a mechanism.
 - Evidence: cite at least one external source (web_search) AND one trade-level
-  finding (analyst). External-only is theory; analyst-only is data dredging.
-- Predictions: state at least two expected metric movements with rationale.
-  A single PF prediction can be a lucky parameter; multiple coupled predictions
-  test the mechanism.
-- Alternatives: name at least two candidate mechanisms you considered and why
-  this one wins. Greedy first-idea selection is brittle.
-- Source-code citation: name the specific strategy file/function whose behavior
-  the proposed change touches. Mechanism claims that don't connect to code are
-  proxies.
+  finding (analyst) in evidence_citations. In no-trades rounds after a latest
+  outcome exists, cite experiment_result instead of analyst. In cold-start
+  rounds with no current-job backtests yet, cite web_search plus memory/source
+  code when available. External-only is theory once local results exist;
+  ungrounded analyst-only is data dredging.
+- Predictions: state at least two coupled expected metric movements with
+  rationale. A single PF prediction can be a lucky parameter; multiple coupled
+  predictions test the mechanism.
+- Alternatives: name at least two candidate mechanisms in alternatives_considered
+  and explain why this one wins. Greedy first-idea selection is brittle.
+- Source-code citation: source_code_verification must name the specific
+  repo-relative strategy file/function whose behavior the proposed change
+  touches. Mechanism claims that don't connect to code are proxies.
 - Causal cluster vs config key: causal_cluster is a human-phrased family name
   ("opening-session adverse selection"), not a config identifier
   ("min_stop_distance_pct").
@@ -136,8 +140,18 @@ Return ONE JSON object matching the thesis schema. Fields:
   requested_primitives   list of new primitives needed (REQUIRED when
                          requires_code_change=true; e.g. ["volatility_regime_filter"])
   expected_effects       per-metric prediction with direction and rationale
+                         (REQUIRED: at least two coupled metrics)
   disqualifiers          at least one with kind='mechanism_evidence'
   required_diagnostics   non-builtin metrics this thesis needs
+  evidence_strength      one of direct / proxy / mixed / speculative
+  alternatives_considered
+                         at least two rejected mechanism alternatives
+  evidence_citations     source-tagged evidence; include web_search and analyst
+                         when trades exist, web_search and experiment_result
+                         for no-trades latest-outcome rounds, and web_search
+                         for cold-start rounds
+  source_code_verification
+                         repo-relative file:function citation for touched logic
   theme_keywords         2-3 noun phrases categorizing the cluster
   prior_lever_outcomes   citations of prior theses reusing the same lever concept
   falsification_or_alternative   REQUIRED — what data pattern would weaken this

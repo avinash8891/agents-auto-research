@@ -124,7 +124,7 @@ def test_research_thesis_has_source_code_verification_default_empty() -> None:
 def test_research_thesis_accepts_source_code_verification() -> None:
     payload = _base_thesis_dict()
     payload["source_code_verification"] = (
-        "strategies/ema/signals.py:detect_pullback uses min_stop_distance_pct as a hard floor "
+        "strategies/ema/signals.py:generate_signals_for_frame uses min_stop_distance_pct as a hard floor "
         "in the entry filter; widening this would increase tradeable setups."
     )
     obj = ResearchThesis.model_validate(payload)

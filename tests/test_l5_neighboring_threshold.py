@@ -60,7 +60,7 @@ def _base_thesis(thesis_id: str, config_changes: dict) -> dict:
             {
                 "metric": "trade_count",
                 "direction": "decrease_or_same",
-                "rationale": "selective filter",
+                "rationale": "The selective gap filter should reduce but not collapse activity.",
             },
         ],
         "disqualifiers": [
@@ -80,7 +80,7 @@ def _base_thesis(thesis_id: str, config_changes: dict) -> dict:
             {"source": "analyst", "citation": "round-2 analyst: gap-day PF dispersion"},
         ],
         "source_code_verification": (
-            "strategies/ema/signals.py:detect_pullback applies gap_exclude_pct as "
+            "strategies/ema/signals.py:generate_signals_for_frame applies gap_exclude_pct as "
             "a top-of-day filter; tighter values reduce the included population."
         ),
         # Required post-refactor: falsification_or_alternative must be

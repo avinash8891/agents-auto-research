@@ -54,9 +54,13 @@ VALIDATOR_INSPECTED_FIELDS: set[str] = {
     "requires_code_change",
     "requested_primitives",
     "expected_effects",
+    "evidence_citations",
+    "evidence_strength",
     "disqualifiers",
     "required_diagnostics",
     "falsification_or_alternative",
+    "alternatives_considered",
+    "source_code_verification",
     "theme_keywords",
     "prior_lever_outcomes",
 }
