@@ -73,9 +73,6 @@ reference them, so the LLM emits targets before references:
 §4.1 Identity is omitted from LLM-facing OUTPUT and documented in a separate
 `## SYSTEM-INJECTED FIELDS (do not emit)` appendix above OUTPUT.
 
-`scripts/check_prompt_drift.py` asserts referenced-field categories render
-before referencing-field categories.
-
 ## 3.2 Runtime Context References
 
 Some `Required:` and `Source set:` lines refer to runtime keys such as
