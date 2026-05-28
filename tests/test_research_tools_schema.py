@@ -13,22 +13,32 @@ from research_tools_schema import (
     GetRejectionArgs,
     RejectionPatternSummaryArgs,
     MemoryStatusArgs,
+    FINDING_TYPES,
+    FINDING_STATUSES,
 )
 
 
-def test_imports_exist():
-    assert AnalyzeTradesArgs
-    assert WebSearchArgs
-    assert SaveFindingArgs
-    assert SearchFindingsArgs
-    assert ListPastThesesArgs
-    assert GetPastThesisArgs
-    assert ListExperimentResultsArgs
-    assert GetExperimentResultArgs
-    assert ListRejectionsArgs
-    assert GetRejectionArgs
-    assert RejectionPatternSummaryArgs
-    assert MemoryStatusArgs
+def test_all_models_instantiate_with_minimal_valid_args():
+    """Smoke test: all models construct without error given minimal valid args."""
+    AnalyzeTradesArgs(focus_question="test question")
+    WebSearchArgs(query="test query")
+    SaveFindingArgs(
+        finding="EMA crossover on 9/21 shows PF=2.1 across 847 trades",
+        finding_type="observation",
+        status="unvalidated",
+        evidence="round_001, thesis ema_crossover_baseline",
+        scope="train_2021-2023",
+        expires_if="fails on out-of-sample validation",
+    )
+    SearchFindingsArgs(query="ema crossover")
+    ListPastThesesArgs()
+    GetPastThesisArgs(thesis_id="ema_crossover_baseline")
+    ListExperimentResultsArgs()
+    GetExperimentResultArgs(thesis_id="ema_crossover_baseline")
+    ListRejectionsArgs()
+    GetRejectionArgs(round_number=1, thesis_id="ema_crossover_baseline")
+    RejectionPatternSummaryArgs()
+    MemoryStatusArgs()
 
 
 def test_analyze_trades_valid():
@@ -101,8 +111,7 @@ def test_save_finding_empty_finding():
 
 
 def test_save_finding_all_valid_types():
-    for ft in ("observation", "hypothesis", "validated_finding",
-               "rejected_finding", "open_question", "implementation_note"):
+    for ft in FINDING_TYPES:
         SaveFindingArgs(
             finding="test",
             finding_type=ft,
@@ -114,7 +123,7 @@ def test_save_finding_all_valid_types():
 
 
 def test_save_finding_all_valid_statuses():
-    for s in ("unvalidated", "validated", "rejected", "stale"):
+    for s in FINDING_STATUSES:
         SaveFindingArgs(
             finding="test",
             finding_type="observation",

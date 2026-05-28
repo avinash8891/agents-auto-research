@@ -31,6 +31,16 @@ FindingStatus = Literal["unvalidated", "validated", "rejected", "stale"]
 
 ResultOrder = Literal["latest", "best"]
 
+FindingTypeFilter = Literal[
+    "",
+    "observation",
+    "hypothesis",
+    "validated_finding",
+    "rejected_finding",
+    "open_question",
+    "implementation_note",
+]
+
 NonEmptyStr = Annotated[str, Field(min_length=1)]
 
 
@@ -54,15 +64,7 @@ class SaveFindingArgs(BaseModel):
 
 class SearchFindingsArgs(BaseModel):
     query: NonEmptyStr
-    finding_type: Literal[
-        "",
-        "observation",
-        "hypothesis",
-        "validated_finding",
-        "rejected_finding",
-        "open_question",
-        "implementation_note",
-    ] = ""
+    finding_type: FindingTypeFilter = ""
 
 
 class ListPastThesesArgs(BaseModel):
