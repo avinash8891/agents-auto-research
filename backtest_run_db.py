@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_logging import get_logger
+from autoresearch_runtime_paths import research_round_id as _build_research_round_id
 from autoresearch_runtime_paths import research_round_id_or_empty
 from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
 from config_hash import _config_hash
@@ -419,6 +420,13 @@ class BacktestRunDB:
             )
         if research_round_number < 0:
             raise ValueError(f"research_round_number must be >= 0; got {research_round_number}")
+        expected_research_round_id = _build_research_round_id(job_id, research_round_number)
+        if research_round_id != expected_research_round_id:
+            raise ValueError(
+                f"research_round_id mismatch: got {research_round_id!r}, "
+                f"expected {expected_research_round_id!r} from (job_id={job_id}, "
+                f"research_round_number={research_round_number})"
+            )
         merged_metrics = dict(metrics)
         merged_metrics.setdefault(primary_metric_name, primary_metric_value)
         if trade_analysis:
