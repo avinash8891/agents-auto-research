@@ -407,6 +407,9 @@ class BacktestRunDB:
         job_id: int,
         primary_metric_name: str,
         primary_metric_value: float,
+        research_round_id: str = "",
+        research_round_number: int = -1,
+        is_baseline: bool = False,
     ) -> None:
         merged_metrics = dict(metrics)
         merged_metrics.setdefault(primary_metric_name, primary_metric_value)
@@ -436,6 +439,9 @@ class BacktestRunDB:
                 timestamp=_iso8601_utc_now(),
                 family=family,
                 job=job_id,
+                research_round_id=research_round_id,
+                research_round_number=research_round_number,
+                is_baseline=is_baseline,
             )
         )
 
@@ -895,8 +901,15 @@ class BacktestRunDB:
                 return r
         return None
 
-    def get_by_thesis(self, thesis_id: str) -> list[BacktestRunRecord]:
-        return [r for r in self._load() if r.thesis_id == thesis_id]
+    def get_by_research_round_id(
+        self, research_round_id: str
+    ) -> BacktestRunRecord | None:
+        if not research_round_id:
+            return None
+        for r in self._load():
+            if r.research_round_id == research_round_id:
+                return r
+        return None
 
     def all(self) -> list[BacktestRunRecord]:
         return list(self._load())

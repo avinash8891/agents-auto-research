@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from autoresearch_runtime_paths import research_round_id
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
 
 
@@ -207,6 +208,66 @@ def test_research_round_retry_attempts_remain_first_class_rows(
     assert by_attempt[3]["hypothesis"] == "tighten entry after weak crosses"
     assert by_attempt[3]["mechanism"] == "avoid low-conviction crosses"
     assert by_attempt[3]["created_at_utc"] == "2026-05-28T00:00:03+00:00"
+
+
+def test_get_by_research_round_id_returns_single_record(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    db.add(_record(round_number=5, job=1))
+    db.add(_record(round_number=7, job=1))
+
+    target_round_id = research_round_id(1, 5)
+    record = db.get_by_research_round_id(target_round_id)
+
+    assert record is not None
+    assert record.research_round_id == target_round_id
+    assert record.run_id == "exp-1-5"
+
+
+def test_get_by_research_round_id_returns_none_for_unknown(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    db.add(_record(round_number=5, job=1))
+
+    assert db.get_by_research_round_id(research_round_id(1, 99)) is None
+
+
+def test_add_from_sqlite_fields_persists_research_round_id(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    round_id = research_round_id(2, 4)
+    db.add_from_sqlite_fields(
+        run_id="exp-2-4",
+        thesis_id="ema_breakout_v1",
+        config_path="runtime/jobs/job-2/research/round-4/selected_config.json",
+        runtime_config={"ema_length": 21},
+        code_commit="abc1234",
+        data_hash="data",
+        metrics={"profit_factor": 1.65},
+        trade_analysis={"trade_count": 42},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="accepted",
+        verdict_summary="accepted",
+        family="ema",
+        job_id=2,
+        primary_metric_name="profit_factor",
+        primary_metric_value=1.65,
+        research_round_id=round_id,
+        research_round_number=4,
+        is_baseline=False,
+    )
+
+    record = db.get_by_research_round_id(round_id)
+
+    assert record is not None
+    assert record.research_round_id == round_id
+    assert record.research_round_number == 4
+    assert record.is_baseline is False
+    assert record.thesis_id == "ema_breakout_v1"
 
 
 def test_best_by_metric_ignores_malformed_metric_values(tmp_path: Path) -> None:
