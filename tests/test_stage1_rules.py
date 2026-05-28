@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import pytest
 
+from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import ThesisValidationError
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
-
-from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 
 
 def validate_thesis_dict(*args: object, **kwargs: object) -> object:

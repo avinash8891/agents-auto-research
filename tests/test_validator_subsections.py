@@ -18,14 +18,13 @@ from unittest.mock import patch
 import pytest
 
 import thesis_validator
+from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import (
     ThesisValidationError,
     infer_rejection_code,
 )
 from thesis_validator import validate_stage_1 as _validate_stage_1
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
-
-from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 
 
 def validate_stage_1(*args: object, **kwargs: object) -> object:

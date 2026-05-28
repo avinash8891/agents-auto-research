@@ -9,6 +9,9 @@ import pytest
 from research_types import BacktestContract, DiagnosticRequirementSpec
 from thesis_validator import (
     ALIGNMENT_THRESHOLD,
+)
+from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
+from thesis_validator import (
     ThesisValidationError,
 )
 from thesis_validator import validate_research_thesis as _validate_research_thesis
@@ -17,8 +20,6 @@ from thesis_validator import (
     validate_stage_2,
 )
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
-
-from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 
 
 def validate_research_thesis(*args: Any, **kwargs: Any) -> Any:
