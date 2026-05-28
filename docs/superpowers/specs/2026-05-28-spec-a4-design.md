@@ -32,7 +32,9 @@ consistent with the LLM not knowing the envelope shape it must produce.
 ## 2. Non-goals
 
 - **Adding fields beyond what §4 lists.** §4.12's proposed additions are scoped here; nothing else.
-- **DOCTRINE rewrite.** DOCTRINE stays as soft, field-agnostic principles. A4 removes schema-field contracts from DOCTRINE; it doesn't rewrite the research philosophy.
+- **Research philosophy rewrite.** A4 rewrites DOCTRINE only enough to remove
+  duplicated schema/output contracts and keep the remaining principles
+  field-agnostic. It does not change the underlying research philosophy.
 - **Tool-list rewrite.** Spec A §5.10 handles this.
 - **Multi-LLM testing harness.** A4 is the prompt redesign; measuring its effect on conductor acceptance rate is downstream work.
 
