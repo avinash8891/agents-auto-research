@@ -60,6 +60,8 @@ LLM-facing prompt.
 | `deepest_alternative` | Required, non-null. `tiebreaker.value` resolves by exact match: `kind="evidence_citation"` → `citation_N` where `1 ≤ N ≤ len(evidence_citations)`; `kind="disqualifier"` → must equal a `disqualifiers[i].name`; `kind="mechanism_dimension"` → must be a member of `MECHANISM_DIMENSIONS`. | `structural_deepest_alternative_missing`, `structural_deepest_alternative_tiebreaker_unresolved` |
 | `other_alternatives` | ≥1 entry; each `why_rejected` ≥40 chars. When `lighter_tiebreaker` is non-null, it resolves by the same rules as `deepest_alternative.tiebreaker`. | `structural_other_alternatives_too_few`, `structural_lighter_tiebreaker_unresolved` |
 | `prior_lever_outcomes` | Required when ANY key in `config_changes` appears in any `prior_lever_history[i].config_keys` AND your derived direction differs from `prior_lever_history[i].direction`. `prior_thesis_id` values must exist in ROUND CONTEXT `prior_theses_snapshot`. | `structural_direction_whipsaw_uncited`, `structural_prior_lever_outcomes_unknown_id` |
+| `mechanism_lineage` | `thesis_id` entries must appear in ROUND CONTEXT `prior_theses_snapshot`. With ≥3 ancestors sharing the same `mechanism_dimension`, require either (a) a different `mechanism_dimension` on this thesis, OR (b) a `disqualifiers` entry with `kind="mechanism_evidence"` that distinguishes this thesis from the lineage's prior failures. | `thesis_quality_lineage_no_structural_pivot` |
+| `if_this_fails_next_thesis` | Non-empty; must reference either a specific `mechanism_dimension` (different from current) OR the `mechanism` text of `deepest_alternative`. | `thesis_quality_next_thesis_not_pre_committed` |
 
 ### 3.1.5 Emergent-Dimension Contract
 
@@ -76,12 +78,14 @@ All three conditional on `mechanism_dimension == "emergent"`.
 | Field | Rule | Rejection code(s) |
 |---|---|---|
 | `evidence_citations` | ≥2 entries; ≤6 entries; ≥1 with `source="web_search"` AND ≥1 with `source="analyst"`; each `citation` ≥30 chars. | `structural_evidence_citations_missing_source_diversity`, `structural_evidence_citation_too_short` |
+| `confidence_distribution` | At least one of `{data, literature}` must be `"direct"` or `"mixed"`. Theses with all three `"speculative"` require a `disqualifiers` entry with `kind="mechanism_evidence"` acknowledging the weak-evidence basis. Greenfield exemption: when ROUND CONTEXT `dimensions_already_explored` is empty, `precedent="speculative"` is not counted against the gate. | `thesis_quality_confidence_distribution_too_weak`, `thesis_quality_confidence_distribution_missing` |
 
 ### 3.1.7 Predictions + Falsification
 
 | Field | Rule | Rejection code(s) |
 |---|---|---|
 | `expected_effects` | Non-empty list (≥2 entries recommended); `magnitude_range` required when `direction in {"increase","decrease"}`; `unit` required and must be a member of `EXPECTED_EFFECT_UNITS` when `magnitude_range` is set; `rationale` required (≥40 chars) when `direction in {"increase","decrease"}`. `magnitude_range[0] < magnitude_range[1]` when set. | `structural_missing_expected_effects`, `structural_expected_effect_magnitude_missing`, `structural_expected_effect_magnitude_range_invalid`, `structural_expected_effect_unit_invalid`, `structural_expected_effect_rationale_required` |
+| `expected_runtime_signal` | Each `event_path` must resolve in ROUND CONTEXT `diagnostic_event_paths`. `lower` set when `expected_relation in {">", ">=", "==", "in_range"}`; `upper` set when `expected_relation in {"<", "<=", "==", "in_range"}`. | `thesis_quality_expected_runtime_signal_path_unknown` |
 | `disqualifiers` | ≥2 entries; ≥1 with `kind="mechanism_evidence"`; ≥1 entry whose `name` is in `OVERFIT_DISQUALIFIER_MARKERS` OR whose `condition` (lowercased) contains a member of `OVERFIT_KEYWORD_HINTS`. A single entry may satisfy both `mechanism_evidence` and overfit requirements. | `structural_disqualifiers_too_few`, `structural_disqualifiers_no_mechanism_evidence`, `structural_disqualifiers_no_overfit_address` |
 
 ### 3.1.8 Config + Engine
@@ -104,16 +108,7 @@ All three conditional on `mechanism_dimension == "emergent"`.
 |---|---|---|
 | `validator_challenge` | No rule; accepts any object. Logged for human review only. | none |
 
-### 3.1.11 Proposed Additions
-
-| Field | Rule | Rejection code(s) |
-|---|---|---|
-| `expected_runtime_signal` | Each `event_path` must resolve in ROUND CONTEXT `diagnostic_event_paths`. `lower` set when `expected_relation in {">", ">=", "==", "in_range"}`; `upper` set when `expected_relation in {"<", "<=", "==", "in_range"}`. | `thesis_quality_expected_runtime_signal_path_unknown` |
-| `mechanism_lineage` | `thesis_id` entries must appear in ROUND CONTEXT `prior_theses_snapshot`. With ≥3 ancestors sharing the same `mechanism_dimension`, require either (a) a different `mechanism_dimension` on this thesis, OR (b) a `disqualifiers` entry with `kind="mechanism_evidence"` that distinguishes this thesis from the lineage's prior failures. | `thesis_quality_lineage_no_structural_pivot` |
-| `if_this_fails_next_thesis` | Non-empty; must reference either a specific `mechanism_dimension` (different from current) OR the `mechanism` text of `deepest_alternative`. | `thesis_quality_next_thesis_not_pre_committed` |
-| `confidence_distribution` | At least one of `{data, literature}` must be `"direct"` or `"mixed"`. Theses with all three `"speculative"` require a `disqualifiers` entry with `kind="mechanism_evidence"` acknowledging the weak-evidence basis. Greenfield exemption: when ROUND CONTEXT `dimensions_already_explored` is empty, `precedent="speculative"` is not counted against the gate. | `thesis_quality_confidence_distribution_too_weak`, `thesis_quality_confidence_distribution_missing` |
-
-### 3.1.12 Notes For The Implementer
+### 3.1.11 Notes For The Implementer
 
 - `prompts/conductor_output_rules.json` is generated from this section + §4.1's `predicate_kind` mapping. Every rule above maps to one or more `predicate_kind` rows in §4.1.
 - The `_PROMPT_OMITTED_RULES` set in `check_prompt_drift.py` covers any rejection code the validator emits internally that isn't in this section (e.g. duplicate-thesis-id checks across rounds — system-level, not field-level).
@@ -183,7 +178,7 @@ table. The renderer fails if a §4 rule cannot be expressed in this set.
 
 Process-tier predicates (`path_in_read_trace`, `tool_invoked_in_trace`)
 require the validator to receive the attempt's tool-call trace alongside
-the thesis — see §9 plumbing items for `ConductorResult.read_paths`.
+the thesis — see §6 migration items for `ConductorResult.read_paths`.
 
 ## 5. Programmatic Regeneration
 

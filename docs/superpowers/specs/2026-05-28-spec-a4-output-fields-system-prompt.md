@@ -68,7 +68,6 @@ reference them, so the LLM emits targets before references:
 8. Config + engine (§4.9)
 9. Diagnostics + code grounding (§4.10)
 10. Optional escape hatch (§4.11)
-11. Proposed additions (§4.12)
 
 §4.1 Identity is omitted from LLM-facing OUTPUT and documented in a separate
 `## SYSTEM-INJECTED FIELDS (do not emit)` appendix above OUTPUT.
@@ -95,9 +94,9 @@ matching the order of `evidence_citations` in this same JSON object.
 `ResearchThesis.model_fields` enumeration on 2026-05-28):
 
 - 35 pre-A4 schema fields
-- − 13 deletions (12 A4a-consolidation drops + `alternatives_considered` replaced; see §9.1)
+- − 13 deletions (12 consolidation drops + `alternatives_considered` replaced)
 - + 2 replacements (`deepest_alternative`, `other_alternatives`)
-- + 4 proposed additions (§4.12)
+- + 4 integrated additions (`expected_runtime_signal`, `mechanism_lineage`, `if_this_fails_next_thesis`, `confidence_distribution`)
 - + 1 inner-shape extension to `ExpectedEffect` (§4.8)
 - = **28 fields in the post-A4 schema**
 
@@ -340,6 +339,28 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
 ```
 
 ```
+- if_this_fails_next_thesis
+    Type:        str
+    Format:      1-3 sentences
+    Source set:  Free
+    Token cap:   ≤300 chars
+    Required:    Always
+    Meaning:     Pre-commitment to the next thesis if THIS one is killed.
+                 Surfaces the conductor's implicit "what next" thinking.
+    Producer guidance: State the CONCRETE next thesis you would propose if
+                       this round's backtest kills the current thesis. Vague
+                       answers ("retry with different parameters") indicate
+                       shallow forward planning. Must reference either a
+                       different mechanism_dimension OR the mechanism named
+                       in deepest_alternative — this is a hard validator gate,
+                       not a stylistic preference.
+    Example:     "If this kills, next round tests ADX>30 entry filter
+                  (deepest_alternative.mechanism) in signal_quality dimension.
+                  Drops the regime-overlay theme; switches to threshold-based
+                  filtering."
+```
+
+```
 - other_alternatives
     Type:        list[Alternative]
     Format:      typed list — see Inner shape
@@ -413,6 +434,26 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                    "why_retry": "Prior tightened stop in calm regime; this
                                  loosens stop distance only in high-vol regime —
                                  opposite direction, different context."}]
+```
+
+```
+- mechanism_lineage
+    Type:        list[str]
+    Format:      list of ancestral thesis_ids (most recent ancestor first)
+    Source set:  Free; ids must be in the round snapshot's thesis_ids set
+    Token cap:   ≤5 entries
+    Required:    Optional. Empty list = greenfield thesis with no predecessor.
+    Meaning:     Explicit ancestry chain back to predecessor theses.
+                 Distinct from SIMILARITY (cluster overlap) — this is direct
+                 iteration.
+    Producer guidance: List ONLY the predecessor theses this thesis directly
+                       evolves from. Don't list theses that just happen to be
+                       in the same dimension.
+    Example:     ["job-12-round-3-attempt-1", "job-12-round-1-attempt-2"]
+                 # At ≥3 ancestors all in the same mechanism_dimension, the
+                 # pivot rule fires: either set a different mechanism_dimension
+                 # on this thesis, OR add a disqualifier with
+                 # kind="mechanism_evidence" naming the structural pivot.
 ```
 
 ### 4.6 Emergent-dimension contract
@@ -490,9 +531,9 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
     Token cap:   ≥2 entries; ≤6 entries
     Required:    Always; MUST contain ≥1 with source="web_search" AND
                  ≥1 with source="analyst".
-    Meaning:     Typed evidence with required source diversity. The validator
-                 assigns positional ids `citation_1`, `citation_2`, ... to
-                 entries by array position; the LLM does not emit ids.
+    Meaning:     Typed evidence with required source diversity. Entries are ordered;
+                 tiebreakers can cite them with positional references such as
+                 `citation_1`, `citation_2`, etc.
     Producer guidance: ≥1 web_search entry citing external mechanism evidence
                        (paper/source/precedent); ≥1 analyst entry citing
                        trade-level evidence from the strategy's own diagnostics.
@@ -507,6 +548,34 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                  # Non-gate sources (source_code, experiment_result, memory)
                  # don't satisfy the web_search/analyst diversity gate but
                  # are accepted as supporting evidence.
+```
+
+```
+- confidence_distribution
+    Type:        object — see Inner shape
+    Inner shape: ConfidenceDistribution = {
+                     data:        Literal["direct", "proxy", "mixed", "speculative"],
+                     literature:  Literal["direct", "proxy", "mixed", "speculative"],
+                     precedent:   Literal["direct", "proxy", "mixed", "speculative"]
+                 }
+                 No empty-string escape — every dimension gets a rating.
+                 The four values cover the full epistemic spectrum; "" was
+                 a soft path the LLM defaulted to under uncertainty.
+    Source set:  One-of per dimension
+    Required:    Always; all three dimensions must be set.
+    Meaning:     Per-dimension confidence rating:
+                   - data:       analyst-grade evidence in this strategy's diagnostics
+                   - literature: external sources via web_search
+                   - precedent:  prior accepted theses in this family or related families
+                 Per-dimension rating exposes the weakest link rather than
+                 letting a single self-rating average it out.
+    Producer guidance: Rate each dimension separately and honestly. A thesis
+                       with data="direct" + literature="speculative"
+                       + precedent="proxy" is honest — your strongest evidence
+                       is the data, weakest is literature. Avoid
+                       all-three="direct" — that signals motivated reasoning,
+                       not strong evidence.
+    Example:     {"data": "direct", "literature": "speculative", "precedent": "proxy"}
 ```
 
 ### 4.8 Predictions + falsification
@@ -548,6 +617,44 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
                   {"metric": "trade_count", "direction": "decrease_or_same",
                    "magnitude_range": null, "unit": null,
                    "rationale": null}]   # rationale optional for *_or_same
+```
+
+```
+- expected_runtime_signal
+    Type:        list[ExpectedRuntimeSignal]
+    Format:      typed list — see Inner shape
+    Inner shape: ExpectedRuntimeSignal = {
+                     event_path:        str,    # dotted path into strategy_diagnostics
+                     expected_relation: Literal["in_range", ">", ">=", "<", "<=", "=="],
+                     lower:             float | None,
+                     upper:             float | None,
+                     condition:         str     # when this signal should hold
+                 }
+                 lower set when relation in {">", ">=", "==", "in_range"};
+                 upper set when relation in {"<", "<=", "==", "in_range"}.
+    Source set:  Free; event_path must resolve in the prior round's diagnostics
+                 (paths shown in ROUND CONTEXT `diagnostic_event_paths`).
+    Token cap:   ≥1 entry recommended; ≤3 entries
+    Required:    Optional today; recommended.
+    Meaning:     Typed prediction of what should be observable in the
+                 runtime event stream if the mechanism is working. Distinct
+                 from `expected_effects` (which predicts headline metrics);
+                 this predicts the signal-flow behavior the mechanism implies.
+    Producer guidance: Predict the SIGNAL-FLOW behavior the mechanism implies,
+                       not the metric movement. A regime-overlay thesis should
+                       predict that trend_filter_rejected share rises in
+                       trending regimes — the outcome evaluator checks this
+                       directly against the diagnostics file.
+    Example:     [{"event_path": "rejection_breakdown.trend_filter_rejected",
+                   "expected_relation": ">", "lower": 0.3, "upper": null,
+                   "condition": "in trending regimes"},
+                  {"event_path": "event_counts.signals_generated",
+                   "expected_relation": "in_range",
+                   "lower": 800, "upper": 1500,
+                   "condition": "overall (vs ~2400 in baseline)"}]
+                 # First entry uses ">" with only lower bound. Second uses
+                 # "in_range" with both bounds — relation/lower/upper
+                 # conditional pairing demonstrated.
 ```
 
 ```
@@ -687,118 +794,6 @@ unblocker.
                   "evidence": "The rejected payload included deepest_alternative.tiebreaker={kind: 'mechanism_dimension', value: 'signal_quality'} and no other unresolved references."}
 ```
 
-### 4.12 Proposed schema additions
-
-Four new top-level fields. The inner-shape extension to `expected_effects`
-(`magnitude_range` + `unit`) is already inlined in §4.8.
-
-```
-- expected_runtime_signal
-    Type:        list[ExpectedRuntimeSignal]
-    Format:      typed list — see Inner shape
-    Inner shape: ExpectedRuntimeSignal = {
-                     event_path:        str,    # dotted path into strategy_diagnostics
-                     expected_relation: Literal["in_range", ">", ">=", "<", "<=", "=="],
-                     lower:             float | None,
-                     upper:             float | None,
-                     condition:         str     # when this signal should hold
-                 }
-                 lower set when relation in {">", ">=", "==", "in_range"};
-                 upper set when relation in {"<", "<=", "==", "in_range"}.
-    Source set:  Free; event_path must resolve in the prior round's diagnostics
-                 (paths shown in ROUND CONTEXT or upstream context block).
-    Token cap:   ≥1 entry recommended; ≤3 entries
-    Required:    Optional today; recommended.
-    Meaning:     Typed prediction of what should be observable in the
-                 runtime event stream if the mechanism is working. Distinct
-                 from `expected_effects` (which predicts headline metrics);
-                 this predicts the signal-flow behavior the mechanism implies.
-    Producer guidance: Predict the SIGNAL-FLOW behavior the mechanism implies,
-                       not the metric movement. A regime-overlay thesis should
-                       predict that trend_filter_rejected share rises in
-                       trending regimes — the outcome evaluator checks this
-                       directly against the diagnostics file.
-    Example:     [{"event_path": "rejection_breakdown.trend_filter_rejected",
-                   "expected_relation": ">", "lower": 0.3, "upper": null,
-                   "condition": "in trending regimes"},
-                  {"event_path": "event_counts.signals_generated",
-                   "expected_relation": "in_range",
-                   "lower": 800, "upper": 1500,
-                   "condition": "overall (vs ~2400 in baseline)"}]
-                 # First entry uses ">" with only lower bound. Second uses
-                 # "in_range" with both bounds — relation/lower/upper
-                 # conditional pairing demonstrated.
-```
-
-```
-- mechanism_lineage
-    Type:        list[str]
-    Format:      list of ancestral thesis_ids (most recent ancestor first)
-    Source set:  Free; ids must be in the round snapshot's thesis_ids set
-    Token cap:   ≤5 entries
-    Required:    Optional. Empty list = greenfield thesis with no predecessor.
-    Meaning:     Explicit ancestry chain back to predecessor theses.
-                 Distinct from SIMILARITY (cluster overlap) — this is direct
-                 iteration.
-    Producer guidance: List ONLY the predecessor theses this thesis directly
-                       evolves from. Don't list theses that just happen to be
-                       in the same dimension.
-    Example:     ["job-12-round-3-attempt-1", "job-12-round-1-attempt-2"]
-                 # At ≥3 ancestors all in the same mechanism_dimension, the
-                 # pivot rule fires: either set a different mechanism_dimension
-                 # on this thesis, OR add a disqualifier with
-                 # kind="mechanism_evidence" naming the structural pivot.
-```
-
-```
-- if_this_fails_next_thesis
-    Type:        str
-    Format:      1-3 sentences
-    Source set:  Free
-    Token cap:   ≤300 chars
-    Required:    Always
-    Meaning:     Pre-commitment to the next thesis if THIS one is killed.
-                 Surfaces the conductor's implicit "what next" thinking.
-    Producer guidance: State the CONCRETE next thesis you would propose if
-                       this round's backtest kills the current thesis. Vague
-                       answers ("retry with different parameters") indicate
-                       shallow forward planning. Must reference either a
-                       different mechanism_dimension OR the mechanism named
-                       in deepest_alternative — this is a hard validator gate,
-                       not a stylistic preference.
-    Example:     "If this kills, next round tests ADX>30 entry filter
-                  (deepest_alternative.mechanism) in signal_quality dimension.
-                  Drops the regime-overlay theme; switches to threshold-based
-                  filtering."
-```
-
-```
-- confidence_distribution
-    Type:        object — see Inner shape
-    Inner shape: ConfidenceDistribution = {
-                     data:        Literal["direct", "proxy", "mixed", "speculative"],
-                     literature:  Literal["direct", "proxy", "mixed", "speculative"],
-                     precedent:   Literal["direct", "proxy", "mixed", "speculative"]
-                 }
-                 No empty-string escape — every dimension gets a rating.
-                 The four values cover the full epistemic spectrum; "" was
-                 a soft path the LLM defaulted to under uncertainty.
-    Source set:  One-of per dimension
-    Required:    Always; all three dimensions must be set.
-    Meaning:     Per-dimension confidence rating:
-                   - data:       analyst-grade evidence in this strategy's diagnostics
-                   - literature: external sources via web_search
-                   - precedent:  prior accepted theses in this family or related families
-                 Per-dimension rating exposes the weakest link rather than
-                 letting a single self-rating average it out.
-    Producer guidance: Rate each dimension separately and honestly. A thesis
-                       with data="direct" + literature="speculative"
-                       + precedent="proxy" is honest — your strongest evidence
-                       is the data, weakest is literature. Avoid
-                       all-three="direct" — that signals motivated reasoning,
-                       not strong evidence.
-    Example:     {"data": "direct", "literature": "speculative", "precedent": "proxy"}
-```
 
 ---
 
@@ -807,7 +802,7 @@ Four new top-level fields. The inner-shape extension to `expected_effects`
 The worked example lives at `tests/fixtures/conductor_prompt_worked_example.json`
 (not inline). The test suite asserts the fixture passes Pydantic validation,
 the live `validate_thesis_dict(...)` call, and every rule declared in
-`prompts/conductor_output_rules.json` (§6.2).
+`prompts/conductor_output_rules.json` (A4c).
 
 A negative-fixture directory `tests/fixtures/conductor_prompt_rejections/`
 holds one fixture per rejection code, each minimally violating one rule.
