@@ -526,7 +526,7 @@ def _metric_for_record(record: Any, metric_name: str) -> float | int | None:
     return None
 
 
-def _iter_experiment_records(root: Path, *, job_id: int | None = None) -> list[dict[str, Any]]:
+def _iter_round_records(root: Path, *, job_id: int | None = None) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for db_path in sorted(root.glob("*_backtest_runs.db")):
         from backtest_run_db import (
@@ -558,13 +558,14 @@ def _iter_experiment_records(root: Path, *, job_id: int | None = None) -> list[d
     return records
 
 
-def _experiment_index_entry(item: dict[str, Any]) -> dict[str, Any]:
+def _round_index_entry(item: dict[str, Any]) -> dict[str, Any]:
     record = item["record"]
     metrics = dict(getattr(record, "train_metrics", {}) or {})
     metrics.update(getattr(record, "validation_metrics", {}) or {})
     return {
         "run_id": getattr(record, "run_id", ""),
         "thesis_id": getattr(record, "thesis_id", ""),
+        "research_round_id": getattr(record, "research_round_id", ""),
         "job_id": item.get("job_id"),
         "family": getattr(record, "family", ""),
         "metric_name": item.get("primary_metric_name"),
@@ -584,12 +585,12 @@ def _experiment_index_entry(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _experiment_detail(item: dict[str, Any]) -> dict[str, Any]:
+def _round_detail(item: dict[str, Any]) -> dict[str, Any]:
     record = item["record"]
     metrics = dict(getattr(record, "train_metrics", {}) or {})
     metrics.update(getattr(record, "validation_metrics", {}) or {})
     return {
-        **_experiment_index_entry(item),
+        **_round_index_entry(item),
         "runtime_config": getattr(record, "runtime_config", {}) or {},
         "metrics": metrics,
         "train_metrics": getattr(record, "train_metrics", {}) or {},
@@ -607,7 +608,7 @@ def _experiment_detail(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _experiment_compact_detail(item: dict[str, Any]) -> dict[str, Any]:
+def _round_compact_detail(item: dict[str, Any]) -> dict[str, Any]:
     record = item["record"]
     runtime_config = getattr(record, "runtime_config", {}) or {}
     strategy_diagnostics = getattr(record, "strategy_diagnostics", {}) or {}
@@ -622,7 +623,7 @@ def _experiment_compact_detail(item: dict[str, Any]) -> dict[str, Any]:
         if key in strategy_diagnostics
     }
     return {
-        **_experiment_index_entry(item),
+        **_round_index_entry(item),
         "metrics": {
             **(getattr(record, "train_metrics", {}) or {}),
             **(getattr(record, "validation_metrics", {}) or {}),
@@ -647,7 +648,7 @@ def _experiment_compact_detail(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _sort_experiment_records(items: list[dict[str, Any]], order: str) -> list[dict[str, Any]]:
+def _sort_round_records(items: list[dict[str, Any]], order: str) -> list[dict[str, Any]]:
     normalized = str(order or "latest").lower()
     if normalized == "best":
         return sorted(
@@ -684,7 +685,7 @@ def _sort_experiment_records(items: list[dict[str, Any]], order: str) -> list[di
     )
 
 
-def list_experiment_results(
+def list_round_results(
     root: Path,
     *,
     job_id: int | None = None,
@@ -692,8 +693,12 @@ def list_experiment_results(
     offset: int = 0,
     limit: int = 10,
 ) -> str:
+    """Return a list of round results, ordered by recency / metric / etc.
+
+    Each item is one round (= one backtest = one experiment).
+    """
     offset, limit = _clamp_pagination(offset, limit)
-    records = _sort_experiment_records(_iter_experiment_records(root, job_id=job_id), order)
+    records = _sort_round_records(_iter_round_records(root, job_id=job_id), order)
     page = records[offset : offset + limit]
     payload = {
         "total": len(records),
@@ -702,55 +707,55 @@ def list_experiment_results(
         "has_more": offset + limit < len(records),
         "job_id": job_id,
         "order": order,
-        "entries": [_experiment_index_entry(item) for item in page],
-        "instructions": "Call get_experiment_result(thesis_id) before relying on full details.",
+        "entries": [_round_index_entry(item) for item in page],
+        "instructions": (
+            "Call get_round_result(research_round_id) before relying on full details."
+        ),
     }
     return json.dumps(payload, indent=2, default=str)
 
 
-def get_experiment_result(
+def get_round_result(
     root: Path,
-    thesis_id: str,
     *,
-    job_id: int | None = None,
+    research_round_id: str,
     detail: bool = False,
 ) -> str:
-    requested_id = str(thesis_id or "").strip()
+    """Return backtest result for a specific research round.
+
+    ``research_round_id`` format: ``"job-{job}-round-{N}"`` (composite,
+    unique per backtest). Raises ``KeyError`` if the round id doesn't
+    resolve to a backtest record — callers must pass a valid id (no
+    fallback resolution from thesis_id).
+    """
+    requested_id = str(research_round_id or "").strip()
     if not requested_id:
-        return json.dumps(
-            {"status": "error", "error": "thesis_id is required", "thesis_id": thesis_id},
-            indent=2,
-        )
+        raise KeyError("research_round_id is required")
     matches = [
         item
-        for item in _iter_experiment_records(root, job_id=job_id)
-        if getattr(item["record"], "thesis_id", "") == requested_id
-        or getattr(item["record"], "run_id", "") == requested_id
+        for item in _iter_round_records(root)
+        if getattr(item["record"], "research_round_id", "") == requested_id
     ]
     if not matches:
-        return json.dumps(
-            {"status": "not_found", "thesis_id": requested_id, "job_id": job_id},
-            indent=2,
-            default=str,
-        )
-    sorted_matches = _sort_experiment_records(matches, "latest")
+        raise KeyError(f"no round result for {requested_id!r}")
+    sorted_matches = _sort_round_records(matches, "latest")
     result = (
-        _experiment_detail(sorted_matches[0])
+        _round_detail(sorted_matches[0])
         if detail
-        else _experiment_compact_detail(sorted_matches[0])
+        else _round_compact_detail(sorted_matches[0])
     )
     payload = {
         "status": "ok",
-        "thesis_id": requested_id,
-        "job_id": job_id,
+        "research_round_id": requested_id,
         "detail": "full" if detail else "compact",
         "full_result_available": not detail,
         "result": result,
-        "matching_results": [_experiment_index_entry(item) for item in sorted_matches],
+        "matching_results": [_round_index_entry(item) for item in sorted_matches],
     }
     if not detail:
         payload["instructions"] = (
-            "This is a compact result. Call get_experiment_result(thesis_id, detail=true) "
-            "only when specific full fields are required."
+            "This is a compact result. Call "
+            "get_round_result(research_round_id, detail=true) only when specific "
+            "full fields are required."
         )
     return json.dumps(payload, indent=2, default=str)
