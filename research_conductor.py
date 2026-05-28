@@ -614,7 +614,12 @@ async def run_research_conductor(
             )
             tools_called_this_round.add("list_round_results")
             output = list_round_results_for_root(
-                _ROOT, job_id=current_job, order=order, offset=offset, limit=limit
+                _ROOT,
+                job_id=current_job,
+                family=family_name,
+                order=order,
+                offset=offset,
+                limit=limit,
             )
             trace_agent_tool_result(
                 "research-conductor",

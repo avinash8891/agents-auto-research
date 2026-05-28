@@ -63,10 +63,11 @@ logger = logging.getLogger("migrate_experiment_dirs")
 
 
 class ExplicitDbMissingError(ValueError):
-    """Raised when ``--db`` is supplied explicitly but the file does not exist.
+    """Raised when an explicit operator-supplied path does not exist.
 
-    Distinct from the auto-discovery empty case so ``main()`` can exit 3 for
-    operator typos instead of silently treating it as "nothing to migrate".
+    Covers both ``--db /typo/path`` and ``--root /typo/path``. Distinct from
+    the auto-discovery empty case so ``main()`` can exit 3 for operator
+    typos instead of silently treating it as "nothing to migrate".
     """
 
 
@@ -88,7 +89,7 @@ def _discover_db_paths(root: Path, explicit: str | None) -> list[Path]:
         return [p]
 
     if not root.exists():
-        return []
+        raise ExplicitDbMissingError(f"--root path does not exist: {root}")
 
     candidates: list[Path] = []
     seen: set[Path] = set()

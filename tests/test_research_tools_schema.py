@@ -197,10 +197,17 @@ def test_list_round_results_defaults():
     assert args.offset == 0
     assert args.limit == 10
     assert args.job_id is None
+    assert args.family is None
 
 
 def test_list_round_results_valid():
-    ListRoundResultsArgs(order="best", offset=5, limit=20, job_id=7)
+    args = ListRoundResultsArgs(order="best", offset=5, limit=20, job_id=7, family="ema")
+    assert args.family == "ema"
+
+
+def test_list_round_results_rejects_empty_family():
+    with pytest.raises(ValidationError, match="family"):
+        ListRoundResultsArgs(family="")
 
 
 def test_list_round_results_worst_order():
@@ -224,16 +231,29 @@ def test_list_round_results_negative_offset():
 
 
 def test_get_round_result_valid():
-    GetRoundResultArgs(research_round_id="job-1-round-3")
+    args = GetRoundResultArgs(research_round_id="job-1-round-3")
+    assert args.job_id is None
+    assert args.family is None
 
 
 def test_get_round_result_with_detail():
     GetRoundResultArgs(research_round_id="job-1-round-3", detail=True)
 
 
+def test_get_round_result_with_job_and_family():
+    args = GetRoundResultArgs(research_round_id="job-2-round-5", job_id=2, family="orb")
+    assert args.job_id == 2
+    assert args.family == "orb"
+
+
 def test_get_round_result_empty_id():
     with pytest.raises(ValidationError, match="research_round_id"):
         GetRoundResultArgs(research_round_id="")
+
+
+def test_get_round_result_rejects_empty_family():
+    with pytest.raises(ValidationError, match="family"):
+        GetRoundResultArgs(research_round_id="job-1-round-3", family="")
 
 
 def test_list_rejections_defaults():

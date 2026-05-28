@@ -696,16 +696,21 @@ def list_round_results(
     root: Path,
     *,
     job_id: int | None = None,
+    family: str | None = None,
     order: str = "latest",
     offset: int = 0,
     limit: int = 10,
 ) -> str:
     """Return a list of round results, ordered by recency / metric / etc.
 
-    Each item is one round (= one backtest = one experiment).
+    Each item is one round (= one backtest = one experiment). When the
+    runtime root holds multiple per-family DBs that share job/round
+    numbering, callers should pass ``family`` so that get_round_result
+    on any returned ``research_round_id`` resolves unambiguously to the
+    same row.
     """
     offset, limit = _clamp_pagination(offset, limit)
-    records = _sort_round_records(_iter_round_records(root, job_id=job_id), order)
+    records = _sort_round_records(_iter_round_records(root, job_id=job_id, family=family), order)
     page = records[offset : offset + limit]
     payload = {
         "total": len(records),
@@ -713,6 +718,7 @@ def list_round_results(
         "limit": limit,
         "has_more": offset + limit < len(records),
         "job_id": job_id,
+        "family": family,
         "order": order,
         "entries": [_round_index_entry(item) for item in page],
         "instructions": (
@@ -773,6 +779,11 @@ def get_round_result(
             if not getattr(item["record"], "research_round_id", "")
             and getattr(item["record"], "run_id", "") == requested_id
         ]
+        if len(matches) > 1:
+            raise KeyError(
+                f"ambiguous run_id fallback for {requested_id!r}; "
+                "pass job_id and/or family to disambiguate"
+            )
     if not matches:
         raise KeyError(f"no round result for {requested_id!r}")
     sorted_matches = _sort_round_records(matches, "latest")

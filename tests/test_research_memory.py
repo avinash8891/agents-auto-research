@@ -518,3 +518,43 @@ def test_get_round_result_run_id_fallback_skips_rows_with_non_empty_rrid(
     # because the row has a non-empty research_round_id.
     with _pytest.raises(KeyError):
         _json.loads(get_round_result(tmp_path, research_round_id="run-collision"))
+
+
+def test_get_round_result_run_id_fallback_raises_on_ambiguous_match(
+    tmp_path: Path,
+) -> None:
+    """Finding from PR review: when two empty-rrid rows in different per-family
+    DBs share the same run_id, the fallback path would silently pick one.
+    Detect and raise so callers know to pass job_id/family."""
+    ema_db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    ema_db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    _add_backtest_record_family(
+        ema_db,
+        research_round_id_value="",
+        family="ema",
+        thesis_id="ema-legacy",
+        job=1,
+        run_id="run-shared",
+    )
+
+    orb_db = BacktestRunDB(tmp_path / "orb_backtest_runs.db")
+    orb_db.init_session(name="orb", metric_name="profit_factor", direction="higher")
+    _add_backtest_record_family(
+        orb_db,
+        research_round_id_value="",
+        family="orb",
+        thesis_id="orb-legacy",
+        job=1,
+        run_id="run-shared",
+    )
+
+    import pytest as _pytest
+
+    with _pytest.raises(KeyError, match="ambiguous run_id fallback"):
+        get_round_result(tmp_path, research_round_id="run-shared")
+
+    # Disambiguated via family — picks the right one.
+    import json as _json
+
+    payload = _json.loads(get_round_result(tmp_path, research_round_id="run-shared", family="orb"))
+    assert payload["result"]["thesis_id"] == "orb-legacy"

@@ -273,49 +273,83 @@ def _build_research_tools_mcp(
         offset: int = 0,
         limit: int = 10,
         job_id: int | None = None,
+        family: str | None = None,
     ) -> str:
         """List a bounded index of round (= backtest) outcomes."""
         err = _dispatch(
             ListRoundResultsArgs,
-            {"order": order, "offset": offset, "limit": limit, "job_id": job_id},
+            {
+                "order": order,
+                "offset": offset,
+                "limit": limit,
+                "job_id": job_id,
+                "family": family,
+            },
         )
         if err:
             return err
         effective_job = job_id if job_id is not None else current_job
         if list_round_results_for_root is None:
             return _list_round_results_for_root(
-                root, job_id=effective_job, order=order, offset=offset, limit=limit
+                root,
+                job_id=effective_job,
+                family=family,
+                order=order,
+                offset=offset,
+                limit=limit,
             )
         return list_round_results_for_root(
-            root, job_id=effective_job, order=order, offset=offset, limit=limit
+            root,
+            job_id=effective_job,
+            family=family,
+            order=order,
+            offset=offset,
+            limit=limit,
         )
 
     @mcp.tool()
-    async def get_round_result(research_round_id: str, detail: bool = False) -> str:
+    async def get_round_result(
+        research_round_id: str,
+        detail: bool = False,
+        job_id: int | None = None,
+        family: str | None = None,
+    ) -> str:
         """Fetch stored details for one round result by research_round_id.
 
         Defaults to a compact result for context efficiency. Pass detail=true
         only when the compact result is insufficient for the current decision.
+        Pass ``job_id`` / ``family`` when fetching a round surfaced by
+        ``list_round_results(job_id=..., family=...)`` for a job other than
+        the agent's current job — otherwise the lookup is scoped to the
+        current job and won't find the row.
         """
         err = _dispatch(
             GetRoundResultArgs,
-            {"research_round_id": research_round_id, "detail": detail},
+            {
+                "research_round_id": research_round_id,
+                "detail": detail,
+                "job_id": job_id,
+                "family": family,
+            },
         )
         if err:
             return err
+        effective_job = job_id if job_id is not None else current_job
         try:
             if get_round_result_for_root is None:
                 return _get_round_result_for_root(
                     root,
                     research_round_id=research_round_id,
                     detail=detail,
-                    job_id=current_job,
+                    job_id=effective_job,
+                    family=family,
                 )
             return get_round_result_for_root(
                 root,
                 research_round_id=research_round_id,
                 detail=detail,
-                job_id=current_job,
+                job_id=effective_job,
+                family=family,
             )
         except KeyError as exc:
             return round_result_not_found_envelope(research_round_id, exc)

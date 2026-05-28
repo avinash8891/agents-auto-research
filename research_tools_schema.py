@@ -81,11 +81,14 @@ class ListRoundResultsArgs(BaseModel):
     offset: Annotated[int, Field(ge=0)] = 0
     limit: Annotated[int, Field(ge=1, le=50)] = 10
     job_id: Optional[int] = None
+    family: Optional[NonEmptyStr] = None
 
 
 class GetRoundResultArgs(BaseModel):
     research_round_id: NonEmptyStr
     detail: bool = False
+    job_id: Optional[int] = None
+    family: Optional[NonEmptyStr] = None
 
 
 class ListRejectionsArgs(BaseModel):

@@ -217,6 +217,26 @@ class TestCliSmoke:
         assert result.returncode != 0
         assert "--root" in (result.stderr + result.stdout)
 
+    def test_typo_root_exits_3(self, tmp_path: Path) -> None:
+        """An explicit --root pointing at a nonexistent path is an operator
+        typo, not "nothing to migrate" — exit 3 like the --db typo case."""
+        bogus = tmp_path / "does_not_exist"
+        assert not bogus.exists()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--root",
+                str(bogus),
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 3, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert "--root path does not exist" in (result.stderr + result.stdout)
+
 
 class TestRegressionFindings:
     """Regression tests for PR review findings E, F, G."""
