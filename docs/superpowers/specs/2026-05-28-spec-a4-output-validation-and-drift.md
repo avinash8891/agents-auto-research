@@ -100,6 +100,110 @@ Do not remove `required_diagnostic_specs` or Stage 2 diagnostic validation as
 part of this cleanup. A4a omits it from LLM OUTPUT, but the compiler/evaluator
 contract still uses it.
 
+### 3.3 Comprehensive Validator Inventory
+
+`(O)` marks validators that operate on the LLM OUTPUT / `ResearchThesis`
+contract. `remove` marks current Stage 1 OUTPUT gates that are stale after A4a's
+field changes. Validators without `(O)` are adjacent process, compiler-contract,
+post-run, or drift validators that still affect the A4 boundary.
+
+#### Process Validators
+
+| Validator | Scope | Owner | Rejection code(s) | Status |
+|---|---|---|---|---|
+| Required process tools called: `list_round_results`, `web_search`, and `analyze_trades` when analyst evidence is required. | process | `_validate_process` | `process_required_tools_not_called` | keep |
+| Source-code path read trace for `source_code_verification`. | process | attempt-trace extension | `process_source_code_not_read`, `process_source_code_path_not_read` | add |
+
+#### Research Policy Validators
+
+| Validator | Scope | Owner | Rejection code(s) | Status |
+|---|---|---|---|---|
+| Theme-cluster fixation across recent priors. | `(O)` | `_detect_theme_cluster_fixation` | `thesis_quality_theme_cluster_fixation` | keep |
+| Direction whipsaw on a prior lever without `prior_lever_outcomes` acknowledgement. | `(O)` | `_detect_direction_whipsaw` | `thesis_quality_direction_whipsaw` | keep / retarget to A4 `prior_lever_outcomes` |
+| Missing substantive mechanism-evidence disqualifier. | `(O)` | `_detect_missing_mechanism_evidence_disqualifier` | `thesis_quality_missing_mechanism_evidence_disqualifier` | keep |
+| Needs-code starvation after repeated code-change theses. | `(O)` | `_detect_needs_code_starvation` | `thesis_quality_needs_code_starvation` | keep |
+| Config-key overlap with prior theses. | `(O)` | `_detect_config_key_overlap` | `config_validity_config_key_overlap_real` | keep as policy-routed config gate |
+| Neighboring-threshold parameter nudge. | `(O)` | `_detect_neighboring_threshold` | `config_validity_neighboring_threshold` | keep as policy-routed config gate |
+| Repeated same-dimension `mechanism_lineage` without pivot/disqualifier. | `(O)` | new behavior signal | `thesis_quality_lineage_no_structural_pivot` | add |
+| Weak `confidence_distribution` / all-speculative basis without mechanism evidence. | `(O)` | new behavior signal | `thesis_quality_confidence_distribution_too_weak` | add |
+| Weak or vague `if_this_fails_next_thesis` pre-commitment. | `(O)` | new behavior signal or predicate-backed policy | `thesis_quality_next_thesis_not_pre_committed` | add |
+
+#### Mechanical OUTPUT Validators
+
+| Validator | Scope | Owner | Rejection code(s) | Status |
+|---|---|---|---|---|
+| Pydantic schema/type validation for `ResearchThesis` and nested OUTPUT objects, including enum fields and `Field(min_length=...)` constraints. | `(O)` | `ResearchThesis.model_validate` and nested Pydantic models | Pydantic `ValidationError` before named gate mapping | keep / extend with A4 nested shapes |
+| `thesis_id` non-empty. | `(O)` system-injected | `_collect_inline_structural_failures` | `structural_missing_thesis_id` | keep |
+| `hypothesis` non-empty. | `(O)` | `_collect_inline_structural_failures` | `structural_missing_hypothesis` | keep |
+| `mechanism` non-empty. | `(O)` | `_collect_inline_structural_failures` | `structural_missing_mechanism` | keep |
+| `dimension_novelty` length and grounded dimension references. | `(O)` | `_collect_inline_structural_failures` plus generated predicate | `structural_dimension_novelty_too_short`, `structural_dimension_novelty_not_grounded` | keep / add grounded predicate |
+| `mechanism_dimension` non-empty and valid. | `(O)` | `_validate_mechanism_dimension` | `structural_missing_mechanism_dimension`, `structural_mechanism_dimension_invalid` | keep |
+| Emergent-dimension conditional fields. | `(O)` | `_validate_emergent_dimension` | `structural_emergent_thesis_malformed`, `structural_new_dimension_name_duplicates_existing` | keep / update deleted field list |
+| `underexplored_dimensions_considered` membership and chosen-dimension exclusion. | `(O)` | `_validate_underexplored_dimensions` | `structural_underexplored_dimensions_invalid`, `structural_underexplored_includes_chosen` | keep |
+| `novel_connection` required when keyword overlap triggers it. | `(O)` | `_collect_inline_structural_failures` plus generated predicate | `structural_novel_connection_too_short`, `structural_novel_connection_not_grounded` | keep / add grounded predicate |
+| `config_changes` non-empty OR `requires_code_change=true`. | `(O)` | `_validate_thesis_specifies_change` | `structural_config_changes_required` | keep with renamed code from current `structural_missing_config_or_code_change` |
+| `requested_primitives` non-empty when `requires_code_change=true`. | `(O)` | `_validate_thesis_specifies_change` | `structural_engine_change_request_malformed` | keep with renamed code from current `structural_missing_requested_primitives` |
+| `expected_effects` present. | `(O)` | `_validate_expected_effects_present` | `structural_missing_expected_effects` | keep |
+| `expected_effects` metric backing through builtin metrics or `required_diagnostic_specs[*].key`. | `(O)` | metric-backing loop / generated predicate | `structural_expected_effect_metric_unbacked` | keep / retarget from deleted `required_diagnostics` |
+| `expected_effects` coupling / distinct metrics / rationale. | `(O)` | `_collect_research_contract_failures` plus generated predicates | `structural_expected_effects_not_coupled`, `structural_expected_effect_magnitude_missing`, `structural_expected_effect_magnitude_range_invalid`, `structural_expected_effect_unit_invalid`, `structural_expected_effect_rationale_required` | keep / add A4 shape conditionals |
+| `evidence_citations` context-aware source diversity, count, and citation length. | `(O)` | `_collect_research_contract_failures` plus generated predicates | `structural_evidence_citations_missing_source_diversity`, `structural_evidence_citation_too_short`, `structural_evidence_citations_too_many` | keep / retarget context names |
+| `source_code_verification` format, repo path, family path, symbol exists. | `(O)` | `_collect_source_code_verification_failures` | `structural_source_code_verification_too_short`, `structural_source_code_verification_malformed` | keep with split codes from current consolidated code |
+| `disqualifiers` count, mechanism-evidence kind, overfit marker. | `(O)` | `_collect_inline_structural_failures` plus generated predicates | `structural_disqualifiers_too_few`, `structural_disqualifiers_no_mechanism_evidence`, `structural_disqualifiers_no_overfit_address` | keep / add count and overfit predicates |
+| `deepest_alternative` required and tiebreaker resolution. | `(O)` | new generated predicates | `structural_deepest_alternative_missing`, `structural_deepest_alternative_tiebreaker_unresolved` | add |
+| `other_alternatives` count, rejected-reason length, and optional tiebreaker resolution. | `(O)` | new generated predicates | `structural_other_alternatives_too_few`, `structural_lighter_tiebreaker_unresolved` | add |
+| `prior_lever_outcomes[*].prior_thesis_id` resolves. | `(O)` | new generated predicate | `structural_prior_lever_outcomes_unknown_id` | add |
+| `mechanism_lineage[*]` resolves. | `(O)` | new generated predicate | `structural_mechanism_lineage_unknown_id` | add |
+| `confidence_distribution` required object and enum fields. | `(O)` | Pydantic plus generated predicates | `structural_confidence_distribution_missing`, `structural_confidence_distribution_invalid` | add |
+| `expected_runtime_signal` shape, event-path resolution, and bound/relation consistency. | `(O)` | new generated predicates | `structural_expected_runtime_signal_invalid` | add |
+| `theme_keywords` non-empty. | `(O)` | generated predicate / inline structural extension | `structural_theme_keywords_empty` | add |
+| `thesis_role` literal membership. | `(O)` | Pydantic plus generated predicate | `structural_thesis_role_required` | add |
+| `alternatives_considered` count and blank-mechanism gate. | `(O)` | `_collect_research_contract_failures` | `structural_alternatives_considered_invalid` | remove; replaced by `deepest_alternative` + `other_alternatives` |
+| `evidence_strength` required. | `(O)` | `_collect_research_contract_failures` | `structural_missing_evidence_strength` | remove; replaced by `confidence_distribution` |
+| `falsification_or_alternative` length. | `(O)` | `_collect_inline_structural_failures` | `structural_falsification_invalid` | remove; replaced by `disqualifiers` |
+| `causal_cluster` required when priors exist. | `(O)` | `_collect_inline_structural_failures` | `structural_missing_causal_cluster` | remove; replaced by `theme_keywords`, computed overlap, and `mechanism_lineage` |
+| `expected_reuse_across_future_theses` as emergent required field. | `(O)` | `_validate_emergent_dimension` | `structural_emergent_thesis_malformed` | remove; replaced by `mechanism_family_definition` |
+
+#### Config Validity Validators
+
+| Validator | Scope | Owner | Rejection code(s) | Status |
+|---|---|---|---|---|
+| Metadata keys leaked into `config_changes`. | `(O)` | `_collect_mechanical_config_validity_failures` | `config_validity_config_changes_metadata_leak` | keep |
+| `config_changes` keys resolve against A4b `strategy_config_keys`. | `(O)` | new generated predicate | `structural_config_changes_unknown_key` | add |
+| `base_config_path` path syntax / runtime path / inheritance. | compiler contract | `_validate_base_config_path`, `_collect_mechanical_config_validity_failures` today | `config_validity_base_config_path_invalid`, `config_validity_base_config_path_runtime_construction`, `config_validity_base_config_path_inheritance_blocked` | move out of Stage 1 `ResearchThesis` validation |
+| `base_contract_id` inheritance blocked. | compiler contract | `_collect_mechanical_config_validity_failures` today | `config_validity_base_contract_id_not_allowed` | move out of Stage 1 `ResearchThesis` validation |
+
+#### Stage 2 / Compiler-Contract Validators
+
+| Validator | Scope | Owner | Rejection code(s) | Status |
+|---|---|---|---|---|
+| Hypothesis/config alignment against compiled `runtime_config`. | compiler contract | `_detect_stage_2_hypothesis_config_misalignment`, `validate_stage_2` | `hypothesis_config_misalignment` | keep |
+| Strategy family missing `key_concepts`, making alignment unenforceable. | compiler contract | `validate_stage_2` | `hypothesis_config_alignment_unconfigured` | keep |
+| Required diagnostics resolve through `required_diagnostic_specs` key/alias or `runtime_config`. | compiler contract | `_collect_stage_2_required_diagnostic_failures` | `required_diagnostic_missing_post_compile` | keep |
+| Compiled base config inheritance validation. | compiler contract | Stage 2/compiler-contract validation | `config_validity_base_config_path_invalid`, `config_validity_base_config_path_runtime_construction`, `config_validity_base_config_path_inheritance_blocked`, `config_validity_base_contract_id_not_allowed` | add/move here from Stage 1 |
+
+#### Post-run Evaluation Validators
+
+| Validator | Scope | Owner | Rejection code(s) | Status |
+|---|---|---|---|---|
+| Expected effects pass/fail against backtest metrics. | evaluator | evaluator / `BacktestVerdict` | `passed_effects`, `failed_effects` verdict fields | keep outside Stage 1 |
+| Disqualifiers triggered by run results. | evaluator | evaluator / `BacktestVerdict` | `triggered_disqualifiers`, `unparsed_disqualifiers` verdict fields | keep outside Stage 1 |
+| Required diagnostics missing after run. | evaluator | evaluator / `BacktestVerdict` | `missing_required_diagnostics` verdict field | keep outside Stage 1 |
+| `expected_runtime_signal` actually occurred. | evaluator | future runtime-signal evaluator | TBD verdict/rejection field | add outside Stage 1 |
+
+#### Drift / Prompt Contract Validators
+
+| Validator | Scope | Owner | Failure mode | Status |
+|---|---|---|---|---|
+| `ResearchThesis.model_fields` match rendered OUTPUT fields except `_PROMPT_OMITTED_FIELDS`. | drift | `scripts/check_prompt_drift.py` | CI failure | keep |
+| Validator rejection codes match `prompts/conductor_output_rules.json` except `_PROMPT_OMITTED_RULES`. | drift | `scripts/check_prompt_drift.py` | CI failure | add |
+| Rendered OUTPUT has no validator rule prose or rejection-code catalogue. | drift | `scripts/check_prompt_drift.py` | CI failure | keep |
+| Rendered fields include compact slots and typed fields include `Shape`. | drift | `scripts/check_prompt_drift.py` | CI failure | keep |
+| Rendered `G` guidance preserves decision criteria and is not title-only. | drift | `scripts/check_prompt_drift.py` | CI failure | keep |
+| Rendered `M`, `G`, and `Ex` obey A4a compression rules. | drift | `scripts/check_prompt_drift.py` | CI failure | keep |
+| Rendered constants come from code constants, not prose-only duplication. | drift | `scripts/check_prompt_drift.py` | CI failure | keep |
+| Prompt schema-version stamp matches schema/rules hash. | drift | `scripts/check_prompt_drift.py` | CI failure | add |
+| DOCTRINE contains no schema-field names or field-reference arrows. | drift | `scripts/check_prompt_drift.py` | CI failure | keep |
+
 ## 4. Consolidated Validator Rules
 
 All validator rules for the A4a OUTPUT fields, in one place. This section is the
