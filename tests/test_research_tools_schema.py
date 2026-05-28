@@ -285,3 +285,58 @@ def test_rejection_pattern_summary_over_max():
 
 def test_memory_status_no_args():
     MemoryStatusArgs()
+
+
+# --- _dispatch helper ---
+
+
+def test_dispatch_valid_returns_none():
+    from research_tools_mcp import _dispatch, _TOOL_MODELS  # noqa: F401
+    from research_tools_schema import WebSearchArgs as _WebSearchArgs
+
+    result = _dispatch(_WebSearchArgs, {"query": "ORB gap filter on Tuesday open"})
+    assert result is None
+
+
+def test_dispatch_invalid_returns_validation_error_string():
+    from research_tools_mcp import _dispatch
+    from research_tools_schema import WebSearchArgs as _WebSearchArgs
+
+    result = _dispatch(_WebSearchArgs, {"query": ""})
+    assert isinstance(result, str)
+    assert result.startswith("VALIDATION ERROR:")
+
+
+def test_dispatch_missing_required_field():
+    from research_tools_mcp import _dispatch
+    from research_tools_schema import WebSearchArgs as _WebSearchArgs
+
+    result = _dispatch(_WebSearchArgs, {})
+    assert isinstance(result, str)
+    assert result.startswith("VALIDATION ERROR:")
+
+
+def test_enforce_tool_models_raises_for_unregistered_tool():
+    """A tool registered via @mcp.tool() but absent from _TOOL_MODELS raises TypeError."""
+    from mcp.server.fastmcp import FastMCP
+
+    from research_tools_mcp import _enforce_tool_models, _TOOL_MODELS
+
+    mcp = FastMCP("test-enforcement")
+
+    @mcp.tool()
+    async def unregistered_tool(x: str) -> str:
+        return x
+
+    with pytest.raises(TypeError, match="unregistered_tool"):
+        _enforce_tool_models(mcp, _TOOL_MODELS)
+
+
+def test_enforce_tool_models_passes_for_empty_mcp():
+    """An MCP with no tools registered passes enforcement with any tool_models dict."""
+    from mcp.server.fastmcp import FastMCP
+
+    from research_tools_mcp import _enforce_tool_models, _TOOL_MODELS
+
+    mcp = FastMCP("test-empty")
+    _enforce_tool_models(mcp, _TOOL_MODELS)  # no tools registered, nothing to check

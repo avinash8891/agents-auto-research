@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agnost_mcp import config, track
-
 from rejection_artifact import get_rejection as _get_rejection
 from rejection_artifact import list_rejections as _list_rejections
 from rejection_artifact import rejection_pattern_summary as _rejection_pattern_summary
@@ -13,6 +11,64 @@ from research_memory import get_past_thesis as _get_past_thesis_for_root
 from research_memory import list_experiment_results as _list_results_for_root
 from research_memory import list_past_theses as _list_past_theses_for_root
 from trace_sdk import trace
+
+from pydantic import BaseModel, ValidationError
+
+from research_tools_schema import (
+    AnalyzeTradesArgs,
+    GetExperimentResultArgs,
+    GetPastThesisArgs,
+    GetRejectionArgs,
+    ListExperimentResultsArgs,
+    ListPastThesesArgs,
+    ListRejectionsArgs,
+    MemoryStatusArgs,
+    RejectionPatternSummaryArgs,
+    SaveFindingArgs,
+    SearchFindingsArgs,
+    WebSearchArgs,
+)
+
+_TOOL_MODELS: dict[str, type[BaseModel]] = {
+    "analyze_trades": AnalyzeTradesArgs,
+    "web_search": WebSearchArgs,
+    "save_finding": SaveFindingArgs,
+    "search_findings": SearchFindingsArgs,
+    "memory_status": MemoryStatusArgs,
+    "list_past_theses": ListPastThesesArgs,
+    "get_past_thesis": GetPastThesisArgs,
+    "list_experiment_results": ListExperimentResultsArgs,
+    "get_experiment_result": GetExperimentResultArgs,
+    "list_rejections": ListRejectionsArgs,
+    "get_rejection": GetRejectionArgs,
+    "rejection_pattern_summary": RejectionPatternSummaryArgs,
+}
+
+
+def _dispatch(model_cls: type[BaseModel], kwargs: dict) -> str | None:
+    """Validate kwargs against model_cls. Returns error string on failure, None on success."""
+    try:
+        model_cls(**kwargs)
+        return None
+    except ValidationError as exc:
+        errors = exc.errors(include_url=False)
+        parts = []
+        for e in errors:
+            loc = ".".join(str(x) for x in e["loc"]) if e["loc"] else "input"
+            parts.append(f"{loc}: {e['msg']}")
+        return "VALIDATION ERROR: " + "; ".join(parts)
+
+
+def _enforce_tool_models(mcp, tool_models: dict[str, type[BaseModel]]) -> None:
+    """Raise TypeError if any registered tool lacks an entry in tool_models."""
+    registered = set(mcp._tool_manager._tools.keys())
+    modeled = set(tool_models.keys())
+    missing = registered - modeled
+    if missing:
+        raise TypeError(
+            f"MCP tool(s) registered without an arg model in _TOOL_MODELS: {sorted(missing)}. "
+            "Add a Pydantic model to research_tools_schema.py and register it in _TOOL_MODELS."
+        )
 
 
 def _build_research_tools_mcp(
@@ -262,6 +318,8 @@ def _build_research_tools_mcp(
             window_rounds=window_rounds,
         )
         return json.dumps(summary, indent=2, default=str)
+
+    from agnost_mcp import config, track  # lazy: not needed at module import time
 
     track(
         mcp,
