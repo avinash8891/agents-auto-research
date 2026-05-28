@@ -203,7 +203,7 @@ def test_check_parsed_for_terminal_defers_validation_failed_when_thesis_attached
             error="validation_failed",
             validation_reason="Process gate failed: required tools not called: ['web_search']",
             thesis={"thesis_id": "open_alert_regime_filter"},
-            tools_called=frozenset({"list_experiment_results"}),
+            tools_called=frozenset({"list_round_results"}),
         )
     )
 
@@ -653,7 +653,7 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
             {"source": "web_search", "citation": "EMA smoothing reduces noisy signals."},
             {"source": "analyst", "citation": "Analyst found weak crosses cluster in losses."},
             {
-                "source": "experiment_result",
+                "source": "round_result",
                 "citation": "Latest experiment result showed weak-cross filtering needs research.",
             },
         ],
@@ -706,7 +706,7 @@ def _dict_to_conductor_result(d: dict) -> ConductorResult:
         status="ok",
         thesis=theses[0] if theses else None,
         reasoning=d.get("reasoning", ""),
-        tools_called=frozenset(d.get("tools_called", {"list_experiment_results", "web_search"})),
+        tools_called=frozenset(d.get("tools_called", {"list_round_results", "web_search"})),
     )
 
 
@@ -1342,9 +1342,7 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
         def read_results(self):
             return []
 
-    monkeypatch.setattr(
-        "agent_formatters.format_experiment_results_summary", lambda result_dicts: []
-    )
+    monkeypatch.setattr("agent_formatters.format_round_results_summary", lambda result_dicts: [])
     monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root: [])
     monkeypatch.setattr(
         "autoresearch_research._resolve_conductor_inputs",
@@ -1407,7 +1405,7 @@ def test_handle_success_sets_pending_experiment_activity(tmp_path: Path) -> None
 
     assert updated["state"] == "running"
     assert updated["activity"] == {
-        "type": "experiment",
+        "type": "round",
         "phase": "pending_backtest",
         "round": 8,
         "config": "runtime/jobs/job-26/research/round-8/selected_config.json",

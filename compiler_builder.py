@@ -567,7 +567,11 @@ def _read_json_artifact(path: Path) -> dict[str, Any] | None:
 
 
 def _load_structured_thesis_artifacts(
-    root: Path, thesis_id: str, *, artifact_root: Path | None = None
+    root: Path,
+    thesis_id: str,
+    *,
+    artifact_root: Path | None = None,
+    research_round_id: str,
 ) -> tuple[dict[str, Any], dict[str, Any], Path, Path] | None:
     roots = [artifact_root] if artifact_root is not None else []
     roots.append(root)
@@ -579,11 +583,28 @@ def _load_structured_thesis_artifacts(
             contract = _read_json_artifact(contract_path)
             if thesis is not None and contract is not None:
                 return thesis, contract, thesis_path, contract_path
-        legacy_dir = current_root / "experiments" / thesis_id
+        legacy_dir = current_root / "experiments" / research_round_id
         if legacy_dir.exists():
-            raise RuntimeError(
-                f"legacy builder experiment directory is not supported: {legacy_dir}"
+            has_legacy_builder_artifact = (legacy_dir / "thesis.json").exists() or (
+                legacy_dir / "contract.json"
+            ).exists()
+            # A dir carrying a migration marker was renamed by
+            # scripts/migrate_experiment_dirs.py and may legitimately contain
+            # thesis.json carried over from the legacy experiments/{thesis_id}/
+            # layout. Such dirs are backtest artifacts, not stale builder
+            # state, so the guardrail must NOT raise on them.
+            migration_marker = any(
+                p.name.startswith(".migrated_from_thesis_id__") for p in legacy_dir.iterdir()
             )
+            if has_legacy_builder_artifact and not migration_marker:
+                raise RuntimeError(
+                    "legacy builder experiment directory is not supported — "
+                    f"found `experiments/{research_round_id}/` at {legacy_dir} "
+                    "with thesis.json or contract.json; new layout uses "
+                    "`builder_request/`. Move builder artifacts there; "
+                    f"backtest artifacts in experiments/{research_round_id}/ "
+                    "are fine."
+                )
     return None
 
 
@@ -1298,13 +1319,22 @@ def _validated_generated_config_result(
 
 
 def build_missing_primitives(
-    root: Path, thesis_id: str, *, artifact_root: Path | None = None
+    root: Path,
+    thesis_id: str,
+    *,
+    artifact_root: Path | None = None,
+    research_round_id: str,
 ) -> dict[str, Any]:
     """Dispatch CLI builder to implement missing primitives for a thesis."""
     started_at = time.monotonic()
     if artifact_root is None:
         raise ValueError("job-scoped artifact_root is required for builder dispatch")
-    structured = _load_structured_thesis_artifacts(root, thesis_id, artifact_root=artifact_root)
+    structured = _load_structured_thesis_artifacts(
+        root,
+        thesis_id,
+        artifact_root=artifact_root,
+        research_round_id=research_round_id,
+    )
     if structured is not None:
         proposal, compilation, proposal_path, compilation_path = structured
         proposal, proposal_normalized = _normalize_proposal_config_changes(proposal)

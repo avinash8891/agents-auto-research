@@ -68,7 +68,7 @@ def _validate(raw: dict, *, attempt_number: int):
         research_round_id="job-1-round-1",
         attempt_number=attempt_number,
         assign_thesis_id=research_thesis_attempt_id,
-        tools_called={"list_experiment_results", "web_search"},
+        tools_called={"list_round_results", "web_search"},
     )
 
 

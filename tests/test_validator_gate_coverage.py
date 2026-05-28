@@ -38,7 +38,7 @@ from thesis_validator import validate_research_thesis as _validate_research_thes
 STRATEGY_FAMILY = "ema"
 SAMPLE_THESIS_ID = "ema-opening-noise-skip-v1"
 SAMPLE_MECHANISM_DIMENSION = "entry_timing"
-_VALID_PROCESS_TOOLS = {"list_experiment_results", "web_search"}
+from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 
 
 def validate_research_thesis(*args: Any, **kwargs: Any) -> ResearchThesis:
@@ -428,7 +428,7 @@ def test_gate_structural_evidence_citations_allow_experiment_result_when_no_trad
                 citation="Market microstructure literature links opening auctions with wider spreads.",
             ),
             EvidenceCitation(
-                source="experiment_result",
+                source="round_result",
                 citation="latest experiment rejected before writing a trades artifact.",
             ),
         ]
@@ -451,7 +451,7 @@ def test_gate_structural_evidence_citations_no_trades_still_requires_experiment_
         validate_research_thesis(thesis, evidence_context="no_trades")
 
     assert excinfo.value.rejection_code == "structural_evidence_citations_invalid"
-    assert excinfo.value.evidence["missing_sources"] == ["experiment_result"]
+    assert excinfo.value.evidence["missing_sources"] == ["round_result"]
 
 
 def test_gate_structural_evidence_citations_cold_start_allows_web_only() -> None:

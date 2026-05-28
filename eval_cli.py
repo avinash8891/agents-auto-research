@@ -6,7 +6,7 @@ Usage:
     python eval_cli.py --label halo-trial-1 --repeat 5
 
 This is a separate file from ``autoresearch_cli.py`` (which is the
-SQLite experiment-tracker CLI) to keep the two concerns from
+SQLite round-tracker CLI) to keep the two concerns from
 tangling.
 """
 

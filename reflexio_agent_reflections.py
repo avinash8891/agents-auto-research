@@ -81,7 +81,7 @@ def _build_agent_reflection(agent: str, items: list[dict[str, Any]]) -> dict[str
             "run narrow verifier/tests before success",
         ]
     elif agent == "conductor":
-        lesson = "Use prior theses, experiment results, web evidence, and analyst data before proposing one next mechanism."
+        lesson = "Use prior theses, round results, web evidence, and analyst data before proposing one next mechanism."
         avoid = ["repeating prior mechanisms without a new data-backed reason"]
         repeat = ["fetch exact past thesis/result details before relying on them"]
     else:

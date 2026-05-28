@@ -68,6 +68,11 @@ class EvidenceCitation(BaseModel):
         "web_search",
         "analyst",
         "source_code",
+        "round_result",
+        # Deployment-migration alias: theses persisted before the
+        # experiment→round terminology rename use "experiment_result".
+        # Accepting the legacy value here keeps halted / manual-review state
+        # readable. Normalize-on-load is in normalize_thesis_payload.
         "experiment_result",
         "memory",
     ]

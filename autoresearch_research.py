@@ -240,8 +240,20 @@ def log_research_round(
 
     db = BacktestRunDB(db_path)
     state = read_state(state_path)
-    job_id = coerce_job_to_int(state.get("job"))
-    research_round_id = make_research_round_id(job_id, round_number)
+    raw_job = state.get("job")
+    try:
+        job_id = int(raw_job)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"log_research_round requires a valid state['job']; "
+            f"got job={raw_job!r}, round_number={round_number!r}"
+        ) from exc
+    if job_id < 1 or round_number < 0:
+        raise ValueError(
+            f"log_research_round requires job>=1 and round_number>=0; "
+            f"got job={job_id}, round_number={round_number}"
+        )
+    round_id = make_research_round_id(job_id, round_number)
     attempt_number = 1
     if outcome.startswith("rejected_attempt_"):
         try:
@@ -249,7 +261,7 @@ def log_research_round(
         except ValueError:
             attempt_number = 1
     else:
-        attempt_number = db.next_research_thesis_attempt_number(research_round_id)
+        attempt_number = db.next_research_thesis_attempt_number(round_id)
     db.log_research_round(
         state_path,
         round_number=round_number,
@@ -260,7 +272,7 @@ def log_research_round(
     )
     db.add_research_thesis_attempt(
         {
-            "research_round_id": research_round_id,
+            "research_round_id": round_id,
             "attempt_number": attempt_number,
             "thesis_id": thesis_id,
             "strategy_family": state.get("family", ""),
@@ -369,7 +381,7 @@ def queue_variants(
     primary_contract: Any,  # BacktestContract
     baseline_config: dict[str, Any],
     *,
-    experiments_dir: Path | None = None,
+    builder_requests_dir: Path | None = None,
     job: int | None = None,
     created_for_commit: str = "",
 ) -> None:
@@ -1026,7 +1038,7 @@ def _call_conductor(
     trades_file: str,
     strategy_events_file: str,
     diagnostics_file: str,
-    experiment_results: Any,
+    round_results: Any,
     latest_outcome: dict[str, Any],
     family_name: str,
     rejection_feedback: str,
@@ -1052,7 +1064,7 @@ def _call_conductor(
     trace("CONDUCTOR", f"START {label}")
     return run_research_conductor_sync(
         trades_file=trades_file,
-        experiment_results=experiment_results,
+        round_results=round_results,
         latest_outcome=latest_outcome,
         research_round=research_round,
         family_name=family_name,
@@ -1079,7 +1091,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     If validation rejects the thesis, calls the conductor AGAIN with
     the rejection reason so it can propose something different.
     """
-    from agent_formatters import format_experiment_results_summary
+    from agent_formatters import format_round_results_summary
     from thesis_validator import load_prior_theses
 
     state = controller.read_state()
@@ -1099,7 +1111,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     result_dicts = results_to_dicts(results)
     if current_job is not None:
         result_dicts = [result for result in result_dicts if result.get("job") == current_job]
-    experiment_results = format_experiment_results_summary(result_dicts)
+    round_results = format_round_results_summary(result_dicts)
     prior_theses = load_prior_theses(controller.root)
     trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
     trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
@@ -1138,7 +1150,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             trades_file=trades_file,
             strategy_events_file=strategy_events_file,
             diagnostics_file=diagnostics_file,
-            experiment_results=experiment_results,
+            round_results=round_results,
             latest_outcome=latest_outcome,
             family_name=controller.family.name,
             rejection_feedback=rejection_feedback,
@@ -1724,7 +1736,7 @@ def _handle_success(
     state["research_round"] = research_round
     state.pop("research_round_in_progress", None)
     state["activity"] = {
-        "type": "experiment",
+        "type": "round",
         "phase": "pending_backtest",
         "round": research_round,
         "config": gen_config,
@@ -1741,7 +1753,7 @@ def _handle_success(
         f"runtime/jobs/job-{state.get('job')}/research/round-{research_round}/backtest"
     )
     state["next_action"] = {
-        "type": "run_experiment",
+        "type": "run_round",
         "config": gen_config,
         "benchmark_command": controller.family.benchmark_command(gen_config),
         "requires_trade_analysis": True,

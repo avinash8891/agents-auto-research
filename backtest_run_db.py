@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_logging import get_logger
+from autoresearch_runtime_paths import research_round_id as _build_research_round_id
+from autoresearch_runtime_paths import research_round_id_or_empty
 from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
 from config_hash import _config_hash
 from persistence_utils import (
@@ -22,6 +24,21 @@ from persistence_utils import (
 
 log = get_logger(__name__)
 
+
+def research_round_id(job_id: int, round_number: int) -> str:
+    """Lenient formatter mirroring main's #65 helper.
+
+    Coerces job_id / round_number to int but does NOT raise on
+    out-of-range values — call sites that want strict validation
+    (e.g. the DB write boundary in add_from_sqlite_fields) use the
+    canonical autoresearch_runtime_paths.research_round_id helper via
+    ``_build_research_round_id`` instead. Kept here for callers that
+    need a value even on partial state (research_conductor's pre-validate
+    thesis-id assignment, test fixtures with job=0, etc.).
+    """
+    return f"job-{int(job_id)}-round-{int(round_number)}"
+
+
 INVALID_RESULT_VERDICTS = frozenset(
     {
         "invalid_duplicate_result",
@@ -30,10 +47,6 @@ INVALID_RESULT_VERDICTS = frozenset(
 )
 
 BACKTEST_RUNS_TABLE = "backtest_runs"
-
-
-def research_round_id(job_id: int, round_number: int) -> str:
-    return f"job-{int(job_id)}-round-{int(round_number)}"
 
 
 def research_thesis_attempt_id(research_round_id: str, attempt_number: int) -> str:
@@ -410,7 +423,25 @@ class BacktestRunDB:
         job_id: int,
         primary_metric_name: str,
         primary_metric_value: float,
+        research_round_id: str,
+        research_round_number: int,
+        is_baseline: bool = False,
     ) -> None:
+        if not research_round_id:
+            raise ValueError(
+                "research_round_id is required — empty value would write a row "
+                "unfindable via get_by_research_round_id; callers must derive "
+                "it via autoresearch_runtime_paths.research_round_id(job, round)"
+            )
+        if research_round_number < 0:
+            raise ValueError(f"research_round_number must be >= 0; got {research_round_number}")
+        expected_research_round_id = _build_research_round_id(job_id, research_round_number)
+        if research_round_id != expected_research_round_id:
+            raise ValueError(
+                f"research_round_id mismatch: got {research_round_id!r}, "
+                f"expected {expected_research_round_id!r} from (job_id={job_id}, "
+                f"research_round_number={research_round_number})"
+            )
         merged_metrics = dict(metrics)
         merged_metrics.setdefault(primary_metric_name, primary_metric_value)
         if trade_analysis:
@@ -439,6 +470,9 @@ class BacktestRunDB:
                 timestamp=_iso8601_utc_now(),
                 family=family,
                 job=job_id,
+                research_round_id=research_round_id,
+                research_round_number=research_round_number,
+                is_baseline=is_baseline,
             )
         )
 
@@ -509,6 +543,7 @@ class BacktestRunDB:
         except (TypeError, ValueError):
             job_id = 0
         resolved_hypothesis_id = hypothesis_id or current_hypothesis_id() or thesis_id
+        round_id = research_round_id_or_empty(job_id, round_number)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -518,7 +553,7 @@ class BacktestRunDB:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    research_round_id(job_id, round_number),
+                    round_id,
                     job_id,
                     round_number,
                     get_run_id(),
@@ -900,8 +935,13 @@ class BacktestRunDB:
                 return r
         return None
 
-    def get_by_thesis(self, thesis_id: str) -> list[BacktestRunRecord]:
-        return [r for r in self._load() if r.thesis_id == thesis_id]
+    def get_by_research_round_id(self, research_round_id: str) -> BacktestRunRecord | None:
+        if not research_round_id:
+            return None
+        for r in self._load():
+            if r.research_round_id == research_round_id:
+                return r
+        return None
 
     def all(self) -> list[BacktestRunRecord]:
         return list(self._load())

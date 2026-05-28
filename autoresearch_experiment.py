@@ -33,7 +33,7 @@ from autoresearch_constants import (
 from autoresearch_logging import get_logger
 from autoresearch_paths import path_within_allowed_roots, resolve_config_path
 from autoresearch_planning import build_research_failure_state
-from autoresearch_runtime_paths import research_round_backtest_root
+from autoresearch_runtime_paths import research_round_backtest_root, research_round_id_or_empty
 from autoresearch_state import (
     read_state,
     write_state,
@@ -666,7 +666,7 @@ def _build_db_record(
     details: dict[str, Any],
     analysis: dict[str, Any],
     runtime_config: dict[str, Any] | None = None,
-    fallback_experiment_id: str,
+    fallback_run_id: str,
     state: dict[str, Any],
 ) -> BacktestRunRecord:
     contract = _contract_from_sidecar(controller, config)
@@ -702,14 +702,10 @@ def _build_db_record(
         verdict_summary = _invalid_duplicate_result_summary(duplicate, details, runtime_config)
     code_commit = _executed_code_commit(controller, details)
     round_number = _coerce_research_round_number(state)
-    research_round_id = (
-        f"job-{state.get('job', 0)}-round-{round_number}" if round_number >= 0 else ""
-    )
+    round_id = research_round_id_or_empty(state.get("job", 0), round_number)
     is_baseline = round_number == 0
-    backtest_run_id = (
-        f"{research_round_id}-backtest" if research_round_id else fallback_experiment_id
-    )
-    record_run_id = backtest_run_id or fallback_experiment_id
+    backtest_run_id = f"{round_id}-backtest" if round_id else fallback_run_id
+    record_run_id = backtest_run_id or fallback_run_id
     record = BacktestRunRecord(
         run_id=record_run_id,
         thesis_id=contract.thesis_id if contract else Path(config).stem,
@@ -736,7 +732,7 @@ def _build_db_record(
         job=state.get("job", 0),
         usage=state.get("_last_round_usage", {}),
         backtest_run_id=backtest_run_id,
-        research_round_id=research_round_id,
+        research_round_id=round_id,
         research_round_number=round_number,
         is_baseline=is_baseline,
     )
@@ -877,16 +873,14 @@ def _build_export_entry(
     identity = _resolve_identity(contract, config)
     run_id = f"job-{state.get('job', 0)}-run-{next_run}-{identity}"
     round_number = _coerce_research_round_number(state)
-    research_round_id = (
-        f"job-{state.get('job', 0)}-round-{round_number}" if round_number >= 0 else ""
-    )
+    round_id = research_round_id_or_empty(state.get("job", 0), round_number)
     return {
         "type": "backtest_run",
         "run": next_run,
         "job": state.get("job"),
         "run_id": run_id,
-        "backtest_run_id": f"{research_round_id}-backtest" if research_round_id else run_id,
-        "research_round_id": research_round_id,
+        "backtest_run_id": f"{round_id}-backtest" if round_id else run_id,
+        "research_round_id": round_id,
         "research_round_number": round_number,
         "is_baseline": round_number == 0,
         "hypothesis_id": identity,
@@ -960,7 +954,7 @@ def log_experiment_result(
         details=details,
         analysis=analysis,
         runtime_config=runtime_config,
-        fallback_experiment_id=entry["run_id"],
+        fallback_run_id=entry["run_id"],
         state=state,
     )
     setattr(record, "_asi_export", asi)
@@ -1332,7 +1326,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
     execution_root_value = next_action.get("execution_root")
     controller.ctx.execution_root = _validated_execution_root(controller, execution_root_value)
     state["activity"] = {
-        "type": "experiment",
+        "type": "round",
         "phase": "backtest_running",
         "config": config,
         "source": next_action.get("source"),
@@ -1424,7 +1418,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             if not isinstance(runtime_config, dict) or not runtime_config:
                 runtime_config = getattr(controller.ctx, "latest_config_contents", {}) or {}
             _record_baseline_checkpoint(controller, details, runtime_config)
-        _finalize_experiment(controller, config, metric, decision, verdict)
+        _finalize_round(controller, config, metric, decision, verdict)
         return 0
     finally:
         controller.clear_transient_context()
@@ -1434,7 +1428,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             controller.write_state(state)
 
 
-def _finalize_experiment(
+def _finalize_round(
     controller: "AutoresearchController",
     config: str,
     metric: float,

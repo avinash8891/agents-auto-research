@@ -42,7 +42,7 @@ def test_evidence_citation_rejects_invalid_source() -> None:
 
 
 def test_evidence_citation_accepts_known_sources() -> None:
-    for source in ("web_search", "analyst", "source_code", "experiment_result", "memory"):
+    for source in ("web_search", "analyst", "source_code", "round_result", "memory"):
         EvidenceCitation(source=source, citation="data")
 
 

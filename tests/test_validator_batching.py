@@ -126,7 +126,7 @@ def test_mechanical_batch_collects_multiple_presence_failures() -> None:
     )
 
     with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(thesis, tools_called={"list_experiment_results", "web_search"})
+        validate_research_thesis(thesis, tools_called={"list_round_results", "web_search"})
 
     assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
     failures = exc_info.value.evidence["failures"]
@@ -151,7 +151,7 @@ def test_process_gate_runs_when_tools_called_observed_empty() -> None:
 
     assert exc_info.value.rejection_code == "process_required_tools_not_called"
     assert exc_info.value.evidence["missing_tools"] == [
-        "list_experiment_results",
+        "list_round_results",
         "web_search",
     ]
 
@@ -159,7 +159,7 @@ def test_process_gate_runs_when_tools_called_observed_empty() -> None:
 def test_validate_stage_1_accepts_process_tools() -> None:
     thesis = validate_stage_1(
         _thesis(),
-        tools_called={"list_experiment_results", "web_search"},
+        tools_called={"list_round_results", "web_search"},
     )
 
     assert thesis.thesis_id == "ema-tier-batching-v1"
@@ -177,7 +177,7 @@ def test_mechanical_batch_includes_disqualifiers_and_unbacked_effect_metrics() -
     with pytest.raises(ThesisValidationError) as exc_info:
         validate_research_thesis(
             thesis,
-            tools_called={"list_experiment_results", "web_search"},
+            tools_called={"list_round_results", "web_search"},
         )
 
     assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
@@ -201,7 +201,7 @@ def test_mechanical_batch_includes_underexplored_dimensions_when_cluster_missing
         validate_research_thesis(
             thesis,
             prior_theses=[_prior("ema-prior-a")],
-            tools_called={"list_experiment_results", "web_search"},
+            tools_called={"list_round_results", "web_search"},
         )
 
     assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
@@ -222,7 +222,7 @@ def test_mechanical_batch_does_not_escape_on_unknown_family_without_base_path() 
     with pytest.raises(ThesisValidationError) as exc_info:
         validate_research_thesis(
             thesis,
-            tools_called={"list_experiment_results", "web_search"},
+            tools_called={"list_round_results", "web_search"},
         )
 
     assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
@@ -238,7 +238,7 @@ def test_mechanical_batch_with_single_failure_raises_original_code() -> None:
     thesis = _thesis(thesis_id="")
 
     with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(thesis, tools_called={"list_experiment_results", "web_search"})
+        validate_research_thesis(thesis, tools_called={"list_round_results", "web_search"})
 
     assert exc_info.value.rejection_code == "structural_missing_thesis_id"
     assert "failures" not in exc_info.value.evidence
@@ -251,7 +251,7 @@ def test_behavioral_pass_fires_before_mechanical_when_both_present() -> None:
         validate_research_thesis(
             thesis,
             prior_theses=_cluster_priors(),
-            tools_called={"list_experiment_results", "web_search"},
+            tools_called={"list_round_results", "web_search"},
         )
 
     assert exc_info.value.rejection_code == "thesis_quality_theme_cluster_fixation"
@@ -288,7 +288,7 @@ def test_behavioral_pass_fires_first_signal_only_when_multiple_signals() -> None
         validate_research_thesis(
             thesis,
             prior_theses=priors,
-            tools_called={"list_experiment_results", "web_search"},
+            tools_called={"list_round_results", "web_search"},
         )
 
     assert exc_info.value.rejection_code == "thesis_quality_theme_cluster_fixation"
@@ -303,7 +303,7 @@ def test_rethink_class_1c_config_overlap_fires_before_mechanical() -> None:
         validate_research_thesis(
             thesis,
             prior_theses=priors,
-            tools_called={"list_experiment_results", "web_search"},
+            tools_called={"list_round_results", "web_search"},
         )
 
     assert exc_info.value.rejection_code == "config_validity_config_key_overlap_real"
@@ -317,7 +317,7 @@ def test_neighboring_threshold_is_prioritized_over_config_overlap() -> None:
         validate_research_thesis(
             thesis,
             prior_theses=priors,
-            tools_called={"list_experiment_results", "web_search"},
+            tools_called={"list_round_results", "web_search"},
         )
 
     assert exc_info.value.rejection_code == "config_validity_neighboring_threshold"
@@ -338,7 +338,7 @@ def test_rethink_class_1c_neighboring_threshold_fires_before_mechanical() -> Non
         validate_research_thesis(
             thesis,
             prior_theses=priors,
-            tools_called={"list_experiment_results", "web_search"},
+            tools_called={"list_round_results", "web_search"},
         )
 
     assert exc_info.value.rejection_code == "config_validity_neighboring_threshold"
@@ -348,7 +348,7 @@ def test_mechanical_runs_when_behavioral_silent() -> None:
     thesis = _thesis(falsification_or_alternative="too short")
 
     with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(thesis, tools_called={"list_experiment_results", "web_search"})
+        validate_research_thesis(thesis, tools_called={"list_round_results", "web_search"})
 
     assert exc_info.value.rejection_code == "structural_falsification_invalid"
 

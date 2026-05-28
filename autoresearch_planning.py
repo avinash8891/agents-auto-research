@@ -161,7 +161,7 @@ def _running_state(config: str, family: StrategyFamily, source: str) -> dict[str
             "selected_thesis_id": Path(config).stem,
         },
         "next_action": {
-            "type": "run_experiment",
+            "type": "run_round",
             "config": config,
             "benchmark_command": family.benchmark_command(config),
             "requires_trade_analysis": True,
@@ -369,7 +369,7 @@ def check_baseline_rerun(
     trace("BASELINE", f"forcing rerun: {reason}")
     log.info(f"BASELINE_RERUN {reason}")
     return {
-        "type": "run_experiment",
+        "type": "run_round",
         "config": baseline_config,
         "benchmark_command": family.benchmark_command(baseline_config),
         "requires_trade_analysis": True,

@@ -27,7 +27,7 @@ def test_legacy_l6_message_no_longer_maps_to_process_required_tools_code() -> No
 def test_legacy_l7_message_no_longer_maps_to_process_required_tools_code() -> None:
     assert (
         infer_rejection_code(
-            "ERROR: HARD GATE — call list_experiment_results at least once before proposing a thesis."
+            "ERROR: HARD GATE — call list_round_results at least once before proposing a thesis."
         )
         == "unspecified_validation_error"
     )

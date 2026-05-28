@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, Any
 _log = logging.getLogger(__name__)
 
 from autoresearch_paths import serialize_config_path
-from autoresearch_runtime_paths import research_round_root
+from autoresearch_runtime_paths import (
+    research_round_id,
+    research_round_root,
+)
 from improvement_reflexion import read_validation_failure_reason
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
@@ -117,7 +120,7 @@ def _activate_builder_config(
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
     state["activity"] = {
-        "type": "experiment",
+        "type": "round",
         "phase": "pending_backtest",
         "round": research_round,
         "config": generated_config,
@@ -137,7 +140,7 @@ def _activate_builder_config(
     if execution_root:
         state["current_thesis"]["execution_root"] = execution_root
     state["next_action"] = {
-        "type": "run_experiment",
+        "type": "run_round",
         "config": generated_config,
         "benchmark_command": controller.family.benchmark_command(generated_config),
         "requires_trade_analysis": True,
@@ -542,8 +545,17 @@ def build_missing_primitives_for_state(
     try:
         import compiler_pipeline
 
+        if job is None or research_round is None:
+            raise ValueError(
+                "build_missing_primitives dispatch requires job and research_round; "
+                f"got job={raw_job!r}, research_round={research_round!r}"
+            )
+        round_id = research_round_id(int(job), int(research_round))
         builder_result = compiler_pipeline.build_missing_primitives(
-            controller.root, thesis_id, artifact_root=round_root
+            controller.root,
+            thesis_id,
+            artifact_root=round_root,
+            research_round_id=round_id,
         )
     except (
         Exception
@@ -705,7 +717,7 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
     controller.clear_terminal_metadata(state)
     state["current_thesis"] = {"config": config_path, "status": "ready_to_run"}
     state["next_action"] = {
-        "type": "run_experiment",
+        "type": "run_round",
         "config": config_path,
         "benchmark_command": controller.family.benchmark_command(config_path),
         "requires_trade_analysis": True,
