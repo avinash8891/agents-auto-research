@@ -367,13 +367,23 @@ def _validate_process(
 
 
 def _prior_thesis_entry(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+    details = row.get("thesis_details", {})
+    if not isinstance(details, dict):
+        details = {}
+    entry = {
         "thesis_id": row.get("thesis_id", "unknown"),
         "config_changes": row.get("config_changes") or {},
         "outcome": row.get("validator_status", "unknown"),
         "mechanism_dimension": row.get("mechanism_dimension", ""),
-        "thesis_details": row.get("thesis_details", {}),
+        "thesis_details": details,
     }
+    proposal_label = row.get("proposal_label") or details.get("proposal_label")
+    if proposal_label:
+        entry["proposal_label"] = proposal_label
+    hypothesis = row.get("hypothesis") or details.get("hypothesis")
+    if hypothesis:
+        entry["hypothesis"] = hypothesis
+    return entry
 
 
 # ---------------------------------------------------------------------------
@@ -619,7 +629,17 @@ def _proposed_direction(thesis: ResearchThesis, prior: dict[str, Any]) -> str | 
 
 def _prior_direction(prior: dict[str, Any]) -> str | None:
     """Resolve prior's direction: text-only (no baseline available here)."""
-    return _b2_direction_of(str(prior.get("thesis_id") or ""))
+    details = _prior_thesis_details(prior)
+    return _b2_direction_of(
+        " ".join(
+            str(part or "")
+            for part in (
+                prior.get("thesis_id"),
+                prior.get("proposal_label") or details.get("proposal_label"),
+                prior.get("hypothesis") or details.get("hypothesis"),
+            )
+        )
+    )
 
 
 def _detect_direction_whipsaw(
@@ -675,21 +695,6 @@ def _detect_direction_whipsaw(
             ),
         )
     return None
-
-
-def _check_thesis_id_not_repeated(
-    thesis: ResearchThesis, prior_theses: list[dict[str, Any]]
-) -> None:
-    """L3 (legacy §18): the proposed thesis_id must not duplicate a prior one."""
-    prior_ids = {str(p.get("thesis_id") or "") for p in prior_theses}
-    if thesis.thesis_id in prior_ids:
-        raise ThesisValidationError(
-            f"thesis_id '{thesis.thesis_id}' has already been proposed in a prior "
-            f"round. Each thesis must have a unique thesis_id (do not repeat or "
-            f"resubmit prior names).",
-            rejection_code="structural_thesis_id_repeated",
-            evidence={"thesis_id": thesis.thesis_id},
-        )
 
 
 # Numeric tuning detector: same key, ratio within [1/_NEIGHBORING_RATIO,
@@ -1849,9 +1854,6 @@ def _validate_structural(
         raise ThesisValidationError(
             "Missing thesis_id", rejection_code="structural_missing_thesis_id"
         )
-    if prior_theses:
-        _check_thesis_id_not_repeated(thesis, prior_theses)
-
     if not thesis.hypothesis.strip():
         raise ThesisValidationError(
             "Missing hypothesis", rejection_code="structural_missing_hypothesis"
@@ -2121,10 +2123,6 @@ def _collect_inline_structural_failures(
                 summary="Missing thesis_id",
             )
         )
-    elif prior_theses:
-        failures.extend(
-            _collect_from_validator(lambda: _check_thesis_id_not_repeated(thesis, prior_theses))
-        )
 
     if not thesis.hypothesis.strip():
         failures.append(
@@ -2392,6 +2390,9 @@ def validate_thesis_dict(
     raw: dict,
     prior_theses: list[dict[str, Any]] | None = None,
     *,
+    research_round_id: str,
+    attempt_number: int,
+    assign_thesis_id: Callable[[str, int], str],
     tools_called: set[str] | None = None,
     require_analyst_evidence: bool = True,
     evidence_context: str | None = None,
@@ -2402,7 +2403,9 @@ def validate_thesis_dict(
     Use this when the conductor output is a plain dict.
     Raises ThesisValidationError or pydantic ValidationError.
     """
-    thesis = ResearchThesis.model_validate(normalize_thesis_payload(raw))
+    normalized = normalize_thesis_payload(dict(raw))
+    normalized["thesis_id"] = assign_thesis_id(research_round_id, attempt_number)
+    thesis = ResearchThesis.model_validate(normalized)
     return validate_research_thesis(
         thesis,
         prior_theses=prior_theses,

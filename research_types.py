@@ -139,7 +139,13 @@ MECHANISM_DIMENSIONS = CORE_MECHANISM_DIMENSIONS | {EMERGENT_MECHANISM_DIMENSION
 class ResearchThesis(BaseModel):
     """What the conductor produces. Research-grade, not just config changes."""
 
+    # assigned post-validation; LLM output must not pre-populate this
     thesis_id: str
+    proposal_label: str = Field(
+        default="",
+        max_length=40,
+        description="Optional LLM-supplied human label; never used as an identifier.",
+    )
     strategy_family: str
 
     hypothesis: str
@@ -297,7 +303,7 @@ class StructuredRejection(BaseModel):
 class ConductorResult:
     """Typed return from run_research_conductor.
 
-    The conductor returns one thesis directly (v3 prompt contract, thesis_id at top level).
+    The conductor returns one proposed thesis envelope; the system assigns thesis_id.
     status values: "ok" — thesis ready; "should_stop" — conductor decided to quit;
     "conductor_error" — timeout, parse failure, gate violation, or validation failure.
     """

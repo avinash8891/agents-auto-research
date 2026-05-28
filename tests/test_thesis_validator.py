@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from backtest_run_db import research_thesis_attempt_id
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import (
     ThesisValidationError,
@@ -14,6 +15,9 @@ from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
 def validate_thesis_dict(*args: object, **kwargs: object) -> object:
     kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    kwargs.setdefault("research_round_id", "job-test-round-1")
+    kwargs.setdefault("attempt_number", 1)
+    kwargs.setdefault("assign_thesis_id", research_thesis_attempt_id)
     return _validate_thesis_dict(*args, **kwargs)
 
 
@@ -295,7 +299,7 @@ def test_validate_engine_change_thesis_not_rejected_for_sentinel_overlap() -> No
 
     validated = validate_thesis_dict(thesis, prior_theses=prior)
 
-    assert validated.thesis_id == "close_confirmed_break_entry_gate"
+    assert validated.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_validate_thesis_rejects_metadata_keys_inside_config_changes() -> None:

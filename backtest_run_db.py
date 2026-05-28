@@ -24,6 +24,21 @@ from persistence_utils import (
 
 log = get_logger(__name__)
 
+
+def research_round_id(job_id: int, round_number: int) -> str:
+    """Lenient formatter mirroring main's #65 helper.
+
+    Coerces job_id / round_number to int but does NOT raise on
+    out-of-range values — call sites that want strict validation
+    (e.g. the DB write boundary in add_from_sqlite_fields) use the
+    canonical autoresearch_runtime_paths.research_round_id helper via
+    ``_build_research_round_id`` instead. Kept here for callers that
+    need a value even on partial state (research_conductor's pre-validate
+    thesis-id assignment, test fixtures with job=0, etc.).
+    """
+    return f"job-{int(job_id)}-round-{int(round_number)}"
+
+
 INVALID_RESULT_VERDICTS = frozenset(
     {
         "invalid_duplicate_result",
@@ -34,8 +49,8 @@ INVALID_RESULT_VERDICTS = frozenset(
 BACKTEST_RUNS_TABLE = "backtest_runs"
 
 
-def _research_thesis_attempt_id(research_round_id: str, attempt_number: int) -> str:
-    return f"{research_round_id}-attempt-{attempt_number}"
+def research_thesis_attempt_id(research_round_id: str, attempt_number: int) -> str:
+    return f"{research_round_id}-attempt-{int(attempt_number)}"
 
 
 def _coerce_metric_float(value: Any, *, default: float = 0.0) -> float:
@@ -302,7 +317,7 @@ class BacktestRunDB:
                 WHERE rowid = ?
                 """,
                 (
-                    _research_thesis_attempt_id(
+                    research_thesis_attempt_id(
                         row["research_round_id"], int(row["attempt_number"])
                     ),
                     row["rowid"],
@@ -672,6 +687,9 @@ class BacktestRunDB:
     def add_research_thesis_attempt(self, row: dict[str, Any]) -> None:
         research_round_id = row["research_round_id"]
         attempt_number = int(row["attempt_number"])
+        thesis_id = row.get("thesis_id") or research_thesis_attempt_id(
+            research_round_id, attempt_number
+        )
         with self._connect() as conn:
             conn.execute(
                 """
@@ -685,11 +703,11 @@ class BacktestRunDB:
                 (
                     row.get(
                         "thesis_attempt_id",
-                        _research_thesis_attempt_id(research_round_id, attempt_number),
+                        research_thesis_attempt_id(research_round_id, attempt_number),
                     ),
                     research_round_id,
                     attempt_number,
-                    row["thesis_id"],
+                    thesis_id,
                     row.get("strategy_family", ""),
                     json_dumps_strict(row.get("config_changes", {})),
                     row.get("validator_status", ""),
@@ -731,7 +749,7 @@ class BacktestRunDB:
                     (
                         r.get(
                             "thesis_attempt_id",
-                            _research_thesis_attempt_id(research_round_id, attempt_number),
+                            research_thesis_attempt_id(research_round_id, attempt_number),
                         ),
                         research_round_id,
                         attempt_number,

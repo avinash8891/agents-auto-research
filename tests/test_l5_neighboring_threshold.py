@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from backtest_run_db import research_thesis_attempt_id
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import ThesisValidationError
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
@@ -15,6 +16,9 @@ from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
 def validate_thesis_dict(*args: object, **kwargs: object) -> object:
     kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    kwargs.setdefault("research_round_id", "job-test-round-1")
+    kwargs.setdefault("attempt_number", 1)
+    kwargs.setdefault("assign_thesis_id", research_thesis_attempt_id)
     return _validate_thesis_dict(*args, **kwargs)
 
 
@@ -145,7 +149,7 @@ def test_validator_accepts_large_delta_on_same_key() -> None:
         )
     ]
     obj = validate_thesis_dict(raw, prior_theses=prior)
-    assert obj.thesis_id == "widen_gap_exclude"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_validator_does_not_fire_when_keys_differ() -> None:
@@ -161,7 +165,7 @@ def test_validator_does_not_fire_when_keys_differ() -> None:
         )
     ]
     obj = validate_thesis_dict(raw, prior_theses=prior)
-    assert obj.thesis_id == "different_key"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_validator_does_not_fire_for_non_numeric_values() -> None:
@@ -181,4 +185,4 @@ def test_validator_does_not_fire_for_non_numeric_values() -> None:
         )
     ]
     obj = validate_thesis_dict(raw, prior_theses=prior)
-    assert obj.thesis_id == "flag_change"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"

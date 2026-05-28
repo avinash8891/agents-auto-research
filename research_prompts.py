@@ -120,7 +120,8 @@ D2. If the same lever has been tested in both directions (tighten and loosen)
 
 OUTPUT
 Return ONE JSON object matching the thesis schema. Fields:
-  thesis_id              short stable identifier (must not repeat any prior round)
+  proposal_label         optional free-form handle, <=40 chars, not an identifier
+                         (do NOT emit thesis_id; the system assigns it)
   hypothesis             one-sentence claim
   mechanism              why this should work, in market terms
   mechanism_dimension    one of the known dimensions

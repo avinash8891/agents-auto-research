@@ -18,6 +18,7 @@ from unittest.mock import patch
 import pytest
 
 import thesis_validator
+from backtest_run_db import research_thesis_attempt_id
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import (
     ThesisValidationError,
@@ -34,6 +35,9 @@ def validate_stage_1(*args: object, **kwargs: object) -> object:
 
 def validate_thesis_dict(*args: object, **kwargs: object) -> object:
     kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    kwargs.setdefault("research_round_id", "job-test-round-1")
+    kwargs.setdefault("attempt_number", 1)
+    kwargs.setdefault("assign_thesis_id", research_thesis_attempt_id)
     return _validate_thesis_dict(*args, **kwargs)
 
 
@@ -168,12 +172,11 @@ def test_validate_stage_1_helpers_are_module_level_functions() -> None:
 # ── Structural section: at least one rejection in the namespace ──────────
 
 
-def test_structural_section_rejects_missing_thesis_id_with_prefixed_code() -> None:
+def test_structural_section_assigns_missing_llm_thesis_id() -> None:
     raw = _base_thesis()
     raw["thesis_id"] = ""
-    with pytest.raises(ThesisValidationError) as excinfo:
-        validate_thesis_dict(raw)
-    assert excinfo.value.rejection_code == "structural_missing_thesis_id"
+    validated = validate_thesis_dict(raw)
+    assert validated.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_structural_section_rejects_missing_mechanism_with_prefixed_code() -> None:
@@ -218,17 +221,15 @@ def test_thesis_quality_section_rejects_theme_cluster_fixation_with_prefixed_cod
     assert excinfo.value.rejection_code == "thesis_quality_theme_cluster_fixation"
 
 
-def test_structural_section_rejects_repeated_thesis_id_with_prefixed_code() -> None:
+def test_structural_section_ignores_repeated_llm_thesis_id() -> None:
     prior = [_prior("repeated_id", theme_keywords=["x"])]
     raw = _base_thesis("repeated_id")
     raw["theme_keywords"] = ["unrelated_topic"]
     raw["causal_cluster"] = "unrelated"
     raw["underexplored_dimensions_considered"] = ["portfolio_construction", "regime_conditioning"]
 
-    with pytest.raises(ThesisValidationError) as excinfo:
-        validate_thesis_dict(raw, prior_theses=prior)
-
-    assert excinfo.value.rejection_code == "structural_thesis_id_repeated"
+    validated = validate_thesis_dict(raw, prior_theses=prior)
+    assert validated.thesis_id == "job-test-round-1-attempt-1"
 
 
 # ── Config-validity section: prefixed codes ──────────────────────────────

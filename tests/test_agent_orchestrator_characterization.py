@@ -393,7 +393,7 @@ def test_run_single_agent_falls_back_to_raw_responses_for_research_agent(monkeyp
                                             "reasoning": "Valid thesis",
                                             "suggested_theses": [
                                                 {
-                                                    "thesis_id": "raw_response_fallback",
+                                                    "proposal_label": "raw-response-fallback",
                                                     "hypothesis": "narrow the entry window",
                                                     "mechanism": "Restrict entries to a narrower opening window.",
                                                     "mechanism_dimension": "entry_timing",
@@ -441,7 +441,8 @@ def test_run_single_agent_falls_back_to_raw_responses_for_research_agent(monkeyp
         )
     )
 
-    assert result["suggested_theses"][0]["thesis_id"] == "raw_response_fallback"
+    assert "thesis_id" not in result["suggested_theses"][0]
+    assert result["suggested_theses"][0]["proposal_label"] == "raw-response-fallback"
 
 
 def test_normalize_thesis_payload_maps_family_alias_to_strategy_family():

@@ -126,7 +126,7 @@ def write_state(state_path: Path, state: dict[str, Any]) -> None:
 # ── Results ────────────────────────────────────────────────────────
 
 
-def _coerce_job_to_int(job_value: Any) -> int:
+def coerce_job_to_int(job_value: Any) -> int:
     try:
         return int(job_value or 0)
     except (TypeError, ValueError):
@@ -148,7 +148,7 @@ def read_results(entries: list[dict[str, Any]]) -> list[BacktestResultRecord]:
                 timestamp=coerce_timestamp_to_iso8601_utc(entry.get("timestamp", 0))
                 or "1970-01-01T00:00:00+00:00",
                 asi=asi,
-                job=_coerce_job_to_int(entry.get("job")),
+                job=coerce_job_to_int(entry.get("job")),
             )
         )
     return results
@@ -208,7 +208,7 @@ def deduplicate_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not config:
             non_round.append(entry)
             continue
-        job = _coerce_job_to_int(entry.get("job"))
+        job = coerce_job_to_int(entry.get("job"))
         key = (job, config)
         if key not in config_entries:
             config_entries[key] = []

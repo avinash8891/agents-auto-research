@@ -2,7 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from thesis_validator import ThesisValidationError, validate_thesis_dict
+from backtest_run_db import research_thesis_attempt_id
+from thesis_validator import ThesisValidationError
+from thesis_validator import validate_thesis_dict as _validate_thesis_dict
+
+
+def validate_thesis_dict(*args: object, **kwargs: object) -> object:
+    kwargs.setdefault("research_round_id", "job-test-round-1")
+    kwargs.setdefault("attempt_number", 1)
+    kwargs.setdefault("assign_thesis_id", research_thesis_attempt_id)
+    return _validate_thesis_dict(*args, **kwargs)
 
 
 def _valid_thesis() -> dict:
@@ -69,7 +78,7 @@ def test_process_gate_passes_when_all_required_tools_called() -> None:
         _valid_thesis(),
         tools_called={"list_round_results", "web_search"},
     )
-    assert thesis.thesis_id == "ema-process-gate-v1"
+    assert thesis.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_process_gate_rejects_when_web_search_not_called() -> None:
@@ -123,4 +132,4 @@ def test_process_gate_passes_analyst_tool_requirement_when_analyze_trades_called
         require_analyst_tool=True,
     )
 
-    assert thesis.thesis_id == "ema-process-gate-v1"
+    assert thesis.thesis_id == "job-test-round-1-attempt-1"
