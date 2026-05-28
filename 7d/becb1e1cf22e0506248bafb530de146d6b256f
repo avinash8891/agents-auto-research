@@ -1,0 +1,33 @@
+tests/test_schema_additions.py
+  s_1dc1911c45a5a7::t_b190aae35a0ee6 13
+tests/test_l5_neighboring_threshold.py
+  s_1dc1911c45a5a7::t_b190aae35a0ee6 11
+tests/test_autoresearch_research.py
+  s_1dc1911c45a5a7::t_b190aae35a0ee6 1252
+tests/test_thesis_validator.py
+  s_1dc1911c45a5a7::t_b190aae35a0ee6 5
+tests/test_validator_stages.py
+  s_1dc1911c45a5a7::t_b190aae35a0ee6 12-14
+tests/test_stage1_rules.py
+  s_1dc1911c45a5a7::t_b190aae35a0ee6 11
+tests/test_stage1_rules_part2.py
+  s_1dc1911c45a5a7::t_b190aae35a0ee6 7
+tests/test_validator_subsections.py
+  s_1dc1911c45a5a7::t_b190aae35a0ee6 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7dbecb1e1cf22e0506248bafb530de146d6b256f",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
