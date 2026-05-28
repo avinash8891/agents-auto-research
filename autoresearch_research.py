@@ -36,6 +36,7 @@ from autoresearch_orchestration import (
 )
 from autoresearch_paths import resolve_config_path
 from autoresearch_planning import build_research_failure_state
+from autoresearch_runtime_paths import research_round_id as _build_research_round_id
 from autoresearch_runtime_paths import research_round_root
 from autoresearch_state import (
     BacktestResultRecord,
@@ -225,7 +226,10 @@ def log_research_round(
         job_id = int(state.get("job", 0))
     except (TypeError, ValueError):
         job_id = 0
-    research_round_id = f"job-{job_id}-round-{round_number}"
+    if job_id >= 1 and round_number >= 0:
+        research_round_id = _build_research_round_id(job_id, round_number)
+    else:
+        research_round_id = f"job-{job_id}-round-{round_number}"
     attempt_number = 1
     if outcome.startswith("rejected_attempt_"):
         try:

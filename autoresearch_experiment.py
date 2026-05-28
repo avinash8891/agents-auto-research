@@ -34,6 +34,7 @@ from autoresearch_logging import get_logger
 from autoresearch_paths import path_within_allowed_roots, resolve_config_path
 from autoresearch_planning import build_research_failure_state
 from autoresearch_runtime_paths import research_round_backtest_root
+from autoresearch_runtime_paths import research_round_id as _build_research_round_id
 from autoresearch_state import (
     read_state,
     write_state,
@@ -702,9 +703,13 @@ def _build_db_record(
         verdict_summary = _invalid_duplicate_result_summary(duplicate, details, runtime_config)
     code_commit = _executed_code_commit(controller, details)
     round_number = _coerce_research_round_number(state)
-    research_round_id = (
-        f"job-{state.get('job', 0)}-round-{round_number}" if round_number >= 0 else ""
-    )
+    _job_for_round = state.get("job", 0)
+    if round_number < 0:
+        research_round_id = ""
+    elif isinstance(_job_for_round, int) and _job_for_round >= 1:
+        research_round_id = _build_research_round_id(_job_for_round, round_number)
+    else:
+        research_round_id = f"job-{_job_for_round}-round-{round_number}"
     is_baseline = round_number == 0
     backtest_run_id = (
         f"{research_round_id}-backtest" if research_round_id else fallback_experiment_id
@@ -877,9 +882,13 @@ def _build_export_entry(
     identity = _resolve_identity(contract, config)
     run_id = f"job-{state.get('job', 0)}-run-{next_run}-{identity}"
     round_number = _coerce_research_round_number(state)
-    research_round_id = (
-        f"job-{state.get('job', 0)}-round-{round_number}" if round_number >= 0 else ""
-    )
+    _job_for_round = state.get("job", 0)
+    if round_number < 0:
+        research_round_id = ""
+    elif isinstance(_job_for_round, int) and _job_for_round >= 1:
+        research_round_id = _build_research_round_id(_job_for_round, round_number)
+    else:
+        research_round_id = f"job-{_job_for_round}-round-{round_number}"
     return {
         "type": "backtest_run",
         "run": next_run,

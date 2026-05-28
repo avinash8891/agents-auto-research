@@ -18,6 +18,19 @@ def job_research_root(root: Path, job: int) -> Path:
     return job_runtime_root(root, job) / "research"
 
 
+def research_round_id(job: int, round_number: int) -> str:
+    """Canonical id for a research round (= one backtest = one experiment).
+
+    Format: "job-{job}-round-{round_number}". Use everywhere a round id
+    is constructed — the literal string is duplicated across modules today.
+    """
+    if job < 1:
+        raise ValueError(f"job id must be >= 1; got {job}")
+    if round_number < 0:
+        raise ValueError(f"round number must be >= 0; got {round_number}")
+    return f"job-{job}-round-{round_number}"
+
+
 def research_round_root(root: Path, job: int, round_number: int) -> Path:
     if round_number < 0:
         raise ValueError(f"research round number must be >= 0; got {round_number}")
