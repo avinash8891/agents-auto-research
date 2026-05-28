@@ -136,6 +136,10 @@ LLM's.
 When the block is empty (first attempt of a round), the renderer emits no
 block at all — silence beats noise.
 
+This block is also the LLM-facing context for the optional
+`validator_challenge` escape hatch described in A4c. The challenge object is
+not part of `ResearchThesis` and does not belong in A4a's OUTPUT field list.
+
 ## 5. LLM-Facing Cleanliness Rule
 
 Runtime context blocks must contain facts the LLM can act on, not implementation

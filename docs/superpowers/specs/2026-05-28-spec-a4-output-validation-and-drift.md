@@ -108,6 +108,22 @@ All three conditional on `mechanism_dimension == "emergent"`.
 |---|---|---|
 | `validator_challenge` | No rule; accepts any object. Logged for human review only. | none |
 
+`validator_challenge` is a meta-field outside `ResearchThesis`, used only when
+the LLM believes a recent rejection was wrong. It has this shape:
+
+```json
+{
+  "challenged_round": 3,
+  "challenged_thesis_id": "job-1-round-3-attempt-2",
+  "challenged_rejection_code": "structural_other_alternatives_too_few",
+  "claim": "The 1-entry minimum should not apply when the rejected thesis already had a deepest_alternative with a resolving tiebreaker.",
+  "evidence": "The rejected payload included deepest_alternative.tiebreaker={kind: 'mechanism_dimension', value: 'signal_quality'} and no other unresolved references."
+}
+```
+
+Guidance: use sparingly. It is logged for human review and does not alter the
+validator's decision.
+
 ### 3.1.11 Notes For The Implementer
 
 - `prompts/conductor_output_rules.json` is generated from this section + §4.1's `predicate_kind` mapping. Every rule above maps to one or more `predicate_kind` rows in §4.1.
@@ -195,6 +211,18 @@ script `scripts/render_output_schema.py`. The script:
 
 The rendered files are checked into git for diff visibility. CI re-runs the
 regenerator and fails if the checked-in files are stale.
+
+## 5.1 Validation Fixtures
+
+The worked positive fixture lives at
+`tests/fixtures/conductor_prompt_worked_example.json`. The test suite asserts
+the fixture passes Pydantic validation, the live `validate_thesis_dict(...)`
+call, and every rule declared in `prompts/conductor_output_rules.json`.
+
+A negative-fixture directory `tests/fixtures/conductor_prompt_rejections/`
+holds one fixture per rejection code, each minimally violating one rule. Each
+negative fixture must trip exactly its named rejection code and no unrelated
+code.
 
 ## 6. Migration Items Owned Here
 
