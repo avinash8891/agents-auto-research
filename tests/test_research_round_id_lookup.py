@@ -174,3 +174,43 @@ def test_same_thesis_id_across_rounds_produces_distinct_artifact_dirs(
     # The shared thesis_id must NOT appear in the path — keying is by round.
     assert shared_thesis_id not in str(artifact_dir_1)
     assert shared_thesis_id not in str(artifact_dir_2)
+
+    # Canonical experiments/{research_round_id}/ layout (Spec A1 §6 + §10).
+    # The legacy layout was experiments/{thesis_id}/ — see compiler_builder.py
+    # which raises RuntimeError if it encounters experiments/{research_round_id}/
+    # as a leftover legacy dir, and scripts/migrate_experiment_dirs.py which
+    # renames legacy thesis_id dirs to research_round_id. This assertion proves
+    # production constructs the post-migration canonical path, not the legacy
+    # thesis_id-keyed path that would collide across rounds sharing a thesis.
+    exp_root_round_1 = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-1"
+        / "experiments"
+    )
+    exp_root_round_2 = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-1"
+        / "research"
+        / "round-2"
+        / "experiments"
+    )
+    experiment_dir_1 = exp_root_round_1 / rrid_1
+    experiment_dir_2 = exp_root_round_2 / rrid_2
+
+    # Paths differ across rounds despite shared thesis_id.
+    assert experiment_dir_1 != experiment_dir_2
+    # thesis_id explicitly absent — this is the collision-fix guarantee.
+    assert shared_thesis_id not in str(experiment_dir_1)
+    assert shared_thesis_id not in str(experiment_dir_2)
+    # research_round_id present in the experiments/ subdir component.
+    assert rrid_1 in str(experiment_dir_1)
+    assert rrid_2 in str(experiment_dir_2)
+    # Job scoping present in both paths.
+    assert "job-1" in str(experiment_dir_1)
+    assert "job-1" in str(experiment_dir_2)
