@@ -419,6 +419,37 @@ The current user prompt surfaces metrics + verdict + `previous_thesis` for the l
 **Interaction with §11.1 reflexion:** this is structured data, not LLM-summarized reflexion. Reflexion stays as-is (separate channel).
 **Cost:** ~50–300 tokens depending on rejection count. Reduces analyst calls and improves synthesis-turn quality.
 
+#### 5.8.4 Expand `previous_thesis` to surface load-bearing schema fields
+
+**Today:** `latest_thesis_details` (`research_memory.py:465`) returns 11 fields out of ~30 in the `ResearchThesis` schema (`research_types.py:139`). The conductor sees only ~37% of the prior round's structured reasoning.
+
+**Gap:** the missing fields include the ones the validator and the synthesis turn depend on most. After grading every field on "diagnostic value × forward-reasoning value" and inspecting real fixture values to confirm signal density, the **7 + 1 load-bearing fields** to add are:
+
+| Field | Value shape from fixtures | Why it matters next round |
+|---|---|---|
+| `mechanism_dimension` | one-token enum (`"signal_quality"` etc.) | Anchors landscape positioning |
+| `theme_keywords` | 2–3 short noun phrases | Cluster-fixation rule depends on this |
+| `causal_cluster` | human-phrased family (`"opening-session adverse selection"`) | Adds human framing complementary to `theme_keywords` |
+| `alternatives_considered` | list of `{mechanism, why_rejected ≥40 chars}`, ≥2 entries | The richest field of the lot — the prior conductor's pre-vetted alternatives that *did not get picked* are natural next candidates when the picked angle failed |
+| `prior_lever_outcomes` | list of `{prior_thesis_id, lever, direction_then, outcome, why_retry ≥40 chars}` | Direct anti-whipsaw substrate |
+| `source_code_verification` | rich string (e.g. `"strategies/ema/signals.py:detect_alert_candle is where the volatility floor on the alert candle would gate entries by ATR-percent."`) | Tells the next round exactly where the prior connected to code |
+| `thesis_role` | 3-state enum (`orthogonal_discovery` / `implementation_unlock` / `cleanup_validation_follow_up`) | Shapes what kind of next thesis makes sense |
+| `engine_change_request` (paired render of `requires_code_change` + `requested_primitives`) | `{requires: bool, primitives: ["volatility_regime_filter", ...]}` | Engine-starvation rule depends on this; only meaningful as a pair |
+
+**Deliberately not added** (verified against real fixtures + redundancy check):
+- `dimension_novelty`, `novel_connection` — defensive text from the prior; outcome supersedes
+- `dominant_cluster_overlap` — implied by landscape block counts
+- `underexplored_dimensions_considered` — stale by definition (landscape block has fresher data)
+- `evidence_citations` typed — empty today because the OUTPUT prompt doesn't ask for it (see §5.10 Refactor B; once populated, surface it instead of legacy `evidence`)
+- `required_diagnostics` — values are inconsistent (prose vs key); see §5.10 Refactor A for the producer-side fix
+
+**Change:**
+- Extend `latest_thesis_details` to also return the 8 fields above (loading from `thesis_details_json` in `research_thesis_attempts` table — already stored).
+- Render each as part of `previous_thesis` in the user prompt. Truncation budgets per field (mechanism_dimension/thesis_role/source_code_verification untruncated; alternatives_considered up to 4 entries each with ≤200-char `why_rejected`; prior_lever_outcomes up to 4 entries; `theme_keywords` full list).
+- For each field, if the stored value is empty or missing (legacy attempts), the field is omitted from the rendered block rather than emitting an empty placeholder.
+
+**Cost:** ~200–600 tokens per round depending on richness of the prior thesis. Removes a class of analyst calls that today ask "what alternatives did the prior consider?" or "what code did it touch?"
+
 ### 5.9 Tool-description edit in `research_prompts.py`
 
 The conductor's system prompt currently advertises `list_past_theses` / `get_past_thesis` / `list_experiment_results` / `get_experiment_result` as if they were the primary path to prior context. Once pre-flight pre-loads the top-K relevant priors in the user prompt, those tools become **follow-up tools**, not primary-context tools. Without an edit, the agent will sometimes call them redundantly, wasting tokens and round-trips.
@@ -432,9 +463,47 @@ This is a static reword. It does not change MCP wiring or `research_tools_mcp.py
 
 Test: a unit test on `_build_conductor_system_prompt` asserts the new wording is present, mentions "pre-loaded", and removes the impression that calling these tools is the agent's primary path to context.
 
+### 5.10 Refactor conductor OUTPUT schema to structured fields
+
+The `ResearchThesis` schema has two pairs of (legacy free-form, structured) fields. The OUTPUT block in `research_prompts.py` currently asks for the **legacy** form in each pair, leaving the structured forms empty. Schema-author comments in `research_types.py` explicitly say the structured forms were intended as the canonical machine contract — they're aspirational, not retired.
+
+Two refactors close this gap.
+
+#### 5.10.A Refactor — `required_diagnostics` → `required_diagnostic_specs`
+
+**Today:** OUTPUT prompt asks for `required_diagnostics: list[str]`. Real fixture values vary from descriptive sentences (`"Max_drawdown and pct_profitable_windows vs base"`) to terse keys (`"regime_breakdown"`). The downstream helper `diagnostic_contracts.build_required_diagnostic_specs` normalizes each string into a `DiagnosticRequirementSpec` — for prose strings, the result is a mangled key with the prose as `description`.
+
+**Change:**
+- **OUTPUT prompt edit (`research_prompts.py`):** replace the `required_diagnostics` field instruction with a structured `required_diagnostic_specs` field instruction. Each entry must be `{key: snake_case_str, surface: enum, description: str, payload_fields?: [str]}`. `key` MUST be either a registered diagnostic key (list provided inline in the prompt or referenced via tool) or a stable snake_case identifier the agent commits to.
+- **Helper update (`diagnostic_contracts.build_required_diagnostic_specs`):** when the conductor outputs structured specs directly, the helper uses them as-is. The prose-to-specs derivation path is retained as a fallback for legacy attempts read from the DB but is no longer the primary path.
+- **Validator update (`thesis_validator.py`):** any rule that today reads from `required_diagnostics` (prose) must be migrated to read from `required_diagnostic_specs` (e.g. `[spec.key for spec in required_diagnostic_specs]`). The full list of affected rules is enumerated during writing-plans by grepping for `required_diagnostics` in `thesis_validator.py`.
+
+#### 5.10.B Refactor — `evidence: list[str]` → `evidence_citations` (typed)
+
+**Today:** OUTPUT prompt asks for `evidence: list[str]`. The typed `evidence_citations` (with `source ∈ {web_search, analyst, source_code, experiment_result, memory}` and `citation`) exists in the schema but is empty in real outputs because the prompt doesn't ask for it. The schema comment says *"Validator requires at least one with source='web_search' AND one with source='analyst' (when applicable)"* — that rule is **aspirational, not yet enforced** (would silently pass today because the field is empty).
+
+**Change:**
+- **OUTPUT prompt edit (`research_prompts.py`):** replace the legacy `evidence` field instruction with `evidence_citations: list[{source, citation}]`. List the source enum values explicitly. Drop the legacy `evidence` from the schema instructions (the field remains in `ResearchThesis` for backward-compat on DB reads but is no longer requested).
+- **Validator rule (new):** activate the aspirational rule. When `evidence_citations` is provided, require at least one entry with `source="web_search"` AND at least one with `source="analyst"`. Hard reject on violation with code `structural_evidence_citations_coverage_insufficient`. Exception: when `latest_outcome` indicates no trades file was available (cold start, etc.), the `analyst` requirement is waived — matches the existing `no_trades_instruction` path in `research_conductor.py:162-168`.
+- **Legacy `evidence: list[str]` handling:** read-only for DB-loaded historical attempts. No new conductor output populates it.
+
+#### Blast radius and ordering
+
+These refactors touch three files: `research_prompts.py` (OUTPUT block), `thesis_validator.py` (rules that read these fields), and downstream consumers (`diagnostic_contracts.py` and any compiler-side code that reads diagnostics). All three must move together in the same PR.
+
+**Conflict with `prompt-variant-framework`:** the existing plan doc (`docs/superpowers/plans/2026-05-04-prompt-variant-framework.md`) anticipates registering multiple prompt variants on the conductor. These refactors edit the *default* variant. The variant-framework work, when it lands, should respect this updated default. Worth a heads-up in that plan's next revision, not a blocker.
+
+**Why we ship this with pre-flight rather than as its own spec:** §5.8.4 consumer-side surfacing (typed `evidence_citations`, structured `required_diagnostic_specs`) only delivers value if the producer side actually populates them. Splitting the refactor out would mean §5.8.4 falls back to legacy fields for an unknown amount of time. Bundling keeps the surfacing useful from day one.
+
+**Test surface:**
+- `_build_conductor_system_prompt` output asserts the new field instructions are present and the legacy ones are gone.
+- A captured-fixture conductor run produces a `ResearchThesis` whose `required_diagnostic_specs` and `evidence_citations` are non-empty.
+- Validator rejects a thesis whose `evidence_citations` lacks the required source coverage (with the cold-start waiver tested separately).
+- `build_required_diagnostic_specs` returns the structured input verbatim when provided (no normalization) and falls back to prose normalization only when structured input is empty.
+
 ## 6. Validator changes
 
-**No retires.** Two extensions of existing rules; one new field-level rule for the dedup override.
+**No retires.** Two extensions of existing rules (§6.1, §6.2); one new field-level rule for the dedup override (§6.3); rule migration + one new rule riding §5.10 schema refactor (§6.4–§6.5).
 
 ### 6.1 Extension: `prior_lever_outcomes` content check
 
@@ -460,7 +529,25 @@ Current state: `_validate_underexplored_dimensions` (line 1417) checks non-empty
 
 Already covered in §5.7. Rejection code `structural_dedup_override_invalid` when the override fails its content rules.
 
-### 6.4 Rules explicitly preserved unchanged
+### 6.4 Migration: read from structured `required_diagnostic_specs` instead of legacy `required_diagnostics`
+
+Rides §5.10.A. Any rule in `thesis_validator.py` that reads `required_diagnostics` (prose) is migrated to read `[spec.key for spec in required_diagnostic_specs]` (or the full spec where the description matters). The legacy field remains in the schema for backward-compat on DB-loaded historical attempts; validator rules running on new conductor outputs source from the structured field.
+
+- **Affected rules:** enumerated during writing-plans by grepping `required_diagnostics` in `thesis_validator.py`.
+- **Behavior change:** none for new outputs (the structured field is the canonical source). For old DB-loaded attempts, the legacy field is mirrored into a synthetic `required_diagnostic_specs` view via `build_required_diagnostic_specs` so rules see a consistent shape.
+- **Rejection codes:** unchanged.
+
+### 6.5 New rule: `evidence_citations` source coverage
+
+Activates the aspirational rule referenced in `research_types.py` and rides §5.10.B.
+
+- **Check:** when `evidence_citations` is non-empty, require ≥1 entry with `source="web_search"` AND ≥1 with `source="analyst"`.
+- **Cold-start waiver:** the `analyst` requirement is waived when `latest_outcome` indicates no trades file was available (matches the existing `no_trades_instruction` path in `research_conductor.py:162–168`). The `web_search` requirement is not waived.
+- **Severity:** hard reject.
+- **Rejection code:** `structural_evidence_citations_coverage_insufficient`.
+- **Evidence in rejection:** present sources, required sources, missing sources, waiver-applied flag.
+
+### 6.6 Rules explicitly preserved unchanged
 
 - `_validate_process` and `_REQUIRED_PROCESS_TOOLS` — unchanged.
 - `_check_thesis_id_not_repeated` — unchanged.
@@ -548,11 +635,13 @@ One PR, one deliverable, in this order:
 1. `preflight_recall.py` (with MMR + two-pass retrieval) + `preflight_synthesis_turn.py` modules with full test coverage.
 2. `BacktestRunDB.list_dimension_summary` + `list_killed_kept_pairs` + `list_round_attempts` helpers.
 3. `research_types.ResearchThesis.dedup_override_justification` field (Pydantic optional).
-4. `research_prompts.py` tool-description reword (§5.9).
-5. `autoresearch_research.py` `_resolve_conductor_inputs` enrichments (§5.8): runtime_config, diagnostics_summary, this_round_rejected_attempts attached to `latest_outcome`.
-6. `research_conductor.py` user-prompt augmentation (pre-flight blocks + new last-experiment blocks) + two-turn flow + dedup call site.
-7. `thesis_validator.py` two extensions (§6.1, §6.2) + dedup-override well-formedness rule (§6.3).
-8. End-to-end test against a real fixture DB; commit per CLAUDE.md verification rules.
+4. `research_memory.latest_thesis_details` expansion to surface the 7 + 1 load-bearing schema fields (§5.8.4).
+5. `research_prompts.py` two edits in one PR: tool-description reword (§5.9) + OUTPUT schema refactor for diagnostics and evidence (§5.10).
+6. `diagnostic_contracts.build_required_diagnostic_specs` update: prefer structured input, retain prose-derivation as legacy fallback (§5.10.A).
+7. `autoresearch_research.py` `_resolve_conductor_inputs` enrichments (§5.8): runtime_config, diagnostics_summary, this_round_rejected_attempts, expanded previous_thesis attached to `latest_outcome`.
+8. `research_conductor.py` user-prompt augmentation (pre-flight blocks + new last-experiment blocks + expanded previous_thesis render) + two-turn flow + dedup call site.
+9. `thesis_validator.py` two extensions (§6.1, §6.2) + dedup-override rule (§6.3) + diagnostic-spec migration (§6.4) + new evidence-citations coverage rule with cold-start waiver (§6.5).
+10. End-to-end test against a real fixture DB; commit per CLAUDE.md verification rules.
 
 No staged rollout flag. Behavior change is contained to thesis-creation rounds; cold-start path covers new families.
 
@@ -590,6 +679,11 @@ No staged rollout flag. Behavior change is contained to thesis-creation rounds; 
 - User prompt contains a `LATEST EXPERIMENT CONFIG (values used):` block with concrete key→value pairs from the prior round's `runtime_config` (§5.8.1).
 - User prompt contains a `LATEST EXPERIMENT DIAGNOSTICS (summary):` block with `event_counts`, `rejection_breakdown`, `trade_analysis`, `verdict` subfields when the diagnostics file is readable; block omitted with a `LATEST_DIAGNOSTICS_DEGRADED` log when not (§5.8.2).
 - User prompt contains a `THIS ROUND'S REJECTED ATTEMPTS (structured):` block listing rejected attempts of the most recent completed round of the current job — `attempt_number`, `validator_status`, `validation_failure_reason`, truncated `hypothesis`, `mechanism_dimension` (§5.8.3). Empty list when no rejections; block omitted in that case.
+- The rendered `previous_thesis` block in the user prompt contains the 7 + 1 expanded fields when populated (§5.8.4): `mechanism_dimension`, `theme_keywords`, `causal_cluster`, `alternatives_considered`, `prior_lever_outcomes`, `source_code_verification`, `thesis_role`, and a paired `engine_change_request` block. Verified by asserting that a fixture prior with non-trivial `alternatives_considered` produces a block containing one of its `why_rejected` substrings.
+- A fresh conductor run produces a `ResearchThesis` whose `required_diagnostic_specs` is non-empty and whose entries pass JSON-schema validation (`key` snake_case, `surface` ∈ enum). The legacy `required_diagnostics` field is empty for new outputs (§5.10.A).
+- A fresh conductor run produces a `ResearchThesis` whose `evidence_citations` contains at least one entry with `source="web_search"` and at least one with `source="analyst"` — unless the round is in cold-start path (no trades file), in which case the `analyst` requirement is waived (§5.10.B / §6.5).
+- A thesis with `evidence_citations` missing `web_search` coverage is rejected with `structural_evidence_citations_coverage_insufficient` (§6.5).
+- Pre-existing validator rules previously sourced from `required_diagnostics` (prose) now read from `required_diagnostic_specs` and produce the same rejection codes as before (§6.4).
 - Updated system-prompt tool description (§5.8) is detectable in `_build_conductor_system_prompt` output and references "pre-loaded".
 - A near-duplicate proposed thesis (paraphrased version of a known prior) is caught by dedup, with the matched `thesis_id` and similarity surfaced to the agent.
 - A thesis with a hallucinated `prior_lever_outcomes[].prior_thesis_id` is hard-rejected by the validator.
