@@ -397,6 +397,40 @@ def test_gate_structural_evidence_citations_need_web_and_analyst_sources() -> No
     _expect_rejection(thesis, None, "structural_evidence_citations_invalid")
 
 
+def test_gate_structural_evidence_citations_allow_experiment_result_when_no_trades() -> None:
+    thesis = _minimal_valid_thesis(
+        evidence_citations=[
+            EvidenceCitation(
+                source="web_search",
+                citation="Market microstructure literature links opening auctions with wider spreads.",
+            ),
+            EvidenceCitation(
+                source="experiment_result",
+                citation="latest experiment rejected before writing a trades artifact.",
+            ),
+        ]
+    )
+
+    validate_research_thesis(thesis, require_analyst_evidence=False)
+
+
+def test_gate_structural_evidence_citations_no_trades_still_requires_experiment_result() -> None:
+    thesis = _minimal_valid_thesis(
+        evidence_citations=[
+            EvidenceCitation(
+                source="web_search",
+                citation="Market microstructure literature links opening auctions with wider spreads.",
+            )
+        ]
+    )
+
+    with pytest.raises(ThesisValidationError) as excinfo:
+        validate_research_thesis(thesis, require_analyst_evidence=False)
+
+    assert excinfo.value.rejection_code == "structural_evidence_citations_invalid"
+    assert excinfo.value.evidence["missing_sources"] == ["experiment_result"]
+
+
 def test_gate_structural_source_code_verification_requires_real_file_and_symbol() -> None:
     thesis = _minimal_valid_thesis(
         source_code_verification=(

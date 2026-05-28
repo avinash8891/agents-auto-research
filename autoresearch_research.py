@@ -88,6 +88,7 @@ def _prepare_thesis_for_validation(
     prior_theses: list[dict[str, Any]] | None = None,
     allow_schema_only_code_change_fallback: bool = False,
     tools_called: frozenset[str] | set[str] | None = None,
+    require_analyst_evidence: bool = True,
 ):
     from compiler_pipeline import operationalize_thesis
     from thesis_validator import (
@@ -106,7 +107,10 @@ def _prepare_thesis_for_validation(
         raw_thesis = operationalized
     try:
         validated = validate_thesis_dict(
-            raw_thesis, prior_theses=prior_theses, tools_called=tools_called
+            raw_thesis,
+            prior_theses=prior_theses,
+            tools_called=tools_called,
+            require_analyst_evidence=require_analyst_evidence,
         )
     except ThesisValidationError:
         if not (allow_schema_only_code_change_fallback and raw_thesis.get("requires_code_change")):
@@ -760,6 +764,8 @@ def _try_one_validation_attempt(
     attempt: int,
     conductor_result: ConductorResult,
     prior_theses: Any,
+    *,
+    require_analyst_evidence: bool = True,
 ) -> tuple[dict[str, Any] | None, str | None, str]:
     """One pass of the conductor-validate-compile retry loop.
 
@@ -797,6 +803,7 @@ def _try_one_validation_attempt(
             strategy_family=controller.family.name,
             prior_theses=prior_theses,
             tools_called=tools_called,
+            require_analyst_evidence=require_analyst_evidence,
         )
         thesis_id = raw_thesis.get("thesis_id", "unknown")
         log.info(
@@ -1080,7 +1087,12 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         if terminal is not None:
             return terminal
         result, retry_feedback, failed_stage = _try_one_validation_attempt(
-            controller, research_round, attempt, conductor_result, prior_theses
+            controller,
+            research_round,
+            attempt,
+            conductor_result,
+            prior_theses,
+            require_analyst_evidence=bool(trades_file),
         )
         if result is not None:
             return result

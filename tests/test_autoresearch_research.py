@@ -622,6 +622,10 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
         "evidence_citations": [
             {"source": "web_search", "citation": "EMA smoothing reduces noisy signals."},
             {"source": "analyst", "citation": "Analyst found weak crosses cluster in losses."},
+            {
+                "source": "experiment_result",
+                "citation": "Latest experiment result showed weak-cross filtering needs research.",
+            },
         ],
         "source_code_verification": (
             "strategies/ema/signals.py:generate_signals_for_frame uses ema_length "
@@ -877,7 +881,7 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
         status = "needs_code"
         contract_id = "opening_range_gate"
 
-    def fake_validate(raw, prior_theses=None, tools_called=None):
+    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
         captured["validated_raw"] = dict(raw)
         return _Validated()
 
@@ -964,7 +968,7 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
 
     monkeypatch.setattr(
         "thesis_validator.validate_thesis_dict",
-        lambda raw, prior_theses=None, tools_called=None: _Validated(),
+        lambda raw, prior_theses=None, tools_called=None, **kwargs: _Validated(),
     )
     monkeypatch.setattr(
         "compiler_pipeline.compile_research_thesis",
@@ -1088,7 +1092,7 @@ def test_handle_needs_code_uses_full_validation_contract_before_compile(
     class _Validated:
         thesis_id = "buffered_trailing"
 
-    def fake_validate(raw, prior_theses=None, tools_called=None):
+    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
         captured["validated_raw"] = dict(raw)
         return _Validated()
 
@@ -1161,7 +1165,7 @@ def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_ch
         updated["config_changes"] = {"buffered_trailing_stop_rule": True}
         return updated
 
-    def fake_validate(raw, prior_theses=None, tools_called=None):
+    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
         captured["validated_raw"] = dict(raw)
         raise ThesisValidationError("Missing mechanism_dimension")
 

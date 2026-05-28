@@ -119,6 +119,9 @@ _MIN_ALTERNATIVES_CONSIDERED = 2
 _MIN_EXPECTED_EFFECTS = 2
 _MIN_EFFECT_RATIONALE_CHARS = 20
 _REQUIRED_EVIDENCE_SOURCES: Final[frozenset[str]] = frozenset({"web_search", "analyst"})
+_NO_TRADES_REQUIRED_EVIDENCE_SOURCES: Final[frozenset[str]] = frozenset(
+    {"web_search", "experiment_result"}
+)
 _EMERGENT_REQUIRED_FIELDS = (
     "why_existing_dimensions_do_not_fit",
     "mechanism_family_definition",
@@ -1673,7 +1676,9 @@ def _collect_source_code_verification_failures(thesis: ResearchThesis) -> list[B
     return failures
 
 
-def _collect_research_contract_failures(thesis: ResearchThesis) -> list[BehaviorSignal]:
+def _collect_research_contract_failures(
+    thesis: ResearchThesis, *, require_analyst_evidence: bool
+) -> list[BehaviorSignal]:
     failures: list[BehaviorSignal] = []
 
     if not thesis.evidence_strength:
@@ -1710,7 +1715,12 @@ def _collect_research_contract_failures(thesis: ResearchThesis) -> list[Behavior
     empty_citations = [
         citation.source for citation in thesis.evidence_citations if not citation.citation.strip()
     ]
-    missing_sources = sorted(_REQUIRED_EVIDENCE_SOURCES - sources)
+    required_sources = (
+        _REQUIRED_EVIDENCE_SOURCES
+        if require_analyst_evidence
+        else _NO_TRADES_REQUIRED_EVIDENCE_SOURCES
+    )
+    missing_sources = sorted(required_sources - sources)
     if missing_sources or empty_citations:
         failures.append(
             BehaviorSignal(
@@ -1718,12 +1728,15 @@ def _collect_research_contract_failures(thesis: ResearchThesis) -> list[Behavior
                 confidence=1.0,
                 severity="block",
                 summary=(
-                    "evidence_citations must include non-empty web_search and " "analyst citations"
+                    "evidence_citations must include non-empty "
+                    + ", ".join(sorted(required_sources))
+                    + " citations"
                 ),
                 evidence={
                     "missing_sources": missing_sources,
                     "empty_citation_sources": empty_citations,
                     "observed_sources": sorted(sources),
+                    "require_analyst_evidence": require_analyst_evidence,
                 },
             )
         )
@@ -2254,6 +2267,8 @@ def _collect_mechanical_config_validity_failures(thesis: ResearchThesis) -> list
 def _collect_mechanical_failures(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
+    *,
+    require_analyst_evidence: bool = True,
 ) -> list[BehaviorSignal]:
     failures = _collect_inline_structural_failures(thesis, prior_theses)
     failures.extend(
@@ -2267,7 +2282,12 @@ def _collect_mechanical_failures(
         )
     failures.extend(_collect_from_validator(lambda: _validate_thesis_specifies_change(thesis)))
     failures.extend(_collect_from_validator(lambda: _validate_expected_effects_present(thesis)))
-    failures.extend(_collect_research_contract_failures(thesis))
+    failures.extend(
+        _collect_research_contract_failures(
+            thesis,
+            require_analyst_evidence=require_analyst_evidence,
+        )
+    )
     for effect in thesis.expected_effects:
         if effect.metric in BUILTIN_METRICS:
             continue
@@ -2315,6 +2335,7 @@ def validate_research_thesis(
     prior_theses: list[dict[str, Any]] | None = None,
     *,
     tools_called: set[str] | None = None,
+    require_analyst_evidence: bool = True,
 ) -> ResearchThesis:
     """Validate a research thesis. Raises ThesisValidationError if invalid.
 
@@ -2324,7 +2345,11 @@ def validate_research_thesis(
     if tools_called is not None:
         _validate_process(tools_called)
     _run_behavioral_pass(thesis, prior_theses)
-    mechanical_failures = _collect_mechanical_failures(thesis, prior_theses)
+    mechanical_failures = _collect_mechanical_failures(
+        thesis,
+        prior_theses,
+        require_analyst_evidence=require_analyst_evidence,
+    )
     _raise_mechanical_batch(mechanical_failures)
     return thesis
 
@@ -2334,6 +2359,7 @@ def validate_thesis_dict(
     prior_theses: list[dict[str, Any]] | None = None,
     *,
     tools_called: set[str] | None = None,
+    require_analyst_evidence: bool = True,
 ) -> ResearchThesis:
     """Parse a raw dict into ResearchThesis and validate it.
 
@@ -2345,6 +2371,7 @@ def validate_thesis_dict(
         thesis,
         prior_theses=prior_theses,
         tools_called=tools_called,
+        require_analyst_evidence=require_analyst_evidence,
     )
 
 
@@ -2367,12 +2394,14 @@ def validate_stage_1(
     prior_theses: list[dict[str, Any]] | None = None,
     *,
     tools_called: set[str] | None = None,
+    require_analyst_evidence: bool = True,
 ) -> ResearchThesis:
     """Stage 1: pre-compile validator. Alias for `validate_research_thesis`."""
     return validate_research_thesis(
         thesis,
         prior_theses=prior_theses,
         tools_called=tools_called,
+        require_analyst_evidence=require_analyst_evidence,
     )
 
 
