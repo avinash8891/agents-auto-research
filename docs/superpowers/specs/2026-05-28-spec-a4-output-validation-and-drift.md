@@ -152,7 +152,8 @@ CREATE TABLE IF NOT EXISTS research_thesis_attempt_gate_results (
 );
 ```
 
-`status` is one of:
+`status` is the normalized audit outcome, not necessarily the native return
+value of the validator function. The full vocabulary is:
 
 - `pass` — gate evaluated and accepted the thesis.
 - `warn` — gate evaluated and emitted a non-blocking policy warning.
@@ -160,6 +161,24 @@ CREATE TABLE IF NOT EXISTS research_thesis_attempt_gate_results (
 - `skipped_not_applicable` — gate's condition did not apply to this thesis.
 - `not_evaluated` — gate was not reached because an earlier blocking gate ended
   validation.
+
+Not every gate can emit every status. Each gate's allowed statuses are derived
+from its tier and condition shape:
+
+| Gate type | Allowed statuses | Notes |
+|---|---|---|
+| Required process gate | `pass`, `reject`, `not_evaluated` | If the caller provides no observable attempt trace, the gate is not evaluated by that validation path; do not mark it `pass`. |
+| Conditional process provenance gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | Example: source-code read trace is `skipped_not_applicable` only when the thesis has no `source_code_verification` requirement in that validation path. |
+| Mechanical required-field / schema / enum gate | `pass`, `reject`, `not_evaluated` | No `warn`: deterministic shape failures either block or pass. |
+| Mechanical conditional/reference gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | Example: emergent-dimension gates skip for non-emergent theses; overlap-triggered `novel_connection` gates skip when overlap is below threshold. |
+| Research-policy hard gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | No `warn` unless the gate is explicitly defined as warning-capable in §3.3. |
+| Research-policy warning-capable gate | `pass`, `warn`, `reject`, `skipped_not_applicable`, `not_evaluated` | Use only for gates whose logic explicitly defines a non-blocking warning path, such as weak `confidence_distribution` before the hard-reject conditions are also met. |
+| Stage 2/compiler-contract gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | `not_evaluated` is valid when Stage 1 already rejected. |
+| Post-run evaluator gate | `pass`, `warn`, `reject`, `skipped_not_applicable`, `not_evaluated` | Only post-run gates with advisory semantics may use `warn`; metric/disqualifier failures normally use `reject`. |
+
+`not_evaluated` is never emitted by an individual gate. It is inserted by the
+validation orchestrator when a prior blocking gate prevents later gates from
+running. `warn` is never allowed for purely mechanical gates.
 
 `gate_id` must match the rule id from `prompts/conductor_output_rules.json` for
 generated/prompt-declared gates, or the explicit inventory name in §3.3 for
