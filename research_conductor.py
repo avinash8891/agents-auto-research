@@ -21,6 +21,7 @@ from research_memory import get_past_thesis as get_past_thesis_for_root
 from research_memory import get_round_result as get_round_result_for_root
 from research_memory import list_past_theses as list_past_theses_for_root
 from research_memory import list_round_results as list_round_results_for_root
+from research_memory import round_result_not_found_envelope
 from research_memory import save_research_finding, search_research_findings
 from research_paths import (
     _CONDUCTOR_MODEL,
@@ -647,13 +648,7 @@ async def run_research_conductor(
                     _ROOT, research_round_id=research_round_id, detail=detail
                 )
             except KeyError as exc:
-                output = json.dumps(
-                    {
-                        "status": "not_found",
-                        "research_round_id": research_round_id,
-                        "error": str(exc).strip("'\""),
-                    }
-                )
+                output = round_result_not_found_envelope(research_round_id, exc)
             parsed_status = "ok"
             error_type = ""
             try:

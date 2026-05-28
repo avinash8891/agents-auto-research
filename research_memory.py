@@ -755,3 +755,20 @@ def get_round_result(
             "full fields are required."
         )
     return json.dumps(payload, indent=2, default=str)
+
+
+def round_result_not_found_envelope(research_round_id: str, exc: KeyError) -> str:
+    """Wire-format envelope for tool wrappers catching get_round_result's KeyError.
+
+    Both the MCP wrapper and the conductor wrapper need to convert the raised
+    KeyError into a JSON status payload the agent loop can branch on. Centralized
+    here so a third caller can't drift the shape from research_conductor's
+    {"status": "not_found", ...} branch detection.
+    """
+    return json.dumps(
+        {
+            "status": "not_found",
+            "research_round_id": research_round_id,
+            "error": exc.args[0] if exc.args else str(exc),
+        }
+    )

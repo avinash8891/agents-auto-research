@@ -196,9 +196,7 @@ def test_build_missing_primitives_ignores_benign_backtest_artifacts(tmp_path: Pa
     legacy_dir.mkdir(parents=True, exist_ok=True)
     (legacy_dir / "trades.csv").write_text("ts,symbol,qty\n")
 
-    # No builder artifacts (thesis.json / contract.json) present, so the
-    # guardrail must not fire. The call should fall through to the normal
-    # missing-builder-request error path.
+    # No thesis.json/contract.json → guardrail must not fire; falls through.
     result = build_missing_primitives(
         tmp_path,
         "any-thesis-id",

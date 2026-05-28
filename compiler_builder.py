@@ -595,7 +595,8 @@ def _load_structured_thesis_artifacts(
                     f"found `experiments/{research_round_id}/` at {legacy_dir} "
                     "with thesis.json or contract.json; new layout uses "
                     "`builder_request/`. Move builder artifacts there; "
-                    "backtest artifacts in experiments/{rrid}/ are fine."
+                    f"backtest artifacts in experiments/{research_round_id}/ "
+                    "are fine."
                 )
     return None
 

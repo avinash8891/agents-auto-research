@@ -13,6 +13,7 @@ from research_memory import get_past_thesis as _get_past_thesis_for_root
 from research_memory import get_round_result as _get_round_result_for_root
 from research_memory import list_past_theses as _list_past_theses_for_root
 from research_memory import list_round_results as _list_round_results_for_root
+from research_memory import round_result_not_found_envelope
 from research_tools_schema import (
     AnalyzeTradesArgs,
     GetPastThesisArgs,
@@ -307,13 +308,7 @@ def _build_research_tools_mcp(
                 root, research_round_id=research_round_id, detail=detail
             )
         except KeyError as exc:
-            return json.dumps(
-                {
-                    "status": "not_found",
-                    "research_round_id": research_round_id,
-                    "error": str(exc).strip("'\""),
-                }
-            )
+            return round_result_not_found_envelope(research_round_id, exc)
 
     @mcp.tool()
     async def list_rejections(
