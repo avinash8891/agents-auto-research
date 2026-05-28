@@ -36,3 +36,12 @@ class TestResearchRoundIdOrEmpty:
 
     def test_none_job_returns_empty(self) -> None:
         assert research_round_id_or_empty(None, 1) == ""
+
+    def test_none_round_returns_empty(self) -> None:
+        assert research_round_id_or_empty(1, None) == ""
+
+    def test_non_int_round_returns_empty(self) -> None:
+        assert research_round_id_or_empty(1, "abc") == ""
+
+    def test_stringified_int_round_accepted(self) -> None:
+        assert research_round_id_or_empty(1, "5") == "job-1-round-5"

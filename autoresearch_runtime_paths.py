@@ -32,7 +32,7 @@ def research_round_id(job: int, round_number: int) -> str:
     return f"job-{job}-round-{round_number}"
 
 
-def research_round_id_or_empty(job: int | Any, round_number: int) -> str:
+def research_round_id_or_empty(job: int | Any, round_number: int | Any) -> str:
     """Best-effort round id; returns "" when inputs cannot produce a valid id.
 
     Use ONLY at boundaries where state may be partially populated
@@ -41,11 +41,12 @@ def research_round_id_or_empty(job: int | Any, round_number: int) -> str:
     """
     try:
         j = int(job)
+        r = int(round_number)
     except (TypeError, ValueError):
         return ""
-    if j < 1 or round_number < 0:
+    if j < 1 or r < 0:
         return ""
-    return research_round_id(j, round_number)
+    return research_round_id(j, r)
 
 
 def research_round_root(root: Path, job: int, round_number: int) -> Path:

@@ -36,7 +36,7 @@ from autoresearch_orchestration import (
 )
 from autoresearch_paths import resolve_config_path
 from autoresearch_planning import build_research_failure_state
-from autoresearch_runtime_paths import research_round_id_or_empty, research_round_root
+from autoresearch_runtime_paths import research_round_id, research_round_root
 from autoresearch_state import (
     BacktestResultRecord,
     read_state,
@@ -221,11 +221,20 @@ def log_research_round(
 
     db = BacktestRunDB(db_path)
     state = read_state(state_path)
+    raw_job = state.get("job")
     try:
-        job_id = int(state.get("job", 0))
-    except (TypeError, ValueError):
-        job_id = 0
-    round_id = research_round_id_or_empty(job_id, round_number)
+        job_id = int(raw_job)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"log_research_round requires a valid state['job']; "
+            f"got job={raw_job!r}, round_number={round_number!r}"
+        ) from exc
+    if job_id < 1 or round_number < 0:
+        raise ValueError(
+            f"log_research_round requires job>=1 and round_number>=0; "
+            f"got job={job_id}, round_number={round_number}"
+        )
+    round_id = research_round_id(job_id, round_number)
     attempt_number = 1
     if outcome.startswith("rejected_attempt_"):
         try:
