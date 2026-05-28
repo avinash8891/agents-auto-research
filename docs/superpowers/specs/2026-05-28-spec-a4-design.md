@@ -1,0 +1,1060 @@
+# Spec A4 — Conductor OUTPUT-Schema Instruction Overhaul
+
+**Date:** 2026-05-28
+**Status:** Design — ready for writing-plans
+**Reference:** `research_prompts.py:117–154` (current OUTPUT section being replaced); audit transcript 2026-05-28.
+**Depends on:** none — A4 documents the schema as-is plus targeted shape changes; ships in one PR.
+**Blocks:** none
+**Parallel with:** Spec A1 (terminology), Spec A2 (id provenance), Spec A3 (schema cleanup), Spec B (diagnostic specs).
+
+---
+
+## 1. Goal
+
+Rewrite the conductor's OUTPUT instruction section so the LLM produces
+well-formed, validator-compliant `ResearchThesis` JSON on the first attempt,
+every time. Eliminate the seven systemic problems identified in the
+2026-05-28 audit:
+
+1. **Schema-prompt drift** — OUTPUT documents ~17 of ~30 fields; ~9 validator-required fields are unnamed.
+2. **Shape ambiguity** — typed object fields are named but their inner shape is never shown.
+3. **DOCTRINE ↔ OUTPUT disconnect** — soft principles imply concrete typed-field contracts but never name the fields or shapes.
+4. **Inconsistent field-instruction quality** — some entries are one-liners, some paragraphs; no template.
+5. **Conditional requirements scattered** — emergent-dimension contract, novel-connection conditional, code-change conditional, etc.
+6. **No worked example** — prompt asks for "ONE JSON object matching the thesis schema" without showing one.
+7. **No drift detection** — schema, validator, and prompt drift independently.
+
+**Production evidence:** every conductor attempt on the VPS DBs (3 attempts
+across 2 jobs, 2026-05-09 to 2026-05-27) was rejected pre-flight; one
+rejection was `"validation_failed: expected exactly one thesis, got 0"` —
+consistent with the LLM not knowing the envelope shape it must produce.
+
+## 2. Non-goals
+
+- **Adding fields beyond what §4 lists.** §4.12's proposed additions are scoped here; nothing else.
+- **DOCTRINE rewrite.** DOCTRINE stays as soft principles. A4 adds cross-references; it doesn't rewrite the prose.
+- **Tool-list rewrite.** Spec A §5.10 handles this.
+- **Multi-LLM testing harness.** A4 is the prompt redesign; measuring its effect on conductor acceptance rate is downstream work.
+
+## 2.1 No backward compatibility — hard cutover
+
+The OUTPUT section is replaced wholesale in one PR. Old prose deleted, new
+template applied. No deprecation, no A/B rendering. Same policy as Spec
+A1/A2/A3.
+
+## 3. Per-field entry template
+
+Every field in the rewritten OUTPUT section follows this fixed template.
+Completeness is the contract — every slot is filled, "—" or "n/a" when
+deliberately absent.
+
+```
+- <field_name>
+    Type:        <Python type / typed object name>
+    Format:      <free-form prose | short label | enum value | typed list | typed object>
+    Source set:  <Free | One-of: [list] | Computed: <how>>
+    Token cap:   <~N tokens | unbounded | ≥M chars>
+    Required:    <Always | Conditional on <X> | Optional>
+    Meaning:     <one sentence — what this field captures>
+    Producer guidance: <one or two sentences — how the LLM should think about producing it>
+    Validator rule:    <what the validator hard-rejects | what gets soft-warned | none>
+    Example:     <concrete value the LLM can pattern-match against>
+```
+
+Typed-object fields get an additional `Inner shape:` slot rendering the typed
+class as `{key: type, ...}` so the LLM doesn't guess at nesting.
+
+## 3.1 Category ordering
+
+The §7 renderer emits §4 categories in this order. Fields referenced by other
+fields' typed contents render before fields referencing them, so the LLM
+emits targets before references:
+
+1. Core description (§4.2)
+2. Positioning + classification (§4.3)
+3. Novelty justification (§4.4)
+4. Evidence (§4.7)
+5. Predictions + falsification (§4.8)
+6. Alternatives + prior-work (§4.5)
+7. Emergent-dimension contract (§4.6)
+8. Config + engine (§4.9)
+9. Diagnostics + code grounding (§4.10)
+10. Optional escape hatch (§4.11)
+11. Proposed additions (§4.12)
+
+§4.1 Identity is omitted from LLM-facing OUTPUT and documented in a separate
+`## SYSTEM-INJECTED FIELDS (do not emit)` appendix above OUTPUT.
+
+`scripts/check_prompt_drift.py` asserts referenced-field categories render
+before referencing-field categories.
+
+## 3.2 ROUND CONTEXT block
+
+The system prompt renders a `## ROUND CONTEXT` block immediately above
+OUTPUT. Conditional `Required:` lines reference its keys literally.
+
+```
+## ROUND CONTEXT (computed by conductor before LLM call)
+
+Treat values below as ground truth. Reference them literally in conditional
+fields; do not paraphrase entries or invent counts not shown here.
+
+family_cluster_density: high | medium | low | none
+  (high = the family has >=3 prior theses sharing >=2 theme_keywords each
+   in the last 7 rounds; signals you must work harder on novelty)
+
+dimensions_already_explored: (capped at 12; tail summarized)
+  - signal_quality (4 attempts; 1 kept)
+  - regime_conditioning (1 attempt; killed)
+  (and N more)
+
+dimensions_unexplored: (capped at 12)
+  - portfolio_construction
+  - alpha_decay
+
+emergent_dimensions_in_use: (capped at 8)
+  - session_microstructure (introduced job-9-round-2)
+
+theme_keywords_in_use: (top 12 by attempt count; tail summarized)
+  - stop_distance (5)
+  - htf_gate (2)
+  (and N more)
+
+evidence_citations_available_ids: citation_1, citation_2, ...
+  (assigned positionally by the validator once you commit your
+   evidence_citations list; reference them in deepest_alternative.tiebreaker)
+```
+
+Size caps are hard. The renderer sorts each list by attempt count (or
+recency, for `emergent_dimensions_in_use`) and emits a `(and N more)` tail
+line so the LLM knows the view is truncated.
+
+## 3.3 Tiebreaker id strategy
+
+`evidence_citations` is rendered without an LLM-emitted `id` field. The
+validator assigns positional ids `citation_{i+1}` to each entry by array
+position. `deepest_alternative.tiebreaker.value` references these ids.
+No LLM bookkeeping.
+
+---
+
+## 4. Field-by-field OUTPUT entries
+
+23 schema fields + 4 proposed additions + 1 inner-shape extension.
+
+### 4.1 Identity — system-injected, omitted from OUTPUT
+
+`thesis_id` and `strategy_family` are documented in a `## SYSTEM-INJECTED
+FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
+
+- `thesis_id`: assigned by the validator as `f"{research_round_id}-attempt-{N}"`.
+- `strategy_family`: assigned by `_prepare_thesis_for_validation` at `autoresearch_research.py:100` based on the active job's family.
+
+### 4.2 Core description
+
+```
+- hypothesis
+    Type:        str
+    Format:      one sentence (no list, no bullets, no quotes)
+    Source set:  Free
+    Token cap:   ≤40 words / ≤300 chars
+    Required:    Always
+    Meaning:     The thesis's core claim — what should happen and under what conditions.
+    Producer guidance: State the mechanism, not the parameter. "Tighter stops
+                       reduce wick-stops in high-vol regimes" is a mechanism;
+                       "Set min_stop_distance_pct=0.0035" is a parameter tweak.
+    Validator rule:    Non-empty. Rejection code: structural_missing_hypothesis.
+    Example:     "Adding a 1-hour direction gate filters out counter-trend
+                  5-min pullbacks that drove the strategy's drawdown floor."
+```
+
+```
+- mechanism
+    Type:        str
+    Format:      1-3 sentences explaining the causal story
+    Source set:  Free
+    Token cap:   ≤150 words / ≤1000 chars
+    Required:    Always
+    Meaning:     Why the hypothesis should hold — the market-mechanics
+                 explanation, in trader/market terms.
+    Producer guidance: Describe order flow, regime behavior, or microstructure
+                       that explains WHY the hypothesis should be true. Avoid
+                       restating the hypothesis in different words; avoid
+                       academic prose and math-speak.
+    Validator rule:    Non-empty. Rejection code: structural_missing_mechanism.
+    Example:     "HTF direction acts as a regime overlay — when 1h trend is up,
+                  only long 5-min pullbacks fire. Reduces signal count by ~40%
+                  but surviving signals have better edge because they align
+                  with the dominant regime."
+```
+
+### 4.3 Positioning + classification
+
+```
+- mechanism_dimension
+    Type:        Literal[*MECHANISM_DIMENSIONS]
+    Format:      enum value
+    Source set:  One-of: entry_timing | exit_mechanism | signal_quality |
+                 regime_conditioning | portfolio_construction | risk_structure |
+                 market_microstructure | execution_costs | universe_selection |
+                 alternative_data | alpha_decay | emergent |
+                 <a value from emergent_dimensions_in_use in ROUND CONTEXT>
+    Token cap:   single label
+    Required:    Always
+    Meaning:     Which mechanism family this thesis belongs to.
+    Producer guidance: Pick the category that BEST fits the lever you're
+                       changing, not the category you wish to explore.
+    Validator rule:    Must be a member of MECHANISM_DIMENSIONS or a value
+                       in ROUND CONTEXT `emergent_dimensions_in_use`.
+                       Rejection code: structural_invalid_mechanism_dimension.
+    Example:     "regime_conditioning"
+```
+
+```
+- theme_keywords
+    Type:        list[str]
+    Format:      list of 2-3 short noun phrases (snake_case lowercase)
+    Source set:  Free; reuse from ROUND CONTEXT `theme_keywords_in_use` when applicable
+    Token cap:   2-3 entries, each ≤20 chars
+    Required:    Always (≥1 entry; ≥2 strongly recommended)
+    Meaning:     Lever-theme tokens identifying the specific knob this thesis
+                 touches. Used by cluster-fixation and direction-whipsaw rules.
+    Producer guidance: Reuse a token from ROUND CONTEXT `theme_keywords_in_use`
+                       if your thesis touches the same lever. Only invent a new
+                       token for a genuinely new lever.
+    Validator rule:    Non-empty list. Cluster-fixation gate uses these against
+                       prior rounds (max 3 of last 7 share a keyword).
+                       Rejection codes:
+                         structural_theme_keywords_empty
+                         thesis_quality_theme_cluster_fixation
+    Example:     ["htf_gate", "trend_overlay"]
+```
+
+```
+- thesis_role
+    Type:        Literal["orthogonal_discovery",
+                          "implementation_unlock",
+                          "cleanup_validation_follow_up"]
+    Format:      single enum label
+    Source set:  One-of (above)
+    Token cap:   single label
+    Required:    Always — empty value rejected.
+    Meaning:     Categorical commitment about what kind of work this thesis represents.
+                   - orthogonal_discovery: tests a lever family not previously
+                     explored or kept.
+                   - implementation_unlock: paves the way for future code-change theses.
+                   - cleanup_validation_follow_up: ties up loose ends from a
+                     prior round's contested finding.
+    Producer guidance: Pick the role that fits BEFORE you finalize the thesis;
+                       if you can't pick, your hypothesis is probably unfocused.
+    Validator rule:    Non-empty + Literal restricts to the three values.
+                       Rejection code: structural_thesis_role_required.
+    Example:     "orthogonal_discovery"
+```
+
+### 4.4 Novelty justification
+
+```
+- dimension_novelty
+    Type:        str
+    Format:      1-2 sentences
+    Source set:  Free, but MUST mention ≥1 specific mechanism_dimension name
+    Token cap:   ≥30 chars (hard), ≤80 words (soft)
+    Required:    Always
+    Meaning:     Why your chosen mechanism_dimension is structurally novel
+                 (not a parameter tweak of prior work in the same dimension).
+    Producer guidance: Reference the dimension name explicitly. "This moves
+                       from signal_quality (where prior trend_filter_v2 lived)
+                       to regime_conditioning — a different lever family."
+    Validator rule:    Length ≥30 chars + must mention ≥1 dimension name from
+                       MECHANISM_DIMENSIONS. Rejection codes:
+                         structural_dimension_novelty_too_short
+                         thesis_quality_dimension_novelty_not_grounded
+    Example:     "Moves from signal_quality threshold tweaking to
+                  regime_conditioning by overlaying a 1h direction gate."
+```
+
+```
+- novel_connection
+    Type:        str
+    Format:      1-2 sentences
+    Source set:  Free, but MUST mention a specific shared theme_keyword or
+                 a structurally-distinct mechanism_dimension
+    Token cap:   ≥120 chars (hard, when required)
+    Required:    Pre-emit warn: ROUND CONTEXT `family_cluster_density == "high"`
+                 signals you must work harder. Hard validator gate fires
+                 post-emit: required when ≥1 of your `theme_keywords` overlaps
+                 a prior thesis's keywords in the last 7 rounds.
+    Meaning:     Why this thesis is materially new despite keyword overlap
+                 with priors (not just another variation of the dominant cluster).
+    Producer guidance: Reference the shared keyword by name and explain the
+                       structural difference. Length without grounded mention
+                       is rejected.
+    Validator rule:    Conditional gate; length + grounded-mention.
+                       Rejection codes:
+                         structural_novel_connection_too_short
+                         thesis_quality_novel_connection_not_grounded
+    Example:     "Recasts stop_distance as a regime-detection signal rather
+                  than an absolute threshold — distinct from prior
+                  stop_distance theses that all tested fixed thresholds."
+```
+
+```
+- underexplored_dimensions_considered
+    Type:        list[str]
+    Format:      list of mechanism_dimension names
+    Source set:  One-of: entries from ROUND CONTEXT `dimensions_unexplored`
+    Token cap:   ≥1 entry when ROUND CONTEXT lists any; ≤4 entries
+    Required:    REQUIRED when ROUND CONTEXT `dimensions_unexplored` is non-empty.
+    Meaning:     The dimensions you considered as alternatives before picking
+                 the one you chose.
+    Producer guidance: Pick from ROUND CONTEXT `dimensions_unexplored`. Do NOT
+                       include the dimension you chose. A soft warn fires if
+                       the chosen dimension has more attempts than every
+                       dimension you list here.
+    Validator rule:    Each entry must be present in ROUND CONTEXT
+                       `dimensions_unexplored`. Rejection code:
+                       structural_underexplored_dimensions_invalid.
+    Example:     ["portfolio_construction", "regime_conditioning"]
+```
+
+### 4.5 Alternatives + prior-work
+
+```
+- deepest_alternative
+    Type:        DeepestAlternative
+    Format:      typed object — see Inner shape
+    Inner shape: DeepestAlternative = {
+                     mechanism:    str,
+                     why_rejected: str (≥40 chars),
+                     tiebreaker:   TiebreakerRef = {
+                         kind:  Literal["evidence_citation",
+                                        "disqualifier",
+                                        "mechanism_dimension"],
+                         value: str
+                     }
+                 }
+    Source set:  Free; tiebreaker.value constrained by lookup
+    Token cap:   ~80 words total
+    Required:    Always
+    Meaning:     The single near-equivalent mechanism you almost picked. The
+                 tiebreaker is a structured reference to the specific evidence,
+                 disqualifier, or dimension that made you pick the current
+                 hypothesis instead.
+    Producer guidance: Pick the alternative that, if you reversed the decision,
+                       would produce a roughly equally strong thesis. The
+                       tiebreaker must reference a target you committed to in
+                       this same thesis: a citation by id (`citation_N`, shown
+                       in ROUND CONTEXT `evidence_citations_available_ids` once
+                       you commit `evidence_citations`), OR a `disqualifiers[i].name`,
+                       OR a `mechanism_dimension` from the enum. The why_rejected
+                       prose can paraphrase; the tiebreaker must resolve by
+                       exact match.
+    Validator rule:    tiebreaker.value resolves by exact match against the
+                       referenced target. Rejection codes:
+                         structural_deepest_alternative_missing
+                         structural_deepest_alternative_tiebreaker_unresolved
+    Example:     {"mechanism": "ADX>30 entry filter",
+                  "why_rejected": "Too strict in low-vol regimes per round-3
+                                   analyst evidence (citation_2) — would
+                                   suppress signals where the HTF gate still
+                                   admits them.",
+                  "tiebreaker": {"kind": "evidence_citation",
+                                 "value": "citation_2"}}
+```
+
+```
+- other_alternatives
+    Type:        list[Alternative]
+    Format:      typed list — see Inner shape
+    Inner shape: Alternative = {
+                     mechanism:         str,
+                     why_rejected:      str (≥40 chars),
+                     lighter_tiebreaker: TiebreakerRef | None
+                 }
+    Source set:  Free
+    Token cap:   ≥1 entry; ≤4 entries
+    Required:    Always (≥1 entry)
+    Meaning:     Other rejected alternatives. lighter_tiebreaker is optional;
+                 populating it signals deeper vetting.
+    Producer guidance: Each entry is a DIFFERENT mechanism, not a parameter
+                       variant. why_rejected must be substantively distinct
+                       from deepest_alternative.why_rejected.
+    Validator rule:    ≥1 entry; each why_rejected ≥40 chars. When
+                       lighter_tiebreaker is non-null, it resolves by the
+                       same rules as deepest_alternative.tiebreaker.
+                       Rejection codes:
+                         structural_other_alternatives_too_few
+                         structural_lighter_tiebreaker_unresolved
+    Example:     [{"mechanism": "session-time entry filter",
+                   "why_rejected": "Proxy for the regime problem rather than
+                                    the structural fix; cannot distinguish
+                                    high-vol from low-vol opens within the
+                                    same session.",
+                   "lighter_tiebreaker": null}]
+```
+
+```
+- prior_lever_outcomes
+    Type:        list[PriorLeverOutcome]
+    Format:      typed list — see Inner shape
+    Inner shape: PriorLeverOutcome = {
+                     prior_thesis_id: str,          # must exist in ROUND CONTEXT snapshot
+                     lever:           str,          # the shared knob
+                     direction_then:  str,          # past-tense verb; see hints below
+                     outcome:         Literal[*PRIOR_LEVER_OUTCOMES],
+                                                    # kept | killed | inconclusive
+                     why_retry:       str (≥40 chars)
+                 }
+                 PRIOR_LEVER_DIRECTION_HINTS (guidance, not gate):
+                   tightened, loosened, extended, shortened,
+                   filtered_in, filtered_out, added, removed
+    Source set:  Free; prior_thesis_id constrained by snapshot
+    Token cap:   ≤4 entries
+    Required:    Required when the new thesis flips a lever direction tested
+                 by a prior (direction-whipsaw rule). Otherwise optional.
+    Meaning:     Citations of prior theses that tested the same lever in a
+                 different direction — and why this round is justified in
+                 retrying it.
+    Producer guidance: If you're flipping a lever direction, cite the prior
+                       with direction_then + outcome + why_retry. `direction_then`
+                       is free text; use a past-tense verb that names the change.
+    Validator rule:    Whipsaw rule + prior_thesis_id must exist in snapshot.
+                       Rejection codes:
+                         structural_direction_whipsaw_uncited
+                         structural_prior_lever_outcomes_unknown_id
+    Example:     [{"prior_thesis_id": "job-11-round-2-attempt-1",
+                   "lever": "stop_distance",
+                   "direction_then": "tightened",
+                   "outcome": "killed",
+                   "why_retry": "Prior tightened stop in calm regime; this
+                                 tightens only in high-vol regime — different
+                                 context entirely."}]
+```
+
+### 4.6 Emergent-dimension contract
+
+All three fields conditional on `mechanism_dimension == "emergent"`.
+
+```
+- new_dimension_name
+    Type:        str
+    Format:      snake_case short name (≤40 chars)
+    Source set:  Free; must not duplicate any entry in MECHANISM_DIMENSIONS
+                 or ROUND CONTEXT `emergent_dimensions_in_use`.
+    Token cap:   ≤40 chars
+    Required:    REQUIRED IF mechanism_dimension == "emergent"; otherwise OMIT.
+    Meaning:     The new dimension name you're introducing.
+    Producer guidance: Use only when no existing dimension fits. The name
+                       you pick can be cited by future theses, so make it
+                       semantically clear.
+    Validator rule:    When emergent: non-empty + not in MECHANISM_DIMENSIONS
+                       + not in emergent_dimensions_in_use. Rejection code:
+                       structural_new_dimension_name_duplicates_existing.
+    Example:     "session_microstructure"
+```
+
+```
+- why_existing_dimensions_do_not_fit
+    Type:        str
+    Format:      paragraph
+    Source set:  Free
+    Token cap:   ≥80 chars
+    Required:    REQUIRED IF mechanism_dimension == "emergent"; otherwise OMIT.
+    Meaning:     Why none of the core dimensions could host this thesis.
+    Producer guidance: Address each adjacent core dimension explicitly — name
+                       it and say why it doesn't fit.
+    Validator rule:    When emergent: non-empty. Rejection code:
+                       structural_emergent_thesis_malformed.
+    Example:     "Not market_microstructure because the mechanism is about
+                  session-edge behavior, not order-flow imbalance. Not
+                  regime_conditioning because regime is a longer-horizon
+                  concept; this is single-session-edge."
+```
+
+```
+- mechanism_family_definition
+    Type:        str
+    Format:      paragraph
+    Source set:  Free
+    Token cap:   ≥80 chars
+    Required:    REQUIRED IF mechanism_dimension == "emergent"; otherwise OMIT.
+    Meaning:     A short definition of what falls inside the new family.
+                 Future theses pattern-match against this.
+    Producer guidance: Write the definition as if onboarding a future research
+                       round. Abstract — describe the family, not this thesis.
+    Validator rule:    When emergent: non-empty. Rejection code:
+                       structural_emergent_thesis_malformed.
+    Example:     "Theses in this dimension address asymmetric liquidity or
+                  volatility behavior in a specific session window (open,
+                  close, lunch). Distinct from market_microstructure
+                  (order-flow level) and regime_conditioning (multi-session)."
+```
+
+### 4.7 Evidence
+
+```
+- evidence_citations
+    Type:        list[EvidenceCitation]
+    Format:      typed list — see Inner shape
+    Inner shape: EvidenceCitation = {
+                     source:   Literal[*EVIDENCE_SOURCES],
+                                  # web_search | analyst | source_code |
+                                  # experiment_result | memory
+                     citation: str (≥30 chars)
+                 }
+                 Diversity gate counts: web_search, analyst (subset of source enum).
+    Source set:  Free
+    Token cap:   ≥2 entries; ≤6 entries
+    Required:    Always; MUST contain ≥1 with source="web_search" AND
+                 ≥1 with source="analyst".
+    Meaning:     Typed evidence with required source diversity. The validator
+                 assigns positional ids `citation_1`, `citation_2`, ... to
+                 entries by array position; the LLM does not emit ids.
+    Producer guidance: ≥1 web_search entry citing external mechanism evidence
+                       (paper/source/precedent); ≥1 analyst entry citing
+                       trade-level evidence from the strategy's own diagnostics.
+                       Other source values are accepted but don't count toward
+                       the diversity gate.
+    Validator rule:    ≥1 web_search + ≥1 analyst; each citation ≥30 chars.
+                       Rejection codes:
+                         structural_evidence_citations_missing_source_diversity
+                         structural_evidence_citation_too_short
+    Example:     [{"source": "web_search",
+                   "citation": "Cont et al. on order-flow regime persistence (Journal of Finance, 2021)"},
+                  {"source": "analyst",
+                   "citation": "round-3 analyst found 62% of stops occur in counter-HTF-trend setups"}]
+```
+
+### 4.8 Predictions + falsification
+
+```
+- expected_effects
+    Type:        list[ExpectedEffect]
+    Format:      typed list — see Inner shape
+    Inner shape: ExpectedEffect = {
+                     metric:          str,
+                     direction:       Literal["increase", "decrease",
+                                              "increase_or_same",
+                                              "decrease_or_same",
+                                              "not_worse_than"],
+                     magnitude_range: tuple[float, float] | None,
+                     unit:            str | None,
+                     rationale:       str | None (≥40 chars when set)
+                 }
+    Source set:  Free
+    Token cap:   ≥2 entries; ≤6 entries
+    Required:    Always; non-empty. magnitude_range required when
+                 direction in {"increase", "decrease"}; unit required when
+                 magnitude_range is set.
+    Meaning:     Per-metric predictions of directional impact and quantitative
+                 bounds, used by the outcome evaluator to compare prediction
+                 vs actual.
+    Producer guidance: Predict ≥2 coupled metrics (one primary outcome, one
+                       mechanism check) so the mechanism is testable, not
+                       just lucky. Wide magnitude_range signals low confidence;
+                       tight range signals a specific quantitative claim.
+    Validator rule:    Non-empty list; magnitude_range[0] < magnitude_range[1]
+                       when set. Rejection codes:
+                         structural_missing_expected_effects
+                         structural_expected_effect_magnitude_missing
+                         structural_expected_effect_magnitude_range_invalid
+    Example:     [{"metric": "profit_factor", "direction": "increase",
+                   "magnitude_range": [0.05, 0.20], "unit": "ratio",
+                   "rationale": "HTF gate filters counter-trend chop, raising win rate by a measurable margin."},
+                  {"metric": "trade_count", "direction": "decrease_or_same",
+                   "magnitude_range": null, "unit": null,
+                   "rationale": "Filtering should reduce trades but not collapse frequency."}]
+```
+
+```
+- disqualifiers
+    Type:        list[Disqualifier]
+    Format:      typed list — see Inner shape
+    Inner shape: Disqualifier = {
+                     name:      str,
+                     condition: str,
+                     severity:  Literal["hard_fail", "soft_fail"],
+                     kind:      Literal["metric_threshold", "mechanism_evidence"]
+                 }
+    Source set:  Free
+    Token cap:   ≥2 entries; ≤5 entries
+    Required:    Always; ≥2 entries; ≥1 with kind="mechanism_evidence";
+                 ≥1 addressing overfit risk.
+    Meaning:     Stated conditions under which the thesis is wrong.
+                 Two sub-roles:
+                   (a) mechanism-evidence entries state the data pattern that
+                       would distinguish your mechanism from an alternative.
+                   (b) overfit entries pre-commit to a falsification threshold
+                       that catches per-symbol or regime-specific overfit.
+    Producer guidance: At least one disqualifier must test the MECHANISM
+                       (kind="mechanism_evidence"). At least one must address
+                       OVERFIT — either name it from OVERFIT_DISQUALIFIER_MARKERS
+                       (trade_count_collapse, cross_symbol_divergence,
+                       regime_specific_overfit) OR write a condition mentioning
+                       an overfit keyword (overfit, lookahead, regime_specific,
+                       symbol_specific, etc.).
+    Validator rule:    ≥2 entries; ≥1 with kind="mechanism_evidence";
+                       ≥1 entry whose `name` is in OVERFIT_DISQUALIFIER_MARKERS
+                       OR whose `condition` (lowercased) contains a member of
+                       OVERFIT_KEYWORD_HINTS. Rejection codes:
+                         structural_disqualifiers_too_few
+                         structural_disqualifiers_no_mechanism_evidence
+                         structural_disqualifiers_no_overfit_address
+    Example:     [{"name": "trade_count_collapse",
+                   "condition": "trade_count decreases by more than 50%",
+                   "severity": "hard_fail", "kind": "metric_threshold"},
+                  {"name": "no_regime_separation",
+                   "condition": "PF in up-regime not >1.2× PF in down-regime",
+                   "severity": "hard_fail", "kind": "mechanism_evidence"}]
+```
+
+### 4.9 Config + engine
+
+```
+- config_changes
+    Type:        dict[str, Any]
+    Format:      {key: new_value, ...} — runtime config keys to set
+    Source set:  Free (keys must exist in the strategy's runtime config schema)
+    Token cap:   ≤30 keys
+    Required:    Non-empty UNLESS requires_code_change=true.
+    Meaning:     The runtime-config knobs the proposer chose to set this round.
+    Producer guidance: Include EVERY key you want set. Keys you omit remain
+                       at family-baseline default — they do NOT inherit from
+                       prior rounds' configs.
+    Validator rule:    Non-empty OR requires_code_change=true. Rejection code:
+                       structural_config_changes_required.
+    Example:     {"min_stop_distance_pct": 0.0035, "gap_filter": true,
+                  "trail_after_r": 3.0}
+```
+
+```
+- requires_code_change
+    Type:        bool
+    Format:      true | false
+    Required:    Always (defaults to false if omitted)
+    Meaning:     Whether this thesis needs new engine primitives that no
+                 existing config key can express.
+    Producer guidance: Set true ONLY when no combination of existing config
+                       keys would test the mechanism. Most theses are false.
+    Validator rule:    When true, requested_primitives must be non-empty.
+                       Rejection code: structural_engine_change_request_malformed.
+    Example:     false
+```
+
+```
+- requested_primitives
+    Type:        list[str]
+    Format:      list of short snake_case primitive names
+    Source set:  Free
+    Token cap:   ≤5 entries, each ≤40 chars
+    Required:    REQUIRED IF requires_code_change=true; otherwise [].
+    Meaning:     Names of new primitive functions/filters the engine needs.
+    Producer guidance: Use the same name a strategy developer would pick:
+                       "close_confirmed_entry_gate", not "gate_for_my_thesis".
+    Validator rule:    Non-empty pair with requires_code_change=true. Same
+                       rejection code as above.
+    Example:     ["close_confirmed_entry_gate"]
+```
+
+### 4.10 Diagnostics + code grounding
+
+```
+- source_code_verification
+    Type:        str
+    Format:      "<repo path>:<function or symbol> — <explanation>"
+    Source set:  Free, but the cited path must have been read during this attempt.
+    Token cap:   ≥40 chars; ≤200 chars
+    Required:    Always
+    Meaning:     Citation of the strategy source file and function whose
+                 behavior the proposed change touches.
+    Producer guidance: Read the file using the source-reading tool BEFORE
+                       proposing this thesis. Cite the path you actually read;
+                       the validator checks the read trace.
+    Validator rule:    Length ≥40 chars; format matches "<path>:<symbol> — <prose>";
+                       the cited <path> must appear in the conductor's
+                       read-paths trace for this attempt. Rejection codes:
+                         structural_source_code_verification_too_short
+                         structural_source_code_verification_malformed
+                         process_source_code_not_read
+                         process_source_code_path_not_read
+    Example:     "strategies/ema/signals.py:apply_htf_gate — gate evaluated
+                  before stop_distance check; placing here ensures the
+                  filter sees the raw signal."
+```
+
+`required_diagnostic_specs` is omitted from OUTPUT until Spec B lands.
+Listed in `_PROMPT_OMITTED_FIELDS` with a comment naming Spec B as the
+unblocker.
+
+### 4.11 Optional escape hatch — meta-field, not part of `ResearchThesis` schema
+
+```
+- validator_challenge  (OPTIONAL)
+    Type:        object
+    Format:      {challenged_round, challenged_thesis_id,
+                  challenged_rejection_code, claim, evidence}
+    Token cap:   ≤200 words total
+    Required:    Optional. Use only if you believe a recent rejection was wrong.
+    Meaning:     A formal challenge to a prior rejection. Logged for human
+                 review; does NOT alter the validator's decision.
+    Producer guidance: Use sparingly. Most "the validator was wrong" feelings
+                       are actually "the validator surfaced something I didn't
+                       want to address."
+    Validator rule:    No rule — accepts any object.
+    Example:     {"challenged_round": 3,
+                  "challenged_thesis_id": "job-1-round-3-attempt-2",
+                  "challenged_rejection_code": "structural_other_alternatives_too_few",
+                  "claim": "The 1-entry minimum should not apply when…",
+                  "evidence": "…"}
+```
+
+### 4.12 Proposed schema additions
+
+Four new top-level fields. The inner-shape extension to `expected_effects`
+(`magnitude_range` + `unit`) is already inlined in §4.8.
+
+```
+- expected_runtime_signal
+    Type:        list[ExpectedRuntimeSignal]
+    Format:      typed list — see Inner shape
+    Inner shape: ExpectedRuntimeSignal = {
+                     event_path:        str,    # dotted path into strategy_diagnostics
+                     expected_relation: Literal["in_range", ">", ">=", "<", "<=", "=="],
+                     lower:             float | None,
+                     upper:             float | None,
+                     condition:         str     # when this signal should hold
+                 }
+                 lower set when relation in {">", ">=", "==", "in_range"};
+                 upper set when relation in {"<", "<=", "==", "in_range"}.
+    Source set:  Free; event_path must resolve in the prior round's diagnostics
+                 (paths shown in ROUND CONTEXT or upstream context block).
+    Token cap:   ≥1 entry recommended; ≤3 entries
+    Required:    Optional today; recommended.
+    Meaning:     Typed prediction of what should be observable in the
+                 runtime event stream if the mechanism is working. Distinct
+                 from `expected_effects` (which predicts headline metrics);
+                 this predicts the signal-flow behavior the mechanism implies.
+    Producer guidance: Predict the SIGNAL-FLOW behavior the mechanism implies,
+                       not the metric movement. A regime-overlay thesis should
+                       predict that trend_filter_rejected share rises in
+                       trending regimes — the outcome evaluator checks this
+                       directly against the diagnostics file.
+    Validator rule:    event_path must resolve in the prior round's diagnostics
+                       JSON. Rejection code:
+                       thesis_quality_expected_runtime_signal_path_unknown.
+    Example:     [{"event_path": "rejection_breakdown.trend_filter_rejected",
+                   "expected_relation": ">", "lower": 0.3, "upper": null,
+                   "condition": "in trending regimes"}]
+```
+
+```
+- mechanism_lineage
+    Type:        list[str]
+    Format:      list of ancestral thesis_ids (most recent ancestor first)
+    Source set:  Free; ids must be in the round snapshot's thesis_ids set
+    Token cap:   ≤5 entries
+    Required:    Optional. Empty list = greenfield thesis with no predecessor.
+    Meaning:     Explicit ancestry chain back to predecessor theses.
+                 Distinct from SIMILARITY (cluster overlap) — this is direct
+                 iteration.
+    Producer guidance: List ONLY the predecessor theses this thesis directly
+                       evolves from. Don't list theses that just happen to be
+                       in the same dimension.
+    Validator rule:    With ≥3 ancestors sharing the same mechanism_dimension,
+                       require either (a) a different mechanism_dimension on
+                       this thesis, or (b) a disqualifier with
+                       kind="mechanism_evidence" that distinguishes this thesis
+                       from the lineage's prior failures. Rejection code:
+                       thesis_quality_lineage_no_structural_pivot.
+    Example:     ["job-12-round-3-attempt-1", "job-12-round-1-attempt-2"]
+```
+
+```
+- if_this_fails_next_thesis
+    Type:        str
+    Format:      1-3 sentences
+    Source set:  Free
+    Token cap:   ≤300 chars
+    Required:    Always
+    Meaning:     Pre-commitment to the next thesis if THIS one is killed.
+                 Surfaces the conductor's implicit "what next" thinking.
+    Producer guidance: State the CONCRETE next thesis you would propose if
+                       this round's backtest kills the current thesis. Vague
+                       answers ("retry with different parameters") indicate
+                       shallow forward planning. Best when the next thesis
+                       references either a different mechanism_dimension or
+                       the mechanism named in deepest_alternative.
+    Validator rule:    Non-empty + must reference either a specific
+                       mechanism_dimension (different from current) OR the
+                       `mechanism` text of deepest_alternative. Rejection code:
+                       thesis_quality_next_thesis_not_pre_committed.
+    Example:     "If this kills, next round tests an ATR-based dynamic stop
+                  in signal_quality dimension (deepest_alternative.mechanism).
+                  Drops the regime-overlay theme; switches to volatility-
+                  responsive stops."
+```
+
+```
+- confidence_distribution
+    Type:        object — see Inner shape
+    Inner shape: ConfidenceDistribution = {
+                     data:        Literal["", "direct", "proxy", "mixed", "speculative"],
+                     literature:  Literal["", "direct", "proxy", "mixed", "speculative"],
+                     precedent:   Literal["", "direct", "proxy", "mixed", "speculative"]
+                 }
+    Source set:  One-of per dimension
+    Required:    Always
+    Meaning:     Per-dimension confidence rating:
+                   - data:       analyst-grade evidence in this strategy's diagnostics
+                   - literature: external sources via web_search
+                   - precedent:  prior accepted theses in this family or related families
+                 Per-dimension rating exposes the weakest link rather than
+                 letting a single self-rating average it out.
+    Producer guidance: Rate each dimension separately and honestly. A thesis
+                       with data="direct" + literature="speculative"
+                       + precedent="proxy" is honest — your strongest evidence
+                       is the data, weakest is literature. Avoid
+                       all-three="direct" — that signals motivated reasoning,
+                       not strong evidence.
+    Validator rule:    At least one of {data, literature} must be "direct" or
+                       "mixed". Theses with all three "" or "speculative"
+                       require an explicit disqualifier with
+                       kind="mechanism_evidence" acknowledging the weak-
+                       evidence basis. Rejection codes:
+                         thesis_quality_confidence_distribution_too_weak
+                         thesis_quality_confidence_distribution_missing
+    Example:     {"data": "direct", "literature": "speculative", "precedent": "proxy"}
+```
+
+---
+
+## 5. Worked example — fixture
+
+The worked example lives at `tests/fixtures/conductor_prompt_worked_example.json`
+(not inline). The test suite asserts the fixture passes Pydantic validation,
+the live `validate_thesis_dict(...)` call, and every rule declared in
+`prompts/conductor_output_rules.json` (§6.2).
+
+A negative-fixture directory `tests/fixtures/conductor_prompt_rejections/`
+holds one fixture per rejection code, each minimally violating one rule.
+
+Canonical positive fixture shape:
+
+```json
+{
+  "hypothesis": "Adding a 1-hour direction gate filters out counter-trend 5-min pullbacks that drove the strategy's drawdown floor.",
+  "mechanism": "HTF direction acts as a regime overlay — when 1h trend is up, only long 5-min pullbacks fire; when down, only shorts. Reduces signal count by ~40% but surviving signals have better edge.",
+  "mechanism_dimension": "regime_conditioning",
+  "theme_keywords": ["htf_gate", "trend_overlay"],
+  "thesis_role": "orthogonal_discovery",
+  "dimension_novelty": "Moves from signal_quality threshold tweaking (where prior trend_filter_v2 lived) to regime_conditioning by overlaying a 1h direction gate.",
+  "evidence_citations": [
+    {"source": "web_search", "citation": "Cont et al. on order-flow regime persistence (Journal of Finance, 2021)"},
+    {"source": "analyst",    "citation": "round-3 analyst found 62% of stops occur in counter-HTF-trend setups"}
+  ],
+  "expected_effects": [
+    {"metric": "profit_factor", "direction": "increase",
+     "magnitude_range": [0.05, 0.20], "unit": "ratio",
+     "rationale": "HTF gate filters counter-trend chop, raising win rate by a measurable margin."},
+    {"metric": "trade_count", "direction": "decrease_or_same",
+     "magnitude_range": null, "unit": null,
+     "rationale": "Filtering should reduce trades but not collapse frequency."}
+  ],
+  "disqualifiers": [
+    {"name": "trade_count_collapse", "condition": "trade_count decreases by more than 50%",
+     "severity": "hard_fail", "kind": "metric_threshold"},
+    {"name": "no_regime_separation",
+     "condition": "PF in up-regime not >1.2× PF in down-regime",
+     "severity": "hard_fail", "kind": "mechanism_evidence"}
+  ],
+  "deepest_alternative": {
+    "mechanism": "ADX>30 entry filter",
+    "why_rejected": "Too strict in low-vol regimes per round-3 analyst evidence (citation_2) — would suppress signals where the HTF gate still admits them, costing trade frequency without addressing the wick-only stop-out mechanism.",
+    "tiebreaker": {"kind": "evidence_citation", "value": "citation_2"}
+  },
+  "other_alternatives": [
+    {"mechanism": "session-time entry filter",
+     "why_rejected": "Proxy for the regime problem rather than the structural fix; cannot distinguish high-vol from low-vol opens within the same session.",
+     "lighter_tiebreaker": null}
+  ],
+  "prior_lever_outcomes": [],
+  "config_changes": {"use_htf_direction_gate": true, "htf_timeframe_minutes": 60},
+  "requires_code_change": false,
+  "requested_primitives": [],
+  "source_code_verification": "strategies/ema/signals.py:apply_htf_gate — gate evaluated before stop_distance check; placing here ensures filter sees raw signal.",
+  "if_this_fails_next_thesis": "If this kills, next round tests ADX>30 entry filter in signal_quality dimension (deepest_alternative.mechanism). Drops the regime-overlay theme; switches to threshold-based filtering.",
+  "confidence_distribution": {"data": "direct", "literature": "speculative", "precedent": "proxy"}
+}
+```
+
+## 6. DOCTRINE ↔ OUTPUT cross-references
+
+Each DOCTRINE principle that implies a field gets an inline `→ see <field>`
+reference. Each OUTPUT entry's `Producer guidance` line references the
+relevant DOCTRINE principle by name.
+
+DOCTRINE:
+```
+- Evidence: cite at least one external source (web_search) AND one trade-level
+  finding (analyst). External-only is theory; analyst-only is data dredging.
+  → see field `evidence_citations` in OUTPUT.
+```
+
+OUTPUT entry for `evidence_citations`:
+```
+Producer guidance: ≥1 web_search entry... (DOCTRINE: Evidence)
+```
+
+## 6.2 Structured rule metadata
+
+The §7 renderer emits, alongside `prompts/conductor_output_section.md`, a
+sidecar file `prompts/conductor_output_rules.json` with the shape:
+
+```json
+{
+  "schema_version": "<hash>",
+  "rules": [
+    {
+      "rule_id": "structural_deepest_alternative_tiebreaker_unresolved",
+      "field": "deepest_alternative.tiebreaker",
+      "predicate_kind": "tiebreaker_resolves",
+      "predicate_args": {
+        "ref_field": "deepest_alternative.tiebreaker",
+        "lookup_tables": ["evidence_citations", "disqualifiers", "MECHANISM_DIMENSIONS"]
+      },
+      "rejection_code": "structural_deepest_alternative_tiebreaker_unresolved"
+    }
+  ]
+}
+```
+
+A `prompt_rules.py` module exposes `iter_prompt_declared_rules() →
+Iterable[(rule_id, predicate_callable)]` by mapping `predicate_kind` values
+to predicate functions. The validator imports the same mapping. The test
+suite uses it directly to assert the positive fixture passes every predicate
+and each negative fixture trips exactly its one named rule.
+
+## 7. Programmatic regeneration
+
+The OUTPUT section is machine-generated from `ResearchThesis` by a new
+script `scripts/render_output_schema.py`. The script:
+
+- Introspects `ResearchThesis.model_fields`.
+- For each field, reads the Pydantic type annotation, default, `Field(description=...)`, and the validator rules referenced from `_FIELD_VALIDATION_RULES` (a dict mirroring `thesis_validator.py`).
+- Renders each field per §3's template in the §3.1 category order.
+- Renders `EVIDENCE_SOURCES` (full enum) and `EVIDENCE_SOURCES_FOR_DIVERSITY_GATE` (subset) as two distinct lines under `evidence_citations`.
+- Resolves enum/marker lists by importing constants (`PRIOR_LEVER_OUTCOMES`, `OVERFIT_DISQUALIFIER_MARKERS`, etc.) — never inlines them in prose.
+- Emits both `prompts/conductor_output_section.md` and `prompts/conductor_output_rules.json`.
+
+The rendered files are checked into git for diff visibility. CI re-runs the
+regenerator and fails if the checked-in files are stale.
+
+## 8. Drift detection
+
+Checks in CI via `scripts/check_prompt_drift.py`:
+
+1. **Schema-prompt parity** — every field in `ResearchThesis.model_fields` appears in `prompts/conductor_output_section.md` UNLESS in `_PROMPT_OMITTED_FIELDS` (`thesis_id`, `strategy_family`, `required_diagnostic_specs`).
+2. **Validator-prompt parity** — every rejection code emitted by `thesis_validator.py` is referenced in at least one field's `Validator rule:` line OR listed in `_PROMPT_OMITTED_RULES`.
+3. **Category ordering** — referenced-field categories render before referencing-field categories.
+4. **Constants in prompt** — every enum/marker list rendered in the prompt originates from a tuple/frozenset constant in `research_types.py`. No prose-only lists.
+5. **Schema-version stamp** — `_build_conductor_system_prompt` includes a `# Output schema version: <hash>` line, computed from `ResearchThesis.model_fields` + validator rule list + rules sidecar.
+6. **Rules sidecar freshness** — `prompts/conductor_output_rules.json` matches a fresh regeneration.
+
+## 9. Migration plan — single PR
+
+1. **`research_types.py`**:
+   - Add `TiebreakerRef`, `DeepestAlternative` models; extend `Alternative` with `lighter_tiebreaker: TiebreakerRef | None`.
+   - Add `deepest_alternative` and `other_alternatives` to `ResearchThesis`; delete `alternatives_considered`.
+   - Add `ExpectedRuntimeSignal`, `ConfidenceDistribution` models.
+   - Add fields `expected_runtime_signal`, `mechanism_lineage`, `if_this_fails_next_thesis`, `confidence_distribution`.
+   - Redesign `ExpectedEffect`: replace `threshold` with `magnitude_range: tuple[float,float] | None`; keep `unit`; conditional rules per §4.8.
+   - Add `EvidenceCitation.citation` `min_length=30`.
+   - Drop `""` from `thesis_role` Literal.
+   - Add constants: `PRIOR_LEVER_OUTCOMES`, `PRIOR_LEVER_DIRECTION_HINTS`, `EVIDENCE_SOURCES`, `EVIDENCE_SOURCES_FOR_DIVERSITY_GATE`, `OVERFIT_DISQUALIFIER_MARKERS`, `OVERFIT_KEYWORD_HINTS`. Import-time assertions pair each `Literal` with its constant.
+   - Add `Field(description=...)` to every field that lacks one.
+2. **`thesis_validator.py`**:
+   - Implement all new rejection codes listed in §4.
+   - Tiebreaker resolution against positional `citation_N` ids.
+   - Overfit gate: structural name match OR keyword match in condition.
+   - `source_code_verification` path-level gate using read-paths trace.
+   - Replace all hardcoded marker/enum prose-references with imports from the new constants.
+3. **`research_prompts.py`** (or `autoresearch_research.py`):
+   - Build the `## ROUND CONTEXT` block with size caps per §3.2.
+   - Add `## SYSTEM-INJECTED FIELDS (do not emit)` appendix for `thesis_id`, `strategy_family`.
+   - `_build_conductor_system_prompt` reads `prompts/conductor_output_section.md` and interpolates.
+   - DOCTRINE updated with §6 cross-references; old OUTPUT prose deleted.
+4. **`scripts/render_output_schema.py`** (new): per §7.
+5. **`prompts/conductor_output_section.md`** (new, generated): committed.
+6. **`prompts/conductor_output_rules.json`** (new, generated): committed.
+7. **`prompt_rules.py`** (new): exposes `iter_prompt_declared_rules()`.
+8. **`scripts/check_prompt_drift.py`** (extended): per §8.
+9. **`tests/fixtures/conductor_prompt_worked_example.json`** (new).
+10. **`tests/fixtures/conductor_prompt_rejections/`** (new dir): one fixture per rejection code, each marked with `__expected_rejection_code__`.
+11. **`tests/test_conductor_prompt_v3.py`**:
+    - Positive fixture passes Pydantic + live validator + every prompt-declared rule.
+    - Each negative fixture trips exactly its named rejection code.
+    - `## ROUND CONTEXT` present with all required keys.
+    - Category ordering verified.
+    - No hardcoded enum/marker strings in the rendered prompt.
+12. **Final grep gate** (PR not mergeable until all pass):
+    - `grep -n 'OUTPUT$' research_prompts.py` returns a single match (the interpolated section).
+    - `pytest tests/test_conductor_prompt_v3.py` passes.
+    - `python scripts/check_prompt_drift.py` exits 0.
+
+## 10. Risk and rollback
+
+**Risks:**
+
+- **Renderer bugs ship a malformed prompt.** Mitigation: §8 drift detection catches schema-prompt mismatches; the rendered prompt is checked in so git diff makes changes visible. The test suite runs `validate_thesis_dict` on the positive fixture — if it doesn't pass, CI fails.
+- **`ExpectedEffect.threshold` removal breaks downstream readers.** Mitigation: grep for `.threshold` on `ExpectedEffect` and migrate at the same time. Spec-B-style telemetry that read `threshold` migrates with it.
+- **Tiebreaker positional-id convention surprises the LLM at first.** Mitigation: ROUND CONTEXT explicitly renders `evidence_citations_available_ids` so the LLM sees the convention in use. Producer guidance on `deepest_alternative` references it.
+- **ROUND CONTEXT computation pulls validated data into the prompt path.** Mitigation: ROUND CONTEXT is a pure projection of snapshot state already used by the validator; same source of truth, new render target. Unit-test the projection independently.
+- **`source_code_verification` path-level gate too strict.** Mitigation: post-deploy success criteria includes monitoring rejections under `process_source_code_path_not_read`; non-zero rate after 4 weeks prompts a guidance revision, not gate removal.
+
+**Rollback:** revert the PR. `_build_conductor_system_prompt` returns to the
+hand-written prose. Lose drift detection, the worked example fixture, and
+the structural rule sidecar until re-landed.
+
+## 11. Success criteria
+
+**Coverage:**
+
+- Every key in `ResearchThesis.model_fields` appears in the rendered OUTPUT section OR in `_PROMPT_OMITTED_FIELDS`.
+- Every typed-object field has its `Inner shape:` slot populated.
+- Every conditional-requirement contract is named in the relevant `Required:` line and references a ROUND CONTEXT key the LLM can read.
+
+**Worked example:**
+
+- `tests/test_conductor_prompt_v3.py` asserts the positive fixture passes (a) Pydantic, (b) `validate_thesis_dict`, and (c) every rule in `prompts/conductor_output_rules.json`.
+- Each negative fixture trips exactly its named rejection code.
+
+**Drift detection:**
+
+- `scripts/check_prompt_drift.py` extended with schema-prompt parity, validator-prompt parity, category ordering, constants-in-prompt, schema-version-stamp, and rules-sidecar-freshness checks. CI gates on all.
+
+**Cross-references:**
+
+- Every DOCTRINE principle that implies a field has a `→ see <field>` cross-reference.
+- Every OUTPUT entry's `Producer guidance` has a `(DOCTRINE: <principle>)` back-reference where applicable.
+
+**Structural integrity:**
+
+- No hardcoded enum/marker string list appears in the rendered prompt.
+- `deepest_alternative` and `other_alternatives` replace `alternatives_considered` end-to-end.
+- `ExpectedEffect` schema is `{metric, direction, magnitude_range, unit, rationale}`; `threshold` removed; consumers migrated.
+
+**Production behavioral signal (post-deploy):**
+
+- Conductor's per-attempt acceptance rate (theses that pass Stage 1 validation on first emit) — pre-deploy baseline is 0 of 3 on VPS (100% rejection). Target: ≥50% acceptance on the first 10 attempts.
+- Secondary: ≥80% of accepted theses have `deepest_alternative.tiebreaker` resolving on first emit.
+- Secondary: ≥30% of accepted theses populate at least one `other_alternatives[i].lighter_tiebreaker`.
+- Secondary: 0 rejections with code `process_source_code_path_not_read` after 4 weeks; non-zero prompts a guidance revision.
+
+## 12. Out of scope
+
+- Schema-field additions beyond §4.12.
+- Validator rule additions beyond §4's `Validator rule:` lines.
+- DOCTRINE rewrites beyond §6 cross-references.
+- Multi-model prompt A/B testing.
+- Changing the JSON envelope key `suggested_theses`.
