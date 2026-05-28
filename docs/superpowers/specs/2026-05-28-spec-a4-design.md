@@ -568,8 +568,8 @@ FIELDS (do not emit)` appendix above OUTPUT. The system assigns both.
                    "direction_then": "tightened",
                    "outcome": "killed",
                    "why_retry": "Prior tightened stop in calm regime; this
-                                 tightens only in high-vol regime — different
-                                 context entirely."}]
+                                 loosens stop distance only in high-vol regime —
+                                 opposite direction, different context."}]
 ```
 
 ### 4.6 Emergent-dimension contract
@@ -794,7 +794,9 @@ All three fields conditional on `mechanism_dimension == "emergent"`.
     Meaning:     Names of new primitive functions/filters the engine needs.
     Producer guidance: Use the same name a strategy developer would pick:
                        "close_confirmed_entry_gate", not "gate_for_my_thesis".
-    Example:     ["close_confirmed_entry_gate"]
+    Example:     []
+                 # When requires_code_change=true, use:
+                 # ["close_confirmed_entry_gate"]
 ```
 
 ### 4.10 Diagnostics + code grounding
@@ -838,8 +840,8 @@ unblocker.
     Example:     {"challenged_round": 3,
                   "challenged_thesis_id": "job-1-round-3-attempt-2",
                   "challenged_rejection_code": "structural_other_alternatives_too_few",
-                  "claim": "The 1-entry minimum should not apply when…",
-                  "evidence": "…"}
+                  "claim": "The 1-entry minimum should not apply when the rejected thesis already had a deepest_alternative with a resolving tiebreaker.",
+                  "evidence": "The rejected payload included deepest_alternative.tiebreaker={kind: 'mechanism_dimension', value: 'signal_quality'} and no other unresolved references."}
 ```
 
 ### 4.12 Proposed schema additions
@@ -921,10 +923,10 @@ Four new top-level fields. The inner-shape extension to `expected_effects`
                        different mechanism_dimension OR the mechanism named
                        in deepest_alternative — this is a hard validator gate,
                        not a stylistic preference.
-    Example:     "If this kills, next round tests an ATR-based dynamic stop
-                  in signal_quality dimension (deepest_alternative.mechanism).
-                  Drops the regime-overlay theme; switches to volatility-
-                  responsive stops."
+    Example:     "If this kills, next round tests ADX>30 entry filter
+                  (deepest_alternative.mechanism) in signal_quality dimension.
+                  Drops the regime-overlay theme; switches to threshold-based
+                  filtering."
 ```
 
 ```
