@@ -407,10 +407,18 @@ class BacktestRunDB:
         job_id: int,
         primary_metric_name: str,
         primary_metric_value: float,
-        research_round_id: str = "",
-        research_round_number: int = -1,
+        research_round_id: str,
+        research_round_number: int,
         is_baseline: bool = False,
     ) -> None:
+        if not research_round_id:
+            raise ValueError(
+                "research_round_id is required — empty value would write a row "
+                "unfindable via get_by_research_round_id; callers must derive "
+                "it via autoresearch_runtime_paths.research_round_id(job, round)"
+            )
+        if research_round_number < 0:
+            raise ValueError(f"research_round_number must be >= 0; got {research_round_number}")
         merged_metrics = dict(metrics)
         merged_metrics.setdefault(primary_metric_name, primary_metric_value)
         if trade_analysis:
@@ -901,9 +909,7 @@ class BacktestRunDB:
                 return r
         return None
 
-    def get_by_research_round_id(
-        self, research_round_id: str
-    ) -> BacktestRunRecord | None:
+    def get_by_research_round_id(self, research_round_id: str) -> BacktestRunRecord | None:
         if not research_round_id:
             return None
         for r in self._load():

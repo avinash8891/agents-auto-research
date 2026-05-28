@@ -739,18 +739,14 @@ def get_round_result(
     if not matches:
         raise KeyError(f"no round result for {requested_id!r}")
     sorted_matches = _sort_round_records(matches, "latest")
-    result = (
-        _round_detail(sorted_matches[0])
-        if detail
-        else _round_compact_detail(sorted_matches[0])
-    )
+    chosen = sorted_matches[0]
+    result = _round_detail(chosen) if detail else _round_compact_detail(chosen)
     payload = {
         "status": "ok",
         "research_round_id": requested_id,
         "detail": "full" if detail else "compact",
         "full_result_available": not detail,
         "result": result,
-        "matching_results": [_round_index_entry(item) for item in sorted_matches],
     }
     if not detail:
         payload["instructions"] = (

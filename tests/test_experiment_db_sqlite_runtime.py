@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from autoresearch_runtime_paths import research_round_id
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
 
@@ -268,6 +270,60 @@ def test_add_from_sqlite_fields_persists_research_round_id(tmp_path: Path) -> No
     assert record.research_round_number == 4
     assert record.is_baseline is False
     assert record.thesis_id == "ema_breakout_v1"
+
+
+def test_add_from_sqlite_fields_rejects_empty_research_round_id(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    with pytest.raises(ValueError, match="research_round_id is required"):
+        db.add_from_sqlite_fields(
+            run_id="exp-no-rrid",
+            thesis_id="ema_breakout_v1",
+            config_path="runtime/jobs/job-2/research/round-4/selected_config.json",
+            runtime_config={"ema_length": 21},
+            code_commit="abc1234",
+            data_hash="data",
+            metrics={"profit_factor": 1.65},
+            trade_analysis={},
+            strategy_diagnostics={},
+            decision_status="keep",
+            verdict_status="accepted",
+            verdict_summary="accepted",
+            family="ema",
+            job_id=2,
+            primary_metric_name="profit_factor",
+            primary_metric_value=1.65,
+            research_round_id="",
+            research_round_number=4,
+        )
+
+
+def test_add_from_sqlite_fields_rejects_negative_round_number(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    with pytest.raises(ValueError, match="research_round_number must be >= 0"):
+        db.add_from_sqlite_fields(
+            run_id="exp-bad-round",
+            thesis_id="ema_breakout_v1",
+            config_path="runtime/jobs/job-2/research/round-4/selected_config.json",
+            runtime_config={"ema_length": 21},
+            code_commit="abc1234",
+            data_hash="data",
+            metrics={"profit_factor": 1.65},
+            trade_analysis={},
+            strategy_diagnostics={},
+            decision_status="keep",
+            verdict_status="accepted",
+            verdict_summary="accepted",
+            family="ema",
+            job_id=2,
+            primary_metric_name="profit_factor",
+            primary_metric_value=1.65,
+            research_round_id="job-2-round-x",
+            research_round_number=-1,
+        )
 
 
 def test_best_by_metric_ignores_malformed_metric_values(tmp_path: Path) -> None:

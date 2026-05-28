@@ -570,6 +570,8 @@ def test_resolve_next_action_builds_halted_thesis_when_resume_cannot_materialize
         job_id=3,
         primary_metric_name="profit_factor",
         primary_metric_value=1.0,
+        research_round_id="job-3-round-2",
+        research_round_number=2,
     )
     controller.write_state(
         {
