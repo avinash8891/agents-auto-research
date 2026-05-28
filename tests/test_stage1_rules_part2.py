@@ -156,6 +156,29 @@ def test_b2_rejects_when_thesis_flips_lever_direction_without_acknowledging() ->
         validate_thesis_dict(thesis, prior_theses=prior_theses)
 
 
+def test_b2_rejects_when_prior_mechanical_id_keeps_direction_in_proposal_label() -> None:
+    thesis = _base_thesis("widen_max_stop_distance_pct_cap_removal")
+    thesis["theme_keywords"] = ["stop_distance"]
+    thesis["hypothesis"] = "Widening max stop distance to capture larger setups."
+    thesis["prior_lever_outcomes"] = []
+
+    prior_theses = [
+        {
+            "thesis_id": "job-1-round-1-attempt-1",
+            "config_changes": {"some_other_key": 5},
+            "outcome": "compiled",
+            "mechanism_dimension": "signal_quality",
+            "thesis_details": {
+                "theme_keywords": ["stop_distance"],
+                "proposal_label": "tighten minimum stop distance floor",
+            },
+        }
+    ]
+
+    with pytest.raises(ThesisValidationError, match="(?i)whipsaw|direction|prior_lever_outcomes"):
+        validate_thesis_dict(thesis, prior_theses=prior_theses)
+
+
 def test_b2_accepts_lever_flip_when_prior_lever_outcomes_cites_prior() -> None:
     """Same flip as above, but with an explicit citation in prior_lever_outcomes."""
     thesis = _base_thesis("widen_max_stop_distance_pct_cap_removal_v2")

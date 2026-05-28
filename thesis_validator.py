@@ -365,12 +365,17 @@ def _validate_process(
 
 
 def _prior_thesis_entry(row: dict[str, Any]) -> dict[str, Any]:
+    details = row.get("thesis_details", {})
+    if not isinstance(details, dict):
+        details = {}
     return {
         "thesis_id": row.get("thesis_id", "unknown"),
         "config_changes": row.get("config_changes") or {},
         "outcome": row.get("validator_status", "unknown"),
         "mechanism_dimension": row.get("mechanism_dimension", ""),
-        "thesis_details": row.get("thesis_details", {}),
+        "proposal_label": row.get("proposal_label") or details.get("proposal_label", ""),
+        "hypothesis": row.get("hypothesis") or details.get("hypothesis", ""),
+        "thesis_details": details,
     }
 
 
@@ -617,7 +622,17 @@ def _proposed_direction(thesis: ResearchThesis, prior: dict[str, Any]) -> str | 
 
 def _prior_direction(prior: dict[str, Any]) -> str | None:
     """Resolve prior's direction: text-only (no baseline available here)."""
-    return _b2_direction_of(str(prior.get("thesis_id") or ""))
+    details = _prior_thesis_details(prior)
+    return _b2_direction_of(
+        " ".join(
+            str(part or "")
+            for part in (
+                prior.get("thesis_id"),
+                prior.get("proposal_label") or details.get("proposal_label"),
+                prior.get("hypothesis") or details.get("hypothesis"),
+            )
+        )
+    )
 
 
 def _detect_direction_whipsaw(

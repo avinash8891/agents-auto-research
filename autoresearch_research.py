@@ -711,6 +711,7 @@ def _log_validation_rejection(
             key: raw_thesis.get(key)
             for key in (
                 "dimension_novelty",
+                "proposal_label",
                 "evidence",
                 "expected_effects",
                 "disqualifiers",
@@ -979,13 +980,15 @@ def _dispatch_compiled_contract(
 
 
 def _exhausted_retries_result(
-    conductor_result: ConductorResult | None, rejection_feedback: str
+    conductor_result: ConductorResult | None,
+    rejection_feedback: str,
+    *,
+    research_round_id: str,
+    attempt_number: int,
 ) -> dict[str, Any]:
-    thesis_id = (
-        conductor_result.thesis.get("thesis_id", "unknown")
-        if conductor_result and conductor_result.thesis
-        else "unknown"
-    )
+    thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
+    thesis = dict(conductor_result.thesis or {}) if conductor_result else {}
+    thesis["thesis_id"] = thesis_id
     log.error(
         f"THESIS REJECTED after {MAX_VALIDATION_RETRIES} attempts: {rejection_feedback} "
         f"| hint=the conductor produced a thesis that failed validation 3 times in a row; "
@@ -1001,9 +1004,12 @@ def _exhausted_retries_result(
         "generated_config": None,
         "generated_config_needs_build": False,
         "generated_thesis_id": thesis_id,
+        "research_round_id": research_round_id,
+        "attempt_number": attempt_number,
         "validation_failure_reason": rejection_feedback,
         "should_stop": False,
         "reasoning": conductor_result.reasoning if conductor_result else "",
+        "thesis": thesis,
     }
 
 
@@ -1156,7 +1162,14 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             compile_failures += 1
         rejection_feedback = retry_feedback or rejection_feedback
         attempt += 1
-    return _exhausted_retries_result(conductor_result, rejection_feedback)
+    job_id = coerce_job_to_int(current_job)
+    research_round_id = make_research_round_id(job_id, research_round)
+    return _exhausted_retries_result(
+        conductor_result,
+        rejection_feedback,
+        research_round_id=research_round_id,
+        attempt_number=max(attempt, 1),
+    )
 
 
 def execute_research_one(controller: "AutoresearchController") -> dict[str, Any]:
@@ -1190,7 +1203,7 @@ def _attempt_context_from_result(state: dict[str, Any], result: dict[str, Any]) 
             pass
 
     job_id = coerce_job_to_int(state.get("job"))
-    halt_round = int(state.get("research_round", result.get("research_round", 0)) or 0)
+    halt_round = int(result.get("research_round", state.get("research_round", 0)) or 0)
     return make_research_round_id(job_id, halt_round), 1
 
 
@@ -1821,6 +1834,7 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
             key: thesis_meta.get(key)
             for key in (
                 "dimension_novelty",
+                "proposal_label",
                 "evidence",
                 "expected_effects",
                 "disqualifiers",

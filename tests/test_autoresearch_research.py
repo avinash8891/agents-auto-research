@@ -22,6 +22,8 @@ from autoresearch_research import (
     _check_parsed_for_terminal,  # keep for backward-compat callers in integration tests
 )
 from autoresearch_research import (
+    _attempt_context_from_result,
+    _exhausted_retries_result,
     _handle_needs_code,
     _handle_round_failure,
     _handle_success,
@@ -206,6 +208,34 @@ def test_check_parsed_for_terminal_defers_validation_failed_when_thesis_attached
     )
 
     assert result is None
+
+
+def test_exhausted_retries_result_preserves_assigned_attempt_id() -> None:
+    result = _exhausted_retries_result(
+        ConductorResult(
+            status="ok",
+            thesis={"proposal_label": "opening skip"},
+            reasoning="candidate failed validation",
+        ),
+        "mechanism evidence missing",
+        research_round_id="job-5-round-3",
+        attempt_number=3,
+    )
+
+    assert result["generated_thesis_id"] == "job-5-round-3-attempt-3"
+    assert result["research_round_id"] == "job-5-round-3"
+    assert result["attempt_number"] == 3
+    assert result["thesis"]["thesis_id"] == "job-5-round-3-attempt-3"
+
+
+def test_attempt_context_fallback_prefers_result_round_over_stale_state_round() -> None:
+    research_round_id, attempt_number = _attempt_context_from_result(
+        {"job": 5, "research_round": 2},
+        {"research_round": 3},
+    )
+
+    assert research_round_id == "job-5-round-3"
+    assert attempt_number == 1
 
 
 def test_log_research_round_persists_required_fields_to_sqlite(tmp_path: Path) -> None:
