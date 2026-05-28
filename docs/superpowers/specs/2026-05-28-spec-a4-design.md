@@ -44,25 +44,47 @@ A1/A2/A3.
 
 ## 3. Per-field entry template
 
-Every field in the rewritten OUTPUT section follows this fixed template.
-Completeness is the contract — every slot is filled, "—" or "n/a" when
-deliberately absent.
+Every field in the spec's §4 follows this fixed template.
 
 ```
 - <field_name>
     Type:        <Python type / typed object name>
     Format:      <free-form prose | short label | enum value | typed list | typed object>
-    Source set:  <Free | One-of: [list] | Computed: <how>>
+    Source set:  <Free | One-of: [list] | Constrained by <ROUND CONTEXT key>>
     Token cap:   <~N tokens | unbounded | ≥M chars>
     Required:    <Always | Conditional on <X> | Optional>
     Meaning:     <one sentence — what this field captures>
     Producer guidance: <one or two sentences — how the LLM should think about producing it>
-    Validator rule:    <what the validator hard-rejects | what gets soft-warned | none>
+    Validator rule:    <SPEC-ONLY — see §3.1 below>
     Example:     <concrete value the LLM can pattern-match against>
 ```
 
 Typed-object fields get an additional `Inner shape:` slot rendering the typed
 class as `{key: type, ...}` so the LLM doesn't guess at nesting.
+
+### 3.0.1 The `Validator rule:` slot does NOT render into the LLM prompt
+
+The `Validator rule:` slot exists in this spec for reviewers and implementers.
+It is the source of truth for what `thesis_validator.py` enforces and what
+rejection codes it emits. The §7 renderer **omits** it from
+`prompts/conductor_output_section.md`. Reasoning:
+
+- Token budget — rule lines don't change emit behavior in the desired direction.
+- Goodharting — showing the LLM "must mention ≥2 distinct dimension names"
+  produces theses that count dimension names rather than write real contrast.
+  Showing it "must resolve by exact match against a citation_N id" produces
+  theses that pick any id rather than the right one. Producer guidance
+  internalizes the rule's intent in LLM-actionable terms; the rule line
+  invites letter-of-the-law compliance.
+- Single source of truth — `prompts/conductor_output_rules.json` (§6.2) is
+  the rule surface the validator and tests import. The rendered prompt is
+  not a second copy.
+
+Rejection codes reach the LLM only when it has actually tripped one. A
+separate `## RECENT REJECTIONS` block above OUTPUT renders the last N codes
+the conductor saw for this thesis-attempt sequence (sourced from the
+existing `list_rejections` tool). The LLM sees codes that already happened,
+not the full rule catalogue.
 
 ## 3.1 Category ordering
 
@@ -192,6 +214,29 @@ citation_id_convention:
 Size caps are hard. The renderer sorts each list by attempt count (or
 recency, for `emergent_dimensions_in_use`) and emits a `(and N more)` tail
 line so the LLM knows the view is truncated.
+
+## 3.2.1 RECENT REJECTIONS block
+
+The conductor prompt also renders a `## RECENT REJECTIONS` block above OUTPUT
+when prior attempts in this thesis-attempt sequence were rejected. Source:
+the existing `list_rejections` MCP tool. Format:
+
+```
+## RECENT REJECTIONS (last 3 attempts in this round)
+
+attempt 1: structural_other_alternatives_too_few
+attempt 2: structural_deepest_alternative_tiebreaker_unresolved
+attempt 3: thesis_quality_dimension_novelty_not_grounded
+```
+
+This is the ONLY place rejection codes appear in the LLM-facing prompt. The
+LLM sees codes it has already tripped — not the full rule catalogue. Codes
+the LLM has not tripped do not get surfaced; the spec's rule catalogue lives
+in `prompts/conductor_output_rules.json` for the validator's use, not the
+LLM's.
+
+When the block is empty (first attempt of a round), the renderer emits no
+block at all — silence beats noise.
 
 ## 3.3 Tiebreaker id strategy
 
@@ -1181,11 +1226,11 @@ The OUTPUT section is machine-generated from `ResearchThesis` by a new
 script `scripts/render_output_schema.py`. The script:
 
 - Introspects `ResearchThesis.model_fields`.
-- For each field, reads the Pydantic type annotation, default, `Field(description=...)`, and the validator rules referenced from `_FIELD_VALIDATION_RULES` (a dict mirroring `thesis_validator.py`).
-- Renders each field per §3's template in the §3.1 category order.
+- For each field, reads the Pydantic type annotation, default, and `Field(description=...)`.
+- Renders each field per §3's template in the §3.1 category order, **omitting the `Validator rule:` slot** (per §3.0.1 — that slot exists only in the spec doc and the rules sidecar, not in the LLM-facing prompt).
 - Renders `EVIDENCE_SOURCES` (full enum) and `EVIDENCE_SOURCES_FOR_DIVERSITY_GATE` (subset) as two distinct lines under `evidence_citations`.
 - Resolves enum/marker lists by importing constants (`PRIOR_LEVER_OUTCOMES`, `OVERFIT_DISQUALIFIER_MARKERS`, etc.) — never inlines them in prose.
-- Emits both `prompts/conductor_output_section.md` and `prompts/conductor_output_rules.json`.
+- Emits `prompts/conductor_output_section.md` (LLM-facing) and `prompts/conductor_output_rules.json` (validator/test machine source). Rejection codes appear in the sidecar only.
 
 The rendered files are checked into git for diff visibility. CI re-runs the
 regenerator and fails if the checked-in files are stale.
@@ -1195,11 +1240,12 @@ regenerator and fails if the checked-in files are stale.
 Checks in CI via `scripts/check_prompt_drift.py`:
 
 1. **Schema-prompt parity** — every field in `ResearchThesis.model_fields` appears in `prompts/conductor_output_section.md` UNLESS in `_PROMPT_OMITTED_FIELDS` (`thesis_id`, `strategy_family`, `required_diagnostic_specs`).
-2. **Validator-prompt parity** — every rejection code emitted by `thesis_validator.py` is referenced in at least one field's `Validator rule:` line OR listed in `_PROMPT_OMITTED_RULES`.
-3. **Category ordering** — referenced-field categories render before referencing-field categories.
-4. **Constants in prompt** — every enum/marker list rendered in the prompt originates from a tuple/frozenset constant in `research_types.py`. No prose-only lists.
-5. **Schema-version stamp** — `_build_conductor_system_prompt` includes a `# Output schema version: <hash>` line, computed from `ResearchThesis.model_fields` + validator rule list + rules sidecar.
-6. **Rules sidecar freshness** — `prompts/conductor_output_rules.json` matches a fresh regeneration.
+2. **Validator-sidecar parity** — every rejection code emitted by `thesis_validator.py` (extracted by parsing `rejection_code=...` literals) is referenced in `prompts/conductor_output_rules.json` OR listed in `_PROMPT_OMITTED_RULES`. Rejection codes do not appear in the rendered prompt; the sidecar is the machine-readable source.
+3. **No rule leakage in prompt** — `prompts/conductor_output_section.md` must not contain `Validator rule:` lines or any `structural_*` / `thesis_quality_*` / `process_*` rejection code literals. CI greps for these and fails the build if found.
+4. **Category ordering** — referenced-field categories render before referencing-field categories.
+5. **Constants in prompt** — every enum/marker list rendered in the prompt originates from a tuple/frozenset constant in `research_types.py`. No prose-only lists.
+6. **Schema-version stamp** — `_build_conductor_system_prompt` includes a `# Output schema version: <hash>` line, computed from `ResearchThesis.model_fields` + rules sidecar hash.
+7. **Rules sidecar freshness** — `prompts/conductor_output_rules.json` matches a fresh regeneration.
 
 ## 9. Migration plan — single PR
 
@@ -1318,7 +1364,8 @@ the structural rule sidecar until re-landed.
 
 **Drift detection:**
 
-- `scripts/check_prompt_drift.py` extended with schema-prompt parity, validator-prompt parity, category ordering, constants-in-prompt, schema-version-stamp, and rules-sidecar-freshness checks. CI gates on all.
+- `scripts/check_prompt_drift.py` extended with schema-prompt parity, validator-sidecar parity, no-rule-leakage-in-prompt, category ordering, constants-in-prompt, schema-version-stamp, and rules-sidecar-freshness checks. CI gates on all.
+- Rejection codes never appear in the rendered LLM-facing prompt; they live in `prompts/conductor_output_rules.json` only.
 
 **Cross-references:**
 
