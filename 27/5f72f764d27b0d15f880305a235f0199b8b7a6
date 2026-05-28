@@ -1,0 +1,31 @@
+research_tools_mcp.py
+  s_0f03028903c317::t_4f2883f23f98d8 160-169
+  s_0f03028903c317::t_e3a81549a77803 228-230
+  s_0f03028903c317::t_abdb68eb8e4582 265-267
+  s_0f03028903c317::t_be4cd2b5e85e00 283-285
+  s_0f03028903c317::t_7e600484019722 359-361
+  s_0f03028903c317::t_bcb21f1b1ef7f5 253-255
+  s_0f03028903c317::t_aaa59b9a8db028 336-338
+  s_0f03028903c317::t_2e628a636ff6af 205-207
+  s_0f03028903c317::t_5718c6f43a1024 414-415
+  s_0f03028903c317::t_bf49359076d8d4 113-115
+  s_0f03028903c317::t_27b71bfdfb044a 133-135
+  s_0f03028903c317::t_ac438082b0a457 307-313
+  s_0f03028903c317::t_eb7edd5f561f62 243-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "275f72f764d27b0d15f880305a235f0199b8b7a6",
+  "prompts": {},
+  "sessions": {
+    "s_0f03028903c317": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "120fd87e-e766-437f-b6ab-cb4825eafbf0",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
