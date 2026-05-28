@@ -1,0 +1,22 @@
+vps_runner.py
+  s_1dc1911c45a5a7::t_9b5d4004c62c6b 454-457,461-462
+  s_1dc1911c45a5a7::t_ec7373c6c3ad48 469-470
+tests/test_vps_runner_config.py
+  s_1dc1911c45a5a7::t_2f27a01b336f7e 472-474
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b1e4736f5a5a957eba5d1b7134eadcd514c2db81",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
