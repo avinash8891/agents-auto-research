@@ -1,0 +1,15 @@
+tests/test_research_tools_schema.py
+  ai_agent 202,216
+research_tools_mcp.py
+  ai_agent 272,275,281,283,301,304
+research_tools_schema.py
+  ai_agent 81
+tests/test_research_tools_mcp.py
+  ai_agent 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "dbbc0d7ffe01b2ba9013d4431aa44645f834e40a",
+  "prompts": {}
+}
