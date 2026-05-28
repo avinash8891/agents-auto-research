@@ -354,7 +354,7 @@ def queue_variants(
     primary_contract: Any,  # BacktestContract
     baseline_config: dict[str, Any],
     *,
-    experiments_dir: Path | None = None,
+    builder_requests_dir: Path | None = None,
     job: int | None = None,
     created_for_commit: str = "",
 ) -> None:

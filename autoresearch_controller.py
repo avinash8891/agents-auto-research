@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 # ── Module-function backing store ───────────────────────────────────────────
-# The _artifacts_* and _experiment_* aliases below are the module-level
+# The _artifacts_* and _round_* aliases below are the module-level
 # implementations for AutoresearchController instance methods defined later in
 # this file. They are NOT wrapper-only renames: they adapt module functions
 # (which take explicit path/root parameters) to instance methods (which read
@@ -21,20 +21,20 @@ from autoresearch_artifacts import (
 )
 from autoresearch_artifacts import read_research_artifacts as _artifacts_read_research_artifacts
 from autoresearch_constants import PREPARE_RESULT_MARKER
-from autoresearch_experiment import artifact_dir_for as _experiment_artifact_dir_for
-from autoresearch_experiment import derive_trade_analysis as _experiment_derive_trade_analysis
-from autoresearch_experiment import evaluate_metric as _experiment_evaluate_metric
-from autoresearch_experiment import log_experiment_result as _experiment_log_experiment_result
-from autoresearch_experiment import parse_benchmark_details as _experiment_parse_benchmark_details
+from autoresearch_experiment import artifact_dir_for as _round_artifact_dir_for
+from autoresearch_experiment import derive_trade_analysis as _round_derive_trade_analysis
+from autoresearch_experiment import evaluate_metric as _round_evaluate_metric
+from autoresearch_experiment import log_experiment_result as _round_log_experiment_result
+from autoresearch_experiment import parse_benchmark_details as _round_parse_benchmark_details
 from autoresearch_experiment import (
-    parse_benchmark_details_legacy as _experiment_parse_benchmark_details_legacy,
+    parse_benchmark_details_legacy as _round_parse_benchmark_details_legacy,
 )
-from autoresearch_experiment import parse_metric as _experiment_parse_metric
-from autoresearch_experiment import parse_result_json as _experiment_parse_result_json
-from autoresearch_experiment import run_command as _experiment_run_command
-from autoresearch_experiment import run_experiment as _experiment_run_experiment
+from autoresearch_experiment import parse_metric as _round_parse_metric
+from autoresearch_experiment import parse_result_json as _round_parse_result_json
+from autoresearch_experiment import run_command as _round_run_command
+from autoresearch_experiment import run_experiment as _round_run_experiment
 from autoresearch_experiment import (
-    sanitize_duplicate_entries as _experiment_sanitize_duplicate_entries,
+    sanitize_duplicate_entries as _round_sanitize_duplicate_entries,
 )
 from autoresearch_logging import get_logger
 from autoresearch_orchestration import (
@@ -216,7 +216,7 @@ def _is_blocked_research_required_resume_state(state: dict[str, Any]) -> bool:
     return bool(_RESEARCH_BLOCKER_KINDS & _blocker_kinds(state))
 
 
-def _is_blocked_failed_experiment_resume_state(state: dict[str, Any]) -> bool:
+def _is_blocked_failed_round_resume_state(state: dict[str, Any]) -> bool:
     if state.get("state") != "blocked":
         return False
     next_action = state.get("next_action")
@@ -380,7 +380,7 @@ def normalize_controller_launch_state(
     resume_builder_running = _is_builder_running_resume_state(prior_state)
     resume_research_failure = _is_interrupted_research_failure_state(prior_state)
     resume_blocked_research = _is_blocked_research_required_resume_state(prior_state)
-    resume_failed_experiment = _is_blocked_failed_experiment_resume_state(prior_state)
+    resume_failed_round = _is_blocked_failed_round_resume_state(prior_state)
 
     if resume_current_job:
         if not (
@@ -389,7 +389,7 @@ def normalize_controller_launch_state(
             or resume_builder_running
             or resume_research_failure
             or resume_blocked_research
-            or resume_failed_experiment
+            or resume_failed_round
         ):
             raise ValueError(
                 "--resume-current-job requires a recoverable halted code-change, "
@@ -401,7 +401,7 @@ def normalize_controller_launch_state(
             job = 1
     else:
         # Fresh jobs start from the next job number so new launches stay
-        # distinguishable from earlier runs in traces and experiment rows.
+        # distinguishable from earlier runs in traces and backtest rows.
         job = fresh_job if fresh_job is not None else job + 1
         if job < 1:
             job = 1
@@ -412,7 +412,7 @@ def normalize_controller_launch_state(
         state = dict(prior_state)
         state["job"] = job
         return state, job
-    if resume_current_job and resume_failed_experiment:
+    if resume_current_job and resume_failed_round:
         return (
             _running_resume_state(
                 prior_state,
@@ -670,7 +670,7 @@ class AutoresearchController:
         """Pick a fresh job id that cannot collide with checkout history.
 
         Fresh launches must not reuse a historical job id from the local
-        state file, experiment DB, or runtime job tree. Reusing one of those
+        state file, backtest run DB, or runtime job tree. Reusing one of those
         ids makes a "fresh" job inherit stale baseline decisions, queued
         theses, or old results.
         """
@@ -681,7 +681,7 @@ class AutoresearchController:
         return max_seen + 1 if max_seen > 0 else 1
 
     def clear_transient_context(self) -> None:
-        """Clear per-experiment and per-research-round context.
+        """Clear per-round context.
 
         This prevents stale lineage metadata from leaking into later runs in
         the same controller process.
@@ -815,13 +815,13 @@ class AutoresearchController:
         return []
 
     def parse_result_json(self, output: str) -> dict[str, Any] | None:
-        return _experiment_parse_result_json(output)
+        return _round_parse_result_json(output)
 
     def parse_benchmark_details(self, output: str) -> dict[str, Any]:
-        return _experiment_parse_benchmark_details(output)
+        return _round_parse_benchmark_details(output)
 
     def _parse_benchmark_details_legacy(self, output: str) -> dict[str, Any]:
-        return _experiment_parse_benchmark_details_legacy(output)
+        return _round_parse_benchmark_details_legacy(output)
 
     def select_research_next_action(self, results: list[BacktestResultRecord]) -> dict[str, Any]:
         return _planning_select_research_next_action(
@@ -916,10 +916,10 @@ class AutoresearchController:
         return state
 
     def artifact_dir_for(self, config: str) -> Path:
-        return _experiment_artifact_dir_for(self.state_path, self.runtime_root, config)
+        return _round_artifact_dir_for(self.state_path, self.runtime_root, config)
 
     def sanitize_duplicate_entries(self, config: str) -> None:
-        _experiment_sanitize_duplicate_entries(self.backtest_run_db, config)
+        _round_sanitize_duplicate_entries(self.backtest_run_db, config)
 
     def _accumulate_job_usage(self, round_usage: dict[str, Any]) -> None:
         _research_accumulate_job_usage(self.state_path, round_usage)
@@ -966,7 +966,7 @@ class AutoresearchController:
         next_action: dict[str, Any] | None = None,
         artifact_dir: Path | None = None,
     ) -> None:
-        _experiment_log_experiment_result(
+        _round_log_experiment_result(
             self,
             config=config,
             metric=metric,
@@ -978,13 +978,13 @@ class AutoresearchController:
         )
 
     def run_command(self, command: str) -> tuple[int, str]:
-        return _experiment_run_command(self.ctx.execution_root or self.root, command)
+        return _round_run_command(self.ctx.execution_root or self.root, command)
 
     def primary_metric_name(self) -> str:
         return self.backtest_run_db.primary_metric_name()
 
     def parse_metric(self, output: str, name: str = "profit_factor") -> float | None:
-        return _experiment_parse_metric(output, name)
+        return _round_parse_metric(output, name)
 
     def evaluate_metric(self, metric: float) -> str:
         state = self.read_state()
@@ -995,7 +995,7 @@ class AutoresearchController:
                 job_id = int(raw_job)
         except (TypeError, ValueError):
             job_id = None
-        return _experiment_evaluate_metric(
+        return _round_evaluate_metric(
             self.runtime_root,
             self.backtest_run_db.path.name,
             metric,
@@ -1005,7 +1005,7 @@ class AutoresearchController:
     def derive_trade_analysis(
         self, config: str, metric: float, decision: str, output: str = ""
     ) -> dict[str, Any]:
-        return _experiment_derive_trade_analysis(self, config, metric, decision, output)
+        return _round_derive_trade_analysis(self, config, metric, decision, output)
 
     def execute_research_sdk(self) -> dict[str, Any]:
         return _research_execute_research_sdk(self)
@@ -1027,7 +1027,7 @@ class AutoresearchController:
             thesis,
             primary_contract,
             baseline_config,
-            experiments_dir=self.builder_requests_dir,
+            builder_requests_dir=self.builder_requests_dir,
             job=self._current_job(),
             created_for_commit=self.current_commit(),
         )
@@ -1059,8 +1059,8 @@ class AutoresearchController:
     def _run_research(self, state: dict[str, Any]) -> dict[str, Any]:
         return _research_run_research(self, state)
 
-    def _run_experiment(self, state: dict[str, Any]) -> int:
-        return _experiment_run_experiment(self, state)
+    def _run_round(self, state: dict[str, Any]) -> int:
+        return _round_run_experiment(self, state)
 
     def execute_once(self) -> int:
         """Run one iteration of the autoresearch loop.
@@ -1068,7 +1068,7 @@ class AutoresearchController:
         Flow:
         1. Resolve what to do next (baseline rerun, pending config, or research)
         2. If blocked for research: run conductor, compile thesis, wire config
-        3. If running: execute the experiment (backtest + evaluate)
+        3. If running: execute the round (backtest + evaluate)
         """
         trace("LOOP", "=== execute_once START ===")
         self._ensure_job_metadata()
@@ -1097,7 +1097,7 @@ class AutoresearchController:
                         ),
                         constraints=[
                             "must clear blockers before running",
-                            "must still pass experiment execution",
+                            "must still pass round execution",
                         ],
                         evidence_event_ids=[],
                     )
@@ -1115,7 +1115,7 @@ class AutoresearchController:
             return 0
 
         # We have a config to run
-        return self._run_experiment(state)
+        return self._run_round(state)
 
 
 def main() -> int:

@@ -672,8 +672,8 @@ def test_execute_once_stops_without_experiment_for_terminal_blocked_state(
         "research_round": 1,
         "blockers": [{"kind": "manual_review", "detail": "operator required"}],
     }
-    controller._run_experiment = lambda state: (_ for _ in ()).throw(  # type: ignore[method-assign]
-        AssertionError("terminal blocked state must not run experiment")
+    controller._run_round = lambda state: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("terminal blocked state must not run round")
     )
 
     assert controller.execute_once() == 0
