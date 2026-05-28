@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""SQLite-backed CLI helper for autoresearch experiment tracking."""
+"""SQLite-backed CLI helper for autoresearch round session tracking.
+
+Tracks per-round results (one row per backtest run) so users can inspect
+round outcomes, baselines, and confidence deltas without re-running the
+strategy. The persistence layer is shared with the controller's
+round-results table.
+"""
 
 import argparse
 import json
@@ -147,7 +153,7 @@ def compute_confidence(results, segment, direction):
 
 
 def find_baseline(results, segment):
-    """Find the baseline metric (first experiment in current segment)."""
+    """Find the baseline metric (first round in current segment)."""
     cur = current_segment_results(results, segment)
     if not cur:
         return None
@@ -187,7 +193,7 @@ def is_better(current, best, direction):
 
 
 def cmd_init(args):
-    """Initialize the sqlite-backed experiment session."""
+    """Initialize the sqlite-backed round session."""
     db = _db(args.db)
     db.init_session(
         name=args.name,
@@ -305,7 +311,7 @@ def cmd_evaluate(args):
     compare_against = best if best is not None else baseline
 
     if compare_against is None:
-        _log.info("DECISION: keep (first experiment — this is the baseline)")
+        _log.info("DECISION: keep (first round — this is the baseline)")
         _log.info(f"  Metric: {args.metric}")
         sys.exit(0)
 
@@ -339,7 +345,7 @@ def cmd_evaluate(args):
 
 
 def cmd_summary(args):
-    """Print a summary of the experiment session."""
+    """Print a summary of the round session."""
     config, results = read_session(args.db)
 
     if not config:
@@ -364,7 +370,7 @@ def cmd_summary(args):
         f"Metric: {config.get('metricName', 'metric')} ({config.get('metricUnit', '')}), {direction} is better"
     )
     _log.info(
-        f"Experiments: {total} total, {len(kept)} kept, {len(discarded)} discarded, {len(crashed)} crashed"
+        f"Rounds: {total} total, {len(kept)} kept, {len(discarded)} discarded, {len(crashed)} crashed"
     )
     _log.info("")
 
@@ -416,7 +422,7 @@ def cmd_status(args):
         "name": config.get("name"),
         "metricName": config.get("metricName"),
         "direction": direction,
-        "totalExperiments": len(cur),
+        "totalRounds": len(cur),
         "keptCount": len([r for r in cur if r.get("status") == "keep"]),
         "baseline": baseline,
         "bestKept": best,
@@ -431,11 +437,11 @@ def cmd_status(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Autoresearch experiment helper")
+    parser = argparse.ArgumentParser(description="Autoresearch round helper")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # init
-    p_init = subparsers.add_parser("init", help="Initialize experiment session")
+    p_init = subparsers.add_parser("init", help="Initialize round session")
     p_init.add_argument("--db", required=True, help="Path to backtest_runs sqlite database")
     p_init.add_argument("--name", required=True, help="Session name")
     p_init.add_argument("--metric-name", required=True, help="Primary metric name")
@@ -443,7 +449,7 @@ def main():
     p_init.add_argument("--direction", default="lower", choices=["lower", "higher"])
 
     # log
-    p_log = subparsers.add_parser("log", help="Log an experiment result")
+    p_log = subparsers.add_parser("log", help="Log a round result")
     p_log.add_argument("--db", required=True, help="Path to backtest_runs sqlite database")
     p_log.add_argument("--commit", required=True, help="Git commit hash")
     p_log.add_argument("--metric", required=True, type=float, help="Primary metric value")
@@ -466,7 +472,7 @@ def main():
     )
 
     # summary
-    p_summary = subparsers.add_parser("summary", help="Print experiment summary")
+    p_summary = subparsers.add_parser("summary", help="Print round summary")
     p_summary.add_argument("--db", required=True, help="Path to backtest_runs sqlite database")
 
     # status

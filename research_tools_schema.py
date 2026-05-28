@@ -76,15 +76,19 @@ class GetPastThesisArgs(BaseModel):
     thesis_id: NonEmptyStr
 
 
-class ListExperimentResultsArgs(BaseModel):
+class ListRoundResultsArgs(BaseModel):
     order: ResultOrder = "latest"
     offset: Annotated[int, Field(ge=0)] = 0
     limit: Annotated[int, Field(ge=1, le=50)] = 10
+    job_id: Optional[int] = None
+    family: Optional[NonEmptyStr] = None
 
 
-class GetExperimentResultArgs(BaseModel):
-    thesis_id: NonEmptyStr
+class GetRoundResultArgs(BaseModel):
+    research_round_id: NonEmptyStr
     detail: bool = False
+    job_id: Optional[int] = None
+    family: Optional[NonEmptyStr] = None
 
 
 class ListRejectionsArgs(BaseModel):

@@ -204,7 +204,7 @@ def test_plan_next_action_preserves_forced_baseline_rerun_state(tmp_path: Path, 
         "state": "running",
         "job": 3,
         "next_action": {
-            "type": "run_experiment",
+            "type": "run_round",
             "config": "configs/ema_base.yaml",
             "baseline_rerun_for_commit": "new-sha",
         },
@@ -353,7 +353,7 @@ def test_check_baseline_rerun_returns_action_when_code_commit_changed(
     out = check_baseline_rerun(tmp_path, ema_family, tracker, "new-sha", [])
 
     assert out is not None
-    assert out["type"] == "run_experiment"
+    assert out["type"] == "run_round"
     assert out["config"] == "configs/ema_base.yaml"
     assert out["baseline_rerun_for_commit"] == "new-sha"
     assert out["rerun_reason"] == "code changed old-sha -> new-sha"

@@ -121,8 +121,8 @@ def format_result_history(results: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def format_experiment_results_summary(results: list[dict[str, Any]]) -> str:
-    """Small prompt seed; conductor tools provide full experiment history."""
+def format_round_results_summary(results: list[dict[str, Any]]) -> str:
+    """Small prompt seed; conductor tools provide full round history."""
     if not results:
         return "No backtest runs yet."
     metric_name = "metric"
@@ -147,14 +147,14 @@ def format_experiment_results_summary(results: list[dict[str, Any]]) -> str:
     discarded = sum(1 for result in results if result.get("status") == "discard")
     return "\n".join(
         [
-            f"total_experiments={len(results)} keep={kept} discard={discarded}",
+            f"total_rounds={len(results)} keep={kept} discard={discarded}",
             _line("best", best),
             _line("latest", latest),
             (
-                "Use list_experiment_results(order='latest') and "
-                "list_experiment_results(order='best') for details."
+                "Use list_round_results(order='latest') and "
+                "list_round_results(order='best') for details."
             ),
-            "Call get_experiment_result(thesis_id) before relying on a specific experiment.",
+            "Call get_round_result(research_round_id) before relying on a specific round.",
         ]
     )
 

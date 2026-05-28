@@ -393,7 +393,7 @@ def test_run_single_agent_falls_back_to_raw_responses_for_research_agent(monkeyp
                                             "reasoning": "Valid thesis",
                                             "suggested_theses": [
                                                 {
-                                                    "thesis_id": "raw_response_fallback",
+                                                    "proposal_label": "raw-response-fallback",
                                                     "hypothesis": "narrow the entry window",
                                                     "mechanism": "Restrict entries to a narrower opening window.",
                                                     "mechanism_dimension": "entry_timing",
@@ -441,7 +441,8 @@ def test_run_single_agent_falls_back_to_raw_responses_for_research_agent(monkeyp
         )
     )
 
-    assert result["suggested_theses"][0]["thesis_id"] == "raw_response_fallback"
+    assert "thesis_id" not in result["suggested_theses"][0]
+    assert result["suggested_theses"][0]["proposal_label"] == "raw-response-fallback"
 
 
 def test_normalize_thesis_payload_maps_family_alias_to_strategy_family():
@@ -489,6 +490,29 @@ def test_normalize_thesis_payload_treats_none_lists_as_empty():
 
     assert normalized["expected_effects"] == []
     assert normalized["disqualifiers"] == []
+
+
+def test_normalize_thesis_payload_rewrites_legacy_experiment_result_citation():
+    """Theses persisted before the experiment→round rename still carry
+    source='experiment_result' in evidence_citations. Normalization rewrites
+    that to 'round_result' so ResearchThesis.model_validate accepts it."""
+    from thesis_validator import normalize_thesis_payload
+
+    normalized = normalize_thesis_payload(
+        {
+            "thesis_id": "x",
+            "hypothesis": "y",
+            "mechanism": "z",
+            "evidence_citations": [
+                {"source": "experiment_result", "citation": "round 3 PF=1.7"},
+                {"source": "web_search", "citation": "external evidence"},
+            ],
+        }
+    )
+
+    assert normalized["evidence_citations"][0]["source"] == "round_result"
+    assert normalized["evidence_citations"][0]["citation"] == "round 3 PF=1.7"
+    assert normalized["evidence_citations"][1]["source"] == "web_search"
 
 
 def test_run_single_agent_returns_structured_parse_error_without_stdout(monkeypatch, capsys):

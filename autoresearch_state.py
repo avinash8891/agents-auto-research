@@ -84,7 +84,7 @@ class RunContext:
     Replaces the legacy `self._current_*` / `self._latest_*` fields. Fields
     fall into three lifecycles:
 
-    - Per-experiment (set in run_experiment, consumed by log_experiment_result,
+    - Per-round (set in run_experiment, consumed by log_experiment_result,
       then cleared): current_artifact_dir.
     - Per-research-round (set in execute_research_sdk, consumed by run_experiment
       and log_experiment_result, then cleared): current_contract,
@@ -126,7 +126,7 @@ def write_state(state_path: Path, state: dict[str, Any]) -> None:
 # ── Results ────────────────────────────────────────────────────────
 
 
-def _coerce_job_to_int(job_value: Any) -> int:
+def coerce_job_to_int(job_value: Any) -> int:
     try:
         return int(job_value or 0)
     except (TypeError, ValueError):
@@ -148,7 +148,7 @@ def read_results(entries: list[dict[str, Any]]) -> list[BacktestResultRecord]:
                 timestamp=coerce_timestamp_to_iso8601_utc(entry.get("timestamp", 0))
                 or "1970-01-01T00:00:00+00:00",
                 asi=asi,
-                job=_coerce_job_to_int(entry.get("job")),
+                job=coerce_job_to_int(entry.get("job")),
             )
         )
     return results
@@ -197,25 +197,25 @@ def deduplicate_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep only the richest entry per (job, config). Drop low-info duplicates."""
     config_entries: dict[tuple[int, str], list[tuple[int, dict[str, Any]]]] = {}
     config_order: list[tuple[int, str]] = []
-    non_experiment: list[dict[str, Any]] = []
+    non_round: list[dict[str, Any]] = []
 
     for idx, entry in enumerate(entries):
         if entry.get("type") == "config":
-            non_experiment.append(entry)
+            non_round.append(entry)
             continue
         asi = entry.get("asi") or {}
         config = asi.get("config", "")
         if not config:
-            non_experiment.append(entry)
+            non_round.append(entry)
             continue
-        job = _coerce_job_to_int(entry.get("job"))
+        job = coerce_job_to_int(entry.get("job"))
         key = (job, config)
         if key not in config_entries:
             config_entries[key] = []
             config_order.append(key)
         config_entries[key].append((idx, entry))
 
-    deduped: list[dict[str, Any]] = list(non_experiment)
+    deduped: list[dict[str, Any]] = list(non_round)
     for key in config_order:
         group = config_entries[key]
         if len(group) == 1:
@@ -308,7 +308,7 @@ def render_current_md(
         "## Execution Control",
         "- Machine-readable controller: `autoresearch.next.json`",
         f"- Current controller state: `{state.get('state')}`",
-        "- Experiment outcomes are heartbeats, not stopping points.",
+        "- Round outcomes are heartbeats, not stopping points.",
     ]
     return "\n".join(lines) + "\n"
 

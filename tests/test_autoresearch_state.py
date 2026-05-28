@@ -44,7 +44,7 @@ def test_state_round_trip_preserves_payload_atomically(tmp_path: Path) -> None:
         "state": "running",
         "job": 7,
         "research_round": 3,
-        "next_action": {"type": "run_experiment", "config": "configs/ema_base.yaml"},
+        "next_action": {"type": "run_round", "config": "configs/ema_base.yaml"},
     }
     write_state(state_path, payload)
     assert state_path.exists()
@@ -240,7 +240,7 @@ def test_deduplicate_entries_keeps_same_config_across_different_jobs() -> None:
     assert {entry["job"] for entry in out} == {1, 2}
 
 
-def test_deduplicate_entries_preserves_non_experiment_rows() -> None:
+def test_deduplicate_entries_preserves_non_round_rows() -> None:
     config_header = {"type": "config", "metricName": "median_expectancy"}
     no_config_entry = {"run": 9, "metric": 0.0, "status": "keep", "asi": {}}
     out = deduplicate_entries([config_header, no_config_entry])
@@ -260,7 +260,7 @@ def test_render_current_md_includes_best_and_latest_when_present() -> None:
     state = {
         "state": "running",
         "current_best": {"config": "configs/variants/ema_a.yaml", "metric": 1.5},
-        "next_action": {"type": "run_experiment", "config": "configs/variants/ema_b.yaml"},
+        "next_action": {"type": "run_round", "config": "configs/variants/ema_b.yaml"},
         "pending_configs": [],
         "thesis_statuses": {},
         "blockers": [],

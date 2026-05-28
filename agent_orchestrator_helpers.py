@@ -153,7 +153,7 @@ def _build_research_prompt(context: dict[str, Any], family_name: str, spec: Any)
         f"(not over the current-best config). Any key you OMIT from config_changes will revert "
         f"to the strategy default — NOT remain at the current-best value. You MUST include "
         f"every key from the current best that you want to preserve, plus your changed keys.\n\n"
-        f"FULL EXPERIMENT HISTORY:\n{history}\n\n"
+        f"FULL ROUND HISTORY:\n{history}\n\n"
         f"DIAGNOSTIC ANALYST INSIGHTS:\n{analyst_brief}\n\n"
         f"WEB RESEARCH FINDINGS:\n{web_findings}\n\n"
         f"PRIOR THESES (from memory):\n{prior_theses}\n\n"

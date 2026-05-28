@@ -16,12 +16,20 @@ from agent_infra import _run_coroutine_sync
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import get_round_usage, reset_round_usage
 from autoresearch_logging import get_logger
-from research_memory import _palace_status
-from research_memory import get_experiment_result as get_experiment_result_for_root
+from backtest_run_db import research_round_id as make_research_round_id
+from backtest_run_db import research_thesis_attempt_id
+from research_memory import (
+    _palace_status,
+)
 from research_memory import get_past_thesis as get_past_thesis_for_root
-from research_memory import list_experiment_results as list_experiment_results_for_root
+from research_memory import get_round_result as get_round_result_for_root
 from research_memory import list_past_theses as list_past_theses_for_root
-from research_memory import save_research_finding, search_research_findings
+from research_memory import list_round_results as list_round_results_for_root
+from research_memory import (
+    round_result_not_found_envelope,
+    save_research_finding,
+    search_research_findings,
+)
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,
@@ -101,13 +109,13 @@ def _evidence_context_for_round(trades_file: str, latest_outcome: dict[str, Any]
 def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     """Extract single thesis dict from conductor response. Returns (thesis, validation_error).
 
-    v3 prompt contract: conductor returns the thesis object directly (thesis_id at top level).
-    The suggested_theses wrapper path is kept for backward compatibility with test fixtures only.
+    v3 prompt contract: conductor returns exactly one thesis in suggested_theses.
+    The direct thesis-object path is kept for backward compatibility with older fixtures only.
     """
-    if "thesis_id" in parsed:
-        return parsed, ""
     theses = parsed.get("suggested_theses")
     if theses is None:
+        if "hypothesis" in parsed or "config_changes" in parsed:
+            return parsed, ""
         return None, "no thesis returned"
     if not isinstance(theses, list):
         return None, "suggested_theses must be a list"
@@ -120,7 +128,7 @@ def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]
 
 async def run_research_conductor(
     trades_file: str,
-    experiment_results: str,
+    round_results: str,
     latest_outcome: dict[str, Any],
     research_round: int,
     family_name: str,
@@ -139,8 +147,8 @@ async def run_research_conductor(
     base_prompt = (
         f"Research round: {research_round}\n\n"
         f"{_render_resolution_context(resolution_context)}\n\n"
-        f"LATEST EXPERIMENT OUTCOME:\n{outcome_lines}\n\n"
-        f"EXPERIMENT RESULTS SUMMARY:\n{experiment_results}\n\n"
+        f"LATEST ROUND OUTCOME:\n{outcome_lines}\n\n"
+        f"PRIOR ROUNDS — RESULTS SUMMARY:\n{round_results}\n\n"
     )
 
     if trades_file:
@@ -168,10 +176,10 @@ async def run_research_conductor(
     else:
         if latest_outcome:
             no_trades_instruction = (
-                "No trades file is available for the latest/current experiment. "
-                "This is not a cold start: use the latest outcome and experiment-result "
+                "No trades file is available for the latest/current round. "
+                "This is not a cold start: use the latest outcome and round-result "
                 "tools to understand what happened. Do not call analyze_trades this round; "
-                "use web research, past theses, experiment-result tools, memory, and source-code "
+                "use web research, past theses, round-result tools, memory, and source-code "
                 "reasoning to propose the next thesis only if the evidence is sufficient."
             )
         else:
@@ -333,8 +341,8 @@ async def run_research_conductor(
 
             SAVE: data facts, dataset properties, seasonal patterns, web research
             findings — things that will still be true next round.
-            DO NOT SAVE: experiment outcomes, thesis evaluations, opinions like
-            "I think X is better". Experiment results are in the results table;
+            DO NOT SAVE: round outcomes, thesis evaluations, opinions like
+            "I think X is better". Round results are in the results table;
             you see them fresh every round. Form your own conclusions; do not
             cache opinions (they poison future rounds).
 
@@ -344,7 +352,7 @@ async def run_research_conductor(
               finding_type    one of [observation, hypothesis, validated_finding,
                               rejected_finding, open_question, implementation_note]
               status          one of [unvalidated, validated, rejected, stale]
-              evidence        which round/experiment produced this
+              evidence        which research_round_id produced this
                               (e.g. "round_003, thesis entry_window_test")
               scope           what data this applies to
                               (e.g. "train_period_only", "full_sample", "SPY_only")
@@ -584,7 +592,7 @@ async def run_research_conductor(
             return output
 
         @function_tool
-        async def list_experiment_results(
+        async def list_round_results(
             order: str = "latest", offset: int = 0, limit: int = 10
         ) -> str:
             started = monotonic()
@@ -601,19 +609,24 @@ async def run_research_conductor(
             trace_agent_tool_call(
                 "research-conductor",
                 trace_id,
-                "list_experiment_results",
+                "list_round_results",
                 tool_input,
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-            tools_called_this_round.add("list_experiment_results")
-            output = list_experiment_results_for_root(
-                _ROOT, job_id=current_job, order=order, offset=offset, limit=limit
+            tools_called_this_round.add("list_round_results")
+            output = list_round_results_for_root(
+                _ROOT,
+                job_id=current_job,
+                family=family_name,
+                order=order,
+                offset=offset,
+                limit=limit,
             )
             trace_agent_tool_result(
                 "research-conductor",
                 trace_id,
-                "list_experiment_results",
+                "list_round_results",
                 output,
                 duration_ms=int((monotonic() - started) * 1000),
                 model_provider="openai",
@@ -622,13 +635,13 @@ async def run_research_conductor(
             return output
 
         @function_tool
-        async def get_experiment_result(thesis_id: str, detail: bool = False) -> str:
+        async def get_round_result(research_round_id: str, detail: bool = False) -> str:
             started = monotonic()
             tool_input = json.dumps(
                 {
                     "root": str(_ROOT),
                     "job_id": current_job,
-                    "thesis_id": thesis_id,
+                    "research_round_id": research_round_id,
                     "detail": detail,
                 },
                 default=str,
@@ -636,14 +649,22 @@ async def run_research_conductor(
             trace_agent_tool_call(
                 "research-conductor",
                 trace_id,
-                "get_experiment_result",
+                "get_round_result",
                 tool_input,
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
-            output = get_experiment_result_for_root(
-                _ROOT, thesis_id, job_id=current_job, detail=detail
-            )
+            tools_called_this_round.add("get_round_result")
+            try:
+                output = get_round_result_for_root(
+                    _ROOT,
+                    research_round_id=research_round_id,
+                    detail=detail,
+                    job_id=current_job,
+                    family=family_name,
+                )
+            except KeyError as exc:
+                output = round_result_not_found_envelope(research_round_id, exc)
             parsed_status = "ok"
             error_type = ""
             try:
@@ -659,7 +680,7 @@ async def run_research_conductor(
             trace_agent_tool_result(
                 "research-conductor",
                 trace_id,
-                "get_experiment_result",
+                "get_round_result",
                 output,
                 status=parsed_status,
                 error_type=error_type,
@@ -827,8 +848,8 @@ async def run_research_conductor(
                 memory_status,
                 list_past_theses,
                 get_past_thesis,
-                list_experiment_results,
-                get_experiment_result,
+                list_round_results,
+                get_round_result,
                 list_rejections_tool,
                 get_rejection_tool,
                 rejection_pattern_summary_tool,
@@ -923,9 +944,7 @@ async def run_research_conductor(
         revise={"used_feedback_retry": bool(rejection_feedback)},
         evaluate={
             "parsed": bool(parsed),
-            "has_thesis": (
-                bool(parsed.get("thesis_id") or parsed.get("suggested_theses")) if parsed else False
-            ),
+            "has_thesis": bool(parsed.get("suggested_theses")) if parsed else False,
             "should_stop": bool(parsed.get("should_stop")) if parsed else False,
         },
     )
@@ -961,8 +980,11 @@ async def run_research_conductor(
             candidate = dict(thesis)
             candidate["strategy_family"] = family_name
             try:
-                validate_thesis_dict(
+                validated = validate_thesis_dict(
                     candidate,
+                    research_round_id=make_research_round_id(current_job or 0, research_round),
+                    attempt_number=1,
+                    assign_thesis_id=research_thesis_attempt_id,
                     tools_called=tools_called_this_round,
                     require_analyst_evidence=bool(trades_file),
                     evidence_context=_evidence_context_for_round(trades_file, latest_outcome),
@@ -975,14 +997,14 @@ async def run_research_conductor(
                 validation_reason = str(exc)
                 trace(
                     "CONDUCTOR",
-                    f"validate failed thesis={thesis.get('thesis_id', 'unknown')}: {exc}",
+                    f"validate failed proposal={thesis.get('proposal_label', 'unknown')}: {exc}",
                     model_provider="openai",
                     model_name=_CONDUCTOR_MODEL,
                 )
             else:
                 trace(
                     "CONDUCTOR",
-                    f"OK thesis={thesis['thesis_id']}",
+                    f"OK thesis={validated.thesis_id}",
                     model_provider="openai",
                     model_name=_CONDUCTOR_MODEL,
                 )
@@ -1038,7 +1060,7 @@ async def run_research_conductor(
 
 def run_research_conductor_sync(
     trades_file: str,
-    experiment_results: str,
+    round_results: str,
     latest_outcome: dict[str, Any],
     research_round: int,
     family_name: str,
@@ -1051,7 +1073,7 @@ def run_research_conductor_sync(
     return _run_coroutine_sync(
         run_research_conductor(
             trades_file,
-            experiment_results,
+            round_results,
             latest_outcome,
             research_round,
             family_name,

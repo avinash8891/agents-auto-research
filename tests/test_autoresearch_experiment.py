@@ -442,7 +442,7 @@ def test_build_db_record_sets_round_and_backtest_run_metadata(tmp_path: Path) ->
         details={"profit_factor": 1.4, "trade_count": 12},
         analysis={"trade_analysis": {"verdict": {"status": "accepted", "summary": "ok"}}},
         runtime_config={"ema_length": 7},
-        fallback_experiment_id="fallback",
+        fallback_run_id="fallback",
         state=state,
     )
 
@@ -508,7 +508,7 @@ def test_build_db_record_marks_duplicate_artifacts_invalid(tmp_path: Path) -> No
         },
         analysis={"trade_analysis": {"verdict": {"status": "accepted", "summary": "ok"}}},
         runtime_config={"ema_length": 7},
-        fallback_experiment_id="fallback",
+        fallback_run_id="fallback",
         state=state,
     )
 
@@ -630,7 +630,7 @@ def test_build_db_record_preserves_round_zero_baseline_identity(tmp_path: Path) 
         details={"profit_factor": 1.4, "trade_count": 12},
         analysis={"trade_analysis": {"verdict": {"status": "accepted", "summary": "ok"}}},
         runtime_config={"ema_length": 7},
-        fallback_experiment_id="fallback",
+        fallback_run_id="fallback",
         state=state,
     )
 
@@ -1030,7 +1030,7 @@ def test_record_baseline_checkpoint_persists_critical_drift_and_clears_rerun_mar
             "job": 1,
             "research_round": 0,
             "next_action": {
-                "type": "run_experiment",
+                "type": "run_round",
                 "source": "baseline",
                 "baseline_rerun_for_commit": "abc1234",
             },
@@ -1092,7 +1092,7 @@ def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Pa
             "job": 4,
             "research_round": 1,
             "next_action": {
-                "type": "run_experiment",
+                "type": "run_round",
                 "config": "runtime/jobs/job-4/research/round-1/selected_config.json",
                 "selected_thesis_id": "ema-delay",
             },
@@ -1200,7 +1200,7 @@ def test_run_experiment_executes_command_logs_result_and_reconciles_state(
         "research_round": 1,
         "selected_thesis_id": "ema-command-success",
         "next_action": {
-            "type": "run_experiment",
+            "type": "run_round",
             "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
             "selected_thesis_id": "ema-command-success",
             "source": "research",
@@ -1239,7 +1239,7 @@ def test_run_experiment_blocks_when_command_exits_nonzero(
         "job": 7,
         "research_round": 0,
         "next_action": {
-            "type": "run_experiment",
+            "type": "run_round",
             "config": "configs/ema_base.yaml",
             "source": "baseline",
         },
@@ -1270,7 +1270,7 @@ def test_run_experiment_blocks_when_metric_marker_is_missing(
         "job": 8,
         "research_round": 0,
         "next_action": {
-            "type": "run_experiment",
+            "type": "run_round",
             "config": "configs/ema_base.yaml",
             "source": "baseline",
         },
@@ -1333,7 +1333,7 @@ def test_run_experiment_records_interrupted_state_when_metric_evaluator_times_ou
         "research_round": 0,
         "_last_round_usage": {"total_tokens": 123},
         "next_action": {
-            "type": "run_experiment",
+            "type": "run_round",
             "config": "configs/ema_base.yaml",
             "source": "baseline",
         },
@@ -1391,7 +1391,7 @@ def test_run_experiment_records_baseline_checkpoint_and_clears_rerun_marker(
         "job": 9,
         "research_round": 0,
         "next_action": {
-            "type": "run_experiment",
+            "type": "run_round",
             "config": "configs/ema_base.yaml",
             "source": "baseline",
             "baseline_rerun_for_commit": "abcdef1",
@@ -1422,7 +1422,7 @@ def test_run_experiment_returns_one_when_family_has_no_benchmark_command(tmp_pat
         "job": 10,
         "research_round": 0,
         "next_action": {
-            "type": "run_experiment",
+            "type": "run_round",
             "config": "configs/ema_base.yaml",
             "source": "baseline",
         },

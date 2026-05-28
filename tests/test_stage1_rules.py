@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import pytest
 
+from backtest_run_db import research_thesis_attempt_id
+from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import ThesisValidationError
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
-
-_VALID_PROCESS_TOOLS = {"list_experiment_results", "web_search"}
 
 
 def validate_thesis_dict(*args: object, **kwargs: object) -> object:
     kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    kwargs.setdefault("research_round_id", "job-test-round-1")
+    kwargs.setdefault("attempt_number", 1)
+    kwargs.setdefault("assign_thesis_id", research_thesis_attempt_id)
     return _validate_thesis_dict(*args, **kwargs)
 
 
@@ -159,7 +162,7 @@ def test_b1_accepts_when_only_3_of_last_7_share_theme_keywords() -> None:
     new = _base_thesis("p7")  # has volatility_floor + alert_candle
     # Overlap: p1 (volatility_floor), p5 (alert_candle), p7 itself = 3 → accepted
     obj = validate_thesis_dict(new, prior_theses=prior_theses)
-    assert obj.thesis_id == "p7"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_b1_does_not_fire_with_few_priors() -> None:
@@ -170,7 +173,7 @@ def test_b1_does_not_fire_with_few_priors() -> None:
     ]
     new = _base_thesis("p3")
     obj = validate_thesis_dict(new, prior_theses=prior_theses)
-    assert obj.thesis_id == "p3"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_b1_does_not_fire_when_thesis_has_no_theme_keywords() -> None:
@@ -179,7 +182,7 @@ def test_b1_does_not_fire_when_thesis_has_no_theme_keywords() -> None:
     new = _base_thesis("p_new")
     new["theme_keywords"] = []
     obj = validate_thesis_dict(new, prior_theses=prior_theses)
-    assert obj.thesis_id == "p_new"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 # ── B3 needs_code starvation ───────────────────────────────────────────────
@@ -210,7 +213,7 @@ def test_b3_accepts_no_code_thesis_after_needs_code_starvation() -> None:
     new = _base_thesis("p_break")
     new["requires_code_change"] = False  # breaks the streak
     obj = validate_thesis_dict(new, prior_theses=prior_theses)
-    assert obj.thesis_id == "p_break"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_b3_does_not_fire_when_streak_was_broken_by_a_run() -> None:
@@ -225,4 +228,4 @@ def test_b3_does_not_fire_when_streak_was_broken_by_a_run() -> None:
     new["requested_primitives"] = ["x"]
     new["config_changes"] = {"requires_engine_change": True}
     obj = validate_thesis_dict(new, prior_theses=prior_theses)
-    assert obj.thesis_id == "p4"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"

@@ -35,7 +35,7 @@ from typing import Any
 
 import pytest
 
-from backtest_run_db import BacktestRunDB
+from backtest_run_db import BacktestRunDB, BacktestRunRecord
 from persistence_utils import utc_now_iso8601
 from rejection_artifact import write_rejection
 from research_tools_mcp import _build_research_tools_mcp
@@ -185,8 +185,8 @@ def _build_mcp(
         # Same code path a lightweight caller would hit.
         list_past_theses_for_root=None,
         get_past_thesis_for_root=None,
-        list_experiment_results_for_root=None,
-        get_experiment_result_for_root=None,
+        list_round_results_for_root=None,
+        get_round_result_for_root=None,
     )
 
 
@@ -214,8 +214,8 @@ EXPECTED_TOOL_NAMES = {
     "memory_status",
     "list_past_theses",
     "get_past_thesis",
-    "list_experiment_results",
-    "get_experiment_result",
+    "list_round_results",
+    "get_round_result",
     "list_rejections",
     "get_rejection",
     "rejection_pattern_summary",
@@ -368,23 +368,102 @@ def test_get_past_thesis_returns_full_record_from_sqlite(tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-def test_list_experiment_results_handles_empty_db_without_crashing(tmp_path: Path) -> None:
+def test_list_round_results_handles_empty_db_without_crashing(tmp_path: Path) -> None:
     BacktestRunDB(tmp_path / f"{STRATEGY_FAMILY}_backtest_runs.db")
     mcp = _build_mcp(tmp_path)
 
-    text = _invoke(mcp, "list_experiment_results", {"order": "latest", "limit": 5})
+    text = _invoke(mcp, "list_round_results", {"order": "latest", "limit": 5})
 
     assert text  # non-empty string (either JSON payload or "no results" message)
 
 
-def test_get_experiment_result_returns_message_when_thesis_unknown(tmp_path: Path) -> None:
+def _seed_backtest_round(
+    db: BacktestRunDB,
+    *,
+    round_no: int,
+    timestamp: str,
+    job: int = JOB_ID,
+) -> str:
+    research_round_id = f"job-{job}-round-{round_no}"
+    db.add(
+        BacktestRunRecord(
+            run_id=f"run-{research_round_id}",
+            thesis_id=f"{SAMPLE_THESIS_ID}-{round_no}",
+            config_path=f"runtime/jobs/job-{job}/research/round-{round_no}/selected_config.json",
+            runtime_config={"ema_length": 12},
+            code_commit="abc1234",
+            data_hash="datahash",
+            train_metrics={"sharpe": 1.4, "profit_factor": 1.6, "max_drawdown": -0.15},
+            validation_metrics={"pct_profitable_windows": 0.62},
+            trade_count=84,
+            trades_file="trades.csv",
+            strategy_events_file="events.csv",
+            diagnostics_file="diagnostics.json",
+            strategy_diagnostics={},
+            accepted=True,
+            rejection_reason="",
+            verdict_status="accepted",
+            verdict_summary="ok",
+            family=STRATEGY_FAMILY,
+            hypothesis="EMA length 12 improves trend capture",
+            mechanism="Longer EMA filters noise",
+            job=job,
+            research_round_id=research_round_id,
+            timestamp=timestamp,
+        )
+    )
+    return research_round_id
+
+
+def test_list_round_results_offset_paginates_over_seeded_rows(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / f"{STRATEGY_FAMILY}_backtest_runs.db")
+    # Seed 5 rounds with strictly-increasing timestamps so "latest" ordering
+    # is deterministic: round-5 newest, round-1 oldest.
+    seeded = [
+        _seed_backtest_round(db, round_no=n, timestamp=f"2026-01-0{n}T00:00:00+00:00")
+        for n in range(1, 6)
+    ]
+    newest_first = list(reversed(seeded))  # round-5 .. round-1
+
+    mcp = _build_mcp(tmp_path, current_job=JOB_ID)
+
+    page1 = json.loads(_invoke(mcp, "list_round_results", {"order": "latest", "limit": 2}))
+    assert page1["total"] == 5
+    assert page1["offset"] == 0
+    assert page1["has_more"] is True
+    assert [e["research_round_id"] for e in page1["entries"]] == newest_first[0:2]
+
+    page2 = json.loads(
+        _invoke(
+            mcp,
+            "list_round_results",
+            {"order": "latest", "offset": 2, "limit": 2},
+        )
+    )
+    assert page2["offset"] == 2
+    assert page2["has_more"] is True
+    assert [e["research_round_id"] for e in page2["entries"]] == newest_first[2:4]
+
+    page3 = json.loads(
+        _invoke(
+            mcp,
+            "list_round_results",
+            {"order": "latest", "offset": 4, "limit": 2},
+        )
+    )
+    assert page3["offset"] == 4
+    assert page3["has_more"] is False
+    assert [e["research_round_id"] for e in page3["entries"]] == newest_first[4:5]
+
+
+def test_get_round_result_returns_message_when_round_unknown(tmp_path: Path) -> None:
     BacktestRunDB(tmp_path / f"{STRATEGY_FAMILY}_backtest_runs.db")
     mcp = _build_mcp(tmp_path)
 
     text = _invoke(
         mcp,
-        "get_experiment_result",
-        {"thesis_id": "thesis-that-does-not-exist", "detail": False},
+        "get_round_result",
+        {"research_round_id": "job-1-round-3", "detail": False},
     )
 
     assert text  # tool returns a string; the test that asserts content needs a seeded run

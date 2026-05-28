@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import pytest
 
+from backtest_run_db import research_thesis_attempt_id
+from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import ThesisValidationError
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
-
-_VALID_PROCESS_TOOLS = {"list_experiment_results", "web_search"}
 
 
 def validate_thesis_dict(*args: object, **kwargs: object) -> object:
     kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    kwargs.setdefault("research_round_id", "job-test-round-1")
+    kwargs.setdefault("attempt_number", 1)
+    kwargs.setdefault("assign_thesis_id", research_thesis_attempt_id)
     return _validate_thesis_dict(*args, **kwargs)
 
 
@@ -130,7 +133,7 @@ def test_b5_rejects_when_all_disqualifiers_are_metric_threshold() -> None:
 def test_b5_accepts_when_at_least_one_mechanism_evidence_disqualifier_present() -> None:
     thesis = _base_thesis("has_mechanism_evidence_disqualifier")
     obj = validate_thesis_dict(thesis)
-    assert obj.thesis_id == "has_mechanism_evidence_disqualifier"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 # ── B2 direction whipsaw ───────────────────────────────────────────────────
@@ -146,6 +149,29 @@ def test_b2_rejects_when_thesis_flips_lever_direction_without_acknowledging() ->
 
     prior_theses = [
         _prior("tighten_min_stop_distance_pct_floor", theme_keywords=["stop_distance"]),
+    ]
+
+    with pytest.raises(ThesisValidationError, match="(?i)whipsaw|direction|prior_lever_outcomes"):
+        validate_thesis_dict(thesis, prior_theses=prior_theses)
+
+
+def test_b2_rejects_when_prior_mechanical_id_keeps_direction_in_proposal_label() -> None:
+    thesis = _base_thesis("widen_max_stop_distance_pct_cap_removal")
+    thesis["theme_keywords"] = ["stop_distance"]
+    thesis["hypothesis"] = "Widening max stop distance to capture larger setups."
+    thesis["prior_lever_outcomes"] = []
+
+    prior_theses = [
+        {
+            "thesis_id": "job-1-round-1-attempt-1",
+            "config_changes": {"some_other_key": 5},
+            "outcome": "compiled",
+            "mechanism_dimension": "signal_quality",
+            "thesis_details": {
+                "theme_keywords": ["stop_distance"],
+                "proposal_label": "tighten minimum stop distance floor",
+            },
+        }
     ]
 
     with pytest.raises(ThesisValidationError, match="(?i)whipsaw|direction|prior_lever_outcomes"):
@@ -175,7 +201,7 @@ def test_b2_accepts_lever_flip_when_prior_lever_outcomes_cites_prior() -> None:
     ]
 
     obj = validate_thesis_dict(thesis, prior_theses=prior_theses)
-    assert obj.thesis_id == "widen_max_stop_distance_pct_cap_removal_v2"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_b2_does_not_fire_when_no_lever_overlap() -> None:
@@ -187,7 +213,7 @@ def test_b2_does_not_fire_when_no_lever_overlap() -> None:
     ]
 
     obj = validate_thesis_dict(thesis, prior_theses=prior_theses)
-    assert obj.thesis_id == "unrelated_thesis"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_b2_does_not_fire_when_no_opposing_direction_word_in_thesis_id() -> None:
@@ -200,4 +226,4 @@ def test_b2_does_not_fire_when_no_opposing_direction_word_in_thesis_id() -> None
     ]
 
     obj = validate_thesis_dict(thesis, prior_theses=prior_theses)
-    assert obj.thesis_id == "filter_signals_by_volatility_quintile"
+    assert obj.thesis_id == "job-test-round-1-attempt-1"

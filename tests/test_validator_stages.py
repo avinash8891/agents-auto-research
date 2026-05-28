@@ -6,9 +6,13 @@ from typing import Any
 
 import pytest
 
+from backtest_run_db import research_thesis_attempt_id
 from research_types import BacktestContract, DiagnosticRequirementSpec
 from thesis_validator import (
     ALIGNMENT_THRESHOLD,
+)
+from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
+from thesis_validator import (
     ThesisValidationError,
 )
 from thesis_validator import validate_research_thesis as _validate_research_thesis
@@ -18,8 +22,6 @@ from thesis_validator import (
 )
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
-_VALID_PROCESS_TOOLS = {"list_experiment_results", "web_search"}
-
 
 def validate_research_thesis(*args: Any, **kwargs: Any) -> Any:
     kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
@@ -28,6 +30,9 @@ def validate_research_thesis(*args: Any, **kwargs: Any) -> Any:
 
 def validate_thesis_dict(*args: Any, **kwargs: Any) -> Any:
     kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
+    kwargs.setdefault("research_round_id", "job-test-round-1")
+    kwargs.setdefault("attempt_number", 1)
+    kwargs.setdefault("assign_thesis_id", research_thesis_attempt_id)
     return _validate_thesis_dict(*args, **kwargs)
 
 
@@ -135,7 +140,7 @@ def test_validate_stage_1_accepts_well_formed_thesis() -> None:
         prior_theses=[],
         tools_called=_VALID_PROCESS_TOOLS,
     )
-    assert out.thesis_id == "stage1_test_thesis"
+    assert out.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_validate_stage_1_rejects_missing_mechanism() -> None:
@@ -162,10 +167,10 @@ def test_validate_research_thesis_does_not_run_alignment_at_stage_1() -> None:
 
     # Stage 1 must accept this.
     validated = validate_thesis_dict(raw)
-    assert validated.thesis_id == raw["thesis_id"]
+    assert validated.thesis_id == "job-test-round-1-attempt-1"
     # validate_research_thesis must also accept (it's the Stage 1 alias).
     again = validate_research_thesis(validated, prior_theses=[])
-    assert again.thesis_id == raw["thesis_id"]
+    assert again.thesis_id == "job-test-round-1-attempt-1"
 
 
 # ── Stage 2: hypothesis-config alignment ──────────────────────────────────

@@ -1,6 +1,6 @@
 """Named constants for autoresearch.
 
-Replaces inline literals scattered across the loop, research, and experiment
+Replaces inline literals scattered across the loop, research, and round
 modules. Names preserve the behavior of the original code — truncation lengths
 and color codes are NOT consolidated where the original used different values
 at different log sites, because some downstream log scrapers may key off the
