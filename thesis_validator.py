@@ -1718,8 +1718,7 @@ def _collect_research_contract_failures(thesis: ResearchThesis) -> list[Behavior
                 confidence=1.0,
                 severity="block",
                 summary=(
-                    "evidence_citations must include non-empty web_search and "
-                    "analyst citations"
+                    "evidence_citations must include non-empty web_search and " "analyst citations"
                 ),
                 evidence={
                     "missing_sources": missing_sources,
