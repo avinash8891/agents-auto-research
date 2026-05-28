@@ -1,0 +1,29 @@
+compiler_builder.py
+  s_1dc1911c45a5a7::t_c01d7716c67af4 598-599
+research_conductor.py
+  s_1dc1911c45a5a7::t_d98edcbddab64c 24
+  s_1dc1911c45a5a7::t_d4c31281a31fd7 651
+tests/test_compiler_pipeline_characterization.py
+  s_1dc1911c45a5a7::t_2f3f04bbf61652 199
+research_memory.py
+  s_1dc1911c45a5a7::t_e8f56140c90ec0 758-774
+research_tools_mcp.py
+  s_1dc1911c45a5a7::t_8e38dd328cc895 311
+  s_1dc1911c45a5a7::t_4af735c526f45b 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9fedea4d764c983c086d9ed2596f5aaa82e9cabf",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
