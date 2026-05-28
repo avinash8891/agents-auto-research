@@ -13,7 +13,7 @@ from research_types import (
 from thesis_validator import ThesisValidationError
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
-_VALID_PROCESS_TOOLS = {"list_experiment_results", "web_search"}
+from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 
 
 def validate_thesis_dict(*args: object, **kwargs: object) -> object:

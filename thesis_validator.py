@@ -123,7 +123,7 @@ _EVIDENCE_CONTEXT_NO_TRADES: Final[str] = "no_trades"
 _EVIDENCE_CONTEXT_COLD_START: Final[str] = "cold_start"
 _EVIDENCE_SOURCES_BY_CONTEXT: Final[dict[str, frozenset[str]]] = {
     _EVIDENCE_CONTEXT_TRADES: frozenset({"web_search", "analyst"}),
-    _EVIDENCE_CONTEXT_NO_TRADES: frozenset({"web_search", "experiment_result"}),
+    _EVIDENCE_CONTEXT_NO_TRADES: frozenset({"web_search", "round_result"}),
     _EVIDENCE_CONTEXT_COLD_START: frozenset({"web_search"}),
 }
 _EMERGENT_REQUIRED_FIELDS = (
@@ -343,16 +343,18 @@ def _known_emergent_dimension_names(prior_theses: list[dict[str, Any]] | None) -
     return known
 
 
-_REQUIRED_PROCESS_TOOLS: Final[tuple[str, ...]] = (
-    "list_experiment_results",
-    "web_search",
+VALID_PROCESS_TOOLS: Final[frozenset[str]] = frozenset(
+    {
+        "list_round_results",
+        "web_search",
+    }
 )
 
 
 def _validate_process(
     tools_called: set[str] | frozenset[str], *, require_analyst_tool: bool = False
 ) -> None:
-    missing = [tool for tool in _REQUIRED_PROCESS_TOOLS if tool not in tools_called]
+    missing = [tool for tool in sorted(VALID_PROCESS_TOOLS) if tool not in tools_called]
     if require_analyst_tool and "analyze_trades" not in tools_called:
         missing.append("analyze_trades")
     if not missing:

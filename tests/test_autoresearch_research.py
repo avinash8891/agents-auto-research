@@ -201,7 +201,7 @@ def test_check_parsed_for_terminal_defers_validation_failed_when_thesis_attached
             error="validation_failed",
             validation_reason="Process gate failed: required tools not called: ['web_search']",
             thesis={"thesis_id": "open_alert_regime_filter"},
-            tools_called=frozenset({"list_experiment_results"}),
+            tools_called=frozenset({"list_round_results"}),
         )
     )
 
@@ -623,7 +623,7 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
             {"source": "web_search", "citation": "EMA smoothing reduces noisy signals."},
             {"source": "analyst", "citation": "Analyst found weak crosses cluster in losses."},
             {
-                "source": "experiment_result",
+                "source": "round_result",
                 "citation": "Latest experiment result showed weak-cross filtering needs research.",
             },
         ],
@@ -676,7 +676,7 @@ def _dict_to_conductor_result(d: dict) -> ConductorResult:
         status="ok",
         thesis=theses[0] if theses else None,
         reasoning=d.get("reasoning", ""),
-        tools_called=frozenset(d.get("tools_called", {"list_experiment_results", "web_search"})),
+        tools_called=frozenset(d.get("tools_called", {"list_round_results", "web_search"})),
     )
 
 

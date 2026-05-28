@@ -82,7 +82,7 @@ def _research_agent(
 Your job: propose exactly ONE next thesis to test, expressed as concrete config_changes.
 
 WORKFLOW:
-1. Study the experiment history, diagnostic insights, and web research findings provided.
+1. Study the round history, diagnostic insights, and web research findings provided.
    These contain per-hour, per-direction, per-day, per-year breakdowns with exact numbers,
    plus external evidence from academic and practitioner sources.
 2. Identify the single most promising structural improvement based on data patterns
@@ -99,7 +99,8 @@ WORKFLOW:
 - TWO configs with the same final runtime values are DUPLICATES even if thesis_id differs.
   Before proposing, mentally compute the full config and check it differs from all prior backtests.
 - Do NOT propose vague ideas. Every thesis must map to exact parameter values.
-- Do NOT repeat a thesis_id that appears in PRIOR THESES or EXPERIMENT HISTORY.
+- Do NOT repeat a thesis_id that appears in PRIOR THESES.
+- (Informational) Each research round has a unique research_round_id by construction — backtests of the same thesis_id across rounds produce distinct rounds.
 - If the diagnostic data shows a clear pattern (e.g., only 09:00 hour is profitable),
   propose the most direct structural change to exploit it.
 - If a thesis requires functionality not available in the config schema, set
@@ -115,7 +116,7 @@ CONFIG SCHEMA (only these keys are valid in config_changes):
     Return a JSON object:
     {{
       "reasoning": "2-3 sentences explaining why this is the logical next step, citing specific
-                      numbers from the diagnostics or experiment history",
+                      numbers from the diagnostics or round history",
       "suggested_theses": [
         {{
           "thesis_id": "short_snake_case_name (unique, never reuse)",

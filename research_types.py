@@ -68,7 +68,7 @@ class EvidenceCitation(BaseModel):
         "web_search",
         "analyst",
         "source_code",
-        "experiment_result",
+        "round_result",
         "memory",
     ]
     citation: str
