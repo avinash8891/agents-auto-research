@@ -1,0 +1,36 @@
+tests/test_validator_gate_coverage.py
+  s_6c679bbe02c14f::t_278280901eea34 400-433
+tests/test_research_conductor_characterization.py
+  s_6c679bbe02c14f::t_de45c79b95dd79 661,728
+  s_6c679bbe02c14f::t_bf77425846dc3c 606,614-618,622,645
+research_prompts.py
+  s_6c679bbe02c14f::t_07d873a199200a 92-95,149
+research_conductor.py
+  s_6c679bbe02c14f::t_b588c385703fe3 956-960
+tests/test_autoresearch_research.py
+  s_6c679bbe02c14f::t_de45c79b95dd79 884,971,1095,1168
+  s_6c679bbe02c14f::t_72586f21b9282d 625-628
+autoresearch_research.py
+  s_6c679bbe02c14f::t_17ed56de2a430e 91,110-113,767-768,806,1090-1095
+thesis_validator.py
+  s_6c679bbe02c14f::t_22c5a3f1b6abe7 1679-1681,1718-1723,1731-1733,1739
+  s_6c679bbe02c14f::t_2aca10bf53e7fd 122-124
+  s_6c679bbe02c14f::t_0351d43a7f289f 2270-2271,2285-2290
+  s_6c679bbe02c14f::t_d8884c703f7d47 2338,2348-2352,2362,2374,2397,2404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fc4106916ffa258f9b1440eae94790738d1cacd4",
+  "prompts": {},
+  "sessions": {
+    "s_6c679bbe02c14f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6cb5-a417-72a3-83ad-c70f9103d198",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}
