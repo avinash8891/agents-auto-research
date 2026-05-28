@@ -39,19 +39,25 @@ def _make_db(path: Path) -> sqlite3.Connection:
             run_id TEXT PRIMARY KEY,
             thesis_id TEXT NOT NULL,
             job INTEGER NOT NULL,
-            research_round_id TEXT NOT NULL DEFAULT ''
+            research_round_id TEXT NOT NULL DEFAULT '',
+            research_round_number INTEGER NOT NULL DEFAULT -1
         )
         """)
     return conn
 
 
 def _seed(
-    conn: sqlite3.Connection, thesis_id: str, job_id: int, round_id: str, run_id: str
+    conn: sqlite3.Connection,
+    thesis_id: str,
+    job_id: int,
+    round_id: str,
+    run_id: str,
+    round_number: int = 1,
 ) -> None:
     conn.execute(
-        "INSERT INTO backtest_runs (run_id, thesis_id, job, research_round_id) "
-        "VALUES (?, ?, ?, ?)",
-        (run_id, thesis_id, job_id, round_id),
+        "INSERT INTO backtest_runs (run_id, thesis_id, job, research_round_id, "
+        "research_round_number) VALUES (?, ?, ?, ?, ?)",
+        (run_id, thesis_id, job_id, round_id, round_number),
     )
     conn.commit()
 
@@ -81,7 +87,7 @@ def staged_runtime(tmp_path: Path):
     db_path = tmp_path / "ema_backtest_runs.db"
     conn = _make_db(db_path)
     round_id = "job-12-round-1"
-    _seed(conn, THESIS_ID_A, JOB_ID, round_id, "run-001")
+    _seed(conn, THESIS_ID_A, JOB_ID, round_id, "run-001", round_number=1)
     conn.close()
     legacy_dir = _make_experiments_dir(root, JOB_ID, 1, THESIS_ID_A)
     return root, db_path, legacy_dir, round_id
@@ -140,8 +146,10 @@ class TestMigrateExperimentDirs:
         conn = _make_db(db_path)
         round_id_1 = "job-12-round-1"
         round_id_2 = "job-12-round-2"
-        _seed(conn, THESIS_ID_A, JOB_ID, round_id_1, "run-001")
-        _seed(conn, THESIS_ID_A, JOB_ID, round_id_2, "run-002")
+        # Same (thesis, job, round_number) but two different research_round_ids
+        # — that is the actual collision case the script must detect.
+        _seed(conn, THESIS_ID_A, JOB_ID, round_id_1, "run-001", round_number=1)
+        _seed(conn, THESIS_ID_A, JOB_ID, round_id_2, "run-002", round_number=1)
         conn.close()
         _make_experiments_dir(root, JOB_ID, 1, THESIS_ID_A)
 
@@ -196,3 +204,106 @@ class TestCliSmoke:
             check=False,
         )
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+
+    def test_missing_root_exits_nonzero(self, tmp_path: Path) -> None:
+        """--root is now required; invoking without it must fail (argparse exit 2)."""
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), "--dry-run"],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(tmp_path),
+        )
+        assert result.returncode != 0
+        assert "--root" in (result.stderr + result.stdout)
+
+
+class TestRegressionFindings:
+    """Regression tests for PR review findings E, F, G."""
+
+    def test_explicit_missing_db_exits_3(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Finding E: an explicit --db path that does not exist must exit 3,
+        not silently exit 0 as if migration completed."""
+        root = tmp_path / "runtime_root"
+        root.mkdir()
+        bogus = tmp_path / "does_not_exist.db"
+
+        exit_code = migrate_experiment_dirs.main(
+            ["--root", str(root), "--db", str(bogus), "--dry-run"]
+        )
+
+        assert exit_code == 3
+
+    def test_reverse_lookup_duplicate_aborts(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Finding F: if two distinct thesis_ids map to the same
+        (research_round_id, job_id, round_number), the migration must abort
+        instead of silently overwriting one of them in the reverse lookup.
+        """
+        root = tmp_path / "runtime_root"
+        root.mkdir()
+        db_path = tmp_path / "ema_backtest_runs.db"
+        conn = _make_db(db_path)
+        shared_round_id = "job-12-round-1"
+        # Two distinct thesis_ids share the same research_round_id at the same
+        # (job_id, round_number). Canonical scheme prevents this, but a
+        # malformed DB row could otherwise corrupt the reverse migration.
+        _seed(conn, THESIS_ID_A, JOB_ID, shared_round_id, "run-001", round_number=1)
+        _seed(conn, THESIS_ID_B, JOB_ID, shared_round_id, "run-002", round_number=1)
+        conn.close()
+
+        exit_code = migrate_experiment_dirs.main(
+            ["--root", str(root), "--db", str(db_path), "--dry-run"]
+        )
+
+        captured = capsys.readouterr()
+        assert exit_code == 1
+        assert "COLLISION" in captured.out
+        assert shared_round_id in captured.out
+        assert THESIS_ID_A in captured.out
+        assert THESIS_ID_B in captured.out
+
+    def test_same_thesis_across_rounds_migrates_both(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Finding G: the same thesis_id legitimately appearing in two
+        different rounds of the same job must produce two independent
+        renames, not a false collision.
+        """
+        root = tmp_path / "runtime_root"
+        root.mkdir()
+        db_path = tmp_path / "ema_backtest_runs.db"
+        conn = _make_db(db_path)
+        round_id_1 = "job-12-round-1"
+        round_id_2 = "job-12-round-2"
+        _seed(conn, THESIS_ID_A, JOB_ID, round_id_1, "run-001", round_number=1)
+        _seed(conn, THESIS_ID_A, JOB_ID, round_id_2, "run-002", round_number=2)
+        conn.close()
+
+        legacy_1 = _make_experiments_dir(root, JOB_ID, 1, THESIS_ID_A)
+        legacy_2 = _make_experiments_dir(root, JOB_ID, 2, THESIS_ID_A)
+        target_1 = legacy_1.parent / round_id_1
+        target_2 = legacy_2.parent / round_id_2
+
+        # Dry-run plans both renames.
+        exit_code = migrate_experiment_dirs.main(
+            ["--root", str(root), "--db", str(db_path), "--dry-run"]
+        )
+        out = capsys.readouterr().out
+        assert exit_code == 0, out
+        assert "COLLISION" not in out
+        assert str(legacy_1) in out and round_id_1 in out
+        assert str(legacy_2) in out and round_id_2 in out
+
+        # Apply moves both to their per-round targets.
+        exit_code = migrate_experiment_dirs.main(
+            ["--root", str(root), "--db", str(db_path), "--apply"]
+        )
+        assert exit_code == 0
+        assert target_1.is_dir() and not legacy_1.exists()
+        assert target_2.is_dir() and not legacy_2.exists()
+        assert (target_1 / "thesis.json").exists()
+        assert (target_2 / "thesis.json").exists()
