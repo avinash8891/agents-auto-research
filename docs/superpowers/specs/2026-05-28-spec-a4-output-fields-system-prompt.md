@@ -135,7 +135,17 @@ Compression rules:
 - Remove repeated prose scaffolding, not field semantics.
 - Keep one concrete example per field.
 - Keep every producer-guidance sentence that changes how the LLM should think.
+- Compress `M`, `G`, and `Ex` internally:
+  - `M`: one sentence; no background or motivation.
+  - `G`: one or two dense imperative sentences preserving every decision
+    criterion, contrast, required reference behavior, and source constraint.
+  - `Ex`: the smallest concrete value that still matches the exact shape; use
+    one-line JSON where possible.
 - Deduplicate only globally shared instructions already stated in §3.1-§3.3.
+- Remove rhetorical warnings and repeated motivation only when they do not
+  change what the LLM should produce.
+- Keep negative examples when they define a boundary; inline them briefly
+  inside `G`.
 - Do not render field accounting, migration items, success criteria, validator
   rules, rejection codes, or implementation notes.
 

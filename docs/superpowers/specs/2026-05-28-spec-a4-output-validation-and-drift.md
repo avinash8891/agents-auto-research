@@ -232,8 +232,8 @@ code.
 - Add `prompt_rules.py` exposing `iter_prompt_declared_rules()`.
 - Extend `scripts/check_prompt_drift.py` for schema-prompt parity,
   validator-sidecar parity, no-rule-leakage-in-prompt, category ordering,
-  compact-slot completeness, constants-in-prompt, schema-version stamp, and
-  sidecar freshness.
+  compact-slot completeness, M/G/Ex compression integrity,
+  constants-in-prompt, schema-version stamp, and sidecar freshness.
 - Add positive and negative prompt fixtures; each negative fixture trips exactly
   its named rejection code.
 - Thread attempt trace data needed by process-tier predicates, including
@@ -253,13 +253,18 @@ Checks in CI via `scripts/check_prompt_drift.py`:
 5. Every rendered field contains compact slots `T`, `F`, `S`, `Cap`, `Req`,
    `M`, `G`, and `Ex`; every typed-object field also contains `Shape`.
 6. Every rendered field preserves producer guidance in `G`; empty or
-   title-only guidance fails drift.
-7. Every enum/marker list rendered in OUTPUT comes from a tuple/frozenset
+   title-only guidance fails drift. `G` must retain decision criteria,
+   required reference behavior, source constraints, and boundary examples from
+   A4a's authoring entry.
+7. Rendered `M`, `G`, and `Ex` follow A4a's compression rules: compact text is
+   allowed, but missing meaning, missing guidance criteria, or shape-mismatched
+   examples fail drift.
+8. Every enum/marker list rendered in OUTPUT comes from a tuple/frozenset
    constant, not prose-only duplication.
-8. `_build_conductor_system_prompt` includes a schema-version stamp computed
+9. `_build_conductor_system_prompt` includes a schema-version stamp computed
    from `ResearchThesis.model_fields` and the rules sidecar hash.
-9. The checked-in rules sidecar matches fresh regeneration.
-10. DOCTRINE prose contains no `ResearchThesis.model_fields` names and no
+10. The checked-in rules sidecar matches fresh regeneration.
+11. DOCTRINE prose contains no `ResearchThesis.model_fields` names and no
    `-> see <field>` / `→ see <field>` references.
 
 ## 8. Success Criteria
