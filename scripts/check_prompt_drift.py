@@ -146,7 +146,7 @@ def extract_output_fields_from_prompt(prompt: str) -> set[str]:
     """Pull field names out of the prompt's OUTPUT section.
 
     Field lines look like:
-      "  thesis_id              short stable identifier"
+      "  proposal_label         optional free-form handle"
     """
     section_match = re.search(
         r"^OUTPUT\b.*?(?=^[A-Z][A-Z _\-]{3,}$|\Z)",

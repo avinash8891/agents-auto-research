@@ -68,8 +68,8 @@ from autoresearch_research import queue_variants as _research_queue_variants
 from autoresearch_research import results_to_dicts as _research_results_to_dicts
 from autoresearch_research import run_research as _research_run_research
 from autoresearch_state import BacktestResultRecord, RunContext
-from autoresearch_state import _coerce_job_to_int as _state_coerce_job_to_int
 from autoresearch_state import best_result as _state_best_result
+from autoresearch_state import coerce_job_to_int as _state_coerce_job_to_int
 from autoresearch_state import deduplicate_entries as _state_deduplicate_entries
 from autoresearch_state import is_better as _state_is_better
 from autoresearch_state import latest_result as _state_latest_result
