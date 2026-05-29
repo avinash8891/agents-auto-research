@@ -9,15 +9,16 @@
 
 ## 1. Goal
 
-Define how generated OUTPUT fields are validated and kept in sync with schema,
-validator code, runtime context, and rendered prompt artifacts. This spec owns
-validator rules, predicate metadata, generated sidecars, drift detection, and
-validation fixtures.
+Define how generated thesis OUTPUT is validated before a run and kept in sync
+with schema, validator code, runtime context, and rendered prompt artifacts.
+This spec owns pre-run validator rules, predicate metadata, generated sidecars,
+drift detection, and validation fixtures.
 
 ## 2. Non-goals
 
 - LLM-facing field wording and examples — see A4a.
 - Per-round runtime prompt content — see A4b.
+- Post-run outcome evaluation of accepted theses — see A4d.
 - Showing rejection-code catalogues to the LLM. Rejection codes reach the LLM
   only through runtime retry feedback such as A4b's `RECENT REJECTIONS` block.
 
@@ -39,8 +40,8 @@ Current Stage 1 order is:
    mechanical; repeated-tuning behavior remains research-policy even when the
    rejection code is prefixed `config_validity_*`.
 
-Stage 2 owns post-compile contract resolution. Post-run evaluation owns whether
-runtime predictions actually occurred.
+Stage 2 owns post-compile contract resolution needed before execution. A4d owns
+whether predictions actually occurred after execution.
 
 ### 3.1 A4 Field Rules By Validator Tier
 
@@ -66,7 +67,6 @@ runtime predictions actually occurred.
 | `confidence_distribution` strength floor / speculative-basis handling | `research_policy` | new behavior signal | Epistemic-quality policy. Replaces the deleted `evidence_strength` gate. |
 | `expected_effects` presence, metric backing, magnitude/unit/rationale conditionals | `mechanical` | `_validate_expected_effects_present`, metric-backing loop, new predicates | Metric backing reads `required_diagnostic_specs[*].key`; do not reintroduce deleted `required_diagnostics` as an LLM field. |
 | `expected_runtime_signal` shape and event-path resolution | `mechanical` | new A4 predicate implementation | Validates declared path/relation only. |
-| Whether `expected_runtime_signal` happened | post-run evaluator | evaluator, not Stage 1 validator | Do not reject a thesis before runtime for an outcome that cannot exist yet. |
 | `disqualifiers` count/kind/overfit marker | `mechanical` | existing disqualifier checks plus new count predicate | Replaces the deleted `falsification_or_alternative` gate. |
 | Missing mechanism-evidence disqualifier quality | `research_policy` | `_detect_missing_mechanism_evidence_disqualifier` | Behavioral/quality signal. |
 | `config_changes` non-empty-or-code-change and unknown keys | `mechanical` / `config_validity` | `_validate_thesis_specifies_change`; new A4b key predicate | Deterministic config contract. |
@@ -105,13 +105,12 @@ contract still uses it.
 `(O)` marks validators that operate on the LLM OUTPUT / `ResearchThesis`
 contract. `remove` marks current Stage 1 OUTPUT gates that are stale after A4a's
 field changes. Validators without `(O)` are adjacent process, compiler-contract,
-post-run, or drift validators that still affect the A4 boundary.
+or drift validators that still affect the A4 boundary.
 
 Every validator gate in this inventory must define:
 
 - **Applicability:** whether the gate is always required, conditional,
-  optional-if-present, system-injected, compiler-contract, post-run-only,
-  CI-only, or removed.
+  optional-if-present, system-injected, compiler-contract, CI-only, or removed.
 - **Logic:** the exact data read and condition checked by code.
 - **Feedback:** the concise retry message returned to the research conductor in
   `RECENT REJECTIONS`. Feedback must name the field or process behavior to fix,
@@ -128,7 +127,6 @@ Applicability values:
   repairable OUTPUT.
 - `compiler_contract` — runs after compilation, not as Stage 1 OUTPUT
   validation.
-- `post_run_only` — runs only after backtest execution.
 - `ci_always` — CI/operator drift gate, not per-thesis runtime validation.
 - `removed` — stale legacy gate that must not run after A4a.
 
@@ -209,15 +207,13 @@ from its `Applicability` value plus tier/condition shape:
 | Research-policy hard gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | No `warn` unless the gate is explicitly defined as warning-capable in §3.3. |
 | Research-policy warning-capable gate | `pass`, `warn`, `reject`, `skipped_not_applicable`, `not_evaluated` | Use only for gates whose logic explicitly defines a non-blocking warning path, such as weak `confidence_distribution` before the hard-reject conditions are also met. |
 | Stage 2/compiler-contract gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | `not_evaluated` is valid when Stage 1 already rejected. |
-| Post-run evaluator gate | `pass`, `warn`, `reject`, `skipped_not_applicable`, `not_evaluated` | Only post-run gates with advisory semantics may use `warn`; metric/disqualifier failures normally use `reject`. |
-
 `not_evaluated` is never emitted by an individual gate. It is inserted by the
 validation orchestrator when a prior blocking gate prevents later gates from
 running. `warn` is never allowed for purely mechanical gates.
 
 `gate_id` must match the rule id from `prompts/conductor_output_rules.json` for
 generated/prompt-declared gates, or the explicit inventory name in §3.3 for
-process, compiler-contract, and post-run gates. `applicability` must copy the
+process and compiler-contract gates. `applicability` must copy the
 gate's §3.3 `Applicability` value so DB analytics can distinguish missing
 required gates from valid optional skips. `rejection_code` is empty for passing
 gates that do not have a code; for reject/warn rows it must match the
@@ -337,16 +333,6 @@ guidance, not against legacy validator behavior.
 | Strategy family alignment unconfigured. | compiler contract | `validate_stage_2` / `_load_family_key_concepts` | `hypothesis_config_alignment_unconfigured` | keep / tighten | `compiler_contract` | Hard-fail when the family name is empty, the family is unregistered, `family_research_spec` cannot load, or a production family has empty `key_concepts`, because Stage 2 cannot know whether compiled config tests the thesis. Only families in an explicit scaffold/demo allowlist may skip alignment. This is an operator/compiler configuration problem, not an LLM OUTPUT repair. | "Stage 2 alignment is not configured for strategy family {strategy_family}. Populate `FamilyResearchSpec.key_concepts` or add the family to the explicit scaffold/demo allowlist." |
 | Required diagnostics resolve post-compile. | compiler contract | `_collect_stage_2_required_diagnostic_failures` | `required_diagnostic_missing_post_compile` | keep | `compiler_contract` | Resolve each `required_diagnostic_specs[*].key` or alias against the compiled contract and `runtime_config`. Reject when a diagnostic predicted by the thesis cannot be produced by the compiled strategy. | "Required diagnostic {diagnostic_key} is not produced by the compiled contract/runtime config. Add the diagnostic or remove the prediction that depends on it." |
 | Compiled base config inheritance validation. | compiler contract | Stage 2/compiler-contract validation | `config_validity_base_config_path_invalid`, `config_validity_base_config_path_runtime_construction`, `config_validity_base_config_path_inheritance_blocked`, `config_validity_base_contract_id_not_allowed` | add/move here | `compiler_contract` | Validate compiler-generated base config inheritance only after contract construction. Enforce path allowlists, no runtime string construction, no disallowed base contract id inheritance, and family policy. | "Compiled base config inheritance is invalid: {reason}. Fix the compiler contract, not the LLM OUTPUT JSON." |
-
-#### Post-run Evaluation Validators
-
-| Gate | Scope | Owner | Rejection code(s) | Status | Applicability | Logic | Feedback to research conductor |
-|---|---|---|---|---|---|---|---|
-| Expected effects pass/fail against backtest metrics. | evaluator | evaluator / `BacktestVerdict` | `passed_effects`, `failed_effects` verdict fields | keep outside Stage 1 | `post_run_only` | After a run, compare candidate metrics against baseline metrics for each `expected_effects` entry. `increase`/`decrease` must move in the declared direction and, when A4 `magnitude_range` is present, the measured delta must fall inside that range after converting by `unit`: `ratio` = raw delta for ratio metrics, `pct` = percent relative change, `bps` = basis-point delta, `sharpe_points` = raw Sharpe delta, `count`/`trades` = absolute count delta, `dollars` = absolute currency delta. `increase_or_same`, `decrease_or_same`, and `not_worse_than` are guardrail checks. Missing or failed effects produce `failed_effects` and make the verdict `inconclusive`, not accepted. | "Post-run result: expected effect {metric} {direction} {range} was {passed_or_failed}; baseline={baseline_value}, candidate={candidate_value}." |
-| Disqualifiers triggered by run results. | evaluator | evaluator / `BacktestVerdict` | `triggered_disqualifiers` verdict field | keep outside Stage 1 | `post_run_only` | Parse mechanically evaluable disqualifier conditions against run metrics/diagnostics. Hard-fail disqualifiers make the verdict `rejected`; soft-fail disqualifiers make it `inconclusive`. This is outcome evaluation, not Stage 1 thesis validation. | "Post-run disqualifier {name} triggered: {condition} matched actual diagnostics. Treat the thesis as killed for hard_fail, or inconclusive for soft_fail." |
-| Disqualifiers that cannot be parsed mechanically. | evaluator | evaluator / `BacktestVerdict` | `unparsed_disqualifiers` verdict field | keep outside Stage 1 | `post_run_only` | When a disqualifier condition cannot be mechanically parsed, record its name in `unparsed_disqualifiers` and return an `inconclusive` verdict. Do not silently accept the run; the next prompt/spec iteration should make the disqualifier condition machine-checkable. | "Post-run disqualifier {name} could not be parsed mechanically. Rewrite future disqualifiers as metric/diagnostic comparisons the evaluator can check." |
-| Required diagnostics missing after run. | evaluator | evaluator / `BacktestVerdict` | `missing_required_diagnostics` verdict field | keep outside Stage 1 | `post_run_only` | After execution, ensure diagnostics required by predictions and `required_diagnostic_specs` appear in the run artifact. | "Post-run diagnostics are missing: {diagnostic_keys}. The run cannot evaluate the thesis claims until these diagnostics are emitted." |
-| `expected_runtime_signal` actually occurred. | evaluator | future runtime-signal evaluator | TBD verdict/rejection field | add outside Stage 1 | `post_run_only` | After execution, resolve each `expected_runtime_signal.event_path` in diagnostics and evaluate relation/bounds under its condition when condition data is available. | "Post-run runtime signal {event_path} did not satisfy {relation}/{bounds} under condition {condition}." |
 
 #### Drift / Prompt Contract Validators
 
