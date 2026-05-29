@@ -17,7 +17,7 @@ This spec deliberately does not own round-specific prompt blocks or validator
 implementation details. Those live in:
 
 - `2026-05-28-spec-a4-round-runtime-context-prompt.md`
-- `2026-05-28-spec-a4-output-validation-and-drift.md`
+- `2026-05-28-spec-a4-validation-and-drift.md`
 
 ## 2. Non-goals
 

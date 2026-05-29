@@ -1,4 +1,4 @@
-# Spec A4c — Conductor OUTPUT Validation And Drift
+# Spec A4c — Conductor Validation And Drift
 
 **Date:** 2026-05-28
 **Status:** Design — split from Spec A4
@@ -9,15 +9,20 @@
 
 ## 1. Goal
 
-- Pre-run validation for A4a `ResearchThesis` OUTPUT JSON.
-- Adjacent process and compiler-contract gates that affect the A4 boundary.
-- Predicate metadata, generated sidecars, drift detection, validation fixtures,
-  and validator retry-feedback behavior.
+Define the complete A4 validation boundary:
+
+- Stage 1 `ResearchThesis` OUTPUT JSON validation.
+- Runtime-context reference validation against A4b data.
+- Process/provenance validation for required research and source-reading work.
+- Stage 2 compiler-contract validation before execution.
+- Validator metadata, generated sidecars, drift detection, validation fixtures,
+  persistence, and retry-feedback behavior.
 - Sync between schema, validator code, runtime context, and rendered prompt
   artifacts.
-- Rejection-code catalogues stay out of the LLM-facing A4a OUTPUT section.
-  Rejection codes reach the LLM only through runtime retry feedback such as
-  A4b's `RECENT REJECTIONS` block.
+
+Rejection-code catalogues stay out of the LLM-facing A4a OUTPUT section.
+Rejection codes reach the LLM only through runtime retry feedback such as A4b's
+`RECENT REJECTIONS` block.
 
 ## 2. Non-goals
 
