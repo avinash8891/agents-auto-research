@@ -16,15 +16,16 @@ prompt artifacts.
 This spec is broader than the system-prompt OUTPUT text itself: it owns pre-run
 validator rules for emitted `ResearchThesis` JSON, adjacent process and
 compiler-contract gates, predicate metadata, generated sidecars, drift
-detection, and validation fixtures.
+detection, validation fixtures, and validator retry-feedback behavior.
+Rejection-code catalogues never render into the LLM-facing A4a OUTPUT section;
+rejection codes reach the LLM only through runtime retry feedback such as A4b's
+`RECENT REJECTIONS` block.
 
 ## 2. Non-goals
 
 - LLM-facing field wording and examples — see A4a.
 - Per-round runtime prompt content — see A4b.
 - Post-run outcome evaluation of accepted theses — see A4d.
-- Showing rejection-code catalogues to the LLM. Rejection codes reach the LLM
-  only through runtime retry feedback such as A4b's `RECENT REJECTIONS` block.
 
 ## 3. Validator Gate Ownership
 
