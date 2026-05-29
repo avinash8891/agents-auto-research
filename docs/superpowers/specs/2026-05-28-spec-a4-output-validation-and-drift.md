@@ -2,17 +2,21 @@
 
 **Date:** 2026-05-28
 **Status:** Design — split from Spec A4
-**Reference:** A4a OUTPUT fields and A4b runtime context keys.
+**Reference:** A4a OUTPUT system-prompt fields and A4b runtime context keys.
 **Depends on:** A4a for fields; A4b for round context data dependencies.
 
 ---
 
 ## 1. Goal
 
-Define how generated thesis OUTPUT is validated before a run and kept in sync
-with schema, validator code, runtime context, and rendered prompt artifacts.
-This spec owns pre-run validator rules, predicate metadata, generated sidecars,
-drift detection, and validation fixtures.
+Define how the A4a OUTPUT system-prompt JSON contract is validated before a run
+and kept in sync with schema, validator code, runtime context, and rendered
+prompt artifacts.
+
+This spec is broader than the system-prompt OUTPUT text itself: it owns pre-run
+validator rules for emitted `ResearchThesis` JSON, adjacent process and
+compiler-contract gates, predicate metadata, generated sidecars, drift
+detection, and validation fixtures.
 
 ## 2. Non-goals
 
