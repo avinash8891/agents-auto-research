@@ -3,7 +3,8 @@
 **Date:** 2026-05-28
 **Status:** Design — split from Spec A4
 **Reference:** A4a OUTPUT system-prompt fields and A4b runtime context keys.
-**Depends on:** A4a for fields; A4b for round context data dependencies.
+**Depends on:** A4a for Stage 1 thesis fields; A4b for round context data
+dependencies.
 
 ---
 
@@ -32,9 +33,21 @@ Rejection codes reach the LLM only through runtime retry feedback such as A4b's
 
 ## 3. Validator Gate Ownership
 
-The validator is tiered. New A4 rules must be assigned to the tier that owns
-the data dependency, not merely to the OUTPUT field category where the field
-renders.
+The validator is tiered. A4c owns the full validation lifecycle, not just OUTPUT
+schema checks. New A4 rules must be assigned to the tier that owns the data
+dependency, not merely to the OUTPUT field category where the field renders.
+
+Validation lifecycle:
+
+1. **Process/provenance gates** inspect observed tool and source-read traces.
+2. **Stage 1 thesis gates** validate emitted `ResearchThesis` JSON, including
+   references into A4b runtime context.
+3. **Persistence gates** record per-attempt gate outcomes, retry feedback, and
+   validator challenges.
+4. **Stage 2 compiler-contract gates** validate compiled contracts before
+   execution.
+5. **Drift gates** keep schema, prompt artifacts, validator codes, and sidecars
+   synchronized in CI.
 
 Current Stage 1 order is:
 
@@ -51,9 +64,9 @@ Current Stage 1 order is:
 Stage 2 owns post-compile contract resolution needed before execution. A4d owns
 whether predictions actually occurred after execution.
 
-### 3.1 A4 Field Rules By Validator Tier
+### 3.1 A4 Validation Rules By Tier
 
-| Field / rule | Validator tier | Implementation owner | Notes |
+| Rule / data dependency | Validator tier | Implementation owner | Notes |
 |---|---|---|---|
 | Required process tools, evidence-producing tools, source-code read trace | `process` | `_validate_process` plus attempt-trace extension | Tool/path evidence belongs to process, not field mechanics. |
 | `hypothesis`, `mechanism`, `thesis_role`, `theme_keywords` presence/enum/list shape | `mechanical` | `_collect_inline_structural_failures` or generated predicate sidecar | Deterministic thesis-local checks. |
@@ -109,14 +122,14 @@ part of this cleanup. A4a omits it from LLM OUTPUT until diagnostic-spec fields
 are separately defined, but the compiler/evaluator contract may still use
 system/compiler-generated specs after Stage 1 OUTPUT validation.
 
-### 3.3 Comprehensive Validator Inventory
+### 3.3 Gate Inventory Contract
 
 `(O)` marks validators that operate on the LLM OUTPUT / `ResearchThesis`
 contract. `remove` marks current Stage 1 OUTPUT gates that are stale after A4a's
-field changes. Validators without `(O)` are adjacent process, compiler-contract,
-or drift validators that still affect the A4 boundary.
+field changes. Validators without `(O)` are process, compiler-contract,
+persistence, or drift validators that still affect the A4 validation boundary.
 
-Every validator gate in this inventory must define:
+Every validator gate in §3.5-§3.10 must define:
 
 - **Applicability:** whether the gate is always required, conditional,
   optional-if-present, system-injected, compiler-contract, CI-only, or removed.
@@ -213,7 +226,7 @@ from its `Applicability` value plus tier/condition shape:
 | Conditional process provenance gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | A4a makes `source_code_verification` always required for thesis attempts, so its read-trace gate does not skip for normal Stage 1 thesis validation. `skipped_not_applicable` is reserved for non-OUTPUT validation paths that explicitly do not validate a thesis attempt. |
 | Mechanical required-field / schema / enum gate | `pass`, `reject`, `not_evaluated` | No `warn`: deterministic shape failures either block or pass. |
 | Mechanical conditional/reference gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | Example: emergent-dimension gates skip for non-emergent theses; overlap-triggered `novel_connection` gates skip when overlap is below threshold. |
-| Research-policy hard gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | No `warn` unless the gate is explicitly defined as warning-capable in §3.3. |
+| Research-policy hard gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | No `warn` unless the gate is explicitly defined as warning-capable in the gate inventory. |
 | Research-policy warning-capable gate | `pass`, `warn`, `reject`, `skipped_not_applicable`, `not_evaluated` | Use only for gates whose logic explicitly defines a non-blocking warning path, such as weak `confidence_distribution` before the hard-reject conditions are also met. |
 | Stage 2/compiler-contract gate | `pass`, `reject`, `skipped_not_applicable`, `not_evaluated` | `not_evaluated` is valid when Stage 1 already rejected. |
 `not_evaluated` is never emitted by an individual gate. It is inserted by the
@@ -221,8 +234,8 @@ validation orchestrator when a prior blocking gate prevents later gates from
 running. `warn` is never allowed for purely mechanical gates.
 
 `gate_id` must match the rule id from `prompts/conductor_output_rules.json` for
-generated/prompt-declared gates, or the explicit inventory name in §3.3 for
-process and compiler-contract gates. `applicability` must copy the
+generated/prompt-declared gates, or the explicit inventory name in §3.5-§3.10
+for process and compiler-contract gates. `applicability` must copy the
 gate's §3.3 `Applicability` value so DB analytics can distinguish missing
 required gates from valid optional skips. `rejection_code` is empty for passing
 gates that do not have a code; for reject/warn rows it must match the
@@ -272,14 +285,14 @@ believes a prior rejection may be wrong. `challenge.json` is derived from this
 DB row for compatibility with prompt/debug tooling and must not be the only
 source of the challenge claim.
 
-#### Process Validators
+### 3.5 Process Validators
 
 | Gate | Scope | Owner | Rejection code(s) | Status | Applicability | Logic | Feedback to research conductor |
 |---|---|---|---|---|---|---|---|
 | Required process tools called. | process | `_validate_process` | `process_required_tools_not_called` | keep | `conditional_required` | Read the attempt trace when it is available. Require `list_round_results` and `web_search` for each new thesis-proposal attempt, because the conductor must inspect prior round state and external mechanism evidence before proposing OUTPUT. Format-only retries in the same round may reuse previously observed tool evidence if the retry context carries the prior attempt's tool trace and evidence summary. Require `analyze_trades` only when the caller sets `require_analyst_tool=true` for contexts that need trade-level analyst evidence. If `tools_called is None`, skip the process gate because the caller did not observe tool usage; if it is an empty set and no reusable prior-attempt trace is attached, the gate must fire. | "This attempt has no usable record of required research tool(s): {missing_tools}. Run those tools first, or retry with the prior attempt's tool trace/evidence summary attached." |
 | Source-code path read trace for `source_code_verification`. | process | attempt-trace extension | `process_source_code_not_read`, `process_source_code_path_not_read` | add | `always_required` | Extract the repo-relative path from `source_code_verification`. Because A4a marks this OUTPUT field `Required: Always`, require at least one source-reading tool call in the attempt trace and require the extracted path to appear in normalized read paths for every normal Stage 1 thesis-proposal attempt. If a caller invokes validation without any observable attempt trace, the orchestrator records this gate as `not_evaluated`, not `pass` or `skipped_not_applicable`. This validates provenance, not string shape; the mechanical OUTPUT gate still owns `path:symbol` syntax and symbol existence. | `process_source_code_not_read`: "You cited source code but did not read any source file in this attempt." `process_source_code_path_not_read`: "You cited {path}, but that path was not read in this attempt. Read the cited file or cite the file you actually inspected." |
 
-#### Research Policy Validators
+### 3.6 Research Policy Validators
 
 | Gate | Scope | Owner | Rejection code(s) | Status | Applicability | Logic | Feedback to research conductor |
 |---|---|---|---|---|---|---|---|
@@ -293,7 +306,7 @@ source of the challenge claim.
 | Weak `confidence_distribution`. | `(O)` | new behavior signal | `thesis_quality_confidence_distribution_too_weak` | add as warning / conditional block | `always_required` | Read `confidence_distribution`. Do not hard-reject merely because evidence is honestly weak. Emit `warn` when all counted dimensions are `speculative`; emit `reject` instead when all counted dimensions are `speculative` AND the thesis lacks both (a) a mechanism-evidence disqualifier acknowledging the weak basis and (b) a concrete `if_this_fails_next_thesis` pivot. Greenfield contexts may have `precedent="speculative"` without counting it against this gate. One gate row is persisted; `reject` dominates `warn` when both conditions are true. | "Your confidence distribution is weak. Either strengthen evidence, or explicitly handle the weak basis with a mechanism-evidence disqualifier and concrete next-thesis pivot." |
 | Weak `if_this_fails_next_thesis` pre-commitment. | `(O)` | new behavior signal or predicate-backed policy | `thesis_quality_next_thesis_not_pre_committed` | add | `always_required` | Require `if_this_fails_next_thesis` to name either (a) the exact `deepest_alternative.mechanism`, or (b) a different `mechanism_dimension` plus a concrete mechanism phrase of at least 5 words. Reject vague retries such as parameter retuning without a named pivot. | "Make `if_this_fails_next_thesis` concrete: cite the deepest alternative exactly, or name a different mechanism dimension plus the mechanism you would test next." |
 
-#### Mechanical OUTPUT Validators
+### 3.7 Stage 1 Thesis Mechanical Validators
 
 These gates must be finalized against A4a OUTPUT meanings and producer
 guidance, not against legacy validator behavior.
@@ -332,7 +345,7 @@ guidance, not against legacy validator behavior.
 | Legacy `causal_cluster` gate. | `(O)` | `_collect_inline_structural_failures` | `structural_missing_causal_cluster` | remove | `removed` | Delete this Stage 1 gate. Replacement signals are `theme_keywords`, computed overlap, `novel_connection`, and optional `mechanism_lineage`. | "Use `theme_keywords`, `novel_connection`, and `mechanism_lineage`; `causal_cluster` is no longer part of OUTPUT." |
 | Legacy `expected_reuse_across_future_theses` emergent gate. | `(O)` | `_validate_emergent_dimension` | `structural_emergent_thesis_malformed` | remove | `removed` | Delete this required field from emergent checks. A4a replacement is `mechanism_family_definition`. | "Use `mechanism_family_definition`; `expected_reuse_across_future_theses` is no longer part of OUTPUT." |
 
-#### Config Validity Validators
+### 3.8 Config Validity Validators
 
 | Gate | Scope | Owner | Rejection code(s) | Status | Applicability | Logic | Feedback to research conductor |
 |---|---|---|---|---|---|---|---|
@@ -341,7 +354,7 @@ guidance, not against legacy validator behavior.
 | `base_config_path` path syntax / runtime path / inheritance. | compiler contract | `_validate_base_config_path`, `_collect_mechanical_config_validity_failures` today | `config_validity_base_config_path_invalid`, `config_validity_base_config_path_runtime_construction`, `config_validity_base_config_path_inheritance_blocked` | move out of Stage 1 | `compiler_contract` | Do not validate this as an LLM OUTPUT field. After compilation, validate only compiler-generated contract inheritance paths: repo-relative, allowed location, not runtime-constructed from user data, and permitted by family policy. | "Compiled contract inheritance path {path} is invalid or not allowed. The compiler must use an approved base config path." |
 | `base_contract_id` inheritance blocked. | compiler contract | `_collect_mechanical_config_validity_failures` today | `config_validity_base_contract_id_not_allowed` | move out of Stage 1 | `compiler_contract` | Do not validate this as an LLM OUTPUT field. If the compiler emits contract inheritance, enforce family policy there. | "Compiled contract inheritance by base_contract_id is not allowed for this family/path." |
 
-#### Stage 2 / Compiler-Contract Validators
+### 3.9 Stage 2 / Compiler-Contract Validators
 
 | Gate | Scope | Owner | Rejection code(s) | Status | Applicability | Logic | Feedback to research conductor |
 |---|---|---|---|---|---|---|---|
@@ -350,7 +363,7 @@ guidance, not against legacy validator behavior.
 | Required diagnostics and free-form predicted metrics resolve post-compile. | compiler contract | `_collect_stage_2_required_diagnostic_failures` plus expected-effect metric producibility check | `required_diagnostic_missing_post_compile` | keep / extend | `compiler_contract` | Resolve each `required_diagnostic_specs[*].key` or alias against the compiled contract and `runtime_config`. For `expected_effects[*].metric`, accept built-in evaluator metrics directly; for non-builtin metrics, require the compiled contract to produce a matching diagnostic spec, alias, runtime metric, or experiment-evaluation surface. Reject after compilation when a metric predicted by the thesis cannot be produced by the compiled strategy. | "Required diagnostic or predicted metric {diagnostic_key} is not produced by the compiled contract/runtime config. Add the diagnostic or remove the prediction that depends on it." |
 | Compiled base config inheritance validation. | compiler contract | Stage 2/compiler-contract validation | `config_validity_base_config_path_invalid`, `config_validity_base_config_path_runtime_construction`, `config_validity_base_config_path_inheritance_blocked`, `config_validity_base_contract_id_not_allowed` | add/move here | `compiler_contract` | Validate compiler-generated base config inheritance only after contract construction. Enforce path allowlists, no runtime string construction, no disallowed base contract id inheritance, and family policy. | "Compiled base config inheritance is invalid: {reason}. Fix the compiler contract, not the LLM OUTPUT JSON." |
 
-#### Drift / Prompt Contract Validators
+### 3.10 Drift / Prompt Contract Validators
 
 | Gate | Scope | Owner | Failure mode | Status | Applicability | Logic | CI / operator feedback |
 |---|---|---|---|---|---|---|---|
@@ -364,9 +377,16 @@ guidance, not against legacy validator behavior.
 | Prompt schema-version stamp matches schema/rules hash. | drift | `scripts/check_prompt_drift.py` | CI failure | add | `ci_always` | Compute hash from `ResearchThesis.model_fields` plus rules sidecar. Fail if `_build_conductor_system_prompt` stamp differs. | "Drift check failed: prompt schema-version stamp is stale." |
 | DOCTRINE contains no schema-field names or field-reference arrows. | drift | `scripts/check_prompt_drift.py` | CI failure | keep | `ci_always` | Scan DOCTRINE prose for `ResearchThesis.model_fields` names and `-> see <field>` / `→ see <field>` patterns. | "Drift check failed: DOCTRINE duplicates OUTPUT schema-field contract {field}." |
 
-## 4. Consolidated Validator Rules
+## 4. Stage 1 Thesis Rule Details
 
-All validator rules for the A4a OUTPUT fields, in one place. This section is the
+This section expands the Stage 1 thesis gates for A4a OUTPUT fields and their
+A4b runtime-context references. It is not the complete validation inventory:
+per-attempt persistence, Stage 2 compiler-contract, and CI drift gates are
+canonical in §3.4, §3.9, and §3.10. Process/provenance gates are canonical in
+§3.5; §4.9 repeats the source-read trace gate only because it is tightly paired
+with `source_code_verification`.
+
+For prompt-declared Stage 1 thesis predicates, this section is the
 authoritative human-readable source; `prompts/conductor_output_rules.json`
 (§5) is the machine-readable derivation. None of this content renders into the
 LLM-facing prompt.
@@ -479,10 +499,11 @@ near OUTPUT as an optional attachment, but it must not be required to appear in
 
 ---
 
-## 5. Structured Rule Metadata
+## 5. Stage 1 Prompt Rule Metadata
 
-The OUTPUT renderer emits, alongside `prompts/conductor_output_section.md`, a
-sidecar file `prompts/conductor_output_rules.json` with the shape:
+For prompt-declared Stage 1 thesis predicates, the OUTPUT renderer emits,
+alongside `prompts/conductor_output_section.md`, a sidecar file
+`prompts/conductor_output_rules.json` with the shape:
 
 ```json
 {
@@ -590,7 +611,8 @@ code.
 
 ## 7. Migration Items Owned Here
 
-- Implement all rejection codes listed in §4.
+- Implement all validator gates listed in §3.5-§3.10.
+- Implement all prompt-declared Stage 1 rejection codes listed in §4 and §5.
 - Remove Stage 1 validator references to deleted LLM OUTPUT fields listed in
   §3.2 and replace them with the A4 replacement-owner gates.
 - Move any remaining `base_config_path` / `base_contract_id` inheritance checks
@@ -605,8 +627,8 @@ code.
   validator-sidecar parity, no-rule-leakage-in-prompt, compact-slot
   completeness, M/G/Ex compression integrity, constants-in-prompt,
   schema-version stamp, and sidecar freshness.
-- Add positive and negative prompt fixtures; each negative fixture trips exactly
-  its named rejection code.
+- Add positive and negative prompt fixtures for §4/§5 Stage 1 predicates; each
+  negative fixture trips exactly its named rejection code.
 - Thread attempt trace data needed by process-tier predicates, including
   `read_strategy_source` paths, into validator calls.
 - Add DB persistence for per-attempt gate outcomes using
@@ -674,5 +696,11 @@ Checks in CI via `scripts/check_prompt_drift.py`:
   `challenge.json` can be regenerated from the DB row.
 - An accepted-attempt integration test proves a `compiled` thesis has persisted
   passing/skipped gate rows, not only `selected_for_execution=1`.
+- A process-validation integration test proves required tool/read-path gates
+  reject when trace evidence is missing and do not silently pass when the
+  validation path lacks observable attempt trace data.
+- A Stage 2 integration test proves compiler-contract validation rejects
+  misaligned compiled configs and unresolved predicted diagnostics/metrics
+  after compilation.
 - `python scripts/check_prompt_drift.py` exits 0.
 - Rejection codes never appear in the rendered LLM-facing OUTPUT section.
