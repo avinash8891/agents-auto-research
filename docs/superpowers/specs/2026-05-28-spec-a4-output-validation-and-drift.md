@@ -9,17 +9,15 @@
 
 ## 1. Goal
 
-Define how the A4a OUTPUT system-prompt JSON contract is validated before a run
-and kept in sync with schema, validator code, runtime context, and rendered
-prompt artifacts.
-
-This spec is broader than the system-prompt OUTPUT text itself: it owns pre-run
-validator rules for emitted `ResearchThesis` JSON, adjacent process and
-compiler-contract gates, predicate metadata, generated sidecars, drift
-detection, validation fixtures, and validator retry-feedback behavior.
-Rejection-code catalogues never render into the LLM-facing A4a OUTPUT section;
-rejection codes reach the LLM only through runtime retry feedback such as A4b's
-`RECENT REJECTIONS` block.
+- Pre-run validation for A4a `ResearchThesis` OUTPUT JSON.
+- Adjacent process and compiler-contract gates that affect the A4 boundary.
+- Predicate metadata, generated sidecars, drift detection, validation fixtures,
+  and validator retry-feedback behavior.
+- Sync between schema, validator code, runtime context, and rendered prompt
+  artifacts.
+- Rejection-code catalogues stay out of the LLM-facing A4a OUTPUT section.
+  Rejection codes reach the LLM only through runtime retry feedback such as
+  A4b's `RECENT REJECTIONS` block.
 
 ## 2. Non-goals
 
