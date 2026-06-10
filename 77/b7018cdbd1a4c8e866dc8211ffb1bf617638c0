@@ -1,0 +1,22 @@
+strategy_family.py
+  s_cea1fad922bae5::t_b292fc59177acf 10,63-65
+autoresearch_artifacts.py
+  s_cea1fad922bae5::t_23b73e22fc9b5b 56-58
+  s_cea1fad922bae5::t_8a1e128d9304d2 10,49-50,52-55,59-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "77b7018cdbd1a4c8e866dc8211ffb1bf617638c0",
+  "prompts": {},
+  "sessions": {
+    "s_cea1fad922bae5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb13f-b2e3-7941-9881-40c2f957586d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
