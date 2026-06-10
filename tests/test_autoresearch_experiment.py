@@ -39,8 +39,9 @@ from autoresearch_experiment import (
 )
 from autoresearch_paths import resolve_config_path
 from backtest_run_db import BacktestRunRecord, BaselineCheckpoint
+from causal_model import load_model, save_model
 from feature_table import load_feature_table
-from research_types import BacktestContract
+from research_types import BacktestContract, CausalFactor, CausalModel
 from strategy_family import load_family
 
 
@@ -1267,6 +1268,7 @@ def test_run_experiment_executes_command_logs_result_and_reconciles_state(
 def test_run_experiment_uses_registered_predictions_without_force_discard(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
     script = tmp_path / "write_result.py"
     script.write_text(
         "\n".join(
@@ -1306,6 +1308,18 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
     round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
     round_root.mkdir(parents=True)
     (round_root / "selected_config.json").write_text(json.dumps({"ema_length": 10}) + "\n")
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-success",
+                "strategy_family": "ema",
+                "hypothesis": "Gap-down entries should improve harvest metrics.",
+                "mechanism": "Gap pressure creates better mean-reversion setups.",
+                "rule": "gap_pct < 0",
+            }
+        )
+        + "\n"
+    )
     (round_root / "registered_predictions.json").write_text(
         json.dumps(
             {
@@ -1318,6 +1332,21 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
             }
         )
         + "\n"
+    )
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            factors=[
+                CausalFactor(
+                    factor_id="f-gap-down",
+                    story="Gap-down entries should improve harvest metrics.",
+                    rule="gap_pct < 0",
+                    direction="win",
+                )
+            ],
+            accuracy_history=[],
+        )
     )
     state = {
         "state": "running",
@@ -1341,6 +1370,10 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
     assert record.prediction_verdict == "supported"
     assert "profit_factor direction=pass" in record.lesson
     assert record.verdict_status != "inconclusive"
+    updated_model = load_model("ema")
+    assert updated_model.version == 2
+    assert updated_model.factors[0].status == "harvested"
+    assert "profit_factor direction=pass" in updated_model.factors[0].lesson
 
 
 def test_run_experiment_writes_feature_table_artifact(

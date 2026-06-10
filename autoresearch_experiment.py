@@ -625,6 +625,29 @@ def _contract_from_sidecar(controller: "AutoresearchController", config: str) ->
     )
 
 
+def _selected_thesis_payload(controller: "AutoresearchController", config: str) -> dict[str, Any]:
+    contract = controller.ctx.current_contract
+    experiment_slug = contract.contract_id if contract else Path(config).parent.name
+    thesis_json_path = _thesis_sidecar_path(controller, config, experiment_slug)
+    if not thesis_json_path.exists():
+        return {}
+    try:
+        payload = json.loads(thesis_json_path.read_text())
+    except json.JSONDecodeError as exc:
+        log.error(
+            f"THESIS_METADATA_MALFORMED path={thesis_json_path}: {exc} "
+            f"| hint=repair or delete the malformed thesis sidecar JSON"
+        )
+        raise ValueError(f"THESIS_METADATA_MALFORMED path={thesis_json_path}: {exc}") from exc
+    except OSError as exc:
+        log.error(
+            f"THESIS_METADATA_READ error path={thesis_json_path}: {exc} "
+            f"| hint=the thesis sidecar exists but cannot be read"
+        )
+        raise
+    return payload if isinstance(payload, dict) else {}
+
+
 def _resolve_identity(contract: Any | None, config: str) -> str:
     return (
         contract.thesis_id if contract and getattr(contract, "thesis_id", "") else Path(config).stem
@@ -1332,6 +1355,39 @@ def _evaluate_registered_predictions(
     )
 
 
+def _apply_registered_verdict_to_causal_factor(
+    controller: "AutoresearchController",
+    config: str,
+    verdict: Any,
+) -> None:
+    status = getattr(verdict, "status", "")
+    if status not in {"supported", "refuted"}:
+        return
+    rule = str(_selected_thesis_payload(controller, config).get("rule") or "")
+    if not rule:
+        return
+
+    from causal_model import load_model, save_model
+
+    model = load_model(controller.family.name)
+    target_status = "harvested" if status == "supported" else "refuted"
+    lesson = str(getattr(verdict, "lesson", "") or getattr(verdict, "summary", ""))
+    updated_factors = []
+    matched = False
+    for factor in model.factors:
+        if factor.rule == rule:
+            updated_factors.append(
+                factor.model_copy(update={"status": target_status, "lesson": lesson})
+            )
+            matched = True
+        else:
+            updated_factors.append(factor)
+    if matched:
+        save_model(
+            model.model_copy(update={"version": model.version + 1, "factors": updated_factors})
+        )
+
+
 def _record_baseline_checkpoint(
     controller: "AutoresearchController",
     details: dict[str, Any],
@@ -1546,6 +1602,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             verdict = registered_verdict
             if registered_verdict.status == "degenerate":
                 decision = "discard"
+            _apply_registered_verdict_to_causal_factor(controller, config, registered_verdict)
 
         analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
         if verdict:
