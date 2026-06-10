@@ -626,7 +626,8 @@ class AutoresearchController:
             self.runtime_root / f"{self.family.name}_backtest_runs.db"
         )
         self.baseline_tracker = BaselineTracker(
-            self.runtime_root / f"{self.family.name}_baseline_checkpoints.json"
+            self.runtime_root / f"{self.family.name}_baseline_checkpoints.json",
+            db=self.backtest_run_db,
         )
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()

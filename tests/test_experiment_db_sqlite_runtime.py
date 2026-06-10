@@ -460,3 +460,40 @@ def test_best_by_metric_skips_corrupt_lower_direction(tmp_path: Path, caplog) ->
     assert best is not None
     assert best.run_id == good.run_id
     assert "not-a-number" in caplog.text
+
+
+def test_baseline_checkpoint_persists_to_sqlite(tmp_path: Path) -> None:
+    """F1/U3: BaselineTracker.record() must write to baseline_checkpoints table."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    from backtest_run_db import BaselineCheckpoint, BaselineTracker
+
+    tracker = BaselineTracker(
+        tmp_path / "ema_baseline_checkpoints.json",
+        db=db,
+    )
+
+    checkpoint = BaselineCheckpoint(
+        code_commit="abc123",
+        data_hash="def456",
+        config_hash="ghi789",
+        metrics={"profit_factor": 1.5, "max_drawdown": 0.12},
+        timestamp="2026-06-10T12:00:00+00:00",
+        round_number=3,
+    )
+    tracker.record(checkpoint)
+
+    import sqlite3
+
+    conn = sqlite3.connect(tmp_path / "backtest_runs.db")
+    rows = conn.execute(
+        "SELECT checkpoint_id, strategy_family, code_commit, round_number FROM baseline_checkpoints"
+    ).fetchall()
+    conn.close()
+
+    assert len(rows) == 1
+    assert rows[0][0]  # checkpoint_id is non-empty
+    assert rows[0][1] == "ema"  # strategy_family from session
+    assert rows[0][2] == "abc123"
+    assert rows[0][3] == 3

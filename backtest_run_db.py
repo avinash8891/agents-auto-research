@@ -351,6 +351,26 @@ class BacktestRunDB:
                 CREATE INDEX IF NOT EXISTS idx_backtest_runs_primary_metric_value
                 ON {BACKTEST_RUNS_TABLE} (primary_metric_value)
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS baseline_checkpoints (
+                    checkpoint_id TEXT PRIMARY KEY,
+                    strategy_family TEXT NOT NULL,
+                    code_commit TEXT NOT NULL,
+                    data_hash TEXT NOT NULL,
+                    config_hash TEXT NOT NULL,
+                    metrics_json TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    round_number INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_baseline_checkpoints_strategy_family_created_at
+                ON baseline_checkpoints (strategy_family, created_at_utc)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_baseline_checkpoints_code_commit
+                ON baseline_checkpoints (code_commit)
+            """)
             conn.commit()
 
     def _ensure_column(
@@ -1131,8 +1151,9 @@ class BaselineCheckpoint:
 class BaselineTracker:
     """Track baseline metrics across rounds to detect environment drift."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, db: "BacktestRunDB | None" = None) -> None:
         self.path = path
+        self.db = db
         self._checkpoints: list[BaselineCheckpoint] | None = None
 
     def _load(self) -> list[BaselineCheckpoint]:
@@ -1165,6 +1186,46 @@ class BaselineTracker:
         checkpoints.append(checkpoint)
         self._checkpoints = checkpoints
         self._save()
+        if self.db is not None:
+            self._write_to_sqlite(checkpoint)
+
+    def _write_to_sqlite(self, checkpoint: BaselineCheckpoint) -> None:
+        import hashlib
+
+        raw = (
+            f"{checkpoint.code_commit}:{checkpoint.data_hash}:"
+            f"{checkpoint.config_hash}:{checkpoint.timestamp}"
+        )
+        checkpoint_id = hashlib.sha256(raw.encode()).hexdigest()[:12]
+        strategy_family = ""
+        try:
+            with self.db._connect() as conn:
+                row = conn.execute("SELECT name FROM session_meta WHERE id = 1").fetchone()
+                if row:
+                    strategy_family = row["name"]
+        except Exception:
+            pass
+        try:
+            with self.db._connect() as conn:
+                conn.execute(
+                    """INSERT OR REPLACE INTO baseline_checkpoints
+                       (checkpoint_id, strategy_family, code_commit, data_hash,
+                        config_hash, metrics_json, created_at_utc, round_number)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        checkpoint_id,
+                        strategy_family,
+                        checkpoint.code_commit,
+                        checkpoint.data_hash,
+                        checkpoint.config_hash,
+                        json_dumps_strict(checkpoint.metrics),
+                        checkpoint.timestamp or _iso8601_utc_now(),
+                        checkpoint.round_number,
+                    ),
+                )
+                conn.commit()
+        except Exception as exc:
+            log.warning("baseline_checkpoints sqlite write failed: %s", exc)
 
     def latest(self) -> BaselineCheckpoint | None:
         checkpoints = self._load()
