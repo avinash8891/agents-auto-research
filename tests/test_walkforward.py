@@ -1,0 +1,164 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from backtest_run_db import BacktestRunDB
+from causal_model import load_model, save_model
+from research_types import CausalFactor, CausalModel
+from walkforward import build_windows, evaluate_walkforward, walkforward_config
+
+
+def _seed_run(db_path: Path, *, run_id: str = "run-thesis") -> None:
+    db = BacktestRunDB(db_path)
+    db.add_from_sqlite_fields(
+        run_id=run_id,
+        thesis_id="thesis-001",
+        config_path="runtime/jobs/job-1/research/round-1/selected_config.json",
+        runtime_config={"ema_length": 8},
+        code_commit="abcdef1",
+        data_hash="data",
+        metrics={"profit_factor": 1.2, "trade_count": 30},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="supported",
+        verdict_summary="supported",
+        family="ema",
+        job_id=1,
+        primary_metric_name="profit_factor",
+        primary_metric_value=1.2,
+        research_round_id="job-1-round-1",
+        research_round_number=1,
+    )
+
+
+def _predictions() -> list[dict]:
+    return [
+        {"metric": "profit_factor", "direction": "increase", "predicted": 1.5},
+        {"metric": "trade_count", "direction": "not_worse_than", "predicted": 20},
+    ]
+
+
+def _windows():
+    return build_windows("2020-01-01", "2021-04-01")
+
+
+def test_build_windows_records_train_window_but_uses_test_window_geometry() -> None:
+    windows = _windows()
+
+    assert [window.test_start for window in windows] == [
+        "2020-07-01T00:00:00+00:00",
+        "2020-10-01T00:00:00+00:00",
+        "2021-01-01T00:00:00+00:00",
+    ]
+    assert windows[0].train_start == "2020-01-01T00:00:00+00:00"
+    assert windows[0].train_end == windows[0].test_start
+
+
+def test_walkforward_robust_fixture_graduates_and_writes_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    db_path = tmp_path / "ema_backtest_runs.db"
+    _seed_run(db_path)
+
+    report = evaluate_walkforward(
+        family="ema",
+        thesis_id="thesis-001",
+        runtime_root=tmp_path,
+        db_path=db_path,
+        run_id="run-thesis",
+        windows=_windows(),
+        predictions=_predictions(),
+        baseline_metrics=[
+            {"profit_factor": 1.0, "trade_count": 30},
+            {"profit_factor": 1.0, "trade_count": 30},
+            {"profit_factor": 1.0, "trade_count": 30},
+        ],
+        candidate_metrics=[
+            {"profit_factor": 1.2, "trade_count": 30},
+            {"profit_factor": 1.1, "trade_count": 31},
+            {"profit_factor": 0.9, "trade_count": 30},
+        ],
+    )
+
+    persisted = json.loads((tmp_path / "walkforward" / "thesis-001.json").read_text())
+    with sqlite3.connect(db_path) as conn:
+        graduated = conn.execute(
+            "SELECT graduated FROM backtest_runs WHERE run_id = 'run-thesis'"
+        ).fetchone()[0]
+    assert report["graduated"] is True
+    assert persisted["survival_rate"] == pytest.approx(2 / 3)
+    assert persisted["windows"][0]["directions_hold"] is True
+    assert graduated == 1
+
+
+def test_walkforward_curve_fit_fixture_demotes_factor_and_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    db_path = tmp_path / "ema_backtest_runs.db"
+    _seed_run(db_path)
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            factors=[
+                CausalFactor(
+                    factor_id="f001",
+                    story="curve-fit gap rule",
+                    rule="gap_pct < 0",
+                    direction="win",
+                    status="harvested",
+                )
+            ],
+            accuracy_history=[],
+        )
+    )
+
+    report = evaluate_walkforward(
+        family="ema",
+        thesis_id="thesis-001",
+        runtime_root=tmp_path,
+        db_path=db_path,
+        run_id="run-thesis",
+        windows=_windows(),
+        predictions=_predictions(),
+        baseline_metrics=[
+            {"profit_factor": 1.0, "trade_count": 30},
+            {"profit_factor": 1.0, "trade_count": 30},
+            {"profit_factor": 1.0, "trade_count": 30},
+        ],
+        candidate_metrics=[
+            {"profit_factor": 1.2, "trade_count": 30},
+            {"profit_factor": 0.8, "trade_count": 30},
+            {"profit_factor": 0.7, "trade_count": 30},
+        ],
+        factor_rule="gap_pct < 0",
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        graduated = conn.execute(
+            "SELECT graduated FROM backtest_runs WHERE run_id = 'run-thesis'"
+        ).fetchone()[0]
+    model = load_model("ema")
+    assert report["graduated"] is False
+    assert report["verdict"] == "demoted"
+    assert graduated == 0
+    assert model.factors[0].status == "demoted"
+    assert "survival_rate=0.333" in model.factors[0].lesson
+
+
+def test_walkforward_config_reads_nested_defaults() -> None:
+    config = {"research_engine": {"walkforward": {"survival_pct": 0.75}}}
+
+    assert walkforward_config(config) == {
+        "train_months": 6,
+        "test_months": 3,
+        "step_months": 3,
+        "survival_pct": 0.75,
+    }

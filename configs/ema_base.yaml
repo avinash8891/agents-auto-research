@@ -71,3 +71,8 @@ research_engine:
   min_trades: 20
   plateau_rounds: 5
   plateau_min_skill_gain: 0.01
+  walkforward:
+    train_months: 6
+    test_months: 3
+    step_months: 3
+    survival_pct: 0.60

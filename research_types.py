@@ -125,7 +125,7 @@ class CausalFactor(BaseModel):
     rule: str
     direction: Literal["loss", "win"]
     evidence_rounds: list[int] = Field(default_factory=list)
-    status: Literal["candidate", "supported", "refuted", "harvested"] = "candidate"
+    status: Literal["candidate", "supported", "refuted", "harvested", "demoted"] = "candidate"
     created_at: str = Field(default_factory=_utc_now_iso)
     lesson: str = ""
 

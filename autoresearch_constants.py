@@ -88,6 +88,11 @@ def _research_engine_block(config: dict) -> dict:
     return block if isinstance(block, dict) else {}
 
 
+def _research_engine_walkforward_block(config: dict) -> dict:
+    block = _research_engine_block(config).get("walkforward")
+    return block if isinstance(block, dict) else {}
+
+
 def research_engine_min_sample(config: dict) -> int:
     value = _research_engine_block(config).get("min_sample", 30)
     try:
@@ -184,4 +189,38 @@ def research_engine_plateau_min_skill_gain(config: dict) -> float:
         raise ValueError("research_engine.plateau_min_skill_gain must be a number") from exc
     if parsed < 0.0:
         raise ValueError("research_engine.plateau_min_skill_gain must be >= 0")
+    return parsed
+
+
+def research_engine_walkforward_train_months(config: dict) -> int:
+    return _research_engine_walkforward_int(config, "train_months", 6)
+
+
+def research_engine_walkforward_test_months(config: dict) -> int:
+    return _research_engine_walkforward_int(config, "test_months", 3)
+
+
+def research_engine_walkforward_step_months(config: dict) -> int:
+    return _research_engine_walkforward_int(config, "step_months", 3)
+
+
+def research_engine_walkforward_survival_pct(config: dict) -> float:
+    value = _research_engine_walkforward_block(config).get("survival_pct", 0.60)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.walkforward.survival_pct must be a number") from exc
+    if parsed < 0.0 or parsed > 1.0:
+        raise ValueError("research_engine.walkforward.survival_pct must be between 0 and 1")
+    return parsed
+
+
+def _research_engine_walkforward_int(config: dict, key: str, default: int) -> int:
+    value = _research_engine_walkforward_block(config).get(key, default)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"research_engine.walkforward.{key} must be an integer") from exc
+    if parsed < 1:
+        raise ValueError(f"research_engine.walkforward.{key} must be >= 1")
     return parsed
