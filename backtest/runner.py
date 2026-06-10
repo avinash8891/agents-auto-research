@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -29,7 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--strategy", required=True, choices=sorted(STRATEGIES))
     parser.add_argument("--config", required=True)
     parser.add_argument(
-        "--output-dir", default="/tmp", help="Directory to write result.json and trades CSV"
+        "--output-dir",
+        default=os.environ.get("AUTORESEARCH_OUTPUT_DIR", "."),
+        help="Directory to write result.json and trades CSV",
     )
     return parser
 

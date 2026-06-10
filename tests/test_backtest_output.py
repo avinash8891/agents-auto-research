@@ -224,3 +224,21 @@ def test_write_all_omits_missing_strategy_events_path_for_empty_parquet_logger(
 
     assert payload["strategy_events_file"] == ""
     assert not (tmp_path / "strategy_events.parquet").exists()
+
+
+def test_runner_output_dir_default_is_not_tmp(monkeypatch) -> None:
+    """F13: --output-dir must not default to /tmp."""
+    monkeypatch.delenv("AUTORESEARCH_OUTPUT_DIR", raising=False)
+    from backtest.runner import build_parser
+
+    args = build_parser().parse_args(["--strategy", "ema", "--config", "x.json"])
+    assert args.output_dir == "."
+
+
+def test_runner_output_dir_honors_env(monkeypatch) -> None:
+    """F13: --output-dir respects AUTORESEARCH_OUTPUT_DIR env var."""
+    monkeypatch.setenv("AUTORESEARCH_OUTPUT_DIR", "/opt/results")
+    from backtest.runner import build_parser
+
+    args = build_parser().parse_args(["--strategy", "ema", "--config", "x.json"])
+    assert args.output_dir == "/opt/results"
