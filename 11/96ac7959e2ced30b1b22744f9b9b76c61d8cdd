@@ -1,0 +1,23 @@
+tests/test_step0_dead_code_deletion.py
+  s_7b3a36a5bf11f5::t_3318db64f5d0f2 11-19,24-25
+  s_7b3a36a5bf11f5::t_1eb85ec87e891a 1-2,4-10,20-23,26-43,45-55
+  s_7b3a36a5bf11f5::t_7dc3c29f3fdea3 3,44
+thesis_validator.py
+  s_7b3a36a5bf11f5::t_db89d18e935d6e 1437-1438
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "1196ac7959e2ced30b1b22744f9b9b76c61d8cdd",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
