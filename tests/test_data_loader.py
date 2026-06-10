@@ -77,3 +77,12 @@ def test_load_data_raises_on_missing_symbol_per_symbol(tmp_path):
 
     with pytest.raises(DataLoadError, match="MSFT"):
         load_data(str(tmp_path), symbols=["AAPL", "MSFT"])
+
+
+def test_load_data_raises_when_requested_symbol_dir_has_no_loaded_frames(tmp_path):
+    """Per-symbol path: an empty requested symbol directory is still missing."""
+    _write_per_symbol_fixture(tmp_path, symbols=["AAPL"])
+    (tmp_path / "MSFT").mkdir()
+
+    with pytest.raises(DataLoadError, match="MSFT"):
+        load_data(str(tmp_path), symbols=["AAPL", "MSFT"])

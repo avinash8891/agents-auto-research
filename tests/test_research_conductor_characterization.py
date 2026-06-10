@@ -837,6 +837,48 @@ def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wra
     assert out.thesis["thesis_id"] == "open_alert_regime_filter"
 
 
+def test_conductor_default_job_context_preserves_round_id_for_thesis_assignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    thesis = {
+        "thesis_id": "open_alert_regime_filter",
+        "hypothesis": "Early-open alerts are dominated by adverse selection.",
+        "mechanism": "Opening auction noise causes systematic stop-outs.",
+        "mechanism_dimension": "time_regime_microstructure",
+        "config_changes": {"min_alert_time": "09:40"},
+    }
+
+    def _validate(candidate, **kwargs):
+        captured.update(kwargs)
+        assigned = kwargs["assign_thesis_id"](
+            kwargs["research_round_id"],
+            kwargs["attempt_number"],
+        )
+        captured["assigned_thesis_id"] = assigned
+        return type("Validated", (), {"thesis_id": assigned})()
+
+    monkeypatch.setattr(conductor, "validate_thesis_dict", _validate)
+    _patch_conductor_runner(
+        monkeypatch,
+        thesis,
+        tool_calls=[("list_round_results", {"order": "latest", "offset": 0, "limit": 1})],
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "full experiment history consulted",
+        {"status": "keep"},
+        research_round=3,
+        family_name="ema",
+    )
+
+    assert out is not None
+    assert out.thesis is not None
+    assert captured["research_round_id"] == "job-0-round-3"
+    assert captured["assigned_thesis_id"] == "job-0-round-3-attempt-1"
+
+
 def test_build_round_index_exposes_round_refs_and_latest_round(tmp_path: Path, monkeypatch) -> None:
     db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
     db.init_session(name="ema", metric_name="profit_factor", direction="higher")

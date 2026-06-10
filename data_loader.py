@@ -88,8 +88,7 @@ def _load_per_symbol(
         missing = set(symbols) - set(subdirs)
         if missing:
             raise DataLoadError(
-                f"Requested symbols not found as subdirectories in {data_path}: "
-                f"{sorted(missing)}"
+                f"Requested symbols not found as subdirectories in {data_path}: {sorted(missing)}"
             )
 
     all_dfs: dict[str, pd.DataFrame] = {}
@@ -113,6 +112,17 @@ def _load_per_symbol(
             wide = _normalize_intraday_frame(wide)
             wide = _apply_date_filters(wide, start_date, end_date)
             batch[field_map[field]] = wide
+    if symbols:
+        missing_by_field = {
+            key: sorted(set(symbols) - set(batch.get(key, pd.DataFrame()).columns))
+            for key in field_map.values()
+        }
+        missing = sorted({sym for values in missing_by_field.values() for sym in values})
+        if missing:
+            raise DataLoadError(
+                f"Requested symbols missing loaded OHLCV data in {data_path}: {missing}; "
+                f"missing_by_field={missing_by_field}"
+            )
     return batch
 
 

@@ -634,8 +634,7 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
             "and improve profit_factor."
         ),
         "mechanism": (
-            f"A slower ema_length={ema_length} signal filters noisy pullback crosses "
-            "before entry."
+            f"A slower ema_length={ema_length} signal filters noisy pullback crosses before entry."
         ),
         "mechanism_dimension": "signal_quality",
         "dimension_novelty": (
@@ -1401,10 +1400,16 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
     tmp_path: Path, monkeypatch
 ) -> None:
     writes: list[dict[str, object]] = []
+    started_rounds: list[dict[str, object]] = []
+
+    class _DB:
+        def ensure_round_started(self, **kwargs):
+            started_rounds.append(dict(kwargs))
 
     class _Controller:
         root = tmp_path
         family = type("Family", (), {"name": "ema"})()
+        backtest_run_db = _DB()
 
         def __init__(self) -> None:
             self.state = {"state": "blocked", "job": 26, "research_round": 7}
@@ -1448,6 +1453,11 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
 
     assert result["generated_config"] == "runtime/jobs/job-26/research/round-8/selected_config.json"
     assert writes[0]["research_round_in_progress"] == 8
+    assert len(started_rounds) == 1
+    assert started_rounds[0]["research_round_id"] == "job-26-round-8"
+    assert started_rounds[0]["job_id"] == 26
+    assert started_rounds[0]["round_number"] == 8
+    assert str(started_rounds[0]["run_id"]).startswith("R-")
     assert writes[0]["activity"] == {
         "type": "research",
         "phase": "conductor_running",

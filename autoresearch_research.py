@@ -65,6 +65,7 @@ from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
     get_event_file,
+    get_run_id,
     record_event,
     trace,
 )
@@ -172,9 +173,7 @@ def notify_discord(
         # webhook URL comes from AUTORESEARCH_DISCORD_WEBHOOK_<FAMILY>
         # env var (rule 2). The operator controls the env, so url-scheme
         # exposure is bounded by the deployment surface, not user input.
-        urllib.request.urlopen(
-            req, timeout=DISCORD_HTTP_TIMEOUT_SECONDS
-        )  # noqa: S310  # nosec B310
+        urllib.request.urlopen(req, timeout=DISCORD_HTTP_TIMEOUT_SECONDS)  # noqa: S310  # nosec B310
         trace("DISCORD", f"OK title='{title[:60]}'")
     except (urllib.error.URLError, OSError) as exc:
         trace("DISCORD", f"FAILED title='{title[:60]}' error={exc}")
@@ -1136,6 +1135,13 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     state["research_round_in_progress"] = research_round
     state["activity"] = _research_activity(research_round=research_round, phase="conductor_running")
     controller.write_state(state)
+    if current_job is not None:
+        controller.backtest_run_db.ensure_round_started(
+            research_round_id=make_research_round_id(current_job, research_round),
+            job_id=current_job,
+            round_number=research_round,
+            run_id=get_run_id(),
+        )
 
     from improvement_flags import reflexion_enabled
 

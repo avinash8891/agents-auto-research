@@ -17,7 +17,6 @@ from agent_infra import _run_coroutine_sync
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import get_round_usage, reset_round_usage
 from autoresearch_logging import get_logger
-from autoresearch_runtime_paths import research_round_id_or_empty as make_research_round_id
 from backtest_run_db import research_thesis_attempt_id
 from research_memory import (
     _palace_status,
@@ -79,6 +78,10 @@ __all__ = [
 _REFINEMENT_RECORDER = RefinementRecorder()
 CONDUCTOR_TIMEOUT_ENV = "AUTORESEARCH_CONDUCTOR_TIMEOUT_SECONDS"
 DEFAULT_CONDUCTOR_TIMEOUT_SECONDS = 900.0
+
+
+def _lenient_research_round_id(job_id: int | None, research_round: int) -> str:
+    return f"job-{int(job_id or 0)}-round-{int(research_round)}"
 
 
 def _conductor_timeout_seconds() -> float:
@@ -1119,7 +1122,7 @@ async def run_research_conductor(
             try:
                 validated = validate_thesis_dict(
                     candidate,
-                    research_round_id=make_research_round_id(current_job or 0, research_round),
+                    research_round_id=_lenient_research_round_id(current_job, research_round),
                     attempt_number=1,
                     assign_thesis_id=research_thesis_attempt_id,
                     tools_called=tools_called_this_round,
