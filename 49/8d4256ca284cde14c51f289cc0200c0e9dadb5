@@ -1,0 +1,21 @@
+tests/conftest.py
+  s_78fd65d4838bdf::t_09204247d1017e 19-23
+trace_sdk.py
+  s_78fd65d4838bdf::t_09204247d1017e 511
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "498d4256ca284cde14c51f289cc0200c0e9dadb5",
+  "prompts": {},
+  "sessions": {
+    "s_78fd65d4838bdf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "50c223f1-16c3-47a2-8a6a-94b7b8a34f59",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
