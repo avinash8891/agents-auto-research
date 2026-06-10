@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_logging import get_logger
-from autoresearch_paths import resolve_runtime_root
+from autoresearch_runtime_paths import iter_family_backtest_db_paths, resolve_runtime_root
 from research_paths import _ROOT
 
 _PALACE_DIR = str(_ROOT / "palace")
@@ -570,18 +570,8 @@ def _iter_round_records(
     return records
 
 
-def _iter_backtest_db_paths(root: Path) -> list[Path]:
-    roots = [resolve_runtime_root(root), root.resolve()]
-    seen: set[Path] = set()
-    db_paths: list[Path] = []
-    for candidate_root in roots:
-        for db_path in sorted(candidate_root.glob("*_backtest_runs.db")):
-            resolved = db_path.resolve()
-            if resolved in seen:
-                continue
-            seen.add(resolved)
-            db_paths.append(db_path)
-    return db_paths
+def _iter_backtest_db_paths(root: Path, *, family: str | None = None) -> list[Path]:
+    return iter_family_backtest_db_paths(root, family=family)
 
 
 def _round_index_entry(item: dict[str, Any]) -> dict[str, Any]:

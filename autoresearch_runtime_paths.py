@@ -1,7 +1,84 @@
 from __future__ import annotations
 
+import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+
+@dataclass(frozen=True)
+class AutoresearchRuntimeContext:
+    """Canonical path authority for one autoresearch strategy-family run."""
+
+    code_root: Path
+    runtime_root: Path
+    family_name: str
+    state_path: Path
+    current_md_path: Path
+    jobs_root: Path
+    backtest_db_path: Path
+    baseline_checkpoints_path: Path
+
+    @classmethod
+    def for_family(
+        cls,
+        *,
+        code_root: Path,
+        runtime_root: Path,
+        family_name: str,
+        state_path: Path | None = None,
+        current_md_path: Path | None = None,
+        jobs_root: Path | None = None,
+    ) -> "AutoresearchRuntimeContext":
+        code_root = code_root.resolve()
+        runtime_root = runtime_root.resolve()
+        prefix = "" if family_name == "orb" else f"{family_name}_"
+        resolved_state_path = cls._resolve_runtime_path(
+            state_path or runtime_root / f"{prefix}autoresearch.next.json",
+            runtime_root=runtime_root,
+        )
+        resolved_current_md_path = cls._resolve_runtime_path(
+            current_md_path or runtime_root / f"{prefix}autoresearch.current.md",
+            runtime_root=runtime_root,
+        )
+        resolved_jobs_root = cls._resolve_runtime_path(
+            jobs_root or runtime_root / "runtime" / "jobs",
+            runtime_root=runtime_root,
+        )
+        return cls(
+            code_root=code_root,
+            runtime_root=runtime_root,
+            family_name=family_name,
+            state_path=resolved_state_path,
+            current_md_path=resolved_current_md_path,
+            jobs_root=resolved_jobs_root,
+            backtest_db_path=runtime_root / f"{family_name}_backtest_runs.db",
+            baseline_checkpoints_path=runtime_root / f"{family_name}_baseline_checkpoints.json",
+        )
+
+    @staticmethod
+    def _resolve_runtime_path(path: Path, *, runtime_root: Path) -> Path:
+        return path.resolve() if path.is_absolute() else (runtime_root / path).resolve()
+
+    def job_runtime_root(self, job: int) -> Path:
+        if job < 1:
+            raise ValueError(f"job id must be >= 1; got {job}")
+        return self.jobs_root / f"job-{job}"
+
+    def research_dir(self, job: int) -> Path:
+        return self.job_runtime_root(job) / "research"
+
+    def builder_requests_dir(self, job: int) -> Path:
+        return self.job_runtime_root(job) / "builder-requests"
+
+    def research_round_root(self, job: int, round_number: int) -> Path:
+        if round_number < 0:
+            raise ValueError(f"research round number must be >= 0; got {round_number}")
+        dirname = "round-0-baseline" if round_number == 0 else f"round-{round_number}"
+        return self.research_dir(job) / dirname
+
+    def research_round_backtest_root(self, job: int, round_number: int) -> Path:
+        return self.research_round_root(job, round_number) / "backtest"
 
 
 def job_runtime_root(root: Path, job: int) -> Path:
@@ -79,3 +156,30 @@ def research_round_trace_exports_root(root: Path, job: int, round_number: int) -
 
 def job_builder_requests_root(root: Path, job: int) -> Path:
     return job_runtime_root(root, job) / "builder-requests"
+
+
+def resolve_runtime_root(code_root: Path) -> Path:
+    raw = os.environ.get("AUTORESEARCH_RUNTIME_ROOT", "").strip()
+    if not raw:
+        return code_root.resolve()
+    return Path(raw).expanduser().resolve()
+
+
+def iter_family_backtest_db_paths(root: Path, *, family: str | None = None) -> list[Path]:
+    """Return backtest DB paths using the canonical runtime-root policy."""
+    root = root.resolve()
+    runtime_root = resolve_runtime_root(root)
+    roots = [runtime_root]
+    if root == runtime_root:
+        roots.append(root)
+    pattern = f"{family}_backtest_runs.db" if family else "*_backtest_runs.db"
+    seen: set[Path] = set()
+    db_paths: list[Path] = []
+    for candidate_root in roots:
+        for db_path in sorted(candidate_root.glob(pattern)):
+            resolved = db_path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            db_paths.append(db_path)
+    return db_paths

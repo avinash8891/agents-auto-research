@@ -13,7 +13,7 @@ from typing import Any
 
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import _accumulate_usage
-from autoresearch_paths import resolve_runtime_root
+from autoresearch_runtime_paths import iter_family_backtest_db_paths
 from autoresearch_state import coerce_timestamp_to_epoch_ms
 from backtest_run_db import BacktestRunDB
 from research_paths import (
@@ -254,9 +254,7 @@ def _resolve_backtest_db_path(trades_file: str, family_name: str) -> Path | None
     if not family_name:
         return None
     artifact_path = Path(trades_file).expanduser()
-    candidates: list[Path] = []
-    runtime_root = resolve_runtime_root(_ROOT)
-    candidates.append(runtime_root / f"{family_name}_backtest_runs.db")
+    candidates = iter_family_backtest_db_paths(_ROOT, family=family_name)
     for parent in artifact_path.parents:
         candidates.append(parent / f"{family_name}_backtest_runs.db")
         candidates.append(parent / "runtime" / f"{family_name}_backtest_runs.db")

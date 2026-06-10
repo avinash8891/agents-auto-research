@@ -52,7 +52,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from autoresearch_logging import get_logger
-from autoresearch_paths import resolve_runtime_root
+from autoresearch_runtime_paths import iter_family_backtest_db_paths
 from behavior_signals import BehaviorSignal
 from behavior_signals import decide as _policy_decide
 from research_types import (
@@ -1077,18 +1077,8 @@ def load_prior_theses(
     return prior
 
 
-def _iter_backtest_db_paths(root: Path) -> list[Path]:
-    roots = [resolve_runtime_root(root), root.resolve()]
-    seen: set[Path] = set()
-    db_paths: list[Path] = []
-    for candidate_root in roots:
-        for db_path in sorted(candidate_root.glob("*_backtest_runs.db")):
-            resolved = db_path.resolve()
-            if resolved in seen:
-                continue
-            seen.add(resolved)
-            db_paths.append(db_path)
-    return db_paths
+def _iter_backtest_db_paths(root: Path, *, family: str | None = None) -> list[Path]:
+    return iter_family_backtest_db_paths(root, family=family)
 
 
 def _flatten_config_change_keys(config_changes: dict[str, Any]) -> set[str]:
