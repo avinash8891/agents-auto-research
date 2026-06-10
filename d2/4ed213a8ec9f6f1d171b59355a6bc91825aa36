@@ -1,0 +1,29 @@
+agent_sdk_token_usage.py
+  df23f17b640abbde 6,154,157,163,165-168
+tests/test_research_conductor_characterization.py
+  df23f17b640abbde 242,262,305
+agent_token_usage.py
+  df23f17b640abbde 81,97-104,189
+tests/test_agent_token_usage.py
+  df23f17b640abbde 24,99-142,343-352
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "d24ed213a8ec9f6f1d171b59355a6bc91825aa36",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 79,
+      "total_deletions": 5,
+      "accepted_lines": 79,
+      "overriden_lines": 0
+    }
+  }
+}

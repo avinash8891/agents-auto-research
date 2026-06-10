@@ -1,0 +1,25 @@
+scripts/cubic_review.sh
+  dc8cf914dcec6328 10-12
+tests/test_precommit_config.py
+  dc8cf914dcec6328 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "cb2315e61543382334a3a2eb3959552018f59c7b",
+  "prompts": {
+    "dc8cf914dcec6328": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de81a-3102-7e81-b62d-39ed90f5dc00",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 4,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}

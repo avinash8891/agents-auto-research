@@ -1,0 +1,60 @@
+research_conductor.py
+  s_eeaca68b53c0c2::t_a438b4050cdabc 929
+  s_eeaca68b53c0c2::t_35720b4bd70c51 124-142
+  s_eeaca68b53c0c2::t_0d005862357f5d 35
+  s_eeaca68b53c0c2::t_90b961d413d9a6 154
+  s_eeaca68b53c0c2::t_4822ff6bbe7b60 913
+  s_eeaca68b53c0c2::t_3a3d048a4dcd33 952-954,974-979,993-998,1006-1007,1015,1022,1032,1039-1044,1052
+  s_eeaca68b53c0c2::t_4da0d33d0bbe98 1075
+autoresearch_research.py
+  s_eeaca68b53c0c2::t_e7d762b8cb80fe 731,744-745
+  s_eeaca68b53c0c2::t_54c3c84151e3c6 889,892-893,913
+  s_eeaca68b53c0c2::t_3ad8c319a5cb61 524-530,537-538,540-542,548-549,558,561-563,567
+  s_eeaca68b53c0c2::t_e1cca8f2e60a1b 930
+  s_eeaca68b53c0c2::t_e63ecfff634d82 50
+  s_eeaca68b53c0c2::t_46386907543d53 1014,1021,1034,1038,1050
+research_types.py
+  s_eeaca68b53c0c2::t_3ccb9241ba7e4c 296-311
+  s_eeaca68b53c0c2::t_0fe2ea81de87b0 12
+tests/test_autoresearch_research.py
+  s_eeaca68b53c0c2::t_70a082d7c52e26 22,36
+  s_eeaca68b53c0c2::t_5dc01f6a8bf46c 171-175
+  s_eeaca68b53c0c2::t_2378259b4ebcd6 1196,1200
+tests/test_autoresearch_research_helpers.py
+  s_eeaca68b53c0c2::t_4a8717bdc215c4 26
+  s_eeaca68b53c0c2::t_a9c8a800c5b14e 64-65,70-72,75,80-81,87-88
+  s_eeaca68b53c0c2::t_c49015c9ce29e0 42-43
+  s_eeaca68b53c0c2::t_e44f376307051b 123-124,138-139
+tests/test_research_conductor_characterization.py
+  s_eeaca68b53c0c2::t_493bc3e042790e 296-298
+  s_eeaca68b53c0c2::t_f6bdcc5fb4589f 741-742
+  s_eeaca68b53c0c2::t_d75a3268737b26 707-708
+  s_eeaca68b53c0c2::t_6794607e61f128 574
+  s_eeaca68b53c0c2::t_8a4a0cb005586e 526-528
+  s_eeaca68b53c0c2::t_94aac8e5f05973 14
+  s_eeaca68b53c0c2::t_b6e3a91407c2fe 458
+  s_eeaca68b53c0c2::t_0c35a365a3f813 649-650
+  s_eeaca68b53c0c2::t_1bb8f5d544fd7f 614-616
+  s_eeaca68b53c0c2::t_2c227cc8e3f2e6 209
+  s_eeaca68b53c0c2::t_324b4039ce8330 378
+  s_eeaca68b53c0c2::t_26539506c0db02 270
+  s_eeaca68b53c0c2::t_d014c2ebbb36d6 249-250
+  s_eeaca68b53c0c2::t_868ec96bd52a2e 233-234
+  s_eeaca68b53c0c2::t_347c939f318a5b 687-690
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3dd47def3b38454706813f9a604f541ba8ead847",
+  "prompts": {},
+  "sessions": {
+    "s_eeaca68b53c0c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e73224a3-7aac-4c74-95d7-b5f5193ba7f4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

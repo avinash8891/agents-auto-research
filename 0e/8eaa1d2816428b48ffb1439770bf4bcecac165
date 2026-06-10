@@ -1,0 +1,47 @@
+docs/superpowers/specs/2026-05-28-spec-a4-design.md
+  s_d2b4c2b9f356b1::t_cfc6928376acb8 632,637-638
+  s_d2b4c2b9f356b1::t_f578981d079c69 263-264
+  s_d2b4c2b9f356b1::t_8a3a45dc980c40 443-451
+  s_d2b4c2b9f356b1::t_34cf180c4a75db 757-760
+  s_d2b4c2b9f356b1::t_71745228aaea0b 241-244,250
+  s_d2b4c2b9f356b1::t_c4dba4c1e40144 286-294
+  s_d2b4c2b9f356b1::t_2764676da0a996 471-474
+  s_d2b4c2b9f356b1::t_193f3ca0bef2dd 478-481
+  s_d2b4c2b9f356b1::t_0fac87e650e029 123-134
+  s_d2b4c2b9f356b1::t_a157bb439a223d 316-320
+  s_d2b4c2b9f356b1::t_24ebcf766e65e5 865-868
+  s_d2b4c2b9f356b1::t_b9900bb5fd7af5 990-993,996
+  s_d2b4c2b9f356b1::t_5b2bcbfd24772b 590-595
+  s_d2b4c2b9f356b1::t_927e7682c3d6ca 956,959-960,968-973
+  s_d2b4c2b9f356b1::t_f614eb3937ba39 1107-1114,1117,1120
+  s_d2b4c2b9f356b1::t_c56617f2a128a9 511-514
+  s_d2b4c2b9f356b1::t_71b3d2332160e5 346-348
+  s_d2b4c2b9f356b1::t_848a5a6a6f3325 644
+  s_d2b4c2b9f356b1::t_aa8a88325a74a3 673-676
+  s_d2b4c2b9f356b1::t_de3f95c9dd50b6 883-886
+  s_d2b4c2b9f356b1::t_13a2f2dfe8a7d6 923-928
+  s_d2b4c2b9f356b1::t_6b0cd09d618f0c 1092,1096-1098,1100-1103
+  s_d2b4c2b9f356b1::t_cb673a177eced3 1088-1089
+  s_d2b4c2b9f356b1::t_5e598247382fbb 394-412
+  s_d2b4c2b9f356b1::t_f7eaefc3853023 218-223
+  s_d2b4c2b9f356b1::t_be712c7d10d48b 611-616,622-623
+  s_d2b4c2b9f356b1::t_2689e825e84295 698-699,705-712
+  s_d2b4c2b9f356b1::t_af727eb0ea2a59 835-842
+  s_d2b4c2b9f356b1::t_40dcca4d7f1fdd 901-903,905-907,909
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0e8eaa1d2816428b48ffb1439770bf4bcecac165",
+  "prompts": {},
+  "sessions": {
+    "s_d2b4c2b9f356b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7b8e3f64-be70-4e0b-af64-2c0def2c17b7",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

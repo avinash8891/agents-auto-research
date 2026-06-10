@@ -1,0 +1,23 @@
+scripts/cubic_review.sh
+  c6764ab5a64b40e0 20-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "152f37bdc3960b935c46cb306c5c71067806d25f",
+  "prompts": {
+    "c6764ab5a64b40e0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de78d-e526-7713-bd7d-2b58420b3c7d",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 67,
+      "total_deletions": 13,
+      "accepted_lines": 67,
+      "overriden_lines": 0
+    }
+  }
+}

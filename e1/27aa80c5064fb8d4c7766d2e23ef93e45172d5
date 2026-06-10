@@ -1,0 +1,25 @@
+tests/test_improvement_halo.py
+  s_df23f17b640abb::t_b0cc2c9dd480ef 101
+improvement_halo.py
+  s_df23f17b640abb::t_70930c84a9caa7 57
+tests/test_openai_oauth_patch.py
+  s_df23f17b640abb::t_67e5c23521fc95 21-24,36-39,46-50,63-66
+scripts/patch_openai_oauth_ai_sdk_v6_usage.py
+  s_df23f17b640abb::t_d0d37a003629a6 62-201,206-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "e127aa80c5064fb8d4c7766d2e23ef93e45172d5",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

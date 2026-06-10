@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-05-28-spec-a4-output-fields-system-prompt.md
+  s_5b4dc65bb427e5::t_fd7208aaf5b0da 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9159e1e396173eeb036674b17ecd1d9ed831b5b2",
+  "prompts": {},
+  "sessions": {
+    "s_5b4dc65bb427e5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e71b8-9fe4-75f3-a90d-f0528c86ccec",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

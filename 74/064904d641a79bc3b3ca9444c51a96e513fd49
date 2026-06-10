@@ -1,0 +1,37 @@
+thesis_validator.py
+  s_6c679bbe02c14f::t_cd3adc0ebe3f25 121-128,352-354,356-357
+  s_6c679bbe02c14f::t_bb020eef41358a 1687-1690,1692-1693,1697-1699,1701,1718-1726,1739,1748,1765
+  s_6c679bbe02c14f::t_d3397ad3e8de9b 2297,2314
+  s_6c679bbe02c14f::t_0923e0ebb0a6ef 1691,1694-1696
+  s_6c679bbe02c14f::t_220d1ee10485fc 2365-2366,2373-2376,2378,2383,2395-2396,2409-2410,2434-2435,2443-2444
+research_conductor.py
+  s_6c679bbe02c14f::t_dfdc83a7ef6d98 93-100
+  s_6c679bbe02c14f::t_ee531d750a0838 968-969
+research_prompts.py
+  s_6c679bbe02c14f::t_851863f1836101 92-96,150-152
+tests/test_validator_process_gate.py
+  s_6c679bbe02c14f::t_8dc20dea7e62bb 105-126
+autoresearch_research.py
+  s_6c679bbe02c14f::t_3d4a4f95ac1ca1 1022-1029,1065,1113-1114
+  s_6c679bbe02c14f::t_3d50244f75e471 92-93,116-117,773-774,813-814
+tests/test_validator_gate_coverage.py
+  s_6c679bbe02c14f::t_a954fa5e731cd4 383-405,437,451,457-467
+tests/test_research_conductor_characterization.py
+  s_6c679bbe02c14f::t_f75b3e3c1ad96f 617-618,648-691
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "74064904d641a79bc3b3ca9444c51a96e513fd49",
+  "prompts": {},
+  "sessions": {
+    "s_6c679bbe02c14f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6cb5-a417-72a3-83ad-c70f9103d198",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

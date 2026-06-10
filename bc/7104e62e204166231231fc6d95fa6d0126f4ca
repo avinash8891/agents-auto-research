@@ -1,0 +1,25 @@
+compiler_builder.py
+  df23f17b640abbde 34-40,438
+tests/test_compiler_pipeline_characterization.py
+  df23f17b640abbde 613-618
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "bc7104e62e204166231231fc6d95fa6d0126f4ca",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 17,
+      "total_deletions": 5,
+      "accepted_lines": 14,
+      "overriden_lines": 0
+    }
+  }
+}

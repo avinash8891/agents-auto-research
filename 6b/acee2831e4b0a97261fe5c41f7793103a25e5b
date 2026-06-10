@@ -1,0 +1,23 @@
+docs/superpowers/specs/2026-05-28-spec-a4-output-validation-and-drift.md
+  s_8fcfc7baeb3c2c::t_1f24573afc1da3 64,181
+  s_8fcfc7baeb3c2c::t_4c457f91048598 63,81,88,111
+docs/superpowers/specs/2026-05-28-spec-a4-output-fields-system-prompt.md
+  s_8fcfc7baeb3c2c::t_1f24573afc1da3 97,342-362,534-536,636,805
+  s_8fcfc7baeb3c2c::t_4f660be30c9490 99,439-458,553-580,622-635,637-659
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6bacee2831e4b0a97261fe5c41f7793103a25e5b",
+  "prompts": {},
+  "sessions": {
+    "s_8fcfc7baeb3c2c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6f7f-f4de-7711-97d9-cb7f3b8bf716",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

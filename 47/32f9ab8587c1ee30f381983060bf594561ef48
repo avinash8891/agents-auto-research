@@ -1,0 +1,40 @@
+research_tools_mcp.py
+  s_1dc1911c45a5a7::t_741be2f745b7e9 276,281-287,294-299,302-307,311-316,321-324,328-333,337,344-345,351-352
+research_memory.py
+  s_1dc1911c45a5a7::t_f99c6d5e1eb128 713
+  s_1dc1911c45a5a7::t_c77395b5ebc6ce 699,706-710,721
+  s_1dc1911c45a5a7::t_9817dc09e65006 782-786
+tests/test_migrate_experiment_dirs.py
+  s_1dc1911c45a5a7::t_7e251761095806 220-236,238-239
+  s_1dc1911c45a5a7::t_f99c6d5e1eb128 237
+research_tools_schema.py
+  s_1dc1911c45a5a7::t_10fa3ba87b7715 84,90-91
+research_conductor.py
+  s_1dc1911c45a5a7::t_bef50f302cd9e3 617-622
+tests/test_research_tools_schema.py
+  s_1dc1911c45a5a7::t_3871e1acc79232 200,204-210
+  s_1dc1911c45a5a7::t_f99c6d5e1eb128 244
+  s_1dc1911c45a5a7::t_1c8269bcf17f49 234-236,243,245-248,254-256
+tests/test_research_memory.py
+  s_1dc1911c45a5a7::t_4984e4dc01805f 521-558,560
+  s_1dc1911c45a5a7::t_f99c6d5e1eb128 559
+scripts/migrate_experiment_dirs.py
+  s_1dc1911c45a5a7::t_cde19998311160 66,68-70
+  s_1dc1911c45a5a7::t_9d2494672705bb 92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4732f9ab8587c1ee30f381983060bf594561ef48",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

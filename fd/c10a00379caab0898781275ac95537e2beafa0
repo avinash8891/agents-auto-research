@@ -1,0 +1,25 @@
+trace_adapters/halo.py
+  s_df23f17b640abb::t_8b1fb84308727e 348-350
+trace_improvement_report.py
+  s_df23f17b640abb::t_a670b1de11380d 40-41
+tests/test_halo_trace_adapter.py
+  s_df23f17b640abb::t_58f1abf1e00413 314-315
+tests/test_trace_improvement_report.py
+  s_df23f17b640abb::t_f9696a9ba72e05 6-7,134-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "fdc10a00379caab0898781275ac95537e2beafa0",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

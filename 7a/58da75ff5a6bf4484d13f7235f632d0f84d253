@@ -1,0 +1,43 @@
+autoresearch_experiment.py
+  dbc5ae606013cb0f 987-990
+persistence_utils.py
+  dbc5ae606013cb0f 6,27,39-40
+tests/test_autoresearch_experiment.py
+  4937c8713b3321c2 506-562,564-575,579-591
+  dbc5ae606013cb0f 563,576-578
+tests/test_experiment_db_timestamps.py
+  dbc5ae606013cb0f 12,353-371
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "7a58da75ff5a6bf4484d13f7235f632d0f84d253",
+  "prompts": {
+    "4937c8713b3321c2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de4dd-f575-7200-a953-258dfa6c1e00",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 84,
+      "total_deletions": 0,
+      "accepted_lines": 82,
+      "overriden_lines": 0
+    },
+    "dbc5ae606013cb0f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de36d-cd36-7ad0-86bd-68166dfcd69b",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 32,
+      "total_deletions": 14,
+      "accepted_lines": 121,
+      "overriden_lines": 0
+    }
+  }
+}

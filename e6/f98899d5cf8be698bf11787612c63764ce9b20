@@ -1,0 +1,30 @@
+tests/test_validator_stages.py
+  s_cae689298e56ac::t_871da5a8a278c7 155-157
+tests/test_alignment_family_aware.py
+  s_cae689298e56ac::t_be8c13715035a8 1-155
+family_research_spec.py
+  s_cae689298e56ac::t_001fcf87e3f532 4,19-26
+thesis_validator.py
+  s_cae689298e56ac::t_c22fe212e3e36b 1250,1253-1255
+  s_cae689298e56ac::t_b87d082feb1f53 754-773,778-779,783-787,791-792,800-810,818,820-821
+strategies/ema/research.py
+  s_cae689298e56ac::t_a73bafe30a99bf 79-124
+tests/test_thesis_validator.py
+  s_cae689298e56ac::t_90a5a6ee2dd07e 647
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "e6f98899d5cf8be698bf11787612c63764ce9b20",
+  "prompts": {},
+  "sessions": {
+    "s_cae689298e56ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9bc93516-d0c8-4a64-9ccc-09cd00bb80c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

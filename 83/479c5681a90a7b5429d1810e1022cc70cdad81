@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-05-28-spec-a4-output-validation-and-drift.md
+  s_8fcfc7baeb3c2c::t_a381e536fc1e1d 155-156,165-181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "83479c5681a90a7b5429d1810e1022cc70cdad81",
+  "prompts": {},
+  "sessions": {
+    "s_8fcfc7baeb3c2c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6f7f-f4de-7711-97d9-cb7f3b8bf716",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+trace_sdk.py
+  s_df23f17b640abb::t_4a7bc9db3387cf 17
+  s_df23f17b640abb::t_06518a8bf83191 157-159,205-207,215-216
+  s_df23f17b640abb::t_9b356ea90bfb9c 538-566,585,600,620-625
+tests/test_trace_sdk.py
+  s_df23f17b640abb::t_4a7bc9db3387cf 266,317-319
+  s_df23f17b640abb::t_aa89e2d1a9f9b4 267-316,320-333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "8d51b57e68aa00c66fbe774a4a8c0695d579e850",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

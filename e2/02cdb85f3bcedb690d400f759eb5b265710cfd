@@ -1,0 +1,25 @@
+tests/test_strategy_family_variants.py
+  dbc5ae606013cb0f 126-130
+strategy_family.py
+  dbc5ae606013cb0f 59,62,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "e202cdb85f3bcedb690d400f759eb5b265710cfd",
+  "prompts": {
+    "dbc5ae606013cb0f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de36d-cd36-7ad0-86bd-68166dfcd69b",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 2,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    }
+  }
+}

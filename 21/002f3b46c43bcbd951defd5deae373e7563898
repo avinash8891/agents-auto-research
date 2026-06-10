@@ -1,0 +1,112 @@
+trace_exports/round-001-ema5/recursive_improve/package.json
+  s_df23f17b640abb::t_9b8d862398c1c5 6,17,41-85
+trace_exports/round-001-ema5/halo/package.json
+  s_df23f17b640abb::t_9b8d862398c1c5 6,17
+tests/test_analyst_dataframe_helpers.py
+  s_df23f17b640abb::t_2b75e29da13648 1-41
+vps_runner.py
+  s_df23f17b640abb::t_11abc7ea302a8a 694-701,710-711,731-799,817-821
+  s_df23f17b640abb::t_99bfdc6c887864 38,302-332,355-366,373,384-411
+pytest.ini
+  s_df23f17b640abb::t_06e125a208e951 5-7
+trace_exports/round-001-ema5/reflexio/reflexio-trajectory.json
+  ai_agent 1-167
+research_conductor.py
+  s_df23f17b640abb::t_4d560eb69dbef9 480,483-488,499-501
+tests/test_autoresearch_experiment.py
+  s_df23f17b640abb::t_9b8d862398c1c5 543-619,720-774
+trace_sdk.py
+  s_df23f17b640abb::t_6219f065b3fc5f 732,760
+research_subagents.py
+  s_df23f17b640abb::t_d3b1ee2521b5a1 266-270
+  s_df23f17b640abb::t_849a0bfb019962 34,65-91
+  s_df23f17b640abb::t_0271454b4b8c69 309,449-466,491
+research_memory.py
+  s_df23f17b640abb::t_59e2d3669d65bd 543-582,644-650,670-674,679-681,684-688
+  s_df23f17b640abb::t_9b8d862398c1c5 467-471,488-490,589-590,603-604
+tests/test_autoresearch_controller_characterization.py
+  s_df23f17b640abb::t_13721cc3cc714c 161-186
+  s_df23f17b640abb::t_e841e114e77dbe 1088,1113-1117,1119,1249-1251
+  s_df23f17b640abb::t_d2bd0a5b69de91 119-160
+agent_token_usage.py
+  s_df23f17b640abb::t_d9887f6cc1a695 15,17,107-108,129-130,155-190,216,260-262,267,269,271-288,313,315
+  s_df23f17b640abb::t_fd1eff0e550214 58,83,306
+  s_df23f17b640abb::t_6bfc0d36432fba 90-91
+  s_df23f17b640abb::t_4e894359930355 3,10-11,89,92-106,109-119,121-128,131-134,259,263-266,268,270
+  s_df23f17b640abb::t_25fcb7a478a71b 120
+experiment_db.py
+  s_df23f17b640abb::t_9b8d862398c1c5 25-31,54-58,746
+trace_exports/round-001-ema5/reflexio/package.json
+  s_df23f17b640abb::t_9b8d862398c1c5 10-11,13-15,21-31,42,56-223,229-396
+tests/test_vps_runner_config.py
+  s_df23f17b640abb::t_25fcb7a478a71b 17
+  s_df23f17b640abb::t_86fbdb08652f5d 24,129-146,198-226,281-309
+trace_exports/round-001-ema5/reflexio/reflexio-event.json
+  s_df23f17b640abb::t_9b8d862398c1c5 8-9,11-13,19-29,40,54-221
+tests/test_agent_token_usage.py
+  s_df23f17b640abb::t_8be6af912e7cf2 352-353
+  s_df23f17b640abb::t_a5d3787091ba1c 358-397
+  s_df23f17b640abb::t_1e9fce76c4ac9a 327-351,354-357
+  s_df23f17b640abb::t_9a22fc4bff0679 398-416
+agent_sdk_token_usage.py
+  s_df23f17b640abb::t_62dfa272a3e679 139,229
+trace_exports/round-001-ema5/recursive_improve/recursive-improve-trace.json
+  ai_agent 1-45
+tests/test_compiler_builder_errors.py
+  s_df23f17b640abb::t_e07c78a0fbeb70 1-31
+autoresearch_research.py
+  s_df23f17b640abb::t_035ca814b6d1f0 1240
+  s_df23f17b640abb::t_d31a9f4c122935 59,521-531,579-584,587-592
+  s_df23f17b640abb::t_ddbba778a19715 544-563
+  s_df23f17b640abb::t_d50a1133837c8f 573-576,585-586,618-619
+  s_df23f17b640abb::t_9053d4be96bc6f 858
+trace_exports/round-001-ema5/halo/halo-event.json
+  s_df23f17b640abb::t_9b8d862398c1c5 4,15
+improvement_reports/halo/job20-halo-recommendation-audit.md
+  s_df23f17b640abb::t_0c7a520af2b3ac 1-11,13-17,21,26,30,33-35,38,42-66,69-74
+  s_df23f17b640abb::t_aa3f6cf1259128 31-32,39,41
+  s_df23f17b640abb::t_9d8d03c7b13095 12,18-20,22-25,27-29,36-37,40,67-68
+autoresearch_experiment.py
+  s_df23f17b640abb::t_9b8d862398c1c5 538-543,651-666
+compiler_builder.py
+  s_df23f17b640abb::t_04d19f8553d991 715,745
+  s_df23f17b640abb::t_380e7b4c5bc2ae 204-220,383,403,438,448,475,487,495,506,519,528
+  s_df23f17b640abb::t_25fcb7a478a71b 656
+analyst_dataframe_helpers.py
+  s_df23f17b640abb::t_58f12f5f9b6835 1-87
+tests/test_experiment_db_sqlite_runtime.py
+  s_df23f17b640abb::t_9b8d862398c1c5 289-337
+autoresearch_orchestration.py
+  s_df23f17b640abb::t_25fcb7a478a71b 155
+  s_df23f17b640abb::t_0d539b7e661274 18-32,107,149-154,156-193
+  s_df23f17b640abb::t_89019d93f270d8 33,108-148
+tests/test_autoresearch_research_helpers.py
+  s_df23f17b640abb::t_16dd554fd23322 22,49-59
+trace_exports/round-001-ema5/recursive_improve/recursive-improve-event.json
+  s_df23f17b640abb::t_9b8d862398c1c5 4,15
+autoresearch_controller.py
+  s_df23f17b640abb::t_f14446426d536c 137-142,470
+  s_df23f17b640abb::t_08f3aa331f4d39 837,842-849,853
+  s_df23f17b640abb::t_5d2e009e9db084 123,190,833,920
+tests/test_research_conductor_characterization.py
+  s_df23f17b640abb::t_837c3dadcb8976 56-78
+  s_df23f17b640abb::t_e039cc388001fa 1875-1877,1885-1929
+  s_df23f17b640abb::t_9b8d862398c1c5 1795-1826,1832,1834,1839
+  s_df23f17b640abb::t_3ef86a7b956fa3 41-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "21002f3b46c43bcbd951defd5deae373e7563898",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

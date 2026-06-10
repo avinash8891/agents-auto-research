@@ -1,0 +1,57 @@
+agent_openai_calls.py
+  4fdac69567eddff2 28-29,44,48,50,65-67,76,83,90,109-112,164,184,206-207,222,227,229,243-245,254,261,268,287
+tests/test_research_conductor_paths.py
+  4fdac69567eddff2 1-380
+research_conductor.py
+  4fdac69567eddff2 14-16,20-27,35-36,113,130,136-137,167,239-240,249,255,276,299,325,345,352,365,379
+research_subagents.py
+  4fdac69567eddff2 7-15,161-162,174,185,194,202,209,217,258-259,271,284-286,295,303,310,318
+agent_runners.py
+  4fdac69567eddff2 15-16,20-21,70-83,94-95,99-104,121-128,130,173-174
+pyproject.toml
+  4fdac69567eddff2 32,124,139
+research_paths.py
+  4fdac69567eddff2 8-9,11-22
+agent_infra.py
+  4fdac69567eddff2 3,6,10-11,55-58,103-135
+README.md
+  4fdac69567eddff2 3-91,101-107
+tests/test_agent_token_usage.py
+  db0cea63be5d86f5 1-22,24-139,142-145,147-151
+  9fdf9de08494cf74 23,140-141,146
+tests/test_autoresearch_orchestration.py
+  4fdac69567eddff2 1-295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "e773e4e15817fe0545408758741503787c48b4bd",
+  "prompts": {
+    "4fdac69567eddff2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e009dc20-8bf3-41af-89d4-ef43ebf1515e",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 1450,
+      "total_deletions": 973,
+      "accepted_lines": 1420,
+      "overriden_lines": 1
+    },
+    "6282a61e8b4a52b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "94abb7d7-4a32-4cc9-b3cf-2ebd079af057",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 314,
+      "total_deletions": 157,
+      "accepted_lines": 343,
+      "overriden_lines": 0
+    }
+  }
+}

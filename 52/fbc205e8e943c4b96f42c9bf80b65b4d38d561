@@ -1,0 +1,28 @@
+compiler_builder.py
+  s_df23f17b640abb::t_6ddceef1e039fb 15,250,281-287,289-300,306,489,528,559
+  s_df23f17b640abb::t_cf0d5a0edd3247 288
+tests/test_compiler_pipeline_characterization.py
+  s_df23f17b640abb::t_cb905df76689c0 12
+  s_df23f17b640abb::t_11f6085750c659 811-813
+  s_df23f17b640abb::t_c7f68009d5fbfb 690-769
+compiler_implementation_verify.py
+  s_df23f17b640abb::t_ccd11cdf6bf750 12,27,71,99,101-103,107-121
+  s_df23f17b640abb::t_cf0d5a0edd3247 138
+  s_df23f17b640abb::t_20b9fbeccdc444 1-11,13-26,28-70,72-98,100,104-106,122-137,139-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "52fbc205e8e943c4b96f42c9bf80b65b4d38d561",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

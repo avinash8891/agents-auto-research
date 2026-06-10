@@ -1,0 +1,27 @@
+backtest_run_db.py
+  s_1dc1911c45a5a7::t_38bf37dd6f7fb6 410-411,414-420
+  s_1dc1911c45a5a7::t_32a3ec569bdb06 421,912
+research_memory.py
+  s_1dc1911c45a5a7::t_07cf9261cc1aa1 742-743
+tests/test_autoresearch_orchestration.py
+  s_1dc1911c45a5a7::t_921ac56cd65ecc 573-574
+tests/test_experiment_db_sqlite_runtime.py
+  s_1dc1911c45a5a7::t_9d4177269f4ed1 6-7
+  s_1dc1911c45a5a7::t_e4446270f7c299 275-328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "797228d202e21801bdf67edcc272da80c1e0ccf4",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": null
+    }
+  }
+}

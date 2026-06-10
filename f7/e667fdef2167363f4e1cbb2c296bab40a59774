@@ -1,0 +1,31 @@
+tests/test_autoresearch_controller_characterization.py
+  df23f17b640abbde 1624,1633-1635,1644
+research_tools_mcp.py
+  df23f17b640abbde 19,124,127
+agent_formatters.py
+  df23f17b640abbde 130-137
+tests/test_research_conductor_characterization.py
+  df23f17b640abbde 459,622-675,1087,1133,1168
+autoresearch_research.py
+  df23f17b640abbde 359-366,371
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "f7e667fdef2167363f4e1cbb2c296bab40a59774",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 83,
+      "total_deletions": 14,
+      "accepted_lines": 101,
+      "overriden_lines": 0
+    }
+  }
+}

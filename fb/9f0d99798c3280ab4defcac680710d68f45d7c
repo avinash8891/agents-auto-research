@@ -1,0 +1,124 @@
+tests/test_validator_gate_coverage.py
+  s_528f7295c9f483::t_455a6c27de0045 676,687-688
+scripts/check_prompt_drift.py
+  s_528f7295c9f483::t_feb6428ab2411f 149
+backtest_run_db.py
+  s_528f7295c9f483::t_9018a7623c60ef 39-40
+  s_822c8a2069482d::t_5e1c58a95f3c68 521
+  s_528f7295c9f483::t_197d46ec1029ef 655-657,675
+  s_528f7295c9f483::t_6dc95b313e37ab 307,671,717
+  s_822c8a2069482d::t_4bcc6bdc4b331d 35-38
+tests/test_stage1_rules_part2.py
+  s_528f7295c9f483::t_8a95f94eb8fffd 7,18
+  s_528f7295c9f483::t_1fba38651d3947 137,182,194,207
+  s_528f7295c9f483::t_229a2c46a3e8f0 16-17
+autoresearch_research.py
+  s_528f7295c9f483::t_ed0157218b489a 813,815,836-837
+  s_528f7295c9f483::t_035c18a6ba7377 100-101,128-129,136
+  s_822c8a2069482d::t_225274c426c750 905
+  s_822c8a2069482d::t_e08504748c1354 42
+  s_528f7295c9f483::t_c6ecd444752280 47-48,244,812,1194
+  s_528f7295c9f483::t_389a355aa25b9b 932
+  s_528f7295c9f483::t_4f7acf3ffe2d1b 1178
+  s_822c8a2069482d::t_8b93ff61a35cb6 922
+  s_822c8a2069482d::t_57242c942451f1 756
+  s_822c8a2069482d::t_f34c9e77d28d2c 921,931
+  s_528f7295c9f483::t_bab680316cd0ff 814
+  s_822c8a2069482d::t_ab45cdc2e73703 948
+  s_528f7295c9f483::t_b851f25147c570 1174-1175,1198
+  s_528f7295c9f483::t_833e65113243ec 1184-1191
+  s_822c8a2069482d::t_24bb9e001a1125 760
+  s_528f7295c9f483::t_48913bcb69e3ac 130,844,903
+  s_822c8a2069482d::t_40432fc84c672e 1192
+  s_822c8a2069482d::t_3167f65b53041f 864
+  s_822c8a2069482d::t_8a6579b9bb47fb 243
+  s_528f7295c9f483::t_cdc5a8a3497b1a 1179-1183,1193,1195-1196,1651,1655-1656
+  s_528f7295c9f483::t_a64e6f3e7547f4 80-85,87-88,811
+  s_822c8a2069482d::t_b157cd671810dc 904
+  s_528f7295c9f483::t_2ae56a416a4fb3 1272,1563,1809
+  s_528f7295c9f483::t_b70f23865748cf 140
+  s_822c8a2069482d::t_cb7a171b52bf4f 86
+autoresearch_state.py
+  s_822c8a2069482d::t_3289e23af65470 151,211
+  s_822c8a2069482d::t_d77b6fc5caa88b 129
+research_types.py
+  s_822c8a2069482d::t_877a4373692760 142
+  s_528f7295c9f483::t_56754be28eeac4 144-148
+  s_528f7295c9f483::t_76b9e11d1677c5 306
+thesis_validator.py
+  s_528f7295c9f483::t_6a18f2ea70d2ec 2371-2372,2384,2386
+  s_528f7295c9f483::t_78c898bca6e2f6 2373,2385
+tests/test_l5_neighboring_threshold.py
+  s_528f7295c9f483::t_8a95f94eb8fffd 11,22
+  s_528f7295c9f483::t_f94c8e1567e275 153,169,189
+  s_528f7295c9f483::t_229a2c46a3e8f0 20-21
+tests/test_schema_additions.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 22-23
+  s_528f7295c9f483::t_8a95f94eb8fffd 8,24
+  s_528f7295c9f483::t_2e64b6e2aa3e12 196
+tests/test_agent_orchestrator_characterization.py
+  s_528f7295c9f483::t_2936421548c2fd 396,444-445
+agent_prompts.py
+  s_528f7295c9f483::t_eb28cc56948690 99,102-103,122
+tests/test_validator_process_gate.py
+  s_528f7295c9f483::t_a424f07b7458c3 6-12,14,81,135
+  s_528f7295c9f483::t_8a95f94eb8fffd 5,13
+tests/test_thesis_validator.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 19-20
+  s_528f7295c9f483::t_5bfcfd531dfb92 303
+  s_528f7295c9f483::t_8a95f94eb8fffd 5,21
+tests/test_validator_stages.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 32-33
+  s_528f7295c9f483::t_005d7d09775423 142,169,172
+  s_528f7295c9f483::t_8a95f94eb8fffd 9,34
+research_conductor.py
+  s_528f7295c9f483::t_1f05fe20098090 19-20,966
+  s_528f7295c9f483::t_66c379cbc870e8 968,988
+  s_528f7295c9f483::t_7d233d624fe47b 928
+  s_528f7295c9f483::t_b10ecb596ef2b7 106-107,111-112,964,967,981
+tests/test_validator_subsections.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 39-40
+  s_528f7295c9f483::t_368b22558f0752 176,179-180,225,232-233
+  s_528f7295c9f483::t_8a95f94eb8fffd 41
+  s_528f7295c9f483::t_4f7acf3ffe2d1b 21
+tests/test_autoresearch_research.py
+  s_528f7295c9f483::t_923105ce9b5b7c 1233-1292
+  s_528f7295c9f483::t_34c70b1168bdf1 735,1028-1030,1225
+  s_528f7295c9f483::t_69123c38c5063c 823
+  s_528f7295c9f483::t_f2ab9f7a8ac43c 825
+tests/test_thesis_id_assignment.py
+  s_528f7295c9f483::t_d5d501a42ebf82 3,70
+  s_528f7295c9f483::t_afa30464c79c7b 1-2,4-69,71-112
+tests/test_stage1_rules.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 20-21
+  s_528f7295c9f483::t_8a95f94eb8fffd 11,22
+  s_528f7295c9f483::t_6f6b7211a15945 166,177,186,217,232
+research_prompts.py
+  s_528f7295c9f483::t_3193c1cd0f1592 123-124
+tests/test_research_conductor_characterization.py
+  s_528f7295c9f483::t_bbf7e9c2638cef 619,667,774-776
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fb9f0d99798c3280ab4defcac680710d68f45d7c",
+  "prompts": {},
+  "sessions": {
+    "s_528f7295c9f483": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6ec0-b751-7702-b2a5-a60d022b5f23",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    },
+    "s_822c8a2069482d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5d82254e-a95d-4dc3-9786-e7c3da9d8233",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": null
+    }
+  }
+}

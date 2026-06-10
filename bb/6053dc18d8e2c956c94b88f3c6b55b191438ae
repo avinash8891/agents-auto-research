@@ -1,0 +1,19 @@
+research_tools_mcp.py
+  s_0f03028903c317::t_88bb140f095e6d 160-170,268-270,312-319
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bb6053dc18d8e2c956c94b88f3c6b55b191438ae",
+  "prompts": {},
+  "sessions": {
+    "s_0f03028903c317": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "120fd87e-e766-437f-b6ab-cb4825eafbf0",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

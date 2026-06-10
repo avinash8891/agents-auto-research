@@ -1,0 +1,30 @@
+docs/superpowers/specs/2026-05-28-spec-a4-design.md
+  s_d2b4c2b9f356b1::t_106d9aba1665d4 1207-1214,1217,1220-1221
+  s_d2b4c2b9f356b1::t_be9ce46107a0da 1108-1143
+  s_d2b4c2b9f356b1::t_71a3ab58f0af4e 563-566
+  s_d2b4c2b9f356b1::t_3dfea6c3792326 345-348
+  s_d2b4c2b9f356b1::t_2dbcd2e7a2d515 511-516
+  s_d2b4c2b9f356b1::t_c58584fb17719f 416-419
+  s_d2b4c2b9f356b1::t_04175aa56062b8 761-766
+  s_d2b4c2b9f356b1::t_5a5134b96d5e1d 123-133,135-137,145-172
+  s_d2b4c2b9f356b1::t_72f903b4734d42 1192-1200,1204-1206
+  s_d2b4c2b9f356b1::t_3deaad9d9d035c 520-527
+  s_d2b4c2b9f356b1::t_c2bdcc3c64c685 381-384
+  s_d2b4c2b9f356b1::t_21ff9efba9ef28 1061-1065
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8533e8aadc062a45374042f5d78f07b093ddd8da",
+  "prompts": {},
+  "sessions": {
+    "s_d2b4c2b9f356b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7b8e3f64-be70-4e0b-af64-2c0def2c17b7",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

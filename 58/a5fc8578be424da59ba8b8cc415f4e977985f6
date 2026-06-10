@@ -1,0 +1,25 @@
+eval_cli.py
+  a3307316e952de50 89-92
+tests/test_eval_cli.py
+  a3307316e952de50 187,189-194,199-201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "58a5fc8578be424da59ba8b8cc415f4e977985f6",
+  "prompts": {
+    "a3307316e952de50": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea22e46e-9d5b-4cdb-8e89-93343a4ba634",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 16,
+      "total_deletions": 23,
+      "accepted_lines": 14,
+      "overriden_lines": 3
+    }
+  }
+}

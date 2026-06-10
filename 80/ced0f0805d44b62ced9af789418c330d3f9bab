@@ -1,0 +1,25 @@
+tests/test_thesis_validator.py
+  df23f17b640abbde 74-125
+thesis_validator.py
+  df23f17b640abbde 210-233,243,248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "80ced0f0805d44b62ced9af789418c330d3f9bab",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 78,
+      "total_deletions": 2,
+      "accepted_lines": 78,
+      "overriden_lines": 0
+    }
+  }
+}

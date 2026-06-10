@@ -1,0 +1,20 @@
+scripts/check_prompt_drift.py
+  s_757c0ad0f54aeb::t_cff96b331d4322 1-72,74-304
+  s_757c0ad0f54aeb::t_10dd6ffc1ae344 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5f317da0737113f2cb24d5f4a204fbb51cc3c62f",
+  "prompts": {},
+  "sessions": {
+    "s_757c0ad0f54aeb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e93ab1b2-a46f-4c88-9533-f61a81a67dff",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

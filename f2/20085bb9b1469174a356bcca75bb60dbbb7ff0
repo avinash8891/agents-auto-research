@@ -1,0 +1,51 @@
+improvement_reports/recursive_improve/job20-round44-48-action-plan.md
+  s_df23f17b640abb::t_0c73902eff875b 1-103
+improvement_reports/recursive_improve/job20-round44-48-full-report.md
+  s_df23f17b640abb::t_0c73902eff875b 1-16
+improvement_reports/recursive_improve/job20-all-rounds-prioritized-plan.md
+  s_df23f17b640abb::t_e98087771a8ced 1-238
+improvement_reports/recursive_improve/job20-round44-48-review-summary.md
+  s_df23f17b640abb::t_0c73902eff875b 1-67
+improvement_reports/trace/job20-round36-40.md
+  s_df23f17b640abb::t_426da20487f986 40-41,43-44,47-56
+  s_df23f17b640abb::t_45a637e6d11a3b 14,18-19,26,36,42,45
+  s_df23f17b640abb::t_4fb9fcff54c8bf 1-13,15-17,20-25,27-35,37-39,46,57-65
+improvement_reports/builder_verifier_bug_class_review.md
+  s_c48b43797cf947::t_089b0fc7607a24 1-145
+improvement_reports/recursive_improve/job20-all-rounds-review-summary.md
+  s_df23f17b640abb::t_e98087771a8ced 1-85
+improvement_reports/recursive_improve/job20-all-rounds-full-report.md
+  s_df23f17b640abb::t_e98087771a8ced 1-16
+improvement_reports/builder_verifier_fixes_verification.md
+  s_c48b43797cf947::t_910f0f15b14119 1-55
+improvement_reports/halo/job20-all-rounds.real-halo-report.md
+  s_df23f17b640abb::t_f3dbd7c048077d 1-38393
+improvement_reports/builder_verifier_fixes_verification_pass2.md
+  s_c48b43797cf947::t_8487a0f18b411d 1-68
+improvement_reports/halo/round-048.real-halo-smoke.md
+  s_df23f17b640abb::t_b5ef0b45d7ae93 1-9132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "f220085bb9b1469174a356bcca75bb60dbbb7ff0",
+  "prompts": {},
+  "sessions": {
+    "s_c48b43797cf947": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2c09fae7-a10a-4513-a0ab-6918132de419",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+tests/test_agent_orchestrator_characterization.py
+  447321ef367c82c2 445-479
+tests/test_research_conductor_characterization.py
+  447321ef367c82c2 85-86,132-193
+agent_openai_calls.py
+  447321ef367c82c2 23,29
+research_conductor.py
+  447321ef367c82c2 252-254,257,273-288
+pyproject.toml
+  447321ef367c82c2 14-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "4778881568ddcf104aa8c1e136e843512abb5e84",
+  "prompts": {
+    "447321ef367c82c2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de282-777f-7b80-86de-16d1f0cab6f3",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 181,
+      "total_deletions": 3,
+      "accepted_lines": 121,
+      "overriden_lines": 0
+    }
+  }
+}

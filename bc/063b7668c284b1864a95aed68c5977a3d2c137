@@ -1,0 +1,25 @@
+tests/test_alignment_family_aware.py
+  s_00e024b3fdfb90::t_0d794a3fffa623 18,140-164
+tests/test_research_tools_mcp.py
+  s_00e024b3fdfb90::t_b7f1b7e395a11a 233-240
+thesis_validator.py
+  s_00e024b3fdfb90::t_a993a848c5798c 49,183-184,354,1055,1727
+research_tools_mcp.py
+  s_00e024b3fdfb90::t_11733a879008a0 11-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bc063b7668c284b1864a95aed68c5977a3d2c137",
+  "prompts": {},
+  "sessions": {
+    "s_00e024b3fdfb90": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6a5b-f3c7-7540-8d73-175a15705d5d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

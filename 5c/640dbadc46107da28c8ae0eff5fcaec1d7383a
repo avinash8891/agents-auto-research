@@ -1,0 +1,25 @@
+tests/test_dependencies.py
+  df23f17b640abbde 3-6,9-11,15-17,19-21
+pyproject.toml
+  df23f17b640abbde 162,167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "5c640dbadc46107da28c8ae0eff5fcaec1d7383a",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 18,
+      "total_deletions": 31,
+      "accepted_lines": 16,
+      "overriden_lines": 0
+    }
+  }
+}

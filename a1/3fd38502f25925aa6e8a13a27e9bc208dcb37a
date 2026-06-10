@@ -1,0 +1,27 @@
+trace_adapters/reflexio.py
+  s_df23f17b640abb::t_d7d40df1303fb1 96,158
+trace_adapters/recursive_improve.py
+  s_df23f17b640abb::t_3193c284869d48 5,249,252-254
+trace_adapters/halo.py
+  s_df23f17b640abb::t_0d5b95cffbb2ea 300
+tests/test_trace_higher_level_modules.py
+  s_df23f17b640abb::t_68f8b21726df36 486-557
+tests/test_halo_trace_adapter.py
+  s_df23f17b640abb::t_d166e3e5560561 318-339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "a13fd38502f25925aa6e8a13a27e9bc208dcb37a",
+  "prompts": {},
+  "sessions": {
+    "s_df23f17b640abb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

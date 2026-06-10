@@ -1,0 +1,32 @@
+research_conductor.py
+  s_eeaca68b53c0c2::t_6f47f034003bf3 127-128
+research_types.py
+  s_eeaca68b53c0c2::t_2cc558493a0089 300-302
+vps_runner.py
+  s_757c0ad0f54aeb::t_48e09933502f22 561-562
+  s_757c0ad0f54aeb::t_ef9ed202efe7bb 574-582
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3efbae87ba0707d4d1fde6c1e318dd34501413a7",
+  "prompts": {},
+  "sessions": {
+    "s_757c0ad0f54aeb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e93ab1b2-a46f-4c88-9533-f61a81a67dff",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_eeaca68b53c0c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e73224a3-7aac-4c74-95d7-b5f5193ba7f4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

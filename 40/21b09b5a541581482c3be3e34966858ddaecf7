@@ -1,0 +1,27 @@
+autoresearch_research.py
+  becf7afbb66bcc9c 18,927-937,939-940,942,946-957
+autoresearch_controller.py
+  becf7afbb66bcc9c 103-107,692
+autoresearch_artifacts.py
+  becf7afbb66bcc9c 58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "4021b09b5a541581482c3be3e34966858ddaecf7",
+  "prompts": {
+    "becf7afbb66bcc9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f09f6e23-ecca-4698-bc48-e07528fbf3c4",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 36,
+      "total_deletions": 19,
+      "accepted_lines": 36,
+      "overriden_lines": 0
+    }
+  }
+}

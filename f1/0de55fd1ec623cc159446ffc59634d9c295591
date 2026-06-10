@@ -1,0 +1,35 @@
+agent_runners.py
+  81bc3bdee8fa7859 116
+vps_runner.py
+  81bc3bdee8fa7859 643
+autoresearch_research.py
+  81bc3bdee8fa7859 18,922-925,927-930,932-933
+trace_sdk.py
+  81bc3bdee8fa7859 505
+autoresearch_orchestration.py
+  81bc3bdee8fa7859 5,126
+autoresearch_controller.py
+  81bc3bdee8fa7859 657-658,670-676,682
+autoresearch_artifacts.py
+  81bc3bdee8fa7859 11,15-16,58-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "f10de55fd1ec623cc159446ffc59634d9c295591",
+  "prompts": {
+    "81bc3bdee8fa7859": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "59ea692e-a997-4a9d-9158-097859e3e830",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 39,
+      "total_deletions": 13,
+      "accepted_lines": 36,
+      "overriden_lines": 1
+    }
+  }
+}

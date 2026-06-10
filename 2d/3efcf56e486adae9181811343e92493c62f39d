@@ -1,0 +1,49 @@
+compiler_builder.py
+  6282a61e8b4a52b8 5,116-119,227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "2d3efcf56e486adae9181811343e92493c62f39d",
+  "prompts": {
+    "6282a61e8b4a52b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "94abb7d7-4a32-4cc9-b3cf-2ebd079af057",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 5,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    },
+    "6fb29deef95bb295": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a90ae35e-6619-4849-9634-27489205eda7",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 0,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    },
+    "db0cea63be5d86f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a569847f-efe5-48e9-bfe1-1c6f375510aa",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 278,
+      "total_deletions": 31,
+      "accepted_lines": 184,
+      "overriden_lines": 8
+    }
+  }
+}

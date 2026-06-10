@@ -1,0 +1,23 @@
+metrics.py
+  10a07f78d234f13c 10,29-34,57,98,109,120,133,145,201,228,298,312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "85e21dcff11b6d9b16874b3148c7eb241fdb08c0",
+  "prompts": {
+    "10a07f78d234f13c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de304-8ece-74e3-91e3-a641c23979ba",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 17,
+      "total_deletions": 10,
+      "accepted_lines": 17,
+      "overriden_lines": 0
+    }
+  }
+}

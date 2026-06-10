@@ -1,0 +1,29 @@
+vps_runner.py
+  dbc5ae606013cb0f 78
+tests/test_vps_runner_config.py
+  dbc5ae606013cb0f 77-80
+tests/test_autoresearch_state.py
+  dbc5ae606013cb0f 12-13,60-61
+autoresearch_state.py
+  dbc5ae606013cb0f 122-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "42576ef32e2d3f6451a3e915adbb7b9ce483dd88",
+  "prompts": {
+    "dbc5ae606013cb0f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de36d-cd36-7ad0-86bd-68166dfcd69b",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 14,
+      "total_deletions": 7,
+      "accepted_lines": 14,
+      "overriden_lines": 0
+    }
+  }
+}

@@ -1,0 +1,25 @@
+tests/test_research_conductor_paths.py
+  df23f17b640abbde 259-280
+research_paths.py
+  df23f17b640abbde 98-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "2d5d0cdceeff1ca85c1ea8dcdc0d1a3382026f0c",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 51,
+      "total_deletions": 0,
+      "accepted_lines": 51,
+      "overriden_lines": 0
+    }
+  }
+}

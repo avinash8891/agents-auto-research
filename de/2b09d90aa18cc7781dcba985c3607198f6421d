@@ -1,0 +1,57 @@
+autoresearch_research.py
+  s_1dc1911c45a5a7::t_5b1277335cbb0e 1045
+  s_1dc1911c45a5a7::t_e660b46f82efc5 1065
+reflexio_agent_reflections.py
+  s_1dc1911c45a5a7::t_e021f571bc07af 84
+tests/test_research_conductor_characterization.py
+  s_1dc1911c45a5a7::t_11e34bfe5b7340 271
+  s_1dc1911c45a5a7::t_37ee0eac227d66 478
+  s_1dc1911c45a5a7::t_d24fbc38a1131c 308,313
+  s_1dc1911c45a5a7::t_a48fa64452557e 446
+  s_1dc1911c45a5a7::t_723838c851d86b 130
+  s_1dc1911c45a5a7::t_3c6f2a42bb6ea5 405,417
+  s_1dc1911c45a5a7::t_becda8866e2af8 370-371
+  s_1dc1911c45a5a7::t_9cc7eccfdf4d9a 495
+  s_1dc1911c45a5a7::t_db751aa5478672 517
+  s_1dc1911c45a5a7::t_cc82965eaef3b8 586,633,677,718,780
+  s_1dc1911c45a5a7::t_8d7ec918df6f0c 340-341
+agent_orchestrator_helpers.py
+  s_1dc1911c45a5a7::t_7ae3d8bea72e4e 156
+agent_token_usage.py
+  s_1dc1911c45a5a7::t_5c62020ad4f628 225
+tests/test_autoresearch_research.py
+  s_1dc1911c45a5a7::t_da5b59a3dcd119 1253
+agent_formatters.py
+  s_1dc1911c45a5a7::t_6f79b8db3412b9 124-125,150,154-155,157
+research_conductor.py
+  s_1dc1911c45a5a7::t_866f6a48a5fbdf 1051,1064
+  s_1dc1911c45a5a7::t_73f189e97e4376 840-841
+  s_1dc1911c45a5a7::t_d994f40a6344ab 587,604,609-610,616,625,631,639,644-656,672
+  s_1dc1911c45a5a7::t_f1ed4b5150b34a 171-172,174
+  s_1dc1911c45a5a7::t_57b786c7afdf8c 21,23
+  s_1dc1911c45a5a7::t_62752359960dfb 336-337
+  s_1dc1911c45a5a7::t_6fe55bbe40de22 347
+  s_1dc1911c45a5a7::t_3f4527e35fddf7 142-143
+  s_1dc1911c45a5a7::t_462ef632332944 123
+research_prompts.py
+  s_1dc1911c45a5a7::t_b9266c3dd1e944 23
+  s_1dc1911c45a5a7::t_42b5f8f78fd118 93
+  s_1dc1911c45a5a7::t_79b0c3ce2c3726 150
+  s_1dc1911c45a5a7::t_80d67f9b82aa14 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "de2b09d90aa18cc7781dcba985c3607198f6421d",
+  "prompts": {},
+  "sessions": {
+    "s_1dc1911c45a5a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08f7ac5f-5e25-40db-aea3-2ac410c4f646",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

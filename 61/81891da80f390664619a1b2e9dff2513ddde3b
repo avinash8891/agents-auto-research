@@ -1,0 +1,25 @@
+strategies/validate_utils.py
+  4fdac69567eddff2 1-11
+tests/test_validate_utils.py
+  4fdac69567eddff2 1-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "6181891da80f390664619a1b2e9dff2513ddde3b",
+  "prompts": {
+    "4fdac69567eddff2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e009dc20-8bf3-41af-89d4-ef43ebf1515e",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 1578,
+      "total_deletions": 1618,
+      "accepted_lines": 958,
+      "overriden_lines": 0
+    }
+  }
+}

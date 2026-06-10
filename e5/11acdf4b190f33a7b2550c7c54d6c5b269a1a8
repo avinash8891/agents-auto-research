@@ -1,0 +1,31 @@
+agent_openai_calls.py
+  d3cf3dced3343974 9-16,110-245
+agent_orchestrator_helpers.py
+  d3cf3dced3343974 8-76
+agent_orchestrator.py
+  d3cf3dced3343974 15-17,63-95,161-182
+agent_prompts.py
+  d3cf3dced3343974 9-21
+tests/test_agent_orchestrator_characterization.py
+  d3cf3dced3343974 27-31,564-568
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "e511acdf4b190f33a7b2550c7c54d6c5b269a1a8",
+  "prompts": {
+    "d3cf3dced3343974": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a63d46-a3a9-40e3-a476-0c28621ed0be",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 297,
+      "total_deletions": 303,
+      "accepted_lines": 295,
+      "overriden_lines": 0
+    }
+  }
+}

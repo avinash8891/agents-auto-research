@@ -1,0 +1,35 @@
+backtest/output.py
+  dbc5ae606013cb0f 18-20,46
+tests/test_autoresearch_experiment.py
+  dbc5ae606013cb0f 104,106-120,191-196
+vps_runner.py
+  dbc5ae606013cb0f 17,74,76-78,80-81
+tests/test_autoresearch_controller_characterization.py
+  dbc5ae606013cb0f 708,714
+autoresearch_experiment.py
+  dbc5ae606013cb0f 117-122,143-144,155-159,189-190,237-239,244-245
+tests/test_backtest_output.py
+  dbc5ae606013cb0f 7-8,13-21,32-33,35,50-52
+tests/test_vps_runner_config.py
+  dbc5ae606013cb0f 6,69,72-73,75-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "9288b6c202c828555423fef5c204b196fb15b4ef",
+  "prompts": {
+    "dbc5ae606013cb0f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de36d-cd36-7ad0-86bd-68166dfcd69b",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 88,
+      "total_deletions": 49,
+      "accepted_lines": 82,
+      "overriden_lines": 0
+    }
+  }
+}

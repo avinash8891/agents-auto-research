@@ -1,0 +1,68 @@
+agent_prompts.py
+  s_528f7295c9f483::t_eb28cc56948690 99,102-103,122
+tests/test_thesis_validator.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 18-19
+  s_528f7295c9f483::t_5bfcfd531dfb92 301
+backtest_run_db.py
+  s_528f7295c9f483::t_197d46ec1029ef 22,37,652-654,672
+research_prompts.py
+  s_528f7295c9f483::t_3193c1cd0f1592 123-124
+tests/test_validator_stages.py
+  s_528f7295c9f483::t_005d7d09775423 140,167,170
+  s_528f7295c9f483::t_229a2c46a3e8f0 31-32
+tests/test_agent_orchestrator_characterization.py
+  s_528f7295c9f483::t_2936421548c2fd 396,444-445
+tests/test_thesis_id_assignment.py
+  s_528f7295c9f483::t_afa30464c79c7b 1-111
+tests/test_validator_subsections.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 38-39
+  s_528f7295c9f483::t_368b22558f0752 174,177-178,223,230-231
+tests/test_stage1_rules_part2.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 15-16
+  s_528f7295c9f483::t_1fba38651d3947 135,180,192,205
+thesis_validator.py
+  s_528f7295c9f483::t_6a18f2ea70d2ec 63,2372-2373,2384-2386
+tests/test_stage1_rules.py
+  s_528f7295c9f483::t_6f6b7211a15945 164,175,184,215,230
+  s_528f7295c9f483::t_229a2c46a3e8f0 19-20
+research_conductor.py
+  s_528f7295c9f483::t_b10ecb596ef2b7 104-105,109-110,962,964-965,978,985
+  s_528f7295c9f483::t_7d233d624fe47b 926
+research_thesis_ids.py
+  s_528f7295c9f483::t_b9163d2d79a5c0 1-6
+scripts/check_prompt_drift.py
+  s_528f7295c9f483::t_feb6428ab2411f 149
+tests/test_validator_process_gate.py
+  s_528f7295c9f483::t_a424f07b7458c3 5-12,79,133
+research_types.py
+  s_528f7295c9f483::t_56754be28eeac4 142-143,145-149
+  s_528f7295c9f483::t_76b9e11d1677c5 307
+autoresearch_research.py
+  s_528f7295c9f483::t_035c18a6ba7377 50,89-90,117-118,124,128-130
+  s_528f7295c9f483::t_b851f25147c570 1167-1170,1172
+  s_528f7295c9f483::t_1f23c45d462587 1625-1630,1634-1635
+  s_528f7295c9f483::t_ed0157218b489a 805-813,834-835,842,903
+  s_528f7295c9f483::t_2ae56a416a4fb3 1246,1537,1788
+tests/test_l5_neighboring_threshold.py
+  s_528f7295c9f483::t_f94c8e1567e275 151,167,187
+  s_528f7295c9f483::t_229a2c46a3e8f0 19-20
+tests/test_schema_additions.py
+  s_528f7295c9f483::t_2e64b6e2aa3e12 194
+  s_528f7295c9f483::t_229a2c46a3e8f0 21-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6f4242dc0de2d6cd875077ef02f7791129f1c450",
+  "prompts": {},
+  "sessions": {
+    "s_528f7295c9f483": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6ec0-b751-7702-b2a5-a60d022b5f23",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+tests/test_validator_batching.py
+  s_a7aaca1cc6fc4c::t_d6c5661e8b1d1f 107-113,115,180-197
+  s_a7aaca1cc6fc4c::t_5afa0b202a7963 198
+thesis_validator.py
+  s_a7aaca1cc6fc4c::t_78518ddadbad70 346,1991-1992,1994-1996,1998
+  s_a7aaca1cc6fc4c::t_8193b12d14f13d 1993,1997,1999-2002,2100-2101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "79d1037e7aa5fcd29df40a74c5cd7d601387625f",
+  "prompts": {},
+  "sessions": {
+    "s_a7aaca1cc6fc4c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6a87-1fb9-7043-ac50-d74fe1b88695",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

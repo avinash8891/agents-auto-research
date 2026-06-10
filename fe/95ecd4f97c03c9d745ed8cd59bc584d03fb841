@@ -1,0 +1,70 @@
+research_conductor.py
+  s_528f7295c9f483::t_7d233d624fe47b 926
+  s_528f7295c9f483::t_b10ecb596ef2b7 104-105,109-110,962,964-965,978,985
+tests/test_agent_orchestrator_characterization.py
+  s_528f7295c9f483::t_2936421548c2fd 396,444-445
+autoresearch_research.py
+  s_528f7295c9f483::t_1f23c45d462587 1623-1628,1632-1633
+  s_528f7295c9f483::t_b851f25147c570 1165-1168,1170
+  s_528f7295c9f483::t_2ae56a416a4fb3 1244,1535,1786
+  s_528f7295c9f483::t_035c18a6ba7377 50,89-90,117-118,124
+  s_528f7295c9f483::t_ed0157218b489a 803-811,832-833,840,901
+  s_528f7295c9f483::t_b70f23865748cf 128
+tests/test_validator_process_gate.py
+  s_528f7295c9f483::t_a424f07b7458c3 5-12,79,133
+tests/test_thesis_validator.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 18-19
+  s_528f7295c9f483::t_5bfcfd531dfb92 301
+tests/test_validator_stages.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 31-32
+  s_528f7295c9f483::t_005d7d09775423 140,167,170
+tests/test_schema_additions.py
+  s_528f7295c9f483::t_2e64b6e2aa3e12 194
+  s_528f7295c9f483::t_229a2c46a3e8f0 21-22
+research_prompts.py
+  s_528f7295c9f483::t_3193c1cd0f1592 123-124
+tests/test_stage1_rules_part2.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 15-16
+  s_528f7295c9f483::t_1fba38651d3947 135,180,192,205
+tests/test_l5_neighboring_threshold.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 19-20
+  s_528f7295c9f483::t_f94c8e1567e275 151,167,187
+tests/test_validator_subsections.py
+  s_528f7295c9f483::t_229a2c46a3e8f0 38-39
+  s_528f7295c9f483::t_368b22558f0752 174,177-178,223,230-231
+tests/test_stage1_rules.py
+  s_528f7295c9f483::t_6f6b7211a15945 164,175,184,215,230
+  s_528f7295c9f483::t_229a2c46a3e8f0 19-20
+research_thesis_ids.py
+  s_528f7295c9f483::t_b9163d2d79a5c0 1-6
+tests/test_thesis_id_assignment.py
+  s_528f7295c9f483::t_afa30464c79c7b 1-111
+research_types.py
+  s_528f7295c9f483::t_76b9e11d1677c5 307
+  s_528f7295c9f483::t_56754be28eeac4 142-143,145-149
+backtest_run_db.py
+  s_528f7295c9f483::t_197d46ec1029ef 22,37,652-654,672
+agent_prompts.py
+  s_528f7295c9f483::t_eb28cc56948690 99,102-103,122
+thesis_validator.py
+  s_528f7295c9f483::t_b70f23865748cf 57
+  s_528f7295c9f483::t_6a18f2ea70d2ec 2372-2373,2384-2386
+scripts/check_prompt_drift.py
+  s_528f7295c9f483::t_feb6428ab2411f 149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fe95ecd4f97c03c9d745ed8cd59bc584d03fb841",
+  "prompts": {},
+  "sessions": {
+    "s_528f7295c9f483": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6ec0-b751-7702-b2a5-a60d022b5f23",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}

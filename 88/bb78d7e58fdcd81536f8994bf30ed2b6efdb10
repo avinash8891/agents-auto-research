@@ -1,0 +1,51 @@
+trace_sdk.py
+  df23f17b640abbde 601-603,625-627
+tests/test_openai_oauth_patch.py
+  df23f17b640abbde 1-50
+tests/test_autoresearch_research.py
+  df23f17b640abbde 55-58,68-71,86-87,99-100,109-110,122-123
+agent_runners.py
+  df23f17b640abbde 14,138-140,157-159,172-179
+autoresearch_research.py
+  df23f17b640abbde 116-119,127-138
+agent_sdk_token_usage.py
+  df23f17b640abbde 1-174
+research_subagents.py
+  df23f17b640abbde 8-9,190-197,312-314
+scripts/patch_openai_oauth_ai_sdk_v6_usage.py
+  df23f17b640abbde 1-129
+pyproject.toml
+  df23f17b640abbde 24
+research_conductor.py
+  df23f17b640abbde 15-16,250-257
+agent_openai_calls.py
+  df23f17b640abbde 9-10,96-98,207-214,239-240
+agent_token_usage.py
+  df23f17b640abbde 39-41,62-64,77,81-83,121,129-131,136-139,157-159,176,180-182
+tests/test_agent_token_usage.py
+  df23f17b640abbde 1,18,20,45-48,65-67,81,92-93,113-115,123-211,239-258,262,273-275,341,343,352,354,367,369,372,381,383,386
+tests/test_research_conductor_characterization.py
+  df23f17b640abbde 17,238,242-244,257,261-263,290,298
+tests/test_trace_sdk.py
+  df23f17b640abbde 312-315,333-334
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "88bb78d7e58fdcd81536f8994bf30ed2b6efdb10",
+  "prompts": {
+    "df23f17b640abbde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df6eb-c468-7982-a547-84330e0903b7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 801,
+      "total_deletions": 283,
+      "accepted_lines": 627,
+      "overriden_lines": 0
+    }
+  }
+}
