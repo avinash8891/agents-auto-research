@@ -369,3 +369,44 @@ def test_best_by_metric_ignores_malformed_metric_values(tmp_path: Path) -> None:
 
     assert best is not None
     assert best.run_id == second.run_id
+
+
+def test_best_by_metric_respects_lower_direction(tmp_path: Path) -> None:
+    """U1: direction='lower' must pick the smallest metric value."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="max_drawdown", direction="lower")
+
+    worse = _record(round_number=1, job=1)
+    worse.validation_metrics["max_drawdown"] = 0.30
+    better = _record(round_number=2, job=1)
+    better.validation_metrics["max_drawdown"] = 0.10
+
+    db.add(worse)
+    db.add(better)
+
+    best = db.best_by_metric("max_drawdown")
+    assert best is not None
+    assert best.run_id == better.run_id
+
+
+def test_best_by_metric_skips_corrupt_lower_direction(tmp_path: Path, caplog) -> None:
+    """F9: corrupt metric must be skipped, not coerced to 0.0 and win lower-is-better."""
+    import logging
+
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="max_drawdown", direction="lower")
+
+    corrupt = _record(round_number=1, job=1)
+    corrupt.validation_metrics["max_drawdown"] = "not-a-number"
+    good = _record(round_number=2, job=1)
+    good.validation_metrics["max_drawdown"] = 2.5
+
+    db.add(corrupt)
+    db.add(good)
+
+    with caplog.at_level(logging.WARNING):
+        best = db.best_by_metric("max_drawdown")
+
+    assert best is not None
+    assert best.run_id == good.run_id
+    assert "not-a-number" in caplog.text

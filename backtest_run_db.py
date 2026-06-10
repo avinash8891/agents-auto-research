@@ -973,24 +973,31 @@ class BacktestRunDB:
         records = [r for r in self._load() if is_metric_rankable_backtest_run(r)]
         direction = self.best_direction()
         best = None
+        best_candidate = 0.0
         for r in records:
             val = r.validation_metrics.get(metric)
             if val is None:
                 val = r.train_metrics.get(metric)
             if val is None:
                 continue
+            try:
+                candidate = float(val)
+            except (TypeError, ValueError):
+                log.warning(
+                    "best_by_metric: skipping run %s — metric %r value %r is not numeric",
+                    r.run_id, metric, val,
+                )
+                continue
             if best is None:
                 best = r
+                best_candidate = candidate
                 continue
-            best_val = best.validation_metrics.get(metric)
-            if best_val is None:
-                best_val = best.train_metrics.get(metric)
-            candidate = _coerce_metric_float(val)
-            best_candidate = _coerce_metric_float(best_val)
             if direction == "higher" and candidate > best_candidate:
                 best = r
+                best_candidate = candidate
             elif direction != "higher" and candidate < best_candidate:
                 best = r
+                best_candidate = candidate
         return best
 
     def format_for_conductor(self) -> str:
