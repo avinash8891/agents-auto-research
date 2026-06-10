@@ -714,7 +714,7 @@ def _log_validation_rejection(
         round_number=research_round,
         thesis_id=thesis_id,
         hypothesis_id=thesis_id,
-        outcome=f"rejected_attempt_{attempt+1}",
+        outcome=f"rejected_attempt_{attempt + 1}",
         config_changes=raw_thesis.get("config_changes"),
         hypothesis=raw_thesis.get("hypothesis", ""),
         mechanism=raw_thesis.get("mechanism", ""),
@@ -1049,7 +1049,7 @@ def _call_conductor(
     from research_conductor import run_research_conductor_sync
 
     label = f"round={research_round}" + (
-        f" attempt={attempt+1} (retry with feedback)" if attempt else ""
+        f" attempt={attempt + 1} (retry with feedback)" if attempt else ""
     )
     boundary = (
         f"INPUT_BOUNDARY job={current_job} round={research_round} attempt={attempt + 1} "
@@ -1112,7 +1112,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     if current_job is not None:
         result_dicts = [result for result in result_dicts if result.get("job") == current_job]
     round_results = format_round_results_summary(result_dicts)
-    prior_theses = load_prior_theses(controller.root)
+    prior_theses = load_prior_theses(getattr(controller, "runtime_root", controller.root))
     trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
     trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
         controller,

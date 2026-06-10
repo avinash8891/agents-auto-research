@@ -175,6 +175,33 @@ def test_should_terminate_reads_completed_round_json_without_queue_dependency(
     )
 
 
+def test_should_terminate_understands_production_exhausted_round_json(
+    tmp_path: Path, ema_family
+) -> None:
+    older = tmp_path / "research" / "round-9"
+    older.mkdir(parents=True)
+    (older / "round.json").write_text(
+        json.dumps({"job_id": 7, "round_number": 9, "outcome": "selected"})
+    )
+    latest = tmp_path / "research" / "round-10"
+    latest.mkdir(parents=True)
+    (latest / "round.json").write_text(
+        json.dumps(
+            {
+                "job_id": 7,
+                "round_number": 10,
+                "outcome": "research_exhausted",
+                "findings": ["No further viable theses."],
+            }
+        )
+    )
+
+    assert (
+        should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
+        is True
+    )
+
+
 @pytest.mark.parametrize(
     "terminal_payload",
     [

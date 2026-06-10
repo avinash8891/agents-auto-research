@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_logging import get_logger
+from autoresearch_paths import resolve_runtime_root
 from research_paths import _ROOT
 
 _PALACE_DIR = str(_ROOT / "palace")
@@ -385,7 +386,7 @@ def _iter_thesis_attempts(
     root: Path, *, job_id: int | None = None, thesis_id: str | None = None
 ) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
-    for db_path in sorted(root.glob("*_backtest_runs.db")):
+    for db_path in _iter_backtest_db_paths(root):
         from backtest_run_db import BacktestRunDB
 
         db = BacktestRunDB(db_path)
@@ -533,7 +534,7 @@ def _iter_round_records(
     family: str | None = None,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for db_path in sorted(root.glob("*_backtest_runs.db")):
+    for db_path in _iter_backtest_db_paths(root):
         from backtest_run_db import (
             INVALID_RESULT_VERDICTS,
             BacktestRunDB,
@@ -563,6 +564,20 @@ def _iter_round_records(
                 }
             )
     return records
+
+
+def _iter_backtest_db_paths(root: Path) -> list[Path]:
+    roots = [resolve_runtime_root(root), root.resolve()]
+    seen: set[Path] = set()
+    db_paths: list[Path] = []
+    for candidate_root in roots:
+        for db_path in sorted(candidate_root.glob("*_backtest_runs.db")):
+            resolved = db_path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            db_paths.append(db_path)
+    return db_paths
 
 
 def _round_index_entry(item: dict[str, Any]) -> dict[str, Any]:

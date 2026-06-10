@@ -57,9 +57,9 @@ def finalize_thesis_config_changes(
     if primitive_contract is None:
         if resolved_changes:
             finalized["primitive_contract"] = thesis.get("primitive_contract", [])
-            normalized = dict(resolved_changes)
-            if normalized.get("require_regimes") == ["narrow-or"]:
-                normalized["require_regimes"] = ["narrow-OR"]
+            normalized = _normalize_strategy_config_changes(
+                finalized["strategy_family"], dict(resolved_changes)
+            )
             finalized["config_changes"] = normalized
             finalized["requires_code_change"] = clarification.get("requires_code_change", False)
             if finalized["requires_code_change"]:
@@ -86,7 +86,9 @@ def finalize_thesis_config_changes(
         )
     if clarification.get("requires_code_change"):
         finalized["requires_code_change"] = True
-        finalized["config_changes"] = dict(resolved_changes)
+        finalized["config_changes"] = _normalize_strategy_config_changes(
+            family_name, dict(resolved_changes)
+        )
         finalized["missing_primitives"] = resolved_missing or support["missing_primitive_types"]
         finalized["requested_primitives"] = finalized["missing_primitives"]
         finalized["code_change_idea"] = clarification.get("code_change_idea")
@@ -96,7 +98,11 @@ def finalize_thesis_config_changes(
     finalized["missing_primitives"] = support["missing_primitive_types"]
     if finalized["requires_code_change"]:
         finalized["requested_primitives"] = finalized["missing_primitives"]
-    finalized["config_changes"] = rendered_config if renderable and support["supported"] else {}
+    finalized["config_changes"] = (
+        _normalize_strategy_config_changes(family_name, rendered_config)
+        if renderable and support["supported"]
+        else {}
+    )
     if finalized["requires_code_change"] and not finalized.get("code_change_idea"):
         finalized["code_change_idea"] = clarification.get("code_change_idea")
     return finalized
@@ -118,6 +124,9 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
     )
     if needs_operationalization:
         if thesis.get("config_changes"):
+            thesis["config_changes"] = _normalize_strategy_config_changes(
+                family_name, dict(thesis["config_changes"])
+            )
             thesis["primitive_contract"] = thesis.get("primitive_contract", [])
             thesis["requires_code_change"] = thesis.get("requires_code_change", False)
             return thesis
@@ -128,6 +137,9 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
         return finalize_thesis_config_changes(thesis, clarification)
 
     if thesis.get("config_changes"):
+        thesis["config_changes"] = _normalize_strategy_config_changes(
+            family_name, dict(thesis["config_changes"])
+        )
         thesis["primitive_contract"] = thesis.get(
             "primitive_contract"
         ) or strategy.map_config_changes_to_contract(thesis["config_changes"])
@@ -135,10 +147,21 @@ def operationalize_thesis(thesis: dict[str, Any]) -> dict[str, Any]:
         return thesis
 
     thesis["primitive_contract"] = thesis.get("primitive_contract", [])
-    thesis["config_changes"] = strategy.render_contract_to_runtime_config(
-        thesis["primitive_contract"]
+    thesis["config_changes"] = _normalize_strategy_config_changes(
+        family_name,
+        strategy.render_contract_to_runtime_config(thesis["primitive_contract"]),
     )
     return thesis
+
+
+def _normalize_strategy_config_changes(
+    family_name: str, config_changes: dict[str, Any]
+) -> dict[str, Any]:
+    if family_name != "orb":
+        return config_changes
+    from strategies.orb.schema import normalize_config_changes
+
+    return normalize_config_changes(config_changes)
 
 
 def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
@@ -203,16 +226,20 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
 
 def _build_operationalization_prompt(thesis: dict[str, Any]) -> str:
     """Build the prompt for the operationalization agent."""
+    thesis_json = json.dumps(
+        {
+            "thesis_id": thesis.get("thesis_id"),
+            "hypothesis": thesis.get("hypothesis"),
+            "family": thesis.get("strategy_family", thesis.get("family")),
+            "mechanism": thesis.get("mechanism"),
+        },
+        indent=2,
+    )
     return f"""You are a trading strategy contract resolver. Your job is to convert
 ambiguous thesis descriptions into exact, executable contracts.
 
 THESIS:
-{json.dumps({
-    "thesis_id": thesis.get("thesis_id"),
-    "hypothesis": thesis.get("hypothesis"),
-    "family": thesis.get("strategy_family", thesis.get("family")),
-    "mechanism": thesis.get("mechanism"),
-}, indent=2)}
+{thesis_json}
 
 TASK:
 1. Identify every ambiguous term in the thesis/mechanism.

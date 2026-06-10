@@ -126,9 +126,11 @@ def should_terminate(
     if not research:
         return False
     latest = research[-1]
-    if latest.get("status") != "completed":
+    status = latest.get("status")
+    outcome = latest.get("outcome")
+    if status != "completed" and outcome != "research_exhausted":
         return False
-    generated = latest.get("generated_configs")
+    generated = latest.get("generated_configs") or latest.get("generated_config_path")
     if generated:
         return False
     if latest.get("new_theses_generated", 0):

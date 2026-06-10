@@ -38,19 +38,15 @@ def compute_metrics(trades_df: pd.DataFrame) -> dict:
         return result
     equity = np.cumsum(pnl_arr)
     drawdown = np.maximum.accumulate(equity) - equity
-    sharpe = (
-        float(pnl_arr.mean() / pnl_arr.std() * np.sqrt(len(pnl_arr)))
-        if len(pnl_arr) > 1 and pnl_arr.std() > 0
-        else 0.0
-    )
     diagnostics = compute_diagnostics(trades_df)
+    window_metrics = compute_window_metrics(trades_df)
     result = {
         "median_expectancy": round(float(np.median(pnl_arr)), 4),
         "trade_count": int(len(pnl_arr)),
         "profit_factor": _profit_factor_from_pnl(pnl_arr),
         "max_drawdown": round(float(np.max(drawdown)) if len(drawdown) else 0.0, 4),
-        "pct_profitable_windows": round(float((pnl_arr > 0).mean()), 4),
-        "avg_sharpe_across_windows": round(sharpe, 4),
+        "pct_profitable_windows": window_metrics["pct_profitable_windows"],
+        "avg_sharpe_across_windows": window_metrics["avg_sharpe_across_windows"],
         "diagnostics": diagnostics,
     }
     if "exit_reason" in trades_df.columns:
@@ -58,6 +54,41 @@ def compute_metrics(trades_df: pd.DataFrame) -> dict:
             trades_df["exit_reason"].value_counts().sort_index().to_dict()
         )
     return result
+
+
+def compute_window_metrics(trades_df: pd.DataFrame) -> dict[str, float]:
+    """Compute six-month calendar-window robustness metrics from trade PnL."""
+    if (
+        trades_df.empty
+        or "entry_date" not in trades_df.columns
+        or "pnl_pct" not in trades_df.columns
+    ):
+        return {"pct_profitable_windows": 0.0, "avg_sharpe_across_windows": 0.0}
+
+    df = trades_df[["entry_date", "pnl_pct"]].copy()
+    df.loc[:, "entry_date"] = pd.to_datetime(df["entry_date"], errors="coerce")
+    df = df.dropna(subset=["entry_date"])
+    if df.empty:
+        return {"pct_profitable_windows": 0.0, "avg_sharpe_across_windows": 0.0}
+
+    year = df["entry_date"].dt.year.astype(str)
+    half = np.where(df["entry_date"].dt.month <= 6, "H1", "H2")
+    window_key = year + "-" + half
+    window_pnl = df.groupby(window_key)["pnl_pct"]
+    window_returns = window_pnl.sum()
+    sharpe_values: list[float] = []
+    for _, group in window_pnl:
+        values = group.to_numpy(dtype=float)
+        std = float(values.std())
+        if len(values) > 1 and std > 0:
+            sharpe_values.append(float(values.mean() / std * np.sqrt(len(values))))
+        else:
+            sharpe_values.append(0.0)
+
+    return {
+        "pct_profitable_windows": round(float((window_returns > 0).mean()), 4),
+        "avg_sharpe_across_windows": round(float(np.mean(sharpe_values)), 4),
+    }
 
 
 def empty_metrics() -> dict:

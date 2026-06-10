@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from backtest_run_db import research_thesis_attempt_id
+from backtest_run_db import BacktestRunDB, research_thesis_attempt_id
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import (
     ThesisValidationError,
     check_hypothesis_alignment,
     config_key_overlap,
     generate_variants,
+    load_prior_theses,
 )
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
@@ -19,6 +20,36 @@ def validate_thesis_dict(*args: object, **kwargs: object) -> object:
     kwargs.setdefault("attempt_number", 1)
     kwargs.setdefault("assign_thesis_id", research_thesis_attempt_id)
     return _validate_thesis_dict(*args, **kwargs)
+
+
+def test_load_prior_theses_reads_runtime_root_when_split_from_code_root(
+    tmp_path, monkeypatch
+) -> None:
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime-home"
+    code_root.mkdir()
+    runtime_root.mkdir()
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+    db = BacktestRunDB(runtime_root / "ema_backtest_runs.db")
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-1-round-1",
+            "attempt_number": 1,
+            "thesis_id": "ema-runtime-root",
+            "strategy_family": "ema",
+            "config_changes": {"ema_length": 10},
+            "validator_status": "compiled",
+            "mechanism_dimension": "entry_timing",
+            "hypothesis": "EMA crossover predicts short-term momentum",
+            "mechanism": "Trend persistence after crossover is the causal driver",
+            "thesis_details": {},
+            "created_at_utc": "2026-05-01T00:00:00+00:00",
+        }
+    )
+
+    priors = load_prior_theses(code_root)
+
+    assert [prior["thesis_id"] for prior in priors] == ["ema-runtime-root"]
 
 
 def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:

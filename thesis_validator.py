@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from autoresearch_logging import get_logger
+from autoresearch_paths import resolve_runtime_root
 from behavior_signals import BehaviorSignal
 from behavior_signals import decide as _policy_decide
 from research_types import (
@@ -1024,7 +1025,7 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
     if db is None:
         from backtest_run_db import BacktestRunDB
 
-        for db_path in sorted(root.glob("*_backtest_runs.db")):
+        for db_path in _iter_backtest_db_paths(root):
             db = BacktestRunDB(db_path)
             for line_no, row in enumerate(db.list_research_thesis_attempts(), start=1):
                 if not isinstance(row, dict):
@@ -1065,6 +1066,20 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
         ) == EMERGENT_MECHANISM_DIMENSION and details.get("new_dimension_name"):
             prior.append(_prior_thesis_entry(row))
     return prior
+
+
+def _iter_backtest_db_paths(root: Path) -> list[Path]:
+    roots = [resolve_runtime_root(root), root.resolve()]
+    seen: set[Path] = set()
+    db_paths: list[Path] = []
+    for candidate_root in roots:
+        for db_path in sorted(candidate_root.glob("*_backtest_runs.db")):
+            resolved = db_path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            db_paths.append(db_path)
+    return db_paths
 
 
 def _flatten_config_change_keys(config_changes: dict[str, Any]) -> set[str]:
@@ -1679,8 +1694,7 @@ def _collect_source_code_verification_failures(thesis: ResearchThesis) -> list[B
                     confidence=1.0,
                     severity="block",
                     summary=(
-                        f"source_code_verification symbol '{symbol}' was not found "
-                        f"in '{raw_path}'"
+                        f"source_code_verification symbol '{symbol}' was not found in '{raw_path}'"
                     ),
                     evidence={"path": raw_path, "symbol": symbol},
                 )

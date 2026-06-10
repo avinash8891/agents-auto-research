@@ -491,6 +491,7 @@ def _run_controller_loop(
         f"Autoresearch loop starting family={family_name} job={job} session={get_session_id()} log={get_log_file()}",
     )
     consecutive_research_required = 0
+    last_research_required_round: object = None
     while True:
         code = controller.execute_once()
         if code != 0:
@@ -502,7 +503,14 @@ def _run_controller_loop(
         if current == "blocked":
             blockers = state.get("blockers", [])
             if any(b.get("kind") in _RESEARCH_BLOCKER_KINDS for b in blockers):
-                consecutive_research_required += 1
+                current_round = state.get("research_round_in_progress")
+                if current_round is None:
+                    current_round = state.get("research_round")
+                if current_round == last_research_required_round:
+                    consecutive_research_required += 1
+                else:
+                    consecutive_research_required = 1
+                    last_research_required_round = current_round
                 if consecutive_research_required >= max_consecutive_research_required():
                     trace(
                         "MAIN",
