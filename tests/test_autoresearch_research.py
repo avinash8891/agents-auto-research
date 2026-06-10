@@ -742,6 +742,96 @@ def _patch_conductor_round(monkeypatch: pytest.MonkeyPatch, *outputs: dict) -> N
     monkeypatch.setattr("research_conductor.run_research_conductor_sync", _run_conductor)
 
 
+def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 12,
+            "research_round": 0,
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr("evidence_pack.build_corpus", lambda family, round_number: object())
+    monkeypatch.setattr("evidence_pack.render_corpus", lambda corpus: "RENDERED-CORPUS")
+
+    def _run_conductor(*args, **kwargs):
+        captured.update(kwargs)
+        return ConductorResult(status="should_stop", should_stop=True, reasoning="stop")
+
+    monkeypatch.setattr("research_conductor.run_research_conductor_sync", _run_conductor)
+
+    result = execute_research_sdk(controller)
+
+    assert result["status"] == "completed"
+    assert result["should_stop"] is True
+    assert captured["rendered_corpus"] == "RENDERED-CORPUS"
+
+
+def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+
+    def _legacy_validator_called(*args, **kwargs):
+        raise AssertionError("legacy thesis validator must not run for MechanismProposal")
+
+    monkeypatch.setattr("thesis_validator.validate_thesis_dict", _legacy_validator_called)
+    monkeypatch.setattr("thesis_validator.validate_stage_2", _legacy_validator_called)
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades might be the actual source of edge.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {
+                        "metric": "profit_factor",
+                        "direction": "increase",
+                        "predicted": 2.2,
+                        "rationale": "Fewer weak crosses should raise PF.",
+                    },
+                    {
+                        "metric": "trade_count",
+                        "direction": "decrease",
+                        "predicted": 80,
+                        "rationale": "Filter removes marginal entries.",
+                    },
+                ],
+            },
+            reasoning="proposal from corpus",
+        ),
+        prior_theses=[],
+    )
+
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    selected_thesis = json.loads((round_root / "selected_thesis.json").read_text())
+    registered = json.loads((round_root / "registered_predictions.json").read_text())
+    selected_config = json.loads((round_root / "selected_config.json").read_text())
+    assert retry_feedback is None
+    assert stage == ""
+    assert result is not None
+    assert result["generated_config"] == "runtime/jobs/job-12/research/round-1/selected_config.json"
+    assert selected_config["ema_length"] == 8
+    assert selected_thesis["rule"] == "gap_pct < 0"
+    assert selected_thesis["proposed_change"] == {"ema_length": 8}
+    assert registered["predictions"][0]["metric"] == "profit_factor"
+
+
 def test_run_research_success_persists_round_artifacts_and_next_action(
     tmp_path: Path, monkeypatch
 ) -> None:

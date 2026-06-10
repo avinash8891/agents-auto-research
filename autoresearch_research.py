@@ -834,6 +834,87 @@ def _per_stage_budget_exhausted(stage_1: int, stage_2: int, compile_n: int) -> b
     )
 
 
+def _is_mechanism_proposal(raw_thesis: dict[str, Any]) -> bool:
+    return bool(
+        raw_thesis.get("story")
+        and raw_thesis.get("rule")
+        and "proposed_change" in raw_thesis
+        and "predictions" in raw_thesis
+    )
+
+
+def _mechanism_proposal_to_research_thesis(
+    raw_thesis: dict[str, Any],
+    *,
+    strategy_family: str,
+    thesis_id: str,
+) -> dict[str, Any]:
+    proposed_change = raw_thesis.get("proposed_change")
+    if not isinstance(proposed_change, dict) or not proposed_change:
+        raise ValueError("mechanism proposal requires non-empty proposed_change")
+    predictions = raw_thesis.get("predictions") or []
+    story = str(raw_thesis.get("story") or "")
+    expected_effects = [
+        {
+            "metric": prediction.get("metric"),
+            "direction": prediction.get("direction"),
+            "threshold": prediction.get("predicted"),
+            "rationale": prediction.get("rationale", ""),
+        }
+        for prediction in predictions
+        if isinstance(prediction, dict)
+    ]
+    return {
+        **raw_thesis,
+        "thesis_id": thesis_id,
+        "strategy_family": strategy_family,
+        "hypothesis": story,
+        "mechanism": story,
+        "mechanism_dimension": raw_thesis.get("mechanism_dimension") or "emergent",
+        "new_dimension_name": raw_thesis.get("new_dimension_name") or "causal_residual_rule",
+        "why_existing_dimensions_do_not_fit": (
+            raw_thesis.get("why_existing_dimensions_do_not_fit")
+            or "Generated from residual evidence rather than the legacy dimension taxonomy."
+        ),
+        "mechanism_family_definition": (
+            raw_thesis.get("mechanism_family_definition")
+            or "Causal rule over entry-time feature-table columns."
+        ),
+        "expected_reuse_across_future_theses": (
+            raw_thesis.get("expected_reuse_across_future_theses")
+            or "Future rounds can keep, refute, or extend this exact rule."
+        ),
+        "config_changes": proposed_change,
+        "expected_effects": expected_effects,
+        "disqualifiers": [],
+        "why_not_overfit": (
+            "Mechanism proposal is screened on entry-time features and judged "
+            "by registered out-of-sample prediction direction."
+        ),
+    }
+
+
+def _merge_mechanism_fields_into_selected_thesis(
+    round_root: Path,
+    raw_thesis: dict[str, Any],
+) -> None:
+    path = round_root / "selected_thesis.json"
+    if not path.exists():
+        return
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    for key in (
+        "story",
+        "rule",
+        "competitor_rule",
+        "competitor_story",
+        "proposed_change",
+        "predictions",
+    ):
+        if key in raw_thesis:
+            payload[key] = raw_thesis[key]
+    write_json_atomic(path, payload)
+
+
 def _try_one_validation_attempt(
     controller: "AutoresearchController",
     research_round: int,
@@ -864,6 +945,8 @@ def _try_one_validation_attempt(
 
     thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
 
+    mechanism_path = _is_mechanism_proposal(raw_thesis)
+
     # If the conductor attached a validator_challenge, persist it before any
     # validation work. Logged for human review; does not alter the decision.
     challenge_payload = raw_thesis.get("validator_challenge")
@@ -878,41 +961,53 @@ def _try_one_validation_attempt(
         except Exception as challenge_exc:  # noqa: BLE001
             log.warning(f"failed to persist validator_challenge: {challenge_exc}")
 
-    # Stage 1: structural / pre-compile validation.
-    try:
-        raw_thesis, validated = _prepare_thesis_for_validation(
+    # Stage 1: legacy thesis structural validation. The v2 mechanism-proposal
+    # path is already pydantic-validated by the conductor boundary and must not
+    # call the old thesis validator.
+    if mechanism_path:
+        raw_thesis = _mechanism_proposal_to_research_thesis(
             raw_thesis,
             strategy_family=controller.family.name,
-            research_round_id=research_round_id,
-            attempt_number=attempt_number,
-            prior_theses=prior_theses,
-            tools_called=tools_called,
-            require_analyst_evidence=require_analyst_evidence,
-            evidence_context=evidence_context,
-            require_analyst_tool=require_analyst_tool,
+            thesis_id=thesis_id,
         )
-        thesis_id = validated.thesis_id
-        log.info(
-            f"RESEARCH_RAW thesis_id={thesis_id} "
-            f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
-        )
-    except (ThesisValidationError, ValueError) as exc:
-        _log_validation_rejection(
-            controller,
-            research_round,
-            attempt,
-            raw_thesis,
-            thesis_id,
-            str(exc),
-            exc=exc,
-            stage="stage_1",
-        )
-        return None, f"Thesis '{thesis_id}' rejected by validator: {exc}", "stage_1"
+        validated = ResearchThesis.model_validate(raw_thesis)
+    else:
+        try:
+            raw_thesis, validated = _prepare_thesis_for_validation(
+                raw_thesis,
+                strategy_family=controller.family.name,
+                research_round_id=research_round_id,
+                attempt_number=attempt_number,
+                prior_theses=prior_theses,
+                tools_called=tools_called,
+                require_analyst_evidence=require_analyst_evidence,
+                evidence_context=evidence_context,
+                require_analyst_tool=require_analyst_tool,
+            )
+            thesis_id = validated.thesis_id
+            log.info(
+                f"RESEARCH_RAW thesis_id={thesis_id} "
+                f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
+            )
+        except (ThesisValidationError, ValueError) as exc:
+            _log_validation_rejection(
+                controller,
+                research_round,
+                attempt,
+                raw_thesis,
+                thesis_id,
+                str(exc),
+                exc=exc,
+                stage="stage_1",
+            )
+            return None, f"Thesis '{thesis_id}' rejected by validator: {exc}", "stage_1"
 
     # Compile.
     try:
         round_root = research_round_root(controller.root, job_id, research_round)
         contract = compile_research_thesis(validated, controller.root, artifact_root=round_root)
+        if mechanism_path:
+            _merge_mechanism_fields_into_selected_thesis(round_root, raw_thesis)
     except (ThesisValidationError, ValueError) as exc:
         _log_validation_rejection(
             controller,
@@ -926,21 +1021,22 @@ def _try_one_validation_attempt(
         )
         return None, f"Thesis '{thesis_id}' rejected at compile: {exc}", "compile"
 
-    # Stage 2: post-compile semantic rules.
-    try:
-        contract = validate_stage_2(contract)
-    except (ThesisValidationError, ValueError) as exc:
-        _log_validation_rejection(
-            controller,
-            research_round,
-            attempt,
-            raw_thesis,
-            thesis_id,
-            str(exc),
-            exc=exc,
-            stage="stage_2",
-        )
-        return None, f"Thesis '{thesis_id}' rejected by stage_2 validator: {exc}", "stage_2"
+    # Stage 2: post-compile semantic rules for legacy theses only.
+    if not mechanism_path:
+        try:
+            contract = validate_stage_2(contract)
+        except (ThesisValidationError, ValueError) as exc:
+            _log_validation_rejection(
+                controller,
+                research_round,
+                attempt,
+                raw_thesis,
+                thesis_id,
+                str(exc),
+                exc=exc,
+                stage="stage_2",
+            )
+            return None, f"Thesis '{thesis_id}' rejected by stage_2 validator: {exc}", "stage_2"
 
     result, feedback = _dispatch_compiled_contract(
         controller,
@@ -1081,6 +1177,7 @@ def _call_conductor(
     rejection_feedback: str,
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
+    rendered_corpus: str = "",
 ) -> ConductorResult | None:
     """One conductor HTTP/SDK call with the per-attempt log preamble."""
     from research_conductor import run_research_conductor_sync
@@ -1110,6 +1207,7 @@ def _call_conductor(
         rejection_feedback=rejection_feedback,
         agent_reflexions=agent_reflexions,
         current_job=current_job,
+        rendered_corpus=rendered_corpus,
     )
 
 
@@ -1189,6 +1287,9 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             if (feedback := build_reflexion_feedback(controller, research_round, agent=agent))
         }
     conductor_result: ConductorResult | None = None
+    from evidence_pack import build_corpus, render_corpus
+
+    rendered_corpus = render_corpus(build_corpus(controller.family.name, research_round))
     # Per-stage failure counters. Loop exits when any stage's budget is hit.
     stage_1_failures = 0
     stage_2_failures = 0
@@ -1207,6 +1308,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             rejection_feedback=rejection_feedback,
             agent_reflexions=agent_reflexions,
             current_job=current_job,
+            rendered_corpus=rendered_corpus,
         )
         terminal = _check_parsed_for_terminal(conductor_result)
         if terminal is not None:
