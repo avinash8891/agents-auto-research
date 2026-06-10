@@ -1,0 +1,31 @@
+persistence_utils.py
+  s_78fd65d4838bdf::t_a4461a3894cd36 120-134
+tests/test_improvement_halo_apply.py
+  s_78fd65d4838bdf::t_7cf3ffdd50c813 332,334,337,341,343-344,347,351,353-354
+improvement_halo_apply.py
+  s_78fd65d4838bdf::t_f667d9b4aebbe2 29,35-39
+  s_78fd65d4838bdf::t_f01b161b9a2d10 126
+tests/test_improvement_halo.py
+  s_78fd65d4838bdf::t_31295848631d17 222,226,228,231,235,237-238,241,245,247-248
+  s_78fd65d4838bdf::t_fa0f6f951cea68 102
+improvement_halo.py
+  s_78fd65d4838bdf::t_2fe27218b48f5e 131
+  s_78fd65d4838bdf::t_c5fd784772a15f 136
+  s_78fd65d4838bdf::t_b40e263f354bb2 20,27,29-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "ec37263a768d7cf46bf8db67602144b5f4266d3b",
+  "prompts": {},
+  "sessions": {
+    "s_78fd65d4838bdf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "50c223f1-16c3-47a2-8a6a-94b7b8a34f59",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
