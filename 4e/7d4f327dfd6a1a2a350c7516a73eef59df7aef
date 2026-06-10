@@ -1,0 +1,212 @@
+.understand-anything/fingerprints.json
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-18881
+strategies/orb/regime_filter.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 13,143,145-147,194-201,219-220,227,229
+autoresearch_planning.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 129-131,133
+research_conductor.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 5,44-57,80-111,122-128,198-201,273-275,332-333,373-374,459-470,510-513,574-575,620-621,651-652,681-685,691,695-696,708-718,722-723,740-745,750,753-754,766-775,782-783,816,842-850,887-890,930-933,998-1009
+strategies/contract.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-86
+tests/test_agent_orchestrator_characterization.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 6,626-754,907-919
+.github/workflows/ci.yml
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 25-27
+.understand-anything/knowledge-graph.json
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-19757
+agent_openai_calls.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 3,95-96,136-152
+numba_kernels.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 73-74,76-87,91,93-96,98-99
+strategies/ema/signals.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 101-103,163-166
+autoresearch_artifacts.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 9,42-44,46-48,53,58-66
+strategies/ema/strategy.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 18,40-48,58,157
+tests/test_autoresearch_artifacts.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 7,38,58-63,68,73-74,84-85,89,92,94,99-100,103-104,107,110-111
+tests/test_experiment_evaluator.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-28
+tests/test_numba_kernels.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-18
+strategies/orb/runner.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 16,30
+tests/test_stage1_rules.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 95
+tests/test_trace_higher_level_modules.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 9-10,859,891-901,903-905
+tests/test_validator_gate_coverage.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 773
+tests/test_conductor_prompt_v3.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 6-11,84-102
+tests/test_strategy_family_contract.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-32
+agent_memory.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 8,14-26,56,84,111
+autoresearch_research.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 20,257-262,269,279-296,724,1059,1121-1128,1309-1319,1452-1454,1456-1471,1734-1738,1740
+tests/test_vps_runner_config.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 608-609
+autoresearch_runtime_paths.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 3-4,9-83,159-185
+autoresearch_artifact_schemas.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-49
+tests/test_autoresearch_cli.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 5,10-11,28-32
+trace_adapters/recursive_improve.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 11,170-171
+experiment_evaluator.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 58-60,65-67
+scripts/token_audit.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 64
+tests/test_orb_backtest_characterization.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 4,37-56,72,74-75
+tests/test_validator_subsections.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1,3-6
+compiler_operationalize.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 60-62,89-91,101-105,127-129,140-142,150-152,157-166,229-237,242
+tests/test_thesis_validator.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 5,12,25-91
+research_subagents.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 16,257,1321-1338
+tests/test_compiler_builder_medium.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-41
+trace_adapters/reflexio.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 11,141-142
+configs/orb_base.yaml
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 10,46,75-76
+agent_prompts.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 117-119
+metrics.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 42,48-49,59-93,117,151,162,270,313,325-329
+strategies/ema/contract.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 16-25,50-69,108
+research_types.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 169
+tests/test_autoresearch_artifact_schemas.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-69
+tests/test_validator_batching.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 375-381
+strategies/ema/exits.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 55,137,157,214-227,237,244-246,268,270,272,276,280,301,315-316,320,353-355
+strategies/base.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 13-17,59-60,86-89,93
+tests/test_experiment_db_sqlite_runtime.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 111-135
+  s_3c127f7d527d72::t_049a79095228c9 591
+vps_runner.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 389-396
+trace_improvement_report.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 231
+tests/test_autoresearch_controller_characterization.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 230-239,244-245,754-778
+tests/test_autoresearch_orchestration.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 436-437,458-459
+strategy_family.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 10,63-65
+agent_token_usage.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 19-28,100,129,153,208,217,243
+data_loader.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 64,74,113-114,134,137-138,140-170
+strategies/ema/research.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 84-86
+tests/test_autoresearch_planning.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 169-203,227,327-334
+docs/superpowers/plans/2026-06-10-autoresearch-root-cause-hardening.md
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-329
+tests/test_agent_token_usage.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 28,359-389,709-733
+tests/test_agent_formatters.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-15
+agent_formatters.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 124-128,141-142
+tests/test_autoresearch_research.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 264-285,1279,1422-1426
+tests/test_autoresearch_runtime_paths.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 3-4,7-93
+.understand-anything/.understandignore
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-135
+tests/test_research_memory.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 129-144,245-269,375-382
+tests/test_trace_sdk.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 208,250-276,543-559
+AGENTS.md
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 74-76
+scripts/check_prompt_drift.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 42-43,81-85,191-236,346
+tests/test_alignment_family_aware.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 41
+research_prompts.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 3-4,20-38,52,68-69,144
+tests/test_orb_regime_filter.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-37
+web_research_cli.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 26-29,99,110,217-218
+compiler_implementation_verify.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 448-490,635
+research_memory.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 11,18-22,178-179,217,274-276,393,541,573-576,595-597
+tests/test_compiler_implementation_verify.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-44
+tests/test_compiler_pipeline_characterization.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 9,66-70,92-112,120-121
+tests/test_autoresearch_research_helpers.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 301-348
+tests/test_validator_stages.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 126,216-227,231-237,239-243,247-252
+trace_sdk.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 88-150,269-273,426,428,434,436,484-489,677-678,681,683-686
+.understand-anything/meta.json
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-6
+analyst_dataframe_helpers.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 82-83
+compiler_research.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 134,211-216
+tests/test_escalation_directive.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 81-95
+autoresearch_orchestration.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 751-752
+tests/test_analyst_dataframe_helpers.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 45-69
+rejection_artifact.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 229,239-263
+tests/test_metrics.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 5-7,16-37
+tests/test_research_conductor_characterization.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 237-278
+thesis_validator.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 19-21,55,313-314,1021-1026,1032,1043-1044,1065-1066,1079-1082,1567-1569,1693,2272,2276,2345-2346,2358,2364,2367
+tests/test_token_audit_filters.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 1-58
+tests/test_behavior_signals.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 22,273,283
+CLAUDE.md
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 74-76
+tests/test_ema_backtest_characterization.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 25-26,73-140,379-408,614-630
+tests/test_web_research_cli.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 122-126,128,208-247
+agent_runners.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 139,154,174-179,271-275,277-278
+compiler_builder.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 16,24,232,243,290-298,300-302,306,1625-1627
+improvement_reflexion.py
+  s_3c127f7d527d72::t_1c1d5ce6dc6a68 187-189,271-273,275-276,279-282,289,292,294,302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "4e7d4f327dfd6a1a2a350c7516a73eef59df7aef",
+  "prompts": {},
+  "sessions": {
+    "s_3c127f7d527d72": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1e7-e229-7da0-b86c-e6b69c45560f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
