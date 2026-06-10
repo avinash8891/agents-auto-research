@@ -10,9 +10,14 @@ The evaluator checks the result against predictions and produces an BacktestVerd
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class ExpectedEffect(BaseModel):
@@ -120,6 +125,29 @@ class CausalFactor(BaseModel):
     direction: Literal["loss", "win"]
     evidence_rounds: list[int] = Field(default_factory=list)
     status: Literal["candidate", "supported", "refuted", "harvested"] = "candidate"
+    created_at: str = Field(default_factory=_utc_now_iso)
+    lesson: str = ""
+
+
+class AccuracyPoint(BaseModel):
+    """One holdout accuracy observation for a causal model version."""
+
+    round_number: int
+    model_version: int
+    pnl_weighted_accuracy: float
+    naive_accuracy: float
+    skill: float
+    holdout_trade_count: int
+
+
+class CausalModel(BaseModel):
+    """Persisted causal model state for one strategy family."""
+
+    family: str
+    version: int
+    factors: list[CausalFactor] = Field(default_factory=list)
+    accuracy_history: list[AccuracyPoint] = Field(default_factory=list)
+    holdout_start: str = ""
 
 
 class MechanismProposal(BaseModel):

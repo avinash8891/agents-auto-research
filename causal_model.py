@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Sequence
 
-import numpy as np
 import pandas as pd
+import yaml
 
+from autoresearch_runtime_paths import resolve_runtime_root
 from feature_table import ENTRY_TIME_COLUMNS, OUTCOME_COLUMNS
-from research_types import CausalFactor
+from persistence_utils import write_json_atomic
+from research_types import AccuracyPoint, CausalFactor, CausalModel
 
+_ACTIVE_FACTOR_STATUSES = frozenset({"candidate", "supported"})
 _QUERY_KEYWORDS = frozenset(
     {
         "and",
@@ -28,131 +33,170 @@ _QUERY_NAME_RE = re.compile(r"`([^`]+)`|\b[A-Za-z_]\w*\b")
 
 
 @dataclass(frozen=True)
-class CausalModel:
+class _FittedNaiveBayes:
     factors: tuple[CausalFactor, ...]
     class_priors: dict[str, float]
     factor_likelihoods: dict[str, dict[str, float]]
-    holdout_start: pd.Timestamp
-    holdout_end: pd.Timestamp
-    holdout_trade_ids: list[str]
-    pnl_weighted_accuracy: float
-    residual_map: dict[str, float]
 
-    def predict_proba(self, feature_table: pd.DataFrame) -> pd.DataFrame:
-        flags = _factor_flags(feature_table, self.factors)
-        probabilities: list[dict[str, object]] = []
-        for index, row in feature_table.iterrows():
-            log_loss = math.log(self.class_priors["loss"])
-            log_win = math.log(self.class_priors["win"])
-            for factor in self.factors:
-                likelihood = self.factor_likelihoods[factor.factor_id]
-                flagged = bool(flags[factor.factor_id].loc[index])
-                loss_prob = likelihood["p_flag_given_loss"]
-                win_prob = likelihood["p_flag_given_win"]
-                if flagged:
-                    log_loss += math.log(loss_prob)
-                    log_win += math.log(win_prob)
-                else:
-                    log_loss += math.log(1.0 - loss_prob)
-                    log_win += math.log(1.0 - win_prob)
-            p_loss = _normalize_binary_log_prob(log_loss, log_win)
-            probabilities.append(
-                {
-                    "trade_id": str(row["trade_id"]),
-                    "p_loss": p_loss,
-                    "p_win": 1.0 - p_loss,
-                    "predicted_direction": "loss" if p_loss >= 0.5 else "win",
-                }
-            )
-        return pd.DataFrame(
-            probabilities,
-            columns=["trade_id", "p_loss", "p_win", "predicted_direction"],
+
+def load_model(family: str) -> CausalModel:
+    path = _model_path(family)
+    if not path.exists():
+        return CausalModel(family=family, version=0, factors=[], accuracy_history=[])
+    return CausalModel.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+def save_model(model: CausalModel) -> None:
+    model_to_write = model
+    if not model_to_write.holdout_start:
+        model_to_write = model_to_write.model_copy(
+            update={"holdout_start": _holdout_start_for_family(model_to_write.family)}
         )
+    write_json_atomic(_model_path(model_to_write.family), model_to_write.model_dump())
 
 
-def holdout_mask(feature_table: pd.DataFrame) -> pd.Series:
+def predict(model: CausalModel, features: pd.DataFrame) -> pd.Series:
+    _validate_feature_table(features)
+    active_factors = _active_factors(model)
+    holdout = holdout_mask(features, family=model.family, holdout_start=model.holdout_start)
+    train = ~holdout
+    if not train.any():
+        raise ValueError("causal model requires at least one pre-holdout training row")
+    fitted = _fit_naive_bayes(features, active_factors, train)
+    return _predict_with_fitted(fitted, features)
+
+
+def score_on_holdout(model: CausalModel, features: pd.DataFrame) -> AccuracyPoint:
+    predictions = predict(model, features)
+    holdout = holdout_mask(features, family=model.family, holdout_start=model.holdout_start)
+    train = ~holdout
+    if not holdout.any():
+        raise ValueError("causal model requires at least one holdout row")
+    actual = features.loc[holdout, "out_is_loss"].astype(bool)
+    predicted = predictions.loc[holdout] > 0.5
+    weights = features.loc[holdout, "out_pnl"].astype(float).abs()
+    accuracy = _weighted_hit_rate(predicted, actual, weights)
+    majority_loss = bool(features.loc[train, "out_is_loss"].astype(bool).mean() > 0.5)
+    naive_predictions = pd.Series(majority_loss, index=actual.index)
+    naive_accuracy = _weighted_hit_rate(naive_predictions, actual, weights)
+    return AccuracyPoint(
+        round_number=len(model.accuracy_history) + 1,
+        model_version=model.version,
+        pnl_weighted_accuracy=accuracy,
+        naive_accuracy=naive_accuracy,
+        skill=accuracy - naive_accuracy,
+        holdout_trade_count=int(holdout.sum()),
+    )
+
+
+def residual_map(model: CausalModel, features: pd.DataFrame) -> pd.DataFrame:
+    predictions = predict(model, features)
+    holdout = holdout_mask(features, family=model.family, holdout_start=model.holdout_start)
+    actual_loss = features.loc[holdout, "out_is_loss"].astype(bool)
+    predicted_loss = predictions.loc[holdout] > 0.5
+    residuals = pd.DataFrame(
+        {
+            "trade_id": features.loc[holdout, "trade_id"].astype(str),
+            "predicted": predicted_loss.map({True: "loss", False: "win"}),
+            "actual": actual_loss.map({True: "loss", False: "win"}),
+            "abs_pnl": features.loc[holdout, "out_pnl"].astype(float).abs(),
+        }
+    ).reset_index(drop=True)
+    residuals = residuals.assign(
+        unexplained_abs_pnl=residuals["abs_pnl"].where(
+            residuals["predicted"] != residuals["actual"],
+            0.0,
+        )
+    )
+    return residuals.sort_values(
+        ["unexplained_abs_pnl", "abs_pnl", "trade_id"],
+        ascending=[False, False, True],
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+
+def holdout_mask(
+    feature_table: pd.DataFrame,
+    *,
+    family: str = "",
+    holdout_start: str = "",
+) -> pd.Series:
     entry_ts = pd.to_datetime(feature_table["entry_ts"], utc=True)
     if entry_ts.empty:
         return pd.Series([], index=feature_table.index, dtype=bool)
-    start = entry_ts.min()
-    end = entry_ts.max()
-    cutoff = start + (end - start) * 0.75
+    if holdout_start:
+        cutoff = pd.Timestamp(holdout_start)
+    elif family:
+        cutoff = pd.Timestamp(_holdout_start_for_family(family))
+    else:
+        start = entry_ts.min()
+        end = entry_ts.max()
+        cutoff = start + (end - start) * 0.75
     return pd.Series(entry_ts >= cutoff, index=feature_table.index)
 
 
 def fit_causal_model(
     feature_table: pd.DataFrame,
     factors: Sequence[CausalFactor],
-) -> CausalModel:
+) -> _FittedNaiveBayes:
     _validate_feature_table(feature_table)
-    factors_tuple = tuple(factors)
-    flags = _factor_flags(feature_table, factors_tuple)
     holdout = holdout_mask(feature_table)
     train = ~holdout
     if not train.any():
         raise ValueError("causal model requires at least one pre-holdout training row")
+    return _fit_naive_bayes(feature_table, tuple(factors), train)
 
-    y_train = feature_table.loc[train, "out_is_loss"].astype(bool)
+
+def _fit_naive_bayes(
+    features: pd.DataFrame,
+    factors: tuple[CausalFactor, ...],
+    train: pd.Series,
+) -> _FittedNaiveBayes:
+    flags = _factor_flags(features, factors)
+    y_train = features.loc[train, "out_is_loss"].astype(bool)
     loss_count = int(y_train.sum())
     win_count = int((~y_train).sum())
     train_count = int(len(y_train))
-    class_priors = {
-        "loss": (loss_count + 1.0) / (train_count + 2.0),
-        "win": (win_count + 1.0) / (train_count + 2.0),
-    }
-    factor_likelihoods = _fit_factor_likelihoods(
-        flags,
-        factors_tuple,
-        train,
-        y_train,
-        loss_count=loss_count,
-        win_count=win_count,
-    )
-
-    draft = CausalModel(
-        factors=factors_tuple,
-        class_priors=class_priors,
-        factor_likelihoods=factor_likelihoods,
-        holdout_start=pd.to_datetime(feature_table.loc[holdout, "entry_ts"], utc=True).min(),
-        holdout_end=pd.to_datetime(feature_table.loc[holdout, "entry_ts"], utc=True).max(),
-        holdout_trade_ids=feature_table.loc[holdout, "trade_id"].astype(str).tolist(),
-        pnl_weighted_accuracy=0.0,
-        residual_map={},
-    )
-    predictions = draft.predict_proba(feature_table)
-    accuracy = _pnl_weighted_accuracy(feature_table, predictions, holdout)
-    residuals = _residual_map(feature_table, predictions, holdout)
-    return CausalModel(
-        factors=draft.factors,
-        class_priors=draft.class_priors,
-        factor_likelihoods=draft.factor_likelihoods,
-        holdout_start=draft.holdout_start,
-        holdout_end=draft.holdout_end,
-        holdout_trade_ids=draft.holdout_trade_ids,
-        pnl_weighted_accuracy=accuracy,
-        residual_map=residuals,
-    )
-
-
-def _fit_factor_likelihoods(
-    flags: dict[str, pd.Series],
-    factors: tuple[CausalFactor, ...],
-    train: pd.Series,
-    y_train: pd.Series,
-    *,
-    loss_count: int,
-    win_count: int,
-) -> dict[str, dict[str, float]]:
     likelihoods: dict[str, dict[str, float]] = {}
     for factor in factors:
         train_flags = flags[factor.factor_id].loc[train]
-        loss_flags = train_flags[y_train]
-        win_flags = train_flags[~y_train]
         likelihoods[factor.factor_id] = {
-            "p_flag_given_loss": (int(loss_flags.sum()) + 1.0) / (loss_count + 2.0),
-            "p_flag_given_win": (int(win_flags.sum()) + 1.0) / (win_count + 2.0),
+            "p_flag_given_loss": (int(train_flags[y_train].sum()) + 1.0) / (loss_count + 2.0),
+            "p_flag_given_win": (int(train_flags[~y_train].sum()) + 1.0) / (win_count + 2.0),
         }
-    return likelihoods
+    return _FittedNaiveBayes(
+        factors=factors,
+        class_priors={
+            "loss": (loss_count + 1.0) / (train_count + 2.0),
+            "win": (win_count + 1.0) / (train_count + 2.0),
+        },
+        factor_likelihoods=likelihoods,
+    )
+
+
+def _predict_with_fitted(fitted: _FittedNaiveBayes, features: pd.DataFrame) -> pd.Series:
+    flags = _factor_flags(features, fitted.factors)
+    probabilities: list[float] = []
+    for index in features.index:
+        log_loss = math.log(fitted.class_priors["loss"])
+        log_win = math.log(fitted.class_priors["win"])
+        for factor in fitted.factors:
+            likelihood = fitted.factor_likelihoods[factor.factor_id]
+            flagged = bool(flags[factor.factor_id].loc[index])
+            loss_prob = likelihood["p_flag_given_loss"]
+            win_prob = likelihood["p_flag_given_win"]
+            if flagged:
+                log_loss += math.log(loss_prob)
+                log_win += math.log(win_prob)
+            else:
+                log_loss += math.log(1.0 - loss_prob)
+                log_win += math.log(1.0 - win_prob)
+        probabilities.append(_normalize_binary_log_prob(log_loss, log_win))
+    return pd.Series(probabilities, index=features.index, name="p_loss")
+
+
+def _active_factors(model: CausalModel) -> tuple[CausalFactor, ...]:
+    return tuple(factor for factor in model.factors if factor.status in _ACTIVE_FACTOR_STATUSES)
 
 
 def _factor_flags(
@@ -192,6 +236,18 @@ def _validate_feature_table(feature_table: pd.DataFrame) -> None:
         raise ValueError(f"feature_table missing required causal model columns: {sorted(missing)}")
 
 
+def _weighted_hit_rate(
+    predicted: pd.Series,
+    actual: pd.Series,
+    weights: pd.Series,
+) -> float:
+    correct = (predicted.astype(bool) == actual.astype(bool)).astype(float)
+    total_weight = float(weights.sum())
+    if total_weight == 0.0:
+        return float(correct.mean()) if len(correct) else 0.0
+    return float((correct * weights.astype(float)).sum() / total_weight)
+
+
 def _normalize_binary_log_prob(log_loss: float, log_win: float) -> float:
     max_log = max(log_loss, log_win)
     loss = math.exp(log_loss - max_log)
@@ -199,30 +255,27 @@ def _normalize_binary_log_prob(log_loss: float, log_win: float) -> float:
     return float(loss / (loss + win))
 
 
-def _pnl_weighted_accuracy(
-    feature_table: pd.DataFrame,
-    predictions: pd.DataFrame,
-    holdout: pd.Series,
-) -> float:
-    if not holdout.any():
-        return 0.0
-    actual = np.where(feature_table.loc[holdout, "out_is_loss"].astype(bool), "loss", "win")
-    predicted = predictions.loc[holdout, "predicted_direction"].to_numpy()
-    weights = feature_table.loc[holdout, "out_pnl"].astype(float).abs().to_numpy()
-    correct = (actual == predicted).astype(float)
-    total_weight = float(weights.sum())
-    if total_weight == 0.0:
-        return float(correct.mean())
-    return float(np.average(correct, weights=weights))
+def _model_path(family: str) -> Path:
+    runtime_root = resolve_runtime_root(Path.cwd())
+    return runtime_root / f"{family}_causal_model.json"
 
 
-def _residual_map(
-    feature_table: pd.DataFrame,
-    predictions: pd.DataFrame,
-    holdout: pd.Series,
-) -> dict[str, float]:
-    residuals: dict[str, float] = {}
-    for index, row in feature_table.loc[holdout].iterrows():
-        actual_loss = 1.0 if bool(row["out_is_loss"]) else 0.0
-        residuals[str(row["trade_id"])] = actual_loss - float(predictions.loc[index, "p_loss"])
-    return residuals
+def _holdout_start_for_family(family: str) -> str:
+    start, end = _family_validation_bounds(family)
+    cutoff = start + (end - start) * 0.75
+    return cutoff.isoformat()
+
+
+def _family_validation_bounds(family: str) -> tuple[pd.Timestamp, pd.Timestamp]:
+    path = Path.cwd() / "configs" / f"{family}_base.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"missing strategy family config for holdout split: {path}")
+    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    missing = [key for key in ("validation_start", "validation_end") if key not in config]
+    if missing:
+        raise ValueError(f"{path} missing validation date keys: {missing}")
+    start = pd.Timestamp(config["validation_start"], tz="UTC")
+    end = pd.Timestamp(config["validation_end"], tz="UTC")
+    if end <= start:
+        raise ValueError(f"{path} validation_end must be after validation_start")
+    return start, end
