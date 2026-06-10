@@ -1,0 +1,22 @@
+tests/test_data_loader.py
+  s_78fd65d4838bdf::t_cb2d702b5e2888 1-77
+data_loader.py
+  s_78fd65d4838bdf::t_92ea0f2bb811be 76-81
+  s_78fd65d4838bdf::t_5ddc193d3b3c38 100-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "d1a158696bf5e98c117b831a63a108c7cfd7f2da",
+  "prompts": {},
+  "sessions": {
+    "s_78fd65d4838bdf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "50c223f1-16c3-47a2-8a6a-94b7b8a34f59",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
