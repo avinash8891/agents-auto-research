@@ -1,0 +1,22 @@
+strategies/orb/runner.py
+  s_7b3a36a5bf11f5::t_4a4fbeb54f2167 119
+  s_7b3a36a5bf11f5::t_1bc4619c5c1545 118,120
+tests/test_orb_backtest_characterization.py
+  s_7b3a36a5bf11f5::t_4cad9e8288615c 59-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "80a1af69fffcbd6c541bc62548d4b34318ecab38",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
