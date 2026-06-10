@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
-from pydantic import ValidationError
 
 from artifact_io import write_json_artifact
 from autoresearch_artifact_schemas import RoundArtifact, write_round_artifact
@@ -37,6 +36,7 @@ from autoresearch_orchestration import (
 )
 from autoresearch_paths import resolve_config_path
 from autoresearch_planning import build_research_failure_state
+from autoresearch_runtime_paths import research_round_id_or_empty as make_research_round_id
 from autoresearch_runtime_paths import research_round_root
 from autoresearch_state import (
     BacktestResultRecord,
@@ -45,7 +45,6 @@ from autoresearch_state import (
     write_state,
 )
 from backtest.runtime_config import load_runtime_config
-from backtest_run_db import research_round_id as make_research_round_id
 from backtest_run_db import research_thesis_attempt_id
 from family_research_spec import resolve_research_resolution_context
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
@@ -66,6 +65,7 @@ from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
     get_event_file,
+    get_run_id,
     record_event,
     trace,
 )
@@ -1137,6 +1137,13 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     state["research_round_in_progress"] = research_round
     state["activity"] = _research_activity(research_round=research_round, phase="conductor_running")
     controller.write_state(state)
+    if current_job is not None and current_job > 0:
+        controller.backtest_run_db.ensure_round_started(
+            research_round_id=make_research_round_id(current_job, research_round),
+            job_id=current_job,
+            round_number=research_round,
+            run_id=get_run_id(),
+        )
 
     from improvement_flags import reflexion_enabled
 
@@ -1721,7 +1728,7 @@ def _handle_needs_code(
             prior_theses=None,
             allow_schema_only_code_change_fallback=True,
         )
-    except (ValidationError, ValueError) as exc:
+    except Exception as exc:
         log.warning(
             "LOOP_HALT thesis=%s validation failed; skipping compile: %s",
             thesis_id,

@@ -68,8 +68,8 @@ Implement these tables only:
 
 ## Required write behavior for research rounds
 
-When a research round produces its first persisted outcome:
-1. create or replace a `research_rounds` row for that round outcome
+When a research round starts:
+1. create a `research_rounds` row with `outcome = 'in_progress'`
 2. if conductor proposes a thesis that is rejected, persist a
    `research_thesis_attempts` row for that retry with `validator_status`
    recording the rejected attempt outcome

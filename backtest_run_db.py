@@ -25,20 +25,6 @@ from persistence_utils import (
 log = get_logger(__name__)
 
 
-def research_round_id(job_id: int, round_number: int) -> str:
-    """Lenient formatter mirroring main's #65 helper.
-
-    Coerces job_id / round_number to int but does NOT raise on
-    out-of-range values — call sites that want strict validation
-    (e.g. the DB write boundary in add_from_sqlite_fields) use the
-    canonical autoresearch_runtime_paths.research_round_id helper via
-    ``_build_research_round_id`` instead. Kept here for callers that
-    need a value even on partial state (research_conductor's pre-validate
-    thesis-id assignment, test fixtures with job=0, etc.).
-    """
-    return f"job-{int(job_id)}-round-{int(round_number)}"
-
-
 INVALID_RESULT_VERDICTS = frozenset(
     {
         "invalid_duplicate_result",
@@ -362,8 +348,15 @@ class BacktestRunDB:
                 conn, BACKTEST_RUNS_TABLE, "is_baseline", "INTEGER NOT NULL DEFAULT 0"
             )
             self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "decision_status", "TEXT NOT NULL DEFAULT ''"
+            )
+            self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "created_at_utc", "TEXT NOT NULL DEFAULT ''"
             )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "strategy_family", "TEXT NOT NULL DEFAULT ''"
+            )
+            self._ensure_column(conn, BACKTEST_RUNS_TABLE, "job_id", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "primary_metric_name", "TEXT NOT NULL DEFAULT ''"
             )
@@ -374,7 +367,49 @@ class BacktestRunDB:
             self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "trade_analysis_json", "TEXT NOT NULL DEFAULT '{}'"
             )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "trace_run_id", "TEXT NOT NULL DEFAULT ''"
+            )
+            conn.execute(f"""
+                UPDATE {BACKTEST_RUNS_TABLE}
+                SET decision_status = CASE WHEN accepted = 1 THEN 'keep' ELSE 'discard' END
+                WHERE decision_status = ''
+            """)
             self._backfill_backtest_run_created_at_utc(conn)
+            conn.execute(f"""
+                UPDATE {BACKTEST_RUNS_TABLE}
+                SET strategy_family = family
+                WHERE strategy_family = ''
+            """)
+            conn.execute(f"""
+                UPDATE {BACKTEST_RUNS_TABLE}
+                SET job_id = job
+                WHERE job_id = 0
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_thesis_id
+                ON {BACKTEST_RUNS_TABLE} (thesis_id)
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_strategy_family_created_at
+                ON {BACKTEST_RUNS_TABLE} (strategy_family, created_at_utc)
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_job_id
+                ON {BACKTEST_RUNS_TABLE} (job_id)
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_code_commit
+                ON {BACKTEST_RUNS_TABLE} (code_commit)
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_decision_status
+                ON {BACKTEST_RUNS_TABLE} (decision_status)
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_primary_metric_value
+                ON {BACKTEST_RUNS_TABLE} (primary_metric_value)
+            """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS baseline_checkpoints (
                     checkpoint_id TEXT PRIMARY KEY,
@@ -386,7 +421,7 @@ class BacktestRunDB:
                     created_at_utc TEXT NOT NULL,
                     round_number INTEGER NOT NULL DEFAULT 0
                 )
-                """)
+            """)
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_baseline_checkpoints_strategy_family_created_at
                 ON baseline_checkpoints (strategy_family, created_at_utc)
@@ -457,8 +492,7 @@ class BacktestRunDB:
             conn.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
         except Exception as exc:
             raise RuntimeError(
-                f"Failed to rename column {table}.{old} to {new}; "
-                f"schema migration is incomplete"
+                f"Failed to rename column {table}.{old} to {new}; schema migration is incomplete"
             ) from exc
 
     def session_meta(self) -> dict[str, Any]:
@@ -491,9 +525,9 @@ class BacktestRunDB:
 
     def _primary_metric_name_from_conn(self, conn: sqlite3.Connection) -> str:
         row = conn.execute("SELECT metric_name FROM session_meta WHERE id = 1").fetchone()
-        if row is None:
-            return "profit_factor"
-        return row["metric_name"]
+        if row and row["metric_name"]:
+            return row["metric_name"]
+        return "profit_factor"
 
     def best_direction(self) -> str:
         return self.session_meta().get("bestDirection", "higher")
@@ -622,9 +656,11 @@ class BacktestRunDB:
                 trades_file, strategy_events_file, diagnostics_file,
                 strategy_diagnostics_json, accepted, rejection_reason, verdict_status,
                 verdict_summary, parent_backtest_run_id, timestamp, family, hypothesis,
-                mechanism, job, usage_json, asi_json, description, created_at_utc,
-                primary_metric_name, primary_metric_value, metrics_json, trade_analysis_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                mechanism, job, usage_json, asi_json, description,
+                decision_status, created_at_utc, strategy_family, job_id,
+                primary_metric_name, primary_metric_value, metrics_json,
+                trade_analysis_json, trace_run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.run_id,
@@ -657,13 +693,42 @@ class BacktestRunDB:
                 json_dumps_strict(record.usage),
                 json_dumps_strict(getattr(record, "_asi_export", {})),
                 getattr(record, "_description_export", ""),
+                "keep" if record.accepted else "discard",
                 created_at_utc,
+                record.family,
+                record.job,
                 primary_metric_name,
                 primary_metric_value,
                 json_dumps_strict(metrics),
                 json_dumps_strict(trade_analysis),
+                "",
             ),
         )
+
+    def ensure_round_started(
+        self,
+        *,
+        research_round_id: str,
+        job_id: int,
+        round_number: int,
+        run_id: str,
+    ) -> None:
+        """Write a provisional round row if one does not already exist."""
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT 1 FROM research_rounds WHERE research_round_id = ?",
+                (research_round_id,),
+            ).fetchone()
+            if existing:
+                return
+            conn.execute(
+                """INSERT INTO research_rounds
+                   (research_round_id, job_id, round_number, run_id,
+                    selected_thesis_id, outcome, created_at_utc, usage_json)
+                   VALUES (?, ?, ?, ?, '', 'in_progress', ?, '{}')""",
+                (research_round_id, job_id, round_number, run_id, _iso8601_utc_now()),
+            )
+            conn.commit()
 
     def log_research_round(
         self,
@@ -1122,24 +1187,33 @@ class BacktestRunDB:
         records = [r for r in self._load() if is_metric_rankable_backtest_run(r)]
         direction = self.best_direction()
         best = None
+        best_candidate = 0.0
         for r in records:
             val = r.validation_metrics.get(metric)
             if val is None:
                 val = r.train_metrics.get(metric)
             if val is None:
                 continue
+            try:
+                candidate = float(val)
+            except (TypeError, ValueError):
+                log.warning(
+                    "best_by_metric: skipping run %s — metric %r value %r is not numeric",
+                    r.run_id,
+                    metric,
+                    val,
+                )
+                continue
             if best is None:
                 best = r
+                best_candidate = candidate
                 continue
-            best_val = best.validation_metrics.get(metric)
-            if best_val is None:
-                best_val = best.train_metrics.get(metric)
-            candidate = _coerce_metric_float(val)
-            best_candidate = _coerce_metric_float(best_val)
             if direction == "higher" and candidate > best_candidate:
                 best = r
+                best_candidate = candidate
             elif direction != "higher" and candidate < best_candidate:
                 best = r
+                best_candidate = candidate
         return best
 
     def format_for_conductor(self) -> str:
@@ -1254,9 +1328,11 @@ class BaselineTracker:
         if self.db_path is None:
             return
         family = self.strategy_family or _strategy_family_from_path(self.db_path)
+        db = BacktestRunDB(self.db_path)
+        if not family:
+            family = db.session_meta().get("name", "")
         if not family:
             raise ValueError("BaselineTracker requires strategy_family when db_path is configured")
-        BacktestRunDB(self.db_path)
         created_at_utc = coerce_timestamp_to_iso8601_utc(checkpoint.timestamp) or _iso8601_utc_now()
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(

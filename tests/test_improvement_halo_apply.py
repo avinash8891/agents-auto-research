@@ -329,36 +329,29 @@ def test_claude_timeout_overridable_via_env(monkeypatch):
     from autoresearch_constants import ENV_CLAUDE_TIMEOUT_SECONDS
 
     monkeypatch.setenv(ENV_CLAUDE_TIMEOUT_SECONDS, "99")
-    import importlib
+    from improvement_halo_apply import claude_timeout_seconds
 
-    import improvement_halo_apply as m
-
-    importlib.reload(m)
-    assert m.CLAUDE_TIMEOUT_SECONDS == 99
+    assert claude_timeout_seconds() == 99
 
 
-def test_claude_timeout_invalid_env_falls_back_to_default(monkeypatch):
+def test_claude_timeout_invalid_env_raises(monkeypatch):
     from autoresearch_constants import ENV_CLAUDE_TIMEOUT_SECONDS
 
     monkeypatch.setenv(ENV_CLAUDE_TIMEOUT_SECONDS, "not-a-number")
-    import importlib
+    from improvement_halo_apply import claude_timeout_seconds
 
-    import improvement_halo_apply as m
-
-    importlib.reload(m)
-    assert m.CLAUDE_TIMEOUT_SECONDS == 1800
+    with pytest.raises(ValueError, match=ENV_CLAUDE_TIMEOUT_SECONDS):
+        claude_timeout_seconds()
 
 
-def test_claude_timeout_non_positive_env_falls_back_to_default(monkeypatch):
+def test_claude_timeout_non_positive_env_raises(monkeypatch):
     from autoresearch_constants import ENV_CLAUDE_TIMEOUT_SECONDS
 
     monkeypatch.setenv(ENV_CLAUDE_TIMEOUT_SECONDS, "-1")
-    import importlib
+    from improvement_halo_apply import claude_timeout_seconds
 
-    import improvement_halo_apply as m
-
-    importlib.reload(m)
-    assert m.CLAUDE_TIMEOUT_SECONDS == 1800
+    with pytest.raises(ValueError, match=ENV_CLAUDE_TIMEOUT_SECONDS):
+        claude_timeout_seconds()
 
 
 def test_release_lock_does_not_remove_lock_recreated_by_another_owner(tmp_path):

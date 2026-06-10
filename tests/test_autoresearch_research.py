@@ -634,8 +634,7 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
             "and improve profit_factor."
         ),
         "mechanism": (
-            f"A slower ema_length={ema_length} signal filters noisy pullback crosses "
-            "before entry."
+            f"A slower ema_length={ema_length} signal filters noisy pullback crosses before entry."
         ),
         "mechanism_dimension": "signal_quality",
         "dimension_novelty": (
@@ -1342,14 +1341,75 @@ def test_handle_needs_code_preserves_retry_attempt_id_for_schema_only_fallback(
     assert captured["thesis_id"] == "job-26-round-6-attempt-2"
 
 
+def test_handle_needs_code_close_run_called_when_prepare_thesis_raises_type_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Widened except-guard: TypeError in enrichment must not skip _close_run."""
+    close_run_calls: list[object] = []
+
+    class _Controller:
+        root = tmp_path
+        job_runtime_root = tmp_path
+        family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
+
+    def fake_operationalize(thesis):
+        raise TypeError("unexpected NoneType in operationalize")
+
+    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
+    monkeypatch.setattr(
+        "autoresearch_research._close_run",
+        lambda *args, **kwargs: close_run_calls.append(args),
+    )
+
+    state = {"state": "running", "job": 26, "research_round_in_progress": 6}
+    result = {
+        "generated_thesis_id": "buffered_trailing",
+        "research_round": 6,
+        "thesis": {
+            "thesis_id": "buffered_trailing",
+            "hypothesis": "buffered trailing should reduce premature exits",
+            "mechanism": "trailing rule needs a code primitive",
+            "mechanism_dimension": "exit_mechanism",
+            "dimension_novelty": "new trailing rule shape",
+            "expected_effects": [
+                {
+                    "metric": "profit_factor",
+                    "direction": "increase",
+                    "rationale": "fewer premature trail exits",
+                }
+            ],
+            "disqualifiers": [
+                {
+                    "name": "trade_count_collapse",
+                    "condition": "trade_count falls too much",
+                    "severity": "hard_fail",
+                }
+            ],
+            "requires_code_change": True,
+            "requested_primitives": [],
+        },
+    }
+
+    updated = _handle_needs_code(_Controller(), state, result)
+
+    assert updated["state"] == "halted"
+    assert len(close_run_calls) == 1, "_close_run must be called even when TypeError is raised"
+
+
 def test_execute_research_sdk_persists_research_activity_before_conductor_call(
     tmp_path: Path, monkeypatch
 ) -> None:
     writes: list[dict[str, object]] = []
+    started_rounds: list[dict[str, object]] = []
+
+    class _DB:
+        def ensure_round_started(self, **kwargs):
+            started_rounds.append(dict(kwargs))
 
     class _Controller:
         root = tmp_path
         family = type("Family", (), {"name": "ema"})()
+        backtest_run_db = _DB()
 
         def __init__(self) -> None:
             self.state = {"state": "blocked", "job": 26, "research_round": 7}
@@ -1393,6 +1453,11 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
 
     assert result["generated_config"] == "runtime/jobs/job-26/research/round-8/selected_config.json"
     assert writes[0]["research_round_in_progress"] == 8
+    assert len(started_rounds) == 1
+    assert started_rounds[0]["research_round_id"] == "job-26-round-8"
+    assert started_rounds[0]["job_id"] == 26
+    assert started_rounds[0]["round_number"] == 8
+    assert str(started_rounds[0]["run_id"]).startswith("R-")
     assert writes[0]["activity"] == {
         "type": "research",
         "phase": "conductor_running",

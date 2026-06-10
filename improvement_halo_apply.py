@@ -26,13 +26,18 @@ from eval_metrics import (
     compare_eval_results,
 )
 from improvement_flags import halo_apply_enabled
-from persistence_utils import parse_positive_int_env, utc_now_iso8601
+from persistence_utils import require_positive_int_env, utc_now_iso8601
 
 log = get_logger(__name__)
 
 
 CLAUDE_BINARY = "claude"
-CLAUDE_TIMEOUT_SECONDS = parse_positive_int_env(ENV_CLAUDE_TIMEOUT_SECONDS, 1800, logger=log)
+_CLAUDE_TIMEOUT_DEFAULT = 1800
+
+
+def claude_timeout_seconds() -> int:
+    return require_positive_int_env(ENV_CLAUDE_TIMEOUT_SECONDS, _CLAUDE_TIMEOUT_DEFAULT)
+
 
 DEFAULT_EDIT_SCOPE = (
     "agent_prompts.py",
@@ -119,7 +124,7 @@ def _run_claude(prompt: str, repo_root: Path, subprocess_run) -> tuple[bool, str
             cwd=repo_root,
             capture_output=True,
             text=True,
-            timeout=CLAUDE_TIMEOUT_SECONDS,
+            timeout=claude_timeout_seconds(),
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
