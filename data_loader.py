@@ -73,6 +73,12 @@ def _load_wide(
         df = df.between_time("09:30", "15:55")
         if symbols:
             cols = [s for s in symbols if s in df.columns]
+            missing = set(symbols) - set(cols)
+            if missing:
+                raise DataLoadError(
+                    f"Requested symbols not found in {data_path / f'{name}.parquet'}: "
+                    f"{sorted(missing)}"
+                )
             df = df[cols]
         if start_date:
             df = df[df.index >= start_date]
@@ -91,6 +97,12 @@ def _load_per_symbol(
     subdirs = sorted(d.name for d in data_path.iterdir() if d.is_dir())
     if symbols:
         subdirs = [s for s in subdirs if s in symbols]
+        missing = set(symbols) - set(subdirs)
+        if missing:
+            raise DataLoadError(
+                f"Requested symbols not found as subdirectories in {data_path}: "
+                f"{sorted(missing)}"
+            )
 
     all_dfs: dict[str, pd.DataFrame] = {}
     for sym in subdirs:
