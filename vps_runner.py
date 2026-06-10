@@ -386,7 +386,14 @@ def build_git_status_command(config: VPSConfig) -> str:
         'repo_dir="" && current="missing" && '
         f"if [ -d {repo_cache_dir}/.git ]; then "
         f"repo_dir={repo_cache_dir} && "
-        f'if [ -L {current_link} ]; then current=$(basename "$(readlink {current_link})"); fi; '
+        f"if [ -L {current_link} ]; then "
+        f"current_target=$(readlink {current_link}) && "
+        f'case "$current_target" in /*) current_path="$current_target" ;; '
+        f'*) current_path="$(dirname {current_link})/$current_target" ;; esac && '
+        f'if [ -d "$current_path/.git" ] && [ -f "$current_path/autoresearch_controller.py" ]; then '
+        f'current=$(basename "$current_target"); '
+        "fi; "
+        "fi; "
         f"elif [ -d {remote_dir}/.git ]; then "
         f"repo_dir={remote_dir} && "
         'current=$(git -C "$repo_dir" rev-parse --verify HEAD^{commit}); '

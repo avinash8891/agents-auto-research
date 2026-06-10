@@ -605,6 +605,8 @@ def test_git_status_command_reports_current_and_resolved_sha_without_checkout() 
     assert "git -c remote.origin.url=https://github.com/example/repo.git fetch" in command
     assert "AUTORESEARCH_CURRENT_SHA" in command
     assert "AUTORESEARCH_RESOLVED_SHA" in command
+    assert 'current_path="$(dirname /srv/autoresearch/current)/$current_target"' in command
+    assert '[ -f "$current_path/autoresearch_controller.py" ]' in command
 
 
 def test_parse_current_sha_reads_remote_status_marker() -> None:

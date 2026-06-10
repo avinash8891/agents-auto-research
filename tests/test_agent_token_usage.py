@@ -25,6 +25,7 @@ from agent_token_usage import (
     get_round_usage,
     reset_round_usage,
 )
+from compiler_builder import _emit_builder_usage
 
 
 @pytest.fixture(autouse=True)
@@ -355,6 +356,37 @@ def test_accumulate_usage_emits_token_budget_warning(monkeypatch):
     ]
 
 
+def test_web_researcher_agent_aliases_share_round_budget(monkeypatch):
+    warnings = []
+    monkeypatch.setenv("AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL_WEB_RESEARCHER", "1000")
+    monkeypatch.setattr(
+        agent_token_usage,
+        "_emit_token_budget_warning",
+        lambda **kwargs: warnings.append(kwargs),
+    )
+
+    agent_token_usage._accumulate_usage(
+        "web-researcher",
+        {"input_tokens": 400, "output_tokens": 100, "total_tokens": 500},
+        provider="openai",
+        model="gpt-5.2",
+        trace_id="trace-web-1",
+    )
+    agent_token_usage._accumulate_usage(
+        "web_researcher",
+        {"input_tokens": 450, "output_tokens": 100, "total_tokens": 550},
+        provider="openai",
+        model="gpt-5.2",
+        trace_id="trace-web-2",
+    )
+
+    usage = agent_token_usage.get_round_usage()
+    assert set(usage["by_agent"]) == {"web-researcher"}
+    assert usage["by_agent"]["web-researcher"]["total_tokens"] == 1050
+    assert warnings[0]["agent_type"] == "web-researcher"
+    assert warnings[0]["total_tokens"] == 1050
+
+
 def test_accumulate_usage_emits_soft_thesis_budget_warning(monkeypatch):
     warnings = []
     monkeypatch.setenv("AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL_THESIS", "1000")
@@ -672,6 +704,33 @@ def test_agents_sdk_usage_different_dedupe_keys_both_counted():
     agent = get_round_usage()["by_agent"]["web-researcher"]
     assert agent["calls"] == 2, "distinct dedupe_keys must each be counted"
     assert agent["input_tokens"] == 2000
+
+
+def test_builder_usage_enters_round_rollup_and_dedupes() -> None:
+    _emit_builder_usage(
+        thesis_id="ema-builder",
+        attempt_number=1,
+        usage_result=(
+            {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15,
+                "cached_input_tokens": 3,
+                "reasoning_output_tokens": 2,
+            },
+            "codex_cli",
+        ),
+    )
+    _emit_builder_usage(
+        thesis_id="ema-builder",
+        attempt_number=1,
+        usage_result=({"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}, "codex_cli"),
+    )
+
+    usage = get_round_usage()
+    assert usage["by_agent"]["builder"]["calls"] == 1
+    assert usage["by_agent"]["builder"]["total_tokens"] == 15
+    assert usage["total"]["total_tokens"] == 15
 
 
 # ---------------------------------------------------------------------------

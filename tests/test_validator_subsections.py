@@ -1,14 +1,9 @@
-"""Tests for Stage 1 sub-section reorganization + rejection_code namespacing.
+"""Tests for Stage 1 rejection_code namespacing.
 
-Stage 1 is split into three helpers, each owning one category of rules:
-  _validate_structural        — missing fields / schema invariants
-  _validate_thesis_quality    — pattern of reasoning (B1/B2/B3/B5, banned
-                                 language, dimension novelty, repeated id)
-  _validate_config_validity   — base_config_path, Jaccard overlap, metadata
-                                 leak, neighboring threshold (L5)
-
-Each helper raises ThesisValidationError with rejection_code prefixed by its
-section name (`structural_*`, `thesis_quality_*`, `config_validity_*`).
+The live validator routes all Stage 1 checks through validate_research_thesis.
+Rejection codes stay prefixed by rule family (`structural_*`,
+`thesis_quality_*`, `config_validity_*`) even though private compatibility
+entry points no longer exist.
 """
 
 from __future__ import annotations

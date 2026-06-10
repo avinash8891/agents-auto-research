@@ -13,6 +13,16 @@ class CompilationResult:
 
 
 REQUIRED_TYPES = {"ema_length", "timeframe_long", "timeframe_short", "risk_reward"}
+IMPLEMENTED_OPTIONAL_TYPES = {
+    "data_universe",
+    "symbols",
+    "validation_start",
+    "validation_end",
+    "max_hold_bars",
+    "min_stop_distance_pct",
+    "max_stop_distance_pct",
+    "trail_after_r",
+}
 
 
 def normalize_ema_contract(contract: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -36,6 +46,26 @@ def compile_ema_contract(contract: list[dict[str, Any]]) -> CompilationResult:
     missing = sorted(REQUIRED_TYPES - seen)
     if missing:
         return CompilationResult("invalid_contract", {}, missing, normalized)
+
+    implemented_types = (
+        REQUIRED_TYPES
+        | {
+            "direction_bias",
+            "range_shift",
+            "entry_cutoff",
+            "max_trades_per_day",
+            "gap_filter",
+            "gap_exclude",
+        }
+        | IMPLEMENTED_OPTIONAL_TYPES
+    )
+    unsupported_types = sorted(
+        str(primitive.get("type"))
+        for primitive in normalized
+        if primitive.get("type") not in implemented_types
+    )
+    if unsupported_types:
+        return CompilationResult("invalid_contract", {}, unsupported_types, normalized)
 
     # Defaults match transcript-grounded baseline (ema_base.yaml).
     # Keep the research window bounded when a raw primitive contract is run
@@ -75,22 +105,7 @@ def compile_ema_contract(contract: list[dict[str, Any]]) -> CompilationResult:
             if "gap_exclude_pct" in primitive:
                 runtime["gap_exclude_pct"] = primitive["gap_exclude_pct"]
         elif primitive["type"] in {
-            "data_universe",
-            "symbols",
-            "validation_start",
-            "validation_end",
-            "max_hold_bars",
-            "min_stop_distance_pct",
-            "max_stop_distance_pct",
-            "trail_after_r",
-            "trail_distance_mode",
-            "trail_atr_lookback_bars",
-            "trail_atr_multiple",
-            "opening_info_intensity_gate_enabled",
-            "opening_info_window_end_time",
-            "opening_info_abs_return_min_quantile",
-            "opening_info_volume_z_min_quantile",
-            "opening_info_volume_z_lookback_sessions",
+            *IMPLEMENTED_OPTIONAL_TYPES,
         }:
             runtime[primitive["type"]] = primitive.get("value")
 

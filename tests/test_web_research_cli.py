@@ -119,13 +119,13 @@ def test_run_codex_web_research_extracts_usage_from_json_stdout(monkeypatch, tmp
     )
 
     assert metadata["usage"] == {
-        "input_tokens": 101,
-        "cached_input_tokens": 20,
-        "output_tokens": 11,
-        "reasoning_output_tokens": 3,
-        "total_tokens": 112,
+        "input_tokens": 303,
+        "cached_input_tokens": 0,
+        "output_tokens": 33,
+        "reasoning_output_tokens": 0,
+        "total_tokens": 336,
     }
-    assert metadata["usage_source"] == "codex_json_last_token_usage"
+    assert metadata["usage_source"] == "codex_json_total_token_usage"
 
 
 def test_run_codex_web_research_extracts_usage_from_turn_completed_json_stdout(
@@ -203,6 +203,48 @@ def test_run_codex_web_research_preserves_explicit_zero_total_tokens(monkeypatch
     )
 
     assert metadata["usage"]["total_tokens"] == 0
+
+
+def test_run_codex_web_research_attaches_usage_metadata_on_nonzero_exit(monkeypatch, tmp_path):
+    monkeypatch.setattr(web_research_cli, "_find_codex_cli", lambda: "codex")
+
+    class FakeProcess:
+        returncode = 1
+        pid = 12345
+
+        def __init__(self, cmd, **kwargs):
+            self.cmd = cmd
+
+        def communicate(self, *, input, timeout):
+            output_path = self.cmd[self.cmd.index("--output-last-message") + 1]
+            with open(output_path, "w") as f:
+                f.write("")
+            return (
+                '{"type":"event_msg","payload":{"type":"token_count","info":{'
+                '"total_token_usage":{"input_tokens":300,"output_tokens":30,"total_tokens":330}'
+                "}}}\n",
+                "failed",
+            )
+
+    monkeypatch.setattr(web_research_cli.subprocess, "Popen", lambda *a, **k: FakeProcess(*a, **k))
+
+    with pytest.raises(web_research_cli.WebResearchCliError) as exc_info:
+        web_research_cli.run_codex_web_research(
+            "question",
+            instructions="system instructions",
+            model="gpt-5.2",
+            cwd=tmp_path,
+            timeout_seconds=12,
+        )
+
+    assert exc_info.value.metadata["usage"] == {
+        "input_tokens": 300,
+        "cached_input_tokens": 0,
+        "output_tokens": 30,
+        "reasoning_output_tokens": 0,
+        "total_tokens": 330,
+    }
+    assert exc_info.value.metadata["usage_source"] == "codex_json_total_token_usage"
 
 
 def test_run_codex_web_research_terminates_process_group_on_timeout(monkeypatch, tmp_path):

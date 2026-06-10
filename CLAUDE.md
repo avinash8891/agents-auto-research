@@ -71,9 +71,9 @@ python vps_runner.py --strategy ema --git-ref main       # deploy branch/tag
 python vps_runner.py --strategy ema --git-sha <git-sha>   # deploy exact commit
 
 # Backtest run tracking CLI
-python autoresearch_cli.py init   --session-path <path>
-python autoresearch_cli.py log    --session-path <path> --metric sharpe --value 1.23
-python autoresearch_cli.py status --session-path <path>
+python autoresearch_cli.py init   --db <path>
+python autoresearch_cli.py log    --db <path> --metric sharpe --value 1.23
+python autoresearch_cli.py status --db <path>
 
 # Token audit (post-run)
 python scripts/token_audit.py --by model       # group by model id

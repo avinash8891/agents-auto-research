@@ -166,6 +166,7 @@ class ResearchThesis(BaseModel):
         "orthogonal_discovery",
         "implementation_unlock",
         "cleanup_validation_follow_up",
+        "winning_cluster_follow_up",
     ] = ""
     falsification_or_alternative: str = ""  # what would weaken this mechanism
     new_dimension_name: str = ""  # required when mechanism_dimension == emergent

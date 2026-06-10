@@ -162,7 +162,7 @@ def write_research_artifact(
         "status": "completed",
         "timestamp": timestamp_now(),
         "research_mode": research_mode,
-        "job": job if job is not None else request.get("job"),
+        "job_id": job if job is not None else request.get("job_id"),
         "external_research_attempted": external_research_attempted,
         "external_research_attempts": external_research_attempts,
         "findings": parsed.get("findings", []),

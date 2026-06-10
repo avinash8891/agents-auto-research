@@ -85,54 +85,69 @@ class JsonLineTraceExporter(SpanExporter):
     def export(self, spans: list[ReadableSpan]) -> SpanExportResult:
         if not spans:
             return SpanExportResult.SUCCESS
-        with self._lock, self._event_file.open("a", encoding="utf-8") as handle:
-            for span in spans:
-                if not span.attributes.get("autoresearch.event_id"):
-                    continue
-                artifact_paths = _coerce_sequence(
-                    span.attributes.get("autoresearch.artifact_paths")
-                )
-                payload = _decode_json_attribute(span.attributes.get("autoresearch.payload_json"))
-                event = TraceEvent(
-                    event_id=_string_attr(span, "autoresearch.event_id"),
-                    schema_version=int(span.attributes.get("autoresearch.schema_version", 1)),
-                    timestamp=_string_attr(span, "autoresearch.timestamp", span.start_time),
-                    otel_trace_id=_span_trace_id(span),
-                    span_id=_span_id(span),
-                    parent_span_id=_parent_span_id(span),
-                    span_name=str(span.name or ""),
-                    span_kind=_span_kind(span),
-                    span_start_time=_ns_to_iso_z(getattr(span, "start_time", None)),
-                    span_end_time=_ns_to_iso_z(
-                        getattr(span, "end_time", None) or getattr(span, "start_time", None)
-                    ),
-                    span_status_code=_span_status_code(span),
-                    span_status_message=_span_status_message(span),
-                    resource_attributes=dict(
-                        getattr(getattr(span, "resource", None), "attributes", {}) or {}
-                    ),
-                    scope=_span_scope(span),
-                    source_module=_string_attr(span, "autoresearch.source_module"),
-                    run_id=_string_attr(span, "autoresearch.run_id"),
-                    session_id=_string_attr(span, "autoresearch.session_id"),
-                    family=_string_attr(span, "autoresearch.family"),
-                    job=int(span.attributes.get("autoresearch.job", 0)),
-                    model_provider=_string_attr(span, "autoresearch.model_provider"),
-                    model_name=_string_attr(span, "autoresearch.model_name"),
-                    hypothesis_id=_optional_string(
-                        span.attributes.get("autoresearch.hypothesis_id")
-                    ),
-                    hypothesis_name=_optional_string(
-                        span.attributes.get("autoresearch.hypothesis_name")
-                    ),
-                    seq=int(span.attributes.get("autoresearch.seq", 0)),
-                    category=_string_attr(span, "autoresearch.category"),
-                    action=_string_attr(span, "autoresearch.action"),
-                    summary=_string_attr(span, "autoresearch.summary", span.name),
-                    payload=payload,
-                    artifact_paths=artifact_paths,
-                )
-                handle.write(event.to_json() + "\n")
+        try:
+            with self._lock, self._event_file.open("a", encoding="utf-8") as handle:
+                for span in spans:
+                    artifact_paths = _coerce_sequence(
+                        span.attributes.get("autoresearch.artifact_paths")
+                    )
+                    payload = _decode_json_attribute(
+                        span.attributes.get("autoresearch.payload_json")
+                    )
+                    event_id = _string_attr(span, "autoresearch.event_id")
+                    if not event_id:
+                        event_id = f"span-{_span_trace_id(span)}-{_span_id(span)}"
+                    source_module = _string_attr(span, "autoresearch.source_module")
+                    if not source_module:
+                        source_module = _span_scope(span)["name"]
+                    category = _string_attr(span, "autoresearch.category")
+                    if not category:
+                        category = "instrumentation"
+                    action = _string_attr(span, "autoresearch.action")
+                    if not action:
+                        action = str(span.name or "span")
+                    event = TraceEvent(
+                        event_id=event_id,
+                        schema_version=int(span.attributes.get("autoresearch.schema_version", 1)),
+                        timestamp=_string_attr(span, "autoresearch.timestamp", span.start_time),
+                        otel_trace_id=_span_trace_id(span),
+                        span_id=_span_id(span),
+                        parent_span_id=_parent_span_id(span),
+                        span_name=str(span.name or ""),
+                        span_kind=_span_kind(span),
+                        span_start_time=_ns_to_iso_z(getattr(span, "start_time", None)),
+                        span_end_time=_ns_to_iso_z(
+                            getattr(span, "end_time", None) or getattr(span, "start_time", None)
+                        ),
+                        span_status_code=_span_status_code(span),
+                        span_status_message=_span_status_message(span),
+                        resource_attributes=dict(
+                            getattr(getattr(span, "resource", None), "attributes", {}) or {}
+                        ),
+                        scope=_span_scope(span),
+                        source_module=source_module,
+                        run_id=_string_attr(span, "autoresearch.run_id"),
+                        session_id=_string_attr(span, "autoresearch.session_id"),
+                        family=_string_attr(span, "autoresearch.family"),
+                        job=int(span.attributes.get("autoresearch.job", 0)),
+                        model_provider=_string_attr(span, "autoresearch.model_provider"),
+                        model_name=_string_attr(span, "autoresearch.model_name"),
+                        hypothesis_id=_optional_string(
+                            span.attributes.get("autoresearch.hypothesis_id")
+                        ),
+                        hypothesis_name=_optional_string(
+                            span.attributes.get("autoresearch.hypothesis_name")
+                        ),
+                        seq=int(span.attributes.get("autoresearch.seq", 0)),
+                        category=category,
+                        action=action,
+                        summary=_string_attr(span, "autoresearch.summary", span.name),
+                        payload=payload,
+                        artifact_paths=artifact_paths,
+                    )
+                    handle.write(event.to_json() + "\n")
+        except OSError as exc:
+            _log.debug("trace jsonl export failed (suppressed): %s", exc)
         return SpanExportResult.SUCCESS
 
     def shutdown(self) -> None:
@@ -251,7 +266,11 @@ _log = _logging.getLogger(__name__)
 
 
 def _write_text(path: Path, content: str) -> str:
-    write_text_atomic(path, content)
+    try:
+        write_text_atomic(path, content)
+    except OSError as exc:
+        _log.debug("trace artifact write failed (suppressed): %s", exc)
+        return ""
     return str(path)
 
 
@@ -404,17 +423,17 @@ def _decode_json_attribute(value: Any) -> dict[str, Any]:
 def _span_trace_id(span: ReadableSpan) -> str:
     get_context = getattr(span, "get_span_context", None)
     if get_context is None:
-        return ""
+        return "0" * 32
     context = get_context()
-    return f"{context.trace_id:032x}" if context and context.trace_id else ""
+    return f"{context.trace_id:032x}" if context and context.trace_id else "0" * 32
 
 
 def _span_id(span: ReadableSpan) -> str:
     get_context = getattr(span, "get_span_context", None)
     if get_context is None:
-        return ""
+        return "0" * 16
     context = get_context()
-    return f"{context.span_id:016x}" if context and context.span_id else ""
+    return f"{context.span_id:016x}" if context and context.span_id else "0" * 16
 
 
 def _parent_span_id(span: ReadableSpan) -> str:
@@ -462,9 +481,12 @@ def _log_line(component: str, message: str, data: dict[str, Any] | None, seq: in
     if data:
         line += f" | {json.dumps(data, default=str)}"
     line += "\n"
-    handle = _STATE.get_log_handle()
-    handle.write(line)
-    handle.flush()
+    try:
+        handle = _STATE.get_log_handle()
+        handle.write(line)
+        handle.flush()
+    except OSError as exc:
+        _log.debug("trace log write failed (suppressed): %s", exc)
     _safe_console_write(f"TRACE {_STATE.run_id}{htag} [{component}] {message}\n")
 
 
@@ -652,10 +674,16 @@ def begin_round(round_number: int) -> None:
 
 
 def end_hypothesis(decision: str = "", metric: float | None = None) -> None:
+    ended_id = _STATE.current_hypothesis_id
+    ended_name = _STATE.current_hypothesis_name
     trace(
         "HYPOTHESIS",
-        f"END {_STATE.current_hypothesis_id} name={_STATE.current_hypothesis_name} decision={decision} metric={metric}",
+        f"END {ended_id} name={ended_name} decision={decision} metric={metric}",
     )
+    _STATE.current_hypothesis_id = None
+    _STATE.current_hypothesis_name = None
+    _STATE.current_hypothesis_context = None
+    _STATE.agent_contexts.clear()
 
 
 def current_hypothesis_id() -> str | None:

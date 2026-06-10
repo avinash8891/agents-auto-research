@@ -126,6 +126,22 @@ def test_latest_thesis_details_returns_empty_when_no_db_exists(tmp_path: Path) -
     assert result == {}
 
 
+def test_latest_thesis_details_reads_runtime_root_when_split_from_code_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime-home"
+    code_root.mkdir()
+    runtime_root.mkdir()
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+    db = BacktestRunDB(runtime_root / "ema_backtest_runs.db")
+    _add_thesis_attempt(db, "ema-runtime-root")
+
+    result = latest_thesis_details(code_root, "ema-runtime-root")
+
+    assert result["hypothesis"] == "EMA crossover predicts short-term momentum"
+
+
 def test_latest_thesis_details_returns_last_attempt_when_multiple(tmp_path: Path) -> None:
     db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
     _add_thesis_attempt(db, "ema-multi", hypothesis="First attempt", attempt_number=1)
@@ -224,6 +240,31 @@ def test_get_round_result_returns_record_for_valid_id(tmp_path: Path) -> None:
     # metric_name comes from the DB's primary_metric_name (default: profit_factor).
     assert result["metric_name"] == "profit_factor"
     assert result["metric"] == 1.6
+
+
+def test_get_round_result_reads_runtime_root_when_split_from_code_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime-home"
+    code_root.mkdir()
+    runtime_root.mkdir()
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+    rrid = research_round_id(1, 3)
+    db = BacktestRunDB(runtime_root / "ema_backtest_runs.db")
+    _add_backtest_record(
+        db,
+        research_round_id_value=rrid,
+        thesis_id="ema-runtime-root",
+        sharpe=1.85,
+    )
+
+    import json as _json
+
+    payload = _json.loads(get_round_result(code_root, research_round_id=rrid))
+
+    assert payload["status"] == "ok"
+    assert payload["result"]["thesis_id"] == "ema-runtime-root"
 
 
 def test_get_round_result_raises_keyerror_for_missing_id(tmp_path: Path) -> None:
@@ -329,6 +370,16 @@ def test_round_index_entry_hypothesis_empty_when_not_set() -> None:
 
     assert entry["hypothesis"] == ""
     assert entry["mechanism"] == ""
+
+
+def test_round_index_entry_reports_only_actual_config_changes() -> None:
+    item = _make_experiment_item()
+    item["record"].runtime_config = {"ema_length": 12, "validation_start": "2024-01-01"}
+    setattr(item["record"], "_asi_export", {"config_changes": {"ema_length": 12}})
+
+    entry = _round_index_entry(item)
+
+    assert entry["config_change_keys"] == ["ema_length"]
 
 
 # ── J/K/L: scoped lookup + empty-rrid fallback ─────────────────────

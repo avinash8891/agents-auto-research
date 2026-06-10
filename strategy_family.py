@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from strategies import STRATEGIES
+from strategies.contract import BacktestSemanticsContract, backtest_semantics_for_family
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,10 @@ class StrategyFamily:
     @property
     def research_spec(self):
         return STRATEGIES[self.name].research_spec
+
+    @property
+    def backtest_contract(self) -> BacktestSemanticsContract:
+        return backtest_semantics_for_family(self.name)
 
 
 def _discord_webhook_for(family_name: str) -> str:

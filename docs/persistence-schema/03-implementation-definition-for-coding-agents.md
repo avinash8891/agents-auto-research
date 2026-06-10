@@ -85,6 +85,7 @@ This preserves the real workflow:
 - one round
 - many thesis attempts
 - maybe one executed experiment
+- no `research_rounds` row for a controller crash before any round outcome is logged
 
 ---
 

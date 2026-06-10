@@ -184,7 +184,9 @@ def build_reflexion_feedback(controller, current_round: int, *, agent: str | Non
     export_root = (
         research_round_trace_exports_root(controller_root, controller_job, current_round - 1)
         if controller_job is not None
-        else _current_job_trace_exports_root(controller, controller_root)
+        else _current_job_trace_exports_root(
+            controller, controller_root, round_number=current_round - 1
+        )
     )
     prev_round_str = f"{current_round - 1:03d}"
     pattern = EXPORT_GLOB.format(round_str=prev_round_str)
@@ -266,27 +268,30 @@ def _round_from_export_path(path: Path) -> int:
     return int(match.group(1)) if match else -1
 
 
-def _current_job_trace_exports_root(controller: Any, controller_root: Path) -> Path:
+def _current_job_trace_exports_root(
+    controller: Any, controller_root: Path, *, round_number: int | None = None
+) -> Path:
     job_runtime = getattr(controller, "job_runtime_root", None)
-    if job_runtime is not None:
+    target_round = round_number
+    if target_round is None:
         current_round = getattr(controller, "research_round", None)
         if current_round is not None:
-            return Path(job_runtime) / "research" / f"round-{int(current_round)}" / "trace_exports"
+            target_round = int(current_round)
+    if job_runtime is not None:
+        if target_round is not None:
+            return Path(job_runtime) / "research" / f"round-{int(target_round)}" / "trace_exports"
     raw_job = getattr(controller, "job", None)
-    current_round = getattr(controller, "research_round", None)
     try:
         job = int(raw_job) if raw_job is not None else None
     except (TypeError, ValueError):
         job = None
     if job is None:
-        if current_round is not None:
+        if target_round is not None:
             candidates = sorted(
                 (
-                    path / "research" / f"round-{int(current_round)}" / "trace_exports"
+                    path / "research" / f"round-{int(target_round)}" / "trace_exports"
                     for path in (controller_root / "runtime" / "jobs").glob("job-*")
-                    if (
-                        path / "research" / f"round-{int(current_round)}" / "trace_exports"
-                    ).exists()
+                    if (path / "research" / f"round-{int(target_round)}" / "trace_exports").exists()
                 ),
                 key=safe_stat_mtime,
                 reverse=True,
@@ -294,5 +299,4 @@ def _current_job_trace_exports_root(controller: Any, controller_root: Path) -> P
             if candidates:
                 return candidates[0]
         raise ValueError("job id is required for reflexion trace discovery")
-    round_number = int(current_round) if current_round is not None else 1
-    return research_round_trace_exports_root(controller_root, job, round_number)
+    return research_round_trace_exports_root(controller_root, job, int(target_round or 1))

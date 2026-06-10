@@ -250,6 +250,7 @@ def test_legacy_int_db_file_loads_and_coerces_to_iso(tmp_path: Path) -> None:
     assert len(out) == 1
     # Coerced from int 1704067200000 → ISO string.
     assert out[0].timestamp == "2024-01-01T00:00:00+00:00"
+    assert out[0].created_at_utc == "2024-01-01T00:00:00+00:00"
 
 
 def test_legacy_timestamp_backfills_created_at_utc_column(tmp_path: Path) -> None:
@@ -301,6 +302,7 @@ def test_legacy_timestamp_backfills_created_at_utc_column(tmp_path: Path) -> Non
         conn.commit()
 
     BacktestRunDB(db_path)
+
     with sqlite3.connect(db_path) as conn:
         created_at_utc = conn.execute(
             "SELECT created_at_utc FROM backtest_runs WHERE run_id = 'legacy-created-at'"
@@ -394,10 +396,10 @@ def test_baseline_checkpoint_new_record_round_trip(tmp_path: Path) -> None:
 
 
 def test_baseline_checkpoint_records_strategy_family_in_sqlite(tmp_path: Path) -> None:
-    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db_path = tmp_path / "ema_backtest_runs.db"
     tracker = BaselineTracker(
         tmp_path / "baseline.json",
-        db=db,
+        db_path=db_path,
         strategy_family="ema",
     )
 
@@ -412,7 +414,7 @@ def test_baseline_checkpoint_records_strategy_family_in_sqlite(tmp_path: Path) -
         )
     )
 
-    with sqlite3.connect(db.path) as conn:
+    with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute("""
             SELECT strategy_family, code_commit, metrics_json, created_at_utc, round_number
@@ -431,11 +433,9 @@ def test_baseline_checkpoint_raises_when_configured_sqlite_write_fails(
 ) -> None:
     db_dir = tmp_path / "not-a-db"
     db_dir.mkdir()
-    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
-    db.path = db_dir
     tracker = BaselineTracker(
         tmp_path / "baseline.json",
-        db=db,
+        db_path=db_dir,
         strategy_family="ema",
     )
 

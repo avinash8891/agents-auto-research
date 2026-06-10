@@ -61,16 +61,7 @@ def _load_wide(
     batch: dict[str, pd.DataFrame] = {}
     for name in fields:
         df = pd.read_parquet(data_path / f"{name}.parquet")
-        # Normalize timestamps to US/Eastern, no tz
-        if df.index.tz is not None:
-            df.index = df.index.tz_convert("US/Eastern").tz_localize(None)
-        elif df.index.dtype == "datetime64[ns]":
-            # Assume UTC if no tz, convert
-            try:
-                df.index = df.index.tz_localize("UTC").tz_convert("US/Eastern").tz_localize(None)
-            except TypeError:
-                pass  # already handled
-        df = df.between_time("09:30", "15:55")
+        df = _normalize_intraday_frame(df)
         if symbols:
             cols = [s for s in symbols if s in df.columns]
             missing = set(symbols) - set(cols)
@@ -80,10 +71,7 @@ def _load_wide(
                     f"{sorted(missing)}"
                 )
             df = df[cols]
-        if start_date:
-            df = df[df.index >= start_date]
-        if end_date:
-            df = df[df.index <= end_date]
+        df = _apply_date_filters(df, start_date, end_date)
         batch[name] = df
     return batch
 
@@ -122,10 +110,8 @@ def _load_per_symbol(
         series = {sym: df[field] for sym, df in all_dfs.items() if field in df.columns}
         if series:
             wide = pd.DataFrame(series)
-            if start_date:
-                wide = wide[wide.index >= start_date]
-            if end_date:
-                wide = wide[wide.index <= end_date]
+            wide = _normalize_intraday_frame(wide)
+            wide = _apply_date_filters(wide, start_date, end_date)
             batch[field_map[field]] = wide
     return batch
 
@@ -136,10 +122,6 @@ def _load_flat(
     end_date: str | None,
 ) -> dict[str, pd.DataFrame]:
     df = pd.concat([pd.read_parquet(p) for p in sorted(parquets)])
-    if start_date:
-        df = df[df.index >= start_date]
-    if end_date:
-        df = df[df.index <= end_date]
     batch: dict[str, pd.DataFrame] = {}
     for field, key in [
         ("Open", "open"),
@@ -149,7 +131,40 @@ def _load_flat(
         ("Volume", "volume"),
     ]:
         if field in df.columns:
-            batch[key] = (
+            wide = (
                 df.pivot(columns="Symbol", values=field) if "Symbol" in df.columns else df[[field]]
             )
+            wide = _normalize_intraday_frame(wide)
+            batch[key] = _apply_date_filters(wide, start_date, end_date)
     return batch
+
+
+def _normalize_intraday_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if not isinstance(df.index, pd.DatetimeIndex):
+        return df
+    normalized = df.copy()
+    if (
+        normalized.index.tz is None
+        and (normalized.index.time == pd.Timestamp("00:00").time()).all()
+    ):
+        return normalized
+    if normalized.index.tz is not None:
+        normalized.index = normalized.index.tz_convert("US/Eastern").tz_localize(None)
+    elif normalized.index.dtype == "datetime64[ns]":
+        try:
+            normalized.index = (
+                normalized.index.tz_localize("UTC").tz_convert("US/Eastern").tz_localize(None)
+            )
+        except TypeError:
+            pass
+    return normalized.between_time("09:30", "15:55")
+
+
+def _apply_date_filters(
+    df: pd.DataFrame, start_date: str | None, end_date: str | None
+) -> pd.DataFrame:
+    if start_date:
+        df = df[df.index >= start_date]
+    if end_date:
+        df = df[df.index <= end_date]
+    return df

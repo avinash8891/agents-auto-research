@@ -16,6 +16,16 @@ _THESIS_USAGE: dict[str, UsageTotals] = {}
 _SEEN_DEDUPE_KEYS: set[str] = set()
 _EMITTED_BUDGET_WARNINGS: set[str] = set()
 
+_AGENT_TYPE_ALIASES = {
+    "web_researcher": "web-researcher",
+    "web researcher": "web-researcher",
+}
+
+
+def _canonical_agent_type(agent_type: str) -> str:
+    normalized = str(agent_type or "").strip()
+    return _AGENT_TYPE_ALIASES.get(normalized, normalized)
+
 
 def _infer_provider(model: str | None) -> str | None:
     """Best-effort provider inference from a model name."""
@@ -87,6 +97,7 @@ def _emit_trace_usage(
 
 
 def _token_budget_warning_threshold(agent_type: str) -> int:
+    agent_type = _canonical_agent_type(agent_type)
     agent_env = "".join(ch if ch.isalnum() else "_" for ch in agent_type.upper()).strip("_")
     specific = os.environ.get(f"AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL_{agent_env}")
     raw = specific or os.environ.get(TOKEN_BUDGET_WARNING_ENV, "")
@@ -115,7 +126,7 @@ def _emit_token_budget_warning(
     try:
         record_event(
             source_module="agent_token_usage",
-            category="usage",
+            category="telemetry",
             action="token_budget_warning",
             summary=(
                 f"{agent_type} token usage {total_tokens} exceeded warning budget "
@@ -139,6 +150,7 @@ def _emit_token_budget_warning(
 
 
 def _ensure_entry(agent_type: str) -> UsageTotals:
+    agent_type = _canonical_agent_type(agent_type)
     if agent_type not in _ROUND_USAGE:
         _ROUND_USAGE[agent_type] = {
             "input_tokens": 0,
@@ -193,6 +205,7 @@ def _emit_budget_warning_once(
 
 
 def _record_failed_call(agent_type: str, dedupe_key: str | None = None) -> None:
+    agent_type = _canonical_agent_type(agent_type)
     if dedupe_key:
         if dedupe_key in _SEEN_DEDUPE_KEYS:
             return
@@ -201,6 +214,7 @@ def _record_failed_call(agent_type: str, dedupe_key: str | None = None) -> None:
 
 
 def _record_unmetered_call(agent_type: str, dedupe_key: str | None = None) -> None:
+    agent_type = _canonical_agent_type(agent_type)
     if dedupe_key:
         if dedupe_key in _SEEN_DEDUPE_KEYS:
             return
@@ -226,6 +240,7 @@ def _accumulate_usage(
     - per-call trace event (category=usage) -> trace-events.jsonl, carrying
       provider/model and full run_id/hypothesis_id correlation
     """
+    agent_type = _canonical_agent_type(agent_type)
     if dedupe_key:
         if dedupe_key in _SEEN_DEDUPE_KEYS:
             return

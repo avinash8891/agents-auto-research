@@ -256,7 +256,12 @@ class BacktestRunDB:
                     job INTEGER NOT NULL,
                     usage_json TEXT NOT NULL,
                     asi_json TEXT NOT NULL DEFAULT '{{}}',
-                    description TEXT NOT NULL DEFAULT ''
+                    description TEXT NOT NULL DEFAULT '',
+                    created_at_utc TEXT NOT NULL DEFAULT '',
+                    primary_metric_name TEXT NOT NULL DEFAULT '',
+                    primary_metric_value REAL,
+                    metrics_json TEXT NOT NULL DEFAULT '{{}}',
+                    trade_analysis_json TEXT NOT NULL DEFAULT '{{}}'
                 )
                 """)
             conn.execute("""
@@ -420,11 +425,11 @@ class BacktestRunDB:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_baseline_checkpoints_strategy_family_created_at
                 ON baseline_checkpoints (strategy_family, created_at_utc)
-            """)
+                """)
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_baseline_checkpoints_code_commit
                 ON baseline_checkpoints (code_commit)
-            """)
+                """)
             conn.commit()
 
     def _ensure_column(
@@ -1023,6 +1028,7 @@ class BacktestRunDB:
                     description=f"strict-native loop: {Path(record.config_path).stem}",
                     timestamp=record.timestamp or "1970-01-01T00:00:00+00:00",
                     asi={
+                        **dict(getattr(record, "_asi_export", {}) or {}),
                         "config": record.config_path,
                         "thesis_id": record.thesis_id,
                         "research_round_id": record.research_round_id,
@@ -1273,14 +1279,10 @@ class BaselineTracker:
     """Track baseline metrics across rounds to detect environment drift."""
 
     def __init__(
-        self,
-        path: Path,
-        *,
-        db: "BacktestRunDB | None" = None,
-        strategy_family: str = "",
+        self, path: Path, *, db_path: Path | None = None, strategy_family: str = ""
     ) -> None:
         self.path = path
-        self.db = db
+        self.db_path = db_path
         self.strategy_family = strategy_family
         self._checkpoints: list[BaselineCheckpoint] | None = None
 
@@ -1310,9 +1312,7 @@ class BaselineTracker:
         write_text_atomic(self.path, json_dumps_strict([asdict(c) for c in checkpoints]) + "\n")
 
     def _checkpoint_id(self, checkpoint: BaselineCheckpoint) -> str:
-        family = self.strategy_family or _strategy_family_from_path(
-            self.db.path if self.db is not None else None
-        )
+        family = self.strategy_family or _strategy_family_from_path(self.db_path)
         return _config_hash(
             {
                 "family": family,
@@ -1324,32 +1324,27 @@ class BaselineTracker:
             }
         )
 
-    def record(self, checkpoint: BaselineCheckpoint) -> None:
-        if self.db is not None:
-            self._write_to_sqlite(checkpoint)
-        checkpoints = self._load()
-        checkpoints.append(checkpoint)
-        self._checkpoints = checkpoints
-        self._save()
-
-    def _write_to_sqlite(self, checkpoint: BaselineCheckpoint) -> None:
-        if self.db is None:
+    def _record_sqlite(self, checkpoint: BaselineCheckpoint) -> None:
+        if self.db_path is None:
             return
-        strategy_family = self.strategy_family or _strategy_family_from_path(self.db.path)
-        if not strategy_family:
-            strategy_family = self.db.session_meta().get("name", "")
-        if not strategy_family:
-            raise ValueError("BaselineTracker requires strategy_family when db is configured")
+        family = self.strategy_family or _strategy_family_from_path(self.db_path)
+        db = BacktestRunDB(self.db_path)
+        if not family:
+            family = db.session_meta().get("name", "")
+        if not family:
+            raise ValueError("BaselineTracker requires strategy_family when db_path is configured")
         created_at_utc = coerce_timestamp_to_iso8601_utc(checkpoint.timestamp) or _iso8601_utc_now()
-        with self.db._connect() as conn:
+        with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                """INSERT OR REPLACE INTO baseline_checkpoints
-                   (checkpoint_id, strategy_family, code_commit, data_hash,
-                    config_hash, metrics_json, created_at_utc, round_number)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                """
+                INSERT OR REPLACE INTO baseline_checkpoints (
+                    checkpoint_id, strategy_family, code_commit, data_hash, config_hash,
+                    metrics_json, created_at_utc, round_number
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                 (
                     self._checkpoint_id(checkpoint),
-                    strategy_family,
+                    family,
                     checkpoint.code_commit,
                     checkpoint.data_hash,
                     checkpoint.config_hash,
@@ -1359,6 +1354,13 @@ class BaselineTracker:
                 ),
             )
             conn.commit()
+
+    def record(self, checkpoint: BaselineCheckpoint) -> None:
+        self._record_sqlite(checkpoint)
+        checkpoints = self._load()
+        checkpoints.append(checkpoint)
+        self._checkpoints = checkpoints
+        self._save()
 
     def latest(self) -> BaselineCheckpoint | None:
         checkpoints = self._load()

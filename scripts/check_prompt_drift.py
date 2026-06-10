@@ -39,8 +39,8 @@ from research_types import ResearchThesis  # noqa: E402
 
 # Fields the validator inspects directly. If absent from the prompt, the
 # conductor has no idea the field is required and will omit it.
-# Sourced from _validate_structural / _validate_thesis_quality in
-# thesis_validator.py — keep in sync when validator rules change.
+# Sourced from validate_research_thesis and its mechanical/behavioral
+# collectors in thesis_validator.py — keep in sync when validator rules change.
 VALIDATOR_INSPECTED_FIELDS: set[str] = {
     "thesis_id",
     "hypothesis",
@@ -76,6 +76,11 @@ PROMPT_RULE_NAMES_TO_CODES: dict[str, str] = {
     "config-key overlap": "config_validity_config_key_overlap_real",
     "hypothesis-config misalignment": "hypothesis_config_misalignment",
     "thesis_id repeated": "structural_thesis_id_repeated",
+}
+
+REQUIRED_WIRED_SAFETY_RAILS: dict[str, str] = {
+    "normalize_config_changes": "strategies/orb/schema.py",
+    "_enforce_tool_models": "research_tools_mcp.py",
 }
 
 
@@ -181,6 +186,52 @@ def discover_validator_rejection_codes(path: Path) -> set[str]:
     # Drop the catch-all sentinel
     codes.discard("unspecified_validation_error")
     return codes
+
+
+def _python_source_paths(root: Path) -> list[Path]:
+    ignored_parts = {
+        ".git",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "__pycache__",
+        "tests",
+    }
+    return [
+        path
+        for path in root.rglob("*.py")
+        if not any(part in ignored_parts for part in path.relative_to(root).parts)
+    ]
+
+
+def _calls_function(path: Path, function_name: str) -> bool:
+    try:
+        tree = ast.parse(path.read_text())
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == function_name:
+            return True
+        if isinstance(func, ast.Attribute) and func.attr == function_name:
+            return True
+    return False
+
+
+def check_safety_rail_wiring(required_rails: dict[str, str], root: Path = REPO_ROOT) -> list[str]:
+    findings: list[str] = []
+    source_paths = _python_source_paths(root)
+    for function_name, defining_module in required_rails.items():
+        callers = [path for path in source_paths if _calls_function(path, function_name)]
+        if callers:
+            continue
+        findings.append(
+            f"SAFETY_RAIL_UNWIRED: '{function_name}' is required but has no "
+            f"production caller; defined in {defining_module}"
+        )
+    return findings
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +343,7 @@ def main() -> int:
     all_findings.extend(check_tools(prompt, mcp_tools, args.strict))
     all_findings.extend(check_output_fields(prompt))
     all_findings.extend(check_rule_references(prompt, validator_codes))
+    all_findings.extend(check_safety_rail_wiring(REQUIRED_WIRED_SAFETY_RAILS))
 
     if not all_findings:
         print("OK: no prompt drift detected.")

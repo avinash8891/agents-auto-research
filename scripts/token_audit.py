@@ -61,7 +61,7 @@ def _iter_usage_records(paths: list[Path], since: str | None):
                     rec = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if rec.get("category") != "usage":
+                if rec.get("category") != "usage" or rec.get("action") != "accumulate":
                     continue
                 if since and rec.get("timestamp", "") < since:
                     continue
