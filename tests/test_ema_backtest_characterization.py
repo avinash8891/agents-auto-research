@@ -22,8 +22,8 @@ from backtest.runtime_config import load_runtime_config, validate_runtime_config
 from config_hash import _config_hash
 from strategies import STRATEGIES
 from strategies.ema.contract import compile_ema_contract, map_ema_config_changes_to_contract
-from strategies.ema.signals import generate_signals_for_frame
-from strategies.ema.strategy import _log_raw_setups
+from strategies.ema.signals import EMASignals, generate_signals_for_frame
+from strategies.ema.strategy import _log_filter_rejections, _log_raw_setups
 from strategies.ema.validate import validate_ema_runtime_config
 from strategy_event_logger import StrategyEventLogger
 
@@ -351,6 +351,46 @@ def test_ema_raw_setup_events_emit_standardized_event_columns() -> None:
     assert row["trigger_bar_timestamp"] == pd.Timestamp("2024-01-02 09:45")
     assert row["entry_bar_index_from_open"] == 3.0
     assert row["ema.alert_bar_timestamp"] == pd.Timestamp("2024-01-02 09:40")
+
+
+def test_ema_min_stop_distance_rejection_logs_original_stop_distance_pct() -> None:
+    idx = pd.to_datetime(["2024-01-02 09:35"])
+    frame = pd.DataFrame(
+        {
+            "open": [10.0],
+            "high": [10.2],
+            "low": [9.8],
+            "close": [10.0],
+        },
+        index=idx,
+    )
+    signals = EMASignals(
+        entries=pd.Series([False], index=idx),
+        direction="long",
+        entry_price=pd.Series([np.nan], index=idx),
+        stop_price=pd.Series([np.nan], index=idx),
+        alert_bar_idx=pd.Series([0], index=idx),
+    )
+    logger = StrategyEventLogger()
+
+    _log_filter_rejections(
+        logger,
+        frame,
+        signals,
+        before_mask=np.array([True]),
+        after_mask=np.array([False]),
+        entry_prices=np.array([10.0]),
+        stop_prices=np.array([9.9]),
+        symbol="AAA",
+        direction="long",
+        reason="min_stop_distance",
+    )
+
+    row = logger.to_dataframe().iloc[0]
+    assert row["reason"] == "min_stop_distance"
+    assert row["entry_price"] == 10.0
+    assert row["stop_price"] == 9.9
+    assert row["stop_distance_pct"] == pytest.approx(1.0)
 
 
 def test_strategy_event_logger_keeps_none_extra_open_for_later_text() -> None:
