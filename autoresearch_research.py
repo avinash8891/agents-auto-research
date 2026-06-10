@@ -1688,7 +1688,7 @@ def _handle_needs_code(
             prior_theses=None,
             allow_schema_only_code_change_fallback=True,
         )
-    except (ValidationError, ValueError) as exc:
+    except Exception as exc:
         log.warning(
             "LOOP_HALT thesis=%s validation failed; skipping compile: %s",
             thesis_id,
