@@ -116,6 +116,17 @@ class DiagnosticRequirementSpec(BaseModel):
     description: str = ""
 
 
+class CausalFactor(BaseModel):
+    """A candidate causal rule over entry-time feature-table columns."""
+
+    factor_id: str
+    story: str
+    rule: str
+    direction: Literal["loss", "win"]
+    evidence_rounds: list[int] = Field(default_factory=list)
+    status: Literal["candidate", "supported", "refuted", "harvested"] = "candidate"
+
+
 EMERGENT_MECHANISM_DIMENSION = "emergent"
 
 # Stable built-in mechanism dimensions for thesis classification.
