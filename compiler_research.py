@@ -131,6 +131,7 @@ def _compile_runtime_config_contract(
         base_contract_id=thesis.base_contract_id,
         base_config_hash=_config_hash(_load_base_runtime_config(root, thesis)),
         runtime_config=runtime_config,
+        config_changes=dict(thesis.config_changes),
         hypothesis=thesis.hypothesis,
         mechanism=thesis.mechanism,
         expected_effects=thesis.expected_effects,
@@ -155,11 +156,6 @@ def _runtime_config_for_registered_strategy(
     strategy = STRATEGIES.get(family_name)
     if strategy is None:
         return None
-    defaults = strategy.get_defaults()
-    allowed_keys = set(defaults) | set(base_config)
-    invalid_keys = sorted(set(config_changes) - allowed_keys)
-    if invalid_keys:
-        return {}
     return {**base_config, **config_changes}
 
 
@@ -212,6 +208,12 @@ def compile_research_thesis(
             raise ValueError(_format_noop_config_change_error(thesis, base_config))
         violations = STRATEGIES[family_name].validate_runtime_config(runtime_config)
         if violations:
+            unsupported = [message for message in violations if message.startswith("Unsupported ")]
+            if unsupported:
+                raise ValueError(
+                    f"Unsupported config_changes keys for thesis '{thesis.thesis_id}': "
+                    + "; ".join(unsupported)
+                )
             raise ValueError(
                 f"Config validation failed for thesis '{thesis.thesis_id}': "
                 + "; ".join(violations)

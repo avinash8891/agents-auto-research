@@ -22,7 +22,8 @@ from backtest.runtime_config import load_runtime_config, validate_runtime_config
 from config_hash import _config_hash
 from strategies import STRATEGIES
 from strategies.ema.contract import compile_ema_contract, map_ema_config_changes_to_contract
-from strategies.ema.signals import generate_signals_for_frame
+from strategies.ema.exits import simulate_trades
+from strategies.ema.signals import EMASignals, generate_signals_for_frame
 from strategies.ema.strategy import _log_raw_setups
 from strategies.ema.validate import validate_ema_runtime_config
 from strategy_event_logger import StrategyEventLogger
@@ -67,6 +68,74 @@ def _write_wide_dataset(universe_path: Path, symbols: list[str]) -> None:
         )
         + "\n"
     )
+
+
+def _manual_ema_signals(frame: pd.DataFrame, *, direction: str, entry_bar: int) -> EMASignals:
+    entries = pd.Series(False, index=frame.index)
+    entries.iloc[entry_bar] = True
+    entry_prices = pd.Series(np.nan, index=frame.index)
+    stop_prices = pd.Series(np.nan, index=frame.index)
+    entry_prices.iloc[entry_bar] = 100.0
+    stop_prices.iloc[entry_bar] = 95.0
+    return EMASignals(
+        entries=entries,
+        direction=direction,
+        entry_price=entry_prices,
+        stop_price=stop_prices,
+        alert_bar_idx=pd.Series([-1] * len(frame), index=frame.index),
+    )
+
+
+def test_ema_exits_force_flat_at_session_end_before_overnight_gap() -> None:
+    index = pd.to_datetime(
+        ["2024-01-02 15:50", "2024-01-02 15:55", "2024-01-03 09:30"]
+    ).tz_localize("US/Eastern")
+    frame = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 80.0],
+            "high": [101.0, 101.0, 82.0],
+            "low": [99.0, 98.0, 79.0],
+            "close": [100.0, 97.0, 81.0],
+        },
+        index=index,
+    )
+
+    trades = simulate_trades(
+        frame,
+        _manual_ema_signals(frame, direction="long", entry_bar=1),
+        {"rr_ratio": 3.0, "max_hold_bars": 78, "slippage_pct": 0.0},
+    )
+
+    assert len(trades) == 1
+    assert trades[0]["exit_date"] == index[1]
+    assert trades[0]["exit_reason"] == "session_close"
+    assert trades[0]["exit_price"] == 97.0
+
+
+def test_ema_exits_scan_entry_bar_for_stop_loss() -> None:
+    index = pd.to_datetime(
+        ["2024-01-02 10:00", "2024-01-02 10:05", "2024-01-02 10:10"]
+    ).tz_localize("US/Eastern")
+    frame = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 100.0],
+            "high": [101.0, 102.0, 103.0],
+            "low": [99.0, 94.0, 99.0],
+            "close": [100.0, 101.0, 102.0],
+        },
+        index=index,
+    )
+
+    trades = simulate_trades(
+        frame,
+        _manual_ema_signals(frame, direction="long", entry_bar=1),
+        {"rr_ratio": 3.0, "max_hold_bars": 78, "slippage_pct": 0.0},
+    )
+
+    assert len(trades) == 1
+    assert trades[0]["exit_date"] == index[1]
+    assert trades[0]["exit_reason"] == "stop_loss"
+    assert trades[0]["exit_price"] == 95.0
 
 
 def test_ema_strategy_run_returns_event_logger_keys() -> None:
@@ -307,6 +376,36 @@ def test_generate_signals_preserves_carried_alert_bar_idx() -> None:
     assert signals.stop_price.iloc[3] == 8.9
 
 
+def test_generate_signals_suppresses_entries_before_ema_warmup() -> None:
+    idx = pd.to_datetime(["2024-01-02 09:30", "2024-01-02 09:35", "2024-01-02 09:40"])
+    frame = pd.DataFrame(
+        {
+            "open": [10.0, 9.0, 8.5],
+            "high": [10.5, 9.2, 9.6],
+            "low": [9.8, 8.8, 8.7],
+            "close": [10.0, 9.0, 9.4],
+        },
+        index=idx,
+    )
+
+    signals = generate_signals_for_frame(frame, "long", ema_length=3)
+
+    assert signals.entries.tolist() == [False, False, False]
+    assert signals.alert_bar_idx.tolist() == [-1, -1, -1]
+
+
+def test_range_shift_filter_uses_completed_bars_not_entry_bar_extremes() -> None:
+    from strategies.ema.signals import _detect_range_shift
+
+    idx = pd.date_range("2024-01-02 09:30", periods=5, freq="5min")
+    high = pd.Series([10.0, 10.1, 9.0, 9.1, 12.0], index=idx)
+    low = pd.Series([9.0, 9.1, 8.0, 8.1, 11.0], index=idx)
+
+    bias = _detect_range_shift(high, low, lookback=2)
+
+    assert bias[-1] == -1
+
+
 def test_ema_raw_setup_events_emit_standardized_event_columns() -> None:
     idx = pd.to_datetime(
         ["2024-01-02 09:30", "2024-01-02 09:35", "2024-01-02 09:40", "2024-01-02 09:45"]
@@ -510,6 +609,25 @@ def test_compile_ema_contract_returns_ready_to_run_for_valid_contract() -> None:
     assert result.runtime_config["timeframe_long"] == 15
     assert result.runtime_config["timeframe_short"] == 5
     assert result.runtime_config["rr_ratio"] == 3.0
+
+
+def test_compile_ema_contract_rejects_unimplemented_primitives_before_runtime_validation() -> None:
+    result = compile_ema_contract(
+        [
+            {"type": "ema_length", "value": 5},
+            {"type": "timeframe_long", "minutes": 15},
+            {"type": "timeframe_short", "minutes": 5},
+            {"type": "risk_reward", "rr_ratio": 3.0},
+            {"type": "opening_info_intensity_gate_enabled", "value": True},
+            {"type": "trail_atr_multiple", "value": 2.0},
+        ]
+    )
+
+    assert result.status == "invalid_contract"
+    assert result.missing_primitives == [
+        "opening_info_intensity_gate_enabled",
+        "trail_atr_multiple",
+    ]
 
 
 def test_validate_ema_runtime_config_rejects_negative_ema_length() -> None:

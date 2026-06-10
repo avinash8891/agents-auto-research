@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -60,6 +61,39 @@ def test_sqlite_schema_keeps_backtest_runs_table_with_round_columns(tmp_path: Pa
     assert "research_round_id" in columns
     assert "research_round_number" in columns
     assert "backtest_run_id" in columns
+    assert "created_at_utc" in columns
+    assert "primary_metric_name" in columns
+    assert "primary_metric_value" in columns
+    assert "metrics_json" in columns
+    assert "trade_analysis_json" in columns
+
+
+def test_add_populates_canonical_metric_columns_for_direct_sqlite_reads(
+    tmp_path: Path,
+) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    record = _record(round_number=1, job=1)
+    record.trade_analysis = {"trade_count": 10, "avg_win": 1.25}
+    db.add(record)
+
+    with sqlite3.connect(db.path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT created_at_utc, primary_metric_name, primary_metric_value,
+                   metrics_json, trade_analysis_json
+            FROM backtest_runs
+            WHERE run_id = ?
+            """,
+            (record.run_id,),
+        ).fetchone()
+
+    assert row["created_at_utc"] == "2026-05-09T00:00:00+00:00"
+    assert row["primary_metric_name"] == "profit_factor"
+    assert row["primary_metric_value"] == 1.5
+    assert json.loads(row["metrics_json"])["profit_factor"] == 1.5
+    assert json.loads(row["trade_analysis_json"]) == {"trade_count": 10, "avg_win": 1.25}
 
 
 def test_read_results_reports_round_scoped_artifact_dir(tmp_path: Path) -> None:
@@ -72,6 +106,31 @@ def test_read_results_reports_round_scoped_artifact_dir(tmp_path: Path) -> None:
     assert result.asi["artifact_dir"] == "runtime/jobs/job-1/research/round-1/backtest"
     assert result.asi["research_round_id"] == "job-1-round-1"
     assert result.asi["backtest_run_id"] == "job-1-round-1-backtest"
+
+
+def test_read_results_preserves_stored_asi_json_fields(tmp_path: Path) -> None:
+    db_path = tmp_path / "backtest_runs.db"
+    db = BacktestRunDB(db_path)
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    record = _record(round_number=1, job=1)
+    setattr(
+        record,
+        "_asi_export",
+        {
+            "baseline_rerun_for_commit": "abc1234",
+            "insights": ["retry baseline after deploy"],
+            "config_changes": {"ema_length": 13},
+            "next_thesis_suggestion": {"hypothesis": "try a slower EMA"},
+        },
+    )
+    db.add(record)
+
+    result = BacktestRunDB(db_path).read_results()[0]
+
+    assert result.asi["baseline_rerun_for_commit"] == "abc1234"
+    assert result.asi["insights"] == ["retry baseline after deploy"]
+    assert result.asi["config_changes"] == {"ema_length": 13}
+    assert result.asi["next_thesis_suggestion"] == {"hypothesis": "try a slower EMA"}
 
 
 def test_export_entries_use_backtest_run_type(tmp_path: Path) -> None:
@@ -270,6 +329,51 @@ def test_add_from_sqlite_fields_persists_research_round_id(tmp_path: Path) -> No
     assert record.research_round_number == 4
     assert record.is_baseline is False
     assert record.thesis_id == "ema_breakout_v1"
+
+
+def test_add_from_sqlite_fields_persists_canonical_metric_columns(
+    tmp_path: Path,
+) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    round_id = research_round_id(2, 4)
+    db.add_from_sqlite_fields(
+        run_id="exp-2-4",
+        thesis_id="ema_breakout_v1",
+        config_path="runtime/jobs/job-2/research/round-4/selected_config.json",
+        runtime_config={"ema_length": 21},
+        code_commit="abc1234",
+        data_hash="data",
+        metrics={"sharpe": 0.4},
+        trade_analysis={"trade_count": 42, "avg_loss": -0.7},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="accepted",
+        verdict_summary="accepted",
+        family="ema",
+        job_id=2,
+        primary_metric_name="profit_factor",
+        primary_metric_value=1.65,
+        research_round_id=round_id,
+        research_round_number=4,
+        is_baseline=False,
+    )
+
+    with sqlite3.connect(db.path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("""
+            SELECT primary_metric_name, primary_metric_value, metrics_json, trade_analysis_json
+            FROM backtest_runs
+            WHERE run_id = 'exp-2-4'
+            """).fetchone()
+
+    metrics = json.loads(row["metrics_json"])
+    assert row["primary_metric_name"] == "profit_factor"
+    assert row["primary_metric_value"] == 1.65
+    assert metrics["profit_factor"] == 1.65
+    assert metrics["sharpe"] == 0.4
+    assert json.loads(row["trade_analysis_json"]) == {"trade_count": 42, "avg_loss": -0.7}
 
 
 def test_add_from_sqlite_fields_rejects_empty_research_round_id(tmp_path: Path) -> None:

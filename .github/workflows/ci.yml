@@ -22,7 +22,9 @@ jobs:
       - name: Code quality checks (pre-commit)
         run: pre-commit run --all-files
       - name: Security scan (bandit) — high severity, fail on any new issue
-        run: bandit -r autoresearch_*.py agent_*.py research_conductor.py compiler_pipeline.py --severity-level high
+        run: bandit -r autoresearch_*.py agent_*.py research_conductor.py compiler_pipeline.py vps_runner.py --severity-level high
+      - name: Prompt drift check
+        run: python scripts/check_prompt_drift.py
       - name: Run tests with coverage
         run: |
           pytest -v --cov --cov-report=term-missing

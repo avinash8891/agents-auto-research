@@ -68,8 +68,8 @@ Implement these tables only:
 
 ## Required write behavior for research rounds
 
-When a research round starts:
-1. create a `research_rounds` row
+When a research round produces its first persisted outcome:
+1. create or replace a `research_rounds` row for that round outcome
 2. if conductor proposes a thesis that is rejected, persist a
    `research_thesis_attempts` row for that retry with `validator_status`
    recording the rejected attempt outcome
@@ -85,6 +85,7 @@ This preserves the real workflow:
 - one round
 - many thesis attempts
 - maybe one executed experiment
+- no `research_rounds` row for a controller crash before any round outcome is logged
 
 ---
 

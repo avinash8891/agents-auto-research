@@ -748,6 +748,8 @@ def apply_forced_baseline_rerun(
     _archive_reactivated_blocker(state, source="forced_baseline_rerun")
     state["state"] = "running"
     controller.clear_terminal_metadata(state)
+    state["research_round"] = 0
+    state.pop("research_round_in_progress", None)
     state["next_action"] = baseline_action
     state["blockers"] = []
     state.pop("halted_thesis_id", None)

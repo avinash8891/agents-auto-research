@@ -136,6 +136,7 @@ async def _run_single_agent(
         model=model,
     )
 
+    original_prompt = prompt
     for attempt in range(1, retries + 1):
         trace_id = trace_agent_prompt(
             f"sdk-{name}",
@@ -150,6 +151,7 @@ async def _run_single_agent(
             model_provider=model_provider,
             model_name=model_name,
         )
+        result = None
         try:
             result = OAIRunner.run_streamed(
                 agent,
@@ -169,7 +171,12 @@ async def _run_single_agent(
                 model_name=model_name,
             )
             accumulate_agents_sdk_result_usage(
-                name, None, provider=model_provider, model=model_name, trace_id=trace_id
+                name,
+                result,
+                provider=model_provider,
+                model=model_name,
+                input_text=f"{agent_def.prompt}\n\n{prompt}",
+                trace_id=trace_id,
             )
             error = agent_infra._structured_error(
                 name,
@@ -261,9 +268,14 @@ async def _run_single_agent(
             )
 
         if attempt < retries:
+            retry_reason = (
+                "Your previous response failed semantic validation."
+                if error.get("kind") == "validation"
+                else "Your previous response could not be parsed as valid JSON."
+            )
             prompt = (
-                f"RETRY: Your previous response could not be parsed as valid JSON "
-                f"or was missing required fields. {prompt}"
+                f"RETRY: {retry_reason} Return the required schema.\n\n"
+                f"Original request:\n{original_prompt}"
             )
             continue
 

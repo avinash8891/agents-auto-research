@@ -98,7 +98,9 @@ def generate_signals_for_frame(
         )
 
     # EMA
-    ema = pd.Series(close).ewm(span=ema_length, adjust=False).mean().values
+    ema = pd.Series(close).ewm(span=ema_length, adjust=False).mean().to_numpy(copy=True)
+    if ema_length > 1:
+        ema[: ema_length - 1] = np.nan
 
     # Shifted arrays (previous bar values)
     prev_high = np.empty(n)
@@ -158,8 +160,10 @@ def _detect_range_shift(high: pd.Series, low: pd.Series, lookback: int = 20):
     """Detect right range shift using rising/lower rolling range structure.
     Returns numpy array: 1=long bias, -1=short bias, 0=none.
     """
-    range_high = high.rolling(lookback, min_periods=lookback).max()
-    range_low = low.rolling(lookback, min_periods=lookback).min()
+    completed_high = high.shift(1)
+    completed_low = low.shift(1)
+    range_high = completed_high.rolling(lookback, min_periods=lookback).max()
+    range_low = completed_low.rolling(lookback, min_periods=lookback).min()
 
     prev_range_high = range_high.shift(lookback)
     prev_range_low = range_low.shift(lookback)

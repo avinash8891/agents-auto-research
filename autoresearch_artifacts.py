@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from artifact_io import read_json_artifacts as read_artifact_json_files
-from autoresearch_logging import get_logger
-
-_log = get_logger(__name__)
+from autoresearch_artifact_schemas import read_round_artifact
 
 
 def _serialize_artifact_path(path: Path, root: Path) -> str:
@@ -42,35 +39,31 @@ def read_research_artifacts(
 ) -> list[dict[str, Any]]:
     artifacts: list[dict[str, Any]] = []
     if research_dir.exists():
-        for path in sorted(research_dir.glob("round-*/round.json")):
-            try:
-                payload = json.loads(path.read_text())
-            except (json.JSONDecodeError, OSError):
-                continue
+        loaded: list[tuple[Path, dict[str, Any]]] = []
+        for path in research_dir.glob("round-*/round.json"):
+            payload = read_round_artifact(path).to_payload()
             payload["artifact_path"] = _serialize_artifact_path(path, root)
-            artifacts.append(payload)
+            loaded.append((path, payload))
+        loaded.sort(key=lambda item: _research_round_sort_key(item[0], item[1]))
+        artifacts.extend(payload for _, payload in loaded)
     if job is None:
         return artifacts
     matched: list[dict[str, Any]] = []
     for artifact in artifacts:
-        raw_job = artifact.get("job")
-        if raw_job is None:
-            raw_job = artifact.get("job_id")
-        if raw_job is None:
-            continue
-        try:
-            artifact_job = int(raw_job)
-        except (TypeError, ValueError) as exc:
-            _log.warning(
-                "Skipping artifact with malformed job field (path=%s, job=%r): %s",
-                artifact.get("artifact_path", "<unknown>"),
-                raw_job,
-                exc,
-            )
-            continue
-        if artifact_job == job:
+        if artifact["job_id"] == job:
             matched.append(artifact)
     return matched
+
+
+def _research_round_sort_key(path: Path, payload: dict[str, Any]) -> tuple[int, str]:
+    raw_round = payload.get("round_number")
+    if raw_round is None:
+        name = path.parent.name.removeprefix("round-")
+        raw_round = name.split("-", 1)[0]
+    try:
+        return int(raw_round), path.as_posix()
+    except (TypeError, ValueError):
+        return -1, path.as_posix()
 
 
 def read_thesis_artifacts(proposals_dir: Path, root: Path) -> list[dict[str, Any]]:

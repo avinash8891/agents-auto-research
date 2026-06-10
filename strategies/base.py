@@ -10,6 +10,11 @@ from typing import Any, Protocol
 import yaml
 
 from family_research_spec import FamilyResearchSpec
+from strategies.contract import (
+    BacktestSemanticsContract,
+    backtest_semantics_for_family,
+    validate_backtest_runtime_config,
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +56,8 @@ class Strategy(Protocol):
     ) -> list[dict[str, Any]]: ...
     @property
     def family_dirnames(self) -> FamilyDirnames: ...
+    @property
+    def backtest_contract(self) -> BacktestSemanticsContract: ...
 
 
 class BaseStrategy:
@@ -76,21 +83,14 @@ class BaseStrategy:
             variant_prefix=f"{self.name}_",
         )
 
+    @property
+    def backtest_contract(self) -> BacktestSemanticsContract:
+        return backtest_semantics_for_family(self.name)
+
     def validate_runtime_config_scope(
         self, config: dict[str, Any], source_path: Path | None = None
     ) -> dict[str, Any]:
-        if config.get("allow_unbounded_research_backtest"):
-            return config
-        missing = [key for key in ("validation_start", "validation_end") if not config.get(key)]
-        if missing:
-            source = f" for {source_path}" if source_path is not None else ""
-            raise ValueError(
-                f"Refusing unbounded {self.name.upper()} backtest"
-                f"{source}: missing {', '.join(missing)}. "
-                "Set validation_start and validation_end, or explicitly set "
-                "allow_unbounded_research_backtest=true."
-            )
-        return config
+        return validate_backtest_runtime_config(self.name, config, source_path)
 
     @property
     def discord_webhook(self) -> str:

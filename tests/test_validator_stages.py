@@ -123,6 +123,7 @@ def _make_contract(
         strategy_family="ema",
         baseline_config_path="configs/ema_base.yaml",
         runtime_config=runtime_config,
+        config_changes=dict(runtime_config),
         hypothesis=hypothesis,
         mechanism=mechanism,
         required_diagnostics=list(required_diagnostics or []),
@@ -212,21 +213,43 @@ def test_validate_stage_2_accepts_when_alignment_at_or_above_threshold() -> None
     assert out is contract
 
 
-def test_validate_stage_2_uses_runtime_config_not_thesis_config_changes() -> None:
-    """Even with an empty `config_changes` worth of misalignment, Stage 2 evaluates
-    the resolved runtime_config — confirming the input source moved."""
-    # runtime_config carries inherited baseline keys; alignment should reflect those.
-    runtime_config = {
-        "entry_cutoff_time": "10:00",
-        "max_trades_per_day": 1,
-    }
+def test_validate_stage_2_scores_only_contract_config_changes_not_inherited_runtime() -> None:
+    """Stage 2 evaluates the thesis delta, not inherited baseline runtime keys."""
     contract = _make_contract(
-        runtime_config=runtime_config,
+        runtime_config={
+            "entry_cutoff_time": "10:00",
+            "max_trades_per_day": 1,
+            "gap_filter": True,
+        },
         hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
         mechanism="Capture the opening dislocation only.",
     )
-    # Score should be high; no exception raised.
+    contract.config_changes = {
+        "entry_cutoff_time": "10:00",
+        "max_trades_per_day": 1,
+    }
+
     validate_stage_2(contract)
+
+
+def test_validate_stage_2_rejects_misaligned_config_changes_even_when_runtime_defaults_align() -> (
+    None
+):
+    contract = _make_contract(
+        runtime_config={
+            "entry_cutoff_time": "10:00",
+            "max_trades_per_day": 1,
+            "gap_filter": True,
+        },
+        hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
+        mechanism="Capture the opening dislocation only.",
+    )
+    contract.config_changes = {"gap_filter": True}
+
+    with pytest.raises(ThesisValidationError) as excinfo:
+        validate_stage_2(contract)
+
+    assert excinfo.value.rejection_code == "hypothesis_config_misalignment"
 
 
 # ── Stage 2: required-diagnostic resolution ───────────────────────────────

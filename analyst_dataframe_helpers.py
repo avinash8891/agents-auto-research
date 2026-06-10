@@ -79,7 +79,8 @@ def safe_merge_asof(
         raise KeyError(f"left missing asof key: {on}")
     if on not in right.columns:
         raise KeyError(f"right missing asof key: {on}")
-    sort_cols = ([by] if isinstance(by, str) else list(by or [])) + [on]
+    by_cols = [by] if isinstance(by, str) else list(by or [])
+    sort_cols = [on] + by_cols
     left_missing = [column for column in sort_cols if column not in left.columns]
     right_missing = [column for column in sort_cols if column not in right.columns]
     if left_missing:
