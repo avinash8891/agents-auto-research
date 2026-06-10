@@ -16,6 +16,11 @@ from pathlib import Path
 
 import pytest
 
+# Must be set before any import that could trigger trace_sdk module load.
+# PYTEST_CURRENT_TEST is only set during test execution, not import time
+# (CORE-16), so it cannot guard Traceloop.init. This var IS set at import time.
+os.environ.setdefault("AUTORESEARCH_TRACING_DISABLED", "1")
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))

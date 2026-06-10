@@ -508,7 +508,7 @@ def _initialize_tracing() -> None:
         _INITIALIZED = True
         return
     _PROVIDER = _build_provider()
-    if os.getenv("PYTEST_CURRENT_TEST"):
+    if os.getenv("AUTORESEARCH_TRACING_DISABLED"):
         _INITIALIZED = True
         return
     try:
