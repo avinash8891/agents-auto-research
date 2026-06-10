@@ -64,8 +64,10 @@ rvol_computation: "cumulative_or_window"  # How to compute RVOL
 rvol_min_history_days: 10         # Minimum days of history required
 
 research_engine:
-  screening_min_support: 3
-  screening_min_lift: 0.10
+  min_sample: 30
+  min_abs_lift: 0.10
+  max_p_value: 0.05
+  max_population_overlap: 0.70
 
 # --- Universe Selection (OFF for baseline) ---
 universe_mode: null                          # null = all symbols; "stocks_in_play" = top-N by RVOL

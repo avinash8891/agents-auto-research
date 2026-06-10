@@ -16,19 +16,16 @@ def _factor(factor_id: str, rule: str) -> CausalFactor:
     )
 
 
-def _screening(factor_id: str, verdict: str) -> ScreeningResult:
+def _screening(rule: str, verdict: str) -> ScreeningResult:
     return ScreeningResult(
-        factor_id=factor_id,
-        rule="gap_pct < 0",
-        direction="loss",
-        support=3,
-        total_trades=5,
-        flagged_loss_rate=0.667,
-        unflagged_loss_rate=0.0,
-        flagged_pnl_mean=-1.667,
-        unflagged_pnl_mean=2.5,
+        rule=rule,
         verdict=verdict,
-        competing_hypothesis="",
+        sample_count=3,
+        flagged_loss_rate=0.667,
+        base_loss_rate=0.4,
+        lift=0.267,
+        p_value=0.04,
+        overlap_with=None,
     )
 
 
@@ -38,7 +35,7 @@ def test_corpus_model_captures_round_evidence_snapshot() -> None:
         research_round_id="job-1-round-2",
         feature_table_path="runtime/jobs/job-1/research/round-2/backtest/feature_table.parquet",
         factors=[_factor("f001", "gap_pct < 0")],
-        screenings=[_screening("f001", "supported")],
+        screenings=[_screening("gap_pct < 0", "pass")],
         model_accuracy=0.75,
         residual_map={"t2": -0.2, "t1": 0.1},
     )
@@ -47,7 +44,7 @@ def test_corpus_model_captures_round_evidence_snapshot() -> None:
     assert corpus.family == "ema"
     assert corpus.feature_table_path.endswith("feature_table.parquet")
     assert corpus.factors[0].factor_id == "f001"
-    assert corpus.screenings[0].verdict == "supported"
+    assert corpus.screenings[0].verdict == "pass"
 
 
 def test_render_corpus_is_deterministic_and_sorted() -> None:
@@ -56,7 +53,10 @@ def test_render_corpus_is_deterministic_and_sorted() -> None:
         research_round_id="job-1-round-2",
         feature_table_path="feature_table.parquet",
         factors=[_factor("f002", "vol_pctile_20d > 0.7"), _factor("f001", "gap_pct < 0")],
-        screenings=[_screening("f002", "refuted"), _screening("f001", "supported")],
+        screenings=[
+            _screening("vol_pctile_20d > 0.7", "kill_no_lift"),
+            _screening("gap_pct < 0", "pass"),
+        ],
         model_accuracy=0.75,
         residual_map={"t2": -0.2, "t1": 0.1},
     )
@@ -65,7 +65,10 @@ def test_render_corpus_is_deterministic_and_sorted() -> None:
         research_round_id="job-1-round-2",
         feature_table_path="feature_table.parquet",
         factors=[_factor("f001", "gap_pct < 0"), _factor("f002", "vol_pctile_20d > 0.7")],
-        screenings=[_screening("f001", "supported"), _screening("f002", "refuted")],
+        screenings=[
+            _screening("gap_pct < 0", "pass"),
+            _screening("vol_pctile_20d > 0.7", "kill_no_lift"),
+        ],
         model_accuracy=0.75,
         residual_map={"t1": 0.1, "t2": -0.2},
     )

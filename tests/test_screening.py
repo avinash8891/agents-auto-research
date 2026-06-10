@@ -4,95 +4,144 @@ import sqlite3
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from autoresearch_constants import (
-    research_engine_screening_min_lift,
-    research_engine_screening_min_support,
+    research_engine_max_population_overlap,
+    research_engine_max_p_value,
+    research_engine_min_abs_lift,
+    research_engine_min_sample,
 )
 from backtest_run_db import BacktestRunDB
-from research_types import CausalFactor
-from screening import screen_factors, write_screenings
+from research_types import CausalFactor, CausalModel
+from screening import screen, write_screenings
 
 
 def _feature_table() -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {"trade_id": "t1", "gap_pct": -1.1, "out_is_loss": True, "out_pnl": -4.0},
-            {"trade_id": "t2", "gap_pct": -0.9, "out_is_loss": True, "out_pnl": -2.0},
-            {"trade_id": "t3", "gap_pct": 0.4, "out_is_loss": False, "out_pnl": 2.0},
-            {"trade_id": "t4", "gap_pct": 0.3, "out_is_loss": False, "out_pnl": 3.0},
-            {"trade_id": "t5", "gap_pct": -0.2, "out_is_loss": False, "out_pnl": 1.0},
-        ]
+    rows: list[dict[str, object]] = []
+    for index in range(40):
+        rows.append(
+            {
+                "trade_id": f"gap-down-{index}",
+                "gap_pct": -1.0,
+                "vol_pctile_20d": 0.2 if index % 2 else 0.8,
+                "out_is_loss": index < 32,
+                "out_pnl": -2.0 if index < 32 else 1.0,
+            }
+        )
+    for index in range(60):
+        rows.append(
+            {
+                "trade_id": f"gap-up-{index}",
+                "gap_pct": 0.7,
+                "vol_pctile_20d": 0.2 if index % 2 else 0.8,
+                "out_is_loss": index < 24,
+                "out_pnl": -1.0 if index < 24 else 2.0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _model() -> CausalModel:
+    return CausalModel(
+        family="ema",
+        version=1,
+        factors=[
+            CausalFactor(
+                factor_id="f001",
+                story="Prior gap-down mechanism.",
+                rule="gap_pct < -0.5",
+                direction="loss",
+                status="supported",
+            )
+        ],
+        accuracy_history=[],
     )
 
 
 def test_research_engine_screening_thresholds_read_from_config_block() -> None:
-    config = {"research_engine": {"screening_min_support": 7, "screening_min_lift": 0.35}}
+    config = {
+        "research_engine": {
+            "min_sample": 17,
+            "min_abs_lift": 0.35,
+            "max_p_value": 0.04,
+            "max_population_overlap": 0.60,
+        }
+    }
 
-    assert research_engine_screening_min_support(config) == 7
-    assert research_engine_screening_min_lift(config) == 0.35
+    assert research_engine_min_sample(config) == 17
+    assert research_engine_min_abs_lift(config) == 0.35
+    assert research_engine_max_p_value(config) == 0.04
+    assert research_engine_max_population_overlap(config) == 0.60
 
 
-def test_screen_factors_executes_query_rules_and_detects_competing_hypothesis() -> None:
-    factors = [
-        CausalFactor(
-            factor_id="f001",
-            story="Gap-down entries are loss-prone.",
-            rule="gap_pct < 0",
-            direction="loss",
+@pytest.mark.parametrize(
+    ("rule", "competitor_rule", "model", "expected_verdict", "overlap_with"),
+    [
+        ("gap_pct < 0", "gap_pct > 0", CausalModel(family="ema", version=1), "pass", None),
+        ("gap_pct < 0", None, _model(), "kill_duplicate", "f001"),
+        (
+            "gap_pct > 0",
+            "gap_pct < 0",
+            CausalModel(family="ema", version=1),
+            "kill_lost_to_competitor",
+            None,
         ),
-        CausalFactor(
-            factor_id="f002",
-            story="Gap-up entries should be loss-prone, but the data says otherwise.",
-            rule="gap_pct > 0",
-            direction="loss",
-        ),
-    ]
+        ("vol_pctile_20d > 0.5", None, CausalModel(family="ema", version=1), "kill_no_lift", None),
+        ("gap_pct < -2", None, CausalModel(family="ema", version=1), "kill_min_sample", None),
+        ("out_pnl < 0", None, CausalModel(family="ema", version=1), "kill_bad_rule", None),
+    ],
+)
+def test_screen_mixed_rules_return_exact_spec_verdicts(
+    rule: str,
+    competitor_rule: str | None,
+    model: CausalModel,
+    expected_verdict: str,
+    overlap_with: str | None,
+) -> None:
+    result = screen(rule, competitor_rule, model, _feature_table())
 
-    results = screen_factors(
-        _feature_table(),
-        factors,
-        research_engine_config={"screening_min_support": 2, "screening_min_lift": 0.25},
-    )
-
-    by_factor = {result.factor_id: result for result in results}
-    assert by_factor["f001"].verdict == "supported"
-    assert by_factor["f001"].support == 3
-    assert by_factor["f001"].flagged_loss_rate == 2 / 3
-    assert by_factor["f002"].verdict == "refuted"
-    assert by_factor["f002"].competing_hypothesis == "rule flags wins, not losses"
+    assert result.rule == rule
+    assert result.verdict == expected_verdict
+    assert result.overlap_with == overlap_with
+    assert 0.0 <= result.flagged_loss_rate <= 1.0
+    assert 0.0 <= result.base_loss_rate <= 1.0
+    assert 0.0 <= result.p_value <= 1.0
 
 
-def test_screenings_table_exists_and_write_screenings_persists_rows(tmp_path: Path) -> None:
+def test_screen_rejects_empty_and_oversized_rules_as_bad_rule() -> None:
+    model = CausalModel(family="ema", version=1)
+
+    assert screen("", None, model, _feature_table()).verdict == "kill_bad_rule"
+    assert screen("gap_pct > 0 " * 60, None, model, _feature_table()).verdict == "kill_bad_rule"
+
+
+def test_screenings_table_exists_and_write_screenings_appends_spec_rows(tmp_path: Path) -> None:
     db = BacktestRunDB(tmp_path / "backtest_runs.db")
-    results = screen_factors(
-        _feature_table(),
-        [
-            CausalFactor(
-                factor_id="f001",
-                story="Gap-down entries are loss-prone.",
-                rule="gap_pct < 0",
-                direction="loss",
-            )
-        ],
-        research_engine_config={"screening_min_support": 2, "screening_min_lift": 0.25},
+    result = screen(
+        "gap_pct < 0", "gap_pct > 0", CausalModel(family="ema", version=1), _feature_table()
     )
 
-    write_screenings(
-        db.path,
-        results,
-        family="ema",
-        research_round_id="job-1-round-2",
-        thresholds={"screening_min_support": 2, "screening_min_lift": 0.25},
-    )
+    write_screenings(db.path, [result], round_number=3, competitor_rule="gap_pct > 0")
 
     with sqlite3.connect(db.path) as conn:
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(screenings)")}
-        rows = conn.execute(
-            "SELECT factor_id, verdict, support, thresholds_json FROM screenings"
-        ).fetchall()
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(screenings)")]
+        rows = conn.execute("""
+            SELECT round_number, rule, competitor_rule, verdict, sample_count,
+                   ROUND(lift, 3), overlap_with
+            FROM screenings
+            """).fetchall()
 
-    assert {"screening_id", "factor_id", "verdict", "thresholds_json"} <= columns
-    assert rows == [
-        ("f001", "supported", 3, '{"screening_min_lift":0.25,"screening_min_support":2}')
+    assert columns == [
+        "screening_id",
+        "round_number",
+        "rule",
+        "competitor_rule",
+        "verdict",
+        "sample_count",
+        "lift",
+        "p_value",
+        "overlap_with",
+        "created_at_utc",
     ]
+    assert rows == [(3, "gap_pct < 0", "gap_pct > 0", "pass", 40, 0.24, None)]

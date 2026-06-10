@@ -9,17 +9,14 @@ from screening import ScreeningResult
 
 
 class ScreeningEvidence(BaseModel):
-    factor_id: str
     rule: str
-    direction: str
-    support: int
-    total_trades: int
-    flagged_loss_rate: float
-    unflagged_loss_rate: float
-    flagged_pnl_mean: float
-    unflagged_pnl_mean: float
     verdict: str
-    competing_hypothesis: str = ""
+    sample_count: int
+    flagged_loss_rate: float
+    base_loss_rate: float
+    lift: float
+    p_value: float
+    overlap_with: str | None = None
 
 
 class Corpus(BaseModel):
@@ -50,7 +47,7 @@ def build_corpus(
         factors=sorted(factors, key=lambda factor: factor.factor_id),
         screenings=sorted(
             [_coerce_screening(screening) for screening in screenings],
-            key=lambda screening: screening.factor_id,
+            key=lambda screening: screening.rule,
         ),
         residual_map={key: residual_map[key] for key in sorted(residual_map)},
     )
@@ -83,19 +80,17 @@ def render_corpus(corpus: Corpus) -> str:
 
     lines.extend(["", "## Screenings"])
     if corpus.screenings:
-        for screening in sorted(corpus.screenings, key=lambda item: item.factor_id):
+        for screening in sorted(corpus.screenings, key=lambda item: item.rule):
             lines.extend(
                 [
-                    f"### {screening.factor_id}",
+                    f"### {screening.rule}",
                     f"- verdict: {screening.verdict}",
-                    f"- direction: {screening.direction}",
-                    f"- support: {screening.support}/{screening.total_trades}",
+                    f"- sample_count: {screening.sample_count}",
                     f"- flagged_loss_rate: {_format_float(screening.flagged_loss_rate)}",
-                    f"- unflagged_loss_rate: {_format_float(screening.unflagged_loss_rate)}",
-                    f"- flagged_pnl_mean: {_format_float(screening.flagged_pnl_mean)}",
-                    f"- unflagged_pnl_mean: {_format_float(screening.unflagged_pnl_mean)}",
-                    f"- competing_hypothesis: {screening.competing_hypothesis or 'none'}",
-                    f"- rule: {screening.rule}",
+                    f"- base_loss_rate: {_format_float(screening.base_loss_rate)}",
+                    f"- lift: {_format_float(screening.lift)}",
+                    f"- p_value: {_format_float(screening.p_value)}",
+                    f"- overlap_with: {screening.overlap_with or 'none'}",
                 ]
             )
     else:
@@ -114,17 +109,14 @@ def _coerce_screening(screening: ScreeningResult | ScreeningEvidence) -> Screeni
     if isinstance(screening, ScreeningEvidence):
         return screening
     return ScreeningEvidence(
-        factor_id=screening.factor_id,
         rule=screening.rule,
-        direction=screening.direction,
-        support=screening.support,
-        total_trades=screening.total_trades,
-        flagged_loss_rate=screening.flagged_loss_rate,
-        unflagged_loss_rate=screening.unflagged_loss_rate,
-        flagged_pnl_mean=screening.flagged_pnl_mean,
-        unflagged_pnl_mean=screening.unflagged_pnl_mean,
         verdict=screening.verdict,
-        competing_hypothesis=screening.competing_hypothesis,
+        sample_count=screening.sample_count,
+        flagged_loss_rate=screening.flagged_loss_rate,
+        base_loss_rate=screening.base_loss_rate,
+        lift=screening.lift,
+        p_value=screening.p_value,
+        overlap_with=screening.overlap_with,
     )
 
 

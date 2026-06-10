@@ -88,23 +88,45 @@ def _research_engine_block(config: dict) -> dict:
     return block if isinstance(block, dict) else {}
 
 
-def research_engine_screening_min_support(config: dict) -> int:
-    value = _research_engine_block(config).get("screening_min_support", 3)
+def research_engine_min_sample(config: dict) -> int:
+    value = _research_engine_block(config).get("min_sample", 30)
     try:
         parsed = int(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError("research_engine.screening_min_support must be an integer") from exc
+        raise ValueError("research_engine.min_sample must be an integer") from exc
     if parsed < 1:
-        raise ValueError("research_engine.screening_min_support must be >= 1")
+        raise ValueError("research_engine.min_sample must be >= 1")
     return parsed
 
 
-def research_engine_screening_min_lift(config: dict) -> float:
-    value = _research_engine_block(config).get("screening_min_lift", 0.10)
+def research_engine_min_abs_lift(config: dict) -> float:
+    value = _research_engine_block(config).get("min_abs_lift", 0.10)
     try:
         parsed = float(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError("research_engine.screening_min_lift must be a number") from exc
+        raise ValueError("research_engine.min_abs_lift must be a number") from exc
     if parsed < 0.0 or parsed > 1.0:
-        raise ValueError("research_engine.screening_min_lift must be between 0 and 1")
+        raise ValueError("research_engine.min_abs_lift must be between 0 and 1")
+    return parsed
+
+
+def research_engine_max_p_value(config: dict) -> float:
+    value = _research_engine_block(config).get("max_p_value", 0.05)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.max_p_value must be a number") from exc
+    if parsed < 0.0 or parsed > 1.0:
+        raise ValueError("research_engine.max_p_value must be between 0 and 1")
+    return parsed
+
+
+def research_engine_max_population_overlap(config: dict) -> float:
+    value = _research_engine_block(config).get("max_population_overlap", 0.70)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.max_population_overlap must be a number") from exc
+    if parsed < 0.0 or parsed > 1.0:
+        raise ValueError("research_engine.max_population_overlap must be between 0 and 1")
     return parsed
