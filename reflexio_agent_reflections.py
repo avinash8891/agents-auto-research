@@ -3,13 +3,18 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_agent_reflections(trajectory: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def build_agent_reflections(
+    trajectory: list[dict[str, Any]],
+    *,
+    round_facts: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
     """Create compact, deterministic Reflexion memory per agent.
 
     This module is intentionally independent from trace SDK wiring so both the
     Reflexio exporter and the live feedback reader use the same derivation.
     """
     by_agent: dict[str, list[dict[str, Any]]] = {}
+    facts = _merge_round_facts(round_facts, trajectory)
     for item in trajectory:
         if not isinstance(item, dict):
             continue
@@ -17,11 +22,12 @@ def build_agent_reflections(trajectory: list[dict[str, Any]]) -> dict[str, dict[
         if not agent:
             continue
         by_agent.setdefault(agent, []).append(item)
+    if not by_agent and _round_fact_evidence(facts):
+        by_agent["conductor"] = []
 
     return {
-        agent: _build_agent_reflection(agent, items)
+        agent: _build_agent_reflection(agent, items, facts)
         for agent, items in sorted(by_agent.items())
-        if items
     }
 
 
@@ -38,11 +44,17 @@ def _canonical_agent(agent: str) -> str:
     return aliases.get(normalized, normalized)
 
 
-def _build_agent_reflection(agent: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_agent_reflection(
+    agent: str,
+    items: list[dict[str, Any]],
+    round_facts: dict[str, Any],
+) -> dict[str, Any]:
     action_counts: dict[str, int] = {}
     evidence: list[str] = []
     errors: list[str] = []
     tools: list[str] = []
+    evidence.extend(_round_fact_evidence(round_facts))
+    fact_lesson = _round_fact_lesson(round_facts)
 
     for item in items:
         action = str(item.get("action") or "")
@@ -55,11 +67,11 @@ def _build_agent_reflection(agent: str, items: list[dict[str, Any]]) -> dict[str
         combined = " ".join(part for part in (summary, content) if part).strip()
         if combined:
             evidence.append(_redact_text(combined[:300]))
-        if _looks_like_error(item, combined):
+        if _has_structured_error(item):
             errors.append(_redact_text(combined[:300]))
 
     if agent == "analyst":
-        lesson = _analyst_lesson(action_counts, errors)
+        lesson = fact_lesson or _analyst_lesson(action_counts, errors)
         avoid = _analyst_avoid(errors)
         repeat = ["answer the conductor focus question with compact data evidence"]
         if "read_artifact" in tools:
@@ -81,7 +93,10 @@ def _build_agent_reflection(agent: str, items: list[dict[str, Any]]) -> dict[str
             "run narrow verifier/tests before success",
         ]
     elif agent == "conductor":
-        lesson = "Use prior theses, round results, web evidence, and analyst data before proposing one next mechanism."
+        lesson = fact_lesson or (
+            "Use prior theses, round results, web evidence, and analyst data before "
+            "proposing one next mechanism."
+        )
         avoid = ["repeating prior mechanisms without a new data-backed reason"]
         repeat = ["fetch exact past thesis/result details before relying on them"]
     else:
@@ -100,18 +115,112 @@ def _build_agent_reflection(agent: str, items: list[dict[str, Any]]) -> dict[str
     }
 
 
-def _looks_like_error(item: dict[str, Any], combined: str) -> bool:
+def _has_structured_error(item: dict[str, Any]) -> bool:
     action = str(item.get("action") or "")
-    text = combined.lower()
     return (
         action in {"builder_error"}
-        or " status=error" in text
-        or " result error" in text
-        or "error" in text
-        or "failed" in text
-        or "exception" in text
-        or "traceback" in text
+        or str(item.get("status") or "").lower() == "error"
+        or bool(str(item.get("error_type") or "").strip())
+        or bool(str(item.get("error_code") or "").strip())
     )
+
+
+def _merge_round_facts(
+    explicit: dict[str, Any] | None, trajectory: list[dict[str, Any]]
+) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    prediction_gaps: list[dict[str, Any]] = []
+    for source in [explicit or {}, *trajectory]:
+        if not isinstance(source, dict):
+            continue
+        nested = source.get("round_facts")
+        if isinstance(nested, dict):
+            source = {**nested, **source}
+        raw_counts = source.get("screening_verdict_counts")
+        if isinstance(raw_counts, dict):
+            for verdict, count in raw_counts.items():
+                try:
+                    parsed_count = int(count)
+                except (TypeError, ValueError):
+                    continue
+                if parsed_count:
+                    key = str(verdict)
+                    counts[key] = counts.get(key, 0) + parsed_count
+        prediction_gaps.extend(_prediction_gap_items(source.get("prediction_gaps")))
+        prediction_gaps.extend(_prediction_gap_items(source.get("prediction_results")))
+    return {
+        "screening_verdict_counts": counts,
+        "prediction_gaps": prediction_gaps,
+    }
+
+
+def _prediction_gap_items(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    items: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        metric = str(item.get("metric") or "").strip()
+        if not metric:
+            continue
+        gap = item.get("magnitude_gap", item.get("gap"))
+        if gap is None:
+            continue
+        try:
+            parsed_gap = float(gap)
+        except (TypeError, ValueError):
+            continue
+        direction_passed = item.get("direction_passed")
+        items.append(
+            {
+                "metric": metric,
+                "gap": parsed_gap,
+                "direction_passed": (
+                    direction_passed if isinstance(direction_passed, bool) else None
+                ),
+            }
+        )
+    return items
+
+
+def _round_fact_evidence(round_facts: dict[str, Any]) -> list[str]:
+    evidence: list[str] = []
+    counts = round_facts.get("screening_verdict_counts")
+    if isinstance(counts, dict) and counts:
+        rendered_counts = ", ".join(
+            f"{verdict}={count}" for verdict, count in sorted(counts.items())
+        )
+        evidence.append(f"screening verdicts: {rendered_counts}")
+    gaps = round_facts.get("prediction_gaps")
+    if isinstance(gaps, list) and gaps:
+        rendered_gaps = "; ".join(_render_prediction_gap(item) for item in gaps[:5])
+        evidence.append(f"prediction gaps: {rendered_gaps}")
+    return evidence
+
+
+def _round_fact_lesson(round_facts: dict[str, Any]) -> str:
+    evidence = _round_fact_evidence(round_facts)
+    if not evidence:
+        return ""
+    return "Use computed round facts before proposing the next mechanism: " + " | ".join(evidence)
+
+
+def _render_prediction_gap(item: dict[str, Any]) -> str:
+    metric = str(item.get("metric") or "unknown")
+    gap = item.get("gap")
+    try:
+        rendered_gap = f"{float(gap):.6g}"
+    except (TypeError, ValueError):
+        rendered_gap = str(gap)
+    direction_passed = item.get("direction_passed")
+    if direction_passed is True:
+        direction = "pass"
+    elif direction_passed is False:
+        direction = "fail"
+    else:
+        direction = "unknown"
+    return f"{metric} gap={rendered_gap} direction={direction}"
 
 
 def _analyst_lesson(action_counts: dict[str, int], errors: list[str]) -> str:

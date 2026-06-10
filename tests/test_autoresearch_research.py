@@ -28,6 +28,7 @@ from autoresearch_research import (
     _handle_round_failure,
     _handle_success,
     _on_ready_to_run,
+    _quality_score_from_skill_delta,
     _research_feedback_from_verdict,
     _resolve_conductor_inputs,
     _try_one_validation_attempt,
@@ -620,6 +621,13 @@ def test_research_feedback_from_verdict_preserves_prefixed_summary() -> None:
     )
 
     assert feedback == "Previous candidate was rejected: trade count collapsed?"
+
+
+def test_quality_score_uses_documented_skill_delta_formula() -> None:
+    assert _quality_score_from_skill_delta(0.02) == pytest.approx(0.60)
+    assert _quality_score_from_skill_delta(0.0) == pytest.approx(0.50)
+    assert _quality_score_from_skill_delta(-0.20) == pytest.approx(0.0)
+    assert _quality_score_from_skill_delta(0.20) == pytest.approx(1.0)
 
 
 def _write_ema_base_config(root: Path) -> None:

@@ -9,6 +9,7 @@ next state for the controller.
 from __future__ import annotations
 
 import json
+import sqlite3
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -1446,6 +1447,103 @@ def _classify_round_outcome(result: dict[str, Any]) -> str:
     return OUTCOME_CONDUCTOR_ERROR
 
 
+def _quality_score_from_skill_delta(delta: float) -> float:
+    return max(0.0, min(1.0, 0.5 + 5.0 * delta))
+
+
+def _latest_model_skill_delta(family_name: str) -> float:
+    from causal_model import load_model
+
+    history = sorted(load_model(family_name).accuracy_history, key=lambda item: item.round_number)
+    if len(history) < 2:
+        return 0.0
+    return float(history[-1].skill - history[-2].skill)
+
+
+def _round_reflexio_facts(
+    controller: "AutoresearchController",
+    research_round: int,
+) -> dict[str, Any]:
+    runtime_root = Path(getattr(controller, "runtime_root", None) or controller.root)
+    facts = {
+        "screening_verdict_counts": _screening_verdict_counts(controller, research_round),
+        "prediction_gaps": _prediction_gaps(runtime_root, research_round),
+    }
+    return {key: value for key, value in facts.items() if value}
+
+
+def _screening_verdict_counts(
+    controller: "AutoresearchController",
+    research_round: int,
+) -> dict[str, int]:
+    paths = getattr(controller, "paths", None)
+    db_path = Path(
+        getattr(paths, "backtest_db_path", None)
+        or (
+            Path(getattr(controller, "runtime_root", None) or controller.root)
+            / f"{controller.family.name}_backtest_runs.db"
+        )
+    )
+    if not db_path.exists():
+        return {}
+    try:
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT verdict, COUNT(*)
+                FROM screenings
+                WHERE round_number <= ?
+                GROUP BY verdict
+                ORDER BY verdict
+                """,
+                (research_round,),
+            ).fetchall()
+    except sqlite3.Error:
+        return {}
+    return {str(verdict): int(count) for verdict, count in rows if verdict and int(count)}
+
+
+def _prediction_gaps(runtime_root: Path, research_round: int) -> list[dict[str, Any]]:
+    gaps: list[dict[str, Any]] = []
+    pattern = "runtime/jobs/*/research/round-*/harvest_verdict*.json"
+    for path in sorted(runtime_root.glob(pattern)):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        payload_round = int(payload.get("round") or _round_number_from_artifact_path(path) or 0)
+        if payload_round > research_round:
+            continue
+        raw_predictions = payload.get("registered_predictions") or payload.get("prediction_results")
+        if not isinstance(raw_predictions, list):
+            continue
+        for item in raw_predictions:
+            if not isinstance(item, dict):
+                continue
+            metric = str(item.get("metric") or "")
+            gap = item.get("magnitude_gap", item.get("gap"))
+            if not metric or gap is None:
+                continue
+            gaps.append(
+                {
+                    "metric": metric,
+                    "magnitude_gap": gap,
+                    "direction_passed": item.get("direction_passed"),
+                }
+            )
+    return gaps[-10:]
+
+
+def _round_number_from_artifact_path(path: Path) -> int | None:
+    for part in path.parts:
+        if part.startswith("round-"):
+            try:
+                return int(part.removeprefix("round-"))
+            except ValueError:
+                return None
+    return None
+
+
 def _round_findings(result: dict[str, Any], outcome: str) -> list[str]:
     raw_findings = result.get("findings")
     if isinstance(raw_findings, list):
@@ -1473,7 +1571,9 @@ def _record_round_quality_and_bridges(
         for k in ("compiled", "needs_code", "stopped", "rejected", "conductor_error")
     }
     dimension_scores.update(_thesis_quality_dimension_scores(thesis_meta))
-    overall_score = 1.0 if outcome in {"compiled", "stopped"} else 0.0
+    skill_delta = _latest_model_skill_delta(controller.family.name)
+    overall_score = _quality_score_from_skill_delta(skill_delta)
+    dimension_scores["skill_delta"] = skill_delta
     artifact_paths = []
     if result.get("generated_config"):
         artifact_paths.append(str(controller.root / result["generated_config"]))
@@ -1493,6 +1593,7 @@ def _record_round_quality_and_bridges(
         "validation_failure_reason": validation_failure_reason,
         "usage": round_usage,
         "quality": quality_event,
+        "round_facts": _round_reflexio_facts(controller, research_round),
     }
     canonical_trace_path = get_event_file()
     reflexio_package = build_reflexio_export_package(

@@ -22,9 +22,11 @@ def build_reflexio_payload(
     quality: dict[str, Any] | None = None,
     usage: dict[str, Any] | None = None,
     trajectory: list[dict[str, Any]] | None = None,
+    round_facts: dict[str, Any] | None = None,
     agent_reflections: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     resolved_trajectory = deepcopy(trajectory or [])
+    resolved_round_facts = deepcopy(round_facts or {})
     return {
         "system": "reflexio",
         "episode": {
@@ -39,11 +41,15 @@ def build_reflexio_payload(
             "reasoning": reasoning,
             "validation_failure_reason": validation_failure_reason,
             "quality": deepcopy(quality or {}),
+            "round_facts": resolved_round_facts,
         },
         "agent_reflections": deepcopy(
             agent_reflections
             if agent_reflections is not None
-            else build_agent_reflections(resolved_trajectory)
+            else build_agent_reflections(
+                resolved_trajectory,
+                round_facts=resolved_round_facts,
+            )
         ),
         "trajectory": resolved_trajectory,
         "feedback_signal": {
@@ -52,6 +58,7 @@ def build_reflexio_payload(
             "validation_failure_reason": validation_failure_reason,
             "scope": "research_agents",
             "quality": deepcopy(quality or {}),
+            "round_facts": resolved_round_facts,
         },
         "memory_key": f"{family}:round-{research_round}:thesis-{thesis_id}",
         "resources": {"usage": deepcopy(usage or {})},
@@ -118,6 +125,11 @@ def build_reflexio_trajectory(canonical_trace_path: str | Path) -> list[dict[str
                     "agent": agent,
                     "tool_name": str(payload.get("tool_name") or payload.get("tool") or ""),
                     "model": str(event.get("model_name") or ""),
+                    "status": str(payload.get("status") or event.get("status") or ""),
+                    "error_type": str(payload.get("error_type") or ""),
+                    "error_code": str(payload.get("error_code") or ""),
+                    "screening_verdict_counts": _screening_verdict_counts(payload),
+                    "prediction_gaps": _prediction_gaps(payload),
                     "content": _trajectory_content(event, payload, trace_path=trace_path),
                 }
             )
@@ -165,3 +177,59 @@ def _trajectory_content(
             sort_keys=True,
         )
     return redact_text(str(event.get("summary") or ""))
+
+
+def _screening_verdict_counts(payload: dict[str, Any]) -> dict[str, int]:
+    raw = _round_fact_value(payload, "screening_verdict_counts")
+    if not isinstance(raw, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for verdict, count in raw.items():
+        try:
+            parsed = int(count)
+        except (TypeError, ValueError):
+            continue
+        if parsed:
+            counts[str(verdict)] = parsed
+    return counts
+
+
+def _prediction_gaps(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = _round_fact_value(payload, "prediction_gaps")
+    if not isinstance(raw, list):
+        raw = _round_fact_value(payload, "prediction_results")
+    if not isinstance(raw, list):
+        return []
+    gaps: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        metric = str(item.get("metric") or "")
+        gap = item.get("magnitude_gap", item.get("gap"))
+        if not metric or gap is None:
+            continue
+        gaps.append(
+            {
+                "metric": metric,
+                "magnitude_gap": gap,
+                "direction_passed": item.get("direction_passed"),
+            }
+        )
+    return gaps
+
+
+def _round_fact_value(payload: dict[str, Any], key: str) -> Any:
+    round_facts = payload.get("round_facts")
+    if isinstance(round_facts, dict) and key in round_facts:
+        return round_facts[key]
+    reflection = payload.get("reflection")
+    if isinstance(reflection, dict):
+        nested = reflection.get("round_facts")
+        if isinstance(nested, dict) and key in nested:
+            return nested[key]
+    feedback = payload.get("feedback_signal")
+    if isinstance(feedback, dict):
+        nested = feedback.get("round_facts")
+        if isinstance(nested, dict) and key in nested:
+            return nested[key]
+    return payload.get(key)
