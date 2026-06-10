@@ -430,3 +430,13 @@ class BacktestVerdict(BaseModel):
     missing_required_diagnostics: list[str] = Field(default_factory=list)
 
     summary: str = ""
+
+
+class HarvestVerdict(BaseModel):
+    """Result of evaluating registered v2 harvest predictions."""
+
+    thesis_id: str
+    status: Literal["supported", "refuted", "inconclusive", "degenerate"]
+    prediction_results: list[dict[str, Any]] = Field(default_factory=list)
+    summary: str = ""
+    lesson: str = ""

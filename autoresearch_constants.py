@@ -130,3 +130,36 @@ def research_engine_max_population_overlap(config: dict) -> float:
     if parsed < 0.0 or parsed > 1.0:
         raise ValueError("research_engine.max_population_overlap must be between 0 and 1")
     return parsed
+
+
+def research_engine_prediction_tolerance_pct(config: dict) -> float:
+    value = _research_engine_block(config).get("prediction_tolerance_pct", 20)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.prediction_tolerance_pct must be a number") from exc
+    if parsed < 0.0:
+        raise ValueError("research_engine.prediction_tolerance_pct must be >= 0")
+    return parsed
+
+
+def research_engine_noise_floor_pct(config: dict) -> float:
+    value = _research_engine_block(config).get("noise_floor_pct", 2)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.noise_floor_pct must be a number") from exc
+    if parsed < 0.0:
+        raise ValueError("research_engine.noise_floor_pct must be >= 0")
+    return parsed
+
+
+def research_engine_min_trades(config: dict) -> int:
+    value = _research_engine_block(config).get("min_trades", 20)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.min_trades must be an integer") from exc
+    if parsed < 1:
+        raise ValueError("research_engine.min_trades must be >= 1")
+    return parsed

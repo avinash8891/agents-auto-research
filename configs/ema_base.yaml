@@ -66,3 +66,6 @@ research_engine:
   min_abs_lift: 0.10
   max_p_value: 0.05
   max_population_overlap: 0.70
+  prediction_tolerance_pct: 20
+  noise_floor_pct: 2
+  min_trades: 20

@@ -46,8 +46,12 @@ from autoresearch_state import (
 )
 from backtest.runtime_config import load_runtime_config
 from backtest_run_db import research_thesis_attempt_id
-from family_research_spec import resolve_research_resolution_context
+from family_research_spec import (
+    proposed_change_is_single_or_coupled,
+    resolve_research_resolution_context,
+)
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
+from persistence_utils import write_json_atomic
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_memory import latest_thesis_details as _latest_thesis_details
 from research_types import ConductorResult, ResearchThesis
@@ -776,6 +780,8 @@ def _on_ready_to_run(
     runtime_root = getattr(controller, "runtime_root", None) or controller.root
     round_root = research_round_root(runtime_root, job_id, research_round)
     config_path = (round_root / "selected_config.json").relative_to(runtime_root).as_posix()
+    _validate_single_proposed_change(controller.family.name, raw_thesis)
+    _write_registered_predictions(round_root, thesis_id, raw_thesis)
     controller.ctx.current_contract = contract
     latest_db = controller.backtest_run_db.latest(1)
     controller.ctx.parent_backtest_run_id = latest_db[0].run_id if latest_db else ""
@@ -790,6 +796,33 @@ def _on_ready_to_run(
         "should_stop": should_stop,
         "reasoning": conductor_result.reasoning,
     }
+
+
+def _validate_single_proposed_change(family_name: str, raw_thesis: dict[str, Any]) -> None:
+    proposed_change = raw_thesis.get("proposed_change")
+    if not isinstance(proposed_change, dict) or not proposed_change:
+        return
+    if not proposed_change_is_single_or_coupled(family_name, proposed_change):
+        keys = ", ".join(sorted(proposed_change))
+        raise ValueError(f"proposed_change must contain exactly one top-level key: {keys}")
+
+
+def _write_registered_predictions(
+    round_root: Path,
+    thesis_id: str,
+    raw_thesis: dict[str, Any],
+) -> None:
+    predictions = raw_thesis.get("predictions")
+    if not predictions:
+        return
+    write_json_atomic(
+        round_root / "registered_predictions.json",
+        {
+            "thesis_id": thesis_id,
+            "registered_at_utc": iso8601_utc_now(),
+            "predictions": predictions,
+        },
+    )
 
 
 def _per_stage_budget_exhausted(stage_1: int, stage_2: int, compile_n: int) -> bool:

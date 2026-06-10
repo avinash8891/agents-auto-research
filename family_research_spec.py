@@ -4,6 +4,15 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+COUPLED_KEYS: dict[str, frozenset[frozenset[str]]] = {
+    "orb": frozenset(
+        {
+            frozenset({"use_volatility_trail", "vol_trail_atr_mult"}),
+            frozenset({"use_volatility_trail", "trail_atr_multiple"}),
+        }
+    )
+}
+
 
 @dataclass(frozen=True)
 class FamilyResearchSpec:
@@ -81,3 +90,13 @@ def validate_family_config_changes(family_name: str, thesis: dict[str, Any]) -> 
     }
     sanitized["config_changes"] = {}
     return sanitized
+
+
+def proposed_change_is_single_or_coupled(
+    family_name: str,
+    proposed_change: dict[str, Any],
+) -> bool:
+    keys = frozenset(proposed_change)
+    if len(keys) == 1:
+        return True
+    return keys in COUPLED_KEYS.get(family_name, frozenset())

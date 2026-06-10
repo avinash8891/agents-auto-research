@@ -27,6 +27,7 @@ from autoresearch_research import (
     _handle_needs_code,
     _handle_round_failure,
     _handle_success,
+    _on_ready_to_run,
     _research_feedback_from_verdict,
     _resolve_conductor_inputs,
     _try_one_validation_attempt,
@@ -788,6 +789,69 @@ def test_run_research_success_persists_round_artifacts_and_next_action(
     assert attempts[0]["validator_status"] == "compiled"
     assert attempts[0]["thesis_details"]["closest_prior_theses_considered"] == ["ema-baseline"]
     assert controller.read_state()["job_usage"]["total_tokens"] == 321
+
+
+def test_ready_to_run_writes_registered_predictions_before_backtest_dispatch(
+    tmp_path: Path,
+) -> None:
+    controller = _real_controller(tmp_path)
+
+    class Contract:
+        contract_id = "contract-001"
+
+    result = _on_ready_to_run(
+        controller,
+        research_round=2,
+        contract=Contract(),
+        raw_thesis={
+            "predictions": [
+                {"metric": "profit_factor", "direction": "increase", "predicted": 2.4},
+                {
+                    "metric": "pnl_weighted_accuracy",
+                    "direction": "increase",
+                    "predicted": 0.65,
+                },
+            ]
+        },
+        thesis_id="thesis-001",
+        conductor_result=ConductorResult(status="ok", reasoning="harvest now"),
+        should_stop=False,
+        job_id=12,
+    )
+
+    registered_path = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-12"
+        / "research"
+        / "round-2"
+        / "registered_predictions.json"
+    )
+    registered = json.loads(registered_path.read_text(encoding="utf-8"))
+    assert result["generated_config"] == "runtime/jobs/job-12/research/round-2/selected_config.json"
+    assert registered["thesis_id"] == "thesis-001"
+    assert registered["predictions"][0]["metric"] == "profit_factor"
+    assert registered["registered_at_utc"].endswith("+00:00")
+
+
+def test_ready_to_run_rejects_undeclared_multi_key_proposed_change(tmp_path: Path) -> None:
+    controller = _real_controller(tmp_path)
+
+    class Contract:
+        contract_id = "contract-001"
+
+    with pytest.raises(ValueError, match="exactly one top-level key"):
+        _on_ready_to_run(
+            controller,
+            research_round=2,
+            contract=Contract(),
+            raw_thesis={"proposed_change": {"gap_filter": True, "gap_pct": 0.01}},
+            thesis_id="thesis-001",
+            conductor_result=ConductorResult(status="ok", reasoning="harvest now"),
+            should_stop=False,
+            job_id=12,
+        )
 
 
 def test_run_research_should_stop_closes_job_with_finished_state(
