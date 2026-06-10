@@ -98,7 +98,7 @@ def generate_signals_for_frame(
         )
 
     # EMA
-    ema = pd.Series(close).ewm(span=ema_length, adjust=False).mean().values
+    ema = pd.Series(close).ewm(span=ema_length, adjust=False).mean().to_numpy(copy=True)
     if ema_length > 1:
         ema[: ema_length - 1] = np.nan
 

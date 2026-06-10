@@ -630,11 +630,12 @@ class AutoresearchController:
             raise ValueError("AutoresearchController requires an explicit strategy family")
         self.family = family
         self._clear_runtime_paths()
-        self.backtest_run_db = BacktestRunDB(
-            self.runtime_root / f"{self.family.name}_backtest_runs.db"
-        )
+        backtest_run_db_path = self.runtime_root / f"{self.family.name}_backtest_runs.db"
+        self.backtest_run_db = BacktestRunDB(backtest_run_db_path)
         self.baseline_tracker = BaselineTracker(
-            self.runtime_root / f"{self.family.name}_baseline_checkpoints.json"
+            self.runtime_root / f"{self.family.name}_baseline_checkpoints.json",
+            db_path=backtest_run_db_path,
+            strategy_family=self.family.name,
         )
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()
