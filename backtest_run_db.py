@@ -99,6 +99,63 @@ def _load_metric_json(raw: Any) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _coerce_created_at_utc(created_at_utc: Any, timestamp: Any) -> str:
+    return (
+        coerce_timestamp_to_iso8601_utc(created_at_utc)
+        or coerce_timestamp_to_iso8601_utc(timestamp)
+        or (
+            coerce_timestamp_to_iso8601_utc(int(timestamp))
+            if isinstance(timestamp, str) and timestamp.isdigit()
+            else ""
+        )
+    )
+
+
+def _canonical_metrics_for_record(
+    record: BacktestRunRecord, primary_metric_name: str
+) -> dict[str, Any]:
+    metrics = dict(record.train_metrics)
+    metrics.update(record.validation_metrics)
+    metrics.update(record.metrics)
+    primary_metric_value = record.primary_metric_value
+    if primary_metric_value is None:
+        primary_metric_value = _metric_value_for_record(record, primary_metric_name)
+    if primary_metric_name and primary_metric_value is not None:
+        metrics.setdefault(primary_metric_name, primary_metric_value)
+    return metrics
+
+
+def _canonical_trade_analysis_for_record(record: BacktestRunRecord) -> dict[str, Any]:
+    if record.trade_analysis:
+        return dict(record.trade_analysis)
+    asi = getattr(record, "_asi_export", None)
+    if isinstance(asi, dict):
+        trade_analysis = asi.get("trade_analysis")
+        if isinstance(trade_analysis, dict):
+            return dict(trade_analysis)
+    return {}
+
+
+def _canonical_primary_metric_value(record: BacktestRunRecord, metric_name: str) -> float | None:
+    value = record.primary_metric_value
+    if value is None:
+        value = _metric_value_for_record(record, metric_name)
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _strategy_family_from_path(path: Path | None) -> str:
+    if path is None:
+        return ""
+    suffix = "_backtest_runs"
+    stem = path.stem
+    if stem.endswith(suffix):
+        return stem[: -len(suffix)]
+    return ""
+
+
 @dataclass
 class BacktestRunRecord:
     """One complete backtest-run record."""
@@ -138,6 +195,11 @@ class BacktestRunRecord:
     research_round_id: str = ""
     research_round_number: int = -1
     is_baseline: bool = False
+    created_at_utc: str = ""
+    primary_metric_name: str = ""
+    primary_metric_value: float | None = None
+    metrics: dict[str, Any] = field(default_factory=dict)
+    trade_analysis: dict[str, Any] = field(default_factory=dict)
 
 
 class BacktestRunDB:
@@ -308,11 +370,7 @@ class BacktestRunDB:
                 SET decision_status = CASE WHEN accepted = 1 THEN 'keep' ELSE 'discard' END
                 WHERE decision_status = ''
             """)
-            conn.execute(f"""
-                UPDATE {BACKTEST_RUNS_TABLE}
-                SET created_at_utc = timestamp
-                WHERE created_at_utc = ''
-            """)
+            self._backfill_backtest_run_created_at_utc(conn)
             conn.execute(f"""
                 UPDATE {BACKTEST_RUNS_TABLE}
                 SET strategy_family = family
@@ -376,6 +434,21 @@ class BacktestRunDB:
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
+    def _backfill_backtest_run_created_at_utc(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute(f"""
+            SELECT rowid, timestamp, created_at_utc
+            FROM {BACKTEST_RUNS_TABLE}
+            WHERE created_at_utc IS NULL OR created_at_utc = ''
+            """).fetchall()
+        for row in rows:
+            created_at_utc = _coerce_created_at_utc(row["created_at_utc"], row["timestamp"])
+            if not created_at_utc:
+                continue
+            conn.execute(
+                f"UPDATE {BACKTEST_RUNS_TABLE} SET created_at_utc = ? WHERE rowid = ?",
+                (created_at_utc, row["rowid"]),
+            )
+
     def _backfill_research_thesis_attempt_ids(self, conn: sqlite3.Connection) -> None:
         rows = conn.execute("""
             SELECT rowid, research_round_id, attempt_number, thesis_attempt_id
@@ -414,8 +487,7 @@ class BacktestRunDB:
             conn.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
         except Exception as exc:
             raise RuntimeError(
-                f"Failed to rename column {table}.{old} to {new}; "
-                f"schema migration is incomplete"
+                f"Failed to rename column {table}.{old} to {new}; schema migration is incomplete"
             ) from exc
 
     def session_meta(self) -> dict[str, Any]:
@@ -445,6 +517,12 @@ class BacktestRunDB:
 
     def primary_metric_name(self) -> str:
         return self.session_meta().get("metricName", "profit_factor")
+
+    def _primary_metric_name_from_conn(self, conn: sqlite3.Connection) -> str:
+        row = conn.execute("SELECT metric_name FROM session_meta WHERE id = 1").fetchone()
+        if row and row["metric_name"]:
+            return row["metric_name"]
+        return "profit_factor"
 
     def best_direction(self) -> str:
         return self.session_meta().get("bestDirection", "higher")
@@ -521,6 +599,7 @@ class BacktestRunDB:
             for key, value in trade_analysis.items():
                 if key not in merged_metrics and isinstance(value, (int, float)):
                     merged_metrics[key] = value
+        timestamp = _iso8601_utc_now()
         self.add(
             BacktestRunRecord(
                 run_id=run_id,
@@ -540,16 +619,29 @@ class BacktestRunDB:
                 rejection_reason="",
                 verdict_status=verdict_status,
                 verdict_summary=verdict_summary,
-                timestamp=_iso8601_utc_now(),
+                timestamp=timestamp,
                 family=family,
                 job=job_id,
                 research_round_id=research_round_id,
                 research_round_number=research_round_number,
                 is_baseline=is_baseline,
+                created_at_utc=timestamp,
+                primary_metric_name=primary_metric_name,
+                primary_metric_value=primary_metric_value,
+                metrics=merged_metrics,
+                trade_analysis=trade_analysis,
             )
         )
 
     def _write_record(self, conn: sqlite3.Connection, record: BacktestRunRecord) -> None:
+        primary_metric_name = record.primary_metric_name or self._primary_metric_name_from_conn(
+            conn
+        )
+        primary_metric_value = _canonical_primary_metric_value(record, primary_metric_name)
+        metrics = _canonical_metrics_for_record(record, primary_metric_name)
+        trade_analysis = _canonical_trade_analysis_for_record(record)
+        created_at_utc = _coerce_created_at_utc(record.created_at_utc, record.timestamp)
+        timestamp = coerce_timestamp_to_iso8601_utc(record.timestamp) or created_at_utc
         conn.execute(
             """
             INSERT OR REPLACE INTO backtest_runs (
@@ -588,7 +680,7 @@ class BacktestRunDB:
                 record.verdict_status,
                 record.verdict_summary,
                 record.parent_backtest_run_id,
-                record.timestamp,
+                timestamp,
                 record.family,
                 record.hypothesis,
                 record.mechanism,
@@ -597,13 +689,13 @@ class BacktestRunDB:
                 json_dumps_strict(getattr(record, "_asi_export", {})),
                 getattr(record, "_description_export", ""),
                 "keep" if record.accepted else "discard",
-                record.timestamp,
+                created_at_utc,
                 record.family,
                 record.job,
-                "",
-                None,
-                "{}",
-                "{}",
+                primary_metric_name,
+                primary_metric_value,
+                json_dumps_strict(metrics),
+                json_dumps_strict(trade_analysis),
                 "",
             ),
         )
@@ -969,7 +1061,8 @@ class BacktestRunDB:
                        trades_file, strategy_events_file, diagnostics_file,
                        strategy_diagnostics_json, accepted, rejection_reason, verdict_status,
                        verdict_summary, parent_backtest_run_id, timestamp, family, hypothesis,
-                       mechanism, job, usage_json, asi_json, description
+                       mechanism, job, usage_json, asi_json, description, created_at_utc,
+                       primary_metric_name, primary_metric_value, metrics_json, trade_analysis_json
                 FROM backtest_runs
                 """).fetchall()
         self._records = []
@@ -1008,6 +1101,11 @@ class BacktestRunDB:
                 research_round_id=row["research_round_id"],
                 research_round_number=row["research_round_number"],
                 is_baseline=bool(row["is_baseline"]),
+                created_at_utc=_coerce_created_at_utc(row["created_at_utc"], row["timestamp"]),
+                primary_metric_name=row["primary_metric_name"],
+                primary_metric_value=row["primary_metric_value"],
+                metrics=_load_metric_json(row["metrics_json"]),
+                trade_analysis=_load_json_object(row["trade_analysis_json"]),
             )
             setattr(record, "_asi_export", _load_json_object(row["asi_json"]))
             setattr(record, "_description_export", row["description"])
@@ -1174,9 +1272,16 @@ class BaselineCheckpoint:
 class BaselineTracker:
     """Track baseline metrics across rounds to detect environment drift."""
 
-    def __init__(self, path: Path, *, db: "BacktestRunDB | None" = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        db: "BacktestRunDB | None" = None,
+        strategy_family: str = "",
+    ) -> None:
         self.path = path
         self.db = db
+        self.strategy_family = strategy_family
         self._checkpoints: list[BaselineCheckpoint] | None = None
 
     def _load(self) -> list[BaselineCheckpoint]:
@@ -1204,51 +1309,56 @@ class BaselineTracker:
         checkpoints = self._load()
         write_text_atomic(self.path, json_dumps_strict([asdict(c) for c in checkpoints]) + "\n")
 
+    def _checkpoint_id(self, checkpoint: BaselineCheckpoint) -> str:
+        family = self.strategy_family or _strategy_family_from_path(
+            self.db.path if self.db is not None else None
+        )
+        return _config_hash(
+            {
+                "family": family,
+                "code_commit": checkpoint.code_commit,
+                "data_hash": checkpoint.data_hash,
+                "config_hash": checkpoint.config_hash,
+                "timestamp": checkpoint.timestamp,
+                "round_number": checkpoint.round_number,
+            }
+        )
+
     def record(self, checkpoint: BaselineCheckpoint) -> None:
+        if self.db is not None:
+            self._write_to_sqlite(checkpoint)
         checkpoints = self._load()
         checkpoints.append(checkpoint)
         self._checkpoints = checkpoints
         self._save()
-        if self.db is not None:
-            self._write_to_sqlite(checkpoint)
 
     def _write_to_sqlite(self, checkpoint: BaselineCheckpoint) -> None:
-        import hashlib
-
-        raw = (
-            f"{checkpoint.code_commit}:{checkpoint.data_hash}:"
-            f"{checkpoint.config_hash}:{checkpoint.timestamp}"
-        )
-        checkpoint_id = hashlib.sha256(raw.encode()).hexdigest()[:12]
-        strategy_family = ""
-        try:
-            with self.db._connect() as conn:
-                row = conn.execute("SELECT name FROM session_meta WHERE id = 1").fetchone()
-                if row:
-                    strategy_family = row["name"]
-        except Exception:
-            pass
-        try:
-            with self.db._connect() as conn:
-                conn.execute(
-                    """INSERT OR REPLACE INTO baseline_checkpoints
-                       (checkpoint_id, strategy_family, code_commit, data_hash,
-                        config_hash, metrics_json, created_at_utc, round_number)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        checkpoint_id,
-                        strategy_family,
-                        checkpoint.code_commit,
-                        checkpoint.data_hash,
-                        checkpoint.config_hash,
-                        json_dumps_strict(checkpoint.metrics),
-                        checkpoint.timestamp or _iso8601_utc_now(),
-                        checkpoint.round_number,
-                    ),
-                )
-                conn.commit()
-        except Exception as exc:
-            log.warning("baseline_checkpoints sqlite write failed: %s", exc)
+        if self.db is None:
+            return
+        strategy_family = self.strategy_family or _strategy_family_from_path(self.db.path)
+        if not strategy_family:
+            strategy_family = self.db.session_meta().get("name", "")
+        if not strategy_family:
+            raise ValueError("BaselineTracker requires strategy_family when db is configured")
+        created_at_utc = coerce_timestamp_to_iso8601_utc(checkpoint.timestamp) or _iso8601_utc_now()
+        with self.db._connect() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO baseline_checkpoints
+                   (checkpoint_id, strategy_family, code_commit, data_hash,
+                    config_hash, metrics_json, created_at_utc, round_number)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    self._checkpoint_id(checkpoint),
+                    strategy_family,
+                    checkpoint.code_commit,
+                    checkpoint.data_hash,
+                    checkpoint.config_hash,
+                    json_dumps_strict(checkpoint.metrics),
+                    created_at_utc,
+                    checkpoint.round_number,
+                ),
+            )
+            conn.commit()
 
     def latest(self) -> BaselineCheckpoint | None:
         checkpoints = self._load()
@@ -1384,6 +1494,9 @@ def _entry_to_record(entry: dict[str, Any]) -> BacktestRunRecord | None:
     for k, v in trade_analysis.items():
         if k not in metrics and isinstance(v, (int, float)):
             metrics[k] = v
+    primary_metric_value = entry.get("metric")
+    if primary_metric_value is None:
+        primary_metric_value = metrics.get(primary_metric_name)
     record = BacktestRunRecord(
         run_id=entry.get("run_id", ""),
         thesis_id=asi.get("thesis_id") or Path(asi.get("config", "")).stem,
@@ -1412,6 +1525,13 @@ def _entry_to_record(entry: dict[str, Any]) -> BacktestRunRecord | None:
         research_round_id=entry.get("research_round_id", ""),
         research_round_number=int(entry.get("research_round_number", -1) or -1),
         is_baseline=bool(entry.get("is_baseline", False)),
+        created_at_utc=coerce_timestamp_to_iso8601_utc(entry.get("created_at_utc"))
+        or coerce_timestamp_to_iso8601_utc(entry.get("timestamp"))
+        or _iso8601_utc_now(),
+        primary_metric_name=str(primary_metric_name),
+        primary_metric_value=_coerce_metric_float(primary_metric_value),
+        metrics=metrics,
+        trade_analysis=trade_analysis if isinstance(trade_analysis, dict) else {},
     )
     setattr(record, "_asi_export", asi)
     setattr(record, "_description_export", entry.get("description", ""))
@@ -1421,18 +1541,16 @@ def _entry_to_record(entry: dict[str, Any]) -> BacktestRunRecord | None:
 def _record_to_entry(
     record: BacktestRunRecord, run: int, primary_metric_name: str
 ) -> dict[str, Any]:
-    primary_metric_value = record.validation_metrics.get(primary_metric_name)
-    if primary_metric_value is None:
-        primary_metric_value = record.train_metrics.get(primary_metric_name)
-    metrics = dict(record.train_metrics)
-    metrics.update(record.validation_metrics)
-    if primary_metric_name not in metrics and primary_metric_value is not None:
-        metrics[primary_metric_name] = primary_metric_value
+    primary_metric_name = record.primary_metric_name or primary_metric_name
+    primary_metric_value = _canonical_primary_metric_value(record, primary_metric_name)
+    metrics = _canonical_metrics_for_record(record, primary_metric_name)
     asi = getattr(record, "_asi_export", None) or {
         "config": record.config_path,
         "thesis_id": record.thesis_id,
-        "trade_analysis": {},
+        "trade_analysis": _canonical_trade_analysis_for_record(record),
     }
+    if isinstance(asi, dict):
+        asi.setdefault("trade_analysis", _canonical_trade_analysis_for_record(record))
     return {
         "type": "backtest_run",
         "run": run,
@@ -1446,6 +1564,7 @@ def _record_to_entry(
         "metric": _coerce_metric_float(primary_metric_value),
         "primary_metric_name": primary_metric_name,
         "metrics": metrics,
+        "created_at_utc": record.created_at_utc or record.timestamp,
         "status": "keep" if record.accepted else "discard",
         "description": getattr(
             record, "_description_export", f"strict-native loop: {Path(record.config_path).stem}"

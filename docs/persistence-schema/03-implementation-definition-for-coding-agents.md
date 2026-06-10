@@ -69,12 +69,7 @@ Implement these tables only:
 ## Required write behavior for research rounds
 
 When a research round starts:
-1. create a `research_rounds` row
-
-> **Implementation note (2026-06-10):** The round row is written at first
-> outcome (rejected attempt or round finalize), not at round start. Rounds
-> that produce zero logged attempts before a crash leave no row. This is
-> accepted — the JSON state file records the round-in-progress.
+1. create a `research_rounds` row with `outcome = 'in_progress'`
 2. if conductor proposes a thesis that is rejected, persist a
    `research_thesis_attempts` row for that retry with `validator_status`
    recording the rejected attempt outcome

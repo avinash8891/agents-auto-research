@@ -12,6 +12,8 @@ import sqlite3
 import stat
 from pathlib import Path
 
+import pytest
+
 from backtest_run_db import (
     BacktestRunDB,
     BacktestRunRecord,
@@ -250,6 +252,63 @@ def test_legacy_int_db_file_loads_and_coerces_to_iso(tmp_path: Path) -> None:
     assert out[0].timestamp == "2024-01-01T00:00:00+00:00"
 
 
+def test_legacy_timestamp_backfills_created_at_utc_column(tmp_path: Path) -> None:
+    db_path = tmp_path / "backtest_runs.db"
+    BacktestRunDB(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM backtest_runs")
+        conn.execute(
+            """
+            INSERT INTO backtest_runs (
+                run_id, thesis_id, config_path, runtime_config_json, code_commit,
+                data_hash, train_metrics_json, validation_metrics_json, trade_count,
+                trades_file, strategy_events_file, diagnostics_file, strategy_diagnostics_json,
+                accepted, rejection_reason, verdict_status, verdict_summary, parent_backtest_run_id,
+                timestamp, family, hypothesis, mechanism, job, usage_json, asi_json, description,
+                created_at_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy-created-at",
+                "t",
+                "configs/ema_base.yaml",
+                "{}",
+                "abc1234",
+                "d",
+                "{}",
+                "{}",
+                0,
+                "",
+                "",
+                "",
+                "{}",
+                0,
+                "",
+                "none",
+                "",
+                "",
+                1704067200000,
+                "ema",
+                "",
+                "",
+                0,
+                "{}",
+                "{}",
+                "",
+                "",
+            ),
+        )
+        conn.commit()
+
+    BacktestRunDB(db_path)
+    with sqlite3.connect(db_path) as conn:
+        created_at_utc = conn.execute(
+            "SELECT created_at_utc FROM backtest_runs WHERE run_id = 'legacy-created-at'"
+        ).fetchone()[0]
+
+    assert created_at_utc == "2024-01-01T00:00:00+00:00"
+
+
 def test_latest_orders_correctly_across_legacy_and_new(tmp_path: Path) -> None:
     """A DB containing one legacy int row and one new ISO row must order
     correctly when latest() is called."""
@@ -332,6 +391,66 @@ def test_baseline_checkpoint_new_record_round_trip(tmp_path: Path) -> None:
     out = tracker.latest()
     assert out is not None
     assert out.timestamp == "2026-04-29T12:00:00+00:00"
+
+
+def test_baseline_checkpoint_records_strategy_family_in_sqlite(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    tracker = BaselineTracker(
+        tmp_path / "baseline.json",
+        db=db,
+        strategy_family="ema",
+    )
+
+    tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="d",
+            config_hash="c",
+            metrics={"profit_factor": 1.4},
+            timestamp="2026-04-29T12:00:00+00:00",
+            round_number=3,
+        )
+    )
+
+    with sqlite3.connect(db.path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("""
+            SELECT strategy_family, code_commit, metrics_json, created_at_utc, round_number
+            FROM baseline_checkpoints
+            """).fetchone()
+
+    assert row["strategy_family"] == "ema"
+    assert row["code_commit"] == "abc1234"
+    assert json.loads(row["metrics_json"]) == {"profit_factor": 1.4}
+    assert row["created_at_utc"] == "2026-04-29T12:00:00+00:00"
+    assert row["round_number"] == 3
+
+
+def test_baseline_checkpoint_raises_when_configured_sqlite_write_fails(
+    tmp_path: Path,
+) -> None:
+    db_dir = tmp_path / "not-a-db"
+    db_dir.mkdir()
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.path = db_dir
+    tracker = BaselineTracker(
+        tmp_path / "baseline.json",
+        db=db,
+        strategy_family="ema",
+    )
+
+    with pytest.raises(sqlite3.Error):
+        tracker.record(
+            BaselineCheckpoint(
+                code_commit="abc1234",
+                data_hash="d",
+                config_hash="c",
+                metrics={"profit_factor": 1.4},
+                timestamp="2026-04-29T12:00:00+00:00",
+            )
+        )
+
+    assert not (tmp_path / "baseline.json").exists()
 
 
 def test_baseline_checkpoint_legacy_int_loads(tmp_path: Path) -> None:
