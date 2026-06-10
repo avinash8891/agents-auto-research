@@ -8,10 +8,16 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_logging import get_logger
+from autoresearch_runtime_paths import iter_family_backtest_db_paths, resolve_runtime_root
 from research_paths import _ROOT
 
 _PALACE_DIR = str(_ROOT / "palace")
 log = get_logger(__name__)
+
+
+def _local_findings_log() -> Path:
+    runtime_root = resolve_runtime_root(_ROOT)
+    return runtime_root / "research_findings.jsonl"
 
 
 def _resolve_palace_dir() -> str:
@@ -169,7 +175,8 @@ def save_research_finding(
         content=content,
     )
     if not result.get("success"):
-        findings_log = _ROOT / "research_findings.jsonl"
+        findings_log = _local_findings_log()
+        findings_log.parent.mkdir(parents=True, exist_ok=True)
         entry = {
             "finding": finding,
             "type": finding_type,
@@ -207,7 +214,7 @@ def _local_research_findings(
     finding_type: str = "",
     n_results: int = 10,
 ) -> list[dict]:
-    findings_log = _ROOT / "research_findings.jsonl"
+    findings_log = _local_findings_log()
     if not findings_log.exists():
         return []
     query_terms = [term for term in query.lower().split() if term]
@@ -259,16 +266,14 @@ def search_research_findings(
         room=room,
         n_results=n_results,
     )
-    if palace_results and not (len(palace_results) == 1 and "error" in palace_results[0]):
-        return palace_results
     local_results = _local_research_findings(
         query=query,
         finding_type=finding_type,
         n_results=n_results,
     )
-    if local_results:
-        return local_results
-    return palace_results
+    if palace_results and not (len(palace_results) == 1 and "error" in palace_results[0]):
+        return (palace_results + local_results)[:n_results]
+    return local_results or palace_results
 
 
 _PAST_THESES_DEFAULT_LIMIT = 25
@@ -384,10 +389,10 @@ def _attempt_detail(entry: dict[str, Any]) -> dict[str, Any]:
 def _iter_thesis_attempts(
     root: Path, *, job_id: int | None = None, thesis_id: str | None = None
 ) -> list[dict[str, Any]]:
-    from backtest_run_db import BacktestRunDB, resolve_db_paths
+    from backtest_run_db import BacktestRunDB
 
     entries: list[dict[str, Any]] = []
-    for db_path in resolve_db_paths(root=root):
+    for db_path in _iter_backtest_db_paths(root):
         db = BacktestRunDB(db_path)
         entries.extend(db.list_research_thesis_attempts(job_id=job_id, thesis_id=thesis_id))
     # Per-DB rows arrive sorted, but concatenating across multiple family DBs
@@ -536,11 +541,10 @@ def _iter_round_records(
         INVALID_RESULT_VERDICTS,
         BacktestRunDB,
         is_metric_rankable_backtest_run,
-        resolve_db_paths,
     )
 
     records: list[dict[str, Any]] = []
-    for db_path in resolve_db_paths(family=family, root=root):
+    for db_path in _iter_backtest_db_paths(root, family=family):
         db = BacktestRunDB(db_path)
         metric_name = db.primary_metric_name()
         direction = db.best_direction()
@@ -566,6 +570,10 @@ def _iter_round_records(
     return records
 
 
+def _iter_backtest_db_paths(root: Path, *, family: str | None = None) -> list[Path]:
+    return iter_family_backtest_db_paths(root, family=family)
+
+
 def _round_index_entry(item: dict[str, Any]) -> dict[str, Any]:
     record = item["record"]
     metrics = dict(getattr(record, "train_metrics", {}) or {})
@@ -583,7 +591,9 @@ def _round_index_entry(item: dict[str, Any]) -> dict[str, Any]:
         "profit_factor": metrics.get("profit_factor"),
         "max_drawdown": metrics.get("max_drawdown"),
         "config_path": getattr(record, "config_path", ""),
-        "config_change_keys": sorted((getattr(record, "runtime_config", {}) or {}).keys()),
+        "config_change_keys": sorted(
+            (dict(getattr(record, "_asi_export", {}) or {}).get("config_changes") or {}).keys()
+        ),
         "verdict_status": getattr(record, "verdict_status", ""),
         "verdict_summary": _short_text(getattr(record, "verdict_summary", ""), 180),
         "timestamp": getattr(record, "timestamp", ""),

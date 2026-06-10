@@ -49,7 +49,7 @@ The README contains only pre-commit setup. The system description, entry points,
 | Status | ID | Category | File:Line | Severity | Effort | Description | Recommendation |
 |--------|----|----------|-----------|----------|--------|-------------|----------------|
 | 🔴 TODO | F001 | Dep & config debt | `pyproject.toml` (py-modules list) | High | S | `autoresearch_orchestration` is on disk and imported by `autoresearch_controller.py` but absent from `py-modules`. Verified: not in the list. Package installs outside editable mode will silently fail at import time. → **FIXED** | Add `"autoresearch_orchestration"` to the `py-modules` list in `pyproject.toml`. |
-| 🔴 TODO | F002 | Test debt | `pyproject.toml:fail_under = 70` | High | M | Coverage gate is 70%; project rule (CLAUDE.md) requires 80%. The comment says "Will ratchet to 80% once integration test fixtures land in PR 5" — PR 5 shipped long ago. Verified: `fail_under = 70` still in pyproject.toml. → **FIXED** | Raise `fail_under` to 80. Fix F003 first. |
+| 🔴 TODO | F002 | Test debt | `pyproject.toml:fail_under = 45` | High | M | Coverage gate is 45%; project rule (CLAUDE.md) requires 80%. Deliberately lowered to 45 in commit 65f8590 to unblock CI while coverage gaps remain. The comment says "Will ratchet to 80% once integration test fixtures land in PR 5" — PR 5 shipped long ago. | Raise `fail_under` to 80. Fix F003 first (research_conductor.py at 61%). |
 | 🔴 TODO | F003 | Test debt | `research_conductor.py:41–42,66,72,84,93,132–196,226,228–237,259–274,311–386` | High | M | `research_conductor.py` is at **61%** — verified by running `python3 -m coverage run -m pytest`. Below the project's own 70% gate. Untested: `_run_coroutine_sync` threading path, agent tool injection block (lines 132–196), result-parsing / validation branches (lines 311–386). → **FIXED** | Add unit tests with mocked conductor. Start with threading fallback and `should_stop` / `validation_failed` branches. |
 | 🔴 TODO | F004 | Architectural decay | `backtest_run_db.py:537–539` | High | M | `BacktestRunDB._load()` returns `self._records` if not None without re-querying sqlite. Verified at line 538: `if self._records is not None: return self._records`. Any external write (VPS run, migration) makes the cache serve stale data for the process lifetime. → **FIXED** | Add a `reload()` method clearing `self._records = None`. Call it in `read_results()` / `all()` for cross-process callers, or add a runtime assertion enforcing single-process use. |
 | 🟡 PARTIAL | F005 | Consistency rot | `autoresearch_state.py:20` | Medium | S | `backtest_run_db.py` now imports `utc_now_iso8601` from `persistence_utils` ✅ — that duplicate is gone. But `autoresearch_state.py:20` still defines `iso8601_utc_now()` and `autoresearch_orchestration.py:7` still imports from there. Two of three duplicates remain. → **FIXED** | Delete `iso8601_utc_now` from `autoresearch_state.py`. Update `autoresearch_orchestration.py` to import from `persistence_utils`. |
@@ -72,15 +72,7 @@ The README contains only pre-commit setup. The system description, entry points,
 Added to both `py-modules` list and `[tool.coverage.run] source`. Module is now visible to packaging tools and measured by coverage.
 
 ### 2. F002 — Raise coverage gate to 80%
-The promise was made in the comment; the work to get there is already partly done (84% total across tracked modules).
-
-```diff
-# pyproject.toml
--fail_under = 70
-+fail_under = 80
-```
-
-Fix F003 first: `research_conductor.py` at 61% is what's blocking this.
+The gate is currently 45% (`fail_under = 45`), deliberately lowered in commit 65f8590 to unblock CI. Project rule requires 80%. Fix F003 first: `research_conductor.py` at 61% is what's blocking this.
 
 ### 3. F003 — Cover `research_conductor.py` critical paths
 Untested lines confirmed: 41–42, 66, 72, 84, 93, 132–196, 226, 228–237, 259–274, 311–386.
@@ -115,7 +107,7 @@ The threading fallback (testable by patching `asyncio.get_running_loop`) and `sh
 | 🔴 TODO | F016 | Consistency rot | `agent_infra.py:25–39`, `research_paths.py:9–23` | Medium | S | `_OAUTH_PROXY_PORT = 10531`, `_OAUTH_PROXY_URL`, and `_ensure_oauth_proxy()` defined independently in both files. Verified: both define port 10531 and the probe loop. A port change requires two synchronized edits. → **FIXED** | Consolidate into `agent_infra.py`. Have `research_paths.py` import from there. |
 | ✅ STALE | F017 | Consistency rot | `autoresearch_planning.py` | Low | S | Local `_write_text_atomic` removed by simplify pass. `autoresearch_planning.py` now imports `from persistence_utils import write_text_atomic as _write_text_atomic`. Fixed. | — |
 | 🔴 TODO | F018 | Architectural decay | `compiler_pipeline.py:9,31` | Low | S | `compiler_pipeline.py` re-exports `_get_orb_defaults` in `__all__` at line 31. Verified: `"_get_orb_defaults"` still in `__all__`. ORB internals leaking through the compiler namespace. → **FIXED** | Remove `_get_orb_defaults` from `compiler_pipeline.__all__`. |
-| 🔴 TODO | F019 | Dep & config debt | `backtest/runner.py:32` | Low | S | `--output-dir` defaults to `"/tmp"`. Verified at line 32: `default="/tmp"`. On VPS with tmpfs `/tmp`, large backtests could exhaust capacity. → **FIXED** | Change default to `"."` or read from `AUTORESEARCH_OUTPUT_DIR` env var. |
+| 🔴 TODO | F019 | Dep & config debt | `backtest/runner.py:32` | Low | S | `--output-dir` defaults to `"/tmp"`. Verified at line 32: `default="/tmp"`. On VPS with tmpfs `/tmp`, large backtests could exhaust capacity. | Change default to `"."` or read from `AUTORESEARCH_OUTPUT_DIR` env var. |
 | 🔴 TODO | F020 | Performance & resource hygiene | `trace_sdk.py:415` | Low | M | `_initialize_tracing()` called at module level at line 415. Verified: no `PYTEST_CURRENT_TEST` guard. Mutates global OTel state for all 445 tests. → **FIXED** | Add `if os.getenv("PYTEST_CURRENT_TEST"): return` guard inside `_initialize_tracing()`. |
 
 ---

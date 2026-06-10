@@ -1,12 +1,9 @@
-"""Tests for Stage 1 sub-section reorganization + rejection_code namespacing.
+"""Tests for Stage 1 rejection_code namespacing.
 
-Stage 1 is split into process, behavioral, and mechanical passes:
-  _validate_process              — required-tool/process checks
-  _run_behavioral_pass           — pattern-of-reasoning and duplicate checks
-  _collect_mechanical_failures   — schema, config, evidence, and artifact checks
-
-Each helper raises ThesisValidationError with rejection_code prefixed by its
-section name (`structural_*`, `thesis_quality_*`, `config_validity_*`).
+The live validator routes all Stage 1 checks through validate_research_thesis.
+Rejection codes stay prefixed by rule family (`structural_*`,
+`thesis_quality_*`, `config_validity_*`) even though private compatibility
+entry points no longer exist.
 """
 
 from __future__ import annotations

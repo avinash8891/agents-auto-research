@@ -15,6 +15,7 @@ from backtest.filters import (
 from backtest.resample import build_timeframe_frame
 from metrics import compute_metrics, empty_metrics
 from strategies.base import BaseStrategy
+from strategies.contract import validate_backtest_runtime_config
 from strategies.ema.contract import compile_ema_contract, map_ema_config_changes_to_contract
 from strategies.ema.exits import simulate_trades
 from strategies.ema.prompt import DESCRIPTION_FOR_RESEARCH
@@ -36,21 +37,15 @@ def _log_filter_rejections(
     reason: str,
 ) -> None:
     killed = before_mask & ~after_mask
-    extras = _standard_event_extras(frame, signals)
-    original_entry_prices = np.asarray(entry_prices, dtype=float)
-    original_stop_prices = np.asarray(stop_prices, dtype=float)
-    stop_distance_pct = np.full(len(frame), np.nan, dtype=np.float64)
-    valid_prices = (
-        np.isfinite(original_entry_prices)
-        & np.isfinite(original_stop_prices)
-        & (original_entry_prices > 0)
-    )
-    stop_distance_pct[valid_prices] = (
-        np.abs(original_entry_prices[valid_prices] - original_stop_prices[valid_prices])
-        / original_entry_prices[valid_prices]
-        * 100.0
-    )
-    extras["stop_distance_pct"] = stop_distance_pct
+    extras_signals = signals
+    if killed.any():
+        from dataclasses import replace
+
+        extras_signals = replace(
+            signals,
+            entry_price=pd.Series(entry_prices, index=frame.index),
+            stop_price=pd.Series(stop_prices, index=frame.index),
+        )
     event_logger.record_events(
         timestamps=frame.index,
         mask=killed,
@@ -60,7 +55,7 @@ def _log_filter_rejections(
         reason=reason,
         entry_prices=entry_prices,
         stop_prices=stop_prices,
-        extras=extras,
+        extras=_standard_event_extras(frame, extras_signals),
     )
 
 
@@ -159,6 +154,7 @@ def _standard_event_extras(frame: pd.DataFrame, signals) -> dict[str, np.ndarray
 def run_backtest(config: dict) -> dict:
     from strategies.ema.signals import generate_signals_for_frame
 
+    config = validate_backtest_runtime_config("ema", dict(config))
     event_logger = StrategyEventLogger()
 
     batch = load_universe_data(config)

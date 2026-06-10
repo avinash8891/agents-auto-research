@@ -55,13 +55,18 @@ def evaluate_effect(
         # - For max_drawdown: worse = bigger number
         # - For profit_factor: worse = smaller number
         # Use threshold as percent tolerance.
-        # Convention: drawdown is stored as a positive fraction (0.22 = 22%).
+        # Convention: drawdown is stored as a positive fraction (0.22 = 22%)
         pct = threshold if threshold else 0
-        if effect.metric in LOWER_IS_BETTER:
+        if _lower_is_better_metric(effect.metric):
             return c <= b * (1 + pct / 100)
         return c >= b * (1 - pct / 100)
 
     return False  # unknown direction
+
+
+def _lower_is_better_metric(metric: str) -> bool:
+    normalized = metric.lower()
+    return any(token in normalized for token in ("drawdown", "loss", "risk", "cost"))
 
 
 def evaluate_disqualifier(

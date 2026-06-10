@@ -1296,17 +1296,19 @@ git commit -m "feat: key token usage by agent:variant_id for per-variant cost tr
 
 ## Self-Review
 
+> **Status:** Deferred — no implementation has landed. Task checkboxes are all unchecked.
+
 **Spec coverage:**
-- [x] Prompt variant registry with lookup and hashing — Task 1
-- [x] Inline prompts extracted and registered as defaults — Task 2
-- [x] Per-agent prompt variants threaded through conductor + subagents — Task 3
-- [x] `operationalizer` prompt variant threaded through code-change thesis operationalization — Task 3b
-- [x] Family-level default variants via `StrategyFamily` — Task 4
-- [x] `prompt_variant_hash` field + DB column + migration — Task 5
-- [x] Controller resolves overrides against family defaults — Task 6
-- [x] Hash written to state + read into `ExperimentResult` — Task 7
-- [x] Trace payload tagged with `variant_id` — Task 8
-- [x] Token usage keyed by `agent:variant_id` — Task 9
+- [ ] Prompt variant registry with lookup and hashing — Task 1
+- [ ] Inline prompts extracted and registered as defaults — Task 2
+- [ ] Per-agent prompt variants threaded through conductor + subagents — Task 3
+- [ ] `operationalizer` prompt variant threaded through code-change thesis operationalization — Task 3b
+- [ ] Family-level default variants via `StrategyFamily` — Task 4
+- [ ] `prompt_variant_hash` field + DB column + migration — Task 5
+- [ ] Controller resolves overrides against family defaults — Task 6
+- [ ] Hash written to state + read into `ExperimentResult` — Task 7
+- [ ] Trace payload tagged with `variant_id` — Task 8
+- [ ] Token usage keyed by `agent:variant_id` — Task 9
 
 **Confirmed out of scope:**
 - Standalone paths (`agent_openai_calls.py`, `agent_orchestrator.run_research_agent`): no callers from the main loop.

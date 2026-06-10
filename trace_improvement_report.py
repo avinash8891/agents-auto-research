@@ -228,7 +228,7 @@ def analyze_trace_events(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
                     }
                 )
 
-        if action == "usage" or category == "usage":
+        if action == "usage" or (category == "usage" and action == "accumulate"):
             for key, value in _usage_numbers(event).items():
                 stats.usage[key] += value
 

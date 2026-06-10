@@ -11,19 +11,11 @@ from compiler_operationalize import (
     thesis_needs_operationalization as thesis_needs_operationalization,
 )
 from compiler_research import compile_research_thesis as compile_research_thesis
-from compiler_thesis_io import compile_config_thesis as compile_config_thesis
-from compiler_thesis_io import compile_proposal_artifact as compile_proposal_artifact
-from compiler_thesis_io import create_executable_artifact as create_executable_artifact
-from compiler_thesis_io import derive_thesis_artifacts as derive_thesis_artifacts
 from compiler_thesis_io import mark_request_completed as mark_request_completed
 from compiler_thesis_io import write_research_artifact as write_research_artifact
 
 __all__ = [
     "compile_research_thesis",
-    "compile_proposal_artifact",
-    "compile_config_thesis",
-    "create_executable_artifact",
-    "derive_thesis_artifacts",
     "write_research_artifact",
     "mark_request_completed",
     "thesis_needs_operationalization",

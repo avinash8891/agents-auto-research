@@ -769,8 +769,8 @@ def test_gate_config_validity_config_key_overlap_real() -> None:
 def test_gate_config_validity_neighboring_threshold() -> None:
     """Same key, value within 2x of prior.
 
-    FINDING — gate ordering: the Jaccard config-key overlap gate (#31) used
-    to run before the neighboring-threshold gate (#32).
+    FINDING — gate ordering: the Jaccard config-key overlap gate (#31) runs
+    BEFORE the neighboring-threshold gate (#32) in the live config-validity collector.
     For single-key theses, 100% key overlap fires gate #31 every time, so
     gate #32 is only reachable when multiple keys span both theses AND the
     overall overlap stays under 50%. Below: current has 3 keys, prior has 3

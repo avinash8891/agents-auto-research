@@ -114,6 +114,9 @@ CONFIG SCHEMA (only these keys are valid in config_changes):
 {config_schema}
 
     OUTPUT FORMAT:
+    Field notes:
+      thesis_id  omit or leave empty; the system assigns the real thesis_id after validation
+
     Return a JSON object:
     {{
       "reasoning": "2-3 sentences explaining why this is the logical next step, citing specific

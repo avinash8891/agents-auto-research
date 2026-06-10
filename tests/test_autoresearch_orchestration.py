@@ -431,6 +431,8 @@ def test_apply_forced_baseline_rerun_archives_existing_blocker(tmp_path: Path) -
     state = {
         "state": "blocked",
         "job": 9,
+        "research_round": 4,
+        "research_round_in_progress": 4,
         "halted_reason": "requires_code_change",
         "halted_thesis_id": "stalled-thesis",
         "halted_thesis": {"thesis_id": "stalled-thesis", "config_changes": {"ema_length": 7}},
@@ -451,6 +453,8 @@ def test_apply_forced_baseline_rerun_archives_existing_blocker(tmp_path: Path) -
     out = orch.apply_forced_baseline_rerun(ctrl, baseline_action)
 
     assert out["state"] == "running"
+    assert out["research_round"] == 0
+    assert "research_round_in_progress" not in out
     assert out["next_action"] == baseline_action
     assert out["blockers"] == []
     assert out["history"]["last_blocker"]["halted_thesis_id"] == "stalled-thesis"

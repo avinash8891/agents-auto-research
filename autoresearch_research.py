@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
-from pydantic import ValidationError
 
 from artifact_io import write_json_artifact
+from autoresearch_artifact_schemas import RoundArtifact, write_round_artifact
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
     DISCORD_COLOR_DISCARD,
@@ -36,6 +36,7 @@ from autoresearch_orchestration import (
 )
 from autoresearch_paths import resolve_config_path, resolve_runtime_root
 from autoresearch_planning import build_research_failure_state
+from autoresearch_runtime_paths import research_round_id_or_empty as make_research_round_id
 from autoresearch_runtime_paths import research_round_root
 from autoresearch_state import (
     BacktestResultRecord,
@@ -44,7 +45,6 @@ from autoresearch_state import (
     write_state,
 )
 from backtest.runtime_config import load_runtime_config
-from backtest_run_db import research_round_id as make_research_round_id
 from backtest_run_db import research_thesis_attempt_id
 from family_research_spec import resolve_research_resolution_context
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
@@ -65,6 +65,7 @@ from trace_sdk import (
     begin_hypothesis,
     end_hypothesis,
     get_event_file,
+    get_run_id,
     record_event,
     trace,
 )
@@ -254,13 +255,19 @@ def log_research_round(
             f"got job={job_id}, round_number={round_number}"
         )
     round_id = make_research_round_id(job_id, round_number)
+    should_log_attempt = bool(thesis_id) and outcome not in {
+        "rejected",
+        "research_exhausted",
+        "conductor_error",
+        "stopped",
+    }
     attempt_number = 1
     if outcome.startswith("rejected_attempt_"):
         try:
             attempt_number = int(outcome.rsplit("_", 1)[-1])
         except ValueError:
             attempt_number = 1
-    else:
+    elif should_log_attempt:
         attempt_number = db.next_research_thesis_attempt_number(round_id)
     db.log_research_round(
         state_path,
@@ -270,23 +277,24 @@ def log_research_round(
         outcome=outcome,
         usage=usage,
     )
-    db.add_research_thesis_attempt(
-        {
-            "research_round_id": round_id,
-            "attempt_number": attempt_number,
-            "thesis_id": thesis_id,
-            "strategy_family": state.get("family", ""),
-            "config_changes": config_changes or {},
-            "validator_status": outcome,
-            "mechanism_dimension": mechanism_dimension,
-            "hypothesis": hypothesis,
-            "mechanism": mechanism,
-            "thesis_details": thesis_details or {},
-            "validation_failure_reason": validation_failure_reason,
-            "selected_for_execution": 1 if outcome == "compiled" else 0,
-            "created_at_utc": iso8601_utc_now(),
-        }
-    )
+    if should_log_attempt:
+        db.add_research_thesis_attempt(
+            {
+                "research_round_id": round_id,
+                "attempt_number": attempt_number,
+                "thesis_id": thesis_id,
+                "strategy_family": state.get("family", ""),
+                "config_changes": config_changes or {},
+                "validator_status": outcome,
+                "mechanism_dimension": mechanism_dimension,
+                "hypothesis": hypothesis,
+                "mechanism": mechanism,
+                "thesis_details": thesis_details or {},
+                "validation_failure_reason": validation_failure_reason,
+                "selected_for_execution": 1 if outcome == "compiled" else 0,
+                "created_at_utc": iso8601_utc_now(),
+            }
+        )
 
 
 # ── Pure helpers ──────────────────────────────────────────────────
@@ -710,7 +718,7 @@ def _log_validation_rejection(
         round_number=research_round,
         thesis_id=thesis_id,
         hypothesis_id=thesis_id,
-        outcome=f"rejected_attempt_{attempt+1}",
+        outcome=f"rejected_attempt_{attempt + 1}",
         config_changes=raw_thesis.get("config_changes"),
         hypothesis=raw_thesis.get("hypothesis", ""),
         mechanism=raw_thesis.get("mechanism", ""),
@@ -1045,7 +1053,7 @@ def _call_conductor(
     from research_conductor import run_research_conductor_sync
 
     label = f"round={research_round}" + (
-        f" attempt={attempt+1} (retry with feedback)" if attempt else ""
+        f" attempt={attempt + 1} (retry with feedback)" if attempt else ""
     )
     boundary = (
         f"INPUT_BOUNDARY job={current_job} round={research_round} attempt={attempt + 1} "
@@ -1107,8 +1115,15 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     result_dicts = results_to_dicts(results)
     if current_job is not None:
         result_dicts = [result for result in result_dicts if result.get("job") == current_job]
-    round_results = format_round_results_summary(result_dicts)
-    prior_theses = load_prior_theses(resolve_runtime_root(controller.root))
+    metric_direction = getattr(controller, "metric_direction", None) or getattr(
+        controller, "best_direction", None
+    )
+    round_results = format_round_results_summary(result_dicts, best_direction=metric_direction)
+    runtime_root = resolve_runtime_root(getattr(controller, "runtime_root", controller.root))
+    prior_theses = load_prior_theses(
+        runtime_root,
+        strategy_family=controller.family.name,
+    )
     trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
     trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
         controller,
@@ -1119,6 +1134,13 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     state["research_round_in_progress"] = research_round
     state["activity"] = _research_activity(research_round=research_round, phase="conductor_running")
     controller.write_state(state)
+    if current_job is not None and current_job > 0:
+        controller.backtest_run_db.ensure_round_started(
+            research_round_id=make_research_round_id(current_job, research_round),
+            job_id=current_job,
+            round_number=research_round,
+            run_id=get_run_id(),
+        )
 
     from improvement_flags import reflexion_enabled
 
@@ -1289,6 +1311,17 @@ def _classify_round_outcome(result: dict[str, Any]) -> str:
     return OUTCOME_CONDUCTOR_ERROR
 
 
+def _round_findings(result: dict[str, Any], outcome: str) -> list[str]:
+    raw_findings = result.get("findings")
+    if isinstance(raw_findings, list):
+        return [str(item) for item in raw_findings if str(item).strip()]
+    if isinstance(raw_findings, str) and raw_findings.strip():
+        return [raw_findings]
+    if outcome == "research_exhausted":
+        return ["research exhausted without a runnable thesis"]
+    return []
+
+
 def _record_round_quality_and_bridges(
     controller: "AutoresearchController",
     research_round: int,
@@ -1421,18 +1454,26 @@ def _write_research_round_artifacts(
         (round_root / dirname).mkdir(parents=True, exist_ok=True)
     (round_root / "attempts" / "attempt-1").mkdir(parents=True, exist_ok=True)
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id")
-    write_json_artifact(
+    outcome = _classify_round_outcome(result)
+    generated_config = str(result.get("generated_config") or "")
+    write_round_artifact(
         round_root / "round.json",
-        {
-            "job_id": job,
-            "round_number": research_round,
-            "strategy_family": controller.family.name,
-            "selected_thesis_id": thesis_id,
-            "outcome": _classify_round_outcome(result),
-            "run_id": result.get("run_id"),
-            "created_at": iso8601_utc_now(),
-            "usage": round_usage if round_usage else None,
-        },
+        RoundArtifact(
+            job_id=job,
+            round_number=research_round,
+            strategy_family=controller.family.name,
+            status="completed",
+            selected_thesis_id=str(thesis_id or ""),
+            outcome=outcome,
+            run_id=result.get("run_id"),
+            created_at=iso8601_utc_now(),
+            usage=round_usage if round_usage else None,
+            generated_config_path=generated_config,
+            generated_configs=[generated_config] if generated_config else [],
+            new_theses_generated=1 if thesis_id else 0,
+            suggested_theses=result.get("suggested_theses") or [],
+            findings=_round_findings(result, outcome),
+        ),
     )
     write_json_artifact(
         round_root / "links.json",
@@ -1684,7 +1725,7 @@ def _handle_needs_code(
             prior_theses=None,
             allow_schema_only_code_change_fallback=True,
         )
-    except (ValidationError, ValueError) as exc:
+    except Exception as exc:
         log.warning(
             "LOOP_HALT thesis=%s validation failed; skipping compile: %s",
             thesis_id,
@@ -1695,9 +1736,13 @@ def _handle_needs_code(
         from compiler_pipeline import compile_research_thesis
 
         try:
-            compile_research_thesis(
-                validated, controller.root, artifact_root=controller.job_runtime_root
+            research_round = int(state.get("research_round") or result.get("research_round") or 0)
+            artifact_root = (
+                controller.job_runtime_root / "research" / f"round-{research_round}"
+                if getattr(controller, "job_runtime_root", None) is not None
+                else controller.root
             )
+            compile_research_thesis(validated, controller.root, artifact_root=artifact_root)
         except Exception as exc:
             log.warning(
                 "LOOP_HALT thesis=%s could not materialize builder artifacts: %s",

@@ -420,6 +420,69 @@ def _config_key_consumed_by_runtime(text: str, token: str) -> bool:
     return False
 
 
+def _active_string_token_present(text: str, token: str) -> bool:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    for node in _reachable_ast_nodes(tree):
+        if isinstance(node, ast.Dict):
+            for key in node.keys:
+                if isinstance(key, ast.Constant) and key.value == token:
+                    return True
+        if isinstance(node, ast.Call):
+            for arg in list(node.args) + [kw.value for kw in node.keywords]:
+                if isinstance(arg, ast.Constant) and arg.value == token:
+                    return True
+        if isinstance(node, ast.Subscript):
+            if _subscript_string_key(node) == token:
+                return True
+    return False
+
+
+def _test_function_asserts_token(text: str, token: str) -> bool:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not node.name.startswith("test_"):
+            continue
+        function_nodes = list(_reachable_ast_nodes(node))
+        token_present = False
+        has_behavior_assertion = False
+        for child in function_nodes:
+            if isinstance(child, ast.Assert):
+                has_behavior_assertion = True
+            elif isinstance(child, ast.Call):
+                func = child.func
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "raises"
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "pytest"
+                ):
+                    has_behavior_assertion = True
+                if any(
+                    isinstance(arg, ast.Constant) and arg.value == token
+                    for arg in list(child.args) + [kw.value for kw in child.keywords]
+                ):
+                    token_present = True
+            if isinstance(child, ast.Dict):
+                token_present = token_present or any(
+                    isinstance(key, ast.Constant) and key.value == token for key in child.keys
+                )
+            elif isinstance(child, ast.Subscript):
+                token_present = token_present or _subscript_string_key(child) == token
+            elif isinstance(child, ast.Constant):
+                token_present = token_present or child.value == token
+        if token_present and has_behavior_assertion:
+            return True
+    return False
+
+
 def _payload_key_token_present(text: str, token: str) -> bool:
     try:
         tree = ast.parse(text)
@@ -564,26 +627,10 @@ def _verify_tests_cover_behavior(
     if not test_texts:
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
 
-    def test_mentions_token(text: str, token: str) -> bool:
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            return False
-        for node in _reachable_ast_nodes(tree):
-            if isinstance(node, ast.Dict):
-                for key in node.keys:
-                    if isinstance(key, ast.Constant) and key.value == token:
-                        return True
-            if isinstance(node, ast.Call):
-                for arg in list(node.args) + [kw.value for kw in node.keywords]:
-                    if isinstance(arg, ast.Constant) and arg.value == token:
-                        return True
-            if isinstance(node, ast.Subscript) and _subscript_string_key(node) == token:
-                return True
-        return False
-
     if not any(
-        test_mentions_token(test_text, token) for token in unique_tokens for test_text in test_texts
+        _test_function_asserts_token(test_text, token)
+        for token in unique_tokens
+        for test_text in test_texts
     ):
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
     return []

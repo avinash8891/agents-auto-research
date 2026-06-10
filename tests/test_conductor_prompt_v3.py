@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from research_prompts import _build_conductor_system_prompt
-from scripts.check_prompt_drift import VALIDATOR_INSPECTED_FIELDS
+from scripts.check_prompt_drift import (
+    REQUIRED_WIRED_SAFETY_RAILS,
+    VALIDATOR_INSPECTED_FIELDS,
+    check_safety_rail_wiring,
+)
+from strategies.contract import backtest_semantics_for_family
 
 
 def test_v3_prompt_is_substantially_shorter_than_legacy() -> None:
@@ -76,3 +81,22 @@ def test_v3_prompt_lists_required_output_fields() -> None:
 
 def test_prompt_drift_checker_tracks_novel_connection_gate() -> None:
     assert "novel_connection" in VALIDATOR_INSPECTED_FIELDS
+
+
+def test_safety_rails_named_in_prompts_have_production_callers() -> None:
+    findings = check_safety_rail_wiring(REQUIRED_WIRED_SAFETY_RAILS)
+
+    assert findings == []
+
+
+def test_v3_prompt_includes_code_grounded_backtest_semantics() -> None:
+    prompt = _build_conductor_system_prompt(
+        "EMA pullback strategy.",
+        backtest_contract=backtest_semantics_for_family("ema"),
+    )
+    text = prompt.lower()
+
+    assert "backtest semantics" in text
+    assert "force_exit_same_session" in text
+    assert "scan_entry_bar" in text
+    assert "reject_without_explicit_flag" in text

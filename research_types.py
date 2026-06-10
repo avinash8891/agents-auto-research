@@ -69,11 +69,6 @@ class EvidenceCitation(BaseModel):
         "analyst",
         "source_code",
         "round_result",
-        # Deployment-migration alias: theses persisted before the
-        # experiment→round terminology rename use "experiment_result".
-        # Accepting the legacy value here keeps halted / manual-review state
-        # readable. Normalize-on-load is in normalize_thesis_payload.
-        "experiment_result",
         "memory",
     ]
     citation: str
@@ -192,6 +187,7 @@ class ResearchThesis(BaseModel):
         "orthogonal_discovery",
         "implementation_unlock",
         "cleanup_validation_follow_up",
+        "winning_cluster_follow_up",
     ] = ""
     falsification_or_alternative: str = ""  # what would weaken this mechanism
     new_dimension_name: str = ""  # required when mechanism_dimension == emergent

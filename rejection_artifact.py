@@ -226,7 +226,7 @@ def write_challenge(root: Path, *, job: int, payload: dict) -> Path:
     return target
 
 
-def compute_escalation_directive(root: Path, *, job: int) -> str:
+def compute_escalation_directive(root: Path, *, job: int, current_round: int | None = None) -> str:
     """Return a hard prompt directive when a rejection pattern recurs.
 
     Tiers:
@@ -236,8 +236,31 @@ def compute_escalation_directive(root: Path, *, job: int) -> str:
     - 6+ theme_cluster_fixation in last 10 rounds → HALT directive: surface
       to human review channel; the harness should stop the loop.
     """
-    summary_7 = rejection_pattern_summary(root, job=job, window_rounds=7)
-    summary_10 = rejection_pattern_summary(root, job=job, window_rounds=10)
+    if current_round is None:
+        summary_7 = rejection_pattern_summary(root, job=job, window_rounds=7)
+        summary_10 = rejection_pattern_summary(root, job=job, window_rounds=10)
+    else:
+        items = list_rejections(root, job=job)
+
+        def summary_for_window(window_rounds: int) -> list[dict]:
+            cutoff_min = current_round - max(window_rounds, 1) + 1
+            grouped: dict[str, list[StructuredRejection]] = {}
+            for item in items:
+                if cutoff_min <= item.round <= current_round:
+                    grouped.setdefault(item.rejection_code, []).append(item)
+            rows = [
+                {
+                    "rejection_code": code,
+                    "count": len(group),
+                    "example_thesis_ids": [r.thesis_id for r in group[:3]],
+                }
+                for code, group in grouped.items()
+            ]
+            rows.sort(key=lambda row: row["count"], reverse=True)
+            return rows
+
+        summary_7 = summary_for_window(7)
+        summary_10 = summary_for_window(10)
 
     cluster_count_7 = next(
         (

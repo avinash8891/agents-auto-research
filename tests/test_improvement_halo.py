@@ -99,7 +99,7 @@ def test_flag_on_success_writes_report(tmp_path, monkeypatch):
     )
     assert captured["kwargs"]["env"]["OPENAI_API_KEY"] == "unused"
     assert captured["kwargs"]["env"]["OPENAI_AGENTS_DISABLE_TRACING"] == "true"
-    assert captured["kwargs"]["timeout"] == improvement_halo.HALO_TIMEOUT_SECONDS
+    assert captured["kwargs"]["timeout"] == improvement_halo.halo_timeout_seconds()
     assert captured["kwargs"]["check"] is False
     assert (out / "round-007-traces.halo.jsonl").exists()
     assert ensure_calls == [True]
@@ -219,36 +219,30 @@ def test_flag_on_os_error_returns_none(tmp_path, monkeypatch):
 
 
 def test_halo_timeout_overridable_via_env(monkeypatch):
+    """Lazy accessor reads env at call time — no reload needed."""
     from autoresearch_constants import ENV_HALO_TIMEOUT_SECONDS
 
     monkeypatch.setenv(ENV_HALO_TIMEOUT_SECONDS, "42")
-    import importlib
+    from improvement_halo import halo_timeout_seconds
 
-    import improvement_halo as m
-
-    importlib.reload(m)
-    assert m.HALO_TIMEOUT_SECONDS == 42
+    assert halo_timeout_seconds() == 42
 
 
-def test_halo_timeout_invalid_env_falls_back_to_default(monkeypatch):
+def test_halo_timeout_invalid_env_raises(monkeypatch):
     from autoresearch_constants import ENV_HALO_TIMEOUT_SECONDS
 
     monkeypatch.setenv(ENV_HALO_TIMEOUT_SECONDS, "not-a-number")
-    import importlib
+    from improvement_halo import halo_timeout_seconds
 
-    import improvement_halo as m
-
-    importlib.reload(m)
-    assert m.HALO_TIMEOUT_SECONDS == 600
+    with pytest.raises(ValueError, match=ENV_HALO_TIMEOUT_SECONDS):
+        halo_timeout_seconds()
 
 
-def test_halo_timeout_non_positive_env_falls_back_to_default(monkeypatch):
+def test_halo_timeout_non_positive_env_raises(monkeypatch):
     from autoresearch_constants import ENV_HALO_TIMEOUT_SECONDS
 
     monkeypatch.setenv(ENV_HALO_TIMEOUT_SECONDS, "0")
-    import importlib
+    from improvement_halo import halo_timeout_seconds
 
-    import improvement_halo as m
-
-    importlib.reload(m)
-    assert m.HALO_TIMEOUT_SECONDS == 600
+    with pytest.raises(ValueError, match=ENV_HALO_TIMEOUT_SECONDS):
+        halo_timeout_seconds()

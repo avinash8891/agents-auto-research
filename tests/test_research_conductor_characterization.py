@@ -234,6 +234,48 @@ def test_conductor_returns_timeout_error_when_runner_times_out(
     assert out.error == "timeout"
 
 
+def test_conductor_applies_timeout_to_hung_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _HungResult:
+        final_output = ""
+
+        async def stream_events(self):
+            await asyncio.sleep(10)
+            yield None
+
+    monkeypatch.setenv("AUTORESEARCH_CONDUCTOR_TIMEOUT_SECONDS", "0.01")
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", lambda *args, **kwargs: _HungResult())
+
+    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema")
+
+    assert out is not None
+    assert out.status == "conductor_error"
+    assert out.error == "timeout"
+
+
+def test_live_conductor_tools_use_shared_schema_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool_outputs: list[tuple[str, str]] = []
+    _patch_conductor_runner(
+        monkeypatch,
+        {"reasoning": "stop", "suggested_theses": [], "should_stop": True},
+        tool_calls=[("list_rejections", {"limit": 0})],
+        tool_outputs=tool_outputs,
+    )
+
+    out = conductor.run_research_conductor_sync("", "", {}, 8, "ema", current_job=1)
+
+    assert out is not None
+    assert out.status == "should_stop"
+    assert tool_outputs
+    assert tool_outputs[0][0] == "list_rejections"
+    assert tool_outputs[0][1].startswith("VALIDATION ERROR:")
+
+
 def test_conductor_marks_oauth_proxy_failure_as_proxy_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -855,6 +897,48 @@ def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wra
     assert out is not None
     assert out.thesis is not None
     assert out.thesis["thesis_id"] == "open_alert_regime_filter"
+
+
+def test_conductor_default_job_context_preserves_round_id_for_thesis_assignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    thesis = {
+        "thesis_id": "open_alert_regime_filter",
+        "hypothesis": "Early-open alerts are dominated by adverse selection.",
+        "mechanism": "Opening auction noise causes systematic stop-outs.",
+        "mechanism_dimension": "time_regime_microstructure",
+        "config_changes": {"min_alert_time": "09:40"},
+    }
+
+    def _validate(candidate, **kwargs):
+        captured.update(kwargs)
+        assigned = kwargs["assign_thesis_id"](
+            kwargs["research_round_id"],
+            kwargs["attempt_number"],
+        )
+        captured["assigned_thesis_id"] = assigned
+        return type("Validated", (), {"thesis_id": assigned})()
+
+    monkeypatch.setattr(conductor, "validate_thesis_dict", _validate)
+    _patch_conductor_runner(
+        monkeypatch,
+        thesis,
+        tool_calls=[("list_round_results", {"order": "latest", "offset": 0, "limit": 1})],
+    )
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "full experiment history consulted",
+        {"status": "keep"},
+        research_round=3,
+        family_name="ema",
+    )
+
+    assert out is not None
+    assert out.thesis is not None
+    assert captured["research_round_id"] == "job-0-round-3"
+    assert captured["assigned_thesis_id"] == "job-0-round-3-attempt-1"
 
 
 def test_build_round_index_exposes_round_refs_and_latest_round(tmp_path: Path, monkeypatch) -> None:

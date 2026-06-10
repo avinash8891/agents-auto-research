@@ -65,6 +65,7 @@ from autoresearch_research import notify_discord as _notify_discord
 from autoresearch_research import queue_variants as _research_queue_variants
 from autoresearch_research import results_to_dicts as _research_results_to_dicts
 from autoresearch_research import run_research as _research_run_research
+from autoresearch_runtime_paths import AutoresearchRuntimeContext
 from autoresearch_state import BacktestResultRecord, RunContext
 from autoresearch_state import best_result as _state_best_result
 from autoresearch_state import coerce_job_to_int as _state_coerce_job_to_int
@@ -451,12 +452,12 @@ def _validate_current_executable_state(prior_state: dict[str, Any]) -> int:
 
 def default_controller_paths(runtime_root: Path, family: StrategyFamily) -> tuple[Path, Path, Path]:
     """Returns state_path, current_md_path, jobs_root."""
-    prefix = family.name
-    return (
-        runtime_root / f"{prefix}_autoresearch.next.json",
-        runtime_root / f"{prefix}_autoresearch.current.md",
-        runtime_root / "runtime" / "jobs",
+    paths = AutoresearchRuntimeContext.for_family(
+        code_root=ROOT,
+        runtime_root=runtime_root,
+        family_name=family.name,
     )
+    return paths.state_path, paths.current_md_path, paths.jobs_root
 
 
 # Public API and historical re-exports. `_notify_discord` is intentionally
@@ -491,6 +492,7 @@ def _run_controller_loop(
         f"Autoresearch loop starting family={family_name} job={job} session={get_session_id()} log={get_log_file()}",
     )
     consecutive_research_required = 0
+    last_research_required_round: object = None
     while True:
         code = controller.execute_once()
         if code != 0:
@@ -502,7 +504,14 @@ def _run_controller_loop(
         if current == "blocked":
             blockers = state.get("blockers", [])
             if any(b.get("kind") in _RESEARCH_BLOCKER_KINDS for b in blockers):
-                consecutive_research_required += 1
+                current_round = state.get("research_round_in_progress")
+                if current_round is None:
+                    current_round = state.get("research_round")
+                if current_round == last_research_required_round:
+                    consecutive_research_required += 1
+                else:
+                    consecutive_research_required = 1
+                    last_research_required_round = current_round
                 if consecutive_research_required >= max_consecutive_research_required():
                     trace(
                         "MAIN",
@@ -596,37 +605,29 @@ class AutoresearchController:
         jobs_root: Path | None = None,
         family: StrategyFamily | None = None,
     ) -> None:
-        self.root = (root or ROOT).resolve()
-        self.runtime_root = (runtime_root or self.root).resolve()
-        resolved_state_path = state_path or (self.runtime_root / "autoresearch.next.json")
-        resolved_current_md_path = current_md_path or (
-            self.runtime_root / "autoresearch.current.md"
-        )
-        self.state_path = (
-            resolved_state_path
-            if resolved_state_path.is_absolute()
-            else self.runtime_root / resolved_state_path
-        )
-        self.current_md_path = (
-            resolved_current_md_path
-            if resolved_current_md_path.is_absolute()
-            else self.runtime_root / resolved_current_md_path
-        )
-        resolved_jobs_root = jobs_root or (self.runtime_root / "runtime" / "jobs")
-        self.jobs_root = (
-            resolved_jobs_root
-            if resolved_jobs_root.is_absolute()
-            else self.runtime_root / resolved_jobs_root
-        )
         if family is None:
             raise ValueError("AutoresearchController requires an explicit strategy family")
         self.family = family
-        self._clear_runtime_paths()
-        self.backtest_run_db = BacktestRunDB(
-            self.runtime_root / f"{self.family.name}_backtest_runs.db"
+        self.paths = AutoresearchRuntimeContext.for_family(
+            code_root=root or ROOT,
+            runtime_root=runtime_root or (root or ROOT),
+            family_name=self.family.name,
+            state_path=state_path,
+            current_md_path=current_md_path,
+            jobs_root=jobs_root,
         )
+        self.root = self.paths.code_root
+        self.runtime_root = self.paths.runtime_root
+        self.state_path = self.paths.state_path
+        self.current_md_path = self.paths.current_md_path
+        self.jobs_root = self.paths.jobs_root
+        self._clear_runtime_paths()
+        backtest_run_db_path = self.paths.backtest_db_path
+        self.backtest_run_db = BacktestRunDB(backtest_run_db_path)
         self.baseline_tracker = BaselineTracker(
-            self.runtime_root / f"{self.family.name}_baseline_checkpoints.json"
+            self.paths.baseline_checkpoints_path,
+            db_path=backtest_run_db_path,
+            strategy_family=self.family.name,
         )
         # Transient cross-method state (formerly scattered self._* fields).
         self.ctx = RunContext()
@@ -639,9 +640,9 @@ class AutoresearchController:
     def _set_runtime_paths_for_job(self, job: int) -> None:
         if job < 1:
             raise ValueError(f"job id is required for job-scoped runtime paths; got {job!r}")
-        self.job_runtime_root = self.jobs_root / f"job-{job}"
-        self.research_dir = self.job_runtime_root / "research"
-        self.builder_requests_dir = self.job_runtime_root / "builder-requests"
+        self.job_runtime_root = self.paths.job_runtime_root(job)
+        self.research_dir = self.paths.research_dir(job)
+        self.builder_requests_dir = self.paths.builder_requests_dir(job)
 
     def _current_job(self) -> int | None:
         job = self.read_state().get("job")

@@ -5,13 +5,23 @@ import subprocess
 from pathlib import Path
 
 from autoresearch_logging import get_logger
+from research_paths import _ROOT
 
 MEMPALACE_CMD = "mempalace"
-MEMPALACE_PALACE = os.getenv(
-    "AUTORESEARCH_MEMPALACE_PALACE",
-    str(Path.home() / ".codex/mempalace/palace"),
-)
 log = get_logger(__name__)
+
+
+def _mempalace_palace() -> str:
+    configured = os.getenv("AUTORESEARCH_MEMPALACE_PALACE")
+    if configured:
+        return str(Path(configured).expanduser())
+    repo_palace = _ROOT / "palace"
+    if repo_palace.exists():
+        return str(repo_palace)
+    home_palace = Path.home() / ".codex/mempalace/palace"
+    if home_palace.exists():
+        return str(home_palace)
+    return str(repo_palace)
 
 
 def _run_mempalace(
@@ -43,7 +53,7 @@ def _mempalace_search(query_text: str, wing: str = "autoresearch", n: int = 3) -
             "search",
             query_text,
             "--palace",
-            MEMPALACE_PALACE,
+            _mempalace_palace(),
             "--wing",
             wing,
             "-n",
@@ -71,7 +81,7 @@ def _mempalace_write(wing: str, room: str, content: str) -> bool:
             "add",
             content,
             "--palace",
-            MEMPALACE_PALACE,
+            _mempalace_palace(),
             "--wing",
             wing,
             "--room",
@@ -98,7 +108,7 @@ def _mempalace_diary(agent_name: str, topic: str, entry: str) -> bool:
             "diary",
             entry,
             "--palace",
-            MEMPALACE_PALACE,
+            _mempalace_palace(),
             "--agent",
             agent_name,
             "--topic",

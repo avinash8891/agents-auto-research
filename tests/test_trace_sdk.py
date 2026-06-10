@@ -205,7 +205,7 @@ def test_trace_sdk_records_tool_call_and_result_sizes(monkeypatch, tmp_path: Pat
     assert result_event["model_name"] == "gpt-5.2"
 
 
-def test_trace_sdk_exporter_skips_spans_without_autoresearch_event_id(
+def test_trace_sdk_exporter_exports_spans_without_autoresearch_event_id(
     monkeypatch, tmp_path: Path
 ) -> None:
     trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
@@ -243,14 +243,37 @@ def test_trace_sdk_exporter_skips_spans_without_autoresearch_event_id(
     )
 
     exporter.export([skipped, written])
-
     events = [
         json.loads(line)
         for line in (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    assert len(events) == 1
-    assert events[0]["event_id"] == "evt-1"
-    assert events[0]["summary"] == "main"
+
+    assert [event["event_id"] for event in events] == [
+        "span-00000000000000000000000000000000-0000000000000000",
+        "evt-1",
+    ]
+    assert events[0]["category"] == "instrumentation"
+    assert events[0]["action"] == "openai.chat"
+
+
+def test_end_hypothesis_clears_active_hypothesis_context(monkeypatch, tmp_path: Path) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    hypothesis_id = trace_sdk.begin_hypothesis("test-hypothesis")
+    assert trace_sdk.current_hypothesis_id() == hypothesis_id
+
+    trace_sdk.end_hypothesis(decision="accepted", metric=1.2)
+
+    assert trace_sdk.current_hypothesis_id() is None
+
+    trace_sdk.trace("AFTER", "after hypothesis")
+    events = [
+        json.loads(line)
+        for line in trace_sdk.get_event_file().read_text(encoding="utf-8").splitlines()
+    ]
+    after_event = next(event for event in events if event["summary"] == "after hypothesis")
+    assert after_event["hypothesis_id"] is None
+    assert after_event["hypothesis_name"] is None
 
 
 def test_trace_sdk_event_schema_matches_dataclass_and_payload_shape(
@@ -515,6 +538,25 @@ def test_trace_ignores_broken_stdout_pipe(monkeypatch, tmp_path: Path) -> None:
 
     log_text = trace_sdk.get_log_file().read_text(encoding="utf-8")
     assert "[COMMAND] still writes file" in log_text
+
+
+def test_trace_sdk_fail_opens_when_log_file_write_fails(monkeypatch, tmp_path: Path) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    class BrokenHandle:
+        def write(self, _line: str) -> None:
+            raise OSError("disk full")
+
+        def flush(self) -> None:
+            raise OSError("disk full")
+
+    monkeypatch.setattr(trace_sdk.TraceRuntimeState, "get_log_handle", lambda self: BrokenHandle())
+
+    trace_sdk.trace("DEPLOY", "step")
+    trace_sdk.trace_ssh("echo hello", 0, stdout="ok")
+    trace_id = trace_sdk.trace_agent_prompt("agent", "prompt")
+
+    assert trace_id
 
 
 def test_trace_ignores_closed_stdout(monkeypatch, tmp_path: Path) -> None:

@@ -38,6 +38,7 @@ def _make_contract(
         strategy_family=strategy_family,
         baseline_config_path=f"configs/{strategy_family}_base.yaml",
         runtime_config=runtime_config,
+        config_changes=dict(runtime_config),
         hypothesis=hypothesis,
         mechanism=mechanism,
     )

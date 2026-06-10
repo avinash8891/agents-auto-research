@@ -13,8 +13,9 @@ from typing import Any
 
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import _accumulate_usage
+from autoresearch_runtime_paths import iter_family_backtest_db_paths
 from autoresearch_state import coerce_timestamp_to_epoch_ms
-from backtest_run_db import BacktestRunDB, resolve_db_paths
+from backtest_run_db import BacktestRunDB
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,
@@ -253,8 +254,7 @@ def _resolve_backtest_db_path(trades_file: str, family_name: str) -> Path | None
     if not family_name:
         return None
     artifact_path = Path(trades_file).expanduser()
-    candidates: list[Path] = []
-    candidates.extend(resolve_db_paths(family_name, root=_ROOT))
+    candidates = iter_family_backtest_db_paths(_ROOT, family=family_name)
     for parent in artifact_path.parents:
         candidates.append(parent / f"{family_name}_backtest_runs.db")
         candidates.append(parent / "runtime" / f"{family_name}_backtest_runs.db")
@@ -1318,13 +1318,24 @@ Minimum content rules:
         )
         return f"WEB_SEARCH ERROR: could not parse: {output[:500]}"
     except WebResearchCliError as exc:
-        accumulate_agents_sdk_result_usage(
-            "web_researcher",
-            None,
-            provider="openai",
-            model=_CONDUCTOR_MODEL,
-            trace_id=trace_id,
-        )
+        usage = getattr(exc, "metadata", {}).get("usage")
+        if isinstance(usage, dict):
+            usage = {**usage, "usage_source": getattr(exc, "metadata", {}).get("usage_source", "")}
+            _accumulate_usage(
+                "web_researcher",
+                usage,
+                provider="openai",
+                model=_CONDUCTOR_MODEL,
+                trace_id=trace_id,
+            )
+        else:
+            accumulate_agents_sdk_result_usage(
+                "web_researcher",
+                None,
+                provider="openai",
+                model=_CONDUCTOR_MODEL,
+                trace_id=trace_id,
+            )
         trace(
             "CONDUCTOR",
             "web_search ERROR",

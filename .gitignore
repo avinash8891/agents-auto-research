@@ -232,7 +232,9 @@ experiments/
 research_findings.jsonl
 .remember/
 prompts.db
-ema_experiments.db
+*_backtest_runs.db
+trace_exports/
+runtime/
 
 # Eval dry-run scratch dir - not for production, not committed.
 eval_dryrun/

@@ -52,6 +52,7 @@ def simulate_trades(
     f_close = frame["close"].values
     f_idx = frame.index
     n = len(frame)
+    session_end_bar = _session_end_bars(f_idx, n)
 
     signal_bars = np.flatnonzero(entry_mask)
     if len(signal_bars) == 0:
@@ -133,6 +134,7 @@ def simulate_trades(
                 risk,
                 is_long,
                 max_hold,
+                session_end_bar,
                 f_high,
                 f_low,
                 f_open,
@@ -152,6 +154,7 @@ def simulate_trades(
                 risk,
                 is_long,
                 max_hold,
+                session_end_bar,
                 f_high,
                 f_low,
                 f_open,
@@ -208,6 +211,20 @@ def simulate_trades(
     return trades
 
 
+def _session_end_bars(index: pd.Index, n: int) -> np.ndarray:
+    end_bars = np.arange(n, dtype=np.int64)
+    if not isinstance(index, pd.DatetimeIndex) or n == 0:
+        end_bars.fill(n - 1)
+        return end_bars
+    day_values = index.normalize()
+    session_end = n - 1
+    for idx in range(n - 1, -1, -1):
+        if idx == n - 1 or day_values[idx] != day_values[idx + 1]:
+            session_end = idx
+        end_bars[idx] = session_end
+    return end_bars
+
+
 def _exit_fixed_target(
     i: int,
     n: int,
@@ -217,14 +234,16 @@ def _exit_fixed_target(
     risk: float,
     is_long: bool,
     max_hold: int,
+    session_end_bar: np.ndarray,
     f_high: np.ndarray,
     f_low: np.ndarray,
     f_open: np.ndarray,
     f_close: np.ndarray,
 ) -> tuple[int, float, str]:
     """Original fixed-target exit logic."""
-    end = min(i + max_hold + 1, n)
-    sl = slice(i + 1, end)
+    max_hold_end = min(i + max_hold, n - 1)
+    exit_deadline = min(max_hold_end, int(session_end_bar[i]))
+    sl = slice(i, exit_deadline + 1)
     h_chunk = f_high[sl]
     l_chunk = f_low[sl]
     chunk_len = len(h_chunk)
@@ -246,19 +265,19 @@ def _exit_fixed_target(
         tp_first = chunk_len
 
     if sl_first == chunk_len and tp_first == chunk_len:
-        exit_bar = end - 1
+        exit_bar = exit_deadline
         exit_price = f_close[exit_bar]
-        exit_reason = "timeout"
+        exit_reason = "session_close" if exit_deadline < max_hold_end else "timeout"
     elif sl_first < tp_first:
-        exit_bar = i + 1 + sl_first
+        exit_bar = i + sl_first
         exit_price = stop
         exit_reason = "stop_loss"
     elif tp_first < sl_first:
-        exit_bar = i + 1 + tp_first
+        exit_bar = i + tp_first
         exit_price = target
         exit_reason = "target"
     else:
-        j = i + 1 + sl_first
+        j = i + sl_first
         if abs(f_open[j] - stop) <= abs(f_open[j] - target):
             exit_price = stop
             exit_reason = "stop_loss"
@@ -279,6 +298,7 @@ def _exit_trail_after_r(
     risk: float,
     is_long: bool,
     max_hold: int,
+    session_end_bar: np.ndarray,
     f_high: np.ndarray,
     f_low: np.ndarray,
     f_open: np.ndarray,
@@ -292,11 +312,12 @@ def _exit_trail_after_r(
         Each subsequent bar, tighten stop to prev bar's high if lower.
       - Long: mirror with previous bar's low.
     """
-    end = min(i + max_hold + 1, n)
+    max_hold_end = min(i + max_hold, n - 1)
+    exit_deadline = min(max_hold_end, int(session_end_bar[i]))
     trailing = False
     current_stop = stop
 
-    for j in range(i + 1, end):
+    for j in range(i, exit_deadline + 1):
         bar_high = f_high[j]
         bar_low = f_low[j]
 
@@ -329,5 +350,6 @@ def _exit_trail_after_r(
                     current_stop = candidate
 
     # Timeout: held to max_hold without stop hit
-    exit_bar = end - 1
-    return exit_bar, f_close[exit_bar], "timeout"
+    exit_bar = exit_deadline
+    reason = "session_close" if exit_deadline < max_hold_end else "timeout"
+    return exit_bar, f_close[exit_bar], reason

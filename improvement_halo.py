@@ -17,15 +17,21 @@ import agent_infra
 from autoresearch_constants import ENV_HALO_TIMEOUT_SECONDS
 from autoresearch_logging import get_logger
 from improvement_flags import halo_enabled
-from persistence_utils import parse_positive_int_env, write_text_atomic
+from persistence_utils import require_positive_int_env, write_text_atomic
 
 log = get_logger(__name__)
 
 
 HALO_BINARY = "halo"
 HALO_MODEL = "gpt-5.2"
-HALO_TIMEOUT_SECONDS = parse_positive_int_env(ENV_HALO_TIMEOUT_SECONDS, 600, logger=log)
+_HALO_TIMEOUT_DEFAULT = 600
 HALO_BINARY_ENV = "AUTORESEARCH_HALO_BINARY"
+
+
+def halo_timeout_seconds() -> int:
+    return require_positive_int_env(ENV_HALO_TIMEOUT_SECONDS, _HALO_TIMEOUT_DEFAULT)
+
+
 DEFAULT_HALO_BINARY = Path("/opt/autoresearch-tools/halo/venv/bin/halo")
 
 DIAGNOSTIC_PROMPT = (
@@ -124,12 +130,12 @@ def run_halo_after_round(
             capture_output=True,
             text=True,
             env=halo_env,
-            timeout=HALO_TIMEOUT_SECONDS,
+            timeout=halo_timeout_seconds(),
             check=False,
         )
     except subprocess.TimeoutExpired:
         log.error(
-            f"HALO timeout after {HALO_TIMEOUT_SECONDS}s on round={research_round}. "
+            f"HALO timeout after {halo_timeout_seconds()}s on round={research_round}. "
             f"Action: investigate halo CLI hang or raise HALO_TIMEOUT_SECONDS."
         )
         return None

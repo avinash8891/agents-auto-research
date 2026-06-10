@@ -78,3 +78,18 @@ def test_halt_escalation_when_6_or_more_cluster_fixations_in_last_10(tmp_path: P
 
     out = compute_escalation_directive(tmp_path, job=7)
     assert "HALT" in out or "halt" in out.lower()
+
+
+def test_halt_escalation_expires_when_pattern_is_stale(tmp_path: Path) -> None:
+    from rejection_artifact import compute_escalation_directive
+
+    _seed(
+        tmp_path,
+        job=7,
+        entries=[
+            {"round": r, "thesis_id": f"t{r}", "code": "thesis_quality_theme_cluster_fixation"}
+            for r in range(5, 15)
+        ],
+    )
+
+    assert compute_escalation_directive(tmp_path, job=7, current_round=60) == ""

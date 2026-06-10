@@ -42,6 +42,31 @@ def test_safe_merge_asof_sorts_before_merging():
     assert list(merged["y"]) == [10, 20]
 
 
+def test_safe_merge_asof_sorts_multi_symbol_by_merges_by_time_first():
+    left = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-01-02", "2026-01-01", "2026-01-02", "2026-01-01"]),
+            "symbol": ["AAPL", "MSFT", "MSFT", "AAPL"],
+            "x": [4, 2, 3, 1],
+        }
+    )
+    right = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-01", "2026-01-02"]),
+            "symbol": ["AAPL", "AAPL", "MSFT", "MSFT"],
+            "y": [10, 20, 30, 40],
+        }
+    )
+
+    merged = safe_merge_asof(left, right, on="timestamp", by="symbol")
+
+    assert list(merged["timestamp"]) == list(
+        pd.to_datetime(["2026-01-01", "2026-01-01", "2026-01-02", "2026-01-02"])
+    )
+    assert list(merged["symbol"]) == ["AAPL", "MSFT", "AAPL", "MSFT"]
+    assert list(merged["y"]) == [10, 30, 20, 40]
+
+
 def test_bucket_trade_performance_rejects_bins_labels_mismatch():
     trades = pd.DataFrame({"duration_min": [1, 2], "pnl_pct": [0.01, -0.01]})
 

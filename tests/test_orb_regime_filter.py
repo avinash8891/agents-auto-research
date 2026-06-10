@@ -4,7 +4,6 @@ import pandas as pd
 
 from strategies.orb.regime_filter import apply_regime_gate, classify_regimes
 
-
 def _single_symbol_intraday_frames(
     daily_ranges: list[float],
     opening_range_widths: list[float] | None = None,
@@ -110,3 +109,21 @@ def test_wide_or_regime_uses_same_day_opening_range_because_it_is_known_at_entry
 
     assert regimes["wide-OR"].at[trade_date.date(), "AAA"]
     assert kept.empty
+
+
+def test_apply_regime_gate_normalizes_lowercase_regime_aliases() -> None:
+    trades = pd.DataFrame(
+        {
+            "entry_date": [pd.Timestamp("2026-01-02 10:00:00")],
+            "symbol": ["SPY"],
+            "pnl_pct": [0.01],
+        }
+    )
+    regime_dates = [pd.Timestamp("2026-01-02").date()]
+    regime_dict = {
+        "wide-OR": pd.DataFrame({"SPY": [True]}, index=regime_dates),
+    }
+
+    gated = apply_regime_gate(trades, regime_dict, require_regimes={"wide-or"})
+
+    assert len(gated) == 1

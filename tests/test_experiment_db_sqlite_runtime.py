@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -60,6 +61,39 @@ def test_sqlite_schema_keeps_backtest_runs_table_with_round_columns(tmp_path: Pa
     assert "research_round_id" in columns
     assert "research_round_number" in columns
     assert "backtest_run_id" in columns
+    assert "created_at_utc" in columns
+    assert "primary_metric_name" in columns
+    assert "primary_metric_value" in columns
+    assert "metrics_json" in columns
+    assert "trade_analysis_json" in columns
+
+
+def test_add_populates_canonical_metric_columns_for_direct_sqlite_reads(
+    tmp_path: Path,
+) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    record = _record(round_number=1, job=1)
+    record.trade_analysis = {"trade_count": 10, "avg_win": 1.25}
+    db.add(record)
+
+    with sqlite3.connect(db.path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT created_at_utc, primary_metric_name, primary_metric_value,
+                   metrics_json, trade_analysis_json
+            FROM backtest_runs
+            WHERE run_id = ?
+            """,
+            (record.run_id,),
+        ).fetchone()
+
+    assert row["created_at_utc"] == "2026-05-09T00:00:00+00:00"
+    assert row["primary_metric_name"] == "profit_factor"
+    assert row["primary_metric_value"] == 1.5
+    assert json.loads(row["metrics_json"])["profit_factor"] == 1.5
+    assert json.loads(row["trade_analysis_json"]) == {"trade_count": 10, "avg_win": 1.25}
 
 
 def test_read_results_reports_round_scoped_artifact_dir(tmp_path: Path) -> None:
@@ -72,6 +106,31 @@ def test_read_results_reports_round_scoped_artifact_dir(tmp_path: Path) -> None:
     assert result.asi["artifact_dir"] == "runtime/jobs/job-1/research/round-1/backtest"
     assert result.asi["research_round_id"] == "job-1-round-1"
     assert result.asi["backtest_run_id"] == "job-1-round-1-backtest"
+
+
+def test_read_results_preserves_stored_asi_json_fields(tmp_path: Path) -> None:
+    db_path = tmp_path / "backtest_runs.db"
+    db = BacktestRunDB(db_path)
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    record = _record(round_number=1, job=1)
+    setattr(
+        record,
+        "_asi_export",
+        {
+            "baseline_rerun_for_commit": "abc1234",
+            "insights": ["retry baseline after deploy"],
+            "config_changes": {"ema_length": 13},
+            "next_thesis_suggestion": {"hypothesis": "try a slower EMA"},
+        },
+    )
+    db.add(record)
+
+    result = BacktestRunDB(db_path).read_results()[0]
+
+    assert result.asi["baseline_rerun_for_commit"] == "abc1234"
+    assert result.asi["insights"] == ["retry baseline after deploy"]
+    assert result.asi["config_changes"] == {"ema_length": 13}
+    assert result.asi["next_thesis_suggestion"] == {"hypothesis": "try a slower EMA"}
 
 
 def test_export_entries_use_backtest_run_type(tmp_path: Path) -> None:
@@ -272,6 +331,51 @@ def test_add_from_sqlite_fields_persists_research_round_id(tmp_path: Path) -> No
     assert record.thesis_id == "ema_breakout_v1"
 
 
+def test_add_from_sqlite_fields_persists_canonical_metric_columns(
+    tmp_path: Path,
+) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    round_id = research_round_id(2, 4)
+    db.add_from_sqlite_fields(
+        run_id="exp-2-4",
+        thesis_id="ema_breakout_v1",
+        config_path="runtime/jobs/job-2/research/round-4/selected_config.json",
+        runtime_config={"ema_length": 21},
+        code_commit="abc1234",
+        data_hash="data",
+        metrics={"sharpe": 0.4},
+        trade_analysis={"trade_count": 42, "avg_loss": -0.7},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="accepted",
+        verdict_summary="accepted",
+        family="ema",
+        job_id=2,
+        primary_metric_name="profit_factor",
+        primary_metric_value=1.65,
+        research_round_id=round_id,
+        research_round_number=4,
+        is_baseline=False,
+    )
+
+    with sqlite3.connect(db.path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("""
+            SELECT primary_metric_name, primary_metric_value, metrics_json, trade_analysis_json
+            FROM backtest_runs
+            WHERE run_id = 'exp-2-4'
+            """).fetchone()
+
+    metrics = json.loads(row["metrics_json"])
+    assert row["primary_metric_name"] == "profit_factor"
+    assert row["primary_metric_value"] == 1.65
+    assert metrics["profit_factor"] == 1.65
+    assert metrics["sharpe"] == 0.4
+    assert json.loads(row["trade_analysis_json"]) == {"trade_count": 42, "avg_loss": -0.7}
+
+
 def test_add_from_sqlite_fields_rejects_empty_research_round_id(tmp_path: Path) -> None:
     db = BacktestRunDB(tmp_path / "backtest_runs.db")
     db.init_session(name="ema", metric_name="profit_factor", direction="higher")
@@ -369,3 +473,216 @@ def test_best_by_metric_ignores_malformed_metric_values(tmp_path: Path) -> None:
 
     assert best is not None
     assert best.run_id == second.run_id
+
+
+def test_best_by_metric_respects_lower_direction(tmp_path: Path) -> None:
+    """U1: direction='lower' must pick the smallest metric value."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="max_drawdown", direction="lower")
+
+    worse = _record(round_number=1, job=1)
+    worse.validation_metrics["max_drawdown"] = 0.30
+    better = _record(round_number=2, job=1)
+    better.validation_metrics["max_drawdown"] = 0.10
+
+    db.add(worse)
+    db.add(better)
+
+    best = db.best_by_metric("max_drawdown")
+    assert best is not None
+    assert best.run_id == better.run_id
+
+
+def test_backtest_runs_has_canonical_columns_and_indexes(tmp_path: Path) -> None:
+    """F2/U4: backtest_runs must have doc-01 canonical columns + 6 indexes."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    conn = sqlite3.connect(tmp_path / "backtest_runs.db")
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(backtest_runs)").fetchall()}
+    for col in (
+        "decision_status",
+        "created_at_utc",
+        "strategy_family",
+        "job_id",
+        "primary_metric_name",
+        "primary_metric_value",
+        "metrics_json",
+        "trade_analysis_json",
+        "trace_run_id",
+    ):
+        assert col in columns, f"missing canonical column: {col}"
+
+    indexes = {
+        row[1]
+        for row in conn.execute(
+            "SELECT * FROM sqlite_master WHERE type='index' AND tbl_name='backtest_runs'"
+        ).fetchall()
+    }
+    for idx in (
+        "idx_backtest_runs_thesis_id",
+        "idx_backtest_runs_strategy_family_created_at",
+        "idx_backtest_runs_job_id",
+        "idx_backtest_runs_code_commit",
+        "idx_backtest_runs_decision_status",
+        "idx_backtest_runs_primary_metric_value",
+    ):
+        assert idx in indexes, f"missing required index: {idx}"
+    conn.close()
+
+
+def test_backtest_runs_decision_status_backfill(tmp_path: Path) -> None:
+    """F2: accepted=1 -> decision_status='keep', accepted=0 -> 'discard'."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    accepted_rec = _record(round_number=1, job=1)
+    accepted_rec.accepted = True
+    rejected_rec = _record(round_number=2, job=1)
+    rejected_rec.accepted = False
+
+    db.add(accepted_rec)
+    db.add(rejected_rec)
+
+    conn = sqlite3.connect(tmp_path / "backtest_runs.db")
+    rows = conn.execute(
+        "SELECT run_id, decision_status FROM backtest_runs ORDER BY run_id"
+    ).fetchall()
+    conn.close()
+
+    status_by_id = {r[0]: r[1] for r in rows}
+    assert status_by_id[accepted_rec.run_id] == "keep"
+    assert status_by_id[rejected_rec.run_id] == "discard"
+
+
+def test_best_by_metric_skips_corrupt_lower_direction(tmp_path: Path, caplog) -> None:
+    """F9: corrupt metric must be skipped, not coerced to 0.0 and win lower-is-better."""
+    import logging
+
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="max_drawdown", direction="lower")
+
+    corrupt = _record(round_number=1, job=1)
+    corrupt.validation_metrics["max_drawdown"] = "not-a-number"
+    good = _record(round_number=2, job=1)
+    good.validation_metrics["max_drawdown"] = 2.5
+
+    db.add(corrupt)
+    db.add(good)
+
+    with caplog.at_level(logging.WARNING):
+        best = db.best_by_metric("max_drawdown")
+
+    assert best is not None
+    assert best.run_id == good.run_id
+    assert "not-a-number" in caplog.text
+
+
+def test_baseline_checkpoint_persists_to_sqlite(tmp_path: Path) -> None:
+    """F1/U3: BaselineTracker.record() must write to baseline_checkpoints table."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    from backtest_run_db import BaselineCheckpoint, BaselineTracker
+
+    tracker = BaselineTracker(
+        tmp_path / "ema_baseline_checkpoints.json",
+        db_path=db.path,
+    )
+
+    checkpoint = BaselineCheckpoint(
+        code_commit="abc123",
+        data_hash="def456",
+        config_hash="ghi789",
+        metrics={"profit_factor": 1.5, "max_drawdown": 0.12},
+        timestamp="2026-06-10T12:00:00+00:00",
+        round_number=3,
+    )
+    tracker.record(checkpoint)
+
+    import sqlite3
+
+    conn = sqlite3.connect(tmp_path / "backtest_runs.db")
+    rows = conn.execute(
+        "SELECT checkpoint_id, strategy_family, code_commit, round_number FROM baseline_checkpoints"
+    ).fetchall()
+    conn.close()
+
+    assert len(rows) == 1
+    assert rows[0][0]  # checkpoint_id is non-empty
+    assert rows[0][1] == "ema"  # strategy_family from session
+    assert rows[0][2] == "abc123"
+    assert rows[0][3] == 3
+
+
+def test_reload_picks_up_external_sqlite_write(tmp_path: Path) -> None:
+    """U2: reload() must invalidate the cache so external writes are visible."""
+    db_path = tmp_path / "backtest_runs.db"
+    db1 = BacktestRunDB(db_path)
+    db1.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    rec = _record(round_number=1, job=1)
+    db1.add(rec)
+    assert db1.count() == 1
+
+    # External write via a second connection (simulates VPS run)
+    db2 = BacktestRunDB(db_path)
+    rec2 = _record(round_number=2, job=1)
+    db2.add(rec2)
+
+    # db1 still sees stale cache
+    assert db1.count() == 1
+
+    # After reload, sees the external write
+    db1.reload()
+    assert db1.count() == 2
+
+
+def test_ensure_round_started_creates_in_progress_row(tmp_path: Path) -> None:
+    """F15: a research_rounds row should exist after ensure_round_started."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    db.ensure_round_started(
+        research_round_id="job-1-round-1",
+        job_id=1,
+        round_number=1,
+        run_id="run-abc",
+    )
+
+    conn = sqlite3.connect(tmp_path / "backtest_runs.db")
+    rows = conn.execute(
+        "SELECT outcome FROM research_rounds WHERE research_round_id = 'job-1-round-1'"
+    ).fetchall()
+    conn.close()
+
+    assert len(rows) == 1
+    assert rows[0][0] == "in_progress"
+
+
+def test_ensure_round_started_is_idempotent(tmp_path: Path) -> None:
+    """ensure_round_started must not overwrite an existing round row."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    db.ensure_round_started(
+        research_round_id="job-1-round-1",
+        job_id=1,
+        round_number=1,
+        run_id="run-abc",
+    )
+    # Calling again should not error or duplicate
+    db.ensure_round_started(
+        research_round_id="job-1-round-1",
+        job_id=1,
+        round_number=1,
+        run_id="run-abc",
+    )
+
+    conn = sqlite3.connect(tmp_path / "backtest_runs.db")
+    rows = conn.execute(
+        "SELECT outcome FROM research_rounds WHERE research_round_id = 'job-1-round-1'"
+    ).fetchall()
+    conn.close()
+    assert len(rows) == 1

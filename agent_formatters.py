@@ -119,7 +119,11 @@ def format_result_history(results: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def format_round_results_summary(results: list[dict[str, Any]]) -> str:
+def format_round_results_summary(
+    results: list[dict[str, Any]],
+    *,
+    best_direction: str | None = None,
+) -> str:
     """Small prompt seed; conductor tools provide full round history."""
     if not results:
         return "No backtest runs yet."
@@ -132,7 +136,8 @@ def format_round_results_summary(results: list[dict[str, Any]]) -> str:
         except (TypeError, ValueError):
             return float("-inf")
 
-    best = max(results, key=_metric_score)
+    lower_is_better = str(best_direction or "").lower() in {"lower", "min", "minimize"}
+    best = min(results, key=_metric_score) if lower_is_better else max(results, key=_metric_score)
 
     def _line(label: str, result: dict[str, Any]) -> str:
         thesis_id = result.get("thesis_id") or result.get("config") or "unknown"

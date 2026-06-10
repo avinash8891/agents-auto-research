@@ -1,8 +1,0 @@
-{
-  "generated_config_path": "experiments/ema5/runtime_config.json",
-  "selected_thesis_path": "runtime/jobs/job-25/research/round-1/selected_thesis.json",
-  "selected_contract_path": "runtime/jobs/job-25/research/round-1/selected_contract.json",
-  "related_backtest_run_artifact_path": null,
-  "related_trace_export_path": "runtime/jobs/job-25/research/round-1/trace_exports",
-  "related_builder_request_path": null
-}

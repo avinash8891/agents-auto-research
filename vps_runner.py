@@ -386,7 +386,14 @@ def build_git_status_command(config: VPSConfig) -> str:
         'repo_dir="" && current="missing" && '
         f"if [ -d {repo_cache_dir}/.git ]; then "
         f"repo_dir={repo_cache_dir} && "
-        f'if [ -L {current_link} ]; then current=$(basename "$(readlink {current_link})"); fi; '
+        f"if [ -L {current_link} ]; then "
+        f"current_target=$(readlink {current_link}) && "
+        f'case "$current_target" in /*) current_path="$current_target" ;; '
+        f'*) current_path="$(dirname {current_link})/$current_target" ;; esac && '
+        f'if [ -d "$current_path/.git" ] && [ -f "$current_path/autoresearch_controller.py" ]; then '
+        f'current=$(basename "$current_target"); '
+        "fi; "
+        "fi; "
         f"elif [ -d {remote_dir}/.git ]; then "
         f"repo_dir={remote_dir} && "
         'current=$(git -C "$repo_dir" rev-parse --verify HEAD^{commit}); '
@@ -451,22 +458,18 @@ def build_activity_probe_command(config: VPSConfig, family: StrategyFamily) -> s
         "    next_action = state.get('next_action') if isinstance(state.get('next_action'), dict) else {}\n"
         "    payload['next_action_type'] = next_action.get('type')\n"
         "    payload['builder_thesis_id'] = next_action.get('builder_thesis_id') or state.get('halted_thesis_id')\n"
-        "    # Deploy migration compat: accept both 'run_round' (post-refactor) and\n"
-        "    # 'run_experiment' (pre-refactor) so the safety check still recognizes an\n"
-        "    # active backtest on a VPS that hasn't been redeployed yet.\n"
-        "    # TODO: remove the 'run_experiment' branch once all VPS instances are post-refactor.\n"
         "    state_active = bool(state.get('research_round_in_progress')) or (\n"
         "        state.get('state') == 'building' and next_action.get('type') == 'builder_running'\n"
         "    ) or (\n"
         "        state.get('state') == 'running'\n"
-        "        and next_action.get('type') in ('run_round', 'run_experiment')\n"
+        "        and next_action.get('type') == 'run_round'\n"
         "    )\n"
         "    payload['state_active'] = bool(state_active)\n"
         "if payload['process_running'] and payload['state_active']:\n"
         "    payload['active'] = True\n"
         "    if state.get('research_round_in_progress'):\n"
         "        payload['reason'] = f\"research_round_in_progress={state.get('research_round_in_progress')}\"\n"
-        "    elif state.get('state') == 'running' and next_action.get('type') in ('run_round', 'run_experiment'):\n"
+        "    elif state.get('state') == 'running' and next_action.get('type') == 'run_round':\n"
         "        payload['reason'] = f\"{next_action.get('type')} config={next_action.get('config') or '?'}\"\n"
         "    else:\n"
         "        payload['reason'] = f\"builder_running thesis={payload['builder_thesis_id'] or '?'}\"\n"

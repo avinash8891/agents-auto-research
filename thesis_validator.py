@@ -16,8 +16,9 @@ Contract-extraction rule (for maintainers adding or refactoring checks)
 
 Multi-check contracts (e.g. mechanism_dimension, emergent path,
 underexplored_dimensions, thesis_specifies_change, expected_effects) live in
-dedicated private `_validate_<contract>(...)` helpers. The live validator
-routes through `_run_behavioral_pass` and `_collect_mechanical_failures`.
+dedicated private `_validate_<contract>(...)` helpers and feed the live
+mechanical/behavioral collectors. `validate_research_thesis` is the only
+entry point for full thesis validation.
 
 When deciding whether to bundle two related checks into one helper, apply
 this test:
@@ -49,6 +50,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from autoresearch_logging import get_logger
+from autoresearch_runtime_paths import iter_family_backtest_db_paths
 from behavior_signals import BehaviorSignal
 from behavior_signals import decide as _policy_decide
 from research_types import (
@@ -304,9 +306,8 @@ def _validate_base_config_path(path: str) -> None:
                 evidence={"path": path},
             )
         # Other non-configs/ paths (including legacy experiments/) fall through
-        # to the mechanical inheritance-blocked check, which rejects ANY path
-        # that isn't the family baseline. That gate is the authoritative
-        # inheritance check; this specific subcase was redundant.
+        # to the inheritance_blocked check in the mechanical config-validity
+        # collector, which rejects ANY path that isn't the family baseline.
 
 
 def _family_baseline_path(thesis: ResearchThesis) -> str:
@@ -958,13 +959,18 @@ def normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]:
+def load_prior_theses(
+    root: Path,
+    db: Any | None = None,
+    *,
+    strategy_family: str | None = None,
+) -> list[dict[str, Any]]:
     """Load all previously proposed theses from canonical persistence."""
     prior: list[dict[str, Any]] = []
     if db is None:
-        from backtest_run_db import BacktestRunDB, resolve_db_paths
+        from backtest_run_db import BacktestRunDB
 
-        for db_path in resolve_db_paths(root=root):
+        for db_path in _iter_backtest_db_paths(root, family=strategy_family):
             db = BacktestRunDB(db_path)
             for line_no, row in enumerate(db.list_research_thesis_attempts(), start=1):
                 if not isinstance(row, dict):
@@ -974,6 +980,8 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
                         db_path,
                         line_no,
                     )
+                    continue
+                if strategy_family and row.get("strategy_family") != strategy_family:
                     continue
                 config_changes = row.get("config_changes") or {}
                 if config_changes:
@@ -995,6 +1003,8 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
                 line_no,
             )
             continue
+        if strategy_family and row.get("strategy_family") != strategy_family:
+            continue
         config_changes = row.get("config_changes") or {}
         if config_changes:
             prior.append(_prior_thesis_entry(row))
@@ -1005,6 +1015,10 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
         ) == EMERGENT_MECHANISM_DIMENSION and details.get("new_dimension_name"):
             prior.append(_prior_thesis_entry(row))
     return prior
+
+
+def _iter_backtest_db_paths(root: Path, *, family: str | None = None) -> list[Path]:
+    return iter_family_backtest_db_paths(root, family=family)
 
 
 def _flatten_config_change_keys(config_changes: dict[str, Any]) -> set[str]:
@@ -1420,9 +1434,10 @@ def _validate_expected_effects_present(thesis: ResearchThesis) -> None:
     """Validate that expected_effects is populated.
 
     The conductor must declare ≥1 prediction before a thesis can be
-    evaluated. Per-effect metric-backing validation is collected later in
-    `_collect_mechanical_failures` so disqualifier and falsification failures
-    can be reported alongside it.
+    evaluated. Per-effect metric-backing validation lives in a separate
+    helper (_validate_expected_effects_metrics_backed) called later by the
+    mechanical collector — that check must run only after the falsification
+    and disqualifiers presence checks have passed.
     """
     if not thesis.expected_effects:
         raise ThesisValidationError(
@@ -1525,8 +1540,7 @@ def _collect_source_code_verification_failures(thesis: ResearchThesis) -> list[B
                     confidence=1.0,
                     severity="block",
                     summary=(
-                        f"source_code_verification symbol '{symbol}' was not found "
-                        f"in '{raw_path}'"
+                        f"source_code_verification symbol '{symbol}' was not found in '{raw_path}'"
                     ),
                     evidence={"path": raw_path, "symbol": symbol},
                 )
@@ -2105,11 +2119,11 @@ def _collect_runtime_config_keys(value: Any) -> set[str]:
 def _detect_stage_2_hypothesis_config_misalignment(
     hypothesis: str,
     mechanism: str,
-    runtime_config: dict[str, Any],
+    config_changes: dict[str, Any],
     strategy_family: str,
 ) -> BehaviorSignal | None:
     score, explanation = check_hypothesis_alignment(
-        hypothesis, mechanism, runtime_config, family_name=strategy_family
+        hypothesis, mechanism, config_changes, family_name=strategy_family
     )
     if score >= ALIGNMENT_THRESHOLD:
         return None
@@ -2178,8 +2192,8 @@ def validate_stage_2(contract: Any) -> Any:
     """Stage 2: post-compile validator. Operates on the compiled BacktestContract.
 
     Rules that need the resolved/normalized config live here:
-      - hypothesis-config alignment scored against `contract.runtime_config`
-        (NOT against `thesis.config_changes`, which is a pre-compile artifact)
+      - hypothesis-config alignment scored against `contract.config_changes`
+        so inherited baseline keys do not dilute a mismatched thesis delta
       - every entry in `thesis.required_diagnostics` (carried through to
         `contract.required_diagnostics`) must resolve to a real diagnostic in
         the compiled output — present in `contract.required_diagnostic_specs`
@@ -2191,15 +2205,16 @@ def validate_stage_2(contract: Any) -> Any:
         return contract
 
     runtime_config = getattr(contract, "runtime_config", None) or {}
+    config_changes = getattr(contract, "config_changes", None) or {}
     hypothesis = getattr(contract, "hypothesis", "") or ""
     mechanism = getattr(contract, "mechanism", "") or ""
     strategy_family = getattr(contract, "strategy_family", "") or ""
 
     signals: list[BehaviorSignal] = []
-    if isinstance(runtime_config, dict) and runtime_config:
+    if isinstance(config_changes, dict) and config_changes:
         try:
             signal = _detect_stage_2_hypothesis_config_misalignment(
-                hypothesis, mechanism, runtime_config, strategy_family
+                hypothesis, mechanism, config_changes, strategy_family
             )
         except MissingFamilyKeyConceptsError as exc:
             # Operator-visible configuration error, not a thesis-quality issue.

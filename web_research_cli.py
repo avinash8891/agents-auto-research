@@ -23,6 +23,10 @@ WEB_RESEARCH_REASONING_EFFORT = "low"
 class WebResearchCliError(RuntimeError):
     """Raised when the Codex CLI web-search boundary fails before JSON parsing."""
 
+    def __init__(self, message: str, *, metadata: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.metadata = metadata or {}
+
 
 def _find_codex_cli() -> str | None:
     return shutil.which("codex")
@@ -92,7 +96,7 @@ def _extract_codex_token_usage(stdout: str) -> tuple[dict[str, int], str] | None
         info = payload.get("info")
         if not isinstance(info, dict):
             continue
-        raw_usage = info.get("last_token_usage") or info.get("total_token_usage")
+        raw_usage = info.get("total_token_usage") or info.get("last_token_usage")
         if not isinstance(raw_usage, dict):
             continue
         usage_result = (
@@ -103,7 +107,7 @@ def _extract_codex_token_usage(stdout: str) -> tuple[dict[str, int], str] | None
                 "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
                 "total_tokens": int(raw_usage.get("total_tokens") or 0),
             },
-            "codex_json_last_token_usage",
+            "codex_json_total_token_usage",
         )
     return usage_result
 
@@ -210,7 +214,8 @@ def run_codex_web_research(
         if process.returncode != 0:
             raise WebResearchCliError(
                 "codex web research failed "
-                f"exit={process.returncode} stdout_len={len(stdout)} stderr_len={len(stderr)}"
+                f"exit={process.returncode} stdout_len={len(stdout)} stderr_len={len(stderr)}",
+                metadata=metadata,
             )
         return output, metadata
 

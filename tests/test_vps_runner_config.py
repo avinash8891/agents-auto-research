@@ -469,9 +469,7 @@ def test_activity_probe_command_targets_family_state_and_process() -> None:
     assert "research_round_in_progress" in command
     assert "builder_running" in command
     assert "run_round" in command
-    # Deploy migration compat: probe must also recognize legacy 'run_experiment'
-    # so the safety check refuses to overwrite a pre-refactor active backtest.
-    assert "run_experiment" in command
+    assert "run_experiment" not in command
     assert "controller_process_running_without_active_state" in command
     assert "state_error" in command
 
@@ -607,6 +605,8 @@ def test_git_status_command_reports_current_and_resolved_sha_without_checkout() 
     assert "git -c remote.origin.url=https://github.com/example/repo.git fetch" in command
     assert "AUTORESEARCH_CURRENT_SHA" in command
     assert "AUTORESEARCH_RESOLVED_SHA" in command
+    assert 'current_path="$(dirname /srv/autoresearch/current)/$current_target"' in command
+    assert '[ -f "$current_path/autoresearch_controller.py" ]' in command
 
 
 def test_parse_current_sha_reads_remote_status_marker() -> None:

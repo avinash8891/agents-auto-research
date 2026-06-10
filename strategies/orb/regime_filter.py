@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from numba_kernels import njit
-from strategies.orb.schema import canonical_regimes
+from strategies.orb.schema import canonical_regimes, normalize_regime_name
 
 
 @njit(cache=True)
@@ -140,16 +140,10 @@ def classify_regimes(
         wide_or_mask = (or_width_daily > wide_or_mult * median_or) & (median_or > 0)
         narrow_or_mask = (or_width_daily < narrow_or_mult * median_or) & (median_or > 0)
 
-    # LOOK-AHEAD FIX: only lag regimes that use full-day data.
+    # Only same-session opening range width is known before ORB entries.
     #
-    # Per research (TradingStats 6142-day study, Crabel 1990, Holmberg 2013):
-    # - chop: counts midpoint crosses through the ENTIRE day -> look-ahead
-    # - trend: uses close vs open relative to day range -> look-ahead
-    # - high-vol/low-vol: ATR includes the current day's full-session range -> look-ahead
-    # - wide-OR/narrow-OR: OR width known at 10:00 AM -> NO look-ahead
-    #
-    # Lagging chop/trend by 1 day is consistent with volatility clustering
-    # (Crabel NR4/NR7, Ding 2012) but is an untested hypothesis for ORB.
+    # chop/trend/high-vol/low-vol use full-session daily bars, so trades
+    # entered during day D may only use the regime labels known after day D-1.
     needs_lag = {"chop", "trend", "high-vol", "low-vol"}
 
     result = {}
@@ -197,6 +191,14 @@ def apply_regime_gate(
         return trades_df
     if not skip_regimes and not require_regimes:
         return trades_df
+    normalized_skip = (
+        {normalize_regime_name(str(regime)) for regime in skip_regimes} if skip_regimes else None
+    )
+    normalized_require = (
+        {normalize_regime_name(str(regime)) for regime in require_regimes}
+        if require_regimes
+        else None
+    )
 
     entry_dates = (
         trades_df["entry_date"].dt.date
@@ -214,17 +216,17 @@ def apply_regime_gate(
         s = syms.iloc[i]
 
         # Skip check
-        if skip_regimes:
-            for regime_name in skip_regimes:
+        if normalized_skip:
+            for regime_name in normalized_skip:
                 df = regime_dict.get(regime_name)
                 if df is not None and d in df.index and s in df.columns and df.at[d, s]:
                     keep_mask[i] = False
                     break
 
         # Require check (must match at least one)
-        if require_regimes and keep_mask[i]:
+        if normalized_require and keep_mask[i]:
             matched = False
-            for regime_name in require_regimes:
+            for regime_name in normalized_require:
                 df = regime_dict.get(regime_name)
                 if df is not None and d in df.index and s in df.columns and df.at[d, s]:
                     matched = True
