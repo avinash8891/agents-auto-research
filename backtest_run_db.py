@@ -289,15 +289,11 @@ class BacktestRunDB:
             self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "strategy_family", "TEXT NOT NULL DEFAULT ''"
             )
-            self._ensure_column(
-                conn, BACKTEST_RUNS_TABLE, "job_id", "INTEGER NOT NULL DEFAULT 0"
-            )
+            self._ensure_column(conn, BACKTEST_RUNS_TABLE, "job_id", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "primary_metric_name", "TEXT NOT NULL DEFAULT ''"
             )
-            self._ensure_column(
-                conn, BACKTEST_RUNS_TABLE, "primary_metric_value", "REAL"
-            )
+            self._ensure_column(conn, BACKTEST_RUNS_TABLE, "primary_metric_value", "REAL")
             self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "metrics_json", "TEXT NOT NULL DEFAULT '{}'"
             )
@@ -1099,7 +1095,9 @@ class BacktestRunDB:
             except (TypeError, ValueError):
                 log.warning(
                     "best_by_metric: skipping run %s — metric %r value %r is not numeric",
-                    r.run_id, metric, val,
+                    r.run_id,
+                    metric,
+                    val,
                 )
                 continue
             if best is None:

@@ -30,6 +30,8 @@ HALO_BINARY_ENV = "AUTORESEARCH_HALO_BINARY"
 
 def halo_timeout_seconds() -> int:
     return require_positive_int_env(ENV_HALO_TIMEOUT_SECONDS, _HALO_TIMEOUT_DEFAULT)
+
+
 DEFAULT_HALO_BINARY = Path("/opt/autoresearch-tools/halo/venv/bin/halo")
 
 DIAGNOSTIC_PROMPT = (

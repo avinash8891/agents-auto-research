@@ -38,6 +38,7 @@ _CLAUDE_TIMEOUT_DEFAULT = 1800
 def claude_timeout_seconds() -> int:
     return require_positive_int_env(ENV_CLAUDE_TIMEOUT_SECONDS, _CLAUDE_TIMEOUT_DEFAULT)
 
+
 DEFAULT_EDIT_SCOPE = (
     "agent_prompts.py",
     "agent_orchestrator_helpers.py",

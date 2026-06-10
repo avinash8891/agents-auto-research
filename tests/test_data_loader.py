@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
 import pandas as pd
+import pytest
 
 from data_loader import DataLoadError, load_data
-
 
 _IDX = pd.date_range("2024-01-02 09:30", periods=3, freq="5min", tz="US/Eastern")
 _FIELDS = ["close", "open", "high", "low", "volume"]
@@ -61,7 +60,10 @@ def test_load_data_succeeds_when_all_symbols_present_wide(tmp_path):
 
     assert set(result.keys()) == {"close", "open", "high", "low", "volume"}
     for field, df in result.items():
-        assert set(df.columns) == {"AAPL", "MSFT"}, f"Unexpected columns in {field}: {df.columns.tolist()}"
+        assert set(df.columns) == {
+            "AAPL",
+            "MSFT",
+        }, f"Unexpected columns in {field}: {df.columns.tolist()}"
 
 
 # ---------------------------------------------------------------------------

@@ -397,20 +397,33 @@ def test_backtest_runs_has_canonical_columns_and_indexes(tmp_path: Path) -> None
     conn = sqlite3.connect(tmp_path / "backtest_runs.db")
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(backtest_runs)").fetchall()}
-    for col in ("decision_status", "created_at_utc", "strategy_family",
-                "job_id", "primary_metric_name", "primary_metric_value",
-                "metrics_json", "trade_analysis_json", "trace_run_id"):
+    for col in (
+        "decision_status",
+        "created_at_utc",
+        "strategy_family",
+        "job_id",
+        "primary_metric_name",
+        "primary_metric_value",
+        "metrics_json",
+        "trade_analysis_json",
+        "trace_run_id",
+    ):
         assert col in columns, f"missing canonical column: {col}"
 
-    indexes = {row[1] for row in conn.execute(
-        "SELECT * FROM sqlite_master WHERE type='index' AND tbl_name='backtest_runs'"
-    ).fetchall()}
-    for idx in ("idx_backtest_runs_thesis_id",
-                "idx_backtest_runs_strategy_family_created_at",
-                "idx_backtest_runs_job_id",
-                "idx_backtest_runs_code_commit",
-                "idx_backtest_runs_decision_status",
-                "idx_backtest_runs_primary_metric_value"):
+    indexes = {
+        row[1]
+        for row in conn.execute(
+            "SELECT * FROM sqlite_master WHERE type='index' AND tbl_name='backtest_runs'"
+        ).fetchall()
+    }
+    for idx in (
+        "idx_backtest_runs_thesis_id",
+        "idx_backtest_runs_strategy_family_created_at",
+        "idx_backtest_runs_job_id",
+        "idx_backtest_runs_code_commit",
+        "idx_backtest_runs_decision_status",
+        "idx_backtest_runs_primary_metric_value",
+    ):
         assert idx in indexes, f"missing required index: {idx}"
     conn.close()
 
