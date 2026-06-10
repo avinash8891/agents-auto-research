@@ -691,6 +691,68 @@ def test_conductor_marks_cold_start_evidence_context_without_latest_outcome(
     assert captured["require_analyst_tool"] is False
 
 
+def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_validator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rendered_corpus = "## Corpus\n- family: ema\n\n## Causal Factors\n- f001\n"
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+    monkeypatch.setattr(
+        conductor,
+        "validate_thesis_dict",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("old thesis validator must not run")
+        ),
+    )
+
+    def _run_streamed(agent, user_prompt, max_turns, run_config):
+        captured["user_prompt"] = user_prompt
+        captured["system_prompt"] = agent.instructions
+        captured["output_type"] = getattr(agent, "output_type", None)
+        return _StreamedResult(
+            json.dumps(
+                {
+                    "hypothesis": "Gap-down entries reveal loss-prone inventory.",
+                    "mechanism": "Opening imbalance continuation overwhelms the EMA signal.",
+                    "causal_factors": [
+                        {
+                            "factor_id": "f001",
+                            "story": "Gap-down entries have loss skew.",
+                            "rule": "gap_pct < 0",
+                            "direction": "loss",
+                            "evidence_rounds": [2],
+                            "status": "candidate",
+                        }
+                    ],
+                    "reasoning": "Corpus supports a loss mechanism.",
+                    "should_stop": False,
+                }
+            ),
+            agent,
+        )
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "legacy round results must not be included",
+        {"status": "keep"},
+        research_round=12,
+        family_name="ema",
+        rendered_corpus=rendered_corpus,
+    )
+
+    assert out is not None
+    assert out.status == "ok"
+    assert out.thesis is not None
+    assert out.thesis["hypothesis"] == "Gap-down entries reveal loss-prone inventory."
+    assert captured["user_prompt"] == rendered_corpus
+    assert "legacy round results" not in str(captured["user_prompt"])
+    assert "feature_table" not in str(captured["system_prompt"])
+    assert getattr(captured["output_type"], "__name__", "") == "MechanismProposal"
+
+
 def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

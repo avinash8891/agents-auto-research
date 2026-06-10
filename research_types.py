@@ -127,6 +127,16 @@ class CausalFactor(BaseModel):
     status: Literal["candidate", "supported", "refuted", "harvested"] = "candidate"
 
 
+class MechanismProposal(BaseModel):
+    """Conductor output for the causal-engine research path."""
+
+    hypothesis: str
+    mechanism: str
+    causal_factors: list[CausalFactor] = Field(default_factory=list)
+    reasoning: str = ""
+    should_stop: bool = False
+
+
 EMERGENT_MECHANISM_DIMENSION = "emergent"
 
 # Stable built-in mechanism dimensions for thesis classification.

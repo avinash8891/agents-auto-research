@@ -40,7 +40,7 @@ from research_paths import (
 )
 from research_prompts import _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
-from research_types import ConductorResult
+from research_types import ConductorResult, MechanismProposal
 from strategy_family import load_family
 from thesis_validator import validate_thesis_dict
 from trace_refinement import RefinementRecorder
@@ -62,6 +62,16 @@ __all__ = [
 ]
 
 _REFINEMENT_RECORDER = RefinementRecorder()
+
+
+def _build_mechanism_system_prompt() -> str:
+    return (
+        "You are the autoresearch causal mechanism proposer. Use only the rendered "
+        "corpus supplied by the user. Identify the next causal mechanism and candidate "
+        "rule factors that should be tested out of sample. Return only JSON matching "
+        "the MechanismProposal schema: hypothesis, mechanism, causal_factors, "
+        "reasoning, and should_stop."
+    )
 
 
 def _strategy_description_for(family_name: str) -> str:
@@ -137,11 +147,17 @@ async def run_research_conductor(
     rejection_feedback: str = "",
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
+    rendered_corpus: str = "",
 ) -> ConductorResult:
     strategy_desc = _strategy_description_for(family_name)
     resolution_context = latest_outcome.get("resolution_context")
 
-    system_prompt = _build_conductor_system_prompt(strategy_desc)
+    mechanism_path = bool(rendered_corpus)
+    system_prompt = (
+        _build_mechanism_system_prompt()
+        if mechanism_path
+        else _build_conductor_system_prompt(strategy_desc)
+    )
 
     outcome_lines = json.dumps(latest_outcome, indent=2) if latest_outcome else "(no results yet)"
     base_prompt = (
@@ -151,7 +167,9 @@ async def run_research_conductor(
         f"PRIOR ROUNDS — RESULTS SUMMARY:\n{round_results}\n\n"
     )
 
-    if trades_file:
+    if mechanism_path:
+        user_prompt = rendered_corpus
+    elif trades_file:
         evidence_lines = f"Trades file for analysis: {trades_file}"
         if strategy_events_file:
             evidence_lines += (
@@ -840,24 +858,31 @@ async def run_research_conductor(
         agent = OAIAgent(
             name="research-conductor",
             instructions=system_prompt,
-            tools=[
-                analyze_trades,
-                web_search,
-                save_finding,
-                search_findings,
-                memory_status,
-                list_past_theses,
-                get_past_thesis,
-                list_round_results,
-                get_round_result,
-                list_rejections_tool,
-                get_rejection_tool,
-                rejection_pattern_summary_tool,
-                get_dimension_examples_tool,
-                get_tuning_examples_tool,
-            ],
+            tools=(
+                []
+                if mechanism_path
+                else [
+                    analyze_trades,
+                    web_search,
+                    save_finding,
+                    search_findings,
+                    memory_status,
+                    list_past_theses,
+                    get_past_thesis,
+                    list_round_results,
+                    get_round_result,
+                    list_rejections_tool,
+                    get_rejection_tool,
+                    rejection_pattern_summary_tool,
+                    get_dimension_examples_tool,
+                    get_tuning_examples_tool,
+                ]
+            ),
             model=model,
+            output_type=MechanismProposal if mechanism_path else None,
         )
+        if mechanism_path and not hasattr(agent, "output_type"):
+            setattr(agent, "output_type", MechanismProposal)
 
         result = OAIRunner.run_streamed(
             agent,
@@ -950,6 +975,51 @@ async def run_research_conductor(
     )
 
     if parsed:
+        if mechanism_path:
+            try:
+                proposal = MechanismProposal.model_validate(parsed)
+            except Exception as exc:
+                validation_reason = str(exc)
+            else:
+                if proposal.should_stop:
+                    _REFINEMENT_RECORDER.finish_session(
+                        session_id=refinement_session["session_id"],
+                        stopping_reason="should_stop",
+                        final_outcome="stop",
+                    )
+                    session_finished = True
+                    return ConductorResult(
+                        status="should_stop",
+                        should_stop=True,
+                        reasoning=proposal.reasoning,
+                    )
+                _REFINEMENT_RECORDER.finish_session(
+                    session_id=refinement_session["session_id"],
+                    stopping_reason="mechanism_proposal",
+                    final_outcome="accepted",
+                )
+                session_finished = True
+                return ConductorResult(
+                    status="ok",
+                    thesis=proposal.model_dump(),
+                    reasoning=proposal.reasoning,
+                    tools_called=frozenset(tools_called_this_round),
+                )
+            failure = ConductorResult(
+                status="conductor_error",
+                error="validation_failed",
+                validation_reason=validation_reason,
+                reasoning=parsed.get("reasoning", ""),
+                thesis=parsed if isinstance(parsed, dict) else None,
+                tools_called=frozenset(tools_called_this_round),
+            )
+            if not session_finished:
+                _REFINEMENT_RECORDER.finish_session(
+                    session_id=refinement_session["session_id"],
+                    stopping_reason="invalid_output",
+                    final_outcome="retry_required",
+                )
+            return failure
         if parsed.get("should_stop"):
             trace(
                 "CONDUCTOR",
@@ -1069,6 +1139,7 @@ def run_research_conductor_sync(
     rejection_feedback: str = "",
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
+    rendered_corpus: str = "",
 ) -> ConductorResult | None:
     return _run_coroutine_sync(
         run_research_conductor(
@@ -1082,5 +1153,6 @@ def run_research_conductor_sync(
             rejection_feedback=rejection_feedback,
             agent_reflexions=agent_reflexions,
             current_job=current_job,
+            rendered_corpus=rendered_corpus,
         )
     )
