@@ -1,0 +1,36 @@
+.github/workflows/ci.yml
+  s_7b3a36a5bf11f5::t_27b35eb577a02f 25
+autoresearch_research.py
+  s_7b3a36a5bf11f5::t_95ed21476ab62c 1472,1517
+  s_7b3a36a5bf11f5::t_b275968518397b 1450-1462,1574-1576
+  s_7b3a36a5bf11f5::t_f13008fd5d4bba 12,1463-1471,1473-1516,1518-1546,1596
+trace_adapters/reflexio.py
+  s_7b3a36a5bf11f5::t_5a16ecd5d9a3f4 25,29,44,49-52,61,131-132,180-235
+  s_7b3a36a5bf11f5::t_578a3a9b3792a5 128-130
+tests/test_autoresearch_research.py
+  s_7b3a36a5bf11f5::t_c55aa3bce9fd3d 31,626-630
+tests/test_reflexio_agent_reflections.py
+  s_7b3a36a5bf11f5::t_3e1fee4c426a0b 1-51
+  s_7b3a36a5bf11f5::t_548697f7ebe526 52-61
+reflexio_agent_reflections.py
+  s_7b3a36a5bf11f5::t_dcabd7e894373c 6-10,17,29,47-51,56-57,74,96-99,128-178,182-205,207-223
+  s_7b3a36a5bf11f5::t_9ca8f60fc2f538 25-26
+  s_7b3a36a5bf11f5::t_995570a7aa380b 70,118,122-124
+  s_7b3a36a5bf11f5::t_95ed21476ab62c 179-181,206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "ca26f5f2e63666f830923b97a01f5768cb4c0051",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
