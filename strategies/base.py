@@ -10,6 +10,7 @@ from typing import Any, Protocol
 import yaml
 
 from family_research_spec import FamilyResearchSpec
+from strategies.contract import BacktestSemanticsContract, backtest_semantics_for_family
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,8 @@ class Strategy(Protocol):
     ) -> list[dict[str, Any]]: ...
     @property
     def family_dirnames(self) -> FamilyDirnames: ...
+    @property
+    def backtest_contract(self) -> BacktestSemanticsContract: ...
 
 
 class BaseStrategy:
@@ -75,6 +78,10 @@ class BaseStrategy:
             runs=f"{self.name}_autoresearch-runs",
             variant_prefix=f"{self.name}_",
         )
+
+    @property
+    def backtest_contract(self) -> BacktestSemanticsContract:
+        return backtest_semantics_for_family(self.name)
 
     def validate_runtime_config_scope(
         self, config: dict[str, Any], source_path: Path | None = None

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from artifact_io import read_json_artifacts as read_artifact_json_files
+from autoresearch_artifact_schemas import read_round_artifact
 from autoresearch_logging import get_logger
 
 _log = get_logger(__name__)
@@ -45,8 +46,8 @@ def read_research_artifacts(
         loaded: list[tuple[Path, dict[str, Any]]] = []
         for path in research_dir.glob("round-*/round.json"):
             try:
-                payload = json.loads(path.read_text())
-            except (json.JSONDecodeError, OSError):
+                payload = read_round_artifact(path).to_payload()
+            except (json.JSONDecodeError, OSError, ValueError):
                 continue
             payload["artifact_path"] = _serialize_artifact_path(path, root)
             loaded.append((path, payload))

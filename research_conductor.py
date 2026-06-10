@@ -119,6 +119,13 @@ def _strategy_description_for(family_name: str) -> str:
     return description or f"Strategy family: {family_name}"
 
 
+def _backtest_contract_for(family_name: str):
+    try:
+        return load_family(family_name).backtest_contract
+    except ValueError:
+        return None
+
+
 def _render_resolution_context(resolution_context: dict[str, Any] | None) -> str:
     context = resolution_context or {}
     keys = context.get("resolution_config_keys") or []
@@ -188,7 +195,10 @@ async def run_research_conductor(
     strategy_desc = _strategy_description_for(family_name)
     resolution_context = latest_outcome.get("resolution_context")
 
-    system_prompt = _build_conductor_system_prompt(strategy_desc)
+    system_prompt = _build_conductor_system_prompt(
+        strategy_desc,
+        backtest_contract=_backtest_contract_for(family_name),
+    )
 
     outcome_lines = json.dumps(latest_outcome, indent=2) if latest_outcome else "(no results yet)"
     base_prompt = (

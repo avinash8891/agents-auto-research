@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from strategies.contract import BacktestSemanticsContract
+
 # ---------------------------------------------------------------------------
 # Conductor system prompt — v3 (empirical, outcome-only, ~70 lines)
 # ---------------------------------------------------------------------------
@@ -15,7 +17,25 @@ from __future__ import annotations
 # principles (D1, D2) that resist mechanical encoding.
 
 
-def _build_conductor_system_prompt(strategy_description: str) -> str:
+def _format_backtest_contract(contract: BacktestSemanticsContract | None) -> str:
+    if contract is None:
+        return ""
+    return f"""
+BACKTEST SEMANTICS  (generated from code contract)
+- result_schema_version: {contract.result_schema_version}
+- unbounded_run_policy: {contract.unbounded_run_policy}
+- entry_bar_stop_policy: {contract.entry_bar_stop_policy}
+- eod_exit_policy: {contract.eod_exit_policy}
+- stop_fill_policy: {contract.stop_fill_policy}
+"""
+
+
+def _build_conductor_system_prompt(
+    strategy_description: str,
+    *,
+    backtest_contract: BacktestSemanticsContract | None = None,
+) -> str:
+    contract_section = _format_backtest_contract(backtest_contract)
     return f"""You are the research conductor for a quantitative trading strategy family.
 
 Each round you do two things in order:
@@ -29,6 +49,7 @@ without it, the thesis is decoration.
 
 STRATEGY
 {strategy_description}
+{contract_section}
 
 ANCHORING
 Mechanism claims compare against the baseline (round-0). Cross-round

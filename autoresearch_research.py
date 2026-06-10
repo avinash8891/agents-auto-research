@@ -18,6 +18,7 @@ import yaml
 from pydantic import ValidationError
 
 from artifact_io import write_json_artifact
+from autoresearch_artifact_schemas import RoundArtifact, write_round_artifact
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
     DISCORD_COLOR_DISCARD,
@@ -1306,6 +1307,17 @@ def _classify_round_outcome(result: dict[str, Any]) -> str:
     return OUTCOME_CONDUCTOR_ERROR
 
 
+def _round_findings(result: dict[str, Any], outcome: str) -> list[str]:
+    raw_findings = result.get("findings")
+    if isinstance(raw_findings, list):
+        return [str(item) for item in raw_findings if str(item).strip()]
+    if isinstance(raw_findings, str) and raw_findings.strip():
+        return [raw_findings]
+    if outcome == "research_exhausted":
+        return ["research exhausted without a runnable thesis"]
+    return []
+
+
 def _record_round_quality_and_bridges(
     controller: "AutoresearchController",
     research_round: int,
@@ -1438,18 +1450,26 @@ def _write_research_round_artifacts(
         (round_root / dirname).mkdir(parents=True, exist_ok=True)
     (round_root / "attempts" / "attempt-1").mkdir(parents=True, exist_ok=True)
     thesis_id = result.get("generated_thesis_id") or result.get("thesis_id")
-    write_json_artifact(
+    outcome = _classify_round_outcome(result)
+    generated_config = str(result.get("generated_config") or "")
+    write_round_artifact(
         round_root / "round.json",
-        {
-            "job_id": job,
-            "round_number": research_round,
-            "strategy_family": controller.family.name,
-            "selected_thesis_id": thesis_id,
-            "outcome": _classify_round_outcome(result),
-            "run_id": result.get("run_id"),
-            "created_at": iso8601_utc_now(),
-            "usage": round_usage if round_usage else None,
-        },
+        RoundArtifact(
+            job_id=job,
+            round_number=research_round,
+            strategy_family=controller.family.name,
+            status="completed",
+            selected_thesis_id=str(thesis_id or ""),
+            outcome=outcome,
+            run_id=result.get("run_id"),
+            created_at=iso8601_utc_now(),
+            usage=round_usage if round_usage else None,
+            generated_config_path=generated_config,
+            generated_configs=[generated_config] if generated_config else [],
+            new_theses_generated=1 if thesis_id else 0,
+            suggested_theses=result.get("suggested_theses") or [],
+            findings=_round_findings(result, outcome),
+        ),
     )
     write_json_artifact(
         round_root / "links.json",
