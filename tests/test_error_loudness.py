@@ -228,8 +228,31 @@ def test_compute_metrics_zero_trades_returns_sentinel_values() -> None:
 
     assert metrics["trade_count"] == 0
     assert metrics["median_expectancy"] == 0.0
-    assert metrics["pct_profitable_windows"] == 0.0
     assert metrics["profit_factor"] == 0.0
+    assert "pct_profitable_windows" not in metrics
+    assert "avg_sharpe_across_windows" not in metrics
+
+
+def test_compute_metrics_omits_fabricated_window_metrics() -> None:
+    trades = pd.DataFrame({"pnl_pct": [0.02, -0.01, 0.03]})
+
+    metrics = compute_metrics(trades)
+
+    assert "pct_profitable_windows" not in metrics
+    assert "avg_sharpe_across_windows" not in metrics
+
+
+def test_prompts_do_not_advertise_fabricated_window_metrics() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    prompt_paths = [
+        repo_root / "old_conductor_prompt.md",
+        repo_root / "research_prompts.py",
+    ]
+
+    for prompt_path in prompt_paths:
+        text = prompt_path.read_text()
+        assert "pct_profitable_windows" not in text
+        assert "avg_sharpe_across_windows" not in text
 
 
 def test_compute_metrics_all_wins_uses_explicit_profit_factor_sentinel() -> None:

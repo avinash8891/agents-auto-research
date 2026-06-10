@@ -1022,8 +1022,6 @@ class BacktestRunDB:
                 parts.append(f"PF={m['profit_factor']}")
             if m.get("max_drawdown") is not None:
                 parts.append(f"maxDD={m['max_drawdown']}")
-            if m.get("avg_sharpe_across_windows") is not None:
-                parts.append(f"sharpe={m['avg_sharpe_across_windows']}")
             if r.verdict_status and r.verdict_status != "none":
                 parts.append(f"verdict={r.verdict_status}")
             if r.rejection_reason:

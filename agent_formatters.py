@@ -57,8 +57,6 @@ def format_result_history(results: list[dict[str, Any]]) -> str:
             parts.append(f"PF={r['profit_factor']}")
         if r.get("max_drawdown"):
             parts.append(f"maxDD={r['max_drawdown']}")
-        if r.get("avg_sharpe_across_windows"):
-            parts.append(f"sharpe={r['avg_sharpe_across_windows']}")
         if r.get("exit_mix"):
             parts.append(f"exit_mix={r['exit_mix']}")
         if r.get("regime_expectancy"):

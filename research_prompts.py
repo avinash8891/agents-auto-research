@@ -64,7 +64,7 @@ Mechanical pre-emption of the most frequent rejections. Read once and apply.
   regime_conditioning, portfolio_construction, risk_structure, market_microstructure,
   execution_costs, universe_selection, alternative_data, alpha_decay, emergent
 - If an expected_effects.metric is not a builtin (profit_factor, max_drawdown,
-  trade_count, median_expectancy, pct_profitable_windows, avg_sharpe_across_windows),
+  trade_count, median_expectancy),
   list it in required_diagnostics
 - Theme-cluster fixation: at most 3 of the last 7 theses may share theme_keywords
 - Engine-change starvation: at most 2 consecutive theses may set

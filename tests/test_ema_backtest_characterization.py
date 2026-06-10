@@ -170,8 +170,6 @@ def test_main_writes_result_json_with_full_schema(tmp_path: Path) -> None:
         "trade_count": 0,
         "profit_factor": 0.0,
         "max_drawdown": 0.0,
-        "pct_profitable_windows": 0.0,
-        "avg_sharpe_across_windows": 0.0,
         "diagnostics": {},
         "exit_reason_counts": {},
     }

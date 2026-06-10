@@ -67,8 +67,6 @@ BUILTIN_METRICS = {
     "max_drawdown",
     "trade_count",
     "median_expectancy",
-    "pct_profitable_windows",
-    "avg_sharpe_across_windows",
 }
 
 # Minimum Jaccard overlap to trigger rejection
@@ -864,10 +862,6 @@ def _infer_effect_metric(text: str) -> str:
         return "max_drawdown"
     if "expectancy" in lowered or "exp" in lowered:
         return "median_expectancy"
-    if "profitable window" in lowered:
-        return "pct_profitable_windows"
-    if "sharpe" in lowered:
-        return "avg_sharpe_across_windows"
     return "profit_factor"
 
 

@@ -38,19 +38,12 @@ def compute_metrics(trades_df: pd.DataFrame) -> dict:
         return result
     equity = np.cumsum(pnl_arr)
     drawdown = np.maximum.accumulate(equity) - equity
-    sharpe = (
-        float(pnl_arr.mean() / pnl_arr.std() * np.sqrt(len(pnl_arr)))
-        if len(pnl_arr) > 1 and pnl_arr.std() > 0
-        else 0.0
-    )
     diagnostics = compute_diagnostics(trades_df)
     result = {
         "median_expectancy": round(float(np.median(pnl_arr)), 4),
         "trade_count": int(len(pnl_arr)),
         "profit_factor": _profit_factor_from_pnl(pnl_arr),
         "max_drawdown": round(float(np.max(drawdown)) if len(drawdown) else 0.0, 4),
-        "pct_profitable_windows": round(float((pnl_arr > 0).mean()), 4),
-        "avg_sharpe_across_windows": round(sharpe, 4),
         "diagnostics": diagnostics,
     }
     if "exit_reason" in trades_df.columns:
@@ -66,8 +59,6 @@ def empty_metrics() -> dict:
         "trade_count": 0,
         "profit_factor": 0.0,
         "max_drawdown": 0.0,
-        "pct_profitable_windows": 0.0,
-        "avg_sharpe_across_windows": 0.0,
         "exit_reason_counts": {},
         "diagnostics": {},
     }

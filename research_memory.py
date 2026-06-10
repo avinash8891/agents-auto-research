@@ -582,7 +582,6 @@ def _round_index_entry(item: dict[str, Any]) -> dict[str, Any]:
         "trade_count": getattr(record, "trade_count", 0),
         "profit_factor": metrics.get("profit_factor"),
         "max_drawdown": metrics.get("max_drawdown"),
-        "pct_profitable_windows": metrics.get("pct_profitable_windows"),
         "config_path": getattr(record, "config_path", ""),
         "config_change_keys": sorted((getattr(record, "runtime_config", {}) or {}).keys()),
         "verdict_status": getattr(record, "verdict_status", ""),

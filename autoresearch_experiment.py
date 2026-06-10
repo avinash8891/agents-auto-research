@@ -299,8 +299,6 @@ def parse_benchmark_details(output: str, *, allow_legacy: bool = False) -> dict[
             "trade_count",
             "profit_factor",
             "max_drawdown",
-            "pct_profitable_windows",
-            "avg_sharpe_across_windows",
             "win_rate",
         ):
             if key in metrics:
@@ -311,8 +309,6 @@ def parse_benchmark_details(output: str, *, allow_legacy: bool = False) -> dict[
                 "trade_count",
                 "profit_factor",
                 "max_drawdown",
-                "pct_profitable_windows",
-                "avg_sharpe_across_windows",
                 "win_rate",
                 "diagnostics",
                 "exit_reason_counts",
@@ -357,8 +353,6 @@ def parse_benchmark_details_legacy(output: str) -> dict[str, Any]:
         "trade_count": r"^METRIC trade_count=(\d+)",
         "profit_factor": r"^METRIC profit_factor=([-+]?\d*\.?\d+)",
         "max_drawdown": r"^METRIC max_drawdown=([-+]?\d*\.?\d+)",
-        "pct_profitable_windows": r"^METRIC pct_profitable_windows=([-+]?\d*\.?\d+)",
-        "avg_sharpe_across_windows": r"^METRIC avg_sharpe_across_windows=([-+]?\d*\.?\d+)",
         "win_rate": r"^METRIC win_rate=([-+]?\d*\.?\d+)",
     }
     for key, pattern in patterns.items():
@@ -1072,8 +1066,6 @@ def _baseline_metrics_from_first_result(controller: "AutoresearchController") ->
         "trade_count",
         "profit_factor",
         "max_drawdown",
-        "pct_profitable_windows",
-        "avg_sharpe_across_windows",
         "median_expectancy",
     ):
         if bta.get(k) is not None:

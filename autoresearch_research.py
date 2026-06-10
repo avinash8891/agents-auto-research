@@ -309,8 +309,6 @@ def results_to_dicts(results: list[BacktestResultRecord]) -> list[dict[str, Any]
                 "trade_count",
                 "profit_factor",
                 "max_drawdown",
-                "pct_profitable_windows",
-                "avg_sharpe_across_windows",
                 "win_rate",
                 "exit_mix",
                 "regime_expectancy",
@@ -522,8 +520,6 @@ def _resolve_conductor_inputs(
             "trade_count",
             "profit_factor",
             "max_drawdown",
-            "pct_profitable_windows",
-            "avg_sharpe_across_windows",
         ):
             if ta.get(key) is not None:
                 latest_outcome[key] = ta[key]

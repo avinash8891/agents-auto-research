@@ -185,10 +185,10 @@ def test_activate_builder_config_reads_selected_thesis_sidecar(tmp_path: Path) -
                 "strategy_family": "ema",
                 "hypothesis": "h",
                 "mechanism": "m",
-                "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
+                "required_diagnostics": ["Max_drawdown vs base"],
                 "required_diagnostic_specs": [
                     {
-                        "key": "max_drawdown_and_pct_profitable_windows_vs_base",
+                        "key": "max_drawdown_vs_base",
                         "surface": "experiment_evaluation",
                         "payload_fields": ["candidate_max_drawdown"],
                         "aliases": [],
@@ -212,9 +212,7 @@ def test_activate_builder_config_reads_selected_thesis_sidecar(tmp_path: Path) -
 
     assert out["selected_thesis_id"] == thesis_id
     assert written[-1]["backtest_target_path"] == "runtime/jobs/job-5/research/round-3/backtest"
-    assert ctrl.ctx.current_contract.required_diagnostic_specs[0].key == (
-        "max_drawdown_and_pct_profitable_windows_vs_base"
-    )
+    assert ctrl.ctx.current_contract.required_diagnostic_specs[0].key == ("max_drawdown_vs_base")
 
 
 def test_build_missing_primitives_for_state_uses_round_root(tmp_path: Path, monkeypatch) -> None:
@@ -238,10 +236,10 @@ def test_build_missing_primitives_for_state_uses_round_root(tmp_path: Path, monk
                 "strategy_family": "ema",
                 "hypothesis": "h",
                 "mechanism": "m",
-                "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
+                "required_diagnostics": ["Max_drawdown vs base"],
                 "required_diagnostic_specs": [
                     {
-                        "key": "max_drawdown_and_pct_profitable_windows_vs_base",
+                        "key": "max_drawdown_vs_base",
                         "surface": "experiment_evaluation",
                         "payload_fields": ["candidate_max_drawdown"],
                         "aliases": [],
@@ -297,10 +295,10 @@ def test_build_missing_primitives_for_state_uses_runtime_root_when_split(
                 "strategy_family": "ema",
                 "hypothesis": "h",
                 "mechanism": "m",
-                "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
+                "required_diagnostics": ["Max_drawdown vs base"],
                 "required_diagnostic_specs": [
                     {
-                        "key": "max_drawdown_and_pct_profitable_windows_vs_base",
+                        "key": "max_drawdown_vs_base",
                         "surface": "experiment_evaluation",
                         "payload_fields": ["candidate_max_drawdown"],
                         "aliases": [],
