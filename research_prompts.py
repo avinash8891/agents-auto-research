@@ -120,6 +120,7 @@ D2. If the same lever has been tested in both directions (tighten and loosen)
 
 OUTPUT
 Return ONE JSON object matching the thesis schema. Fields:
+  thesis_id              omit or leave empty; the system assigns it after validation
   proposal_label         optional free-form handle, <=40 chars, not an identifier
                          (do NOT emit thesis_id; the system assigns it)
   hypothesis             one-sentence claim
