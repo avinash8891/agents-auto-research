@@ -1,0 +1,21 @@
+spec_review.md
+  s_78fd65d4838bdf::t_64b7ae953033da 1-244
+docs/superpowers/plans/2026-06-10-spec-review-fixes.md
+  s_78fd65d4838bdf::t_64b7ae953033da 1-1439
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "2c3f4ec2cf7d5d91b53ff50a3d50a76d89f85dd7",
+  "prompts": {},
+  "sessions": {
+    "s_78fd65d4838bdf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "50c223f1-16c3-47a2-8a6a-94b7b8a34f59",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
