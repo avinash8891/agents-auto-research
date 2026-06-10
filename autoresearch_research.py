@@ -1137,7 +1137,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     state["research_round_in_progress"] = research_round
     state["activity"] = _research_activity(research_round=research_round, phase="conductor_running")
     controller.write_state(state)
-    if current_job is not None:
+    if current_job is not None and current_job > 0:
         controller.backtest_run_db.ensure_round_started(
             research_round_id=make_research_round_id(current_job, research_round),
             job_id=current_job,
