@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from causal_model import (
+    holdout_mask,
     load_model,
     predict,
     residual_map,
@@ -185,6 +186,25 @@ def test_predict_scores_holdout_with_pnl_weighted_skill_over_naive() -> None:
     assert planted_score.naive_accuracy == pytest.approx(14.0 / 19.0)
     assert planted_score.skill == pytest.approx(5.0 / 19.0)
     assert garbage_score.skill == pytest.approx(0.0)
+
+
+def test_holdout_mask_uses_configured_research_engine_holdout_fraction() -> None:
+    table = pd.DataFrame(
+        {
+            "trade_id": ["a", "b", "c"],
+            "entry_ts": pd.to_datetime(
+                ["2020-06-01", "2022-06-01", "2023-06-01"], utc=True
+            ),
+            "out_is_loss": [False, True, True],
+            "out_pnl": [1.0, -1.0, -2.0],
+        }
+    )
+
+    default_mask = holdout_mask(table, family="ema")
+    half_mask = holdout_mask(table, family="ema", holdout_fraction=0.50)
+
+    assert default_mask.tolist() == [False, False, True]
+    assert half_mask.tolist() == [False, True, True]
 
 
 def test_residual_map_ranks_unexplained_pnl_before_explained_pattern_trades() -> None:

@@ -771,6 +771,7 @@ def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_val
         {"status": "keep"},
         research_round=12,
         family_name="ema",
+        rejection_feedback="prior screening killed this rule",
         rendered_corpus=rendered_corpus,
     )
 
@@ -780,6 +781,7 @@ def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_val
     assert out.thesis["story"] == "Gap-down entries reveal loss-prone inventory."
     assert out.thesis["competitor_rule"] == "gap_pct > 0"
     assert captured["user_prompt"] == rendered_corpus
+    assert "prior screening killed this rule" not in str(captured["user_prompt"])
     assert "legacy round results" not in str(captured["user_prompt"])
     assert "feature_table" not in str(captured["system_prompt"])
     assert "residual" in str(captured["system_prompt"]).lower()

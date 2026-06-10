@@ -12,8 +12,10 @@ exported entry shape.
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from autoresearch_constants import MAX_RESEARCH_ROUNDS
@@ -41,6 +43,8 @@ from autoresearch_research import (
 )
 from autoresearch_state import BacktestResultRecord, write_state
 from backtest_run_db import BacktestRunDB
+from causal_model import load_model
+from feature_table import feature_table_path
 from research_types import ConductorResult
 from strategies import STRATEGIES
 from strategy_family import load_family
@@ -635,6 +639,51 @@ def _write_ema_base_config(root: Path) -> None:
     (root / "configs" / "ema_base.yaml").write_text("ema_length: 5\n")
 
 
+def _write_screening_feature_table(round_root: Path) -> None:
+    rows = []
+    for index in range(80):
+        is_holdout = index >= 60
+        flagged = index % 2 == 0
+        if is_holdout:
+            is_loss = flagged
+        else:
+            is_loss = flagged and index < 56
+        rows.append(
+            {
+                "trade_id": f"trade-{index}",
+                "symbol": "SPY",
+                "side": "long",
+                "entry_ts": (
+                    pd.Timestamp("2022-01-03", tz="UTC") + pd.Timedelta(days=index * 5)
+                    if not is_holdout
+                    else pd.Timestamp("2023-01-03", tz="UTC")
+                    + pd.Timedelta(days=(index - 60) * 5)
+                ),
+                "time_of_day_min": 15,
+                "day_of_week": 1,
+                "bars_since_open": 3,
+                "gap_pct": -1.0 if flagged else 1.0,
+                "prior_day_range_pct": 2.0,
+                "overnight_move_pct": -1.0 if flagged else 1.0,
+                "or_width_pctile": 0.5,
+                "dist_to_ema_pct": -0.2,
+                "vol_pctile_20d": 0.7,
+                "regime_label": "trend",
+                "stop_distance_pct": 0.4,
+                "entry_bar_range_pct": 0.1,
+                "out_pnl": -100.0 if is_loss else 100.0,
+                "out_pnl_pct": -1.0 if is_loss else 1.0,
+                "out_mae": 1.0,
+                "out_mfe": 1.0,
+                "out_exit_reason": "target" if not is_loss else "stop",
+                "out_hold_bars": 5,
+                "out_is_loss": is_loss,
+            }
+        )
+    round_root.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_parquet(feature_table_path(round_root))
+
+
 def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
     return {
         "thesis_id": thesis_id,
@@ -785,7 +834,10 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
 ) -> None:
     controller = _real_controller(tmp_path)
     _write_ema_base_config(tmp_path)
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
     controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    _write_screening_feature_table(round_root)
 
     def _legacy_validator_called(*args, **kwargs):
         raise AssertionError("legacy thesis validator must not run for MechanismProposal")
@@ -826,10 +878,10 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
         prior_theses=[],
     )
 
-    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
     selected_thesis = json.loads((round_root / "selected_thesis.json").read_text())
     registered = json.loads((round_root / "registered_predictions.json").read_text())
     selected_config = json.loads((round_root / "selected_config.json").read_text())
+    model = load_model("ema")
     assert retry_feedback is None
     assert stage == ""
     assert result is not None
@@ -838,6 +890,12 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
     assert selected_thesis["rule"] == "gap_pct < 0"
     assert selected_thesis["proposed_change"] == {"ema_length": 8}
     assert registered["predictions"][0]["metric"] == "profit_factor"
+    assert model.factors[-1].rule == "gap_pct < 0"
+    assert model.factors[-1].status == "candidate"
+    assert model.accuracy_history[-1].round_number == 1
+    with sqlite3.connect(controller.backtest_run_db.path) as conn:
+        rows = conn.execute("SELECT rule, competitor_rule, verdict FROM screenings").fetchall()
+    assert rows == [("gap_pct < 0", "gap_pct > 0", "pass")]
 
 
 def test_run_research_success_persists_round_artifacts_and_next_action(

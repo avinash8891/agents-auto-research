@@ -134,7 +134,6 @@ def test_mechanical_batch_collects_multiple_presence_failures() -> None:
         "structural_missing_thesis_id",
         "structural_missing_hypothesis",
         "structural_missing_mechanism",
-        "structural_dimension_novelty_invalid",
         "structural_missing_expected_effects",
     ]
 
@@ -145,15 +144,13 @@ def test_process_gate_skips_when_tools_called_unobserved() -> None:
     assert thesis.thesis_id == "ema-tier-batching-v1"
 
 
-def test_process_gate_runs_when_tools_called_observed_empty() -> None:
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(_thesis(), tools_called=set())
+def test_process_gate_warns_when_tools_called_observed_empty(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    thesis = validate_research_thesis(_thesis(), tools_called=set())
 
-    assert exc_info.value.rejection_code == "process_required_tools_not_called"
-    assert exc_info.value.evidence["missing_tools"] == [
-        "list_round_results",
-        "web_search",
-    ]
+    assert thesis.thesis_id == "ema-tier-batching-v1"
+    assert "required tools not called: ['list_round_results', 'web_search']" in caplog.text
 
 
 def test_validate_stage_1_accepts_process_tools() -> None:
@@ -191,25 +188,19 @@ def test_mechanical_batch_includes_disqualifiers_and_unbacked_effect_metrics() -
     assert failures[2]["evidence"] == {"metric": "made_up_metric_two"}
 
 
-def test_mechanical_batch_includes_underexplored_dimensions_when_cluster_missing() -> None:
+def test_mechanical_batch_ignores_underexplored_dimensions_when_cluster_missing() -> None:
     thesis = _thesis(
         causal_cluster="",
         underexplored_dimensions_considered=[],
     )
 
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(
-            thesis,
-            prior_theses=[_prior("ema-prior-a")],
-            tools_called={"list_round_results", "web_search"},
-        )
+    validated = validate_research_thesis(
+        thesis,
+        prior_theses=[_prior("ema-prior-a")],
+        tools_called={"list_round_results", "web_search"},
+    )
 
-    assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
-    failures = exc_info.value.evidence["failures"]
-    assert [failure["code"] for failure in failures] == [
-        "structural_missing_causal_cluster",
-        "structural_underexplored_dimensions_invalid",
-    ]
+    assert validated.thesis_id == "ema-tier-batching-v1"
 
 
 def test_mechanical_batch_does_not_escape_on_unknown_family_without_base_path() -> None:
@@ -344,16 +335,18 @@ def test_rethink_class_1c_neighboring_threshold_fires_before_mechanical() -> Non
     assert exc_info.value.rejection_code == "config_validity_neighboring_threshold"
 
 
-def test_mechanical_runs_when_behavioral_silent() -> None:
+def test_mechanical_ignores_falsification_length_when_behavioral_silent() -> None:
     thesis = _thesis(falsification_or_alternative="too short")
 
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(thesis, tools_called={"list_round_results", "web_search"})
+    validated = validate_research_thesis(
+        thesis,
+        tools_called={"list_round_results", "web_search"},
+    )
 
-    assert exc_info.value.rejection_code == "structural_falsification_invalid"
+    assert validated.thesis_id == "ema-tier-batching-v1"
 
 
-def test_stage_2_misalignment_routes_through_behavior_signal_policy(
+def test_stage_2_misalignment_no_longer_routes_through_behavior_signal_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured_codes: list[str] = []
@@ -386,11 +379,9 @@ def test_stage_2_misalignment_routes_through_behavior_signal_policy(
         required_diagnostic_specs=[],
     )
 
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_stage_2(contract)
+    assert validate_stage_2(contract) is contract
 
-    assert exc_info.value.rejection_code == "hypothesis_config_misalignment"
-    assert captured_codes == ["hypothesis_config_misalignment"]
+    assert captured_codes == []
 
 
 def test_stage_2_required_diagnostic_routes_through_mechanical_batch_helper(

@@ -137,6 +137,17 @@ def research_engine_max_population_overlap(config: dict) -> float:
     return parsed
 
 
+def research_engine_max_retries(config: dict) -> int:
+    value = _research_engine_block(config).get("max_retries", 3)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.max_retries must be an integer") from exc
+    if parsed < 1:
+        raise ValueError("research_engine.max_retries must be >= 1")
+    return parsed
+
+
 def research_engine_prediction_tolerance_pct(config: dict) -> float:
     value = _research_engine_block(config).get("prediction_tolerance_pct", 20)
     try:
@@ -156,6 +167,17 @@ def research_engine_noise_floor_pct(config: dict) -> float:
         raise ValueError("research_engine.noise_floor_pct must be a number") from exc
     if parsed < 0.0:
         raise ValueError("research_engine.noise_floor_pct must be >= 0")
+    return parsed
+
+
+def research_engine_retest_extension_months(config: dict) -> int:
+    value = _research_engine_block(config).get("retest_extension_months", 6)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.retest_extension_months must be an integer") from exc
+    if parsed < 1:
+        raise ValueError("research_engine.retest_extension_months must be >= 1")
     return parsed
 
 
@@ -189,6 +211,17 @@ def research_engine_plateau_min_skill_gain(config: dict) -> float:
         raise ValueError("research_engine.plateau_min_skill_gain must be a number") from exc
     if parsed < 0.0:
         raise ValueError("research_engine.plateau_min_skill_gain must be >= 0")
+    return parsed
+
+
+def research_engine_holdout_fraction(config: dict) -> float:
+    value = _research_engine_block(config).get("holdout_fraction", 0.25)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.holdout_fraction must be a number") from exc
+    if parsed <= 0.0 or parsed >= 1.0:
+        raise ValueError("research_engine.holdout_fraction must be between 0 and 1")
     return parsed
 
 

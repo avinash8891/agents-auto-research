@@ -110,7 +110,7 @@ def _prior(thesis_id: str, *, theme_keywords: list[str]) -> dict:
 # ── B5 qualitative disqualifier ───────────────────────────────────────────
 
 
-def test_b5_rejects_when_all_disqualifiers_are_metric_threshold() -> None:
+def test_b5_no_longer_rejects_when_all_disqualifiers_are_metric_threshold() -> None:
     thesis = _base_thesis("only_metric_disqualifiers")
     thesis["disqualifiers"] = [
         {
@@ -126,8 +126,8 @@ def test_b5_rejects_when_all_disqualifiers_are_metric_threshold() -> None:
             "kind": "metric_threshold",
         },
     ]
-    with pytest.raises(ThesisValidationError, match="(?i)mechanism.evidence"):
-        validate_thesis_dict(thesis)
+    obj = validate_thesis_dict(thesis)
+    assert [item.kind for item in obj.disqualifiers] == ["metric_threshold", "metric_threshold"]
 
 
 def test_b5_accepts_when_at_least_one_mechanism_evidence_disqualifier_present() -> None:

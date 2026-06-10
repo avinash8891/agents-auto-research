@@ -291,8 +291,21 @@ def select_research_next_action(
     if baseline is not None:
         return baseline
     if should_terminate(runtime_root, family, run_queue_dir, research_dir, results, job=job):
-        return _finished_state()
+        return _walkforward_state(runtime_root)
     return _blocked_for_research_state(runtime_root, research_dir)
+
+
+def _walkforward_state(root: Path) -> dict[str, Any]:
+    return {
+        "state": "running",
+        "next_action": {
+            "type": "walkforward",
+            "reason": "model_plateau",
+            "artifact_dir": _serialize_path(root, root / "walkforward"),
+        },
+        "blockers": [],
+        "finished_reason": "model_plateau_pending_walkforward",
+    }
 
 
 def _finished_state() -> dict[str, Any]:
@@ -356,6 +369,13 @@ def plan_next_action(
     proposals_dir: Path,
     research_dir: Path,
 ) -> dict[str, Any]:
+    if (
+        state.get("finished_reason") == "model_plateau_pending_walkforward"
+        and state.get("walkforward_status") == "completed"
+    ):
+        state.update(_finished_state())
+        state.pop("walkforward_status", None)
+        return state
     # Respect forced baseline reruns — don't overwrite them
     if state.get("next_action", {}).get("baseline_rerun_for_commit"):
         return state
@@ -385,7 +405,10 @@ def plan_next_action(
             job=job,
         )
     )
-    if state.get("state") == "running":
+    if (
+        state.get("state") == "running"
+        and state.get("finished_reason") != "model_plateau_pending_walkforward"
+    ):
         state.pop("finished_reason", None)
         state.pop("research_stop_reasoning", None)
     return state

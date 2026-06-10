@@ -30,6 +30,7 @@ from autoresearch_constants import (
     MAX_VALIDATION_RETRIES_COMPILE,
     MAX_VALIDATION_RETRIES_STAGE_1,
     MAX_VALIDATION_RETRIES_STAGE_2,
+    research_engine_max_retries,
 )
 from autoresearch_logging import get_logger
 from autoresearch_orchestration import (
@@ -55,7 +56,7 @@ from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_memory import latest_thesis_details as _latest_thesis_details
-from research_types import ConductorResult, ResearchThesis
+from research_types import CausalFactor, ConductorResult, ResearchThesis
 from strategy_family import StrategyFamily
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
 from trace_adapters.halo import build_halo_export_package, build_halo_payload
@@ -835,6 +836,17 @@ def _per_stage_budget_exhausted(stage_1: int, stage_2: int, compile_n: int) -> b
     )
 
 
+def _retry_budget_exhausted(
+    stage_1: int,
+    stage_2: int,
+    compile_n: int,
+    *,
+    attempt: int,
+    max_retries: int,
+) -> bool:
+    return attempt >= max_retries or _per_stage_budget_exhausted(stage_1, stage_2, compile_n)
+
+
 def _is_mechanism_proposal(raw_thesis: dict[str, Any]) -> bool:
     return bool(
         raw_thesis.get("story")
@@ -893,6 +905,76 @@ def _mechanism_proposal_to_research_thesis(
             "by registered out-of-sample prediction direction."
         ),
     }
+
+
+def _screen_mechanism_proposal(
+    controller: "AutoresearchController",
+    research_round: int,
+    raw_thesis: dict[str, Any],
+    thesis_id: str,
+    *,
+    job_id: int,
+) -> tuple[bool, str | None]:
+    from causal_model import holdout_mask, load_model, save_model, score_on_holdout
+    from feature_table import load_feature_table
+    from screening import screen, write_screenings
+
+    round_root = research_round_root(controller.root, job_id, research_round)
+    features = load_feature_table(round_root)
+    model = load_model(controller.family.name)
+    holdout = holdout_mask(features, family=model.family, holdout_start=model.holdout_start)
+    train_features = features.loc[~holdout].copy()
+    screening = screen(
+        str(raw_thesis.get("rule") or ""),
+        str(raw_thesis.get("competitor_rule") or "") or None,
+        model,
+        train_features,
+    )
+    write_screenings(
+        controller.backtest_run_db.path,
+        [screening],
+        round_number=research_round,
+        competitor_rule=str(raw_thesis.get("competitor_rule") or "") or None,
+    )
+    if screening.verdict != "pass":
+        return False, (
+            f"Screening killed rule '{screening.rule}' with verdict {screening.verdict}: "
+            f"sample_count={screening.sample_count}, lift={screening.lift:.6f}, "
+            f"p_value={screening.p_value:.6f}, overlap_with={screening.overlap_with}"
+        )
+
+    factor = CausalFactor(
+        factor_id=thesis_id,
+        story=str(raw_thesis.get("story") or ""),
+        rule=screening.rule,
+        direction="loss" if screening.lift >= 0 else "win",
+        evidence_rounds=[research_round],
+        status="candidate",
+    )
+    rescored = model.model_copy(
+        update={
+            "version": model.version + 1,
+            "factors": [*model.factors, factor],
+        }
+    )
+    accuracy = score_on_holdout(rescored, features)
+    save_model(
+        rescored.model_copy(
+            update={"accuracy_history": [*model.accuracy_history, accuracy]}
+        )
+    )
+    return True, None
+
+
+def _research_engine_config_for_family(root: Path, family_name: str) -> dict[str, Any]:
+    candidates = [
+        root / "configs" / f"{family_name}_base.yaml",
+        Path.cwd() / "configs" / f"{family_name}_base.yaml",
+    ]
+    for path in candidates:
+        if path.exists():
+            return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return {}
 
 
 def _merge_mechanism_fields_into_selected_thesis(
@@ -966,6 +1048,26 @@ def _try_one_validation_attempt(
     # path is already pydantic-validated by the conductor boundary and must not
     # call the old thesis validator.
     if mechanism_path:
+        screening_passed, screening_feedback = _screen_mechanism_proposal(
+            controller,
+            research_round,
+            raw_thesis,
+            thesis_id,
+            job_id=job_id,
+        )
+        if not screening_passed:
+            return None, screening_feedback, "stage_1"
+        if not bool(raw_thesis.get("actionable")):
+            return {
+                "status": "completed",
+                "generated_config": None,
+                "generated_config_needs_build": False,
+                "generated_thesis_id": thesis_id,
+                "thesis_id": thesis_id,
+                "thesis": raw_thesis,
+                "should_stop": False,
+                "reasoning": conductor_result.reasoning,
+            }, None, ""
         raw_thesis = _mechanism_proposal_to_research_thesis(
             raw_thesis,
             strategy_family=controller.family.name,
@@ -1296,7 +1398,16 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     stage_2_failures = 0
     compile_failures = 0
     attempt = 0
-    while not _per_stage_budget_exhausted(stage_1_failures, stage_2_failures, compile_failures):
+    max_retries = research_engine_max_retries(
+        _research_engine_config_for_family(controller.root, controller.family.name)
+    )
+    while not _retry_budget_exhausted(
+        stage_1_failures,
+        stage_2_failures,
+        compile_failures,
+        attempt=attempt,
+        max_retries=max_retries,
+    ):
         conductor_result = _call_conductor(
             research_round,
             attempt,

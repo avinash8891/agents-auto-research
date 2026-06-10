@@ -9,12 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from behavior_signals import BehaviorSignal, PolicyDecision, decide
 from research_types import Disqualifier, ExpectedEffect, ResearchThesis
 from thesis_validator import (
-    ThesisValidationError,
     _detect_direction_whipsaw,
     _detect_missing_mechanism_evidence_disqualifier,
     _detect_needs_code_starvation,
@@ -261,17 +258,14 @@ def test_missing_mechanism_evidence_disqualifier_detector_returns_none_when_subs
     assert _detect_missing_mechanism_evidence_disqualifier(proposal) is None
 
 
-def test_run_behavioral_pass_translates_policy_reject_to_raise() -> None:
-    """End-to-end: when a detector fires, the validator raises with the
-    detector's code (mediated by the policy)."""
+def test_live_behavioral_pass_no_longer_raises_for_missing_mechanism_evidence() -> None:
     proposal = _make_thesis(
         config_changes={"k": 1},
-        # Only metric_threshold → mechanism_evidence detector fires
         disqualifiers=[Disqualifier(name="x", condition="y" * 100, kind="metric_threshold")],
     )
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(proposal, prior_theses=[])
-    assert exc_info.value.rejection_code == "thesis_quality_missing_mechanism_evidence_disqualifier"
+    validated = validate_research_thesis(proposal, prior_theses=[])
+
+    assert validated.thesis_id == proposal.thesis_id
 
 
 def test_run_behavioral_pass_does_not_raise_when_no_signals_fire() -> None:

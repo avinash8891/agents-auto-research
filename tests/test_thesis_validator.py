@@ -535,7 +535,7 @@ def test_validate_real_config_overlap_still_rejected_with_sentinel() -> None:
         validate_thesis_dict(thesis, prior_theses=prior)
 
 
-def test_validate_thesis_requires_diversity_reasoning_when_prior_context_exists() -> None:
+def test_validate_thesis_no_longer_requires_diversity_reasoning_when_prior_context_exists() -> None:
     thesis = _base_engine_change_thesis("new_signal_quality_gate", "signal_quality")
     thesis["causal_cluster"] = ""
     thesis["underexplored_dimensions_considered"] = []
@@ -547,19 +547,12 @@ def test_validate_thesis_requires_diversity_reasoning_when_prior_context_exists(
         }
     ]
 
-    with pytest.raises(ThesisValidationError, match="causal_cluster is required"):
-        validate_thesis_dict(thesis, prior_theses=prior)
+    validated = validate_thesis_dict(thesis, prior_theses=prior)
+
+    assert validated.thesis_id == "job-test-round-1-attempt-1"
 
 
-def test_validate_thesis_rejects_high_overlap_without_novel_connection() -> None:
-    """Overlap is now COMPUTED from theme_keywords data, not LLM self-reported.
-
-    The thesis's `dominant_cluster_overlap` field is informational only after
-    the refactor — the validator computes overlap from theme_keywords vs
-    prior theme_keywords. Setup: 100% of priors share at least one keyword
-    with the proposal → computed overlap = "high" → novel_connection
-    required to be substantive.
-    """
+def test_validate_thesis_no_longer_rejects_high_overlap_without_novel_connection() -> None:
     thesis = _base_engine_change_thesis("opening_gate_followup", "signal_quality")
     thesis.update(
         {
@@ -584,8 +577,9 @@ def test_validate_thesis_rejects_high_overlap_without_novel_connection() -> None
         }
     ]
 
-    with pytest.raises(ThesisValidationError, match="novel_connection"):
-        validate_thesis_dict(thesis, prior_theses=prior)
+    validated = validate_thesis_dict(thesis, prior_theses=prior)
+
+    assert validated.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_validate_thesis_allows_high_overlap_with_novel_connection() -> None:
@@ -645,12 +639,13 @@ def test_validate_emergent_mechanism_dimension_requires_autonomous_definition() 
     assert validated.new_dimension_name == "liquidity_decay"
 
 
-def test_validate_emergent_mechanism_dimension_rejects_missing_definition() -> None:
+def test_validate_emergent_mechanism_dimension_missing_definition_no_longer_rejects() -> None:
     thesis = _base_engine_change_thesis("undefined_new_dimension", "emergent")
     thesis["new_dimension_name"] = "liquidity_decay"
 
-    with pytest.raises(ThesisValidationError, match="why_existing_dimensions_do_not_fit"):
-        validate_thesis_dict(thesis)
+    validated = validate_thesis_dict(thesis)
+
+    assert validated.new_dimension_name == "liquidity_decay"
 
 
 def test_validate_reuses_prior_emergent_dimension_name() -> None:

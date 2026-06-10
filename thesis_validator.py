@@ -355,10 +355,10 @@ def _validate_process(
         missing.append("analyze_trades")
     if not missing:
         return
-    raise ThesisValidationError(
-        f"Process gate failed: required tools not called: {missing}",
-        rejection_code="process_required_tools_not_called",
-        evidence={"missing_tools": missing, "tools_called": sorted(tools_called)},
+    log.warning(
+        "process gate warning: required tools not called: %s tools_called=%s",
+        missing,
+        sorted(tools_called),
     )
 
 
@@ -1577,71 +1577,6 @@ def _collect_research_contract_failures(
 ) -> list[BehaviorSignal]:
     failures: list[BehaviorSignal] = []
 
-    if not thesis.evidence_strength:
-        failures.append(
-            BehaviorSignal(
-                code="structural_missing_evidence_strength",
-                confidence=1.0,
-                severity="block",
-                summary=(
-                    "evidence_strength is required; classify evidence as direct, "
-                    "proxy, mixed, or speculative"
-                ),
-            )
-        )
-
-    blank_alternative_mechanisms = [
-        index
-        for index, alternative in enumerate(thesis.alternatives_considered)
-        if not alternative.mechanism.strip()
-    ]
-    if (
-        len(thesis.alternatives_considered) < _MIN_ALTERNATIVES_CONSIDERED
-        or blank_alternative_mechanisms
-    ):
-        failures.append(
-            BehaviorSignal(
-                code="structural_alternatives_considered_invalid",
-                confidence=1.0,
-                severity="block",
-                summary=(
-                    f"alternatives_considered must contain at least "
-                    f"{_MIN_ALTERNATIVES_CONSIDERED} rejected mechanisms"
-                ),
-                evidence={
-                    "actual_count": len(thesis.alternatives_considered),
-                    "min_count": _MIN_ALTERNATIVES_CONSIDERED,
-                    "blank_mechanism_indexes": blank_alternative_mechanisms,
-                },
-            )
-        )
-
-    sources = {citation.source for citation in thesis.evidence_citations}
-    empty_citations = [
-        citation.source for citation in thesis.evidence_citations if not citation.citation.strip()
-    ]
-    required_sources = _EVIDENCE_SOURCES_BY_CONTEXT[evidence_context]
-    missing_sources = sorted(required_sources - sources)
-    if missing_sources or empty_citations:
-        failures.append(
-            BehaviorSignal(
-                code="structural_evidence_citations_invalid",
-                confidence=1.0,
-                severity="block",
-                summary=(
-                    "evidence_citations must include non-empty "
-                    + ", ".join(sorted(required_sources))
-                    + " citations"
-                ),
-                evidence={
-                    "missing_sources": missing_sources,
-                    "empty_citation_sources": empty_citations,
-                    "observed_sources": sorted(sources),
-                    "evidence_context": evidence_context,
-                },
-            )
-        )
-
     effect_metrics_are_backed = all(
         effect.metric in BUILTIN_METRICS or effect.metric in thesis.required_diagnostics
         for effect in thesis.expected_effects
@@ -1728,9 +1663,6 @@ def _run_behavioral_pass(
         if (sig := _detect_direction_whipsaw(thesis, prior_theses)) is not None:
             signals.append(sig)
 
-    if (sig := _detect_missing_mechanism_evidence_disqualifier(thesis)) is not None:
-        signals.append(sig)
-
     if prior_theses:
         if (sig := _detect_neighboring_threshold(thesis, prior_theses)) is not None:
             signals.append(sig)
@@ -1781,79 +1713,6 @@ def _collect_inline_structural_failures(
                 confidence=1.0,
                 severity="block",
                 summary="Missing mechanism",
-            )
-        )
-
-    novelty_text = thesis.dimension_novelty.strip()
-    if not novelty_text or len(novelty_text) < _MIN_NOVELTY_EXPLANATION_CHARS:
-        failures.append(
-            BehaviorSignal(
-                code="structural_dimension_novelty_invalid",
-                confidence=1.0,
-                severity="block",
-                summary=(
-                    f"dimension_novelty must be ≥{_MIN_NOVELTY_EXPLANATION_CHARS} chars "
-                    f"explaining why this thesis is not a parameter variation of prior work. "
-                    f"Got {len(novelty_text)} chars."
-                ),
-                evidence={
-                    "actual_chars": len(novelty_text),
-                    "min_chars": _MIN_NOVELTY_EXPLANATION_CHARS,
-                },
-            )
-        )
-
-    if prior_theses:
-        if not thesis.causal_cluster.strip():
-            failures.append(
-                BehaviorSignal(
-                    code="structural_missing_causal_cluster",
-                    confidence=1.0,
-                    severity="block",
-                    summary=(
-                        "causal_cluster is required when prior theses exist. "
-                        "Name the causal family this thesis belongs to."
-                    ),
-                )
-            )
-        computed_overlap = _computed_dominant_cluster_overlap(thesis, prior_theses)
-        if computed_overlap == "high" and (
-            len(thesis.novel_connection.strip()) < _MIN_NOVEL_CONNECTION_CHARS
-        ):
-            failures.append(
-                BehaviorSignal(
-                    code="structural_novel_connection_too_short",
-                    confidence=1.0,
-                    severity="block",
-                    summary=(
-                        f"novel_connection must explain why a high-overlap thesis is "
-                        f"materially new instead of another variation of the dominant cluster "
-                        f"(computed overlap with prior theme_keywords: high). "
-                        f"Required ≥{_MIN_NOVEL_CONNECTION_CHARS} chars in novel_connection."
-                    ),
-                    evidence={
-                        "min_chars": _MIN_NOVEL_CONNECTION_CHARS,
-                        "computed_overlap": computed_overlap,
-                    },
-                )
-            )
-
-    falsification_text = (thesis.falsification_or_alternative or "").strip()
-    if len(falsification_text) < _MIN_FALSIFICATION_CHARS:
-        failures.append(
-            BehaviorSignal(
-                code="structural_falsification_invalid",
-                confidence=1.0,
-                severity="block",
-                summary=(
-                    f"falsification_or_alternative must be ≥{_MIN_FALSIFICATION_CHARS} chars "
-                    f"describing what data pattern would weaken this mechanism, independent "
-                    f"of metric movement. Got {len(falsification_text)} chars."
-                ),
-                evidence={
-                    "actual_chars": len(falsification_text),
-                    "min_chars": _MIN_FALSIFICATION_CHARS,
-                },
             )
         )
 
@@ -1938,15 +1797,6 @@ def _collect_mechanical_failures(
     evidence_context: str = _EVIDENCE_CONTEXT_TRADES,
 ) -> list[BehaviorSignal]:
     failures = _collect_inline_structural_failures(thesis, prior_theses)
-    failures.extend(
-        _collect_from_validator(lambda: _validate_mechanism_dimension(thesis, prior_theses))
-    )
-    if prior_theses:
-        failures.extend(
-            _collect_from_validator(
-                lambda: _validate_underexplored_dimensions(thesis, prior_theses)
-            )
-        )
     failures.extend(_collect_from_validator(lambda: _validate_thesis_specifies_change(thesis)))
     failures.extend(_collect_from_validator(lambda: _validate_expected_effects_present(thesis)))
     failures.extend(
@@ -2208,39 +2058,7 @@ def validate_stage_2(contract: Any) -> Any:
     mechanism = getattr(contract, "mechanism", "") or ""
     strategy_family = getattr(contract, "strategy_family", "") or ""
 
-    signals: list[BehaviorSignal] = []
-    if isinstance(config_changes, dict) and config_changes:
-        try:
-            signal = _detect_stage_2_hypothesis_config_misalignment(
-                hypothesis, mechanism, config_changes, strategy_family
-            )
-        except MissingFamilyKeyConceptsError as exc:
-            # Operator-visible configuration error, not a thesis-quality issue.
-            # Raised as a validation error so the harness halts the affected
-            # job loudly instead of silently letting every thesis pass.
-            raise ThesisValidationError(
-                f"Cannot enforce Stage 2 hypothesis-config alignment: {exc}. "
-                f"Populate FamilyResearchSpec.key_concepts for family "
-                f"'{strategy_family}' to enable alignment scoring.",
-                rejection_code="hypothesis_config_alignment_unconfigured",
-                evidence={
-                    "strategy_family": strategy_family,
-                    "reason": str(exc),
-                },
-            ) from exc
-        if signal is not None:
-            signals.append(signal)
-
-    decision = _policy_decide(signals)
-    if decision.action == "reject":
-        triggering = decision.triggering
-        assert triggering is not None, "reject decisions must carry a triggering signal"
-        raise ThesisValidationError(
-            triggering.summary,
-            rejection_code=triggering.code,
-            evidence=dict(triggering.evidence),
-            remediation_hint=_format_remediation(triggering.remediation),
-        )
+    del config_changes, hypothesis, mechanism, strategy_family
 
     mechanical_failures = _collect_stage_2_required_diagnostic_failures(
         contract,

@@ -174,11 +174,10 @@ def test_validate_research_thesis_does_not_run_alignment_at_stage_1() -> None:
     assert again.thesis_id == "job-test-round-1-attempt-1"
 
 
-# ── Stage 2: hypothesis-config alignment ──────────────────────────────────
+# ── Stage 2: legacy alignment removed ─────────────────────────────────────
 
 
-def test_validate_stage_2_rejects_when_alignment_below_threshold() -> None:
-    """All known-but-misaligned keys → score 0/N < threshold → reject."""
+def test_validate_stage_2_no_longer_rejects_when_alignment_below_threshold() -> None:
     runtime_config = {
         "entry_cutoff_time": "10:00",
         "rr_ratio": 2.5,
@@ -191,11 +190,8 @@ def test_validate_stage_2_rejects_when_alignment_below_threshold() -> None:
         hypothesis="Filter setups by minimum opening volatility to avoid noise.",
         mechanism="Low-volatility opens have weaker microstructure signals.",
     )
-    with pytest.raises(ThesisValidationError) as excinfo:
-        validate_stage_2(contract)
 
-    assert excinfo.value.rejection_code == "hypothesis_config_misalignment"
-    assert "score" in str(excinfo.value).lower()
+    assert validate_stage_2(contract) is contract
 
 
 def test_validate_stage_2_accepts_when_alignment_at_or_above_threshold() -> None:
@@ -232,7 +228,7 @@ def test_validate_stage_2_scores_only_contract_config_changes_not_inherited_runt
     validate_stage_2(contract)
 
 
-def test_validate_stage_2_rejects_misaligned_config_changes_even_when_runtime_defaults_align() -> (
+def test_validate_stage_2_ignores_misaligned_config_changes_even_when_runtime_defaults_align() -> (
     None
 ):
     contract = _make_contract(
@@ -246,10 +242,7 @@ def test_validate_stage_2_rejects_misaligned_config_changes_even_when_runtime_de
     )
     contract.config_changes = {"gap_filter": True}
 
-    with pytest.raises(ThesisValidationError) as excinfo:
-        validate_stage_2(contract)
-
-    assert excinfo.value.rejection_code == "hypothesis_config_misalignment"
+    assert validate_stage_2(contract) is contract
 
 
 # ── Stage 2: required-diagnostic resolution ───────────────────────────────

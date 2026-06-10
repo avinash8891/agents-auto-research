@@ -361,7 +361,7 @@ def test_plan_next_action_clears_terminal_metadata_when_baseline_branch_selected
     assert "research_stop_reasoning" not in out
 
 
-def test_plan_next_action_finishes_when_model_plateaus(
+def test_plan_next_action_queues_walkforward_when_model_plateaus(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
 ) -> None:
     monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
@@ -387,6 +387,39 @@ def test_plan_next_action_finishes_when_model_plateaus(
         "research_round": 2,
         "finished_reason": "old",
         "research_stop_reasoning": "old",
+    }
+
+    out = plan_next_action(
+        state,
+        [BacktestResultRecord("configs/ema_base.yaml", 1.0, "keep", "", 1, {})],
+        tmp_path,
+        tmp_path,
+        ema_family,
+        tmp_path / "queue",
+        tmp_path / "proposals",
+        tmp_path / "research",
+    )
+
+    assert out["state"] == "running"
+    assert out["next_action"]["type"] == "walkforward"
+    assert out["next_action"]["reason"] == "model_plateau"
+    assert out["finished_reason"] == "model_plateau_pending_walkforward"
+
+
+def test_plan_next_action_finishes_after_plateau_walkforward_completes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    _save_plateau_model()
+    db_path = tmp_path / "ema_backtest_runs.db"
+    for round_number in range(1, 6):
+        write_screenings(db_path, [_killed_screening()], round_number=round_number)
+    state = {
+        "state": "running",
+        "job": 3,
+        "research_round": 2,
+        "walkforward_status": "completed",
+        "finished_reason": "model_plateau_pending_walkforward",
     }
 
     out = plan_next_action(

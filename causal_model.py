@@ -10,6 +10,7 @@ from typing import Sequence
 import pandas as pd
 import yaml
 
+from autoresearch_constants import research_engine_holdout_fraction
 from autoresearch_runtime_paths import resolve_runtime_root
 from feature_table import ENTRY_TIME_COLUMNS, OUTCOME_COLUMNS
 from persistence_utils import write_json_atomic
@@ -120,12 +121,17 @@ def holdout_mask(
     *,
     family: str = "",
     holdout_start: str = "",
+    holdout_fraction: float | None = None,
 ) -> pd.Series:
     entry_ts = pd.to_datetime(feature_table["entry_ts"], utc=True)
     if entry_ts.empty:
         return pd.Series([], index=feature_table.index, dtype=bool)
     if holdout_start:
         cutoff = pd.Timestamp(holdout_start)
+    elif holdout_fraction is not None:
+        start = entry_ts.min()
+        end = entry_ts.max()
+        cutoff = start + (end - start) * (1.0 - holdout_fraction)
     elif family:
         cutoff = pd.Timestamp(_holdout_start_for_family(family))
     else:
@@ -262,20 +268,27 @@ def _model_path(family: str) -> Path:
 
 def _holdout_start_for_family(family: str) -> str:
     start, end = _family_validation_bounds(family)
-    cutoff = start + (end - start) * 0.75
+    config = _family_config(family)
+    cutoff = start + (end - start) * (1.0 - research_engine_holdout_fraction(config))
     return cutoff.isoformat()
 
 
 def _family_validation_bounds(family: str) -> tuple[pd.Timestamp, pd.Timestamp]:
-    path = Path.cwd() / "configs" / f"{family}_base.yaml"
-    if not path.exists():
-        raise FileNotFoundError(f"missing strategy family config for holdout split: {path}")
-    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    config = _family_config(family)
     missing = [key for key in ("validation_start", "validation_end") if key not in config]
     if missing:
+        path = Path.cwd() / "configs" / f"{family}_base.yaml"
         raise ValueError(f"{path} missing validation date keys: {missing}")
     start = pd.Timestamp(config["validation_start"], tz="UTC")
     end = pd.Timestamp(config["validation_end"], tz="UTC")
     if end <= start:
+        path = Path.cwd() / "configs" / f"{family}_base.yaml"
         raise ValueError(f"{path} validation_end must be after validation_start")
     return start, end
+
+
+def _family_config(family: str) -> dict:
+    path = Path.cwd() / "configs" / f"{family}_base.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"missing strategy family config for holdout split: {path}")
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}

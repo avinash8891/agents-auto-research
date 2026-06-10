@@ -258,7 +258,7 @@ async def run_research_conductor(
             )
         user_prompt = base_prompt + no_trades_instruction
 
-    if rejection_feedback:
+    if rejection_feedback and not mechanism_path:
         user_prompt += (
             f"\n\nFEEDBACK TO APPLY BEFORE PROPOSING:\n"
             f"{rejection_feedback}\n\n"
@@ -268,7 +268,7 @@ async def run_research_conductor(
 
     # Inline structured rejection summary (current-round detail + cross-round
     # pattern counts). Cheap disk read; small block; high signal.
-    if current_job is not None:
+    if current_job is not None and not mechanism_path:
         try:
             from rejection_artifact import (
                 compute_escalation_directive,

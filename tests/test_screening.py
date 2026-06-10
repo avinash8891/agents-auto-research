@@ -7,10 +7,13 @@ import pandas as pd
 import pytest
 
 from autoresearch_constants import (
+    research_engine_holdout_fraction,
     research_engine_max_p_value,
     research_engine_max_population_overlap,
+    research_engine_max_retries,
     research_engine_min_abs_lift,
     research_engine_min_sample,
+    research_engine_retest_extension_months,
 )
 from backtest_run_db import BacktestRunDB
 from research_types import CausalFactor, CausalModel
@@ -66,6 +69,9 @@ def test_research_engine_screening_thresholds_read_from_config_block() -> None:
             "min_abs_lift": 0.35,
             "max_p_value": 0.04,
             "max_population_overlap": 0.60,
+            "max_retries": 4,
+            "retest_extension_months": 9,
+            "holdout_fraction": 0.20,
         }
     }
 
@@ -73,6 +79,9 @@ def test_research_engine_screening_thresholds_read_from_config_block() -> None:
     assert research_engine_min_abs_lift(config) == 0.35
     assert research_engine_max_p_value(config) == 0.04
     assert research_engine_max_population_overlap(config) == 0.60
+    assert research_engine_max_retries(config) == 4
+    assert research_engine_retest_extension_months(config) == 9
+    assert research_engine_holdout_fraction(config) == 0.20
 
 
 @pytest.mark.parametrize(

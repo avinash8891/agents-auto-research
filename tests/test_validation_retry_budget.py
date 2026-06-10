@@ -34,6 +34,20 @@ def test_per_stage_budget_exhausted_helper() -> None:
     assert not _per_stage_budget_exhausted(0, 0, MAX_VALIDATION_RETRIES_COMPILE - 1)
 
 
+def test_v2_retry_budget_caps_total_attempts_from_config() -> None:
+    from autoresearch_research import _retry_budget_exhausted
+
+    assert not _retry_budget_exhausted(0, 0, 0, attempt=2, max_retries=3)
+    assert _retry_budget_exhausted(0, 0, 0, attempt=3, max_retries=3)
+    assert _retry_budget_exhausted(
+        MAX_VALIDATION_RETRIES_STAGE_1,
+        0,
+        0,
+        attempt=1,
+        max_retries=3,
+    )
+
+
 def test_per_stage_total_budget_is_sum_of_stages() -> None:
     """Worst-case attempts = stage_1 + stage_2 + compile budgets."""
     expected_total = (
