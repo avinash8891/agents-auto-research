@@ -29,6 +29,7 @@ from autoresearch_constants import (
     DISCORD_COLOR_DISCARD,
     DISCORD_COLOR_SUCCESS,
     DISCORD_COLOR_WARNING,
+    research_engine_retest_extension_months,
 )
 from autoresearch_logging import get_logger
 from autoresearch_paths import path_within_allowed_roots, resolve_config_path
@@ -1355,6 +1356,127 @@ def _evaluate_registered_predictions(
     )
 
 
+def _is_registered_prediction_retest_action(state: dict[str, Any]) -> bool:
+    next_action = state.get("next_action")
+    return isinstance(next_action, dict) and next_action.get("source") == (
+        "registered_prediction_retest"
+    )
+
+
+def _force_registered_inconclusive_after_retest(verdict: Any) -> Any:
+    directions_hold = all(
+        bool(result.get("direction_passed"))
+        for result in getattr(verdict, "prediction_results", [])
+    )
+    status = "supported" if directions_hold else "refuted"
+    return verdict.model_copy(
+        update={
+            "status": status,
+            "summary": f"forced_after_retest: {verdict.summary}",
+            "lesson": f"forced_after_retest: {verdict.summary}",
+        }
+    )
+
+
+def _schedule_registered_prediction_retest(
+    controller: "AutoresearchController",
+    state: dict[str, Any],
+    *,
+    config: str,
+) -> None:
+    config_path = resolve_config_path(
+        config,
+        code_root=controller.root,
+        runtime_root=_runtime_root(controller),
+        execution_root=_execution_root(controller),
+    )
+    retest_config_path, metadata = _write_extended_retest_config(
+        controller,
+        config_path,
+    )
+    next_action = dict(state.get("next_action") or {})
+    next_action.update(
+        {
+            "type": "run_round",
+            "config": _serialize_artifact_dir(controller, retest_config_path),
+            "source": "registered_prediction_retest",
+            "registered_prediction_retest": metadata,
+        }
+    )
+    persisted = controller.read_state()
+    persisted.update(
+        {
+            "state": "running",
+            "job": state.get("job"),
+            "research_round": state.get("research_round"),
+            "selected_thesis_id": state.get("selected_thesis_id"),
+            "next_action": next_action,
+            "blockers": [],
+            "_preserve_next_action_once": True,
+        }
+    )
+    controller.write_state(persisted)
+
+
+def _write_extended_retest_config(
+    controller: "AutoresearchController",
+    config_path: Path,
+) -> tuple[Path, dict[str, Any]]:
+    raw = _read_config_payload(config_path)
+    if not isinstance(raw, dict):
+        raise ValueError(f"registered prediction retest config must be a mapping: {config_path}")
+    target = raw.get("runtime_config") if isinstance(raw.get("runtime_config"), dict) else raw
+    if not isinstance(target, dict):
+        raise ValueError(
+            f"registered prediction retest runtime_config must be a mapping: {config_path}"
+        )
+    family_config = _family_base_config(controller)
+    validation_start = str(
+        target.get("validation_start") or family_config.get("validation_start") or ""
+    )
+    if not validation_start:
+        raise ValueError(
+            "registered prediction retest requires validation_start in selected config "
+            f"or configs/{controller.family.name}_base.yaml"
+        )
+    config_for_tunables = dict(family_config)
+    config_for_tunables.update(target)
+    months = research_engine_retest_extension_months(config_for_tunables)
+
+    import pandas as pd
+
+    start = pd.Timestamp(validation_start)
+    if start.tzinfo is None:
+        start = start.tz_localize("UTC")
+    else:
+        start = start.tz_convert("UTC")
+    shifted = (start - pd.DateOffset(months=months)).date().isoformat()
+    target["validation_start"] = shifted
+    retest_path = config_path.with_name("selected_config_retest.json")
+    write_json_atomic(retest_path, raw)
+    return retest_path, {
+        "attempt": 1,
+        "original_config": _serialize_artifact_dir(controller, config_path),
+        "original_validation_start": validation_start,
+        "validation_start": shifted,
+        "retest_extension_months": months,
+    }
+
+
+def _read_config_payload(path: Path) -> Any:
+    if path.suffix in (".yaml", ".yml"):
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _family_base_config(controller: "AutoresearchController") -> dict[str, Any]:
+    path = controller.root / "configs" / controller.family.base_config_filename
+    if not path.exists():
+        return {}
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def _apply_registered_verdict_to_causal_factor(
     controller: "AutoresearchController",
     config: str,
@@ -1599,6 +1721,15 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             details,
         )
         if registered_verdict is not None:
+            if registered_verdict.status == "inconclusive":
+                if _is_registered_prediction_retest_action(state):
+                    registered_verdict = _force_registered_inconclusive_after_retest(
+                        registered_verdict
+                    )
+                    decision = "keep" if registered_verdict.status == "supported" else "discard"
+                else:
+                    _schedule_registered_prediction_retest(controller, state, config=config)
+                    decision = "retest"
             verdict = registered_verdict
             if registered_verdict.status == "degenerate":
                 decision = "discard"
@@ -1652,7 +1783,13 @@ def _finalize_round(
     """End the hypothesis, reconcile state, log the iteration trace, and
     send the completion notification."""
     end_hypothesis(decision=decision, metric=metric)
-    state = controller.reconcile_state()
+    pending_state = controller.read_state()
+    if pending_state.pop("_preserve_next_action_once", None):
+        state = pending_state
+        controller.write_state(state)
+        controller.write_current_md(state, controller.read_results())
+    else:
+        state = controller.reconcile_state()
     if "activity" in state:
         state.pop("activity", None)
         controller.write_state(state)

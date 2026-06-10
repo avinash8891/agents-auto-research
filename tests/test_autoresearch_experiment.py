@@ -1376,6 +1376,188 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
     assert "profit_factor direction=pass" in updated_model.factors[0].lesson
 
 
+def _write_registered_prediction_result_script(tmp_path: Path, metrics: dict[str, object]) -> Path:
+    script = tmp_path / "write_registered_result.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import json, sys",
+                "from pathlib import Path",
+                "out = Path(sys.argv[1])",
+                "out.mkdir(parents=True, exist_ok=True)",
+                f"metrics = {metrics!r}",
+                "(out / 'metrics.json').write_text(json.dumps(metrics) + '\\n')",
+                "(out / 'trades.csv').write_text('entry_date,pnl_pct\\n2026-01-01,1.0\\n')",
+                "(out / 'diagnostics.json').write_text(json.dumps({'accepted': 25}) + '\\n')",
+                "payload = {",
+                "  'metrics_file': str(out / 'metrics.json'),",
+                "  'trades_file': str(out / 'trades.csv'),",
+                "  'diagnostics_file': str(out / 'diagnostics.json'),",
+                "  'strategy_events_file': '',",
+                "  'git_sha': 'abcdef1',",
+                "}",
+                "(out / 'result.json').write_text(json.dumps(payload) + '\\n')",
+                "print('RESULT_JSON ' + str(out / 'result.json'))",
+            ]
+        )
+        + "\n"
+    )
+    return script
+
+
+def _prepare_registered_prediction_round(
+    tmp_path: Path,
+    controller: AutoresearchController,
+    *,
+    selected_config_name: str = "selected_config.json",
+) -> Path:
+    controller.baseline_tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="data",
+            config_hash="config",
+            metrics={"profit_factor": 2.0, "trade_count": 25},
+            timestamp="2026-05-09T00:00:00+00:00",
+        )
+    )
+    round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
+    round_root.mkdir(parents=True)
+    (round_root / selected_config_name).write_text(
+        json.dumps(
+            {
+                "ema_length": 10,
+                "validation_start": "2020-01-01",
+                "validation_end": "2023-12-31",
+                "research_engine": {"retest_extension_months": 9},
+            }
+        )
+        + "\n"
+    )
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-inconclusive",
+                "strategy_family": "ema",
+                "hypothesis": "Small PF lift should be retested on extended data.",
+                "mechanism": "Gap pressure creates better mean-reversion setups.",
+                "rule": "gap_pct < 0",
+            }
+        )
+        + "\n"
+    )
+    (round_root / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-inconclusive",
+                "registered_at_utc": "2026-06-10T00:00:00+00:00",
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.4},
+                    {"metric": "trade_count", "direction": "not_worse_than", "predicted": 25},
+                ],
+            }
+        )
+        + "\n"
+    )
+    return round_root
+
+
+def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 25, "profit_factor": 2.01},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(tmp_path, controller)
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    record = controller.backtest_run_db.all()[0]
+    assert record.prediction_verdict == "inconclusive"
+    persisted = controller.read_state()
+    retest_action = persisted["next_action"]
+    assert retest_action["source"] == "registered_prediction_retest"
+    assert retest_action["registered_prediction_retest"]["attempt"] == 1
+    retest_config = tmp_path / retest_action["config"]
+    assert json.loads(retest_config.read_text())["validation_start"] == "2019-04-01"
+
+
+def test_run_experiment_forces_registered_inconclusive_after_retest_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 25, "profit_factor": 2.01},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(
+        tmp_path,
+        controller,
+        selected_config_name="selected_config_retest.json",
+    )
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            factors=[
+                CausalFactor(
+                    factor_id="f-gap-down",
+                    story="Small PF lift should be retested on extended data.",
+                    rule="gap_pct < 0",
+                    direction="win",
+                )
+            ],
+            accuracy_history=[],
+        )
+    )
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "registered_prediction_retest",
+            "registered_prediction_retest": {"attempt": 1},
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    record = controller.backtest_run_db.all()[0]
+    assert record.prediction_verdict == "supported"
+    assert "forced_after_retest" in record.lesson
+    assert controller.read_state().get("next_action", {}).get("source") != (
+        "registered_prediction_retest"
+    )
+    updated_model = load_model("ema")
+    assert updated_model.factors[0].status == "harvested"
+    assert "forced_after_retest" in updated_model.factors[0].lesson
+
+
 def test_run_experiment_writes_feature_table_artifact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
