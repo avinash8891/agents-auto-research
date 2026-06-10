@@ -968,9 +968,9 @@ def load_prior_theses(root: Path, db: Any | None = None) -> list[dict[str, Any]]
     """Load all previously proposed theses from canonical persistence."""
     prior: list[dict[str, Any]] = []
     if db is None:
-        from backtest_run_db import BacktestRunDB
+        from backtest_run_db import BacktestRunDB, resolve_db_paths
 
-        for db_path in sorted(root.glob("*_backtest_runs.db")):
+        for db_path in resolve_db_paths(root=root):
             db = BacktestRunDB(db_path)
             for line_no, row in enumerate(db.list_research_thesis_attempts(), start=1):
                 if not isinstance(row, dict):

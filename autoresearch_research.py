@@ -34,7 +34,7 @@ from autoresearch_logging import get_logger
 from autoresearch_orchestration import (
     build_missing_primitives_for_state as _orchestration_build_missing_primitives_for_state,
 )
-from autoresearch_paths import resolve_config_path
+from autoresearch_paths import resolve_config_path, resolve_runtime_root
 from autoresearch_planning import build_research_failure_state
 from autoresearch_runtime_paths import research_round_root
 from autoresearch_state import (
@@ -1112,7 +1112,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     if current_job is not None:
         result_dicts = [result for result in result_dicts if result.get("job") == current_job]
     round_results = format_round_results_summary(result_dicts)
-    prior_theses = load_prior_theses(controller.root)
+    prior_theses = load_prior_theses(resolve_runtime_root(controller.root))
     trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
     trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
         controller,

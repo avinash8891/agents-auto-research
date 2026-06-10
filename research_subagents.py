@@ -13,9 +13,8 @@ from typing import Any
 
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import _accumulate_usage
-from autoresearch_paths import resolve_runtime_root
 from autoresearch_state import coerce_timestamp_to_epoch_ms
-from backtest_run_db import BacktestRunDB
+from backtest_run_db import BacktestRunDB, resolve_db_paths
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,
@@ -255,8 +254,7 @@ def _resolve_backtest_db_path(trades_file: str, family_name: str) -> Path | None
         return None
     artifact_path = Path(trades_file).expanduser()
     candidates: list[Path] = []
-    runtime_root = resolve_runtime_root(_ROOT)
-    candidates.append(runtime_root / f"{family_name}_backtest_runs.db")
+    candidates.extend(resolve_db_paths(family_name, root=_ROOT))
     for parent in artifact_path.parents:
         candidates.append(parent / f"{family_name}_backtest_runs.db")
         candidates.append(parent / "runtime" / f"{family_name}_backtest_runs.db")

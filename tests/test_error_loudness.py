@@ -71,6 +71,38 @@ def test_load_prior_theses_logs_bad_sqlite_row(
     assert "PRIOR_THESES_SQLITE_INVALID" in caplog.text
 
 
+def test_load_prior_theses_uses_runtime_root_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backtest_run_db import BacktestRunDB
+
+    code_root = tmp_path / "code-root"
+    runtime_root = tmp_path / "runtime-root"
+    code_root.mkdir()
+    runtime_root.mkdir()
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+
+    db = BacktestRunDB(runtime_root / "ema_backtest_runs.db")
+    db.seed_research_thesis_attempts_rows(
+        [
+            {
+                "research_round_id": "job-1-round-1",
+                "attempt_number": 1,
+                "thesis_id": "runtime_prior_thesis",
+                "config_changes": {"ema_length": 13},
+                "validator_status": "accepted",
+                "strategy_family": "ema",
+                "selected_for_execution": 1,
+                "created_at_utc": "2026-04-30T00:00:00+00:00",
+            },
+        ],
+    )
+
+    prior = load_prior_theses(code_root)
+
+    assert prior[-1]["thesis_id"] == "runtime_prior_thesis"
+
+
 def test_load_prior_theses_includes_code_only_emergent_thesis(tmp_path: Path) -> None:
     from backtest_run_db import BacktestRunDB
 

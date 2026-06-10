@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_logging import get_logger
+from autoresearch_paths import resolve_runtime_root
 from autoresearch_runtime_paths import research_round_id as _build_research_round_id
 from autoresearch_runtime_paths import research_round_id_or_empty
 from autoresearch_state import coerce_timestamp_to_epoch_ms, coerce_timestamp_to_iso8601_utc
@@ -47,6 +48,14 @@ INVALID_RESULT_VERDICTS = frozenset(
 )
 
 BACKTEST_RUNS_TABLE = "backtest_runs"
+
+
+def resolve_db_paths(family: str | None = None, *, root: Path | None = None) -> list[Path]:
+    runtime_root = resolve_runtime_root(root or Path.cwd())
+    if family:
+        candidate = runtime_root / f"{family}_backtest_runs.db"
+        return [candidate] if candidate.exists() else []
+    return sorted(runtime_root.glob("*_backtest_runs.db"))
 
 
 def research_thesis_attempt_id(research_round_id: str, attempt_number: int) -> str:

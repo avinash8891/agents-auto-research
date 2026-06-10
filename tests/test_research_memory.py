@@ -7,6 +7,7 @@ Covers:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from autoresearch_runtime_paths import research_round_id
@@ -110,6 +111,31 @@ def test_latest_thesis_details_returns_proposal_fields(tmp_path: Path) -> None:
     assert len(result["expected_effects"]) == 1
     assert result["expected_effects"][0]["metric"] == "profit_factor"
     assert len(result["evidence"]) == 1
+
+
+def test_research_memory_readers_use_runtime_root_env(tmp_path: Path, monkeypatch) -> None:
+    code_root = tmp_path / "code-root"
+    runtime_root = tmp_path / "runtime-root"
+    code_root.mkdir()
+    runtime_root.mkdir()
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+
+    rrid = research_round_id(1, 4)
+    db = BacktestRunDB(runtime_root / "ema_backtest_runs.db")
+    _add_thesis_attempt(db, "runtime-thesis", research_round_id=rrid)
+    _add_backtest_record(
+        db,
+        research_round_id_value=rrid,
+        thesis_id="runtime-thesis",
+        sharpe=2.1,
+    )
+
+    thesis = latest_thesis_details(code_root, "runtime-thesis")
+    round_payload = json.loads(get_round_result(code_root, research_round_id=rrid))
+
+    assert thesis["hypothesis"] == "EMA crossover predicts short-term momentum"
+    assert round_payload["status"] == "ok"
+    assert round_payload["result"]["thesis_id"] == "runtime-thesis"
 
 
 def test_latest_thesis_details_returns_empty_for_unknown_thesis(tmp_path: Path) -> None:
