@@ -81,3 +81,30 @@ PREPARE_RESULT_MARKER = "AUTORESEARCH_PREPARE_RESULT"
 
 # Default location of the held-out task list relative to the repo root.
 HOLDOUT_TASKS_PATH = "configs/eval/holdout_tasks.yaml"
+
+
+def _research_engine_block(config: dict) -> dict:
+    block = config.get("research_engine") if isinstance(config, dict) else None
+    return block if isinstance(block, dict) else {}
+
+
+def research_engine_screening_min_support(config: dict) -> int:
+    value = _research_engine_block(config).get("screening_min_support", 3)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.screening_min_support must be an integer") from exc
+    if parsed < 1:
+        raise ValueError("research_engine.screening_min_support must be >= 1")
+    return parsed
+
+
+def research_engine_screening_min_lift(config: dict) -> float:
+    value = _research_engine_block(config).get("screening_min_lift", 0.10)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.screening_min_lift must be a number") from exc
+    if parsed < 0.0 or parsed > 1.0:
+        raise ValueError("research_engine.screening_min_lift must be between 0 and 1")
+    return parsed

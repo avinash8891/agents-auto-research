@@ -63,6 +63,10 @@ rvol_baseline_stat: "mean"        # "mean" or "median" for baseline
 rvol_computation: "cumulative_or_window"  # How to compute RVOL
 rvol_min_history_days: 10         # Minimum days of history required
 
+research_engine:
+  screening_min_support: 3
+  screening_min_lift: 0.10
+
 # --- Universe Selection (OFF for baseline) ---
 universe_mode: null                          # null = all symbols; "stocks_in_play" = top-N by RVOL
 stocks_in_play_top_n: 20                     # How many stocks per day when universe_mode=stocks_in_play

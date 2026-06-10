@@ -252,6 +252,9 @@ class BacktestRunDB:
                     UNIQUE (research_round_id, attempt_number)
                 )
                 """)
+            from screening import _ensure_screenings_table
+
+            _ensure_screenings_table(conn)
             self._ensure_column(
                 conn,
                 "research_thesis_attempts",

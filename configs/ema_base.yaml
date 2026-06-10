@@ -60,3 +60,7 @@ max_hold_bars: 78
 # false = disabled.
 use_range_shift: false
 range_shift_lookback: 20
+
+research_engine:
+  screening_min_support: 3
+  screening_min_lift: 0.10
