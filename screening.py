@@ -1,3 +1,14 @@
+"""Screen candidate causal rules against the training feature table.
+
+Rule screening uses a two-proportion z-test to compare the flagged loss rate
+against the unflagged population:
+
+    z = (p1 - p2) / sqrt(pooled * (1 - pooled) * (1/n1 + 1/n2))
+
+The returned p-value is the two-sided normal tail probability implemented as
+``erfc(abs(z) / sqrt(2))``.
+"""
+
 from __future__ import annotations
 
 import hashlib

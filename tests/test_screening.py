@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import screening
 from autoresearch_constants import (
     research_engine_holdout_fraction,
     research_engine_max_p_value,
@@ -18,6 +19,11 @@ from autoresearch_constants import (
 from backtest_run_db import BacktestRunDB
 from research_types import CausalFactor, CausalModel
 from screening import screen, write_screenings
+
+
+def test_screening_module_docstring_documents_two_proportion_z_test_formula() -> None:
+    assert screening.__doc__ is not None
+    assert "z = (p1 - p2) / sqrt(pooled * (1 - pooled) * (1/n1 + 1/n2))" in (screening.__doc__)
 
 
 def _feature_table() -> pd.DataFrame:

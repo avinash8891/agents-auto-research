@@ -14,8 +14,8 @@ Three guardrails inspired by AlphaAgent (arxiv 2502.16789v2):
 Contract-extraction rule (for maintainers adding or refactoring checks)
 ──────────────────────────────────────────────────────────────────────────────
 
-Multi-check contracts (e.g. mechanism_dimension, emergent path,
-underexplored_dimensions, thesis_specifies_change, expected_effects) live in
+Multi-check contracts (e.g. underexplored_dimensions, thesis_specifies_change,
+expected_effects) live in
 dedicated private `_validate_<contract>(...)` helpers and feed the live
 mechanical/behavioral collectors. `validate_research_thesis` is the only
 entry point for full thesis validation.
@@ -32,8 +32,7 @@ collector, while metric-backing failures are collected later after disqualifier
 checks. Bundling them regresses the expected mechanical failure ordering.
 
 If NO → one helper owning both checks is fine, with structured `evidence`
-when failure modes are independent. Example: `_validate_emergent_dimension`
-collects all emergent-path failures into one rejection.
+when failure modes are independent.
 
 Single-check contracts (thesis_id presence, hypothesis presence, etc.) stay
 inline in the collector — extracting them into one-line helpers is noise.
@@ -53,12 +52,7 @@ from autoresearch_logging import get_logger
 from autoresearch_runtime_paths import iter_family_backtest_db_paths
 from behavior_signals import BehaviorSignal
 from behavior_signals import decide as _policy_decide
-from research_types import (
-    CORE_MECHANISM_DIMENSIONS,
-    EMERGENT_MECHANISM_DIMENSION,
-    MECHANISM_DIMENSIONS,
-    ResearchThesis,
-)
+from research_types import EMERGENT_MECHANISM_DIMENSION, MECHANISM_DIMENSIONS, ResearchThesis
 from strategy_family import load_family
 
 log = get_logger(__name__)
@@ -102,17 +96,6 @@ def _is_overlap_ignored_key(key: str) -> bool:
     return any(key.startswith(prefix) for prefix in CONFIG_OVERLAP_IGNORED_PREFIXES)
 
 
-_MIN_EMERGENT_FIELD_CHARS = 40
-_MIN_NOVEL_CONNECTION_CHARS = 40
-# A mechanism_evidence disqualifier's `condition` must be substantive — short
-# strings like "x" or "yes" satisfy the kind=mechanism_evidence check trivially
-# without describing any observable data pattern. 40 chars forces real content.
-_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS: Final[int] = 40
-# When falsification_or_alternative is set, it must be substantive — short text
-# is decoration, not a real disconfirmer. The field itself remains optional;
-# this rule only enforces quality when the agent does fill it in.
-_MIN_FALSIFICATION_CHARS = 80
-_MIN_ALTERNATIVES_CONSIDERED = 2
 _MIN_EXPECTED_EFFECTS = 2
 _MIN_EFFECT_RATIONALE_CHARS = 20
 _EVIDENCE_CONTEXT_TRADES: Final[str] = "trades"
@@ -123,11 +106,6 @@ _EVIDENCE_SOURCES_BY_CONTEXT: Final[dict[str, frozenset[str]]] = {
     _EVIDENCE_CONTEXT_NO_TRADES: frozenset({"web_search", "round_result"}),
     _EVIDENCE_CONTEXT_COLD_START: frozenset({"web_search"}),
 }
-_EMERGENT_REQUIRED_FIELDS = (
-    "why_existing_dimensions_do_not_fit",
-    "mechanism_family_definition",
-    "expected_reuse_across_future_theses",
-)
 _ALLOWED_BASE_CONFIG_PREFIXES = ("configs/",)
 
 # Removed gate: prior-winner inheritance language regex.
@@ -383,14 +361,8 @@ def _prior_thesis_entry(row: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Stage 1 cross-thesis rules: theme cluster (B1), needs_code starvation (B3).
+# Stage 1 cross-thesis rules: needs_code starvation (B3).
 # ---------------------------------------------------------------------------
-
-# B1: when 4 or more of the last 7 prior theses (plus the proposed one) share
-# at least one keyword with the proposed theme, the agent has fixated on a
-# single theme cluster. Forces dimension diversification.
-B1_THEME_CLUSTER_THRESHOLD = 4
-B1_THEME_CLUSTER_WINDOW = 7
 
 # B3: 3 consecutive prior theses requiring code change with no completed run
 # in between means the agent is queueing engine work without progress. Force
@@ -457,240 +429,6 @@ def _prior_was_run(prior: dict[str, Any]) -> bool:
     if outcome == "stopped":
         return False
     return True
-
-
-def _detect_theme_cluster_fixation(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]],
-) -> BehaviorSignal | None:
-    """Detect when the proposed thesis fixates on a theme cluster.
-
-    Returns a BehaviorSignal when >=4 of the last 7 priors (including the
-    proposal itself) share at least one theme_keyword. Returns None when
-    the pattern is absent.
-
-    Confidence is proportional to the fraction of the window that overlaps:
-    4/7 -> 0.57, 7/7 -> 1.0. Severity is "block" in Phase C to match the
-    pre-refactor hard-block behavior.
-    """
-    proposed_keywords = {kw.strip() for kw in thesis.theme_keywords if kw.strip()}
-    if not proposed_keywords:
-        return None
-    recent = prior_theses[-(B1_THEME_CLUSTER_WINDOW - 1) :]
-    if not recent:
-        return None
-    overlap_count = 1  # the new thesis itself
-    overlapping_priors: list[str] = []
-    for prior in recent:
-        prior_kw = _theme_keywords_from_prior(prior)
-        if prior_kw & proposed_keywords:
-            overlap_count += 1
-            overlapping_priors.append(str(prior.get("thesis_id") or "?"))
-    if overlap_count < B1_THEME_CLUSTER_THRESHOLD:
-        return None
-    return BehaviorSignal(
-        code="thesis_quality_theme_cluster_fixation",
-        confidence=min(1.0, overlap_count / B1_THEME_CLUSTER_WINDOW),
-        severity="block",
-        summary=(
-            f"Theme-cluster fixation: {overlap_count} of last "
-            f"{B1_THEME_CLUSTER_WINDOW} theses share keywords {sorted(proposed_keywords)} "
-            f"(overlapping priors: {overlapping_priors}). Propose from a different "
-            f"mechanism dimension, or justify novelty in dimension_novelty."
-        ),
-        evidence={
-            "overlap_count": overlap_count,
-            "window": B1_THEME_CLUSTER_WINDOW,
-            "shared_keywords": sorted(proposed_keywords),
-            "overlapping_priors": overlapping_priors,
-        },
-        remediation=(
-            "Propose from a different mechanism_dimension",
-            "If staying in this dimension, use distinct theme_keywords",
-        ),
-    )
-
-
-# B2 direction whipsaw: detection has two complementary signals.
-#
-# (1) Data signal — preferred when both theses change the same numeric config
-#     key. Lever-name prefix conventions map a value change to a direction:
-#       - keys with min_/floor_ prefix: increase = tighten, decrease = loosen
-#       - keys with max_/ceiling_ prefix: increase = loosen, decrease = tighten
-#     This is the authoritative signal because it reads what the thesis
-#     actually does, not what its name suggests.
-#
-# (2) Text signal — fallback when no shared numeric key gives a data direction.
-#     Word-boundary match on explicit direction verbs in thesis_id or
-#     hypothesis. Config-key prefixes are NOT direction tokens — that caused
-#     false-positives where `min_stop_distance_pct` (a config key) registered
-#     as a "tighten" direction word.
-_B2_DIRECTION_TIGHTEN_TOKENS: Final[tuple[str, ...]] = (
-    "tighten",
-    "tightening",
-    "narrow",
-    "narrowing",
-    "shrink",
-    "shrinking",
-)
-_B2_DIRECTION_WIDEN_TOKENS: Final[tuple[str, ...]] = (
-    "widen",
-    "widening",
-    "loosen",
-    "loosening",
-    "expand",
-    "expanding",
-)
-
-_LEVER_PREFIX_TIGHTEN_ON_INCREASE: Final[tuple[str, ...]] = ("min_", "floor_", "minimum_")
-_LEVER_PREFIX_LOOSEN_ON_INCREASE: Final[tuple[str, ...]] = (
-    "max_",
-    "ceiling_",
-    "maximum_",
-    "cap_",
-)
-
-# Pre-computed frozensets for hot-path membership checks in _b2_direction_of.
-# Avoids rebuilding a fresh set on every call (called per-thesis during
-# direction-whipsaw evaluation against the full prior list).
-_B2_DIRECTION_TIGHTEN_TOKEN_SET: Final[frozenset[str]] = frozenset(_B2_DIRECTION_TIGHTEN_TOKENS)
-_B2_DIRECTION_WIDEN_TOKEN_SET: Final[frozenset[str]] = frozenset(_B2_DIRECTION_WIDEN_TOKENS)
-
-
-def _b2_direction_of(text: str) -> str | None:
-    """Return 'tighten', 'widen', or None for the dominant direction in `text`.
-
-    Tokenises `text` by splitting on any non-alphabetic character (so snake_case,
-    kebab-case, and natural prose all decompose to the same alphabetic-token set)
-    and tests for exact token membership in the direction-word sets. This avoids
-    two prior failure modes:
-
-      * Substring matching let config-key prefixes like 'min_' (an old TIGHTEN
-        token) trip on `min_stop_distance_pct` (not a direction word).
-      * `re.search(\\bwiden\\b)` does not match `widen_max_stops` because `_`
-        is a regex word character, so the word-boundary fails between `n` and
-        `_`. Tokenisation sidesteps the issue by treating `_` as a separator.
-    """
-    tokens = set(re.findall(r"[a-z]+", text.lower()))
-    has_tighten = bool(tokens & _B2_DIRECTION_TIGHTEN_TOKEN_SET)
-    has_widen = bool(tokens & _B2_DIRECTION_WIDEN_TOKEN_SET)
-    if has_tighten and not has_widen:
-        return "tighten"
-    if has_widen and not has_tighten:
-        return "widen"
-    return None  # ambiguous or none
-
-
-def _direction_from_value_change(key: str, old_val: float, new_val: float) -> str | None:
-    """Map a numeric value change on a known-convention key to tighten/widen.
-
-    Returns None when the key has no recognized convention (in which case the
-    text-based signal is the only available fallback) or when values are equal.
-    """
-    if old_val == new_val:
-        return None
-    lower_key = key.lower()
-    increased = new_val > old_val
-    if any(lower_key.startswith(p) for p in _LEVER_PREFIX_TIGHTEN_ON_INCREASE):
-        return "tighten" if increased else "widen"
-    if any(lower_key.startswith(p) for p in _LEVER_PREFIX_LOOSEN_ON_INCREASE):
-        return "widen" if increased else "tighten"
-    return None
-
-
-def _proposed_direction(thesis: ResearchThesis, prior: dict[str, Any]) -> str | None:
-    """Resolve direction prioritising data signal over text signal.
-
-    Looks for a shared numeric config key with a known lever-name convention;
-    if found, returns the data-derived direction. Otherwise falls back to
-    word-boundary text match on thesis_id + hypothesis.
-
-    The asymmetry with _prior_direction is intentional: a prior thesis's
-    config_changes are accessible via the prior dict, but its BASELINE value
-    is not — without baseline, the prior's data-direction is unrecoverable.
-    Text matching on the prior's thesis_id is the only signal available there.
-    """
-    prior_changes = prior.get("config_changes") or {}
-    for key, new_val in (thesis.config_changes or {}).items():
-        if key not in prior_changes:
-            continue
-        prior_val = prior_changes[key]
-        if not (_is_numeric_value(new_val) and _is_numeric_value(prior_val)):
-            continue
-        data_direction = _direction_from_value_change(str(key), float(prior_val), float(new_val))
-        if data_direction is not None:
-            return data_direction
-    return _b2_direction_of(f"{thesis.thesis_id} {thesis.hypothesis}")
-
-
-def _prior_direction(prior: dict[str, Any]) -> str | None:
-    """Resolve prior's direction: text-only (no baseline available here)."""
-    details = _prior_thesis_details(prior)
-    return _b2_direction_of(
-        " ".join(
-            str(part or "")
-            for part in (
-                prior.get("thesis_id"),
-                prior.get("proposal_label") or details.get("proposal_label"),
-                prior.get("hypothesis") or details.get("hypothesis"),
-            )
-        )
-    )
-
-
-def _detect_direction_whipsaw(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]],
-) -> BehaviorSignal | None:
-    """Detect when the thesis flips the direction of a lever already tested
-    by a prior thesis on the same theme, without citing it.
-
-    Direction is determined per (current_thesis, prior) pair using the data
-    signal first (shared numeric key with lever-name convention), falling
-    back to word-boundary text matching when no data signal is available.
-    """
-    proposed_kw = {kw.strip() for kw in thesis.theme_keywords if kw.strip()}
-    if not proposed_kw:
-        return None
-    cited_prior_ids = {p.prior_thesis_id for p in thesis.prior_lever_outcomes}
-
-    for prior in prior_theses:
-        prior_kw = _theme_keywords_from_prior(prior)
-        if not (prior_kw & proposed_kw):
-            continue
-        prior_id = str(prior.get("thesis_id") or "")
-        if prior_id in cited_prior_ids:
-            continue
-        prior_dir = _prior_direction(prior)
-        if prior_dir is None:
-            continue
-        proposed_dir = _proposed_direction(thesis, prior)
-        opposing = "widen" if prior_dir == "tighten" else "tighten"
-        if proposed_dir != opposing:
-            continue
-        return BehaviorSignal(
-            code="thesis_quality_direction_whipsaw",
-            confidence=1.0,
-            severity="block",
-            summary=(
-                f"Direction whipsaw: prior thesis '{prior_id}' tested the {prior_dir} "
-                f"direction on lever theme {sorted(proposed_kw)}, and this thesis "
-                f"flips to {proposed_dir} without acknowledgment. Cite '{prior_id}' "
-                f"in prior_lever_outcomes (with direction_then, outcome, and why_retry) "
-                f"or propose from a different mechanism dimension."
-            ),
-            evidence={
-                "prior_thesis_id": prior_id,
-                "opposing_direction": opposing,
-                "proposed_direction": proposed_dir,
-                "lever_theme": sorted(proposed_kw),
-            },
-            remediation=(
-                f"Cite '{prior_id}' in prior_lever_outcomes",
-                "Or propose from a different mechanism dimension",
-            ),
-        )
-    return None
 
 
 # Numeric tuning detector: same key, ratio within [1/_NEIGHBORING_RATIO,
@@ -769,47 +507,6 @@ def _detect_neighboring_threshold(
                     ratio=ratio,
                 )
     return None
-
-
-def _detect_missing_mechanism_evidence_disqualifier(
-    thesis: ResearchThesis,
-) -> BehaviorSignal | None:
-    """Detect when no substantive mechanism_evidence disqualifier is present.
-
-    Requires at least one disqualifier with kind='mechanism_evidence' AND
-    condition ≥40 chars. Pure metric_threshold disqualifiers are pass/fail
-    criteria, not Popperian disconfirmers; substantively-short mechanism_evidence
-    conditions are ceremonial (the LLM can game the enum without writing real
-    falsification evidence).
-    """
-    if not thesis.disqualifiers:
-        return None  # absence handled by structural_missing_disqualifiers
-    has_substantive = any(
-        d.kind == "mechanism_evidence"
-        and len(d.condition.strip()) >= _MIN_MECHANISM_EVIDENCE_CONDITION_CHARS
-        for d in thesis.disqualifiers
-    )
-    if has_substantive:
-        return None
-    return BehaviorSignal(
-        code="thesis_quality_missing_mechanism_evidence_disqualifier",
-        confidence=1.0,
-        severity="block",
-        summary=(
-            "Need at least one disqualifier with kind='mechanism_evidence' AND a "
-            f"condition ≥{_MIN_MECHANISM_EVIDENCE_CONDITION_CHARS} chars describing "
-            "an observable data pattern that would falsify the mechanism. "
-            "Pure kind='metric_threshold' disqualifiers ('PF must improve by 5%') "
-            "are pass/fail criteria, not Popperian disconfirmers."
-        ),
-        evidence={
-            "min_condition_chars": _MIN_MECHANISM_EVIDENCE_CONDITION_CHARS,
-            "disqualifier_count": len(thesis.disqualifiers),
-        },
-        remediation=(
-            "Add a disqualifier with kind='mechanism_evidence' and a substantive condition",
-        ),
-    )
 
 
 def _detect_needs_code_starvation(
@@ -1225,7 +922,6 @@ def check_hypothesis_alignment(
 
 
 ALIGNMENT_THRESHOLD = 0.4  # reject if less than 40% of keys align
-_MIN_NOVELTY_EXPLANATION_CHARS = 30
 
 
 # ---------------------------------------------------------------------------
@@ -1260,21 +956,6 @@ def _raise_aggregated_validation_error(
     )
 
 
-def _describe_emergent_issue(issue: dict[str, Any]) -> str:
-    kind = issue["kind"]
-    if kind == "missing_new_dimension_name":
-        return "new_dimension_name is empty"
-    if kind == "new_dimension_name_duplicates_core":
-        return f"new_dimension_name '{issue['name']}' duplicates a core dimension"
-    if kind == "short_fields":
-        field_list = ", ".join(f"{f['field']} ({f['actual_chars']} chars)" for f in issue["fields"])
-        return (
-            f"emergent justification fields each need "
-            f"≥{_MIN_EMERGENT_FIELD_CHARS} chars: {field_list}"
-        )
-    return kind  # defensive: unknown kinds surface their tag
-
-
 def _describe_underexplored_issue(issue: dict[str, Any]) -> str:
     kind = issue["kind"]
     if kind == "empty":
@@ -1286,45 +967,6 @@ def _describe_underexplored_issue(issue: dict[str, Any]) -> str:
     return kind  # defensive: unknown kinds surface their tag
 
 
-def _validate_emergent_dimension(thesis: ResearchThesis) -> None:
-    """Validate the rare emergent-dimension path with a single rejection code.
-
-    All emergent-path failures roll up to ``structural_emergent_thesis_malformed``
-    with structured evidence describing every issue found. One rejection per
-    attempt (since emergent fields are interdependent and the LLM should fix
-    them all together).
-    """
-    issues: list[dict[str, Any]] = []
-
-    new_dimension_name = _dimension_slug(thesis.new_dimension_name)
-    if not new_dimension_name:
-        issues.append({"kind": "missing_new_dimension_name"})
-    elif new_dimension_name in CORE_MECHANISM_DIMENSIONS:
-        issues.append(
-            {
-                "kind": "new_dimension_name_duplicates_core",
-                "name": thesis.new_dimension_name,
-            }
-        )
-
-    short_fields = [
-        {"field": field, "actual_chars": len(getattr(thesis, field).strip())}
-        for field in _EMERGENT_REQUIRED_FIELDS
-        if len(getattr(thesis, field).strip()) < _MIN_EMERGENT_FIELD_CHARS
-    ]
-    if short_fields:
-        issues.append({"kind": "short_fields", "fields": short_fields})
-
-    # emergent passes the global threshold so the LLM rejection block can show it
-    _raise_aggregated_validation_error(
-        rejection_code="structural_emergent_thesis_malformed",
-        summary_prefix="Emergent thesis malformed",
-        issues=issues,
-        describer=_describe_emergent_issue,
-        extra_evidence={"min_emergent_field_chars": _MIN_EMERGENT_FIELD_CHARS},
-    )
-
-
 def _validate_underexplored_dimensions(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None,
@@ -1334,8 +976,7 @@ def _validate_underexplored_dimensions(
     The contract only fires when prior theses exist (no priors = nothing to
     have underexplored). The helper is self-guarding: it returns immediately
     when prior_theses is None or empty, so callers don't need to wrap the
-    call in `if prior_theses:`. Signature matches its sibling
-    `_validate_mechanism_dimension` for consistency.
+    call in `if prior_theses:`.
 
     When priors exist, the contract requires:
       * Non-empty list.
@@ -1369,41 +1010,6 @@ def _validate_underexplored_dimensions(
         issues=issues,
         describer=_describe_underexplored_issue,
     )
-
-
-def _validate_mechanism_dimension(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]] | None,
-) -> None:
-    """Validate the mechanism_dimension contract.
-
-    Three checks in dependency order:
-      1. Field is non-empty.
-      2. Value is a known dimension (core set OR a prior-emergent name).
-      3. If "emergent", delegate to _validate_emergent_dimension for the
-         conditional sub-contract (new_dimension_name + 3 emergent fields).
-
-    Fail-fast within the contract: a missing-field failure does not check
-    the value-validity rule, since the latter would fire a meaningless
-    "'' is not a valid mechanism_dimension" rejection. Each gate's
-    rejection_code is preserved from its pre-refactor identity.
-    """
-    if not thesis.mechanism_dimension.strip():
-        raise ThesisValidationError(
-            "Missing mechanism_dimension. Every thesis must declare which "
-            "dimension it explores: " + ", ".join(sorted(MECHANISM_DIMENSIONS)),
-            rejection_code="structural_missing_mechanism_dimension",
-        )
-    known_dimensions = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
-    if thesis.mechanism_dimension not in known_dimensions:
-        raise ThesisValidationError(
-            f"Invalid mechanism_dimension '{thesis.mechanism_dimension}'. "
-            f"Must be one of: {sorted(known_dimensions)}",
-            rejection_code="structural_mechanism_dimension_invalid",
-            evidence={"mechanism_dimension": thesis.mechanism_dimension},
-        )
-    if thesis.mechanism_dimension == EMERGENT_MECHANISM_DIMENSION:
-        _validate_emergent_dimension(thesis)
 
 
 def _validate_thesis_specifies_change(thesis: ResearchThesis) -> None:
@@ -1656,11 +1262,7 @@ def _run_behavioral_pass(
     signals: list[BehaviorSignal] = []
 
     if prior_theses:
-        if (sig := _detect_theme_cluster_fixation(thesis, prior_theses)) is not None:
-            signals.append(sig)
         if (sig := _detect_needs_code_starvation(thesis, prior_theses)) is not None:
-            signals.append(sig)
-        if (sig := _detect_direction_whipsaw(thesis, prior_theses)) is not None:
             signals.append(sig)
 
     if prior_theses:

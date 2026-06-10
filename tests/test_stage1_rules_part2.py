@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from backtest_run_db import research_thesis_attempt_id
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
-from thesis_validator import ThesisValidationError
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
 
@@ -136,12 +133,11 @@ def test_b5_accepts_when_at_least_one_mechanism_evidence_disqualifier_present() 
     assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
-# ── B2 direction whipsaw ───────────────────────────────────────────────────
+# ── Removed B2 direction whipsaw ───────────────────────────────────────────
 
 
-def test_b2_rejects_when_thesis_flips_lever_direction_without_acknowledging() -> None:
-    """Prior thesis 'tightened' a stop_distance lever; new thesis 'widens' the same lever
-    without citing the prior in prior_lever_outcomes → reject."""
+def test_b2_no_longer_rejects_when_thesis_flips_lever_direction_without_acknowledging() -> None:
+    """Direction flips are evaluated by the v2 objective, not thesis-id token gates."""
     thesis = _base_thesis("widen_max_stop_distance_pct_cap_removal")
     thesis["theme_keywords"] = ["stop_distance"]
     thesis["hypothesis"] = "Widening max stop distance to capture larger setups."
@@ -151,11 +147,11 @@ def test_b2_rejects_when_thesis_flips_lever_direction_without_acknowledging() ->
         _prior("tighten_min_stop_distance_pct_floor", theme_keywords=["stop_distance"]),
     ]
 
-    with pytest.raises(ThesisValidationError, match="(?i)whipsaw|direction|prior_lever_outcomes"):
-        validate_thesis_dict(thesis, prior_theses=prior_theses)
+    obj = validate_thesis_dict(thesis, prior_theses=prior_theses)
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
-def test_b2_rejects_when_prior_mechanical_id_keeps_direction_in_proposal_label() -> None:
+def test_b2_no_longer_reads_prior_proposal_label_for_direction_rejection() -> None:
     thesis = _base_thesis("widen_max_stop_distance_pct_cap_removal")
     thesis["theme_keywords"] = ["stop_distance"]
     thesis["hypothesis"] = "Widening max stop distance to capture larger setups."
@@ -174,8 +170,8 @@ def test_b2_rejects_when_prior_mechanical_id_keeps_direction_in_proposal_label()
         }
     ]
 
-    with pytest.raises(ThesisValidationError, match="(?i)whipsaw|direction|prior_lever_outcomes"):
-        validate_thesis_dict(thesis, prior_theses=prior_theses)
+    obj = validate_thesis_dict(thesis, prior_theses=prior_theses)
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_b2_accepts_lever_flip_when_prior_lever_outcomes_cites_prior() -> None:

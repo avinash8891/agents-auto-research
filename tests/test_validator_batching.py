@@ -235,7 +235,7 @@ def test_mechanical_batch_with_single_failure_raises_original_code() -> None:
     assert "failures" not in exc_info.value.evidence
 
 
-def test_behavioral_pass_fires_before_mechanical_when_both_present() -> None:
+def test_removed_theme_cluster_no_longer_preempts_mechanical_failure() -> None:
     thesis = _thesis(thesis_id="", theme_keywords=["opening_noise"])
 
     with pytest.raises(ThesisValidationError) as exc_info:
@@ -245,10 +245,10 @@ def test_behavioral_pass_fires_before_mechanical_when_both_present() -> None:
             tools_called={"list_round_results", "web_search"},
         )
 
-    assert exc_info.value.rejection_code == "thesis_quality_theme_cluster_fixation"
+    assert exc_info.value.rejection_code == "structural_missing_thesis_id"
 
 
-def test_behavioral_pass_fires_first_signal_only_when_multiple_signals() -> None:
+def test_behavioral_pass_uses_first_remaining_signal_after_theme_cluster_removal() -> None:
     thesis = _thesis(
         theme_keywords=["opening_noise"],
         requires_code_change=True,
@@ -282,8 +282,7 @@ def test_behavioral_pass_fires_first_signal_only_when_multiple_signals() -> None
             tools_called={"list_round_results", "web_search"},
         )
 
-    assert exc_info.value.rejection_code == "thesis_quality_theme_cluster_fixation"
-    assert "needs_code_starvation" not in str(exc_info.value)
+    assert exc_info.value.rejection_code == "thesis_quality_needs_code_starvation"
 
 
 def test_rethink_class_1c_config_overlap_fires_before_mechanical() -> None:

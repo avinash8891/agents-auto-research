@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -599,8 +600,12 @@ def _verify_tests_cover_behavior(
     tests_dir = root / "tests"
     if not tests_dir.exists():
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
+    changed_test_paths = _changed_test_files(root)
+    if not changed_test_paths:
+        return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
+
     test_texts: list[str] = []
-    for path in sorted(tests_dir.rglob("test*.py")):
+    for path in changed_test_paths:
         text, _failure = _read_source_text(path)
         if text is not None:
             test_texts.append(text)
@@ -614,3 +619,29 @@ def _verify_tests_cover_behavior(
     ):
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
     return []
+
+
+def _changed_test_files(root: Path) -> list[Path]:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "--", "tests"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return []
+    if completed.returncode != 0:
+        return []
+
+    paths: list[Path] = []
+    for line in completed.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        raw_path = line[3:].strip()
+        if " -> " in raw_path:
+            raw_path = raw_path.rsplit(" -> ", 1)[1].strip()
+        path = (root / raw_path).resolve()
+        if path.match("*.py") and path.name.startswith("test") and path.exists():
+            paths.append(path)
+    return sorted(set(paths))

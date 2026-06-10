@@ -534,12 +534,12 @@ def test_prior_winner_language_no_longer_a_gate() -> None:
     validate_research_thesis(thesis)
 
 
-def test_gate_thesis_quality_theme_cluster_fixation() -> None:
-    """4 of last 7 (including current) sharing keyword 'opening' tripped.
+def test_gate_thesis_quality_theme_cluster_fixation_no_longer_rejects() -> None:
+    """Theme repetition is no longer a validator gate.
 
     This setup has high computed theme overlap (3 of 4 priors share keywords)
-    so novel_connection must be substantive for the structural gate to pass;
-    only then does the later quality gate get to fire.
+    but the v2 objective and population dedupe handle fixation instead of
+    rejecting on keyword sets.
     """
     thesis = _minimal_valid_thesis(
         causal_cluster="opening-session noise",
@@ -556,7 +556,7 @@ def test_gate_thesis_quality_theme_cluster_fixation() -> None:
         _prior("ema-p3", config_changes={"k3": 1}, theme_keywords=["opening", "gamma"]),
         _prior("ema-p4", config_changes={"k4": 1}, theme_keywords=["delta"]),
     ]
-    _expect_rejection(thesis, priors, "thesis_quality_theme_cluster_fixation")
+    _expect_acceptance(thesis, priors)
 
 
 def test_gate_thesis_quality_needs_code_starvation() -> None:
@@ -591,17 +591,12 @@ def test_gate_thesis_quality_needs_code_starvation() -> None:
     _expect_rejection(thesis, priors, "thesis_quality_needs_code_starvation")
 
 
-def test_gate_thesis_quality_direction_whipsaw() -> None:
-    """Prior tightened a theme; this thesis loosens it without citing prior.
+def test_gate_thesis_quality_direction_whipsaw_no_longer_rejects() -> None:
+    """Direction-token whipsaw is prompt guidance, not a validator gate.
 
-    FINDING — direction-token collision: the validator's `_b2_direction_of`
-    uses substring matching on token lists. Common config-key prefixes like
-    `min_` are TIGHTEN tokens; `max_` is a WIDEN token. A thesis_id like
-    `ema-widen-min_stop-v1` registers BOTH tighten (min_) and widen (widen)
-    and is classified as ambiguous → the gate silently does nothing.
-
-    Avoid this in production thesis_ids by either (a) not including config-key
-    prefixes in the id, or (b) ensuring only one direction token appears.
+    The old heuristic inferred tighten/widen intent from thesis IDs. The v2
+    path removes that text gate and lets the causal objective decide whether
+    the mechanism adds predictive skill.
     """
     thesis = _minimal_valid_thesis(
         thesis_id="ema-loosen-stops-v1",  # 'loosen' only (widen token)
@@ -625,7 +620,7 @@ def test_gate_thesis_quality_direction_whipsaw() -> None:
             theme_keywords=["stop_distance"],
         ),
     ]
-    _expect_rejection(thesis, priors, "thesis_quality_direction_whipsaw")
+    _expect_acceptance(thesis, priors)
 
 
 def test_gate_thesis_quality_missing_mechanism_evidence_disqualifier_no_longer_rejects() -> None:
