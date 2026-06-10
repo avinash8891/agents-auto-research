@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from time import monotonic
 from typing import Any
@@ -91,7 +92,8 @@ async def _run_web_research_openai(
             f"web-researcher attempt={attempt}/{retries} model={_MODEL} api=codex_cli_web_search",
         )
         try:
-            output, metadata = run_codex_web_research(
+            output, metadata = await asyncio.to_thread(
+                run_codex_web_research,
                 prompt,
                 instructions=agent_prompts.WEB_RESEARCHER_SYSTEM_PROMPT,
                 model=_MODEL,

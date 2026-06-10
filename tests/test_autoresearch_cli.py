@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import math
+from pathlib import Path
 from types import SimpleNamespace
 
 import autoresearch_cli
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _base_args(tmp_path, **overrides):
@@ -20,6 +23,13 @@ def _base_args(tmp_path, **overrides):
     }
     args.update(overrides)
     return SimpleNamespace(**args)
+
+
+def test_cli_docs_use_db_argument_not_removed_session_path() -> None:
+    for doc_name in ("AGENTS.md", "CLAUDE.md"):
+        body = (REPO_ROOT / doc_name).read_text()
+        assert "python autoresearch_cli.py init   --db <path>" in body
+        assert "--session-path" not in body
 
 
 def test_cli_add_result_persists_timestamp_and_exports(monkeypatch, tmp_path) -> None:

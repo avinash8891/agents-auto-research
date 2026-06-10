@@ -376,6 +376,36 @@ def test_generate_signals_preserves_carried_alert_bar_idx() -> None:
     assert signals.stop_price.iloc[3] == 8.9
 
 
+def test_generate_signals_suppresses_entries_before_ema_warmup() -> None:
+    idx = pd.to_datetime(["2024-01-02 09:30", "2024-01-02 09:35", "2024-01-02 09:40"])
+    frame = pd.DataFrame(
+        {
+            "open": [10.0, 9.0, 8.5],
+            "high": [10.5, 9.2, 9.6],
+            "low": [9.8, 8.8, 8.7],
+            "close": [10.0, 9.0, 9.4],
+        },
+        index=idx,
+    )
+
+    signals = generate_signals_for_frame(frame, "long", ema_length=3)
+
+    assert signals.entries.tolist() == [False, False, False]
+    assert signals.alert_bar_idx.tolist() == [-1, -1, -1]
+
+
+def test_range_shift_filter_uses_completed_bars_not_entry_bar_extremes() -> None:
+    from strategies.ema.signals import _detect_range_shift
+
+    idx = pd.date_range("2024-01-02 09:30", periods=5, freq="5min")
+    high = pd.Series([10.0, 10.1, 9.0, 9.1, 12.0], index=idx)
+    low = pd.Series([9.0, 9.1, 8.0, 8.1, 11.0], index=idx)
+
+    bias = _detect_range_shift(high, low, lookback=2)
+
+    assert bias[-1] == -1
+
+
 def test_ema_raw_setup_events_emit_standardized_event_columns() -> None:
     idx = pd.to_datetime(
         ["2024-01-02 09:30", "2024-01-02 09:35", "2024-01-02 09:40", "2024-01-02 09:45"]

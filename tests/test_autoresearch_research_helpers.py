@@ -298,6 +298,54 @@ def test_load_data_flat_mode_applies_date_filters(tmp_path: Path) -> None:
     assert list(batch["close"].index) == [pd.Timestamp("2024-01-03")]
 
 
+def test_load_data_flat_mode_normalizes_timezone_and_session(tmp_path: Path) -> None:
+    import pandas as pd
+
+    from data_loader import load_data
+
+    df = pd.DataFrame(
+        {
+            "Symbol": ["SPY", "SPY"],
+            "Open": [10.0, 20.0],
+            "High": [11.0, 21.0],
+            "Low": [9.0, 19.0],
+            "Close": [10.5, 20.5],
+            "Volume": [100, 200],
+        },
+        index=pd.to_datetime(["2024-01-02 14:30", "2024-01-02 21:00"], utc=True),
+    )
+    (tmp_path / "flat.parquet").write_bytes(b"")
+    df.to_parquet(tmp_path / "flat.parquet")
+
+    batch = load_data(str(tmp_path))
+
+    assert list(batch["close"].index) == [pd.Timestamp("2024-01-02 09:30")]
+
+
+def test_load_data_per_symbol_mode_normalizes_timezone_and_session(tmp_path: Path) -> None:
+    import pandas as pd
+
+    from data_loader import load_data
+
+    sym_dir = tmp_path / "SPY"
+    sym_dir.mkdir()
+    df = pd.DataFrame(
+        {
+            "Open": [10.0, 20.0],
+            "High": [11.0, 21.0],
+            "Low": [9.0, 19.0],
+            "Close": [10.5, 20.5],
+            "Volume": [100, 200],
+        },
+        index=pd.to_datetime(["2024-01-02 14:30", "2024-01-02 21:00"], utc=True),
+    )
+    df.to_parquet(sym_dir / "bars.parquet")
+
+    batch = load_data(str(tmp_path))
+
+    assert list(batch["close"].index) == [pd.Timestamp("2024-01-02 09:30")]
+
+
 def test_load_data_missing_path_raises_instead_of_exiting() -> None:
     import pytest
 

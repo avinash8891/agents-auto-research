@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -622,6 +623,135 @@ def test_run_web_research_openai_uses_codex_cli_web_search(monkeypatch):
     assert result["summary"] == "codex cli text extraction works"
 
 
+def test_run_web_research_openai_does_not_block_event_loop(monkeypatch):
+    import trace_sdk
+
+    monkeypatch.setattr(trace_sdk, "trace", lambda *a, **k: None)
+    monkeypatch.setattr(trace_sdk, "trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
+
+    def fake_run_codex_web_research(prompt, *, instructions, model):
+        time.sleep(0.05)
+        return (
+            json.dumps(
+                {
+                    "findings": [{"topic": "event loop", "finding": "threaded subprocess wrapper"}],
+                    "summary": "ok",
+                }
+            ),
+            {"exit_code": 0},
+        )
+
+    async def ticker() -> int:
+        ticks = 0
+        for _ in range(3):
+            await asyncio.sleep(0.01)
+            ticks += 1
+        return ticks
+
+    monkeypatch.setattr(agent_openai_calls, "run_codex_web_research", fake_run_codex_web_research)
+
+    started = time.monotonic()
+
+    async def run_both():
+        return await asyncio.gather(
+            agent_openai_calls._run_web_research_openai("prompt", retries=1), ticker()
+        )
+
+    result, ticks = asyncio.run(run_both())
+
+    assert result["summary"] == "ok"
+    assert ticks == 3
+    assert time.monotonic() - started < 0.075
+
+
+def test_run_single_agent_timeout_records_partial_result_usage(monkeypatch):
+    captured: dict[str, object] = {}
+    partial_result = SimpleNamespace(
+        usage=SimpleNamespace(input_tokens=11, output_tokens=2, total_tokens=13)
+    )
+
+    monkeypatch.setattr(agent_runners.agent_infra, "_get_openai_client", lambda *_a, **_k: object())
+    monkeypatch.setattr(agent_runners, "OpenAIChatCompletionsModel", lambda **_k: object())
+    monkeypatch.setattr(agent_runners, "OAIAgent", lambda **_k: object())
+    monkeypatch.setattr(agent_runners.OAIRunner, "run_streamed", lambda *_a, **_k: partial_result)
+
+    async def timeout_drain(_result):
+        raise asyncio.TimeoutError
+
+    def capture_usage(agent_name, result, **kwargs):
+        captured["agent_name"] = agent_name
+        captured["result"] = result
+        captured["input_text"] = kwargs.get("input_text")
+
+    monkeypatch.setattr(agent_runners, "_drain_streamed", timeout_drain)
+    monkeypatch.setattr(agent_runners, "accumulate_agents_sdk_result_usage", capture_usage)
+    monkeypatch.setattr("trace_sdk.trace", lambda *a, **k: None)
+    monkeypatch.setattr("trace_sdk.trace_agent_prompt", lambda *a, **k: "trace-id")
+
+    result = asyncio.run(
+        agent_runners._run_single_agent(
+            "research-agent",
+            "user prompt",
+            SimpleNamespace(
+                prompt="system prompt", tools=[], model="gpt-test", provider="openai", maxTurns=1
+            ),
+            retries=1,
+            timeout=1,
+        )
+    )
+
+    assert result["kind"] == "timeout"
+    assert captured["agent_name"] == "research-agent"
+    assert captured["result"] is partial_result
+    assert captured["input_text"] == "system prompt\n\nuser prompt"
+
+
+def test_run_single_agent_retry_prompt_does_not_stack_prefixes(monkeypatch):
+    prompts: list[str] = []
+
+    monkeypatch.setattr(agent_runners.agent_infra, "_get_openai_client", lambda *_a, **_k: object())
+    monkeypatch.setattr(agent_runners, "OpenAIChatCompletionsModel", lambda **_k: object())
+    monkeypatch.setattr(agent_runners, "OAIAgent", lambda **_k: object())
+
+    def fake_run_streamed(_agent, prompt, **_kwargs):
+        prompts.append(prompt)
+        return SimpleNamespace(
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2)
+        )
+
+    async def noop_drain(_result):
+        return None
+
+    monkeypatch.setattr(agent_runners.OAIRunner, "run_streamed", fake_run_streamed)
+    monkeypatch.setattr(agent_runners, "_drain_streamed", noop_drain)
+    monkeypatch.setattr(
+        agent_runners, "_extract_runner_output_text", lambda _result: '{"suggested_theses": []}'
+    )
+    monkeypatch.setattr(agent_runners, "accumulate_agents_sdk_result_usage", lambda *a, **k: None)
+    monkeypatch.setattr("trace_sdk.trace", lambda *a, **k: None)
+    monkeypatch.setattr("trace_sdk.trace_agent_prompt", lambda *a, **k: "trace-id")
+    monkeypatch.setattr("trace_sdk.trace_agent_response", lambda *a, **k: None)
+
+    result = asyncio.run(
+        agent_runners._run_single_agent(
+            "research-agent",
+            "original prompt",
+            SimpleNamespace(
+                prompt="system", tools=[], model="gpt-test", provider="openai", maxTurns=1
+            ),
+            retries=3,
+            timeout=1,
+        )
+    )
+
+    assert result["kind"] == "validation"
+    assert prompts[0] == "original prompt"
+    assert prompts[1].count("RETRY:") == 1
+    assert prompts[2].count("RETRY:") == 1
+    assert prompts[2].endswith("original prompt")
+
+
 def test_run_research_agent_propagates_error_result_without_memory_writes(monkeypatch):
     error_result = {
         "status": "error",
@@ -772,6 +902,21 @@ def test_mempalace_helpers_fall_back_when_cli_fails(monkeypatch):
     assert agent_memory._mempalace_search("query") == "(memory search unavailable)"
     assert agent_memory._mempalace_write("wing", "room", "content") is False
     assert agent_memory._mempalace_diary("agent", "topic", "entry") is False
+
+
+def test_agent_memory_resolves_palace_env_lazily(monkeypatch, tmp_path):
+    calls: list[list[str]] = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        return agent_memory.subprocess.CompletedProcess(args, 0, stdout="ok\n", stderr="")
+
+    palace = tmp_path / "palace"
+    monkeypatch.setenv("AUTORESEARCH_MEMPALACE_PALACE", str(palace))
+    monkeypatch.setattr(agent_memory.subprocess, "run", fake_run)
+
+    assert agent_memory._mempalace_search("query") == "ok"
+    assert str(palace) in calls[0]
 
 
 def test_validate_output_rejects_diagnostic_without_pattern():
