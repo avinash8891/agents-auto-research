@@ -1,0 +1,69 @@
+autoresearch_research.py
+  s_7b3a36a5bf11f5::t_3080b58e987d36 33,839-849,969-979,1401-1410
+  s_7b3a36a5bf11f5::t_7e1a051b2fc558 59,910-968,1051-1070
+autoresearch_planning.py
+  s_7b3a36a5bf11f5::t_e0a247d3ad0f4c 294,298-310,372-378,408-411
+tests/test_schema_additions.py
+  s_7b3a36a5bf11f5::t_459ae1afa5e578 174,177-178
+tests/test_stage1_rules_part2.py
+  s_7b3a36a5bf11f5::t_39dbb367947fb7 113,129-130
+tests/test_validator_stages.py
+  s_7b3a36a5bf11f5::t_b95c8d538c4d3f 177,180,194,231,245
+tests/test_causal_model.py
+  s_7b3a36a5bf11f5::t_2d1cd084d42572 9,191-207
+tests/test_autoresearch_planning.py
+  s_7b3a36a5bf11f5::t_2ea5d835e70333 364,403-422
+tests/test_validator_batching.py
+  s_7b3a36a5bf11f5::t_b7bde7f3b5ab56 338,341-344,346,349,382,384
+  s_7b3a36a5bf11f5::t_1b156f6104820f 147-150,152-153,191,197-201,203
+causal_model.py
+  s_7b3a36a5bf11f5::t_e4ad8cc3c844f9 13,124,131-134,271-272,277,280,285,288-294
+tests/test_research_conductor_characterization.py
+  s_7b3a36a5bf11f5::t_b3e8100e959ed5 774,784
+research_conductor.py
+  s_7b3a36a5bf11f5::t_d92620896bda41 261,271
+thesis_validator.py
+  s_7b3a36a5bf11f5::t_8de96fc9b02ce6 358-361,2061
+autoresearch_constants.py
+  s_7b3a36a5bf11f5::t_6b6d9cffd854d2 140-150,173-183,217-224
+tests/test_validator_process_gate.py
+  s_7b3a36a5bf11f5::t_dcecbcf89de7a2 83-84,86-96,99-102,104-105,116-123,125-126
+configs/ema_base.yaml
+  s_7b3a36a5bf11f5::t_40183d4205e8b7 69,72,76
+tests/test_validator_gate_coverage.py
+  s_7b3a36a5bf11f5::t_fb417fea6dc826 245,247,250,252,334,336,339,343,359,361,364,366,629,639,642,652
+  s_7b3a36a5bf11f5::t_9bae73f21a9cea 369,389,392,394,397,406,426,436,670,685
+  s_7b3a36a5bf11f5::t_3626e1df43564d 180-187,208,210,213,215,218,223,226,231,234,242,255,258,261,267,270,276,279,285,288,309
+tests/test_thesis_validator.py
+  s_7b3a36a5bf11f5::t_70c94807eb2487 538,550,552,555,580-582,642,646-648
+tests/test_autoresearch_research.py
+  s_7b3a36a5bf11f5::t_ad7f975aa09e9b 15,896-898
+  s_7b3a36a5bf11f5::t_5796df14943a95 656-661
+  s_7b3a36a5bf11f5::t_41d8a184a773a4 18,46-47,642-655,662-686,837,839-840,884,893-895
+tests/test_validation_retry_budget.py
+  s_7b3a36a5bf11f5::t_7d082f0ef9bfb0 37-50
+tests/test_screening.py
+  s_7b3a36a5bf11f5::t_1e7b2645f7c712 10,13,16,72-74,82-84
+tests/test_behavior_signals.py
+  s_7b3a36a5bf11f5::t_e2126a2d5762a8 261,266-268
+configs/orb_base.yaml
+  s_7b3a36a5bf11f5::t_9723bd7d1641a7 71,74,78
+tests/test_alignment_family_aware.py
+  s_7b3a36a5bf11f5::t_f66a30edaf0a82 216,219,232,240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "341c1776fa971e0905f2e4878f218b5db73885b5",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
