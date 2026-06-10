@@ -19,7 +19,7 @@ from thesis_validator import (
     _detect_missing_mechanism_evidence_disqualifier,
     _detect_needs_code_starvation,
     _detect_theme_cluster_fixation,
-    _validate_thesis_quality,
+    _run_behavioral_pass,
 )
 
 
@@ -261,7 +261,7 @@ def test_missing_mechanism_evidence_disqualifier_detector_returns_none_when_subs
     assert _detect_missing_mechanism_evidence_disqualifier(proposal) is None
 
 
-def test_validate_thesis_quality_translates_policy_reject_to_raise() -> None:
+def test_run_behavioral_pass_translates_policy_reject_to_raise() -> None:
     """End-to-end: when a detector fires, the validator raises with the
     detector's code (mediated by the policy)."""
     proposal = _make_thesis(
@@ -270,14 +270,14 @@ def test_validate_thesis_quality_translates_policy_reject_to_raise() -> None:
         disqualifiers=[Disqualifier(name="x", condition="y" * 100, kind="metric_threshold")],
     )
     with pytest.raises(ThesisValidationError) as exc_info:
-        _validate_thesis_quality(proposal, prior_theses=[])
+        _run_behavioral_pass(proposal, prior_theses=[])
     assert exc_info.value.rejection_code == "thesis_quality_missing_mechanism_evidence_disqualifier"
 
 
-def test_validate_thesis_quality_does_not_raise_when_no_signals_fire() -> None:
+def test_run_behavioral_pass_does_not_raise_when_no_signals_fire() -> None:
     """End-to-end: with no signals, the validator returns without raising."""
     proposal = _make_thesis(
         config_changes={"k": 1},
         disqualifiers=[Disqualifier(name="x", condition="z" * 50, kind="mechanism_evidence")],
     )
-    _validate_thesis_quality(proposal, prior_theses=[])  # no raise expected
+    _run_behavioral_pass(proposal, prior_theses=[])  # no raise expected

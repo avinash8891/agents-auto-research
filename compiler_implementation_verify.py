@@ -199,11 +199,6 @@ def _default_runtime_keys(family_name: str) -> set[str]:
         return set()
 
 
-def _runtime_code_text(strategy_dir: Path) -> str:
-    text, _failures = _runtime_code_text_with_failures(strategy_dir)
-    return text
-
-
 def _runtime_code_modules_with_failures(strategy_dir: Path) -> tuple[list[str], list[str]]:
     chunks: list[str] = []
     failures: list[str] = []
@@ -425,26 +420,6 @@ def _config_key_consumed_by_runtime(text: str, token: str) -> bool:
     return False
 
 
-def _active_string_token_present(text: str, token: str) -> bool:
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return False
-    for node in _reachable_ast_nodes(tree):
-        if isinstance(node, ast.Dict):
-            for key in node.keys:
-                if isinstance(key, ast.Constant) and key.value == token:
-                    return True
-        if isinstance(node, ast.Call):
-            for arg in list(node.args) + [kw.value for kw in node.keywords]:
-                if isinstance(arg, ast.Constant) and arg.value == token:
-                    return True
-        if isinstance(node, ast.Subscript):
-            if _subscript_string_key(node) == token:
-                return True
-    return False
-
-
 def _payload_key_token_present(text: str, token: str) -> bool:
     try:
         tree = ast.parse(text)
@@ -588,10 +563,27 @@ def _verify_tests_cover_behavior(
             test_texts.append(text)
     if not test_texts:
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
+
+    def test_mentions_token(text: str, token: str) -> bool:
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return False
+        for node in _reachable_ast_nodes(tree):
+            if isinstance(node, ast.Dict):
+                for key in node.keys:
+                    if isinstance(key, ast.Constant) and key.value == token:
+                        return True
+            if isinstance(node, ast.Call):
+                for arg in list(node.args) + [kw.value for kw in node.keywords]:
+                    if isinstance(arg, ast.Constant) and arg.value == token:
+                        return True
+            if isinstance(node, ast.Subscript) and _subscript_string_key(node) == token:
+                return True
+        return False
+
     if not any(
-        _active_string_token_present(test_text, token)
-        for token in unique_tokens
-        for test_text in test_texts
+        test_mentions_token(test_text, token) for token in unique_tokens for test_text in test_texts
     ):
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
     return []

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Extract three multi-check contracts in `_validate_structural` into dedicated private helpers, matching the existing pattern used by `_validate_emergent_dimension` and `_validate_underexplored_dimensions`. Zero external behavior change — same rejection codes, same messages, same exception type, same fail-fast semantics within and across contracts. The win is internal: consistent organization, easier to evolve each contract independently.
+**Goal:** Extract three multi-check contracts in `_collect_mechanical_failures` into dedicated private helpers, matching the existing pattern used by `_validate_emergent_dimension` and `_validate_underexplored_dimensions`. Zero external behavior change — same rejection codes, same messages, same exception type, same fail-fast semantics within and across contracts. The win is internal: consistent organization, easier to evolve each contract independently.
 
-**Architecture:** Three new private helper functions (`_validate_mechanism_dimension`, `_validate_thesis_specifies_change`, `_validate_expected_effects`) are extracted from inline raise sites in `_validate_structural`. Each owns one conceptual contract. `_validate_structural` becomes a thin orchestrator that calls helpers in dependency order. The raised exceptions, rejection codes, evidence dicts, and message strings are preserved verbatim.
+**Architecture:** Three new private helper functions (`_validate_mechanism_dimension`, `_validate_thesis_specifies_change`, `_validate_expected_effects`) are extracted from inline raise sites in `_collect_mechanical_failures`. Each owns one conceptual contract. `_collect_mechanical_failures` becomes a thin orchestrator that calls helpers in dependency order. The raised exceptions, rejection codes, evidence dicts, and message strings are preserved verbatim.
 
 **Tech Stack:** Python 3.13, no new dependencies, no new dataclasses.
 
@@ -20,16 +20,16 @@ The validator has a partial extraction pattern today:
 |---|---|---|
 | Emergent dimension | `_validate_emergent_dimension(thesis)` extracted helper | unchanged |
 | Underexplored dimensions | `_validate_underexplored_dimensions(thesis, priors)` extracted helper | unchanged |
-| Mechanism dimension | 3 scattered raises in `_validate_structural` + delegation to emergent | `_validate_mechanism_dimension(thesis, priors)` helper |
-| Thesis specifies a change | 2 scattered raises in `_validate_structural` | `_validate_thesis_specifies_change(thesis)` helper |
-| Expected effects well-formed | 1 raise + 1 loop in `_validate_structural` | `_validate_expected_effects(thesis)` helper |
+| Mechanism dimension | 3 scattered raises in `_collect_mechanical_failures` + delegation to emergent | `_validate_mechanism_dimension(thesis, priors)` helper |
+| Thesis specifies a change | 2 scattered raises in `_collect_mechanical_failures` | `_validate_thesis_specifies_change(thesis)` helper |
+| Expected effects well-formed | 1 raise + 1 loop in `_collect_mechanical_failures` | `_validate_expected_effects(thesis)` helper |
 
 After this PR, every multi-check contract has its own helper. Single-check contracts (thesis_id, hypothesis, mechanism, disqualifiers, falsification, dimension_novelty, causal_cluster, novel_connection) stay inline — extracting them would be over-engineering.
 
 ## File Structure
 
 **Files modified:**
-- `thesis_validator.py` — extract three helpers, slim `_validate_structural`
+- `thesis_validator.py` — extract three helpers, slim `_collect_mechanical_failures`
 
 **Files NOT touched:**
 - `behavior_signals.py` — unchanged
@@ -42,9 +42,9 @@ After this PR, every multi-check contract has its own helper. Single-check contr
 ## Task 1: Extract _validate_mechanism_dimension
 
 **Files:**
-- Modify: `thesis_validator.py` (`_validate_structural` mechanism_dimension block + emergent delegation)
+- Modify: `thesis_validator.py` (`_collect_mechanical_failures` mechanism_dimension block + emergent delegation)
 
-Current state in `_validate_structural` (verify exact line numbers before editing):
+Current state in `_collect_mechanical_failures` (verify exact line numbers before editing):
 
 ```python
     if not thesis.mechanism_dimension.strip():
@@ -71,7 +71,7 @@ Run `.venv/bin/grep -n "structural_missing_mechanism_dimension\|structural_mecha
 
 - [ ] **Step 2: Add the helper**
 
-Place the new helper IMMEDIATELY ABOVE `_validate_structural` so related contract helpers stay grouped (matches the existing placement of `_validate_emergent_dimension` and `_validate_underexplored_dimensions`).
+Place the new helper IMMEDIATELY ABOVE `_collect_mechanical_failures` so related contract helpers stay grouped (matches the existing placement of `_validate_emergent_dimension` and `_validate_underexplored_dimensions`).
 
 ```python
 def _validate_mechanism_dimension(
@@ -109,7 +109,7 @@ def _validate_mechanism_dimension(
         _validate_emergent_dimension(thesis)
 ```
 
-- [ ] **Step 3: Replace the inline block in `_validate_structural`**
+- [ ] **Step 3: Replace the inline block in `_collect_mechanical_failures`**
 
 Replace the three-block sequence (missing → invalid → emergent delegation) with a single call:
 
@@ -150,9 +150,9 @@ EOF
 ## Task 2: Extract _validate_thesis_specifies_change
 
 **Files:**
-- Modify: `thesis_validator.py` (`_validate_structural` config_changes XOR + requested_primitives block)
+- Modify: `thesis_validator.py` (`_collect_mechanical_failures` config_changes XOR + requested_primitives block)
 
-Current state in `_validate_structural`:
+Current state in `_collect_mechanical_failures`:
 
 ```python
     if not thesis.config_changes and not thesis.requires_code_change:
@@ -169,7 +169,7 @@ Current state in `_validate_structural`:
 
 - [ ] **Step 1: Add the helper**
 
-Place beside the other contract helpers (above `_validate_structural`):
+Place beside the other contract helpers (above `_collect_mechanical_failures`):
 
 ```python
 def _validate_thesis_specifies_change(thesis: ResearchThesis) -> None:
@@ -233,9 +233,9 @@ EOF
 ## Task 3: Extract _validate_expected_effects
 
 **Files:**
-- Modify: `thesis_validator.py` (`_validate_structural` expected_effects presence + metric_unbacked loop)
+- Modify: `thesis_validator.py` (`_collect_mechanical_failures` expected_effects presence + metric_unbacked loop)
 
-Current state in `_validate_structural`:
+Current state in `_collect_mechanical_failures`:
 
 ```python
     if not thesis.expected_effects:
@@ -291,7 +291,7 @@ def _validate_expected_effects(thesis: ResearchThesis) -> None:
         )
 ```
 
-- [ ] **Step 2: Replace the two inline blocks in `_validate_structural`**
+- [ ] **Step 2: Replace the two inline blocks in `_collect_mechanical_failures`**
 
 Remove the presence check at its current location and the for-loop at its current location. Replace BOTH with a single call to the new helper, placed where the presence check was (so the relative ordering with falsification + disqualifiers is preserved):
 
@@ -301,7 +301,7 @@ Remove the presence check at its current location and the for-loop at its curren
 
 The falsification check and the disqualifiers presence check stay in their current positions relative to the new helper call.
 
-**IMPORTANT**: verify the current `_validate_structural` order before and after. The relative sequence with other checks must remain identical so that the FIRST gate to trip across the entire validator stays the same as before.
+**IMPORTANT**: verify the current `_collect_mechanical_failures` order before and after. The relative sequence with other checks must remain identical so that the FIRST gate to trip across the entire validator stays the same as before.
 
 - [ ] **Step 3: Verify all existing tests pass**
 
@@ -359,9 +359,9 @@ print(f'Distinct rejection_code values: {len(codes)}')
 ```
 Expected: 31 (unchanged from before this PR).
 
-- [ ] **Step 4: Confirm `_validate_structural` is now a thin orchestrator**
+- [ ] **Step 4: Confirm `_collect_mechanical_failures` is now a thin orchestrator**
 
-Read `_validate_structural` end-to-end. Should be ~30 lines of mostly helper calls + simple presence checks. If it's still hundreds of lines with inline raises, something didn't get extracted.
+Read `_collect_mechanical_failures` end-to-end. Should be ~30 lines of mostly helper calls + simple presence checks. If it's still hundreds of lines with inline raises, something didn't get extracted.
 
 ---
 
@@ -369,7 +369,7 @@ Read `_validate_structural` end-to-end. Should be ~30 lines of mostly helper cal
 
 - Tier-1 batching (collecting multiple presence failures into one rejection) — separate PR
 - Wrapping single-check contracts in helpers (over-engineering)
-- Changing `_validate_config_validity` organization — not flagged in this audit; revisit if needed
+- Changing `_collect_mechanical_config_validity_failures` organization — not flagged in this audit; revisit if needed
 - Changes to `behavior_signals.py` or the policy layer — already aligned
 
 ## Invariants this PR must preserve

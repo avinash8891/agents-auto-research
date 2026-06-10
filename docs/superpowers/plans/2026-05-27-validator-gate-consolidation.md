@@ -21,7 +21,7 @@ Audit from session 2026-05-27 identified 10 issues across 38 rejection codes:
 | 3 | Over-fractured (rare path) | 3 emergent codes | Merge into one `structural_emergent_thesis_malformed` with structured evidence |
 | 4 | Over-fractured | 3 underexplored-dim codes | Merge into one `structural_underexplored_dimensions_invalid` |
 | 5 | Subsumed gate | `config_validity_base_config_path_legacy_experiments` | Fold into `config_validity_base_config_path_inheritance_blocked` |
-| 6 | Wrong category | `thesis_quality_thesis_id_repeated` | Move from `_validate_thesis_quality` to `_validate_structural` |
+| 6 | Wrong category | `thesis_quality_thesis_id_repeated` | Move from `_run_behavioral_pass` to `_collect_mechanical_failures` |
 | 7 | Gameable | `thesis_quality_missing_mechanism_evidence_disqualifier` | Add content check on `condition` (≥40 chars, non-trivial) |
 | 8 | Mixed concerns | `config_validity_config_changes_metadata_leak` | Decide: leave as validator (current); document the choice |
 | — | Tests must follow | All affected test files | Update test expectations to new codes |
@@ -51,7 +51,7 @@ Net: 38 → 30 codes, plus one strengthened gate (#7) and one moved gate (#6).
 ## Task 1: Merge dimension_novelty gates
 
 **Files:**
-- Modify: `thesis_validator.py` (the `_validate_structural` and `_validate_thesis_quality` blocks for dimension_novelty)
+- Modify: `thesis_validator.py` (the `_collect_mechanical_failures` and `_run_behavioral_pass` blocks for dimension_novelty)
 - Test: `tests/test_validator_gate_coverage.py`
 
 Current state: two gates touching the same field.
@@ -108,9 +108,9 @@ def test_gate_structural_dimension_novelty_too_short_with_same_dim_priors() -> N
     _expect_rejection(thesis, priors, "structural_dimension_novelty_invalid")
 ```
 
-- [ ] **Step 4: Implement the merged gate in `_validate_structural`**
+- [ ] **Step 4: Implement the merged gate in `_collect_mechanical_failures`**
 
-Replace the existing `if not thesis.dimension_novelty.strip(): raise ...` block (around line 1106 in `_validate_structural`) AND delete the corresponding block in `_validate_thesis_quality` (around line 1262). The merged block:
+Replace the existing `if not thesis.dimension_novelty.strip(): raise ...` block (around line 1106 in `_collect_mechanical_failures`) AND delete the corresponding block in `_run_behavioral_pass` (around line 1262). The merged block:
 
 ```python
     # Unified dimension_novelty contract: must be non-empty AND ≥30 chars.
@@ -131,9 +131,9 @@ Replace the existing `if not thesis.dimension_novelty.strip(): raise ...` block 
         )
 ```
 
-Delete the old `_validate_thesis_quality` block:
+Delete the old `_run_behavioral_pass` block:
 ```python
-    # DELETE these lines from _validate_thesis_quality:
+    # DELETE these lines from _run_behavioral_pass:
     if prior_theses and thesis.mechanism_dimension:
         same_dim = [...]
         if same_dim:
@@ -177,7 +177,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ## Task 2: Merge falsification gates
 
 **Files:**
-- Modify: `thesis_validator.py` (falsification block in `_validate_structural`)
+- Modify: `thesis_validator.py` (falsification block in `_collect_mechanical_failures`)
 - Test: `tests/test_validator_gate_coverage.py`
 
 Current state: two gates I split myself in the last refactor — over-fractured.
@@ -209,7 +209,7 @@ Replace the old `test_gate_structural_missing_falsification` and `test_gate_stru
 
 - [ ] **Step 2: Replace the validator block**
 
-In `_validate_structural` (around lines 1196-1217), replace:
+In `_collect_mechanical_failures` (around lines 1196-1217), replace:
 
 ```python
     falsification_text = (thesis.falsification_or_alternative or "").strip()
@@ -284,7 +284,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ## Task 3: Merge emergent dimension gates
 
 **Files:**
-- Modify: `thesis_validator.py` (emergent block in `_validate_structural`)
+- Modify: `thesis_validator.py` (emergent block in `_collect_mechanical_failures`)
 - Test: `tests/test_validator_gate_coverage.py`
 
 Current state: 3 gates for a rare path:
@@ -330,7 +330,7 @@ def test_gate_structural_emergent_malformed_short_fields() -> None:
 
 Remove the three old tests (`test_gate_structural_missing_new_dimension_name`, `test_gate_structural_new_dimension_name_duplicates_core`, `test_gate_structural_emergent_field_too_short`).
 
-- [ ] **Step 2: Replace the emergent block in `_validate_structural`**
+- [ ] **Step 2: Replace the emergent block in `_collect_mechanical_failures`**
 
 Replace the existing `if thesis.mechanism_dimension == EMERGENT_MECHANISM_DIMENSION:` block (around lines 1083-1105) with:
 
@@ -339,7 +339,7 @@ Replace the existing `if thesis.mechanism_dimension == EMERGENT_MECHANISM_DIMENS
         _validate_emergent_dimension(thesis)
 ```
 
-Add a new helper function above `_validate_structural`:
+Add a new helper function above `_collect_mechanical_failures`:
 
 ```python
 def _validate_emergent_dimension(thesis: ResearchThesis) -> None:
@@ -433,7 +433,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ## Task 4: Merge underexplored_dimensions gates
 
 **Files:**
-- Modify: `thesis_validator.py` (underexplored block in `_validate_structural`)
+- Modify: `thesis_validator.py` (underexplored block in `_collect_mechanical_failures`)
 - Test: `tests/test_validator_gate_coverage.py`
 
 Current state: 3 gates for one field:
@@ -479,7 +479,7 @@ def test_gate_structural_underexplored_dimensions_invalid_includes_chosen() -> N
 
 Remove old `test_gate_structural_missing_underexplored_dimensions_when_priors_exist`, `test_gate_structural_underexplored_dimensions_invalid_values`, `test_gate_structural_underexplored_dimensions_includes_chosen`.
 
-- [ ] **Step 2: Replace the underexplored block in `_validate_structural`**
+- [ ] **Step 2: Replace the underexplored block in `_collect_mechanical_failures`**
 
 Replace the three existing raise statements (around lines 1119-1147) with:
 
@@ -597,7 +597,7 @@ In `_validate_base_config_path` (around lines 286-302), the current code is:
         )
 ```
 
-Replace the last raise with `pass` (let the caller's check in `_validate_config_validity` against the family baseline catch it):
+Replace the last raise with `pass` (let the caller's check in `_collect_mechanical_config_validity_failures` against the family baseline catch it):
 
 ```python
     if not is_allowed:
@@ -610,7 +610,7 @@ Replace the last raise with `pass` (let the caller's check in `_validate_config_
                 evidence={"path": path},
             )
         # Other non-configs/ paths (including legacy experiments/) fall through
-        # to the inheritance_blocked check in _validate_config_validity, which
+        # to the inheritance_blocked check in _collect_mechanical_config_validity_failures, which
         # rejects ANY path that isn't the family baseline. That gate is the
         # authoritative inheritance check; this specific subcase was redundant.
 ```
@@ -677,18 +677,18 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 - Modify: `thesis_validator.py` (move the check between sub-functions)
 - Test: `tests/test_validator_gate_coverage.py`, `tests/test_validator_subsections.py`
 
-Current state: `thesis_quality_thesis_id_repeated` lives in `_validate_thesis_quality`. But uniqueness on an ID is a structural invariant, not a "pattern of reasoning" rule. Misleading category.
+Current state: `thesis_quality_thesis_id_repeated` lives in `_run_behavioral_pass`. But uniqueness on an ID is a structural invariant, not a "pattern of reasoning" rule. Misleading category.
 
 - [ ] **Step 1: Move the check call**
 
-In `_validate_thesis_quality`, delete:
+In `_run_behavioral_pass`, delete:
 
 ```python
     if prior_theses:
         _check_thesis_id_not_repeated(thesis, prior_theses)
 ```
 
-In `_validate_structural`, add (right after thesis_id presence check):
+In `_collect_mechanical_failures`, add (right after thesis_id presence check):
 
 ```python
     if not thesis.thesis_id.strip():
@@ -710,7 +710,7 @@ def _check_thesis_id_not_repeated(
     """Uniqueness constraint on thesis_id across all prior rounds.
 
     This is a structural invariant (no duplicate IDs), not a pattern-of-
-    reasoning rule. Lives in _validate_structural.
+    reasoning rule. Lives in _collect_mechanical_failures.
     """
     prior_ids = {str(p.get("thesis_id") or "") for p in prior_theses}
     if thesis.thesis_id in prior_ids:
@@ -775,7 +775,7 @@ git add thesis_validator.py tests/test_validator_gate_coverage.py tests/test_val
 git commit -m "refactor(validator): move thesis_id_repeated to structural section
 
 Uniqueness on an ID is a structural invariant, not a pattern-of-reasoning
-rule. Moves the check to _validate_structural and renames the rejection
+rule. Moves the check to _collect_mechanical_failures and renames the rejection
 code from thesis_quality_* to structural_*.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
@@ -927,7 +927,7 @@ Document the choice so future maintainers don't waste time re-litigating.
 
 - [ ] **Step 1: Add a docstring comment near the gate**
 
-In `_validate_config_validity`, before the metadata-leak loop:
+In `_collect_mechanical_config_validity_failures`, before the metadata-leak loop:
 
 ```python
     # Design choice: this is enforced as a validator error rather than

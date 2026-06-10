@@ -39,7 +39,7 @@ from research_types import ResearchThesis  # noqa: E402
 
 # Fields the validator inspects directly. If absent from the prompt, the
 # conductor has no idea the field is required and will omit it.
-# Sourced from _validate_structural / _validate_thesis_quality in
+# Sourced from _run_behavioral_pass / _collect_mechanical_failures in
 # thesis_validator.py — keep in sync when validator rules change.
 VALIDATOR_INSPECTED_FIELDS: set[str] = {
     "thesis_id",

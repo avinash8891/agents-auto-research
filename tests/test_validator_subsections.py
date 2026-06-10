@@ -1,11 +1,9 @@
 """Tests for Stage 1 sub-section reorganization + rejection_code namespacing.
 
-Stage 1 is split into three helpers, each owning one category of rules:
-  _validate_structural        — missing fields / schema invariants
-  _validate_thesis_quality    — pattern of reasoning (B1/B2/B3/B5, banned
-                                 language, dimension novelty, repeated id)
-  _validate_config_validity   — base_config_path, Jaccard overlap, metadata
-                                 leak, neighboring threshold (L5)
+Stage 1 is split into process, behavioral, and mechanical passes:
+  _validate_process              — required-tool/process checks
+  _run_behavioral_pass           — pattern-of-reasoning and duplicate checks
+  _collect_mechanical_failures   — schema, config, evidence, and artifact checks
 
 Each helper raises ThesisValidationError with rejection_code prefixed by its
 section name (`structural_*`, `thesis_quality_*`, `config_validity_*`).
@@ -239,11 +237,11 @@ def test_config_validity_section_rejects_jaccard_overlap_with_prefixed_code() ->
     """Jaccard overlap fires for non-trivial key overlap when no shared numeric
     key falls within the neighboring-threshold band.
 
-    Gate ordering note: `_check_neighboring_threshold` now runs BEFORE the
-    Jaccard check so single-key value-tweak theses get the more specific
-    finding. To isolate Jaccard, the shared numeric key here uses a value
-    well outside the 2x neighboring band (10.0 → 2.5 = 0.25x), so the
-    neighboring gate passes and Jaccard fires next.
+    Gate ordering note: the behavioral pass checks neighboring-threshold
+    before Jaccard overlap so single-key value-tweak theses get the more
+    specific finding. To isolate Jaccard, the shared numeric key here uses
+    a value well outside the 2x neighboring band (10.0 → 2.5 = 0.25x), so
+    the neighboring gate passes and Jaccard fires next.
     """
     raw = _base_thesis("dup_keys")
     raw["theme_keywords"] = ["unrelated"]

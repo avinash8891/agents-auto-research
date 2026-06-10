@@ -8,7 +8,6 @@ from thesis_validator import (
     ThesisValidationError,
     check_hypothesis_alignment,
     config_key_overlap,
-    generate_variants,
 )
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
@@ -650,29 +649,6 @@ def test_validate_normalizes_reused_prior_emergent_dimension_name() -> None:
     validated = validate_thesis_dict(thesis, prior_theses=prior)
 
     assert validated.mechanism_dimension == "liquidity_decay"
-
-
-def test_generate_variants_does_not_extrapolate_max_trades_below_valid_bound() -> None:
-    variants = generate_variants(
-        {"max_trades_per_day": 1},
-        {"max_trades_per_day": 3},
-    )
-
-    by_label = {variant["_variant_label"]: variant for variant in variants}
-
-    assert by_label["conservative"]["max_trades_per_day"] == 2
-    assert by_label["proposed"]["max_trades_per_day"] == 1
-    assert "aggressive" not in by_label
-    assert all(variant["max_trades_per_day"] >= 1 for variant in variants)
-
-
-def test_generate_variants_does_not_extrapolate_max_hold_bars_below_valid_bound() -> None:
-    variants = generate_variants(
-        {"max_hold_bars": 40},
-        {"max_hold_bars": 78},
-    )
-
-    assert all(variant["max_hold_bars"] >= 1 for variant in variants)
 
 
 def test_hypothesis_alignment_accepts_first_trade_only_for_max_trades_per_day() -> None:

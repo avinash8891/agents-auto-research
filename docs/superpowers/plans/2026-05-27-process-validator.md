@@ -188,7 +188,7 @@ def validate_thesis_dict(
 ) -> ResearchThesis:
 ```
 
-Call `_validate_process(thesis, tools_called or set())` before `_validate_structural(...)`. Pass `tools_called=tools_called` from `validate_thesis_dict` to `validate_research_thesis`.
+Call `_validate_process(thesis, tools_called or set())` before `_collect_mechanical_failures(...)`. Pass `tools_called=tools_called` from `validate_thesis_dict` to `validate_research_thesis`.
 
 - [ ] **Step 3: Update legacy inference mapping**
 

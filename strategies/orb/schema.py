@@ -112,12 +112,3 @@ def normalize_config_changes(config_changes: dict[str, Any]) -> dict[str, Any]:
         if key in normalized and normalized[key] is not None:
             normalized[key] = _normalize_regime_list(list(normalized[key]))
     return normalized
-
-
-def validate_runtime_config(config: dict[str, Any]) -> None:
-    unknown = sorted(set(config) - set(SUPPORTED_CONFIG_KEYS))
-    if unknown:
-        raise ValueError(f"Unsupported config keys: {', '.join(unknown)}")
-    for key in ("skip_regimes", "require_regimes"):
-        if key in config and config[key] is not None:
-            _normalize_regime_list(list(config[key]))

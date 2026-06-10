@@ -17,7 +17,6 @@ from compiler_thesis_io import create_executable_artifact as create_executable_a
 from compiler_thesis_io import derive_thesis_artifacts as derive_thesis_artifacts
 from compiler_thesis_io import mark_request_completed as mark_request_completed
 from compiler_thesis_io import write_research_artifact as write_research_artifact
-from compiler_validate import validate_orb_runtime_config as validate_orb_runtime_config
 
 __all__ = [
     "compile_research_thesis",
@@ -27,7 +26,6 @@ __all__ = [
     "derive_thesis_artifacts",
     "write_research_artifact",
     "mark_request_completed",
-    "validate_orb_runtime_config",
     "thesis_needs_operationalization",
     "operationalize_thesis",
     "build_missing_primitives",
