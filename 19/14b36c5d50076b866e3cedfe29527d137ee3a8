@@ -1,0 +1,116 @@
+web_research_cli.py
+  s_cea1fad922bae5::t_d0c1ddc535b396 26-28,217-218
+  s_cea1fad922bae5::t_8d92ef960553af 99,110
+tests/test_numba_kernels.py
+  s_cea1fad922bae5::t_05358b51145702 10-12,16-18
+  s_cea1fad922bae5::t_3a689aefa72313 1-9,13-15
+tests/test_agent_formatters.py
+  s_cea1fad922bae5::t_4b55bc42980b9b 1-15
+strategies/ema/strategy.py
+  s_cea1fad922bae5::t_e1b14d6e358651 39-47,57
+research_subagents.py
+  s_cea1fad922bae5::t_d0c1ddc535b396 1323-1340
+analyst_dataframe_helpers.py
+  s_cea1fad922bae5::t_c900070e064acb 82-83
+tests/test_orb_backtest_characterization.py
+  s_cea1fad922bae5::t_3a689aefa72313 59-81
+numba_kernels.py
+  s_cea1fad922bae5::t_c900070e064acb 73-74,76-87,91,93-96,98-99
+research_types.py
+  s_cea1fad922bae5::t_0d9ec6a5ff9f90 174
+tests/test_experiment_db_sqlite_runtime.py
+  s_cea1fad922bae5::t_ff6fa42ce82601 77-101
+agent_openai_calls.py
+  s_cea1fad922bae5::t_42da0d67f74559 136-139
+  s_cea1fad922bae5::t_d0c1ddc535b396 134-135,140-150
+tests/test_trace_higher_level_modules.py
+  s_cea1fad922bae5::t_6a3c64396ab4f8 859,891-901,903-905
+  s_cea1fad922bae5::t_05358b51145702 9-10
+tests/test_autoresearch_research.py
+  s_cea1fad922bae5::t_05358b51145702 283
+  s_cea1fad922bae5::t_c252d4ede27117 1279
+  s_cea1fad922bae5::t_1ec95ccf597339 264-282,284-285
+  s_cea1fad922bae5::t_b052ce0e8c23d4 1367-1371
+backtest_run_db.py
+  s_cea1fad922bae5::t_73c442cd4163a7 824
+configs/orb_base.yaml
+  s_cea1fad922bae5::t_c900070e064acb 46
+tests/test_research_memory.py
+  s_cea1fad922bae5::t_4b55bc42980b9b 375-384
+tests/test_agent_token_usage.py
+  s_cea1fad922bae5::t_c252d4ede27117 359-389
+tests/test_compiler_builder_medium.py
+  s_cea1fad922bae5::t_4b55bc42980b9b 1-41
+vps_runner.py
+  s_cea1fad922bae5::t_42da0d67f74559 391-393
+  s_cea1fad922bae5::t_af230fc3176b6d 389-390,394-396
+tests/test_vps_runner_config.py
+  s_cea1fad922bae5::t_4b55bc42980b9b 610-611
+tests/test_analyst_dataframe_helpers.py
+  s_cea1fad922bae5::t_42da0d67f74559 48,55
+  s_cea1fad922bae5::t_c252d4ede27117 45-47,49-54,56-69
+compiler_builder.py
+  s_cea1fad922bae5::t_8d92ef960553af 232,243
+  s_cea1fad922bae5::t_0d9ec6a5ff9f90 1625-1627
+.github/workflows/ci.yml
+  s_cea1fad922bae5::t_af230fc3176b6d 25-27
+tests/test_thesis_validator.py
+  s_cea1fad922bae5::t_3a689aefa72313 55-93
+autoresearch_research.py
+  s_cea1fad922bae5::t_0d9ec6a5ff9f90 1715-1719,1721
+  s_cea1fad922bae5::t_e32d895c3f7b0c 1121-1128
+  s_cea1fad922bae5::t_73c442cd4163a7 257-262,269,279-296
+improvement_reflexion.py
+  s_cea1fad922bae5::t_42da0d67f74559 294
+  s_cea1fad922bae5::t_0d9ec6a5ff9f90 187-189,271-273,275-276,279-282,289,292,302
+thesis_validator.py
+  s_cea1fad922bae5::t_c0f05fda989420 1022-1027,1044-1045,1066
+  s_cea1fad922bae5::t_6aa8e5dca366e7 1867-1868,1875-1876,1883-1885
+research_memory.py
+  s_cea1fad922bae5::t_e32d895c3f7b0c 605-607
+  s_cea1fad922bae5::t_1a717a3feb24b6 18-22,178-179,217,274-276
+tests/test_trace_sdk.py
+  s_cea1fad922bae5::t_c252d4ede27117 208,250-267
+  s_cea1fad922bae5::t_ff6fa42ce82601 269-276
+tests/test_compiler_implementation_verify.py
+  s_cea1fad922bae5::t_1ec95ccf597339 1-44
+trace_adapters/reflexio.py
+  s_cea1fad922bae5::t_af230fc3176b6d 141-142
+  s_cea1fad922bae5::t_42da0d67f74559 11
+trace_sdk.py
+  s_cea1fad922bae5::t_05358b51145702 426,428,434,436
+  s_cea1fad922bae5::t_af230fc3176b6d 677-678,681,683-686
+  s_cea1fad922bae5::t_02ef3414c89855 97-108,110,128,142-143
+agent_formatters.py
+  s_cea1fad922bae5::t_e32d895c3f7b0c 124-128,141-142
+strategies/orb/runner.py
+  s_cea1fad922bae5::t_c900070e064acb 30-32
+agent_token_usage.py
+  s_cea1fad922bae5::t_0d9ec6a5ff9f90 19-28,100,153,208,217,243
+trace_adapters/recursive_improve.py
+  s_cea1fad922bae5::t_42da0d67f74559 11
+  s_cea1fad922bae5::t_af230fc3176b6d 170-171
+compiler_implementation_verify.py
+  s_cea1fad922bae5::t_6a3c64396ab4f8 448-490,635
+tests/test_web_research_cli.py
+  s_cea1fad922bae5::t_3a689aefa72313 122,124,126,128
+  s_cea1fad922bae5::t_05358b51145702 123,125
+  s_cea1fad922bae5::t_42da0d67f74559 208
+  s_cea1fad922bae5::t_183c56ae64cbef 209-249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "1914b36c5d50076b866e3cedfe29527d137ee3a8",
+  "prompts": {},
+  "sessions": {
+    "s_cea1fad922bae5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb13f-b2e3-7941-9881-40c2f957586d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
