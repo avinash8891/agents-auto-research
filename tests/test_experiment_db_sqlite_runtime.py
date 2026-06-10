@@ -520,3 +520,52 @@ def test_reload_picks_up_external_sqlite_write(tmp_path: Path) -> None:
     # After reload, sees the external write
     db1.reload()
     assert db1.count() == 2
+
+
+def test_ensure_round_started_creates_in_progress_row(tmp_path: Path) -> None:
+    """F15: a research_rounds row should exist after ensure_round_started."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    db.ensure_round_started(
+        research_round_id="job-1-round-1",
+        job_id=1,
+        round_number=1,
+        run_id="run-abc",
+    )
+
+    conn = sqlite3.connect(tmp_path / "backtest_runs.db")
+    rows = conn.execute(
+        "SELECT outcome FROM research_rounds WHERE research_round_id = 'job-1-round-1'"
+    ).fetchall()
+    conn.close()
+
+    assert len(rows) == 1
+    assert rows[0][0] == "in_progress"
+
+
+def test_ensure_round_started_is_idempotent(tmp_path: Path) -> None:
+    """ensure_round_started must not overwrite an existing round row."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    db.ensure_round_started(
+        research_round_id="job-1-round-1",
+        job_id=1,
+        round_number=1,
+        run_id="run-abc",
+    )
+    # Calling again should not error or duplicate
+    db.ensure_round_started(
+        research_round_id="job-1-round-1",
+        job_id=1,
+        round_number=1,
+        run_id="run-abc",
+    )
+
+    conn = sqlite3.connect(tmp_path / "backtest_runs.db")
+    rows = conn.execute(
+        "SELECT outcome FROM research_rounds WHERE research_round_id = 'job-1-round-1'"
+    ).fetchall()
+    conn.close()
+    assert len(rows) == 1

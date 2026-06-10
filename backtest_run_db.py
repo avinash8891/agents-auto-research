@@ -612,6 +612,31 @@ class BacktestRunDB:
             ),
         )
 
+    def ensure_round_started(
+        self,
+        *,
+        research_round_id: str,
+        job_id: int,
+        round_number: int,
+        run_id: str,
+    ) -> None:
+        """Write a provisional round row if one does not already exist."""
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT 1 FROM research_rounds WHERE research_round_id = ?",
+                (research_round_id,),
+            ).fetchone()
+            if existing:
+                return
+            conn.execute(
+                """INSERT INTO research_rounds
+                   (research_round_id, job_id, round_number, run_id,
+                    selected_thesis_id, outcome, created_at_utc, usage_json)
+                   VALUES (?, ?, ?, ?, '', 'in_progress', ?, '{}')""",
+                (research_round_id, job_id, round_number, run_id, _iso8601_utc_now()),
+            )
+            conn.commit()
+
     def log_research_round(
         self,
         state_path: Path,
