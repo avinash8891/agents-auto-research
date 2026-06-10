@@ -372,6 +372,13 @@ def test_stage_2_misalignment_routes_through_behavior_signal_policy(
             "gap_pct": 0.01,
             "direction_bias": "long_only",
         },
+        config_changes={
+            "entry_cutoff_time": "10:00",
+            "rr_ratio": 2.5,
+            "gap_filter": True,
+            "gap_pct": 0.01,
+            "direction_bias": "long_only",
+        },
         hypothesis="Filter setups by minimum opening volatility to avoid noise.",
         mechanism="Low-volatility opens have weaker microstructure signals.",
         strategy_family="ema",

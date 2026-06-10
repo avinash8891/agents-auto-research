@@ -517,6 +517,25 @@ def test_trace_ignores_broken_stdout_pipe(monkeypatch, tmp_path: Path) -> None:
     assert "[COMMAND] still writes file" in log_text
 
 
+def test_trace_sdk_fail_opens_when_log_file_write_fails(monkeypatch, tmp_path: Path) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    class BrokenHandle:
+        def write(self, _line: str) -> None:
+            raise OSError("disk full")
+
+        def flush(self) -> None:
+            raise OSError("disk full")
+
+    monkeypatch.setattr(trace_sdk.TraceRuntimeState, "get_log_handle", lambda self: BrokenHandle())
+
+    trace_sdk.trace("DEPLOY", "step")
+    trace_sdk.trace_ssh("echo hello", 0, stdout="ok")
+    trace_id = trace_sdk.trace_agent_prompt("agent", "prompt")
+
+    assert trace_id
+
+
 def test_trace_ignores_closed_stdout(monkeypatch, tmp_path: Path) -> None:
     trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
 

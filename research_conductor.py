@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from time import monotonic
 from typing import Any
 
@@ -40,6 +41,20 @@ from research_paths import (
 )
 from research_prompts import _build_conductor_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
+from research_tools_schema import (
+    AnalyzeTradesArgs,
+    GetPastThesisArgs,
+    GetRejectionArgs,
+    GetRoundResultArgs,
+    ListPastThesesArgs,
+    ListRejectionsArgs,
+    ListRoundResultsArgs,
+    MemoryStatusArgs,
+    RejectionPatternSummaryArgs,
+    SaveFindingArgs,
+    SearchFindingsArgs,
+    WebSearchArgs,
+)
 from research_types import ConductorResult
 from strategy_family import load_family
 from thesis_validator import validate_thesis_dict
@@ -62,6 +77,38 @@ __all__ = [
 ]
 
 _REFINEMENT_RECORDER = RefinementRecorder()
+CONDUCTOR_TIMEOUT_ENV = "AUTORESEARCH_CONDUCTOR_TIMEOUT_SECONDS"
+DEFAULT_CONDUCTOR_TIMEOUT_SECONDS = 900.0
+
+
+def _conductor_timeout_seconds() -> float:
+    raw = os.environ.get(CONDUCTOR_TIMEOUT_ENV, "")
+    if not raw:
+        return DEFAULT_CONDUCTOR_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        log.warning("%s=%r is invalid; using default timeout", CONDUCTOR_TIMEOUT_ENV, raw)
+        return DEFAULT_CONDUCTOR_TIMEOUT_SECONDS
+    if value <= 0:
+        log.warning("%s=%r must be positive; using default timeout", CONDUCTOR_TIMEOUT_ENV, raw)
+        return DEFAULT_CONDUCTOR_TIMEOUT_SECONDS
+    return value
+
+
+def _validate_tool_args(model_cls: type, kwargs: dict[str, Any]) -> str:
+    try:
+        model_cls(**kwargs)
+        return ""
+    except Exception as exc:  # noqa: BLE001
+        errors = getattr(exc, "errors", lambda **_: [])(include_url=False)
+        if not errors:
+            return f"VALIDATION ERROR: {exc}"
+        parts = []
+        for error in errors:
+            loc = ".".join(str(item) for item in error.get("loc", ())) or "input"
+            parts.append(f"{loc}: {error.get('msg')}")
+        return "VALIDATION ERROR: " + "; ".join(parts)
 
 
 def _strategy_description_for(family_name: str) -> str:
@@ -213,7 +260,9 @@ async def run_research_conductor(
             if rejection_block:
                 user_prompt += f"\n\n{rejection_block}\n"
 
-            escalation = compute_escalation_directive(_ROOT, job=current_job)
+            escalation = compute_escalation_directive(
+                _ROOT, job=current_job, current_round=research_round
+            )
             if escalation:
                 user_prompt += f"\n\n{escalation}\n"
         except Exception as render_exc:  # noqa: BLE001
@@ -270,6 +319,8 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(AnalyzeTradesArgs, {"focus_question": focus_question}):
+                return err
             if not trades_file:
                 output = "ERROR: No trades file available for this round."
             else:
@@ -309,6 +360,8 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(WebSearchArgs, {"query": query, "context": context}):
+                return err
             tools_called_this_round.add("web_search")
             output = await _call_web_researcher(
                 query,
@@ -393,6 +446,18 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(
+                SaveFindingArgs,
+                {
+                    "finding": finding,
+                    "finding_type": finding_type,
+                    "status": status,
+                    "evidence": evidence,
+                    "scope": scope,
+                    "expires_if": expires_if,
+                },
+            ):
+                return err
             trace(
                 "CONDUCTOR",
                 f"save_finding type={finding_type} status={status} finding='{finding[:80]}'",
@@ -432,6 +497,10 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(
+                SearchFindingsArgs, {"query": query, "finding_type": finding_type}
+            ):
+                return err
             results = search_research_findings(
                 query=query,
                 finding_type=finding_type,
@@ -492,6 +561,8 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(MemoryStatusArgs, {}):
+                return err
             info = _palace_status()
             if "error" in info:
                 output = f"STATUS ERROR: {info['error']}"
@@ -536,6 +607,8 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(ListPastThesesArgs, {"offset": offset, "limit": limit}):
+                return err
             output = list_past_theses_for_root(
                 _ROOT, job_id=current_job, offset=offset, limit=limit
             )
@@ -565,6 +638,8 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(GetPastThesisArgs, {"thesis_id": thesis_id}):
+                return err
             output = get_past_thesis_for_root(_ROOT, thesis_id, job_id=current_job)
             parsed_status = "ok"
             error_type = ""
@@ -593,16 +668,22 @@ async def run_research_conductor(
 
         @function_tool
         async def list_round_results(
-            order: str = "latest", offset: int = 0, limit: int = 10
+            order: str = "latest",
+            offset: int = 0,
+            limit: int = 10,
+            job_id: int | None = None,
+            family: str | None = None,
         ) -> str:
             started = monotonic()
             tool_input = json.dumps(
                 {
                     "root": str(_ROOT),
-                    "job_id": current_job,
+                    "current_job": current_job,
                     "order": order,
                     "offset": offset,
                     "limit": limit,
+                    "job_id": job_id,
+                    "family": family,
                 },
                 default=str,
             )
@@ -614,11 +695,22 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(
+                ListRoundResultsArgs,
+                {
+                    "order": order,
+                    "offset": offset,
+                    "limit": limit,
+                    "job_id": job_id,
+                    "family": family,
+                },
+            ):
+                return err
             tools_called_this_round.add("list_round_results")
             output = list_round_results_for_root(
                 _ROOT,
-                job_id=current_job,
-                family=family_name,
+                job_id=job_id if job_id is not None else current_job,
+                family=family if family is not None else family_name,
                 order=order,
                 offset=offset,
                 limit=limit,
@@ -635,14 +727,21 @@ async def run_research_conductor(
             return output
 
         @function_tool
-        async def get_round_result(research_round_id: str, detail: bool = False) -> str:
+        async def get_round_result(
+            research_round_id: str,
+            detail: bool = False,
+            job_id: int | None = None,
+            family: str | None = None,
+        ) -> str:
             started = monotonic()
             tool_input = json.dumps(
                 {
                     "root": str(_ROOT),
-                    "job_id": current_job,
+                    "current_job": current_job,
                     "research_round_id": research_round_id,
                     "detail": detail,
+                    "job_id": job_id,
+                    "family": family,
                 },
                 default=str,
             )
@@ -654,14 +753,24 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(
+                GetRoundResultArgs,
+                {
+                    "research_round_id": research_round_id,
+                    "detail": detail,
+                    "job_id": job_id,
+                    "family": family,
+                },
+            ):
+                return err
             tools_called_this_round.add("get_round_result")
             try:
                 output = get_round_result_for_root(
                     _ROOT,
                     research_round_id=research_round_id,
                     detail=detail,
-                    job_id=current_job,
-                    family=family_name,
+                    job_id=job_id if job_id is not None else current_job,
+                    family=family if family is not None else family_name,
                 )
             except KeyError as exc:
                 output = round_result_not_found_envelope(research_round_id, exc)
@@ -694,7 +803,7 @@ async def run_research_conductor(
         async def list_rejections_tool(
             round_number: int | None = None,
             rejection_code: str | None = None,
-            limit: int = 20,
+            limit: int = 25,
         ) -> str:
             """List validator/compile rejections for the current job.
 
@@ -720,6 +829,15 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(
+                ListRejectionsArgs,
+                {
+                    "round_number": round_number,
+                    "rejection_code": rejection_code,
+                    "limit": limit,
+                },
+            ):
+                return err
             if current_job is None:
                 output = json.dumps({"status": "error", "error": "no current job"})
             else:
@@ -756,6 +874,10 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(
+                GetRejectionArgs, {"round_number": round_number, "thesis_id": thesis_id}
+            ):
+                return err
             if current_job is None:
                 output = json.dumps({"status": "error", "error": "no current job"})
             else:
@@ -795,6 +917,10 @@ async def run_research_conductor(
                 model_provider="openai",
                 model_name=_CONDUCTOR_MODEL,
             )
+            if err := _validate_tool_args(
+                RejectionPatternSummaryArgs, {"window_rounds": window_rounds}
+            ):
+                return err
             if current_job is None:
                 output = json.dumps({"status": "error", "error": "no current job"})
             else:
@@ -859,17 +985,18 @@ async def run_research_conductor(
             model=model,
         )
 
-        result = OAIRunner.run_streamed(
-            agent,
-            user_prompt,
-            max_turns=50,
-            run_config=OAIRunConfig(
-                model_settings=OAIModelSettings(store=False),
-                tracing_disabled=True,
-            ),
-        )
-        async for _ in result.stream_events():
-            pass
+        async with asyncio.timeout(_conductor_timeout_seconds()):
+            result = OAIRunner.run_streamed(
+                agent,
+                user_prompt,
+                max_turns=50,
+                run_config=OAIRunConfig(
+                    model_settings=OAIModelSettings(store=False),
+                    tracing_disabled=True,
+                ),
+            )
+            async for _ in result.stream_events():
+                pass
         if hasattr(result, "final_output_as"):
             try:
                 result_text = result.final_output_as(str) or ""

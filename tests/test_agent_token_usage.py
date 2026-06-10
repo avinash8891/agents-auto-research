@@ -25,6 +25,7 @@ from agent_token_usage import (
     get_round_usage,
     reset_round_usage,
 )
+from compiler_builder import _emit_builder_usage
 
 
 @pytest.fixture(autouse=True)
@@ -672,6 +673,33 @@ def test_agents_sdk_usage_different_dedupe_keys_both_counted():
     agent = get_round_usage()["by_agent"]["web-researcher"]
     assert agent["calls"] == 2, "distinct dedupe_keys must each be counted"
     assert agent["input_tokens"] == 2000
+
+
+def test_builder_usage_enters_round_rollup_and_dedupes() -> None:
+    _emit_builder_usage(
+        thesis_id="ema-builder",
+        attempt_number=1,
+        usage_result=(
+            {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15,
+                "cached_input_tokens": 3,
+                "reasoning_output_tokens": 2,
+            },
+            "codex_cli",
+        ),
+    )
+    _emit_builder_usage(
+        thesis_id="ema-builder",
+        attempt_number=1,
+        usage_result=({"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}, "codex_cli"),
+    )
+
+    usage = get_round_usage()
+    assert usage["by_agent"]["builder"]["calls"] == 1
+    assert usage["by_agent"]["builder"]["total_tokens"] == 15
+    assert usage["total"]["total_tokens"] == 15
 
 
 # ---------------------------------------------------------------------------

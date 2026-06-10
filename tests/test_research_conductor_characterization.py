@@ -234,6 +234,48 @@ def test_conductor_returns_timeout_error_when_runner_times_out(
     assert out.error == "timeout"
 
 
+def test_conductor_applies_timeout_to_hung_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _HungResult:
+        final_output = ""
+
+        async def stream_events(self):
+            await asyncio.sleep(10)
+            yield None
+
+    monkeypatch.setenv("AUTORESEARCH_CONDUCTOR_TIMEOUT_SECONDS", "0.01")
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", lambda *args, **kwargs: _HungResult())
+
+    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema")
+
+    assert out is not None
+    assert out.status == "conductor_error"
+    assert out.error == "timeout"
+
+
+def test_live_conductor_tools_use_shared_schema_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool_outputs: list[tuple[str, str]] = []
+    _patch_conductor_runner(
+        monkeypatch,
+        {"reasoning": "stop", "suggested_theses": [], "should_stop": True},
+        tool_calls=[("list_rejections", {"limit": 0})],
+        tool_outputs=tool_outputs,
+    )
+
+    out = conductor.run_research_conductor_sync("", "", {}, 8, "ema", current_job=1)
+
+    assert out is not None
+    assert out.status == "should_stop"
+    assert tool_outputs
+    assert tool_outputs[0][0] == "list_rejections"
+    assert tool_outputs[0][1].startswith("VALIDATION ERROR:")
+
+
 def test_conductor_marks_oauth_proxy_failure_as_proxy_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -115,7 +115,7 @@ def _emit_token_budget_warning(
     try:
         record_event(
             source_module="agent_token_usage",
-            category="usage",
+            category="telemetry",
             action="token_budget_warning",
             summary=(
                 f"{agent_type} token usage {total_tokens} exceeded warning budget "

@@ -98,7 +98,27 @@ def test_compile_research_thesis_writes_round_selected_artifacts(tmp_path: Path)
     assert (round_root / "selected_config.json").exists()
 
 
-def test_compile_research_thesis_writes_builder_request_for_needs_code(tmp_path: Path) -> None:
+def test_compile_research_thesis_rejects_invalid_config_keys_loudly(tmp_path: Path) -> None:
+    _write_ema_baseline(tmp_path)
+    round_root = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-2"
+    thesis = ResearchThesis(
+        thesis_id="invalid-key",
+        strategy_family="ema",
+        hypothesis="Use invalid primitive.",
+        mechanism="Request an invalid runtime config key.",
+        config_changes={"not_a_real_key": 1},
+    )
+
+    with pytest.raises(ValueError, match="Unsupported config_changes keys.*not_a_real_key"):
+        compile_research_thesis(thesis, tmp_path, artifact_root=round_root)
+
+    assert not (round_root / "builder_request" / "thesis.json").exists()
+    assert not (round_root / "selected_config.json").exists()
+
+
+def test_compile_research_thesis_writes_builder_request_for_explicit_code_change(
+    tmp_path: Path,
+) -> None:
     _write_ema_baseline(tmp_path)
     round_root = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-2"
     thesis = ResearchThesis(
@@ -106,7 +126,8 @@ def test_compile_research_thesis_writes_builder_request_for_needs_code(tmp_path:
         strategy_family="ema",
         hypothesis="Use unsupported primitive.",
         mechanism="Request a missing primitive.",
-        config_changes={"not_a_real_key": 1},
+        requires_code_change=True,
+        requested_primitives=["not_a_real_key"],
     )
 
     contract = compile_research_thesis(thesis, tmp_path, artifact_root=round_root)

@@ -2500,11 +2500,11 @@ def _collect_runtime_config_keys(value: Any) -> set[str]:
 def _detect_stage_2_hypothesis_config_misalignment(
     hypothesis: str,
     mechanism: str,
-    runtime_config: dict[str, Any],
+    config_changes: dict[str, Any],
     strategy_family: str,
 ) -> BehaviorSignal | None:
     score, explanation = check_hypothesis_alignment(
-        hypothesis, mechanism, runtime_config, family_name=strategy_family
+        hypothesis, mechanism, config_changes, family_name=strategy_family
     )
     if score >= ALIGNMENT_THRESHOLD:
         return None
@@ -2573,8 +2573,8 @@ def validate_stage_2(contract: Any) -> Any:
     """Stage 2: post-compile validator. Operates on the compiled BacktestContract.
 
     Rules that need the resolved/normalized config live here:
-      - hypothesis-config alignment scored against `contract.runtime_config`
-        (NOT against `thesis.config_changes`, which is a pre-compile artifact)
+      - hypothesis-config alignment scored against `contract.config_changes`
+        so inherited baseline keys do not dilute a mismatched thesis delta
       - every entry in `thesis.required_diagnostics` (carried through to
         `contract.required_diagnostics`) must resolve to a real diagnostic in
         the compiled output — present in `contract.required_diagnostic_specs`
@@ -2586,15 +2586,16 @@ def validate_stage_2(contract: Any) -> Any:
         return contract
 
     runtime_config = getattr(contract, "runtime_config", None) or {}
+    config_changes = getattr(contract, "config_changes", None) or {}
     hypothesis = getattr(contract, "hypothesis", "") or ""
     mechanism = getattr(contract, "mechanism", "") or ""
     strategy_family = getattr(contract, "strategy_family", "") or ""
 
     signals: list[BehaviorSignal] = []
-    if isinstance(runtime_config, dict) and runtime_config:
+    if isinstance(config_changes, dict) and config_changes:
         try:
             signal = _detect_stage_2_hypothesis_config_misalignment(
-                hypothesis, mechanism, runtime_config, strategy_family
+                hypothesis, mechanism, config_changes, strategy_family
             )
         except MissingFamilyKeyConceptsError as exc:
             # Operator-visible configuration error, not a thesis-quality issue.

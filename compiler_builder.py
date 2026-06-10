@@ -13,6 +13,7 @@ from difflib import unified_diff
 from pathlib import Path
 from typing import Any
 
+from agent_token_usage import _accumulate_usage
 from artifact_io import timestamp_now, write_json_artifact
 from autoresearch_logging import get_logger
 from autoresearch_paths import serialize_config_path
@@ -20,7 +21,7 @@ from compiler_implementation_verify import verify_builder_implementation_contrac
 from improvement_reflexion import build_latest_reflexion_feedback
 from persistence_utils import write_text_atomic
 from strategy_family import load_family
-from trace_sdk import record_event, record_usage_event, trace
+from trace_sdk import record_event, trace
 
 log = get_logger(__name__)
 
@@ -286,20 +287,23 @@ def _emit_builder_usage(
     if usage_result is None:
         return None
     usage, usage_source = usage_result
-    record_usage_event(
+    usage_payload = {
+        "input_tokens": int(usage.get("input_tokens") or 0),
+        "output_tokens": int(usage.get("output_tokens") or 0),
+        "total_tokens": int(usage.get("total_tokens") or 0),
+        "cached_input_tokens": int(usage.get("cached_input_tokens") or 0),
+        "reasoning_output_tokens": int(usage.get("reasoning_output_tokens") or 0),
+        "usage_source": usage_source,
+    }
+    _accumulate_usage(
         "builder",
-        model_provider="codex",
-        model_name=BUILDER_CLI_MODEL,
-        input_tokens=int(usage.get("input_tokens") or 0),
-        output_tokens=int(usage.get("output_tokens") or 0),
-        total_tokens=int(usage.get("total_tokens") or 0),
-        cached_input_tokens=int(usage.get("cached_input_tokens") or 0),
-        reasoning_output_tokens=int(usage.get("reasoning_output_tokens") or 0),
-        usage_source=usage_source,
+        usage_payload,
+        provider="codex",
+        model=BUILDER_CLI_MODEL,
         dedupe_key=f"builder:{thesis_id}:attempt:{attempt_number}",
         thesis_id=thesis_id,
     )
-    return {**usage, "usage_source": usage_source}
+    return usage_payload
 
 
 def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str, Any]) -> list[str]:
