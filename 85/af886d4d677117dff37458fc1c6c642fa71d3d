@@ -1,0 +1,31 @@
+tests/test_experiment_db_sqlite_runtime.py
+  s_3c127f7d527d72::t_5036708680dce9 3,64-96,309-351
+backtest_run_db.py
+  s_3c127f7d527d72::t_a781f1eb8715d1 1064-1065,1104-1108,1275-1281,1284,1312-1326,1328-1329,1336-1338,1341-1361,1497-1499,1528-1534,1544-1546,1550,1552-1553,1567
+  s_3c127f7d527d72::t_f999f231254a33 490
+  s_3c127f7d527d72::t_355fafced14e12 102-158,198-202,373,437-450,602,622,628-632,637-644,683,692,695-698
+  s_3c127f7d527d72::t_2bda64f59ed312 521-526,1339-1340
+tests/test_experiment_db_timestamps.py
+  s_3c127f7d527d72::t_05f8a6c116da69 15-16,255-309
+  s_3c127f7d527d72::t_86f9ae0f9c40cb 396-455
+autoresearch_controller.py
+  s_3c127f7d527d72::t_3d0046dd2d639f 631
+docs/persistence-schema/03-implementation-definition-for-coding-agents.md
+  s_3c127f7d527d72::t_3d0046dd2d639f 72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "85af886d4d677117dff37458fc1c6c642fa71d3d",
+  "prompts": {},
+  "sessions": {
+    "s_3c127f7d527d72": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1e7-e229-7da0-b86c-e6b69c45560f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
