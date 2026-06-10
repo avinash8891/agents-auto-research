@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
 from autoresearch_controller import AutoresearchController
@@ -38,6 +39,7 @@ from autoresearch_experiment import (
 )
 from autoresearch_paths import resolve_config_path
 from backtest_run_db import BacktestRunRecord, BaselineCheckpoint
+from feature_table import load_feature_table
 from research_types import BacktestContract
 from strategy_family import load_family
 
@@ -90,6 +92,39 @@ def _controller_for_experiment(tmp_path: Path, command: str) -> AutoresearchCont
         direction="higher",
     )
     return controller
+
+
+def _write_feature_table_data_universe(data_root: Path) -> None:
+    universe = data_root / "universes" / "tiny_feature_data"
+    universe.mkdir(parents=True)
+    index = pd.to_datetime(["2024-01-02 14:30", "2024-01-02 14:35", "2024-01-02 14:40"], utc=True)
+    frames = {
+        "open": [100.0, 100.0, 100.0],
+        "high": [100.5, 100.8, 101.0],
+        "low": [99.5, 100.0, 100.2],
+        "close": [100.2, 100.6, 100.9],
+        "volume": [1000, 1100, 1200],
+    }
+    for name, values in frames.items():
+        pd.DataFrame({"AAA": values}, index=index).to_parquet(universe / f"{name}.parquet")
+    (universe / "manifest.json").write_text(
+        json.dumps(
+            {
+                "data_universe": "tiny_feature_data",
+                "symbol_count": 1,
+                "symbols": ["AAA"],
+                "start": "2024-01-02",
+                "end": "2024-01-02",
+            }
+        )
+        + "\n"
+    )
+    pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2024-01-02").date()],
+            "regime_label": ["risk_on"],
+        }
+    ).to_parquet(data_root / "regime_labels.parquet", index=False)
 
 
 def test_round_context_requires_baseline_only_in_round_zero() -> None:
@@ -1223,6 +1258,87 @@ def test_run_experiment_executes_command_logs_result_and_reconciles_state(
     assert (round_root / "backtest" / "benchmark_output.txt").exists()
     assert controller.ctx.current_contract is None
     assert controller.ctx.execution_root is None
+
+
+def test_run_experiment_writes_feature_table_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_feature_table_data_universe(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    script = tmp_path / "write_result.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import json, sys",
+                "from pathlib import Path",
+                "out = Path(sys.argv[1])",
+                "out.mkdir(parents=True, exist_ok=True)",
+                "metrics = {'trade_count': 1, 'profit_factor': 0.0, 'max_drawdown': 0.02}",
+                "(out / 'metrics.json').write_text(json.dumps(metrics) + '\\n')",
+                "trades = (",
+                "  'symbol,direction,entry_date,entry_price,stop,pnl,pnl_pct,mae,mfe,exit_reason,hold_bars\\n'",
+                "  'AAA,long,2024-01-02T14:35:00+00:00,100.6,99.6,-2.0,-0.02,0.03,0.01,stop,3\\n'",
+                ")",
+                "(out / 'trades.csv').write_text(trades)",
+                "(out / 'diagnostics.json').write_text(json.dumps({'accepted': 1}) + '\\n')",
+                "payload = {",
+                "  'metrics_file': str(out / 'metrics.json'),",
+                "  'trades_file': str(out / 'trades.csv'),",
+                "  'diagnostics_file': str(out / 'diagnostics.json'),",
+                "  'strategy_events_file': '',",
+                "  'git_sha': 'abcdef1',",
+                "}",
+                "(out / 'result.json').write_text(json.dumps(payload) + '\\n')",
+                "print('RESULT_JSON ' + str(out / 'result.json'))",
+            ]
+        )
+        + "\n"
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    round_root = tmp_path / "runtime" / "jobs" / "job-7" / "research" / "round-1"
+    round_root.mkdir(parents=True)
+    runtime_config = {
+        "family": "ema",
+        "data_universe": "tiny_feature_data",
+        "symbols": ["AAA"],
+        "validation_start": "2024-01-02",
+        "validation_end": "2024-01-02 23:59:59",
+        "ema_length": 2,
+    }
+    (round_root / "selected_config.json").write_text(json.dumps(runtime_config) + "\n")
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-feature-table",
+                "hypothesis": "Use feature table artifact.",
+                "mechanism": "Record entry-time state.",
+                "config_changes": {"ema_length": 2},
+            }
+        )
+        + "\n"
+    )
+    state = {
+        "state": "running",
+        "job": 7,
+        "research_round": 1,
+        "selected_thesis_id": "ema-feature-table",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-7/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-feature-table",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    table = load_feature_table(round_root / "backtest")
+    assert table.loc[0, "trade_id"] == "AAA:2024-01-02T14:35:00+00:00"
+    assert table.loc[0, "regime_label"] == "risk_on"
 
 
 def test_run_experiment_blocks_when_command_exits_nonzero(

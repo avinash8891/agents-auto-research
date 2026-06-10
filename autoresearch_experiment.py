@@ -473,6 +473,39 @@ def derive_trade_analysis(
     }
 
 
+def _load_runtime_config_contents(
+    controller: "AutoresearchController",
+    config: str,
+) -> dict[str, Any]:
+    config_path = resolve_config_path(
+        config,
+        code_root=controller.root,
+        runtime_root=controller.runtime_root,
+        execution_root=_execution_root(controller),
+    )
+    if not config_path.exists():
+        return {}
+    try:
+        if config_path.suffix in (".yaml", ".yml"):
+            raw = yaml.safe_load(config_path.read_text())
+        else:
+            raw = json.loads(config_path.read_text())
+    except OSError as exc:
+        log.error(
+            f"CONFIG_READ error config={config}: {exc} "
+            f"| hint=the experiment config exists but cannot be read"
+        )
+        raise
+    if isinstance(raw, dict) and "runtime_config" in raw:
+        raw = raw["runtime_config"]
+    if isinstance(raw, dict):
+        return raw
+    from strategies import STRATEGIES
+
+    family_name = controller.family.name
+    return STRATEGIES[family_name].compile_contract(raw).runtime_config
+
+
 # ── Artifact + entry helpers ─────────────────────────────────────
 
 
@@ -975,6 +1008,92 @@ def _compute_run_output_dir(controller: "AutoresearchController", config: str) -
     return run_output_dir, config_path_full
 
 
+def _write_feature_table_artifact(
+    controller: "AutoresearchController",
+    *,
+    config: str,
+    details: dict[str, Any],
+    artifact_dir: Path,
+) -> None:
+    trades_file = str(details.get("trades_file") or "")
+    if not trades_file:
+        return
+    runtime_config = _load_runtime_config_contents(controller, config)
+    if not runtime_config.get("data_universe"):
+        return
+
+    import pandas as pd
+
+    from backtest.data_universe import load_universe_data
+    from feature_table import build_feature_table, feature_table_path
+
+    trades_df = pd.read_csv(trades_file)
+    batch = load_universe_data(runtime_config)
+    bars_df = _wide_ohlcv_batch_to_long_bars(batch)
+    events = _load_strategy_events(details.get("strategy_events_file"))
+    table = build_feature_table(trades_df, bars_df, events, controller.family.name)
+    path = feature_table_path(artifact_dir)
+    table.to_parquet(path, index=False)
+    details["feature_table_file"] = str(path)
+
+
+def _wide_ohlcv_batch_to_long_bars(batch: dict[str, Any]) -> Any:
+    import pandas as pd
+
+    required = ("open", "high", "low", "close")
+    missing = [name for name in required if name not in batch]
+    if missing:
+        raise ValueError(f"data universe batch missing OHLC fields: {missing}")
+    symbols = set(batch["close"].columns)
+    for name in required:
+        symbols &= set(batch[name].columns)
+    volume = batch.get("volume")
+    if volume is not None:
+        symbols &= set(volume.columns)
+
+    frames: list[pd.DataFrame] = []
+    for symbol in sorted(symbols):
+        timestamps = pd.to_datetime(batch["close"].index)
+        if timestamps.tz is None:
+            timestamps = timestamps.tz_localize("America/New_York").tz_convert("UTC")
+        else:
+            timestamps = timestamps.tz_convert("UTC")
+        frame = pd.DataFrame(
+            {
+                "timestamp": timestamps,
+                "symbol": symbol,
+                "open": batch["open"][symbol].to_numpy(),
+                "high": batch["high"][symbol].to_numpy(),
+                "low": batch["low"][symbol].to_numpy(),
+                "close": batch["close"][symbol].to_numpy(),
+            }
+        )
+        if volume is not None:
+            frame["volume"] = volume[symbol].to_numpy()
+        frames.append(frame)
+    if not frames:
+        return pd.DataFrame(
+            columns=["timestamp", "symbol", "open", "high", "low", "close", "volume"]
+        )
+    return pd.concat(frames, ignore_index=True)
+
+
+def _load_strategy_events(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, str) or not value:
+        return []
+    path = Path(value)
+    if not path.exists():
+        return []
+    if path.suffix == ".parquet":
+        import pandas as pd
+
+        return pd.read_parquet(path).to_dict("records")
+    if path.suffix == ".json":
+        payload = json.loads(path.read_text())
+        return payload if isinstance(payload, list) else []
+    return []
+
+
 def _block_with_command_failed(
     controller: "AutoresearchController",
     state: dict[str, Any],
@@ -1357,6 +1476,12 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             details = controller.parse_benchmark_details(output)
         except (ResultJsonError, ValueError):
             return _block_with_metric_parse_failed(controller, controller.read_state(), command)
+        _write_feature_table_artifact(
+            controller,
+            config=config,
+            details=details,
+            artifact_dir=run_output_dir,
+        )
         try:
             decision = controller.evaluate_metric(metric)
         except TimeoutError as exc:
