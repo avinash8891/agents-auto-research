@@ -261,6 +261,28 @@ def test_log_research_round_persists_required_fields_to_sqlite(tmp_path: Path) -
     assert row["created_at_utc"].endswith("+00:00") or row["created_at_utc"].endswith("Z")
 
 
+def test_log_research_round_does_not_create_attempt_for_round_level_rejection(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "backtest_runs.db"
+    BacktestRunDB(db_path)
+    state_path = tmp_path / "state.json"
+    write_state(state_path, {"state": "running", "job": 5, "family": "ema"})
+
+    log_research_round(
+        db_path,
+        state_path,
+        round_number=3,
+        thesis_id="exhausted-thesis",
+        outcome="rejected",
+        config_changes={"ema_length": 12},
+    )
+
+    db = BacktestRunDB(db_path)
+    assert len(db.list_research_rounds()) == 1
+    assert db.list_research_thesis_attempts(job_id=5) == []
+
+
 def test_log_research_round_persists_explicit_hypothesis_id_without_trace_context(
     tmp_path: Path,
 ) -> None:
@@ -1254,7 +1276,7 @@ def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_ch
     assert captured["compiled"] == {
         "thesis_id": "job-26-round-6-attempt-1",
         "root": tmp_path,
-        "artifact_root": tmp_path,
+        "artifact_root": tmp_path / "research" / "round-6",
         "mechanism_dimension": "",
         "requested_primitives": ["buffered_trailing_stop_rule"],
     }
@@ -1342,8 +1364,11 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
         def read_results(self):
             return []
 
-    monkeypatch.setattr("agent_formatters.format_round_results_summary", lambda result_dicts: [])
-    monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root: [])
+    monkeypatch.setattr(
+        "agent_formatters.format_round_results_summary",
+        lambda result_dicts, **kwargs: [],
+    )
+    monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root, **kwargs: [])
     monkeypatch.setattr(
         "autoresearch_research._resolve_conductor_inputs",
         lambda *args, **kwargs: ("trades.csv", "events.parquet", "diagnostics.json", {}),

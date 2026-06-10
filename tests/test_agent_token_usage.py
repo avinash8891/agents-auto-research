@@ -356,6 +356,37 @@ def test_accumulate_usage_emits_token_budget_warning(monkeypatch):
     ]
 
 
+def test_web_researcher_agent_aliases_share_round_budget(monkeypatch):
+    warnings = []
+    monkeypatch.setenv("AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL_WEB_RESEARCHER", "1000")
+    monkeypatch.setattr(
+        agent_token_usage,
+        "_emit_token_budget_warning",
+        lambda **kwargs: warnings.append(kwargs),
+    )
+
+    agent_token_usage._accumulate_usage(
+        "web-researcher",
+        {"input_tokens": 400, "output_tokens": 100, "total_tokens": 500},
+        provider="openai",
+        model="gpt-5.2",
+        trace_id="trace-web-1",
+    )
+    agent_token_usage._accumulate_usage(
+        "web_researcher",
+        {"input_tokens": 450, "output_tokens": 100, "total_tokens": 550},
+        provider="openai",
+        model="gpt-5.2",
+        trace_id="trace-web-2",
+    )
+
+    usage = agent_token_usage.get_round_usage()
+    assert set(usage["by_agent"]) == {"web-researcher"}
+    assert usage["by_agent"]["web-researcher"]["total_tokens"] == 1050
+    assert warnings[0]["agent_type"] == "web-researcher"
+    assert warnings[0]["total_tokens"] == 1050
+
+
 def test_accumulate_usage_emits_soft_thesis_budget_warning(monkeypatch):
     warnings = []
     monkeypatch.setenv("AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL_THESIS", "1000")

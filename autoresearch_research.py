@@ -254,13 +254,19 @@ def log_research_round(
             f"got job={job_id}, round_number={round_number}"
         )
     round_id = make_research_round_id(job_id, round_number)
+    should_log_attempt = bool(thesis_id) and outcome not in {
+        "rejected",
+        "research_exhausted",
+        "conductor_error",
+        "stopped",
+    }
     attempt_number = 1
     if outcome.startswith("rejected_attempt_"):
         try:
             attempt_number = int(outcome.rsplit("_", 1)[-1])
         except ValueError:
             attempt_number = 1
-    else:
+    elif should_log_attempt:
         attempt_number = db.next_research_thesis_attempt_number(round_id)
     db.log_research_round(
         state_path,
@@ -270,23 +276,24 @@ def log_research_round(
         outcome=outcome,
         usage=usage,
     )
-    db.add_research_thesis_attempt(
-        {
-            "research_round_id": round_id,
-            "attempt_number": attempt_number,
-            "thesis_id": thesis_id,
-            "strategy_family": state.get("family", ""),
-            "config_changes": config_changes or {},
-            "validator_status": outcome,
-            "mechanism_dimension": mechanism_dimension,
-            "hypothesis": hypothesis,
-            "mechanism": mechanism,
-            "thesis_details": thesis_details or {},
-            "validation_failure_reason": validation_failure_reason,
-            "selected_for_execution": 1 if outcome == "compiled" else 0,
-            "created_at_utc": iso8601_utc_now(),
-        }
-    )
+    if should_log_attempt:
+        db.add_research_thesis_attempt(
+            {
+                "research_round_id": round_id,
+                "attempt_number": attempt_number,
+                "thesis_id": thesis_id,
+                "strategy_family": state.get("family", ""),
+                "config_changes": config_changes or {},
+                "validator_status": outcome,
+                "mechanism_dimension": mechanism_dimension,
+                "hypothesis": hypothesis,
+                "mechanism": mechanism,
+                "thesis_details": thesis_details or {},
+                "validation_failure_reason": validation_failure_reason,
+                "selected_for_execution": 1 if outcome == "compiled" else 0,
+                "created_at_utc": iso8601_utc_now(),
+            }
+        )
 
 
 # ── Pure helpers ──────────────────────────────────────────────────
@@ -1111,8 +1118,14 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     result_dicts = results_to_dicts(results)
     if current_job is not None:
         result_dicts = [result for result in result_dicts if result.get("job") == current_job]
-    round_results = format_round_results_summary(result_dicts)
-    prior_theses = load_prior_theses(getattr(controller, "runtime_root", controller.root))
+    metric_direction = getattr(controller, "metric_direction", None) or getattr(
+        controller, "best_direction", None
+    )
+    round_results = format_round_results_summary(result_dicts, best_direction=metric_direction)
+    prior_theses = load_prior_theses(
+        getattr(controller, "runtime_root", controller.root),
+        strategy_family=controller.family.name,
+    )
     trace("LOOP", f"loaded {len(prior_theses)} prior theses for overlap detection")
     trades_file, strategy_events_file, diagnostics_file, latest_outcome = _resolve_conductor_inputs(
         controller,
@@ -1699,9 +1712,13 @@ def _handle_needs_code(
         from compiler_pipeline import compile_research_thesis
 
         try:
-            compile_research_thesis(
-                validated, controller.root, artifact_root=controller.job_runtime_root
+            research_round = int(state.get("research_round") or result.get("research_round") or 0)
+            artifact_root = (
+                controller.job_runtime_root / "research" / f"round-{research_round}"
+                if getattr(controller, "job_runtime_root", None) is not None
+                else controller.root
             )
+            compile_research_thesis(validated, controller.root, artifact_root=artifact_root)
         except Exception as exc:
             log.warning(
                 "LOOP_HALT thesis=%s could not materialize builder artifacts: %s",

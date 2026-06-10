@@ -36,6 +36,15 @@ def _log_filter_rejections(
     reason: str,
 ) -> None:
     killed = before_mask & ~after_mask
+    extras_signals = signals
+    if killed.any():
+        from dataclasses import replace
+
+        extras_signals = replace(
+            signals,
+            entry_price=pd.Series(entry_prices, index=frame.index),
+            stop_price=pd.Series(stop_prices, index=frame.index),
+        )
     event_logger.record_events(
         timestamps=frame.index,
         mask=killed,
@@ -45,7 +54,7 @@ def _log_filter_rejections(
         reason=reason,
         entry_prices=entry_prices,
         stop_prices=stop_prices,
-        extras=_standard_event_extras(frame, signals),
+        extras=_standard_event_extras(frame, extras_signals),
     )
 
 

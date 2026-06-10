@@ -1320,13 +1320,24 @@ Minimum content rules:
         )
         return f"WEB_SEARCH ERROR: could not parse: {output[:500]}"
     except WebResearchCliError as exc:
-        accumulate_agents_sdk_result_usage(
-            "web_researcher",
-            None,
-            provider="openai",
-            model=_CONDUCTOR_MODEL,
-            trace_id=trace_id,
-        )
+        usage = getattr(exc, "metadata", {}).get("usage")
+        if isinstance(usage, dict):
+            usage = {**usage, "usage_source": getattr(exc, "metadata", {}).get("usage_source", "")}
+            _accumulate_usage(
+                "web_researcher",
+                usage,
+                provider="openai",
+                model=_CONDUCTOR_MODEL,
+                trace_id=trace_id,
+            )
+        else:
+            accumulate_agents_sdk_result_usage(
+                "web_researcher",
+                None,
+                provider="openai",
+                model=_CONDUCTOR_MODEL,
+                trace_id=trace_id,
+            )
         trace(
             "CONDUCTOR",
             "web_search ERROR",

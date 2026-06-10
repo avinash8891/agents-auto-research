@@ -372,6 +372,16 @@ def test_round_index_entry_hypothesis_empty_when_not_set() -> None:
     assert entry["mechanism"] == ""
 
 
+def test_round_index_entry_reports_only_actual_config_changes() -> None:
+    item = _make_experiment_item()
+    item["record"].runtime_config = {"ema_length": 12, "validation_start": "2024-01-01"}
+    setattr(item["record"], "_asi_export", {"config_changes": {"ema_length": 12}})
+
+    entry = _round_index_entry(item)
+
+    assert entry["config_change_keys"] == ["ema_length"]
+
+
 # ── J/K/L: scoped lookup + empty-rrid fallback ─────────────────────
 
 

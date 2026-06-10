@@ -15,6 +15,11 @@ _PALACE_DIR = str(_ROOT / "palace")
 log = get_logger(__name__)
 
 
+def _local_findings_log() -> Path:
+    runtime_root = resolve_runtime_root(_ROOT)
+    return runtime_root / "research_findings.jsonl"
+
+
 def _resolve_palace_dir() -> str:
     """Pick an existing palace directory, or create a local fallback.
 
@@ -170,7 +175,8 @@ def save_research_finding(
         content=content,
     )
     if not result.get("success"):
-        findings_log = _ROOT / "research_findings.jsonl"
+        findings_log = _local_findings_log()
+        findings_log.parent.mkdir(parents=True, exist_ok=True)
         entry = {
             "finding": finding,
             "type": finding_type,
@@ -208,7 +214,7 @@ def _local_research_findings(
     finding_type: str = "",
     n_results: int = 10,
 ) -> list[dict]:
-    findings_log = _ROOT / "research_findings.jsonl"
+    findings_log = _local_findings_log()
     if not findings_log.exists():
         return []
     query_terms = [term for term in query.lower().split() if term]
@@ -260,16 +266,14 @@ def search_research_findings(
         room=room,
         n_results=n_results,
     )
-    if palace_results and not (len(palace_results) == 1 and "error" in palace_results[0]):
-        return palace_results
     local_results = _local_research_findings(
         query=query,
         finding_type=finding_type,
         n_results=n_results,
     )
-    if local_results:
-        return local_results
-    return palace_results
+    if palace_results and not (len(palace_results) == 1 and "error" in palace_results[0]):
+        return (palace_results + local_results)[:n_results]
+    return local_results or palace_results
 
 
 _PAST_THESES_DEFAULT_LIMIT = 25
@@ -598,7 +602,9 @@ def _round_index_entry(item: dict[str, Any]) -> dict[str, Any]:
         "max_drawdown": metrics.get("max_drawdown"),
         "pct_profitable_windows": metrics.get("pct_profitable_windows"),
         "config_path": getattr(record, "config_path", ""),
-        "config_change_keys": sorted((getattr(record, "runtime_config", {}) or {}).keys()),
+        "config_change_keys": sorted(
+            (dict(getattr(record, "_asi_export", {}) or {}).get("config_changes") or {}).keys()
+        ),
         "verdict_status": getattr(record, "verdict_status", ""),
         "verdict_summary": _short_text(getattr(record, "verdict_summary", ""), 180),
         "timestamp": getattr(record, "timestamp", ""),

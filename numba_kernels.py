@@ -70,21 +70,32 @@ def compute_atr_nb(
     for c in range(n_syms):
         # True range
         tr = np.empty(n_bars, dtype=np.float64)
-        tr[0] = high[0, c] - low[0, c]
+        prev_close = close[0, c]
+        tr[0] = high[0, c] - low[0, c] if not np.isnan(high[0, c] + low[0, c]) else np.nan
         for i in range(1, n_bars):
-            hl = high[i, c] - low[i, c]
-            hc = abs(high[i, c] - close[i - 1, c])
-            lc = abs(low[i, c] - close[i - 1, c])
-            tr[i] = max(hl, max(hc, lc))
+            if np.isnan(high[i, c]) or np.isnan(low[i, c]):
+                tr[i] = np.nan
+                continue
+            if np.isnan(prev_close):
+                tr[i] = high[i, c] - low[i, c]
+            else:
+                hl = high[i, c] - low[i, c]
+                hc = abs(high[i, c] - prev_close)
+                lc = abs(low[i, c] - prev_close)
+                tr[i] = max(hl, max(hc, lc))
+            if not np.isnan(close[i, c]):
+                prev_close = close[i, c]
 
         # Rolling mean
         cumsum = 0.0
+        count = 0
         for i in range(n_bars):
-            cumsum += tr[i]
-            if i < period:
-                atr[i, c] = cumsum / (i + 1)
-            else:
+            if not np.isnan(tr[i]):
+                cumsum += tr[i]
+                count += 1
+            if i >= period and not np.isnan(tr[i - period]):
                 cumsum -= tr[i - period]
-                atr[i, c] = cumsum / period
+                count -= 1
+            atr[i, c] = cumsum / count if count > 0 else np.nan
 
     return atr

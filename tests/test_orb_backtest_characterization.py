@@ -56,6 +56,29 @@ def test_orb_backtest_applies_legacy_default_validation_window(monkeypatch) -> N
     assert observed["validation_end"] == "2023-12-31"
 
 
+def test_orb_backtest_does_not_default_dates_for_unbounded_research(monkeypatch) -> None:
+    observed: dict[str, str | None] = {}
+    empty = pd.DataFrame()
+
+    def _capture(config: dict) -> dict[str, pd.DataFrame | None]:
+        observed["validation_start"] = config.get("validation_start")
+        observed["validation_end"] = config.get("validation_end")
+        return {
+            "open": empty,
+            "high": empty,
+            "low": empty,
+            "close": empty,
+            "volume": None,
+        }
+
+    monkeypatch.setattr("strategies.orb.runner.load_universe_data", _capture)
+
+    run_backtest({"data_universe": "nasdaq143", "allow_unbounded_research_backtest": True})
+
+    assert observed["validation_start"] is None
+    assert observed["validation_end"] is None
+
+
 def test_orb_max_one_entry_per_day_limits_both_directions() -> None:
     idx = pd.to_datetime(
         [

@@ -6,6 +6,8 @@ import sys
 import warnings
 from pathlib import Path
 
+import pytest
+
 
 def _load_modules(monkeypatch, tmp_path: Path):
     for module_name in [
@@ -854,7 +856,7 @@ def test_recursive_improve_usage_matching_prefers_trace_id_over_agent_alias(
     assert recursive_trace["metadata"]["usage_summary"]["unmatched_total_tokens"] == 0
 
 
-def test_trace_export_adapters_skip_malformed_canonical_jsonl(tmp_path: Path) -> None:
+def test_trace_export_adapters_reject_malformed_canonical_jsonl(tmp_path: Path) -> None:
     from trace_adapters.recursive_improve import build_recursive_improve_trace
     from trace_adapters.reflexio import build_reflexio_trajectory
 
@@ -886,22 +888,21 @@ def test_trace_export_adapters_skip_malformed_canonical_jsonl(tmp_path: Path) ->
         encoding="utf-8",
     )
 
-    recursive_trace = build_recursive_improve_trace(
-        trace,
-        {
-            "iteration_context": {
-                "round": 1,
-                "family": "ema",
-                "candidate_id": "th-1",
-                "status": "rejected",
+    with pytest.raises(ValueError, match="invalid canonical trace JSONL"):
+        build_recursive_improve_trace(
+            trace,
+            {
+                "iteration_context": {
+                    "round": 1,
+                    "family": "ema",
+                    "candidate_id": "th-1",
+                    "status": "rejected",
+                },
+                "feedback": {"validation_failure_reason": "bad"},
             },
-            "feedback": {"validation_failure_reason": "bad"},
-        },
-    )
-    trajectory = build_reflexio_trajectory(trace)
-
-    assert recursive_trace["messages"][0]["content"] == "ok"
-    assert trajectory[0]["content"] == "ok"
+        )
+    with pytest.raises(ValueError, match="invalid canonical trace JSONL"):
+        build_reflexio_trajectory(trace)
 
 
 def test_recursive_improve_and_reflexio_redact_tool_previews(tmp_path: Path) -> None:

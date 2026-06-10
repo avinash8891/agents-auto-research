@@ -131,9 +131,23 @@ async def _run_web_research_openai(
             log.warning(
                 "web-researcher attempt=%d failed: %s: %s", attempt, exc.__class__.__name__, exc
             )
-            accumulate_agents_sdk_result_usage(
-                "web-researcher", None, provider=_PROVIDER, model=_MODEL, trace_id=trace_id
-            )
+            usage = getattr(exc, "metadata", {}).get("usage")
+            if isinstance(usage, dict):
+                usage = {
+                    **usage,
+                    "usage_source": getattr(exc, "metadata", {}).get("usage_source", ""),
+                }
+                _accumulate_usage(
+                    "web-researcher",
+                    usage,
+                    provider=_PROVIDER,
+                    model=_MODEL,
+                    trace_id=trace_id,
+                )
+            else:
+                accumulate_agents_sdk_result_usage(
+                    "web-researcher", None, provider=_PROVIDER, model=_MODEL, trace_id=trace_id
+                )
             error = agent_infra._structured_error(
                 "web-researcher",
                 "transport",

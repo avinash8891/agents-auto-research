@@ -43,7 +43,7 @@ volume_lookback: 20     # Bars for relative volume median
 max_hold_bars: 78       # Full trading day in 5m bars (6.5 hours)
 slippage_pct: 0.05      # 5 bps slippage each way
 
-conservative_sl_fill: false  # If true, fill stops only at stop price (not at open)
+conservative_sl_fill: false  # If true, fill stops at the next same-day open when available
 long_only: false             # If true, only take long breakouts
 
 # Exit variants (all OFF for baseline)

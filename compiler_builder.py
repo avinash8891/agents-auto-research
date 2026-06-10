@@ -229,7 +229,7 @@ def _extract_codex_cli_usage(stdout: str) -> tuple[dict[str, int], str] | None:
         info = payload.get("info")
         if not isinstance(info, dict):
             continue
-        raw_usage = info.get("last_token_usage") or info.get("total_token_usage")
+        raw_usage = info.get("total_token_usage") or info.get("last_token_usage")
         if not isinstance(raw_usage, dict):
             continue
         usage_result = (
@@ -240,7 +240,7 @@ def _extract_codex_cli_usage(stdout: str) -> tuple[dict[str, int], str] | None:
                 "reasoning_output_tokens": int(raw_usage.get("reasoning_output_tokens") or 0),
                 "total_tokens": int(raw_usage.get("total_tokens") or 0),
             },
-            "codex_json_last_token_usage",
+            "codex_json_total_token_usage",
         )
     return usage_result
 
@@ -1622,9 +1622,9 @@ def build_missing_primitives(
                 attempt_prompt = _builder_retry_prompt(
                     task=builder_task,
                     thesis_id=thesis_id,
-                    root=root,
-                    proposal_path=proposal_path,
-                    compilation_path=compilation_path,
+                    root=workspace_root,
+                    proposal_path=workspace_proposal_path,
+                    compilation_path=workspace_compilation_path,
                     config_path=config_path,
                     family_name=family_name,
                     base_config_path=base_config_path,

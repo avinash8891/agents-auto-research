@@ -74,6 +74,31 @@ def test_read_results_reports_round_scoped_artifact_dir(tmp_path: Path) -> None:
     assert result.asi["backtest_run_id"] == "job-1-round-1-backtest"
 
 
+def test_read_results_preserves_stored_asi_json_fields(tmp_path: Path) -> None:
+    db_path = tmp_path / "backtest_runs.db"
+    db = BacktestRunDB(db_path)
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    record = _record(round_number=1, job=1)
+    setattr(
+        record,
+        "_asi_export",
+        {
+            "baseline_rerun_for_commit": "abc1234",
+            "insights": ["retry baseline after deploy"],
+            "config_changes": {"ema_length": 13},
+            "next_thesis_suggestion": {"hypothesis": "try a slower EMA"},
+        },
+    )
+    db.add(record)
+
+    result = BacktestRunDB(db_path).read_results()[0]
+
+    assert result.asi["baseline_rerun_for_commit"] == "abc1234"
+    assert result.asi["insights"] == ["retry baseline after deploy"]
+    assert result.asi["config_changes"] == {"ema_length": 13}
+    assert result.asi["next_thesis_suggestion"] == {"hypothesis": "try a slower EMA"}
+
+
 def test_export_entries_use_backtest_run_type(tmp_path: Path) -> None:
     db = BacktestRunDB(tmp_path / "backtest_runs.db")
     db.init_session(name="ema", metric_name="profit_factor", direction="higher")

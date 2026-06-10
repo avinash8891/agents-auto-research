@@ -821,6 +821,7 @@ class BacktestRunDB:
                     description=f"strict-native loop: {Path(record.config_path).stem}",
                     timestamp=record.timestamp or "1970-01-01T00:00:00+00:00",
                     asi={
+                        **dict(getattr(record, "_asi_export", {}) or {}),
                         "config": record.config_path,
                         "thesis_id": record.thesis_id,
                         "research_round_id": record.research_round_id,

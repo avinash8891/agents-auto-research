@@ -8,6 +8,7 @@ from typing import Any
 
 from trace_adapters import _emit_adapter_event
 from trace_adapters.artifacts import content_from_artifacts, portable_path, redact_text
+from trace_adapters.halo import read_canonical_trace
 
 
 def build_recursive_improve_payload(
@@ -165,21 +166,9 @@ def emit_recursive_improve_event(
 
 
 def _read_canonical_trace(path: Path) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = []
     if not path.exists():
-        return events
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                event = json.loads(stripped)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict):
-                events.append(event)
-    return events
+        return []
+    return read_canonical_trace(path)
 
 
 def _messages_from_events(
