@@ -56,6 +56,81 @@ def test_orb_backtest_applies_legacy_default_validation_window(monkeypatch) -> N
     assert observed["validation_end"] == "2023-12-31"
 
 
+def test_orb_backtest_computes_metrics_in_chronological_trade_order(monkeypatch) -> None:
+    idx = pd.to_datetime(
+        [
+            "2024-01-02 09:30",
+            "2024-01-02 09:35",
+            "2024-01-02 09:40",
+            "2024-01-03 09:30",
+            "2024-01-03 09:35",
+            "2024-01-03 09:40",
+            "2024-01-04 09:30",
+            "2024-01-04 09:35",
+            "2024-01-04 09:40",
+        ]
+    )
+    columns = ["AAA", "BBB"]
+    open_ = pd.DataFrame(100.0, index=idx, columns=columns)
+    high = pd.DataFrame(100.5, index=idx, columns=columns)
+    low = pd.DataFrame(99.5, index=idx, columns=columns)
+    close = pd.DataFrame(100.0, index=idx, columns=columns)
+    volume = pd.DataFrame(1000, index=idx, columns=columns)
+
+    for timestamp in idx[::3]:
+        open_.loc[timestamp] = 100.5
+        high.loc[timestamp] = 101.0
+        low.loc[timestamp] = 100.0
+        close.loc[timestamp] = 100.5
+
+    # Day 1: BBB short loses.
+    close.loc[pd.Timestamp("2024-01-02 09:35"), "BBB"] = 99.0
+    open_.loc[pd.Timestamp("2024-01-02 09:40"), "BBB"] = 100.0
+    high.loc[pd.Timestamp("2024-01-02 09:40"), "BBB"] = 102.0
+    low.loc[pd.Timestamp("2024-01-02 09:40"), "BBB"] = 99.0
+
+    # Day 2: AAA long wins. apply_exits emits this before the shorts because
+    # it concatenates all long trades before all short trades.
+    close.loc[pd.Timestamp("2024-01-03 09:35"), "AAA"] = 102.0
+    open_.loc[pd.Timestamp("2024-01-03 09:40"), "AAA"] = 101.0
+    high.loc[pd.Timestamp("2024-01-03 09:40"), "AAA"] = 103.0
+    low.loc[pd.Timestamp("2024-01-03 09:40"), "AAA"] = 100.5
+    close.loc[pd.Timestamp("2024-01-03 09:40"), "AAA"] = 102.0
+
+    # Day 3: BBB short loses again.
+    close.loc[pd.Timestamp("2024-01-04 09:35"), "BBB"] = 99.0
+    open_.loc[pd.Timestamp("2024-01-04 09:40"), "BBB"] = 100.0
+    high.loc[pd.Timestamp("2024-01-04 09:40"), "BBB"] = 102.0
+    low.loc[pd.Timestamp("2024-01-04 09:40"), "BBB"] = 99.0
+
+    monkeypatch.setattr(
+        "strategies.orb.runner.load_universe_data",
+        lambda config: {
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+        },
+    )
+
+    result = run_backtest(
+        {
+            "data_universe": "fixture",
+            "or_minutes": 5,
+            "timeframe_minutes": 5,
+            "rr_ratio": 1.0,
+            "slippage_pct": 0.0,
+            "max_hold_bars": 1,
+            "max_one_entry_per_day": False,
+        }
+    )
+
+    assert result["_trades_df"]["entry_date"].is_monotonic_increasing
+    assert result["_trades_df"]["direction"].tolist() == ["short", "long", "short"]
+    assert result["max_drawdown"] == 0.01
+
+
 def test_orb_max_one_entry_per_day_limits_both_directions() -> None:
     idx = pd.to_datetime(
         [
