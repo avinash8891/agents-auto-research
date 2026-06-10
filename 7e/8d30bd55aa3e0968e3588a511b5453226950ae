@@ -1,0 +1,22 @@
+strategies/orb/regime_filter.py
+  s_7b3a36a5bf11f5::t_c6d594a9241210 148,153
+tests/test_orb_regime_filter.py
+  s_7b3a36a5bf11f5::t_f04abce977511b 1-77,79-110,112
+  s_7b3a36a5bf11f5::t_a2f26b7bab398b 78,111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "7e8d30bd55aa3e0968e3588a511b5453226950ae",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
