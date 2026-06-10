@@ -145,12 +145,12 @@ def classify_regimes(
     # Per research (TradingStats 6142-day study, Crabel 1990, Holmberg 2013):
     # - chop: counts midpoint crosses through the ENTIRE day -> look-ahead
     # - trend: uses close vs open relative to day range -> look-ahead
-    # - high-vol/low-vol: 14-day ATR from prior closes -> NO look-ahead
+    # - high-vol/low-vol: ATR includes the current day's full-session range -> look-ahead
     # - wide-OR/narrow-OR: OR width known at 10:00 AM -> NO look-ahead
     #
     # Lagging chop/trend by 1 day is consistent with volatility clustering
     # (Crabel NR4/NR7, Ding 2012) but is an untested hypothesis for ORB.
-    needs_lag = {"chop", "trend"}
+    needs_lag = {"chop", "trend", "high-vol", "low-vol"}
 
     result = {}
     for name, df in [
