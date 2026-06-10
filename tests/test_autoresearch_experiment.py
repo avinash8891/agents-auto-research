@@ -1152,6 +1152,8 @@ def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Pa
             "insights": ["metric=1.9"],
             "next_candidates": [],
             "why_not_data_fit": "Independent thesis evaluation only.",
+            "prediction_verdict": "supported",
+            "lesson": "Prediction gap confirmed the harvest.",
         },
         artifact_dir=round_root / "backtest",
     )
@@ -1164,6 +1166,8 @@ def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Pa
     assert record.accepted is True
     assert record.runtime_config == {"ema_length": 9}
     assert record.usage == {"total_tokens": 11}
+    assert record.prediction_verdict == "supported"
+    assert record.lesson == "Prediction gap confirmed the harvest."
     assert (round_root / "backtest" / "benchmark_output.txt").read_text() == (
         f"RESULT_JSON {result_path}\n"
     )

@@ -762,6 +762,8 @@ def _build_db_record(
         research_round_id=round_id,
         research_round_number=round_number,
         is_baseline=is_baseline,
+        prediction_verdict=str(analysis.get("prediction_verdict") or ""),
+        lesson=str(analysis.get("lesson") or ""),
     )
     return record
 
