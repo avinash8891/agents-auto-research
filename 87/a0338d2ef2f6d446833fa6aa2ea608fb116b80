@@ -1,0 +1,51 @@
+tests/test_experiment_db_timestamps.py
+  s_cea1fad922bae5::t_74531c0423b45f 15-16
+  s_cea1fad922bae5::t_043c5b3b445df9 253-257,259-311
+  s_cea1fad922bae5::t_886ce867be35f6 398-418,420-421,423-455
+  s_cea1fad922bae5::t_93a46836b7da3c 258
+  s_cea1fad922bae5::t_d07386a24cc8d4 419,422
+docs/persistence-schema/03-implementation-definition-for-coding-agents.md
+  s_cea1fad922bae5::t_f634a2ee88ff54 71-72,88
+backtest_run_db.py
+  s_cea1fad922bae5::t_d07386a24cc8d4 608-610
+  s_cea1fad922bae5::t_4dbb5d37e5715d 1423-1425,1454-1460,1470-1472,1476,1478-1479,1493
+  s_cea1fad922bae5::t_2bf110046e2263 1005-1006,1045-1049
+  s_cea1fad922bae5::t_3808b396a848cb 212-216,273-278,364-397,407-420
+  s_cea1fad922bae5::t_d80459a9053608 116-162
+  s_cea1fad922bae5::t_0657d2aa542564 163-172
+  s_cea1fad922bae5::t_d33bbaccd62af4 492-497
+  s_cea1fad922bae5::t_42e5ebb61e72df 573,593,599-603,611-615,625-627,652,660-664
+  s_cea1fad922bae5::t_b8057f7811f147 1207-1209,1211-1212,1240-1281,1283
+tests/test_experiment_db_sqlite_runtime.py
+  s_cea1fad922bae5::t_6193bc9330ee1f 64-96,334-364,366-368,370-376
+  s_cea1fad922bae5::t_d07386a24cc8d4 365,369
+  s_cea1fad922bae5::t_3214d95a00f3dc 3
+strategies/ema/signals.py
+  s_63d57846a1d3c4::t_27a07515c923dc 101
+autoresearch_controller.py
+  s_cea1fad922bae5::t_f5988116375481 633-634,636-638
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "87a0338d2ef2f6d446833fa6aa2ea608fb116b80",
+  "prompts": {},
+  "sessions": {
+    "s_63d57846a1d3c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb16e-d081-7282-ba56-266f323d326d",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    },
+    "s_cea1fad922bae5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb13f-b2e3-7941-9881-40c2f957586d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
