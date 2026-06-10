@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 
 from autoresearch_constants import (
-    research_engine_max_population_overlap,
     research_engine_max_p_value,
+    research_engine_max_population_overlap,
     research_engine_min_abs_lift,
     research_engine_min_sample,
 )
