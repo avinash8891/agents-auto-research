@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
-from autoresearch_artifacts import read_research_artifacts
+import yaml
+
+from autoresearch_constants import (
+    research_engine_plateau_min_skill_gain,
+    research_engine_plateau_rounds,
+)
 from autoresearch_logging import get_logger
+from autoresearch_runtime_paths import iter_family_backtest_db_paths
 from autoresearch_state import BacktestResultRecord
+from research_types import CausalModel
 from strategy_family import StrategyFamily
 from trace_sdk import trace
 
@@ -122,22 +131,71 @@ def should_terminate(
     results: list[BacktestResultRecord],
     job: int | None = None,
 ) -> bool:
-    research = read_research_artifacts(research_dir, root, job=job)
-    if not research:
+    del run_queue_dir, research_dir, results, job
+    config = _load_research_engine_config(root, family)
+    plateau_rounds = research_engine_plateau_rounds(config)
+    min_skill_gain = research_engine_plateau_min_skill_gain(config)
+    model = _load_causal_model(root, family.name)
+    if model is None or len(model.accuracy_history) < plateau_rounds:
         return False
-    latest = research[-1]
-    status = latest.get("status")
-    outcome = latest.get("outcome")
-    if status != "completed" and outcome != "research_exhausted":
+
+    recent = sorted(model.accuracy_history, key=lambda point: point.round_number)[-plateau_rounds:]
+    improvements = [max(0.0, right.skill - left.skill) for left, right in zip(recent, recent[1:])]
+    max_improvement = max(improvements, default=0.0)
+    if max_improvement >= min_skill_gain:
         return False
-    generated = latest.get("generated_configs") or latest.get("generated_config_path")
-    if generated:
+
+    round_numbers = [point.round_number for point in recent]
+    if not _screening_pass_rate_is_zero(root, family.name, round_numbers):
         return False
-    if latest.get("new_theses_generated", 0):
+    return True
+
+
+def _load_research_engine_config(root: Path, family: StrategyFamily) -> dict[str, Any]:
+    candidates = [
+        root / "configs" / family.base_config_filename,
+        Path.cwd() / "configs" / family.base_config_filename,
+    ]
+    for path in candidates:
+        if path.exists():
+            return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return {}
+
+
+def _load_causal_model(root: Path, family_name: str) -> CausalModel | None:
+    path = root / f"{family_name}_causal_model.json"
+    if not path.exists():
+        return None
+    return CausalModel.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _screening_pass_rate_is_zero(root: Path, family_name: str, round_numbers: list[int]) -> bool:
+    if not round_numbers:
         return False
-    if latest.get("suggested_theses"):
-        return False
-    return bool(latest.get("findings"))
+    placeholders = ",".join("?" for _ in round_numbers)
+    for db_path in iter_family_backtest_db_paths(root, family=family_name):
+        with sqlite3.connect(db_path) as conn:
+            table_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='screenings'"
+            ).fetchone()
+            if table_exists is None:
+                continue
+            rows = conn.execute(
+                f"""
+                SELECT round_number, verdict
+                FROM screenings
+                WHERE round_number IN ({placeholders})
+                """,
+                round_numbers,
+            ).fetchall()
+        covered_rounds = {int(row[0]) for row in rows}
+        if not set(round_numbers).issubset(covered_rounds):
+            continue
+        total = len(rows)
+        passed = sum(1 for row in rows if row[1] == "pass")
+        if total > 0 and passed == 0:
+            return True
+    return False
 
 
 # ── Research-next-action waterfall + plan_next_action ────────────
@@ -242,10 +300,10 @@ def _finished_state() -> dict[str, Any]:
         "state": "finished",
         "next_action": {
             "type": "terminated",
-            "reason": "Research completed with no further justified theses.",
+            "reason": "Model plateau: holdout skill stopped improving and screening pass-rate is zero.",
         },
         "blockers": [],
-        "finished_reason": "research_completed_no_new_theses",
+        "finished_reason": "model_plateau",
     }
 
 

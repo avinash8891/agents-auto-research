@@ -748,7 +748,7 @@ def test_run_controller_loop_stops_after_repeated_research_required(
     monkeypatch.setenv("AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED", "2")
 
     assert _run_controller_loop(controller, family_name="ema", job=22) == 1
-    assert controller.calls == 2
+    assert controller.calls == 3
 
 
 def test_run_controller_loop_does_not_count_advancing_research_rounds_as_stuck(
@@ -758,6 +758,43 @@ def test_run_controller_loop_does_not_count_advancing_research_rounds_as_stuck(
         {"state": "blocked", "research_round": 1, "blockers": [{"kind": "research_required"}]},
         {"state": "blocked", "research_round": 2, "blockers": [{"kind": "research_required"}]},
         {"state": "finished", "research_round": 2, "blockers": []},
+    ]
+
+    class LoopController:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def execute_once(self) -> int:
+            self.calls += 1
+            return 0
+
+        def read_state(self) -> dict:
+            return states.pop(0)
+
+    controller = LoopController()
+    monkeypatch.setenv("AUTORESEARCH_MAX_CONSECUTIVE_RESEARCH_REQUIRED", "2")
+
+    assert _run_controller_loop(controller, family_name="ema", job=22) == 0
+    assert controller.calls == 3
+
+
+def test_run_controller_loop_does_not_count_changed_blocked_state_as_stuck(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    states = [
+        {
+            "state": "blocked",
+            "research_round": 1,
+            "activity": {"phase": "conductor_running"},
+            "blockers": [{"kind": "research_required"}],
+        },
+        {
+            "state": "blocked",
+            "research_round": 1,
+            "activity": {"phase": "compiler_running"},
+            "blockers": [{"kind": "research_required"}],
+        },
+        {"state": "finished", "research_round": 1, "blockers": []},
     ]
 
     class LoopController:

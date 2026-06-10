@@ -19,6 +19,9 @@ from autoresearch_planning import (
 )
 from autoresearch_state import BacktestResultRecord
 from backtest_run_db import BaselineCheckpoint, BaselineTracker
+from causal_model import save_model
+from research_types import AccuracyPoint, CausalModel
+from screening import ScreeningResult, write_screenings
 from strategy_family import load_family
 
 
@@ -160,7 +163,86 @@ def test_select_research_next_action_blocks_for_research_after_baseline(
     assert out["next_action"]["type"] == "research"
 
 
-def test_should_terminate_reads_completed_round_json_without_queue_dependency(
+def _accuracy_point(round_number: int, skill: float) -> AccuracyPoint:
+    return AccuracyPoint(
+        round_number=round_number,
+        model_version=round_number,
+        pnl_weighted_accuracy=0.50 + skill,
+        naive_accuracy=0.50,
+        skill=skill,
+        holdout_trade_count=100,
+    )
+
+
+def _killed_screening(rule: str = "gap_pct < 0") -> ScreeningResult:
+    return ScreeningResult(
+        rule=rule,
+        verdict="kill_no_lift",
+        sample_count=40,
+        flagged_loss_rate=0.51,
+        base_loss_rate=0.50,
+        lift=0.01,
+        p_value=0.80,
+        overlap_with=None,
+    )
+
+
+def _save_plateau_model(family: str = "ema") -> None:
+    save_model(
+        CausalModel(
+            family=family,
+            version=5,
+            accuracy_history=[
+                _accuracy_point(1, 0.100),
+                _accuracy_point(2, 0.104),
+                _accuracy_point(3, 0.108),
+                _accuracy_point(4, 0.109),
+                _accuracy_point(5, 0.109),
+            ],
+        )
+    )
+
+
+def test_should_terminate_uses_model_plateau_and_zero_screening_pass_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    _save_plateau_model()
+    db_path = tmp_path / "ema_backtest_runs.db"
+    for round_number in range(1, 6):
+        write_screenings(db_path, [_killed_screening()], round_number=round_number)
+
+    assert (
+        should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
+        is True
+    )
+
+
+def test_should_terminate_keeps_running_when_last_plateau_window_has_screening_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    _save_plateau_model()
+    db_path = tmp_path / "ema_backtest_runs.db"
+    for round_number in range(1, 5):
+        write_screenings(db_path, [_killed_screening()], round_number=round_number)
+    write_screenings(
+        db_path,
+        [
+            _killed_screening().model_copy(
+                update={"rule": "gap_pct > 0", "verdict": "pass", "lift": 0.20, "p_value": 0.01}
+            )
+        ],
+        round_number=5,
+    )
+
+    assert (
+        should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
+        is False
+    )
+
+
+def test_should_terminate_ignores_legacy_terminal_findings_without_model_plateau(
     tmp_path: Path, ema_family
 ) -> None:
     research_dir = tmp_path / "research" / "round-1"
@@ -178,54 +260,15 @@ def test_should_terminate_reads_completed_round_json_without_queue_dependency(
 
     assert (
         should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
-        is True
+        is False
     )
 
 
-def test_should_terminate_understands_production_exhausted_round_json(
-    tmp_path: Path, ema_family
+def test_should_terminate_returns_false_without_screening_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
 ) -> None:
-    older = tmp_path / "research" / "round-9"
-    older.mkdir(parents=True)
-    (older / "round.json").write_text(
-        json.dumps({"job_id": 7, "round_number": 9, "outcome": "selected"})
-    )
-    latest = tmp_path / "research" / "round-10"
-    latest.mkdir(parents=True)
-    (latest / "round.json").write_text(
-        json.dumps(
-            {
-                "job_id": 7,
-                "round_number": 10,
-                "outcome": "research_exhausted",
-                "findings": ["No further viable theses."],
-            }
-        )
-    )
-
-    assert (
-        should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
-        is True
-    )
-
-
-@pytest.mark.parametrize(
-    "terminal_payload",
-    [
-        {"status": "running", "findings": ["not done"]},
-        {"status": "completed", "generated_configs": ["runtime/jobs/job-7/x.json"]},
-        {"status": "completed", "new_theses_generated": 1},
-        {"status": "completed", "suggested_theses": [{"thesis_id": "next"}]},
-        {"status": "completed", "findings": []},
-    ],
-)
-def test_should_terminate_requires_completed_empty_queue_with_findings(
-    tmp_path: Path, ema_family, terminal_payload: dict
-) -> None:
-    research_dir = tmp_path / "research" / "round-1"
-    research_dir.mkdir(parents=True)
-    payload = {"job_id": 7, "round_number": 1, **terminal_payload}
-    (research_dir / "round.json").write_text(json.dumps(payload))
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    _save_plateau_model()
 
     assert (
         should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
@@ -318,9 +361,14 @@ def test_plan_next_action_clears_terminal_metadata_when_baseline_branch_selected
     assert "research_stop_reasoning" not in out
 
 
-def test_plan_next_action_finishes_when_research_round_reports_terminal_findings(
-    tmp_path: Path, ema_family
+def test_plan_next_action_finishes_when_model_plateaus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
 ) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    _save_plateau_model()
+    db_path = tmp_path / "ema_backtest_runs.db"
+    for round_number in range(1, 6):
+        write_screenings(db_path, [_killed_screening()], round_number=round_number)
     research_dir = tmp_path / "research" / "round-2"
     research_dir.mkdir(parents=True)
     (research_dir / "round.json").write_text(
@@ -354,7 +402,7 @@ def test_plan_next_action_finishes_when_research_round_reports_terminal_findings
 
     assert out["state"] == "finished"
     assert out["next_action"]["type"] == "terminated"
-    assert out["finished_reason"] == "research_completed_no_new_theses"
+    assert out["finished_reason"] == "model_plateau"
 
 
 def test_plan_next_action_treats_malformed_job_as_unscoped_research_block(

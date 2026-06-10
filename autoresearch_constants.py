@@ -163,3 +163,25 @@ def research_engine_min_trades(config: dict) -> int:
     if parsed < 1:
         raise ValueError("research_engine.min_trades must be >= 1")
     return parsed
+
+
+def research_engine_plateau_rounds(config: dict) -> int:
+    value = _research_engine_block(config).get("plateau_rounds", 5)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.plateau_rounds must be an integer") from exc
+    if parsed < 1:
+        raise ValueError("research_engine.plateau_rounds must be >= 1")
+    return parsed
+
+
+def research_engine_plateau_min_skill_gain(config: dict) -> float:
+    value = _research_engine_block(config).get("plateau_min_skill_gain", 0.01)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.plateau_min_skill_gain must be a number") from exc
+    if parsed < 0.0:
+        raise ValueError("research_engine.plateau_min_skill_gain must be >= 0")
+    return parsed

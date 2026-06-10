@@ -71,6 +71,8 @@ research_engine:
   prediction_tolerance_pct: 20
   noise_floor_pct: 2
   min_trades: 20
+  plateau_rounds: 5
+  plateau_min_skill_gain: 0.01
 
 # --- Universe Selection (OFF for baseline) ---
 universe_mode: null                          # null = all symbols; "stocks_in_play" = top-N by RVOL
