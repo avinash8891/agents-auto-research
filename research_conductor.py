@@ -38,7 +38,7 @@ from research_paths import (
     _get_openai_client,
     _parse_json,
 )
-from research_prompts import _build_conductor_system_prompt
+from research_prompts import _build_conductor_system_prompt, _build_mechanism_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
 from research_tools_schema import (
     AnalyzeTradesArgs,
@@ -112,16 +112,6 @@ def _validate_tool_args(model_cls: type, kwargs: dict[str, Any]) -> str:
             loc = ".".join(str(item) for item in error.get("loc", ())) or "input"
             parts.append(f"{loc}: {error.get('msg')}")
         return "VALIDATION ERROR: " + "; ".join(parts)
-
-
-def _build_mechanism_system_prompt() -> str:
-    return (
-        "You are the autoresearch causal mechanism proposer. Use only the rendered "
-        "corpus supplied by the user. Identify the next causal mechanism and candidate "
-        "rule factors that should be tested out of sample. Return only JSON matching "
-        "the MechanismProposal schema: hypothesis, mechanism, causal_factors, "
-        "reasoning, and should_stop."
-    )
 
 
 def _strategy_description_for(family_name: str) -> str:
@@ -970,30 +960,6 @@ async def run_research_conductor(
             )
             return output
 
-        @function_tool
-        async def get_dimension_examples_tool() -> str:
-            """Return the catalog of mechanism-research dimensions with examples.
-
-            Use when classifying a thesis into a mechanism_dimension or when
-            choosing among under-explored dimensions.
-            """
-            from research_doctrine import DIMENSION_EXAMPLES
-
-            return DIMENSION_EXAMPLES
-
-        @function_tool
-        async def get_tuning_examples_tool() -> str:
-            """Return concrete examples of what counts as parameter tuning vs
-            a real mechanism change.
-
-            Consult before proposing a thesis that touches an existing config
-            key — the validator's neighboring-threshold and config-overlap rules
-            mirror these examples.
-            """
-            from research_doctrine import PARAMETER_TUNING_EXAMPLES
-
-            return PARAMETER_TUNING_EXAMPLES
-
         agent = OAIAgent(
             name="research-conductor",
             instructions=system_prompt,
@@ -1013,8 +979,6 @@ async def run_research_conductor(
                     list_rejections_tool,
                     get_rejection_tool,
                     rejection_pattern_summary_tool,
-                    get_dimension_examples_tool,
-                    get_tuning_examples_tool,
                 ]
             ),
             model=model,
@@ -1121,18 +1085,6 @@ async def run_research_conductor(
             except Exception as exc:
                 validation_reason = str(exc)
             else:
-                if proposal.should_stop:
-                    _REFINEMENT_RECORDER.finish_session(
-                        session_id=refinement_session["session_id"],
-                        stopping_reason="should_stop",
-                        final_outcome="stop",
-                    )
-                    session_finished = True
-                    return ConductorResult(
-                        status="should_stop",
-                        should_stop=True,
-                        reasoning=proposal.reasoning,
-                    )
                 _REFINEMENT_RECORDER.finish_session(
                     session_id=refinement_session["session_id"],
                     stopping_reason="mechanism_proposal",
@@ -1141,15 +1093,15 @@ async def run_research_conductor(
                 session_finished = True
                 return ConductorResult(
                     status="ok",
-                    thesis=proposal.model_dump(),
-                    reasoning=proposal.reasoning,
+                    thesis=proposal.model_dump(mode="json"),
+                    reasoning=proposal.story,
                     tools_called=frozenset(tools_called_this_round),
                 )
             failure = ConductorResult(
                 status="conductor_error",
                 error="validation_failed",
                 validation_reason=validation_reason,
-                reasoning=parsed.get("reasoning", ""),
+                reasoning=str(parsed.get("story", "")),
                 thesis=parsed if isinstance(parsed, dict) else None,
                 tools_called=frozenset(tools_called_this_round),
             )

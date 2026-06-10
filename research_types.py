@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def _utc_now_iso() -> str:
@@ -150,14 +151,55 @@ class CausalModel(BaseModel):
     holdout_start: str = ""
 
 
+class MetricName(str, Enum):
+    profit_factor = "profit_factor"
+    trade_count = "trade_count"
+    max_drawdown = "max_drawdown"
+    win_rate = "win_rate"
+    median_expectancy = "median_expectancy"
+    pnl_weighted_accuracy = "pnl_weighted_accuracy"
+
+
+class Prediction(BaseModel):
+    metric: MetricName
+    direction: Literal[
+        "increase",
+        "decrease",
+        "increase_or_same",
+        "decrease_or_same",
+        "not_worse_than",
+    ]
+    predicted: float | None = None
+    rationale: str = ""
+
+
 class MechanismProposal(BaseModel):
     """Conductor output for the causal-engine research path."""
 
-    hypothesis: str
-    mechanism: str
-    causal_factors: list[CausalFactor] = Field(default_factory=list)
-    reasoning: str = ""
-    should_stop: bool = False
+    story: str
+    rule: str
+    competitor_rule: str
+    competitor_story: str
+    actionable: bool
+    proposed_change: dict[str, Any] | None = None
+    predictions: list[Prediction] | None = None
+
+    @model_validator(mode="after")
+    def _validate_actionable_contract(self) -> "MechanismProposal":
+        if not self.actionable:
+            return self
+        if not self.proposed_change:
+            raise ValueError("proposed_change is required when actionable is true")
+        if len(self.proposed_change) != 1:
+            raise ValueError("proposed_change must contain a single change key")
+        if self.predictions is None or len(self.predictions) < 2:
+            raise ValueError(
+                "predictions must contain at least two entries when actionable is true"
+            )
+        metrics = [prediction.metric for prediction in self.predictions]
+        if len(set(metrics)) != len(metrics):
+            raise ValueError("predictions must use distinct MetricName values")
+        return self
 
 
 EMERGENT_MECHANISM_DIMENSION = "emergent"

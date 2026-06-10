@@ -11,7 +11,7 @@ import research_conductor as conductor
 import research_subagents as subagents
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
 from rejection_artifact import write_rejection
-from research_types import StructuredRejection
+from research_types import MechanismProposal, StructuredRejection
 
 
 def _record(
@@ -384,8 +384,6 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
             ("list_rejections", {"round_number": None, "rejection_code": None, "limit": 3}),
             ("get_rejection", {"round_number": 8, "thesis_id": "missing"}),
             ("rejection_pattern_summary", {"window_rounds": 4}),
-            ("get_dimension_examples_tool", {}),
-            ("get_tuning_examples_tool", {}),
         ],
     )
 
@@ -412,8 +410,6 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
     assert output_by_tool["list_round_results"] == "experiment list"
     assert "missing thesis" in output_by_tool["get_round_result"]
     assert '"error": "no current job"' in output_by_tool["list_rejections"]
-    assert output_by_tool["get_dimension_examples_tool"]
-    assert output_by_tool["get_tuning_examples_tool"]
 
 
 def test_conductor_tools_read_current_job_rejections_and_error_statuses(
@@ -755,20 +751,13 @@ def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_val
         return _StreamedResult(
             json.dumps(
                 {
-                    "hypothesis": "Gap-down entries reveal loss-prone inventory.",
-                    "mechanism": "Opening imbalance continuation overwhelms the EMA signal.",
-                    "causal_factors": [
-                        {
-                            "factor_id": "f001",
-                            "story": "Gap-down entries have loss skew.",
-                            "rule": "gap_pct < 0",
-                            "direction": "loss",
-                            "evidence_rounds": [2],
-                            "status": "candidate",
-                        }
-                    ],
-                    "reasoning": "Corpus supports a loss mechanism.",
-                    "should_stop": False,
+                    "story": "Gap-down entries reveal loss-prone inventory.",
+                    "rule": "gap_pct < 0",
+                    "competitor_rule": "gap_pct > 0",
+                    "competitor_story": "Gap-up entries are the real adverse-selection source.",
+                    "actionable": False,
+                    "proposed_change": None,
+                    "predictions": None,
                 }
             ),
             agent,
@@ -788,11 +777,60 @@ def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_val
     assert out is not None
     assert out.status == "ok"
     assert out.thesis is not None
-    assert out.thesis["hypothesis"] == "Gap-down entries reveal loss-prone inventory."
+    assert out.thesis["story"] == "Gap-down entries reveal loss-prone inventory."
+    assert out.thesis["competitor_rule"] == "gap_pct > 0"
     assert captured["user_prompt"] == rendered_corpus
     assert "legacy round results" not in str(captured["user_prompt"])
     assert "feature_table" not in str(captured["system_prompt"])
+    assert "residual" in str(captured["system_prompt"]).lower()
+    assert "story, rule, competitor_rule" in str(captured["system_prompt"])
     assert getattr(captured["output_type"], "__name__", "") == "MechanismProposal"
+
+
+def test_mechanism_proposal_schema_requires_actionable_change_and_distinct_predictions() -> None:
+    with pytest.raises(ValueError, match="proposed_change"):
+        MechanismProposal(
+            story="Harvest this now.",
+            rule="gap_pct < 0",
+            competitor_rule="gap_pct > 0",
+            competitor_story="Opposite gap sign explains the effect.",
+            actionable=True,
+            proposed_change=None,
+            predictions=None,
+        )
+
+    with pytest.raises(ValueError, match="distinct"):
+        MechanismProposal(
+            story="Harvest this now.",
+            rule="gap_pct < 0",
+            competitor_rule="gap_pct > 0",
+            competitor_story="Opposite gap sign explains the effect.",
+            actionable=True,
+            proposed_change={"gap_filter": True},
+            predictions=[
+                {"metric": "profit_factor", "direction": "increase", "predicted": 1.2},
+                {"metric": "profit_factor", "direction": "increase", "predicted": 1.3},
+            ],
+        )
+
+    proposal = MechanismProposal(
+        story="Harvest this now.",
+        rule="gap_pct < 0",
+        competitor_rule="gap_pct > 0",
+        competitor_story="Opposite gap sign explains the effect.",
+        actionable=True,
+        proposed_change={"gap_filter": True},
+        predictions=[
+            {"metric": "profit_factor", "direction": "increase", "predicted": 1.2},
+            {"metric": "pnl_weighted_accuracy", "direction": "increase", "predicted": 0.65},
+        ],
+    )
+
+    assert proposal.predictions is not None
+    assert {prediction.metric.value for prediction in proposal.predictions} == {
+        "profit_factor",
+        "pnl_weighted_accuracy",
+    }
 
 
 def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
