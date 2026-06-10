@@ -118,3 +118,35 @@ def test_existing_behavior():
     )
 
     assert failures == []
+
+
+def test_tests_covering_behavior_accepts_committed_new_asserting_test_function(tmp_path) -> None:
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_existing.py").write_text(
+        """
+def test_existing_behavior():
+    result = {"old_gate": True}
+    assert result["old_gate"] is True
+""",
+        encoding="utf-8",
+    )
+    _commit_all(tmp_path)
+    (tests_dir / "test_new_gate.py").write_text(
+        """
+def test_new_gate_changes_behavior():
+    result = {"new_gate": True}
+    assert result["new_gate"] is True
+""",
+        encoding="utf-8",
+    )
+    _git("add", ".", cwd=tmp_path)
+    _git("commit", "-m", "add new gate test", cwd=tmp_path)
+
+    failures = _verify_tests_cover_behavior(
+        tmp_path,
+        {"requires_code_change": True, "requested_primitives": ["new_gate"]},
+        {"missing_primitives": ["new_gate"]},
+    )
+
+    assert failures == []

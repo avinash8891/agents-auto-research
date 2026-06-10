@@ -622,9 +622,15 @@ def _verify_tests_cover_behavior(
 
 
 def _changed_test_files(root: Path) -> list[Path]:
+    paths = _git_status_changed_files(root, "tests")
+    paths.extend(_git_committed_changed_files(root, "tests"))
+    return sorted({path for path in paths if _is_existing_test_file(path)})
+
+
+def _git_status_changed_files(root: Path, pathspec: str) -> list[Path]:
     try:
         completed = subprocess.run(
-            ["git", "-C", str(root), "status", "--porcelain", "--", "tests"],
+            ["git", "-C", str(root), "status", "--porcelain", "--", pathspec],
             check=False,
             capture_output=True,
             text=True,
@@ -638,10 +644,66 @@ def _changed_test_files(root: Path) -> list[Path]:
     for line in completed.stdout.splitlines():
         if len(line) < 4:
             continue
+        status = line[:2]
+        if "D" in status:
+            continue
         raw_path = line[3:].strip()
         if " -> " in raw_path:
             raw_path = raw_path.rsplit(" -> ", 1)[1].strip()
-        path = (root / raw_path).resolve()
-        if path.match("*.py") and path.name.startswith("test") and path.exists():
-            paths.append(path)
-    return sorted(set(paths))
+        paths.append((root / raw_path).resolve())
+    return paths
+
+
+def _git_committed_changed_files(root: Path, pathspec: str) -> list[Path]:
+    base = _git_diff_base(root)
+    if base is None:
+        return []
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "diff", "--name-status", f"{base}..HEAD", "--", pathspec],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return []
+    if completed.returncode != 0:
+        return []
+
+    paths: list[Path] = []
+    for line in completed.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        status = parts[0]
+        if status.startswith("D"):
+            continue
+        raw_path = parts[-1].strip()
+        paths.append((root / raw_path).resolve())
+    return paths
+
+
+def _git_diff_base(root: Path) -> str | None:
+    candidates = [
+        ["merge-base", "origin/main", "HEAD"],
+        ["rev-parse", "HEAD~1"],
+    ]
+    for args in candidates:
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(root), *args],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            continue
+        if completed.returncode == 0:
+            base = completed.stdout.strip()
+            if base:
+                return base
+    return None
+
+
+def _is_existing_test_file(path: Path) -> bool:
+    return path.suffix == ".py" and path.name.startswith("test") and path.exists()
