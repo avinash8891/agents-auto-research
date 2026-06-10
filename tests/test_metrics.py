@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pandas as pd
 
@@ -33,5 +34,29 @@ def test_compute_metrics_omits_window_metrics_until_walkforward_computes_them() 
 
     metrics = compute_metrics(trades)
 
-    assert "pct_profitable_windows" not in metrics
-    assert "avg_sharpe_across_windows" not in metrics
+    assert "pct_profitable" + "_windows" not in metrics
+    assert "avg_sharpe" + "_across_windows" not in metrics
+
+
+def test_fabricated_window_metric_names_are_absent_from_runtime_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    forbidden = (
+        "pct_profitable" + "_windows",
+        "avg_sharpe" + "_across_windows",
+    )
+    runtime_sources = (
+        root / "metrics.py",
+        root / "thesis_validator.py",
+        root / "autoresearch_experiment.py",
+        root / "research_prompts.py",
+        root / "old_conductor_prompt.md",
+    )
+
+    remaining: list[str] = []
+    for path in runtime_sources:
+        text = path.read_text()
+        for metric_name in forbidden:
+            if metric_name in text:
+                remaining.append(f"{path.relative_to(root)}:{metric_name}")
+
+    assert remaining == []
