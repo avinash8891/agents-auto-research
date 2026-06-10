@@ -1,0 +1,70 @@
+autoresearch_artifact_schemas.py
+  s_cea1fad922bae5::t_1a6b5bbd65330d 6,35,38
+  s_cea1fad922bae5::t_884362e0005d3c 16
+strategies/contract.py
+  s_cea1fad922bae5::t_7ede0c2c3c5236 4,66-73,76-86
+  s_cea1fad922bae5::t_f95e5316e82af5 74-75
+  s_cea1fad922bae5::t_459685e7eeb91b 5
+  s_cea1fad922bae5::t_4ffbb00dc96384 46
+tests/test_validator_gate_coverage.py
+  s_cea1fad922bae5::t_6fc3e3f3f4590b 773
+compiler_thesis_io.py
+  s_cea1fad922bae5::t_3ba809a70e8eb5 33
+strategies/ema/research.py
+  s_cea1fad922bae5::t_16565a01766bba 84-86
+thesis_validator.py
+  s_cea1fad922bae5::t_1e3897eea87b7c 19-21,313-314,1567-1569
+strategies/orb/runner.py
+  s_cea1fad922bae5::t_327cc582e5d552 16,30
+tests/test_compiler_pipeline_characterization.py
+  s_cea1fad922bae5::t_c6283e8743b3e5 9,66-70
+tests/test_autoresearch_artifacts.py
+  s_cea1fad922bae5::t_ba02ab50f9082f 38
+  s_cea1fad922bae5::t_aa00505ebd4723 7,58-63,68,73-74,84-85,89,92,94,99-100,103-104,107,110-111
+configs/orb_base.yaml
+  s_cea1fad922bae5::t_36153293ee1cdb 10,46,75-76
+autoresearch_artifacts.py
+  s_cea1fad922bae5::t_1b9a8f95bd06ed 9,44
+  s_cea1fad922bae5::t_70f586b5dc4de8 53
+tests/test_autoresearch_controller_characterization.py
+  s_cea1fad922bae5::t_2f3ef5e1598f95 230-239,244-245
+tests/test_autoresearch_planning.py
+  s_cea1fad922bae5::t_3aec8c0c88e3c9 227
+  s_cea1fad922bae5::t_d035a0994ead43 169-176,327-334
+scripts/check_prompt_drift.py
+  s_cea1fad922bae5::t_8288cdca66f7fc 42-43
+tests/test_validator_subsections.py
+  s_cea1fad922bae5::t_4b17365ea766dd 1,3-6
+tests/test_orb_backtest_characterization.py
+  s_cea1fad922bae5::t_05844c260c1bfd 4,37,51-52
+strategies/ema/strategy.py
+  s_cea1fad922bae5::t_44ba7099e218c0 18,157
+strategies/base.py
+  s_cea1fad922bae5::t_9bedf4034410ed 13-17,93
+tests/test_stage1_rules.py
+  s_cea1fad922bae5::t_5c6c7a05d1774e 95
+tests/test_autoresearch_artifact_schemas.py
+  s_cea1fad922bae5::t_4b701a10847c7d 6-8,51,68-69
+tests/test_behavior_signals.py
+  s_cea1fad922bae5::t_9958f87659e4f0 22,273,283
+metrics.py
+  s_cea1fad922bae5::t_e08aa3091a9f7f 117,151,162,270,313,325-329
+research_prompts.py
+  s_cea1fad922bae5::t_badda2fbe9bf04 68-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "44e543d8ca4c5ee27a8d4e3cf29e238f92753b5a",
+  "prompts": {},
+  "sessions": {
+    "s_cea1fad922bae5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb13f-b2e3-7941-9881-40c2f957586d",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}
