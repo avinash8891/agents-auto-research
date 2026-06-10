@@ -3,6 +3,7 @@ from __future__ import annotations
 from experiment_evaluator import evaluate_effect
 from research_types import ExpectedEffect
 
+
 def test_not_worse_than_profit_factor_allows_small_declines_and_rejects_craters() -> None:
     profit_factor_effect = ExpectedEffect(
         metric="profit_factor",

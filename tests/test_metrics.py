@@ -15,7 +15,7 @@ def test_profit_factor_is_zero_when_there_are_no_winners_and_no_losses() -> None
     assert _profit_factor_from_pnl([0.0, 0.0]) == 0.0
 
 
-def test_window_metrics_use_six_month_calendar_windows_not_trade_level_statistics() -> None:
+def test_compute_metrics_omits_window_metrics_until_walkforward_computes_them() -> None:
     trades = pd.DataFrame(
         {
             "entry_date": pd.to_datetime(
@@ -33,5 +33,5 @@ def test_window_metrics_use_six_month_calendar_windows_not_trade_level_statistic
 
     metrics = compute_metrics(trades)
 
-    assert metrics["pct_profitable_windows"] == 0.5
-    assert metrics["avg_sharpe_across_windows"] == 0.0
+    assert "pct_profitable_windows" not in metrics
+    assert "avg_sharpe_across_windows" not in metrics

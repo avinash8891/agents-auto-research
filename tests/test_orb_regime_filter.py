@@ -4,6 +4,7 @@ import pandas as pd
 
 from strategies.orb.regime_filter import apply_regime_gate, classify_regimes
 
+
 def _single_symbol_intraday_frames(
     daily_ranges: list[float],
     opening_range_widths: list[float] | None = None,

@@ -142,6 +142,8 @@ def test_orb_backtest_computes_metrics_in_chronological_trade_order(monkeypatch)
             "slippage_pct": 0.0,
             "max_hold_bars": 1,
             "max_one_entry_per_day": False,
+            "validation_start": "2024-01-02",
+            "validation_end": "2024-01-04",
         }
     )
 

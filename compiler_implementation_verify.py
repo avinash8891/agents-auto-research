@@ -420,26 +420,6 @@ def _config_key_consumed_by_runtime(text: str, token: str) -> bool:
     return False
 
 
-def _active_string_token_present(text: str, token: str) -> bool:
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return False
-    for node in _reachable_ast_nodes(tree):
-        if isinstance(node, ast.Dict):
-            for key in node.keys:
-                if isinstance(key, ast.Constant) and key.value == token:
-                    return True
-        if isinstance(node, ast.Call):
-            for arg in list(node.args) + [kw.value for kw in node.keywords]:
-                if isinstance(arg, ast.Constant) and arg.value == token:
-                    return True
-        if isinstance(node, ast.Subscript):
-            if _subscript_string_key(node) == token:
-                return True
-    return False
-
-
 def _test_function_asserts_token(text: str, token: str) -> bool:
     try:
         tree = ast.parse(text)

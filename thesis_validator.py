@@ -1434,10 +1434,8 @@ def _validate_expected_effects_present(thesis: ResearchThesis) -> None:
     """Validate that expected_effects is populated.
 
     The conductor must declare ≥1 prediction before a thesis can be
-    evaluated. Per-effect metric-backing validation lives in a separate
-    helper (_validate_expected_effects_metrics_backed) called later by the
-    mechanical collector — that check must run only after the falsification
-    and disqualifiers presence checks have passed.
+    evaluated. Additional metric-backed prediction checks live in the v2
+    registered-prediction harvest path rather than a thesis-format helper.
     """
     if not thesis.expected_effects:
         raise ThesisValidationError(
