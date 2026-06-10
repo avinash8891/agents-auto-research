@@ -497,3 +497,26 @@ def test_baseline_checkpoint_persists_to_sqlite(tmp_path: Path) -> None:
     assert rows[0][1] == "ema"  # strategy_family from session
     assert rows[0][2] == "abc123"
     assert rows[0][3] == 3
+
+
+def test_reload_picks_up_external_sqlite_write(tmp_path: Path) -> None:
+    """U2: reload() must invalidate the cache so external writes are visible."""
+    db_path = tmp_path / "backtest_runs.db"
+    db1 = BacktestRunDB(db_path)
+    db1.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    rec = _record(round_number=1, job=1)
+    db1.add(rec)
+    assert db1.count() == 1
+
+    # External write via a second connection (simulates VPS run)
+    db2 = BacktestRunDB(db_path)
+    rec2 = _record(round_number=2, job=1)
+    db2.add(rec2)
+
+    # db1 still sees stale cache
+    assert db1.count() == 1
+
+    # After reload, sees the external write
+    db1.reload()
+    assert db1.count() == 2
