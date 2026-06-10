@@ -1,0 +1,20 @@
+compiler_thesis_io.py
+  s_78fd65d4838bdf::t_8b576cd70059a0 76
+  s_78fd65d4838bdf::t_bf5019c1231711 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "1272e3eb21e7a9792ab70e56a3f27cd97d1514e7",
+  "prompts": {},
+  "sessions": {
+    "s_78fd65d4838bdf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "50c223f1-16c3-47a2-8a6a-94b7b8a34f59",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

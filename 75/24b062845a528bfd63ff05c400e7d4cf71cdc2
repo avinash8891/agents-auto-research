@@ -1,0 +1,25 @@
+autoresearch_controller.py
+  s_78fd65d4838bdf::t_6c3f27731ac116 629-630
+backtest_run_db.py
+  s_78fd65d4838bdf::t_dfc63df405abd5 1189-1192,1196-1228
+  s_78fd65d4838bdf::t_b16db43ceb2090 354-373
+  s_78fd65d4838bdf::t_b4e08382bc6d90 1154,1156
+tests/test_experiment_db_sqlite_runtime.py
+  s_78fd65d4838bdf::t_169c2e060d1003 463-499
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "7524b062845a528bfd63ff05c400e7d4cf71cdc2",
+  "prompts": {},
+  "sessions": {
+    "s_78fd65d4838bdf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "50c223f1-16c3-47a2-8a6a-94b7b8a34f59",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
