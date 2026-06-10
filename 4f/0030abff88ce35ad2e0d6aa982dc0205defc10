@@ -1,0 +1,29 @@
+docs/superpowers/plans/2026-05-04-prompt-variant-framework.md
+  s_78fd65d4838bdf::t_85e54cf0a6c1ca 1299-1300,1302-1311
+TECH_DEBT_AUDIT.md
+  s_78fd65d4838bdf::t_76484e070e1b29 110
+  s_78fd65d4838bdf::t_ee5651d2473a37 52
+tests/test_vps_runner_config.py
+  s_78fd65d4838bdf::t_e5b4776a6a2950 472
+docs/persistence-schema/03-implementation-definition-for-coding-agents.md
+  s_78fd65d4838bdf::t_81c492c5e16fac 73-77
+vps_runner.py
+  s_78fd65d4838bdf::t_1cba02e8a34f1d 458
+  s_78fd65d4838bdf::t_038ce2fbb5866d 465
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "4f0030abff88ce35ad2e0d6aa982dc0205defc10",
+  "prompts": {},
+  "sessions": {
+    "s_78fd65d4838bdf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "50c223f1-16c3-47a2-8a6a-94b7b8a34f59",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
