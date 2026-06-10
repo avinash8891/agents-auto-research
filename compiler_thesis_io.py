@@ -12,6 +12,7 @@ from family_research_spec import validate_family_config_changes
 from persistence_utils import write_text_atomic
 from research_types import ResearchThesis
 from strategies import STRATEGIES
+from thesis_validator import normalize_thesis_payload
 
 
 def _default_runtime_root(root: Path, artifact_root: Path | None) -> Path:
@@ -72,7 +73,7 @@ def create_executable_artifact(
     thesis = validate_family_config_changes(family_name, thesis)
     thesis = operationalize_thesis(dict(thesis))
     runtime_root = _default_runtime_root(root, artifact_root)
-    research_thesis = ResearchThesis.model_validate(thesis)
+    research_thesis = ResearchThesis.model_validate(normalize_thesis_payload(dict(thesis)))
     contract = compile_research_thesis(research_thesis, root, artifact_root=runtime_root)
     if contract.status != "ready_to_run":
         return {
