@@ -25,20 +25,6 @@ from persistence_utils import (
 log = get_logger(__name__)
 
 
-def research_round_id(job_id: int, round_number: int) -> str:
-    """Lenient formatter mirroring main's #65 helper.
-
-    Coerces job_id / round_number to int but does NOT raise on
-    out-of-range values — call sites that want strict validation
-    (e.g. the DB write boundary in add_from_sqlite_fields) use the
-    canonical autoresearch_runtime_paths.research_round_id helper via
-    ``_build_research_round_id`` instead. Kept here for callers that
-    need a value even on partial state (research_conductor's pre-validate
-    thesis-id assignment, test fixtures with job=0, etc.).
-    """
-    return f"job-{int(job_id)}-round-{int(round_number)}"
-
-
 INVALID_RESULT_VERDICTS = frozenset(
     {
         "invalid_duplicate_result",

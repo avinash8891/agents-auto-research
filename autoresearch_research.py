@@ -44,7 +44,7 @@ from autoresearch_state import (
     write_state,
 )
 from backtest.runtime_config import load_runtime_config
-from backtest_run_db import research_round_id as make_research_round_id
+from autoresearch_runtime_paths import research_round_id_or_empty as make_research_round_id
 from backtest_run_db import research_thesis_attempt_id
 from family_research_spec import resolve_research_resolution_context
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
