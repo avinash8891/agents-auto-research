@@ -117,3 +117,18 @@ def parse_positive_int_env(env_key: str, default: int, *, logger: Any | None = N
             logger.warning("non-positive value %r for %s; using default %d", raw, env_key, default)
         return default
     return value
+
+
+def require_positive_int_env(env_key: str, default: int) -> int:
+    raw = os.environ.get(env_key)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"invalid value {raw!r} for {env_key}; expected a positive integer"
+        ) from None
+    if value <= 0:
+        raise ValueError(f"{env_key}={value} must be > 0") from None
+    return value
