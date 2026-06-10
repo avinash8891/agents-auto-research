@@ -389,6 +389,56 @@ def test_best_by_metric_respects_lower_direction(tmp_path: Path) -> None:
     assert best.run_id == better.run_id
 
 
+def test_backtest_runs_has_canonical_columns_and_indexes(tmp_path: Path) -> None:
+    """F2/U4: backtest_runs must have doc-01 canonical columns + 6 indexes."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    conn = sqlite3.connect(tmp_path / "backtest_runs.db")
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(backtest_runs)").fetchall()}
+    for col in ("decision_status", "created_at_utc", "strategy_family",
+                "job_id", "primary_metric_name", "primary_metric_value",
+                "metrics_json", "trade_analysis_json", "trace_run_id"):
+        assert col in columns, f"missing canonical column: {col}"
+
+    indexes = {row[1] for row in conn.execute(
+        "SELECT * FROM sqlite_master WHERE type='index' AND tbl_name='backtest_runs'"
+    ).fetchall()}
+    for idx in ("idx_backtest_runs_thesis_id",
+                "idx_backtest_runs_strategy_family_created_at",
+                "idx_backtest_runs_job_id",
+                "idx_backtest_runs_code_commit",
+                "idx_backtest_runs_decision_status",
+                "idx_backtest_runs_primary_metric_value"):
+        assert idx in indexes, f"missing required index: {idx}"
+    conn.close()
+
+
+def test_backtest_runs_decision_status_backfill(tmp_path: Path) -> None:
+    """F2: accepted=1 -> decision_status='keep', accepted=0 -> 'discard'."""
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+
+    accepted_rec = _record(round_number=1, job=1)
+    accepted_rec.accepted = True
+    rejected_rec = _record(round_number=2, job=1)
+    rejected_rec.accepted = False
+
+    db.add(accepted_rec)
+    db.add(rejected_rec)
+
+    conn = sqlite3.connect(tmp_path / "backtest_runs.db")
+    rows = conn.execute(
+        "SELECT run_id, decision_status FROM backtest_runs ORDER BY run_id"
+    ).fetchall()
+    conn.close()
+
+    status_by_id = {r[0]: r[1] for r in rows}
+    assert status_by_id[accepted_rec.run_id] == "keep"
+    assert status_by_id[rejected_rec.run_id] == "discard"
+
+
 def test_best_by_metric_skips_corrupt_lower_direction(tmp_path: Path, caplog) -> None:
     """F9: corrupt metric must be skipped, not coerced to 0.0 and win lower-is-better."""
     import logging

@@ -280,6 +280,77 @@ class BacktestRunDB:
             self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "is_baseline", "INTEGER NOT NULL DEFAULT 0"
             )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "decision_status", "TEXT NOT NULL DEFAULT ''"
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "created_at_utc", "TEXT NOT NULL DEFAULT ''"
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "strategy_family", "TEXT NOT NULL DEFAULT ''"
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "job_id", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "primary_metric_name", "TEXT NOT NULL DEFAULT ''"
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "primary_metric_value", "REAL"
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "metrics_json", "TEXT NOT NULL DEFAULT '{}'"
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "trade_analysis_json", "TEXT NOT NULL DEFAULT '{}'"
+            )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "trace_run_id", "TEXT NOT NULL DEFAULT ''"
+            )
+            conn.execute(f"""
+                UPDATE {BACKTEST_RUNS_TABLE}
+                SET decision_status = CASE WHEN accepted = 1 THEN 'keep' ELSE 'discard' END
+                WHERE decision_status = ''
+            """)
+            conn.execute(f"""
+                UPDATE {BACKTEST_RUNS_TABLE}
+                SET created_at_utc = timestamp
+                WHERE created_at_utc = ''
+            """)
+            conn.execute(f"""
+                UPDATE {BACKTEST_RUNS_TABLE}
+                SET strategy_family = family
+                WHERE strategy_family = ''
+            """)
+            conn.execute(f"""
+                UPDATE {BACKTEST_RUNS_TABLE}
+                SET job_id = job
+                WHERE job_id = 0
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_thesis_id
+                ON {BACKTEST_RUNS_TABLE} (thesis_id)
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_strategy_family_created_at
+                ON {BACKTEST_RUNS_TABLE} (strategy_family, created_at_utc)
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_job_id
+                ON {BACKTEST_RUNS_TABLE} (job_id)
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_code_commit
+                ON {BACKTEST_RUNS_TABLE} (code_commit)
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_decision_status
+                ON {BACKTEST_RUNS_TABLE} (decision_status)
+            """)
+            conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_backtest_runs_primary_metric_value
+                ON {BACKTEST_RUNS_TABLE} (primary_metric_value)
+            """)
             conn.commit()
 
     def _ensure_column(
@@ -472,8 +543,11 @@ class BacktestRunDB:
                 trades_file, strategy_events_file, diagnostics_file,
                 strategy_diagnostics_json, accepted, rejection_reason, verdict_status,
                 verdict_summary, parent_backtest_run_id, timestamp, family, hypothesis,
-                mechanism, job, usage_json, asi_json, description
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                mechanism, job, usage_json, asi_json, description,
+                decision_status, created_at_utc, strategy_family, job_id,
+                primary_metric_name, primary_metric_value, metrics_json,
+                trade_analysis_json, trace_run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.run_id,
@@ -506,6 +580,15 @@ class BacktestRunDB:
                 json_dumps_strict(record.usage),
                 json_dumps_strict(getattr(record, "_asi_export", {})),
                 getattr(record, "_description_export", ""),
+                "keep" if record.accepted else "discard",
+                record.timestamp,
+                record.family,
+                record.job,
+                "",
+                None,
+                "{}",
+                "{}",
+                "",
             ),
         )
 
