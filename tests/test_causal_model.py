@@ -192,9 +192,7 @@ def test_holdout_mask_uses_configured_research_engine_holdout_fraction() -> None
     table = pd.DataFrame(
         {
             "trade_id": ["a", "b", "c"],
-            "entry_ts": pd.to_datetime(
-                ["2020-06-01", "2022-06-01", "2023-06-01"], utc=True
-            ),
+            "entry_ts": pd.to_datetime(["2020-06-01", "2022-06-01", "2023-06-01"], utc=True),
             "out_is_loss": [False, True, True],
             "out_pnl": [1.0, -1.0, -2.0],
         }

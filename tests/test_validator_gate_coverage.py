@@ -423,7 +423,9 @@ def test_gate_structural_evidence_citations_allow_experiment_result_when_no_trad
     validate_research_thesis(thesis, evidence_context="no_trades")
 
 
-def test_gate_structural_evidence_citations_no_trades_no_longer_requires_experiment_result() -> None:
+def test_gate_structural_evidence_citations_no_trades_no_longer_requires_experiment_result() -> (
+    None
+):
     thesis = _minimal_valid_thesis(
         evidence_citations=[
             EvidenceCitation(
@@ -667,7 +669,9 @@ def test_gate_structural_repeated_llm_thesis_id_no_longer_rejects() -> None:
     assert validated.thesis_id == SAMPLE_THESIS_ID
 
 
-def test_gate_structural_dimension_novelty_too_short_with_same_dim_priors_no_longer_rejects() -> None:
+def test_gate_structural_dimension_novelty_too_short_with_same_dim_priors_no_longer_rejects() -> (
+    None
+):
     thesis = _minimal_valid_thesis(
         thesis_id="ema-new-v1",
         causal_cluster="opening-session noise",

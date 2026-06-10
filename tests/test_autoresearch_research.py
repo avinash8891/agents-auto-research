@@ -656,8 +656,7 @@ def _write_screening_feature_table(round_root: Path) -> None:
                 "entry_ts": (
                     pd.Timestamp("2022-01-03", tz="UTC") + pd.Timedelta(days=index * 5)
                     if not is_holdout
-                    else pd.Timestamp("2023-01-03", tz="UTC")
-                    + pd.Timedelta(days=(index - 60) * 5)
+                    else pd.Timestamp("2023-01-03", tz="UTC") + pd.Timedelta(days=(index - 60) * 5)
                 ),
                 "time_of_day_min": 15,
                 "day_of_week": 1,

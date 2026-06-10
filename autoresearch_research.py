@@ -959,9 +959,7 @@ def _screen_mechanism_proposal(
     )
     accuracy = score_on_holdout(rescored, features)
     save_model(
-        rescored.model_copy(
-            update={"accuracy_history": [*model.accuracy_history, accuracy]}
-        )
+        rescored.model_copy(update={"accuracy_history": [*model.accuracy_history, accuracy]})
     )
     return True, None
 
@@ -1058,16 +1056,20 @@ def _try_one_validation_attempt(
         if not screening_passed:
             return None, screening_feedback, "stage_1"
         if not bool(raw_thesis.get("actionable")):
-            return {
-                "status": "completed",
-                "generated_config": None,
-                "generated_config_needs_build": False,
-                "generated_thesis_id": thesis_id,
-                "thesis_id": thesis_id,
-                "thesis": raw_thesis,
-                "should_stop": False,
-                "reasoning": conductor_result.reasoning,
-            }, None, ""
+            return (
+                {
+                    "status": "completed",
+                    "generated_config": None,
+                    "generated_config_needs_build": False,
+                    "generated_thesis_id": thesis_id,
+                    "thesis_id": thesis_id,
+                    "thesis": raw_thesis,
+                    "should_stop": False,
+                    "reasoning": conductor_result.reasoning,
+                },
+                None,
+                "",
+            )
         raw_thesis = _mechanism_proposal_to_research_thesis(
             raw_thesis,
             strategy_family=controller.family.name,
