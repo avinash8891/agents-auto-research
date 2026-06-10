@@ -19,6 +19,8 @@ from research_types import (
     ResearchThesis,
 )
 
+LOWER_IS_BETTER = {"max_drawdown"}
+
 
 def evaluate_effect(
     effect: ExpectedEffect,
@@ -53,10 +55,11 @@ def evaluate_effect(
         # - For max_drawdown: worse = bigger number
         # - For profit_factor: worse = smaller number
         # Use threshold as percent tolerance.
-        # Convention: drawdown is stored as a positive fraction (0.22 = 22%)
-        # so "not worse" = candidate <= baseline * (1 + threshold/100)
+        # Convention: drawdown is stored as a positive fraction (0.22 = 22%).
         pct = threshold if threshold else 0
-        return c <= b * (1 + pct / 100)
+        if effect.metric in LOWER_IS_BETTER:
+            return c <= b * (1 + pct / 100)
+        return c >= b * (1 - pct / 100)
 
     return False  # unknown direction
 
