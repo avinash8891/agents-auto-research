@@ -16,9 +16,9 @@ Contract-extraction rule (for maintainers adding or refactoring checks)
 
 Multi-check contracts (e.g. mechanism_dimension, emergent path,
 underexplored_dimensions, thesis_specifies_change, expected_effects) live in
-dedicated private `_validate_<contract>(...)` helpers placed adjacent to the
-`_validate_structural` orchestrator. The orchestrator stays a thin sequence
-of inline single-check raises + helper calls.
+dedicated private `_validate_<contract>(...)` helpers and feed the live
+mechanical/behavioral collectors. `validate_research_thesis` is the only
+entry point for full thesis validation.
 
 When deciding whether to bundle two related checks into one helper, apply
 this test:
@@ -310,9 +310,8 @@ def _validate_base_config_path(path: str) -> None:
                 evidence={"path": path},
             )
         # Other non-configs/ paths (including legacy experiments/) fall through
-        # to the inheritance_blocked check in _validate_config_validity, which
-        # rejects ANY path that isn't the family baseline. That gate is the
-        # authoritative inheritance check; this specific subcase was redundant.
+        # to the inheritance_blocked check in the mechanical config-validity
+        # collector, which rejects ANY path that isn't the family baseline.
 
 
 def _family_baseline_path(thesis: ResearchThesis) -> str:
@@ -1565,11 +1564,9 @@ def _validate_expected_effects_present(thesis: ResearchThesis) -> None:
 
     The conductor must declare ≥1 prediction before a thesis can be
     evaluated. Per-effect metric-backing validation lives in a separate
-    helper (_validate_expected_effects_metrics_backed) called later in
-    _validate_structural — that check must run only after the falsification
-    and disqualifiers presence checks have passed, preserving the baseline
-    fail-fast order that was in place before the contract-extraction
-    refactor.
+    helper (_validate_expected_effects_metrics_backed) called later by the
+    mechanical collector — that check must run only after the falsification
+    and disqualifiers presence checks have passed.
     """
     if not thesis.expected_effects:
         raise ThesisValidationError(
@@ -1848,31 +1845,6 @@ def _collect_research_contract_failures(
 
     failures.extend(_collect_source_code_verification_failures(thesis))
     return failures
-
-
-def _validate_structural(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]] | None = None,
-) -> None:
-    """Compatibility entry point for tests; production uses the same collector."""
-    _raise_mechanical_batch(_collect_mechanical_failures(thesis, prior_theses))
-
-
-def _validate_thesis_quality(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]] | None = None,
-) -> None:
-    """Compatibility entry point; delegates to the live behavioral pass."""
-    _run_behavioral_pass(thesis, prior_theses)
-
-
-def _validate_config_validity(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]] | None = None,
-) -> None:
-    """Compatibility entry point; delegates to live behavioral/mechanical gates."""
-    _run_behavioral_pass(thesis, prior_theses)
-    _raise_mechanical_batch(_collect_mechanical_config_validity_failures(thesis))
 
 
 def _signal_from_validation_error(exc: ThesisValidationError) -> BehaviorSignal:

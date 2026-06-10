@@ -6,12 +6,10 @@ from pathlib import Path
 
 import pytest
 
+import compiler_pipeline
 from compiler_pipeline import (
     build_missing_primitives,
-    compile_config_thesis,
-    compile_proposal_artifact,
     compile_research_thesis,
-    create_executable_artifact,
 )
 from research_types import ResearchThesis
 from strategies import STRATEGIES
@@ -65,18 +63,11 @@ def _write_builder_request(round_root: Path, thesis_id: str, *, family: str = "e
     )
 
 
-def test_compile_config_thesis_fails_loudly_for_legacy_entrypoint(tmp_path: Path) -> None:
-    with pytest.raises(RuntimeError, match="not supported"):
-        compile_config_thesis(
-            "ema", "ema-test", {"ema_length": 9}, tmp_path, artifact_root=tmp_path
-        )
-
-
-def test_compile_proposal_artifact_fails_loudly_for_legacy_entrypoint(tmp_path: Path) -> None:
-    with pytest.raises(RuntimeError, match="not supported"):
-        compile_proposal_artifact(
-            {"thesis_id": "x", "strategy_family": "ema"}, tmp_path, artifact_root=tmp_path
-        )
+def test_legacy_compiler_entrypoints_are_not_exported() -> None:
+    assert "compile_config_thesis" not in compiler_pipeline.__all__
+    assert "compile_proposal_artifact" not in compiler_pipeline.__all__
+    assert "create_executable_artifact" not in compiler_pipeline.__all__
+    assert "derive_thesis_artifacts" not in compiler_pipeline.__all__
 
 
 def test_compile_research_thesis_writes_round_selected_artifacts(tmp_path: Path) -> None:
@@ -136,66 +127,6 @@ def test_compile_research_thesis_writes_builder_request_for_explicit_code_change
     assert (round_root / "builder_request" / "thesis.json").exists()
     assert (round_root / "builder_request" / "contract.json").exists()
     assert not (round_root / "selected_config.json").exists()
-
-
-def test_create_executable_artifact_returns_round_selected_config_path(tmp_path: Path) -> None:
-    _write_ema_baseline(tmp_path)
-    round_root = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-3"
-    thesis_dir = tmp_path / "theses"
-    thesis_dir.mkdir()
-    base_config = tmp_path / "configs" / "ema_base.yaml"
-
-    result = create_executable_artifact(
-        thesis_dir,
-        base_config,
-        {
-            "thesis_id": "resolved",
-            "strategy_family": "ema",
-            "hypothesis": "Shorter EMA reacts faster.",
-            "mechanism": "Reduce lag in signal generation.",
-            "config_changes": {"ema_length": 7},
-        },
-        tmp_path,
-        artifact_root=round_root,
-    )
-
-    assert result["generated_config"] == "runtime/jobs/job-1/research/round-3/selected_config.json"
-    assert result["generated_config_needs_build"] is False
-
-
-def test_create_executable_artifact_normalizes_legacy_thesis_payload(tmp_path: Path) -> None:
-    _write_ema_baseline(tmp_path)
-    round_root = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-3"
-    thesis_dir = tmp_path / "theses"
-    thesis_dir.mkdir()
-    base_config = tmp_path / "configs" / "ema_base.yaml"
-
-    result = create_executable_artifact(
-        thesis_dir,
-        base_config,
-        {
-            "thesis_id": "legacy-normalized",
-            "strategy_family": "ema",
-            "hypothesis": "Shorter EMA reacts faster.",
-            "mechanism": "Reduce lag in signal generation.",
-            "mechanism_dimension": "signal quality",
-            "expected_effects": None,
-            "disqualifiers": None,
-            "evidence_citations": [{"source": "experiment_result", "citation": "round-1 PF=1.1"}],
-            "config_changes": {"ema_length": 7},
-        },
-        tmp_path,
-        artifact_root=round_root,
-    )
-
-    selected = json.loads((round_root / "selected_thesis.json").read_text())
-    assert result["generated_config_needs_build"] is False
-    assert selected["mechanism_dimension"] == "signal_quality"
-    assert selected["expected_effects"] == []
-    assert selected["disqualifiers"] == []
-    assert selected["evidence_citations"] == [
-        {"source": "round_result", "citation": "round-1 PF=1.1"}
-    ]
 
 
 def test_build_missing_primitives_requires_round_builder_request_artifacts(tmp_path: Path) -> None:

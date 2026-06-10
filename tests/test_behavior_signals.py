@@ -19,7 +19,7 @@ from thesis_validator import (
     _detect_missing_mechanism_evidence_disqualifier,
     _detect_needs_code_starvation,
     _detect_theme_cluster_fixation,
-    _validate_thesis_quality,
+    validate_research_thesis,
 )
 
 
@@ -270,7 +270,7 @@ def test_validate_thesis_quality_translates_policy_reject_to_raise() -> None:
         disqualifiers=[Disqualifier(name="x", condition="y" * 100, kind="metric_threshold")],
     )
     with pytest.raises(ThesisValidationError) as exc_info:
-        _validate_thesis_quality(proposal, prior_theses=[])
+        validate_research_thesis(proposal, prior_theses=[])
     assert exc_info.value.rejection_code == "thesis_quality_missing_mechanism_evidence_disqualifier"
 
 
@@ -280,4 +280,4 @@ def test_validate_thesis_quality_does_not_raise_when_no_signals_fire() -> None:
         config_changes={"k": 1},
         disqualifiers=[Disqualifier(name="x", condition="z" * 50, kind="mechanism_evidence")],
     )
-    _validate_thesis_quality(proposal, prior_theses=[])  # no raise expected
+    validate_research_thesis(proposal, prior_theses=[])  # no raise expected

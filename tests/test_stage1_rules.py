@@ -92,7 +92,7 @@ def _base_thesis(thesis_id: str, dimension: str = "signal_quality") -> dict:
                 "rationale": "Filtering low-volatility setups reduces but does not collapse counts.",
             },
         ],
-        # Required field post-refactor — see _validate_structural.
+        # Required by the live mechanical validation collector.
         "falsification_or_alternative": (
             "If low-volatility opens show the same PF as high-volatility opens, the "
             "auction-noise mechanism does not hold and the filter is not the cause."

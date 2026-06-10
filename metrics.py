@@ -114,8 +114,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
 
     # 1. PF by hour of entry
     if "entry_date" in trades_df.columns:
-        df = trades_df.copy()
-        df["entry_hour"] = pd.to_datetime(df["entry_date"]).dt.hour
+        df = trades_df.assign(entry_hour=pd.to_datetime(trades_df["entry_date"]).dt.hour)
         pf_by_hour = {}
         for hour, group in df.groupby("entry_hour")["pnl_pct"]:
             pf_by_hour[f"{int(hour):02d}:00"] = {
@@ -149,8 +148,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
 
     # 4. PF by day of week
     if "entry_date" in trades_df.columns:
-        df = trades_df.copy()
-        df["dow"] = pd.to_datetime(df["entry_date"]).dt.day_name()
+        df = trades_df.assign(dow=pd.to_datetime(trades_df["entry_date"]).dt.day_name())
         pf_by_dow = {}
         for dow, group in df.groupby("dow")["pnl_pct"]:
             pf_by_dow[dow] = {
@@ -161,8 +159,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
 
     # 5. PF by year
     if "entry_date" in trades_df.columns:
-        df = trades_df.copy()
-        df["year"] = pd.to_datetime(df["entry_date"]).dt.year
+        df = trades_df.assign(year=pd.to_datetime(trades_df["entry_date"]).dt.year)
         pf_by_year = {}
         for year, group in df.groupby("year")["pnl_pct"]:
             pf_by_year[str(year)] = {
@@ -270,8 +267,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
 
     # 11. Losing streak clusters (streaks >= 5, with date ranges)
     if "entry_date" in trades_df.columns:
-        df = trades_df.copy()
-        df["entry_dt"] = pd.to_datetime(df["entry_date"])
+        df = trades_df.assign(entry_dt=pd.to_datetime(trades_df["entry_date"]))
         streaks = []
         start_dt = None
         prev_dt = None
@@ -314,8 +310,7 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
 
     # 12. PF by month (seasonal patterns)
     if "entry_date" in trades_df.columns:
-        df = trades_df.copy()
-        df["month"] = pd.to_datetime(df["entry_date"]).dt.month_name()
+        df = trades_df.assign(month=pd.to_datetime(trades_df["entry_date"]).dt.month_name())
         pf_by_month = {}
         for month, group in df.groupby("month")["pnl_pct"]:
             pf_by_month[month] = {
@@ -327,9 +322,11 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
 
     # 13. PF by year x quarter (seasonal stability)
     if "entry_date" in trades_df.columns:
-        df = trades_df.copy()
-        df["entry_dt"] = pd.to_datetime(df["entry_date"])
-        df["yq"] = df["entry_dt"].dt.year.astype(str) + "-Q" + df["entry_dt"].dt.quarter.astype(str)
+        entry_dt = pd.to_datetime(trades_df["entry_date"])
+        df = trades_df.assign(
+            entry_dt=entry_dt,
+            yq=entry_dt.dt.year.astype(str) + "-Q" + entry_dt.dt.quarter.astype(str),
+        )
         pf_by_yq = {}
         for yq, group in df.groupby("yq")["pnl_pct"]:
             pf_by_yq[yq] = {

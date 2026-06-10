@@ -166,7 +166,14 @@ def test_should_terminate_reads_completed_round_json_without_queue_dependency(
     research_dir = tmp_path / "research" / "round-1"
     research_dir.mkdir(parents=True)
     (research_dir / "round.json").write_text(
-        json.dumps({"status": "completed", "job": 7, "findings": ["nothing left to try"]})
+        json.dumps(
+            {
+                "status": "completed",
+                "job_id": 7,
+                "round_number": 1,
+                "findings": ["nothing left to try"],
+            }
+        )
     )
 
     assert (
@@ -217,7 +224,7 @@ def test_should_terminate_requires_completed_empty_queue_with_findings(
 ) -> None:
     research_dir = tmp_path / "research" / "round-1"
     research_dir.mkdir(parents=True)
-    payload = {"job": 7, **terminal_payload}
+    payload = {"job_id": 7, "round_number": 1, **terminal_payload}
     (research_dir / "round.json").write_text(json.dumps(payload))
 
     assert (
@@ -317,7 +324,14 @@ def test_plan_next_action_finishes_when_research_round_reports_terminal_findings
     research_dir = tmp_path / "research" / "round-2"
     research_dir.mkdir(parents=True)
     (research_dir / "round.json").write_text(
-        json.dumps({"job": 3, "status": "completed", "findings": ["no edge remains"]})
+        json.dumps(
+            {
+                "job_id": 3,
+                "round_number": 2,
+                "status": "completed",
+                "findings": ["no edge remains"],
+            }
+        )
     )
     state = {
         "state": "blocked",

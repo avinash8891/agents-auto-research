@@ -7,7 +7,7 @@ symbols: null  # null = all available symbols
 
 # --- Date Splits (STRICT: no overlap allowed) ---
 # Discovery: used to develop intuition, look at patterns. NOT used for metrics.
-# Validation: walk-forward windows here produce the primary metric.
+# Validation: source period for backtest metrics and six-month robustness windows.
 # Holdout: NEVER touched during search. Only used for final confirmation.
 #
 # 10 years of data (2016-2025):
@@ -43,7 +43,7 @@ volume_lookback: 20     # Bars for relative volume median
 max_hold_bars: 78       # Full trading day in 5m bars (6.5 hours)
 slippage_pct: 0.05      # 5 bps slippage each way
 
-conservative_sl_fill: false  # If true, fill stops at the next same-day open when available
+conservative_sl_fill: false  # If true, stop hits fill at the next same-session open instead of stop price
 long_only: false             # If true, only take long breakouts
 
 # Exit variants (all OFF for baseline)
@@ -72,8 +72,7 @@ stocks_in_play_ranking: "first30_dollar_volume"  # Ranking metric for stocks-in-
 skip_regimes: []        # e.g. ["chop", "low-vol"] to skip those days
 require_regimes: []     # e.g. ["trending"] to only trade on those days
 
-# --- Walk-Forward Windows ---
-# Windows are auto-generated from validation_start/validation_end.
-# Each window uses 6 months of data, strictly within the validation period.
+# --- Robustness Windows ---
+# Six-month calendar windows are computed from trades inside validation_start/validation_end.
 # Discovery data is NEVER used for metric computation.
 # Holdout data is NEVER touched during search.

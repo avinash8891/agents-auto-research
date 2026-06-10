@@ -15,6 +15,7 @@ from backtest.filters import (
 from backtest.resample import build_timeframe_frame
 from metrics import compute_metrics, empty_metrics
 from strategies.base import BaseStrategy
+from strategies.contract import validate_backtest_runtime_config
 from strategies.ema.contract import compile_ema_contract, map_ema_config_changes_to_contract
 from strategies.ema.exits import simulate_trades
 from strategies.ema.prompt import DESCRIPTION_FOR_RESEARCH
@@ -153,6 +154,7 @@ def _standard_event_extras(frame: pd.DataFrame, signals) -> dict[str, np.ndarray
 def run_backtest(config: dict) -> dict:
     from strategies.ema.signals import generate_signals_for_frame
 
+    config = validate_backtest_runtime_config("ema", dict(config))
     event_logger = StrategyEventLogger()
 
     batch = load_universe_data(config)

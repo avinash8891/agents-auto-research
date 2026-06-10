@@ -65,8 +65,8 @@ hypothesis truly depends on finer timing, state so explicitly and mark blocked.
 
 WHAT "IMPROVE" MEANS  (placeholder, under revision)
 Improve profit factor without regressing median expectancy or trade count
-below baseline. Other metrics (Sharpe, drawdown, margin per order, walk-forward
-stability) are evaluated by the analyst and reported in interpretation.
+below baseline. Other metrics (Sharpe, drawdown, margin per order, six-month
+window stability) are evaluated by the analyst and reported in interpretation.
 
 TOOLS
 - analyze_trades(focus_question)         analyst — interpret evidence (REQUIRED >= 1 / round)

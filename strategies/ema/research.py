@@ -81,9 +81,9 @@ IMPORTANT:
     # EMA uses a deliberate two-layer model. `allowed_config_keys` (above)
     # restricts what the *conductor* can propose directly via config_changes.
     # Other keys (trail_after_r, gap_exclude*, min/max_stop_distance_pct,
-    # max_hold_bars, opening_info_*) reach runtime_config via the *compiler's*
-    # primitive injection layer (see strategies/ema/contract.py). The strategy
-    # runtime reads the union.
+    # max_hold_bars) reach runtime_config via the compiler's primitive
+    # injection layer (see strategies/ema/contract.py). The strategy runtime
+    # reads the union.
     #
     # Stage 2 alignment scores against the resolved runtime_config — which
     # contains keys from BOTH layers — so key_concepts must cover both.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from strategies.orb.runner import run_backtest
 from strategies.orb.signals import _cap_first_entry_per_day, generate_orb_signals
@@ -33,13 +34,10 @@ def test_orb_backtest_returns_empty_metrics_for_empty_validation_window(monkeypa
     assert result["_event_logger"] is None
 
 
-def test_orb_backtest_applies_legacy_default_validation_window(monkeypatch) -> None:
-    observed: dict[str, str] = {}
+def test_orb_backtest_rejects_unbounded_window_without_explicit_flag(monkeypatch) -> None:
     empty = pd.DataFrame()
 
     def _capture(config: dict) -> dict[str, pd.DataFrame | None]:
-        observed["validation_start"] = config.get("validation_start")
-        observed["validation_end"] = config.get("validation_end")
         return {
             "open": empty,
             "high": empty,
@@ -50,10 +48,8 @@ def test_orb_backtest_applies_legacy_default_validation_window(monkeypatch) -> N
 
     monkeypatch.setattr("strategies.orb.runner.load_universe_data", _capture)
 
-    run_backtest({"data_universe": "nasdaq143"})
-
-    assert observed["validation_start"] == "2020-01-01"
-    assert observed["validation_end"] == "2023-12-31"
+    with pytest.raises(ValueError, match="Refusing unbounded ORB backtest"):
+        run_backtest({"data_universe": "nasdaq143"})
 
 
 def test_orb_backtest_does_not_default_dates_for_unbounded_research(monkeypatch) -> None:

@@ -227,13 +227,22 @@ def test_controller_reads_job_scoped_research_artifacts(
     artifact_dir = controller.research_dir / "round-1"
     artifact_dir.mkdir(parents=True)
     artifact_path = artifact_dir / "round.json"
-    artifact_path.write_text(json.dumps({"job": 12, "thesis_id": "ema-artifact"}) + "\n")
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "job_id": 12,
+                "round_number": 1,
+                "selected_thesis_id": "ema-artifact",
+            }
+        )
+        + "\n"
+    )
 
     direct = controller.read_json_artifacts(artifact_dir)
     research = controller.read_research_artifacts()
 
-    assert direct[0]["thesis_id"] == "ema-artifact"
-    assert research[0]["thesis_id"] == "ema-artifact"
+    assert direct[0]["selected_thesis_id"] == "ema-artifact"
+    assert research[0]["selected_thesis_id"] == "ema-artifact"
     assert controller.read_thesis_artifacts() == []
 
 

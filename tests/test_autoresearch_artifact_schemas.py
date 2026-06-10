@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from autoresearch_planning import should_terminate
 from strategy_family import load_family
 
@@ -45,7 +48,7 @@ def test_round_artifact_writer_shape_is_terminal_reader_shape(tmp_path: Path) ->
     )
 
 
-def test_round_artifact_reader_accepts_legacy_production_payload(tmp_path: Path) -> None:
+def test_round_artifact_reader_rejects_legacy_alias_payload(tmp_path: Path) -> None:
     from autoresearch_artifact_schemas import read_round_artifact
 
     path = tmp_path / "round.json"
@@ -62,10 +65,5 @@ def test_round_artifact_reader_accepts_legacy_production_payload(tmp_path: Path)
         + "\n"
     )
 
-    artifact = read_round_artifact(path)
-
-    assert artifact.job_id == 2
-    assert artifact.round_number == 4
-    assert artifact.outcome == "compiled"
-    assert artifact.status == "completed"
-    assert artifact.generated_config_path.endswith("selected_config.json")
+    with pytest.raises(ValidationError, match="job_id"):
+        read_round_artifact(path)

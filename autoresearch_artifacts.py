@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from artifact_io import read_json_artifacts as read_artifact_json_files
-from autoresearch_artifact_schemas import RoundArtifact
-from autoresearch_logging import get_logger
-
-_log = get_logger(__name__)
+from autoresearch_artifact_schemas import read_round_artifact
 
 
 def _serialize_artifact_path(path: Path, root: Path) -> str:
@@ -45,22 +41,7 @@ def read_research_artifacts(
     if research_dir.exists():
         loaded: list[tuple[Path, dict[str, Any]]] = []
         for path in research_dir.glob("round-*/round.json"):
-            try:
-                payload = json.loads(path.read_text())
-            except (json.JSONDecodeError, OSError):
-                continue
-            if not isinstance(payload, dict):
-                continue
-            if "round_number" not in payload:
-                raw_round = path.parent.name.removeprefix("round-")
-                payload["round_number"] = (
-                    0 if raw_round == "0-baseline" else raw_round.split("-", 1)[0]
-                )
-            try:
-                canonical = RoundArtifact.from_payload(payload).to_payload()
-            except ValueError:
-                canonical = {}
-            payload = {**payload, **canonical}
+            payload = read_round_artifact(path).to_payload()
             payload["artifact_path"] = _serialize_artifact_path(path, root)
             loaded.append((path, payload))
         loaded.sort(key=lambda item: _research_round_sort_key(item[0], item[1]))
@@ -69,22 +50,7 @@ def read_research_artifacts(
         return artifacts
     matched: list[dict[str, Any]] = []
     for artifact in artifacts:
-        raw_job = artifact.get("job")
-        if raw_job is None:
-            raw_job = artifact.get("job_id")
-        if raw_job is None:
-            continue
-        try:
-            artifact_job = int(raw_job)
-        except (TypeError, ValueError) as exc:
-            _log.warning(
-                "Skipping artifact with malformed job field (path=%s, job=%r): %s",
-                artifact.get("artifact_path", "<unknown>"),
-                raw_job,
-                exc,
-            )
-            continue
-        if artifact_job == job:
+        if artifact["job_id"] == job:
             matched.append(artifact)
     return matched
 

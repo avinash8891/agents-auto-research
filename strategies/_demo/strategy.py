@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -44,20 +43,6 @@ class DemoStrategy(BaseStrategy):
         )
         result["_event_logger"] = StrategyEventLogger()
         return result
-
-    def validate_runtime_config_scope(
-        self, config: dict[str, Any], source_path: Path | None = None
-    ) -> dict[str, Any]:
-        missing = [key for key in ("validation_start", "validation_end") if not config.get(key)]
-        if missing and not config.get("allow_unbounded_research_backtest"):
-            source = f" for {source_path}" if source_path is not None else ""
-            raise ValueError(
-                "Refusing unbounded _demo backtest"
-                f"{source}: missing {', '.join(missing)}. "
-                "Set validation_start and validation_end, or explicitly set "
-                "allow_unbounded_research_backtest=true."
-            )
-        return config
 
     def validate_runtime_config(self, config: dict[str, Any]) -> list[str]:
         return []

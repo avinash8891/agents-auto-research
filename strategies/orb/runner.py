@@ -13,6 +13,7 @@ import pandas as pd
 
 from backtest.data_universe import load_universe_data
 from metrics import compute_metrics, empty_metrics
+from strategies.contract import validate_backtest_runtime_config
 from strategy_event_logger import StrategyEventLogger
 
 
@@ -26,10 +27,7 @@ def run_backtest(config: dict) -> dict:
     )
     from strategies.orb.signals import generate_orb_signals
 
-    config = dict(config)
-    if not config.get("allow_unbounded_research_backtest"):
-        config.setdefault("validation_start", "2020-01-01")
-        config.setdefault("validation_end", "2023-12-31")
+    config = validate_backtest_runtime_config("orb", dict(config))
 
     batch = load_universe_data(config)
     open_ = batch["open"]
