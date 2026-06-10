@@ -1,0 +1,42 @@
+docs/superpowers/plans/2026-05-27-validator-gate-consolidation.md
+  s_7b3a36a5bf11f5::t_32fe62fce733df 24,54,111,113,134,136,180,212,287,333,342,436,482,600,613,680,684,691,713,778,930
+tests/test_behavior_signals.py
+  s_7b3a36a5bf11f5::t_f9e609286b78a8 22,264,273,277,283
+tests/test_validator_subsections.py
+  s_7b3a36a5bf11f5::t_4d47aeedfaf8f6 3-6,240-244
+tests/test_validator_gate_coverage.py
+  s_7b3a36a5bf11f5::t_7e0e7e5d2925e5 772-773
+docs/superpowers/plans/2026-05-27-behavior-signals-phase-abc.md
+  s_7b3a36a5bf11f5::t_32fe62fce733df 7,17,25,33,439,441,444,494,603,749,880,883,952,956,971,975,978,990,1010
+docs/superpowers/plans/2026-05-27-validator-contract-extraction.md
+  s_7b3a36a5bf11f5::t_32fe62fce733df 5,7,23-25,32,45,47,74,112,153,155,172,236,238,294,304,362,364,372
+tests/test_stage1_rules.py
+  s_7b3a36a5bf11f5::t_9003a8eca0a88b 95
+thesis_validator.py
+  s_7b3a36a5bf11f5::t_b17942617e539c 309-311
+  s_7b3a36a5bf11f5::t_6550fbd26a792c 1429-1431
+  s_7b3a36a5bf11f5::t_b09fedc2b09823 19-20,28-31,38
+docs/superpowers/plans/2026-05-27-process-validator.md
+  s_7b3a36a5bf11f5::t_32fe62fce733df 191
+compiler_implementation_verify.py
+  s_7b3a36a5bf11f5::t_2a75bb3a0aa62b 566,586
+  s_7b3a36a5bf11f5::t_59d38f02a9419e 567-584
+scripts/check_prompt_drift.py
+  s_7b3a36a5bf11f5::t_7d2e2983786328 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "c7fc994cf0046f500b1b80bf4deac71aa0e3c029",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
