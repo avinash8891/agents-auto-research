@@ -1264,6 +1264,85 @@ def test_run_experiment_executes_command_logs_result_and_reconciles_state(
     assert controller.ctx.execution_root is None
 
 
+def test_run_experiment_uses_registered_predictions_without_force_discard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = tmp_path / "write_result.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import json, sys",
+                "from pathlib import Path",
+                "out = Path(sys.argv[1])",
+                "out.mkdir(parents=True, exist_ok=True)",
+                "metrics = {'trade_count': 25, 'profit_factor': 2.1, 'max_drawdown': 0.1}",
+                "(out / 'metrics.json').write_text(json.dumps(metrics) + '\\n')",
+                "(out / 'trades.csv').write_text('entry_date,pnl_pct\\n2026-01-01,1.0\\n')",
+                "(out / 'diagnostics.json').write_text(json.dumps({'accepted': 25}) + '\\n')",
+                "payload = {",
+                "  'metrics_file': str(out / 'metrics.json'),",
+                "  'trades_file': str(out / 'trades.csv'),",
+                "  'diagnostics_file': str(out / 'diagnostics.json'),",
+                "  'strategy_events_file': '',",
+                "  'git_sha': 'abcdef1',",
+                "}",
+                "(out / 'result.json').write_text(json.dumps(payload) + '\\n')",
+                "print('RESULT_JSON ' + str(out / 'result.json'))",
+            ]
+        )
+        + "\n"
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    controller.baseline_tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="data",
+            config_hash="config",
+            metrics={"profit_factor": 2.0, "max_drawdown": 0.2, "trade_count": 25},
+            timestamp="2026-05-09T00:00:00+00:00",
+        )
+    )
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
+    round_root.mkdir(parents=True)
+    (round_root / "selected_config.json").write_text(json.dumps({"ema_length": 10}) + "\n")
+    (round_root / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-success",
+                "registered_at_utc": "2026-06-10T00:00:00+00:00",
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.4},
+                    {"metric": "max_drawdown", "direction": "decrease", "predicted": 0.15},
+                ],
+            }
+        )
+        + "\n"
+    )
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-success",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-command-success",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    record = controller.backtest_run_db.all()[0]
+    assert record.accepted is True
+    assert record.prediction_verdict == "supported"
+    assert "profit_factor direction=pass" in record.lesson
+    assert record.verdict_status != "inconclusive"
+
+
 def test_run_experiment_writes_feature_table_artifact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

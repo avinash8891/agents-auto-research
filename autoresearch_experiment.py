@@ -1307,6 +1307,31 @@ def _evaluate_against_thesis(
         raise
 
 
+def _evaluate_registered_predictions(
+    controller: "AutoresearchController",
+    run_output_dir: Path,
+    metric: float,
+    details: dict[str, Any],
+) -> Any | None:
+    registered_path = run_output_dir.parent / "registered_predictions.json"
+    if not registered_path.exists():
+        return None
+    from experiment_evaluator import evaluate_predictions
+
+    candidate_metrics = dict(details)
+    primary_metric_name = (
+        controller.primary_metric_name()
+        if hasattr(controller, "primary_metric_name")
+        else "profit_factor"
+    )
+    candidate_metrics[primary_metric_name] = metric
+    return evaluate_predictions(
+        registered_path,
+        baseline=_baseline_metrics_from_first_result(controller),
+        candidate=candidate_metrics,
+    )
+
+
 def _record_baseline_checkpoint(
     controller: "AutoresearchController",
     details: dict[str, Any],
@@ -1511,10 +1536,23 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             verdict, decision = _evaluate_against_thesis(
                 controller, contract, config, metric, decision, details
             )
+        registered_verdict = _evaluate_registered_predictions(
+            controller,
+            run_output_dir,
+            metric,
+            details,
+        )
+        if registered_verdict is not None:
+            verdict = registered_verdict
+            if registered_verdict.status == "degenerate":
+                decision = "discard"
 
         analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
         if verdict:
             analysis["trade_analysis"]["verdict"] = verdict.model_dump()
+        if registered_verdict is not None:
+            analysis["prediction_verdict"] = registered_verdict.status
+            analysis["lesson"] = registered_verdict.lesson or registered_verdict.summary
         if controller.ctx.current_contract is None:
             controller.ctx.parent_backtest_run_id = ""
             controller.ctx.execution_root = None
