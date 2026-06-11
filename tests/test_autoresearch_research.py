@@ -1379,6 +1379,7 @@ def test_execute_research_sdk_persists_retry_feedback_for_corpus(
                 ],
             },
             reasoning="invalid first proposal",
+            tools_called=frozenset({"analyze_trades"}),
         ),
         ConductorResult(status="should_stop", should_stop=True, reasoning="stop after feedback"),
     ]
