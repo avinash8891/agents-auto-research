@@ -25,10 +25,12 @@ from research_types import (
     Disqualifier,
     ExpectedEffect,
     HarvestVerdict,
+    MetricName,
     ResearchThesis,
 )
 
 LOWER_IS_BETTER = {"max_drawdown"}
+HIGHER_IS_BETTER = {metric.value for metric in MetricName} - LOWER_IS_BETTER
 
 
 def evaluate_predictions(
@@ -211,7 +213,15 @@ def evaluate_effect(
 
 
 def _lower_is_better_metric(metric: str) -> bool:
-    return metric.lower() in LOWER_IS_BETTER
+    normalized = metric.lower()
+    if normalized in LOWER_IS_BETTER:
+        return True
+    if normalized in HIGHER_IS_BETTER:
+        return False
+    raise ValueError(
+        f"unknown direction for metric {metric!r}: add it to LOWER_IS_BETTER or "
+        "the MetricName enum before using it in a not_worse_than check"
+    )
 
 
 def evaluate_disqualifier(
