@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel, Field
 
+from autoresearch_artifacts import round_number_from_path as _round_number_from_path
 from autoresearch_runtime_paths import iter_family_backtest_db_paths, resolve_runtime_root
 from causal_model import load_model, residual_map
 from feature_table import ENTRY_TIME_COLUMNS
@@ -255,16 +256,6 @@ def _load_rejection_feedback(runtime_root: Path, round_number: int) -> str | Non
         return None
     feedback = candidates[-1].read_text(encoding="utf-8").strip()
     return feedback or None
-
-
-def _round_number_from_path(path: Path) -> int | None:
-    for part in path.parts:
-        if part.startswith("round-"):
-            try:
-                return int(part.removeprefix("round-"))
-            except ValueError:
-                return None
-    return None
 
 
 def _render_factor(factor: CausalFactor) -> list[str]:

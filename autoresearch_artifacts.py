@@ -55,11 +55,22 @@ def read_research_artifacts(
     return matched
 
 
+def round_number_from_path(path: Path) -> int | None:
+    for part in path.parts:
+        if not part.startswith("round-"):
+            continue
+        raw_round = part.removeprefix("round-").split("-", 1)[0]
+        try:
+            return int(raw_round)
+        except ValueError:
+            return None
+    return None
+
+
 def _research_round_sort_key(path: Path, payload: dict[str, Any]) -> tuple[int, str]:
     raw_round = payload.get("round_number")
     if raw_round is None:
-        name = path.parent.name.removeprefix("round-")
-        raw_round = name.split("-", 1)[0]
+        raw_round = round_number_from_path(path)
     try:
         return int(raw_round), path.as_posix()
     except (TypeError, ValueError):

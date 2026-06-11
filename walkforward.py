@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import copy
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
 import pandas as pd
+import yaml
 
 from autoresearch_constants import (
     research_engine_walkforward_step_months,
@@ -13,6 +16,7 @@ from autoresearch_constants import (
     research_engine_walkforward_test_months,
     research_engine_walkforward_train_months,
 )
+from autoresearch_paths import resolve_config_path
 from causal_model import load_model, save_model
 from experiment_evaluator import _direction_passed as _registered_direction_passed
 from persistence_utils import write_json_atomic
@@ -120,6 +124,97 @@ def evaluate_walkforward(
     return report
 
 
+def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
+    current_job = _coerce_job(state.get("job"))
+    records = controller.backtest_run_db.all()
+    if current_job is not None:
+        records = [record for record in records if _coerce_job(record.job) == current_job]
+    baseline = _latest_baseline(records)
+    if baseline is None:
+        return _fail_walkforward(controller, state, "walkforward requires a completed baseline run")
+
+    candidates = [
+        record
+        for record in records
+        if record.accepted
+        and not record.is_baseline
+        and _registered_predictions_path(controller, record).exists()
+    ]
+    reports: list[dict[str, Any]] = []
+    try:
+        for record in sorted(candidates, key=lambda item: item.research_round_number):
+            predictions = _load_registered_predictions(
+                _registered_predictions_path(controller, record)
+            )
+            if not predictions:
+                continue
+            candidate_config = _record_runtime_config(controller, record)
+            baseline_config = _record_runtime_config(controller, baseline)
+            config_for_tunables = dict(baseline_config)
+            config_for_tunables.update(candidate_config)
+            start, end = _walkforward_range(candidate_config, baseline_config)
+            windows = build_windows(
+                start,
+                end,
+                train_months=research_engine_walkforward_train_months(config_for_tunables),
+                test_months=research_engine_walkforward_test_months(config_for_tunables),
+                step_months=research_engine_walkforward_step_months(config_for_tunables),
+            )
+            baseline_metrics: list[dict[str, Any]] = []
+            candidate_metrics: list[dict[str, Any]] = []
+            for index, window in enumerate(windows):
+                baseline_metrics.append(
+                    _run_window_backtest(
+                        controller,
+                        baseline_config,
+                        record.thesis_id,
+                        index,
+                        "baseline",
+                        window,
+                    )
+                )
+                candidate_metrics.append(
+                    _run_window_backtest(
+                        controller,
+                        candidate_config,
+                        record.thesis_id,
+                        index,
+                        "candidate",
+                        window,
+                    )
+                )
+            reports.append(
+                evaluate_walkforward(
+                    family=controller.family.name,
+                    thesis_id=record.thesis_id,
+                    runtime_root=Path(controller.runtime_root),
+                    db_path=controller.backtest_run_db.path,
+                    run_id=record.run_id,
+                    windows=windows,
+                    predictions=predictions,
+                    baseline_metrics=baseline_metrics,
+                    candidate_metrics=candidate_metrics,
+                    config=config_for_tunables,
+                    factor_rule=_factor_rule_for_round(
+                        controller.family.name, record.research_round_number
+                    ),
+                )
+            )
+    except Exception as exc:
+        return _fail_walkforward(controller, state, f"walkforward failed: {exc}")
+
+    next_state = dict(state)
+    next_state["walkforward_status"] = "completed"
+    next_state["walkforward_reports"] = [
+        str(Path(controller.runtime_root) / "walkforward" / f"{report['thesis_id']}.json")
+        for report in reports
+    ]
+    next_state.pop("activity", None)
+    controller.write_state(next_state)
+    controller.write_current_md(next_state, controller.read_results())
+    return 0
+
+
 def walkforward_config(config: dict[str, Any]) -> dict[str, int | float]:
     return {
         "train_months": research_engine_walkforward_train_months(config),
@@ -188,3 +283,124 @@ def _demote_factor(family: str, factor_rule: str, report: dict[str, Any]) -> Non
     ]
     if updated != model.factors:
         save_model(model.model_copy(update={"version": model.version + 1, "factors": updated}))
+
+
+def _coerce_job(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _latest_baseline(records: Sequence[Any]) -> Any | None:
+    baselines = [record for record in records if record.accepted and record.is_baseline]
+    if not baselines:
+        return None
+    return max(baselines, key=lambda item: str(item.created_at_utc or item.timestamp or ""))
+
+
+def _registered_predictions_path(controller: Any, record: Any) -> Path:
+    config_path = _resolve_record_config_path(controller, record)
+    return config_path.parent / "registered_predictions.json"
+
+
+def _load_registered_predictions(path: Path) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    predictions = payload.get("predictions")
+    if not isinstance(predictions, list):
+        return []
+    return [item for item in predictions if isinstance(item, dict)]
+
+
+def _record_runtime_config(controller: Any, record: Any) -> dict[str, Any]:
+    path = _resolve_record_config_path(controller, record)
+    if path.exists():
+        payload = _read_config(path)
+        if isinstance(payload, dict):
+            runtime_config = payload.get("runtime_config")
+            if isinstance(runtime_config, dict):
+                return dict(runtime_config)
+            return dict(payload)
+    return dict(record.runtime_config)
+
+
+def _resolve_record_config_path(controller: Any, record: Any) -> Path:
+    return resolve_config_path(
+        str(record.config_path),
+        code_root=Path(controller.root),
+        runtime_root=Path(controller.runtime_root),
+        execution_root=getattr(getattr(controller, "ctx", None), "execution_root", None),
+    )
+
+
+def _read_config(path: Path) -> Any:
+    if path.suffix in (".yaml", ".yml"):
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _walkforward_range(
+    candidate_config: dict[str, Any], baseline_config: dict[str, Any]
+) -> tuple[str, str]:
+    start = candidate_config.get("validation_start") or baseline_config.get("validation_start")
+    end = candidate_config.get("validation_end") or baseline_config.get("validation_end")
+    if not start or not end:
+        raise ValueError("walkforward requires validation_start and validation_end in config")
+    return str(start), str(end)
+
+
+def _run_window_backtest(
+    controller: Any,
+    runtime_config: dict[str, Any],
+    thesis_id: str,
+    window_index: int,
+    role: str,
+    window: WalkForwardWindow,
+) -> dict[str, Any]:
+    config = copy.deepcopy(runtime_config)
+    config["validation_start"] = pd.Timestamp(window.test_start).date().isoformat()
+    config["validation_end"] = pd.Timestamp(window.test_end).date().isoformat()
+    window_root = (
+        Path(controller.runtime_root)
+        / "walkforward"
+        / thesis_id
+        / f"window-{window_index + 1:03d}"
+        / role
+    )
+    window_root.mkdir(parents=True, exist_ok=True)
+    config_path = window_root / "config.json"
+    write_json_atomic(config_path, config)
+    command = controller.family.benchmark_command(str(config_path), output_dir=str(window_root))
+    code, output = controller.run_command(command)
+    if code != 0:
+        raise RuntimeError(f"{role} window {window_index + 1} backtest failed with exit {code}")
+    metric = controller.parse_metric(output, name=controller.primary_metric_name())
+    details = controller.parse_benchmark_details(output)
+    metrics = dict(details.get("metrics") if isinstance(details.get("metrics"), dict) else {})
+    metrics.update({key: value for key, value in details.items() if isinstance(value, int | float)})
+    if metric is not None:
+        metrics[controller.primary_metric_name()] = metric
+    return metrics
+
+
+def _factor_rule_for_round(family: str, round_number: int) -> str:
+    model = load_model(family)
+    for factor in model.factors:
+        if round_number in factor.evidence_rounds:
+            return factor.rule
+    return ""
+
+
+def _fail_walkforward(controller: Any, state: dict[str, Any], reason: str) -> int:
+    failed = dict(state)
+    failed.update(
+        {
+            "state": "interrupted",
+            "next_action": {"type": "terminated", "reason": reason},
+            "blockers": [{"kind": "walkforward_failed", "detail": reason}],
+        }
+    )
+    failed.pop("activity", None)
+    controller.write_state(failed)
+    controller.write_current_md(failed, controller.read_results())
+    return 1

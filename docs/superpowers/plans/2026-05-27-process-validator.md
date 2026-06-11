@@ -188,7 +188,7 @@ def validate_thesis_dict(
 ) -> ResearchThesis:
 ```
 
-Call `_validate_process(thesis, tools_called or set())` before `_collect_mechanical_failures(...)`. Pass `tools_called=tools_called` from `validate_thesis_dict` to `validate_research_thesis`.
+Call `_validate_process(tools_called, require_analyst_tool=require_analyst_tool)` only when `tools_called is not None`, before `_collect_mechanical_failures(...)`. Pass `tools_called=tools_called` from `validate_thesis_dict` to `validate_research_thesis`.
 
 - [ ] **Step 3: Update legacy inference mapping**
 
@@ -331,4 +331,3 @@ gh run watch --exit-status
 ```
 
 Expected: report the run URL and final status. If no workflow starts or auth is missing, report that instead of claiming CI passed.
-

@@ -13,6 +13,7 @@ from autoresearch_artifacts import (
     read_research_artifacts,
     read_run_queue,
     read_thesis_artifacts,
+    round_number_from_path,
 )
 
 
@@ -66,6 +67,12 @@ def test_read_research_artifacts_reads_round_json_only(tmp_path: Path) -> None:
     out = read_research_artifacts(research_dir, tmp_path, job=1)
 
     assert [artifact["round_number"] for artifact in out] == [0, 1]
+
+
+def test_round_number_from_path_handles_baseline_and_malformed_round_dirs(tmp_path: Path) -> None:
+    assert round_number_from_path(tmp_path / "research" / "round-0-baseline" / "x.json") == 0
+    assert round_number_from_path(tmp_path / "research" / "round-12" / "x.json") == 12
+    assert round_number_from_path(tmp_path / "research" / "round-latest" / "x.json") is None
 
 
 def test_read_research_artifacts_sorts_round_directories_numerically(tmp_path: Path) -> None:

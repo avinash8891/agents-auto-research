@@ -18,6 +18,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from autoresearch_artifacts import round_number_from_path
 from autoresearch_constants import MAX_RESEARCH_ROUNDS
 from autoresearch_controller import AutoresearchController
 from autoresearch_research import (
@@ -34,6 +35,7 @@ from autoresearch_research import (
     _record_round_quality_and_bridges,
     _research_feedback_from_verdict,
     _resolve_conductor_inputs,
+    _round_number_from_artifact_path,
     _screen_mechanism_proposal,
     _try_one_validation_attempt,
     accumulate_job_usage,
@@ -53,6 +55,10 @@ from strategy_family import load_family
 from thesis_validator import ThesisValidationError
 
 # ── notify_discord fail-open contract ────────────────────────────
+
+
+def test_research_round_number_parser_reuses_artifact_helper() -> None:
+    assert _round_number_from_artifact_path is round_number_from_path
 
 
 def _real_controller(tmp_path: Path) -> AutoresearchController:

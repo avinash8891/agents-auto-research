@@ -19,6 +19,7 @@ import yaml
 
 from artifact_io import write_json_artifact
 from autoresearch_artifact_schemas import RoundArtifact, write_round_artifact
+from autoresearch_artifacts import round_number_from_path as _round_number_from_artifact_path
 from autoresearch_constants import (
     DISCORD_BODY_MAX_CHARS,
     DISCORD_COLOR_DISCARD,
@@ -1646,16 +1647,6 @@ def _prediction_gaps(runtime_root: Path, research_round: int) -> list[dict[str, 
                 }
             )
     return gaps[-10:]
-
-
-def _round_number_from_artifact_path(path: Path) -> int | None:
-    for part in path.parts:
-        if part.startswith("round-"):
-            try:
-                return int(part.removeprefix("round-"))
-            except ValueError:
-                return None
-    return None
 
 
 def _round_findings(result: dict[str, Any], outcome: str) -> list[str]:

@@ -688,6 +688,28 @@ def test_execute_once_stops_without_experiment_for_terminal_blocked_state(
     assert controller.execute_once() == 0
 
 
+def test_execute_once_dispatches_walkforward_action(
+    controller: AutoresearchController,
+) -> None:
+    controller.write_state({"state": "running", "job": 14, "research_round": 6})
+    walkforward_state = {
+        "state": "running",
+        "job": 14,
+        "research_round": 6,
+        "next_action": {"type": "walkforward", "reason": "model_plateau"},
+        "finished_reason": "model_plateau_pending_walkforward",
+    }
+    calls: list[dict] = []
+    controller._resolve_next_action = lambda: walkforward_state  # type: ignore[method-assign]
+    controller._run_walkforward = lambda state: calls.append(dict(state)) or 0  # type: ignore[attr-defined, method-assign]
+    controller._run_round = lambda state: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("walkforward action must not run a normal backtest round")
+    )
+
+    assert controller.execute_once() == 0
+    assert calls == [walkforward_state]
+
+
 def test_run_controller_loop_exits_on_terminal_state(monkeypatch: pytest.MonkeyPatch) -> None:
     states = [{"state": "running"}, {"state": "finished"}]
 

@@ -83,6 +83,7 @@ from config_hash import _git_sha
 from strategy_family import StrategyFamily, load_family
 from trace_autonomy_ledger import AutonomyLedger
 from trace_sdk import trace, trace_state_change
+from walkforward import run_walkforward_queue as _walkforward_run_walkforward_queue
 
 log = get_logger(__name__)
 
@@ -1068,6 +1069,9 @@ class AutoresearchController:
     def _run_round(self, state: dict[str, Any]) -> int:
         return _round_run_experiment(self, state)
 
+    def _run_walkforward(self, state: dict[str, Any]) -> int:
+        return _walkforward_run_walkforward_queue(self, state)
+
     def execute_once(self) -> int:
         """Run one iteration of the autoresearch loop.
 
@@ -1119,6 +1123,10 @@ class AutoresearchController:
         if state.get("state") != "running":
             log.info(f"LOOP_STOP state={state.get('state')}")
             return 0
+
+        next_action = state.get("next_action")
+        if isinstance(next_action, dict) and next_action.get("type") == "walkforward":
+            return self._run_walkforward(state)
 
         # We have a config to run
         return self._run_round(state)
