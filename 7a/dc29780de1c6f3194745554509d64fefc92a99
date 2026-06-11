@@ -1,0 +1,26 @@
+feature_table_extractors.py
+  s_3bfcb10840fb93::t_084df0f2a6d9f4 47,53-69
+feature_table.py
+  s_3bfcb10840fb93::t_0bb461547390c0 242,256-257,262-264,266-272
+  s_3bfcb10840fb93::t_d7616198d95d69 78-79,83-120
+  s_3bfcb10840fb93::t_4f5239b70ad8b1 158-163,166,175
+  s_3bfcb10840fb93::t_498448d3e9998a 299-301,305-306
+  s_3bfcb10840fb93::t_e3c401772f59c0 331
+  s_3bfcb10840fb93::t_95bf9e0e9781db 411-413,415-418,423-425,427,430-431,433-436,439-443,445
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "7adc29780de1c6f3194745554509d64fefc92a99",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
