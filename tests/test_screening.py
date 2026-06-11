@@ -210,7 +210,8 @@ def test_screenings_table_exists_and_write_screenings_appends_spec_rows(tmp_path
         columns = [row[1] for row in conn.execute("PRAGMA table_info(screenings)")]
         rows = conn.execute("""
             SELECT round_number, job_id, rule, competitor_rule, verdict, sample_count,
-                   ROUND(lift, 3), overlap_with
+                   ROUND(flagged_loss_rate, 3), ROUND(base_loss_rate, 3), ROUND(lift, 3),
+                   overlap_with
             FROM screenings
             """).fetchall()
 
@@ -222,12 +223,14 @@ def test_screenings_table_exists_and_write_screenings_appends_spec_rows(tmp_path
         "competitor_rule",
         "verdict",
         "sample_count",
+        "flagged_loss_rate",
+        "base_loss_rate",
         "lift",
         "p_value",
         "overlap_with",
         "created_at_utc",
     ]
-    assert rows == [(3, None, "gap_pct < 0", "gap_pct > 0", "pass", 40, 0.24, None)]
+    assert rows == [(3, None, "gap_pct < 0", "gap_pct > 0", "pass", 40, 0.8, 0.56, 0.24, None)]
 
 
 def test_write_screenings_persists_active_job_id(tmp_path: Path) -> None:

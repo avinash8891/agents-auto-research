@@ -150,3 +150,26 @@ def test_new_gate_changes_behavior():
     )
 
     assert failures == []
+
+
+def test_tests_covering_behavior_accepts_asserting_test_in_builder_copy_without_git(
+    tmp_path,
+) -> None:
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_new_gate.py").write_text(
+        """
+def test_new_gate_changes_behavior():
+    result = {"new_gate": True}
+    assert result["new_gate"] is True
+""",
+        encoding="utf-8",
+    )
+
+    failures = _verify_tests_cover_behavior(
+        tmp_path,
+        {"requires_code_change": True, "requested_primitives": ["new_gate"]},
+        {"missing_primitives": ["new_gate"]},
+    )
+
+    assert failures == []

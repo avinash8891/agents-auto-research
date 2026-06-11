@@ -37,6 +37,7 @@ from autoresearch_research import (
     _research_feedback_from_verdict,
     _resolve_conductor_inputs,
     _round_number_from_artifact_path,
+    _round_reflexio_facts,
     _screen_mechanism_proposal,
     _try_one_validation_attempt,
     accumulate_job_usage,
@@ -52,6 +53,7 @@ from causal_harvest import PendingCausalModelArtifact
 from causal_model import load_model, save_model
 from feature_table import feature_table_path
 from research_types import CausalModel, ConductorResult
+from screening import ScreeningResult, write_screenings
 from strategies import STRATEGIES
 from strategy_family import load_family
 from thesis_validator import ThesisValidationError
@@ -91,6 +93,19 @@ def _write_valid_ema_config(path: Path, **overrides: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     config = {**STRATEGIES["ema"].get_defaults(), **overrides}
     path.write_text(json.dumps(config) + "\n")
+
+
+def _screening_result(rule: str, verdict: str) -> ScreeningResult:
+    return ScreeningResult(
+        rule=rule,
+        verdict=verdict,
+        sample_count=40,
+        flagged_loss_rate=0.8,
+        base_loss_rate=0.56,
+        lift=0.24,
+        p_value=0.004,
+        overlap_with=None,
+    )
 
 
 def test_notify_discord_no_op_when_webhook_empty() -> None:
@@ -153,6 +168,27 @@ def test_record_round_quality_sends_round_facts_only_to_reflexio(
         by_name["reflexio"]["reflection"]["round_facts"]["registered_predictions"][0]["metric"]
         == "profit_factor"
     )
+
+
+def test_round_reflexio_facts_scopes_screening_counts_to_active_job(tmp_path: Path) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "running", "job": 4, "research_round": 2})
+    write_screenings(
+        controller.backtest_run_db.path,
+        [_screening_result("own_rule", "pass")],
+        round_number=2,
+        job_id=4,
+    )
+    write_screenings(
+        controller.backtest_run_db.path,
+        [_screening_result("other_rule", "kill_no_lift")],
+        round_number=2,
+        job_id=5,
+    )
+
+    facts = _round_reflexio_facts(controller, 2)
+
+    assert facts["screening_verdict_counts"] == {"pass": 1}
 
 
 def test_screen_mechanism_proposal_reads_feature_table_from_runtime_root(
@@ -1172,6 +1208,60 @@ def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
     execute_research_sdk(controller)
 
     assert calls == [("ema", 0, 12, tmp_path, tmp_path)]
+
+
+def test_execute_research_sdk_persists_retry_feedback_for_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_ema_base_config(tmp_path)
+    controller = _real_controller(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 12,
+            "research_round": 0,
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    calls = [
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades might be the actual source of edge.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease"},
+                ],
+            },
+            reasoning="invalid first proposal",
+        ),
+        ConductorResult(status="should_stop", should_stop=True, reasoning="stop after feedback"),
+    ]
+    monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root, **kwargs: [])
+    monkeypatch.setattr(
+        "autoresearch_research._resolve_conductor_inputs",
+        lambda *args, **kwargs: ("trades.csv", "events.parquet", "diagnostics.json", {}),
+    )
+    monkeypatch.setattr("improvement_flags.reflexion_enabled", lambda: False)
+    monkeypatch.setattr(
+        "research_conductor.run_research_conductor_sync",
+        lambda *args, **kwargs: calls.pop(0),
+    )
+
+    result = execute_research_sdk(controller)
+
+    feedback_path = (
+        tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1" / "rejection_feedback.txt"
+    )
+    assert result["should_stop"] is True
+    assert feedback_path.exists()
+    assert "predicted" in feedback_path.read_text(encoding="utf-8")
 
 
 def test_mechanism_proposal_compiles_without_legacy_thesis_validator(

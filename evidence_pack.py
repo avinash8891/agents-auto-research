@@ -212,6 +212,10 @@ def _load_screening_history(
                 }
                 if job is not None and "job_id" not in columns:
                     continue
+                flagged_loss_rate_select = (
+                    "flagged_loss_rate" if "flagged_loss_rate" in columns else "NULL"
+                )
+                base_loss_rate_select = "base_loss_rate" if "base_loss_rate" in columns else "NULL"
                 where = "round_number <= ?"
                 params: list[int] = [round_number]
                 if job is not None:
@@ -219,7 +223,8 @@ def _load_screening_history(
                     params.append(job)
                 rows = conn.execute(
                     f"""
-                    SELECT rule, verdict, sample_count, lift, p_value, overlap_with
+                    SELECT rule, verdict, sample_count, {flagged_loss_rate_select},
+                           {base_loss_rate_select}, lift, p_value, overlap_with
                     FROM screenings
                     WHERE {where}
                     ORDER BY round_number, created_at_utc, screening_id
@@ -228,14 +233,27 @@ def _load_screening_history(
                 ).fetchall()
         except sqlite3.Error:
             continue
-        for rule, verdict, sample_count, lift, p_value, overlap_with in rows:
+        for (
+            rule,
+            verdict,
+            sample_count,
+            flagged_loss_rate,
+            base_loss_rate,
+            lift,
+            p_value,
+            overlap_with,
+        ) in rows:
             results.append(
                 ScreeningResult(
                     rule=rule,
                     verdict=verdict,
                     sample_count=int(sample_count),
-                    flagged_loss_rate=float("nan"),
-                    base_loss_rate=float("nan"),
+                    flagged_loss_rate=(
+                        float(flagged_loss_rate) if flagged_loss_rate is not None else float("nan")
+                    ),
+                    base_loss_rate=(
+                        float(base_loss_rate) if base_loss_rate is not None else float("nan")
+                    ),
                     lift=float(lift),
                     p_value=float(p_value),
                     overlap_with=overlap_with,

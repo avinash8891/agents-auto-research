@@ -624,6 +624,8 @@ def _verify_tests_cover_behavior(
 def _changed_test_files(root: Path) -> list[Path]:
     paths = _git_status_changed_files(root, "tests")
     paths.extend(_git_committed_changed_files(root, "tests"))
+    if not paths and not (root / ".git").exists():
+        paths.extend((root / "tests").rglob("test*.py"))
     return sorted({path for path in paths if _is_existing_test_file(path)})
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pandas as pd
@@ -154,6 +155,8 @@ def test_build_corpus_reads_runtime_artifacts_for_refuted_harvest(
     assert "23 percentage points" in corpus.model.factors[0].lesson
     assert corpus.screening_history[0].rule == "gap_pct < 0"
     assert corpus.screening_history[0].verdict == "pass"
+    assert corpus.screening_history[0].flagged_loss_rate == 0.8
+    assert corpus.screening_history[0].base_loss_rate == 0.56
     assert corpus.harvest_verdicts[0]["registered_predictions"][0]["gap"] == -0.23
     assert corpus.residual_summary[0]["trade_id"] in {"holdout-loss", "holdout-win"}
     assert corpus.cross_family[0].factor_id == "f101"
@@ -304,10 +307,50 @@ def test_build_corpus_rejection_feedback_is_scoped_to_active_job(
     assert corpus.rejection_feedback == "own job feedback"
 
 
-def test_build_corpus_does_not_fabricate_missing_screening_rates(
+def test_build_corpus_does_not_fabricate_legacy_missing_screening_rates(
     tmp_path: Path, monkeypatch
 ) -> None:
     _setup_runtime(tmp_path, monkeypatch)
+    db_path = tmp_path / "ema_backtest_runs.db"
+    db_path.unlink()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE screenings (
+                screening_id TEXT PRIMARY KEY,
+                round_number INTEGER NOT NULL,
+                job_id INTEGER,
+                rule TEXT NOT NULL,
+                competitor_rule TEXT,
+                verdict TEXT NOT NULL,
+                sample_count INTEGER NOT NULL,
+                lift REAL NOT NULL,
+                p_value REAL NOT NULL,
+                overlap_with TEXT,
+                created_at_utc TEXT NOT NULL
+            )
+            """)
+        conn.execute(
+            """
+            INSERT INTO screenings (
+                screening_id, round_number, job_id, rule, competitor_rule, verdict,
+                sample_count, lift, p_value, overlap_with, created_at_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy",
+                2,
+                1,
+                "gap_pct < 0",
+                "gap_pct > 0",
+                "pass",
+                40,
+                0.24,
+                0.004,
+                None,
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
 
     corpus = build_corpus("ema", 2)
 

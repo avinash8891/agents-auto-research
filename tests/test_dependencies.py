@@ -27,3 +27,12 @@ def test_halo_engine_is_not_in_main_runtime_dependencies() -> None:
     requirements = [Requirement(dep) for dep in pyproject["project"]["dependencies"]]
 
     assert not any(req.name == "halo-engine" for req in requirements)
+
+
+def test_explicit_py_modules_include_helper_modules_used_by_packaged_modules() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    py_modules = set(pyproject["tool"]["setuptools"]["py-modules"])
+
+    assert "causal_rule" in py_modules
+    assert "feature_table_extractors" in py_modules

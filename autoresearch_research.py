@@ -1075,6 +1075,23 @@ def _persist_validator_challenge(
         log.warning(f"failed to persist validator_challenge: {challenge_exc}")
 
 
+def _persist_rejection_feedback(
+    controller: "AutoresearchController",
+    research_round: int,
+    feedback: str,
+) -> None:
+    if not feedback.strip():
+        return
+    try:
+        state = controller.read_state()
+        job_id = int(state["job"])
+        runtime_root = getattr(controller, "runtime_root", None) or controller.root
+        round_root = research_round_root(runtime_root, job_id, research_round)
+        _write_text_atomic(round_root / "rejection_feedback.txt", feedback.strip() + "\n")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("failed to persist rejection feedback: %s", exc)
+
+
 def _init_attempt(
     controller: "AutoresearchController",
     research_round: int,
@@ -1620,6 +1637,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         elif failed_stage == "compile":
             compile_failures += 1
         rejection_feedback = retry_feedback or rejection_feedback
+        _persist_rejection_feedback(controller, research_round, rejection_feedback)
         attempt += 1
     job_id = coerce_job_to_int(current_job)
     research_round_id = make_research_round_id(job_id, research_round)
@@ -1781,17 +1799,34 @@ def _screening_verdict_counts(
     )
     if not db_path.exists():
         return {}
+    current_job: int | None = None
+    read_state_fn = getattr(controller, "read_state", None)
+    if callable(read_state_fn):
+        state = read_state_fn()
+        if isinstance(state, dict):
+            try:
+                current_job = int(state["job"]) if state.get("job") is not None else None
+            except (TypeError, ValueError):
+                current_job = None
     try:
         with sqlite3.connect(db_path) as conn:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(screenings)").fetchall()}
+            if current_job is not None and "job_id" not in columns:
+                return {}
+            where = "round_number <= ?"
+            params: list[int] = [research_round]
+            if current_job is not None:
+                where += " AND job_id = ?"
+                params.append(current_job)
             rows = conn.execute(
-                """
+                f"""
                 SELECT verdict, COUNT(*)
                 FROM screenings
-                WHERE round_number <= ?
+                WHERE {where}
                 GROUP BY verdict
                 ORDER BY verdict
                 """,
-                (research_round,),
+                params,
             ).fetchall()
     except sqlite3.Error:
         return {}

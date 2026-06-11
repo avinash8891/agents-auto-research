@@ -273,8 +273,9 @@ def _insert_screening_with_retry(
                 """
                 INSERT INTO screenings (
                     screening_id, round_number, job_id, rule, competitor_rule, verdict,
-                    sample_count, lift, p_value, overlap_with, created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    sample_count, flagged_loss_rate, base_loss_rate, lift, p_value,
+                    overlap_with, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     screening_id,
@@ -284,6 +285,8 @@ def _insert_screening_with_retry(
                     competitor_rule,
                     result.verdict,
                     result.sample_count,
+                    result.flagged_loss_rate,
+                    result.base_loss_rate,
                     result.lift,
                     result.p_value,
                     result.overlap_with,
@@ -307,6 +310,8 @@ def _ensure_screenings_table(conn: sqlite3.Connection) -> None:
             competitor_rule TEXT,
             verdict TEXT NOT NULL,
             sample_count INTEGER NOT NULL,
+            flagged_loss_rate REAL,
+            base_loss_rate REAL,
             lift REAL NOT NULL,
             p_value REAL NOT NULL,
             overlap_with TEXT,
@@ -320,6 +325,13 @@ def _ensure_screenings_table(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError as exc:
             if "duplicate column name" not in str(exc).lower():
                 raise
+    for column in ("flagged_loss_rate", "base_loss_rate"):
+        if column not in columns:
+            try:
+                conn.execute(f"ALTER TABLE screenings ADD COLUMN {column} REAL")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_screenings_round
         ON screenings (round_number)
