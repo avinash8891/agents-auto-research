@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 from collections import deque
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -823,6 +824,19 @@ def _validate_mechanism_proposed_change(family_name: str, raw_thesis: dict[str, 
         raise ValueError(f"unsupported config key(s) for {family_name}: {', '.join(invalid)}")
 
 
+def _validate_mechanism_dedupe(raw_thesis: dict[str, Any], prior_theses: Any) -> None:
+    proposed_change = raw_thesis.get("proposed_change")
+    if not isinstance(proposed_change, dict) or not proposed_change or not prior_theses:
+        return
+    from thesis_validator import _detect_config_key_overlap, _detect_neighboring_threshold
+
+    thesis_view = SimpleNamespace(config_changes=proposed_change)
+    for detector in (_detect_neighboring_threshold, _detect_config_key_overlap):
+        signal = detector(thesis_view, prior_theses)
+        if signal is not None:
+            raise ValueError(signal.summary)
+
+
 def _write_registered_predictions(
     round_root: Path,
     thesis_id: str,
@@ -1054,6 +1068,7 @@ def _try_one_validation_attempt(
             research_round,
             attempt,
             conductor_result,
+            prior_theses,
         )
     return _try_legacy_validation_attempt(
         controller,
@@ -1123,6 +1138,7 @@ def _try_mechanism_validation_attempt(
     research_round: int,
     attempt: int,
     conductor_result: ConductorResult,
+    prior_theses: Any,
 ) -> tuple[dict[str, Any] | None, str | None, str]:
     """Validate, screen, compile, and dispatch a structured mechanism proposal."""
 
@@ -1180,6 +1196,7 @@ def _try_mechanism_validation_attempt(
 
     try:
         _validate_mechanism_proposed_change(controller.family.name, raw_thesis)
+        _validate_mechanism_dedupe(raw_thesis, prior_theses)
     except ValueError as exc:
         _log_validation_rejection(
             controller,

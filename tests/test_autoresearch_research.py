@@ -1426,6 +1426,48 @@ def test_mechanism_proposal_retry_revalidates_schema_before_screening(
         assert conn.execute("SELECT COUNT(*) FROM screenings").fetchone()[0] == 0
 
 
+def test_mechanism_proposal_rejects_neighboring_prior_config_change_before_screening(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    _write_screening_feature_table(
+        tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
+    )
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades might be the actual source of edge.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease", "predicted": 80},
+                ],
+            },
+            reasoning="proposal from parsed retry path",
+        ),
+        prior_theses=[{"thesis_id": "ema-prior-neighbor", "config_changes": {"ema_length": 5}}],
+    )
+
+    assert result is None
+    assert stage == "stage_1"
+    assert retry_feedback is not None
+    assert "Neighboring threshold" in retry_feedback
+    with sqlite3.connect(controller.backtest_run_db.path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM screenings").fetchone()[0] == 0
+
+
 def test_mechanism_proposal_compiles_under_runtime_root_when_code_root_is_separate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
