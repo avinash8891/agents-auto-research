@@ -18,6 +18,8 @@ from screening import ScreeningResult
 
 log = logging.getLogger(__name__)
 
+CORPUS_RECENT_ROUNDS = 10
+
 
 class Corpus(BaseModel):
     family: str
@@ -26,6 +28,8 @@ class Corpus(BaseModel):
     residual_summary: list[dict] = Field(default_factory=list)
     residual_stats: dict = Field(default_factory=dict)
     screening_history: list[ScreeningResult] = Field(default_factory=list)
+    screening_history_omitted_count: int = 0
+    screening_history_omitted_verdict_counts: dict[str, int] = Field(default_factory=dict)
     harvest_verdicts: list[dict] = Field(default_factory=list)
     cross_family: list[CausalFactor] = Field(default_factory=list)
     rejection_feedback: str | None = None
@@ -46,13 +50,25 @@ def build_corpus(
     model = CausalModelStore(runtime_root=runtime_root, code_root=code_root).load(family)
     features = _load_round_feature_table(runtime_root, round_number, job=job)
     residual_summary = _residual_summary(model, features) if features is not None else []
+    min_history_round = max(0, round_number - CORPUS_RECENT_ROUNDS + 1)
+    omitted_screenings = _load_screening_omission_summary(
+        runtime_root, family, min_history_round, job=job
+    )
     return Corpus(
         family=family,
         round_number=round_number,
         model=model,
         residual_summary=residual_summary,
         residual_stats=_residual_stats(residual_summary),
-        screening_history=_load_screening_history(runtime_root, family, round_number, job=job),
+        screening_history=_load_screening_history(
+            runtime_root,
+            family,
+            round_number,
+            min_round=min_history_round,
+            job=job,
+        ),
+        screening_history_omitted_count=sum(omitted_screenings.values()),
+        screening_history_omitted_verdict_counts=omitted_screenings,
         harvest_verdicts=_load_harvest_verdicts(runtime_root, round_number, job=job),
         cross_family=_load_cross_family_factors(runtime_root, family),
         rejection_feedback=_load_rejection_feedback(runtime_root, round_number, job=job),
@@ -91,6 +107,17 @@ def render_corpus(corpus: Corpus) -> str:
 
     lines.extend(["", "## Screening History"])
     if corpus.screening_history:
+        if corpus.screening_history_omitted_count:
+            verdict_counts = ", ".join(
+                f"{key}={value}"
+                for key, value in sorted(corpus.screening_history_omitted_verdict_counts.items())
+            )
+            lines.extend(
+                [
+                    f"- omitted_older_screening_rows: {corpus.screening_history_omitted_count}",
+                    f"- omitted_older_screening_verdict_counts: {verdict_counts}",
+                ]
+            )
         for screening in corpus.screening_history:
             lines.extend(
                 [
@@ -201,7 +228,12 @@ def _residual_stats(summary: list[dict]) -> dict:
 
 
 def _load_screening_history(
-    runtime_root: Path, family: str, round_number: int, *, job: int | None = None
+    runtime_root: Path,
+    family: str,
+    round_number: int,
+    *,
+    min_round: int | None = None,
+    job: int | None = None,
 ) -> list[ScreeningResult]:
     results: list[ScreeningResult] = []
     for db_path in sorted(runtime_root.resolve().glob(f"{family}_backtest_runs.db")):
@@ -218,6 +250,9 @@ def _load_screening_history(
                 base_loss_rate_select = "base_loss_rate" if "base_loss_rate" in columns else "NULL"
                 where = "round_number <= ?"
                 params: list[int] = [round_number]
+                if min_round is not None:
+                    where += " AND round_number >= ?"
+                    params.append(min_round)
                 if job is not None:
                     where += " AND job_id = ?"
                     params.append(job)
@@ -260,6 +295,46 @@ def _load_screening_history(
                 )
             )
     return results
+
+
+def _load_screening_omission_summary(
+    runtime_root: Path,
+    family: str,
+    min_round: int,
+    *,
+    job: int | None = None,
+) -> dict[str, int]:
+    if min_round <= 0:
+        return {}
+    counts: dict[str, int] = {}
+    for db_path in sorted(runtime_root.resolve().glob(f"{family}_backtest_runs.db")):
+        try:
+            with sqlite3.connect(db_path) as conn:
+                columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(screenings)").fetchall()
+                }
+                if job is not None and "job_id" not in columns:
+                    continue
+                where = "round_number < ?"
+                params: list[int] = [min_round]
+                if job is not None:
+                    where += " AND job_id = ?"
+                    params.append(job)
+                rows = conn.execute(
+                    f"""
+                    SELECT verdict, COUNT(*)
+                    FROM screenings
+                    WHERE {where}
+                    GROUP BY verdict
+                    ORDER BY verdict
+                    """,
+                    params,
+                ).fetchall()
+        except sqlite3.Error:
+            continue
+        for verdict, count in rows:
+            counts[str(verdict)] = counts.get(str(verdict), 0) + int(count)
+    return counts
 
 
 def _load_harvest_verdicts(
