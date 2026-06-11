@@ -211,8 +211,7 @@ def evaluate_effect(
 
 
 def _lower_is_better_metric(metric: str) -> bool:
-    normalized = metric.lower()
-    return any(token in normalized for token in ("drawdown", "loss", "risk", "cost"))
+    return metric.lower() in LOWER_IS_BETTER
 
 
 def evaluate_disqualifier(

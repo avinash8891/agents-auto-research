@@ -76,6 +76,24 @@ def test_not_worse_than_max_drawdown_keeps_lower_is_better_direction() -> None:
     )
 
 
+def test_not_worse_than_win_loss_ratio_is_not_treated_as_lower_is_better() -> None:
+    effect = ExpectedEffect(
+        metric="win_loss_ratio",
+        direction="not_worse_than",
+        threshold=10.0,
+        rationale="Win/loss ratio should not fall materially.",
+    )
+
+    assert (
+        evaluate_effect(
+            effect,
+            baseline={"win_loss_ratio": 2.0},
+            candidate={"win_loss_ratio": 2.3},
+        )
+        is True
+    )
+
+
 def _registered_predictions(tmp_path, predictions: list[dict]) -> object:
     path = tmp_path / "registered_predictions.json"
     path.write_text(
