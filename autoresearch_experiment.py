@@ -52,6 +52,7 @@ from causal_harvest import (
     is_registered_prediction_retest_action,
     load_runtime_config_contents,
     request_registered_prediction_retest,
+    retest_baseline_metrics,
     write_feature_table_artifact,
     write_harvest_verdict_artifact,
 )
@@ -1398,6 +1399,11 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             run_output_dir,
             metric,
             details,
+            baseline_override=(
+                retest_baseline_metrics(controller, state, run_output_dir)
+                if is_registered_prediction_retest_action(state)
+                else None
+            ),
         )
         retest_request: RetestRequested | None = None
         if registered_verdict is not None:

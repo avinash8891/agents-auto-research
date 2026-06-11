@@ -129,6 +129,14 @@ def load_feature_table(round_root: Path) -> pd.DataFrame:
 
 
 def load_regime_labels() -> pd.DataFrame:
+    """Load regime labels exported by the regime-detection repo.
+
+    Contract: each row labels date D using day D's own (full-session) data —
+    the parquet must NOT be pre-lagged. The feature table applies the
+    one-trading-day lag itself at join time (`_prior_regime_record` joins the
+    latest label strictly BEFORE the entry day). A pre-lagged parquet would be
+    double-lagged: safe against look-ahead but one day staler than intended.
+    """
     expected = default_data_root() / "regime_labels.parquet"
     if not expected.exists():
         raise FileNotFoundError(f"Missing regime labels file: {expected}")

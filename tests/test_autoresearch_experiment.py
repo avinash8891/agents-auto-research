@@ -2010,6 +2010,76 @@ def test_run_experiment_forces_registered_inconclusive_after_retest_once(
     assert "forced_after_retest" in updated_model.factors[0].lesson
 
 
+def test_retest_verdict_uses_baseline_rerun_over_extended_range(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 25, "profit_factor": 2.01},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(
+        tmp_path,
+        controller,
+        selected_config_name="selected_config_retest.json",
+    )
+    round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
+    controller.backtest_run_db.add_from_sqlite_fields(
+        run_id="run-baseline",
+        thesis_id="baseline",
+        config_path="runtime/jobs/job-6/research/round-0-baseline/selected_config.json",
+        runtime_config={"validation_start": "2020-01-01", "validation_end": "2023-12-31"},
+        code_commit="abc1234",
+        data_hash="data",
+        metrics={"profit_factor": 2.0, "trade_count": 25},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="supported",
+        verdict_summary="supported",
+        family="ema",
+        job_id=6,
+        primary_metric_name="profit_factor",
+        primary_metric_value=2.0,
+        research_round_id="job-6-round-0",
+        research_round_number=0,
+        is_baseline=True,
+    )
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "registered_prediction_retest",
+            "registered_prediction_retest": {
+                "attempt": 1,
+                "original_validation_end": "2023-12-31",
+                "validation_end": "2024-09-30",
+            },
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    rerun_config = json.loads((round_root / "baseline_retest" / "config.json").read_text())
+    # The comparison baseline is re-run over the SAME extended range as the
+    # retest candidate, not the original checkpoint range.
+    assert rerun_config["validation_end"] == "2024-09-30"
+    harvest = json.loads((round_root / "harvest_verdict.json").read_text())
+    baselines = {row["metric"]: row["baseline"] for row in harvest["registered_predictions"]}
+    # 2.01 is the rerun's value; the original checkpoint baseline was 2.0.
+    assert baselines["profit_factor"] == pytest.approx(2.01)
+
+
 def test_run_experiment_writes_feature_table_artifact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

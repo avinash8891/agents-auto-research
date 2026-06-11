@@ -107,6 +107,8 @@ def evaluate_registered_predictions(
     run_output_dir: Path,
     metric: float,
     details: dict[str, Any],
+    *,
+    baseline_override: dict[str, Any] | None = None,
 ) -> Any | None:
     registered_path = run_output_dir.parent / "registered_predictions.json"
     if not registered_path.exists():
@@ -122,10 +124,68 @@ def evaluate_registered_predictions(
     candidate_metrics[primary_metric_name] = metric
     return evaluate_predictions(
         registered_path,
-        baseline=_baseline_metrics_from_first_result(controller),
+        baseline=baseline_override or _baseline_metrics_from_first_result(controller),
         candidate=candidate_metrics,
         config=_family_base_config(controller),
     )
+
+
+def retest_baseline_metrics(
+    controller: "AutoresearchController",
+    state: dict[str, Any],
+    run_output_dir: Path,
+) -> dict[str, Any] | None:
+    """Re-run the baseline over the retest's extended validation range.
+
+    A retest candidate runs on [validation_start, extended_end] while the
+    checkpoint baseline was measured on the original range — count metrics
+    like trade_count would pass their direction checks mechanically on any
+    extension. A range-matched baseline keeps the comparison honest.
+
+    Returns None (caller falls back to the checkpoint baseline) when no
+    baseline run exists or the rerun fails; the bias risk is logged loudly.
+    """
+    next_action = state.get("next_action") or {}
+    metadata = next_action.get("registered_prediction_retest") or {}
+    extended_end = str(metadata.get("validation_end") or "")
+    if not extended_end:
+        return None
+    records = controller.backtest_run_db.all()
+    baselines = [
+        record for record in records if getattr(record, "is_baseline", False) and record.accepted
+    ]
+    if not baselines:
+        log.error(
+            "retest baseline rerun skipped: no accepted baseline run in DB "
+            "| falling back to checkpoint baseline; count-metric directions may be inflated"
+        )
+        return None
+    baseline_record = baselines[-1]
+    config = dict(baseline_record.runtime_config)
+    config["validation_end"] = extended_end
+    output_dir = run_output_dir.parent / "baseline_retest"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config_path = output_dir / "config.json"
+    write_json_atomic(config_path, config)
+    command = controller.family.benchmark_command(str(config_path), output_dir=str(output_dir))
+    code, output = controller.run_command(command)
+    if code != 0:
+        log.error(
+            "retest baseline rerun failed exit=%s "
+            "| falling back to checkpoint baseline; count-metric directions may be inflated",
+            code,
+        )
+        return None
+    metrics = _flatten_metrics(controller.parse_benchmark_details(output))
+    primary_metric_name = (
+        controller.primary_metric_name()
+        if hasattr(controller, "primary_metric_name")
+        else "profit_factor"
+    )
+    parsed = controller.parse_metric(output, name=primary_metric_name)
+    if parsed is not None:
+        metrics[primary_metric_name] = parsed
+    return metrics
 
 
 def attach_harvest_lesson(
@@ -378,7 +438,9 @@ def apply_registered_verdict_to_causal_factor(
     if not matched_live:
         live_factors.append(updated_pending_factor)
     merged_history = list(live.accuracy_history)
-    merged_history.extend(point for point in pending.accuracy_history if point not in merged_history)
+    merged_history.extend(
+        point for point in pending.accuracy_history if point not in merged_history
+    )
     store.save(
         live.model_copy(
             update={
