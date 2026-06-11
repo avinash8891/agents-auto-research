@@ -1871,6 +1871,50 @@ def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusiv
     assert retest_payload["validation_end"] == "2024-09-30"
 
 
+def test_lesson_synthesis_skipped_when_retest_scheduled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    monkeypatch.setenv("AUTORESEARCH_ENABLE_HARVEST_LLM_LESSON", "1")
+    lesson_calls: list[dict] = []
+
+    def _fake_generate(**kwargs: object) -> str:
+        lesson_calls.append(dict(kwargs))
+        return "llm lesson"
+
+    monkeypatch.setattr("causal_harvest._generate_harvest_lesson", _fake_generate)
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 25, "profit_factor": 2.01},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(tmp_path, controller)
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    persisted = controller.read_state()
+    assert persisted["next_action"]["source"] == "registered_prediction_retest"
+    # The verdict is heading to a retest: the paid lesson call must not run,
+    # because the retest outcome overwrites the lesson anyway.
+    assert lesson_calls == []
+
+
 def test_request_registered_prediction_retest_returns_explicit_transition_without_sentinel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
