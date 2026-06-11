@@ -11,11 +11,14 @@ import yaml
 
 from autoresearch_artifacts import serialize_artifact_path
 from autoresearch_constants import research_engine_retest_extension_months
+from autoresearch_logging import get_logger
 from autoresearch_paths import resolve_config_path
 from causal_model import CausalModelStore
 from feature_table import FeatureTableArtifact
 from persistence_utils import write_json_atomic
 from research_types import CausalModel
+
+log = get_logger(__name__)
 
 if TYPE_CHECKING:
     from autoresearch_controller import AutoresearchController
@@ -59,7 +62,7 @@ def write_feature_table_artifact(
     trades_file = str(details.get("trades_file") or "")
     if not trades_file:
         return
-    runtime_config = _load_runtime_config_contents(controller, config)
+    runtime_config = load_runtime_config_contents(controller, config)
     if not runtime_config.get("data_universe"):
         return
 
@@ -248,7 +251,7 @@ def _execution_root(controller: "AutoresearchController") -> Path:
     return getattr(ctx, "execution_root", None) or controller.root
 
 
-def _load_runtime_config_contents(
+def load_runtime_config_contents(
     controller: "AutoresearchController",
     config: str,
 ) -> dict[str, Any]:
@@ -260,10 +263,17 @@ def _load_runtime_config_contents(
     )
     if not config_path.exists():
         return {}
-    if config_path.suffix in (".yaml", ".yml"):
-        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    else:
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    try:
+        if config_path.suffix in (".yaml", ".yml"):
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        else:
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        log.error(
+            f"CONFIG_READ error config={config}: {exc} "
+            f"| hint=the config file exists but cannot be read"
+        )
+        raise
     if isinstance(raw, dict) and "runtime_config" in raw:
         runtime = raw["runtime_config"]
         return runtime if isinstance(runtime, dict) else {}
@@ -333,13 +343,15 @@ def _load_strategy_events(value: Any) -> list[dict[str, Any]]:
 
 
 def _flatten_metrics(details: dict[str, Any]) -> dict[str, Any]:
-    metrics = dict(details)
-    nested = details.get("metrics")
-    if isinstance(nested, dict):
-        metrics.update(nested)
+    metrics: dict[str, Any] = {}
     train_metrics = details.get("train_metrics")
     if isinstance(train_metrics, dict):
         metrics.update(train_metrics)
+    nested = details.get("metrics")
+    if isinstance(nested, dict):
+        metrics.update(nested)
+    if not metrics:
+        return dict(details)
     return metrics
 
 
