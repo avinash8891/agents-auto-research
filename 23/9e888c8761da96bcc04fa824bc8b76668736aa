@@ -1,0 +1,22 @@
+causal_harvest.py
+  s_b825041d159022::t_a043cdf6311256 65
+  s_b825041d159022::t_481a7af4261146 254,266-276
+  s_b825041d159022::t_a9038d5eedd0d1 14,21
+  s_b825041d159022::t_bc12ea4652ab78 346,350-354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "239e888c8761da96bcc04fa824bc8b76668736aa",
+  "prompts": {},
+  "sessions": {
+    "s_b825041d159022": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d41c7810-f5bb-4d4b-82a0-3e7257ac3d38",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
