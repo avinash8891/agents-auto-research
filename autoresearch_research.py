@@ -1105,7 +1105,11 @@ def _try_mechanism_validation_attempt(
     raw_thesis, job_id, research_round_id, attempt_number, thesis_id = _init_attempt(
         controller, research_round, attempt, conductor_result
     )
-    if require_analyst_tool and "analyze_trades" not in (conductor_result.tools_called or set()):
+    if (
+        require_analyst_tool
+        and conductor_result.tools_called is not None
+        and "analyze_trades" not in conductor_result.tools_called
+    ):
         reason = "trades-backed mechanism proposals must call analyze_trades before validation"
         _log_validation_rejection(
             controller,

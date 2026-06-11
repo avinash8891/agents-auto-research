@@ -189,6 +189,7 @@ def test_conductor_exposes_analyst_tool_when_trades_are_available(
     tools = captured["tools"]
     assert isinstance(tools, list)
     assert len(tools) == 1
+    assert tools[0].name == "analyze_trades"
 
 
 def test_conductor_accepts_structured_final_output(

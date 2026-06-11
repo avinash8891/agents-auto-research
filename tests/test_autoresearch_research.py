@@ -1309,6 +1309,36 @@ def test_mechanism_validation_requires_analyst_tool_when_trades_exist(tmp_path: 
     assert "must call analyze_trades" in retry_feedback
 
 
+def test_mechanism_validation_skips_analyst_gate_when_tools_unobserved(tmp_path: Path) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "Gap-down entries explain residual losses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up entries may explain residual wins.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+            },
+            reasoning="legacy conductor result without tool telemetry",
+        ),
+        prior_theses=[],
+        require_analyst_tool=True,
+    )
+
+    assert result is None
+    assert stage == "stage_1"
+    assert retry_feedback is not None
+    assert "predictions" in retry_feedback
+
+
 def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
