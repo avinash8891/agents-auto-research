@@ -14,7 +14,6 @@ from walkforward import (
     build_windows,
     evaluate_walkforward,
     run_walkforward_queue,
-    walkforward_config,
 )
 
 
@@ -511,14 +510,3 @@ def test_run_walkforward_queue_skips_candidates_without_windows(
     assert commands == []
     assert not (tmp_path / "walkforward" / "thesis-001.json").exists()
     assert written_states[-1]["walkforward_status"] == "completed"
-
-
-def test_walkforward_config_reads_nested_defaults() -> None:
-    config = {"research_engine": {"walkforward": {"survival_pct": 0.75}}}
-
-    assert walkforward_config(config) == {
-        "train_months": 6,
-        "test_months": 3,
-        "step_months": 3,
-        "survival_pct": 0.75,
-    }

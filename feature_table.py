@@ -11,39 +11,9 @@ from autoresearch_runtime_paths import research_round_root
 from backtest.data_universe import default_data_root
 from feature_table_extractors import family_entry_features
 
-ENTRY_TIME_COLUMNS = frozenset(
-    {
-        "trade_id",
-        "symbol",
-        "side",
-        "entry_ts",
-        "time_of_day_min",
-        "day_of_week",
-        "bars_since_open",
-        "gap_pct",
-        "prior_day_range_pct",
-        "overnight_move_pct",
-        "or_width_pctile",
-        "dist_to_ema_pct",
-        "vol_pctile_20d",
-        "regime_label",
-        "stop_distance_pct",
-        "entry_bar_range_pct",
-    }
-)
-
-OUTCOME_COLUMNS = frozenset(
-    {
-        "out_pnl",
-        "out_pnl_pct",
-        "out_mae",
-        "out_mfe",
-        "out_exit_reason",
-        "out_hold_bars",
-        "out_is_loss",
-    }
-)
-
+# Ordered source of truth for the feature-table schema. Outcome columns are the
+# "out_"-prefixed ones; entry-time columns are the rest. The two frozensets below
+# are derived so a new column is added in exactly one place.
 _FEATURE_COLUMNS = [
     "trade_id",
     "symbol",
@@ -69,6 +39,9 @@ _FEATURE_COLUMNS = [
     "out_hold_bars",
     "out_is_loss",
 ]
+
+OUTCOME_COLUMNS = frozenset(c for c in _FEATURE_COLUMNS if c.startswith("out_"))
+ENTRY_TIME_COLUMNS = frozenset(_FEATURE_COLUMNS) - OUTCOME_COLUMNS
 
 
 @dataclass(frozen=True)

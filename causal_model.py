@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -248,22 +249,17 @@ def _fit_naive_bayes(
 
 def _predict_with_fitted(fitted: _FittedNaiveBayes, features: pd.DataFrame) -> pd.Series:
     flags = _factor_flags(features, fitted.factors)
-    probabilities: list[float] = []
-    for index in features.index:
-        log_loss = math.log(fitted.class_priors["loss"])
-        log_win = math.log(fitted.class_priors["win"])
-        for factor in fitted.factors:
-            likelihood = fitted.factor_likelihoods[factor.factor_id]
-            flagged = bool(flags[factor.factor_id].loc[index])
-            loss_prob = likelihood["p_flag_given_loss"]
-            win_prob = likelihood["p_flag_given_win"]
-            if flagged:
-                log_loss += math.log(loss_prob)
-                log_win += math.log(win_prob)
-            else:
-                log_loss += math.log(1.0 - loss_prob)
-                log_win += math.log(1.0 - win_prob)
-        probabilities.append(_normalize_binary_log_prob(log_loss, log_win))
+    row_count = len(features)
+    log_loss = np.full(row_count, math.log(fitted.class_priors["loss"]), dtype=float)
+    log_win = np.full(row_count, math.log(fitted.class_priors["win"]), dtype=float)
+    for factor in fitted.factors:
+        likelihood = fitted.factor_likelihoods[factor.factor_id]
+        flagged = flags[factor.factor_id].to_numpy(dtype=bool, copy=False)
+        loss_prob = likelihood["p_flag_given_loss"]
+        win_prob = likelihood["p_flag_given_win"]
+        log_loss += np.where(flagged, math.log(loss_prob), math.log(1.0 - loss_prob))
+        log_win += np.where(flagged, math.log(win_prob), math.log(1.0 - win_prob))
+    probabilities = _normalize_binary_log_prob_array(log_loss, log_win)
     return pd.Series(probabilities, index=features.index, name="p_loss")
 
 
@@ -314,17 +310,12 @@ def _normalize_binary_log_prob(log_loss: float, log_win: float) -> float:
     return float(loss / (loss + win))
 
 
-def _model_path(family: str) -> Path:
-    return CausalModelStore.default().model_path(family)
+def _normalize_binary_log_prob_array(log_loss: np.ndarray, log_win: np.ndarray) -> np.ndarray:
+    max_log = np.maximum(log_loss, log_win)
+    loss = np.exp(log_loss - max_log)
+    win = np.exp(log_win - max_log)
+    return loss / (loss + win)
 
 
 def _holdout_start_for_family(family: str) -> str:
     return CausalModelStore.default()._holdout_start_for_family(family)
-
-
-def _family_validation_bounds(family: str) -> tuple[pd.Timestamp, pd.Timestamp]:
-    return CausalModelStore.default()._family_validation_bounds(family)
-
-
-def _family_config(family: str) -> dict:
-    return CausalModelStore.default()._family_config(family)

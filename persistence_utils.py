@@ -9,9 +9,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 
 def utc_now_iso8601() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def read_config_payload(path: Path) -> Any:
+    """Load a config file, dispatching on suffix: YAML for .yaml/.yml, else JSON."""
+    text = path.read_text(encoding="utf-8")
+    if path.suffix in (".yaml", ".yml"):
+        return yaml.safe_load(text)
+    return json.loads(text)
 
 
 def json_dumps_strict(payload: Any, *, indent: int = 2) -> str:

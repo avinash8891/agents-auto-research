@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -126,6 +128,32 @@ def _garbage_factor() -> CausalFactor:
         evidence_rounds=[1],
         status="candidate",
     )
+
+
+def _large_feature_table(row_count: int = 20_000, factor_count: int = 16) -> pd.DataFrame:
+    rows = {
+        "trade_id": [f"trade-{index}" for index in range(row_count)],
+        "entry_ts": pd.date_range("2020-01-01", periods=row_count, freq="min", tz="UTC"),
+        "out_is_loss": [(index % 3) == 0 for index in range(row_count)],
+        "out_pnl": [float((index % 11) - 5 or 1) for index in range(row_count)],
+    }
+    for factor_index in range(factor_count):
+        rows[f"x{factor_index}"] = [(index + factor_index) % 17 for index in range(row_count)]
+    return pd.DataFrame(rows)
+
+
+def _large_factors(factor_count: int = 16) -> list[CausalFactor]:
+    return [
+        CausalFactor(
+            factor_id=f"f{factor_index}",
+            story="Synthetic factor for prediction vectorization coverage.",
+            rule=f"x{factor_index} < {factor_index % 17}",
+            direction="loss",
+            evidence_rounds=[1],
+            status="candidate",
+        )
+        for factor_index in range(factor_count)
+    ]
 
 
 def test_causal_factor_and_model_schema_match_spec() -> None:
@@ -398,6 +426,60 @@ def test_causal_model_accepts_string_literal_rule_values() -> None:
     predictions = predict(model, _feature_table())
 
     assert predictions.loc[5] > predictions.loc[6]
+
+
+def test_predict_vectorizes_large_naive_bayes_scoring_without_changing_probabilities() -> None:
+    table = _large_feature_table()
+    factors = _large_factors()
+    model = CausalModel(family="ema", version=1, factors=factors, accuracy_history=[])
+
+    started_at = time.perf_counter()
+    predictions = predict(model, table)
+    duration = time.perf_counter() - started_at
+
+    assert duration < 1.0
+    assert predictions.index.equals(table.index)
+    assert not predictions.isna().any()
+    expected = _reference_naive_bayes_probabilities(
+        table,
+        factors,
+        family=model.family,
+        rows=[0, 1, 17, 997, 19_999],
+    )
+    for index, probability in expected.items():
+        assert predictions.loc[index] == pytest.approx(probability)
+
+
+def _reference_naive_bayes_probabilities(
+    table: pd.DataFrame,
+    factors: list[CausalFactor],
+    *,
+    family: str,
+    rows: list[int],
+) -> dict[int, float]:
+    train = ~holdout_mask(table, family=family)
+    y_train = table.loc[train, "out_is_loss"].astype(bool)
+    loss_count = int(y_train.sum())
+    win_count = int((~y_train).sum())
+    train_count = int(len(y_train))
+    log_loss_prior = math.log((loss_count + 1.0) / (train_count + 2.0))
+    log_win_prior = math.log((win_count + 1.0) / (train_count + 2.0))
+    expected: dict[int, float] = {}
+    for index in rows:
+        log_loss = log_loss_prior
+        log_win = log_win_prior
+        for factor_index, factor in enumerate(factors):
+            flag = table.loc[index, f"x{factor_index}"] < factor_index % 17
+            train_flags = table.loc[train, f"x{factor_index}"] < factor_index % 17
+            p_loss = (int(train_flags[y_train].sum()) + 1.0) / (loss_count + 2.0)
+            p_win = (int(train_flags[~y_train].sum()) + 1.0) / (win_count + 2.0)
+            log_loss += math.log(p_loss if flag else 1.0 - p_loss)
+            log_win += math.log(p_win if flag else 1.0 - p_win)
+        max_log = max(log_loss, log_win)
+        loss = math.exp(log_loss - max_log)
+        win = math.exp(log_win - max_log)
+        expected[index] = float(loss / (loss + win))
+    return expected
 
 
 def test_causal_model_rejects_duplicate_factor_ids() -> None:

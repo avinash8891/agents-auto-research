@@ -59,10 +59,6 @@ def test_runtime_context_resolves_job_scoped_paths(tmp_path: Path) -> None:
     assert ctx.job_runtime_root(7) == ctx.jobs_root / "job-7"
     assert ctx.research_dir(7) == ctx.jobs_root / "job-7" / "research"
     assert ctx.builder_requests_dir(7) == ctx.jobs_root / "job-7" / "builder-requests"
-    assert (
-        ctx.research_round_root(7, 0) == ctx.jobs_root / "job-7" / "research" / "round-0-baseline"
-    )
-    assert ctx.research_round_root(7, 3) == ctx.jobs_root / "job-7" / "research" / "round-3"
 
 
 def test_iter_family_backtest_db_paths_prefers_runtime_root_and_filters_family(

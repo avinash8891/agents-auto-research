@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import pandas as pd
-import yaml
 
 from autoresearch_constants import (
     research_engine_walkforward_step_months,
@@ -19,7 +18,7 @@ from autoresearch_constants import (
 from autoresearch_paths import resolve_config_path
 from causal_model import CausalModelStore
 from experiment_evaluator import _direction_passed as _registered_direction_passed
-from persistence_utils import write_json_atomic
+from persistence_utils import read_config_payload, write_json_atomic
 
 
 @dataclass(frozen=True)
@@ -140,6 +139,7 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
         and _registered_predictions_path(controller, record).exists()
     ]
     reports: list[dict[str, Any]] = []
+    baseline_config = _record_runtime_config(controller, baseline)
     try:
         for record in sorted(candidates, key=lambda item: item.research_round_number):
             predictions = _load_registered_predictions(
@@ -148,7 +148,6 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
             if not predictions:
                 continue
             candidate_config = _record_runtime_config(controller, record)
-            baseline_config = _record_runtime_config(controller, baseline)
             config_for_tunables = dict(baseline_config)
             config_for_tunables.update(candidate_config)
             start, end = _walkforward_range(candidate_config, baseline_config)
@@ -218,15 +217,6 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
     controller.write_state(next_state)
     controller.write_current_md(next_state, controller.read_results())
     return 0
-
-
-def walkforward_config(config: dict[str, Any]) -> dict[str, int | float]:
-    return {
-        "train_months": research_engine_walkforward_train_months(config),
-        "test_months": research_engine_walkforward_test_months(config),
-        "step_months": research_engine_walkforward_step_months(config),
-        "survival_pct": research_engine_walkforward_survival_pct(config),
-    }
 
 
 def _prediction_result(
@@ -324,7 +314,7 @@ def _load_registered_predictions(path: Path) -> list[dict[str, Any]]:
 def _record_runtime_config(controller: Any, record: Any) -> dict[str, Any]:
     path = _resolve_record_config_path(controller, record)
     if path.exists():
-        payload = _read_config(path)
+        payload = read_config_payload(path)
         if isinstance(payload, dict):
             runtime_config = payload.get("runtime_config")
             if isinstance(runtime_config, dict):
@@ -340,12 +330,6 @@ def _resolve_record_config_path(controller: Any, record: Any) -> Path:
         runtime_root=Path(controller.runtime_root),
         execution_root=getattr(getattr(controller, "ctx", None), "execution_root", None),
     )
-
-
-def _read_config(path: Path) -> Any:
-    if path.suffix in (".yaml", ".yml"):
-        return yaml.safe_load(path.read_text(encoding="utf-8"))
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _walkforward_range(

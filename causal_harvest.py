@@ -15,7 +15,7 @@ from autoresearch_logging import get_logger
 from autoresearch_paths import resolve_config_path
 from causal_model import CausalModelStore
 from feature_table import FeatureTableArtifact
-from persistence_utils import write_json_atomic
+from persistence_utils import read_config_payload, write_json_atomic
 from research_types import CausalModel
 
 log = get_logger(__name__)
@@ -381,7 +381,7 @@ def _write_extended_retest_config(
     controller: "AutoresearchController",
     config_path: Path,
 ) -> tuple[Path, dict[str, Any]]:
-    raw = _read_config_payload(config_path)
+    raw = read_config_payload(config_path)
     if not isinstance(raw, dict):
         raise ValueError(f"registered prediction retest config must be a mapping: {config_path}")
     target = raw.get("runtime_config") if isinstance(raw.get("runtime_config"), dict) else raw
@@ -420,12 +420,6 @@ def _write_extended_retest_config(
         "validation_start": shifted,
         "retest_extension_months": months,
     }
-
-
-def _read_config_payload(path: Path) -> Any:
-    if path.suffix in (".yaml", ".yml"):
-        return yaml.safe_load(path.read_text(encoding="utf-8"))
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _family_base_config(controller: "AutoresearchController") -> dict[str, Any]:

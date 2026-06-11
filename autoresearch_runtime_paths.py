@@ -71,15 +71,6 @@ class AutoresearchRuntimeContext:
     def builder_requests_dir(self, job: int) -> Path:
         return self.job_runtime_root(job) / "builder-requests"
 
-    def research_round_root(self, job: int, round_number: int) -> Path:
-        if round_number < 0:
-            raise ValueError(f"research round number must be >= 0; got {round_number}")
-        dirname = "round-0-baseline" if round_number == 0 else f"round-{round_number}"
-        return self.research_dir(job) / dirname
-
-    def research_round_backtest_root(self, job: int, round_number: int) -> Path:
-        return self.research_round_root(job, round_number) / "backtest"
-
 
 def job_runtime_root(root: Path, job: int) -> Path:
     """Return the artifact root for one autoresearch job."""
