@@ -1558,6 +1558,7 @@ def _thesis_quality_dimension_scores(thesis_meta: dict[str, Any]) -> dict[str, f
 def _classify_round_outcome(result: dict[str, Any]) -> str:
     from eval_metrics import (
         OUTCOME_COMPILED,
+        OUTCOME_COMPLETED,
         OUTCOME_CONDUCTOR_ERROR,
         OUTCOME_NEEDS_CODE,
         OUTCOME_REJECTED,
@@ -1570,6 +1571,8 @@ def _classify_round_outcome(result: dict[str, Any]) -> str:
         return OUTCOME_NEEDS_CODE
     if result.get("generated_config"):
         return OUTCOME_COMPILED
+    if result.get("status") == "completed":
+        return OUTCOME_COMPLETED
     if result.get("validation_failure_reason"):
         return OUTCOME_REJECTED
     return OUTCOME_CONDUCTOR_ERROR
@@ -1686,7 +1689,7 @@ def _record_round_quality_and_bridges(
     validation_failure_reason = result.get("validation_failure_reason", "")
     dimension_scores = {
         k: 1.0 if k == outcome else 0.0
-        for k in ("compiled", "needs_code", "stopped", "rejected", "conductor_error")
+        for k in ("compiled", "completed", "needs_code", "stopped", "rejected", "conductor_error")
     }
     dimension_scores.update(_thesis_quality_dimension_scores(thesis_meta))
     skill_delta = _latest_model_skill_delta(controller.family.name)

@@ -29,6 +29,7 @@ OUTCOME_STOPPED = "stopped"
 OUTCOME_REJECTED = "rejected"
 OUTCOME_CONDUCTOR_ERROR = "conductor_error"
 OUTCOME_NEEDS_CODE = "needs_code"
+OUTCOME_COMPLETED = "completed"
 
 # Outcomes that count as a successful round for compiled_rate.
 COMPILED_OUTCOMES = frozenset({OUTCOME_COMPILED})

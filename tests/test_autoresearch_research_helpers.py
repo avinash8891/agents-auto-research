@@ -113,6 +113,11 @@ def test_classify_round_outcome_rejected() -> None:
     assert _classify_round_outcome(result) == "rejected"
 
 
+def test_classify_round_outcome_completed_without_config_is_completed() -> None:
+    result = {"status": "completed", "generated_config": None}
+    assert _classify_round_outcome(result) == "completed"
+
+
 def test_classify_round_outcome_default_is_conductor_error() -> None:
     result: dict = {}
     assert _classify_round_outcome(result) == "conductor_error"

@@ -104,26 +104,13 @@ def write_screenings(
     with sqlite3.connect(db_path) as conn:
         _ensure_screenings_table(conn)
         for index, result in enumerate(results, start=1):
-            screening_id = _unique_screening_id(conn, _screening_id(round_number, index, result))
-            conn.execute(
-                """
-                INSERT INTO screenings (
-                    screening_id, round_number, rule, competitor_rule, verdict,
-                    sample_count, lift, p_value, overlap_with, created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    screening_id,
-                    round_number,
-                    result.rule,
-                    competitor_rule,
-                    result.verdict,
-                    result.sample_count,
-                    result.lift,
-                    result.p_value,
-                    result.overlap_with,
-                    created_at,
-                ),
+            _insert_screening_with_retry(
+                conn,
+                base_id=_screening_id(round_number, index, result),
+                round_number=round_number,
+                result=result,
+                competitor_rule=competitor_rule,
+                created_at=created_at,
             )
         conn.commit()
 
@@ -281,16 +268,44 @@ def _screening_id(round_number: int, index: int, result: ScreeningResult) -> str
     return f"round-{round_number}:{index}:{digest}"
 
 
-def _unique_screening_id(conn: sqlite3.Connection, base_id: str) -> str:
-    candidate = base_id
-    suffix = 2
-    while (
-        conn.execute("SELECT 1 FROM screenings WHERE screening_id = ?", (candidate,)).fetchone()
-        is not None
-    ):
-        candidate = f"{base_id}:retry-{suffix}"
-        suffix += 1
-    return candidate
+def _insert_screening_with_retry(
+    conn: sqlite3.Connection,
+    *,
+    base_id: str,
+    round_number: int,
+    result: ScreeningResult,
+    competitor_rule: str | None,
+    created_at: str,
+) -> None:
+    suffix = 1
+    while True:
+        screening_id = base_id if suffix == 1 else f"{base_id}:retry-{suffix}"
+        try:
+            conn.execute(
+                """
+                INSERT INTO screenings (
+                    screening_id, round_number, rule, competitor_rule, verdict,
+                    sample_count, lift, p_value, overlap_with, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    screening_id,
+                    round_number,
+                    result.rule,
+                    competitor_rule,
+                    result.verdict,
+                    result.sample_count,
+                    result.lift,
+                    result.p_value,
+                    result.overlap_with,
+                    created_at,
+                ),
+            )
+            return
+        except sqlite3.IntegrityError as exc:
+            if "screening_id" not in str(exc):
+                raise
+            suffix += 1
 
 
 def _ensure_screenings_table(conn: sqlite3.Connection) -> None:

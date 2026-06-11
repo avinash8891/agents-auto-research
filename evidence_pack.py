@@ -43,9 +43,9 @@ def build_corpus(family: str, round_number: int, job: int | None = None) -> Corp
         residual_summary=residual_summary,
         residual_stats=_residual_stats(residual_summary),
         screening_history=_load_screening_history(family, round_number),
-        harvest_verdicts=_load_harvest_verdicts(runtime_root, round_number),
+        harvest_verdicts=_load_harvest_verdicts(runtime_root, round_number, job=job),
         cross_family=_load_cross_family_factors(runtime_root, family),
-        rejection_feedback=_load_rejection_feedback(runtime_root, round_number),
+        rejection_feedback=_load_rejection_feedback(runtime_root, round_number, job=job),
     )
 
 
@@ -232,9 +232,14 @@ def _load_screening_history(family: str, round_number: int) -> list[ScreeningRes
     return results
 
 
-def _load_harvest_verdicts(runtime_root: Path, round_number: int) -> list[dict]:
+def _load_harvest_verdicts(
+    runtime_root: Path, round_number: int, *, job: int | None = None
+) -> list[dict]:
     verdicts: list[dict] = []
-    for path in sorted(runtime_root.glob("runtime/jobs/*/research/round-*/harvest_verdict*.json")):
+    job_glob = f"job-{job}" if job is not None else "*"
+    for path in sorted(
+        runtime_root.glob(f"runtime/jobs/{job_glob}/research/round-*/harvest_verdict*.json")
+    ):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
@@ -264,9 +269,14 @@ def _load_cross_family_factors(runtime_root: Path, family: str) -> list[CausalFa
     return sorted(factors, key=lambda item: item.factor_id)
 
 
-def _load_rejection_feedback(runtime_root: Path, round_number: int) -> str | None:
+def _load_rejection_feedback(
+    runtime_root: Path, round_number: int, *, job: int | None = None
+) -> str | None:
+    job_glob = f"job-{job}" if job is not None else "*"
     candidates = sorted(
-        runtime_root.glob(f"runtime/jobs/*/research/round-{round_number}/rejection_feedback.txt")
+        runtime_root.glob(
+            f"runtime/jobs/{job_glob}/research/round-{round_number}/rejection_feedback.txt"
+        )
     )
     if not candidates:
         return None

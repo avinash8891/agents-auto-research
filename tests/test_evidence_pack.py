@@ -201,6 +201,45 @@ def test_build_corpus_feature_table_is_scoped_to_active_job(tmp_path: Path, monk
     assert "other-job" not in {row["trade_id"] for row in corpus.residual_summary}
 
 
+def test_build_corpus_harvest_verdicts_are_scoped_to_active_job(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    other_path = tmp_path / "runtime/jobs/job-2/research/round-2/harvest_verdict.json"
+    other_path.parent.mkdir(parents=True, exist_ok=True)
+    other_path.write_text(
+        """
+        {
+          "round": 2,
+          "change": "other job",
+          "registered_predictions": [],
+          "lesson": "Other job verdict must not enter this corpus."
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    corpus = build_corpus("ema", 2, job=1)
+
+    assert len(corpus.harvest_verdicts) == 1
+    assert corpus.harvest_verdicts[0]["lesson"].startswith("Gap-down rule")
+
+
+def test_build_corpus_rejection_feedback_is_scoped_to_active_job(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    own_path = tmp_path / "runtime/jobs/job-1/research/round-2/rejection_feedback.txt"
+    own_path.write_text("own job feedback", encoding="utf-8")
+    other_path = tmp_path / "runtime/jobs/job-2/research/round-2/rejection_feedback.txt"
+    other_path.parent.mkdir(parents=True, exist_ok=True)
+    other_path.write_text("other job feedback", encoding="utf-8")
+
+    corpus = build_corpus("ema", 2, job=1)
+
+    assert corpus.rejection_feedback == "own job feedback"
+
+
 def test_build_corpus_does_not_fabricate_missing_screening_rates(
     tmp_path: Path, monkeypatch
 ) -> None:

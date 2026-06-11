@@ -194,7 +194,11 @@ def _normalize_bars(bars_df: pd.DataFrame) -> pd.DataFrame:
         bars = bars.reset_index().rename(columns={bars.index.name or "index": "timestamp"})
     if "symbol" not in bars.columns:
         bars["symbol"] = "UNKNOWN"
-    timestamps = pd.to_datetime(bars["timestamp"], utc=True)
+    raw_timestamps = pd.to_datetime(bars["timestamp"])
+    if raw_timestamps.dt.tz is None:
+        timestamps = raw_timestamps.dt.tz_localize("America/New_York").dt.tz_convert("UTC")
+    else:
+        timestamps = raw_timestamps.dt.tz_convert("UTC")
     bars = bars.assign(
         timestamp=timestamps,
         date=timestamps.dt.tz_convert("America/New_York").dt.date,
@@ -276,7 +280,11 @@ def _or_width_pctile(
     for _, day_bars in symbol_bars[symbol_bars["date"] <= local_day].groupby("date", sort=True):
         local_times = day_bars["timestamp"].dt.tz_convert("America/New_York")
         minutes_since_open = (local_times.dt.hour * 60 + local_times.dt.minute) - (9 * 60 + 30)
-        opening = day_bars[(minutes_since_open >= 0) & (minutes_since_open < or_minutes)]
+        opening = day_bars[
+            (minutes_since_open >= 0)
+            & (minutes_since_open < or_minutes)
+            & ((day_bars["date"] < local_day) | (day_bars["timestamp"] <= entry_ts))
+        ]
         if opening.empty:
             daily_widths.append(np.nan)
         else:

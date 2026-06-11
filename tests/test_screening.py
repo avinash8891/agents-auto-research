@@ -191,3 +191,45 @@ def test_write_screenings_is_retry_safe_for_repeated_rule_same_round(tmp_path: P
         count = conn.execute("SELECT COUNT(*) FROM screenings").fetchone()[0]
 
     assert count == 2
+
+
+def test_write_screenings_retries_insert_after_integrity_collision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    result = screen(
+        "gap_pct < 0", "gap_pct > 0", CausalModel(family="ema", version=1), _feature_table()
+    )
+    real_connect = sqlite3.connect
+    collision_seen = False
+
+    class CollisionConnection:
+        def __init__(self, path: Path):
+            self._conn = real_connect(path)
+
+        def __enter__(self):
+            self._conn.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self._conn.__exit__(*args)
+
+        def execute(self, sql: str, params=()):
+            nonlocal collision_seen
+            if sql.lstrip().upper().startswith("INSERT INTO SCREENINGS") and not collision_seen:
+                collision_seen = True
+                raise sqlite3.IntegrityError("UNIQUE constraint failed: screenings.screening_id")
+            return self._conn.execute(sql, params)
+
+        def commit(self) -> None:
+            self._conn.commit()
+
+    monkeypatch.setattr(screening.sqlite3, "connect", CollisionConnection)
+
+    write_screenings(db.path, [result], round_number=3, competitor_rule="gap_pct > 0")
+
+    with real_connect(db.path) as conn:
+        ids = [row[0] for row in conn.execute("SELECT screening_id FROM screenings").fetchall()]
+    assert collision_seen is True
+    assert len(ids) == 1
+    assert ids[0].endswith(":retry-2")

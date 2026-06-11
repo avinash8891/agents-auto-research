@@ -282,6 +282,101 @@ def test_build_feature_table_uses_runtime_or_minutes_for_orb_width(
     assert table.loc[0, "or_width_pctile"] == 0.0
 
 
+def test_build_feature_table_orb_width_ignores_current_day_post_entry_bars(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    rows = []
+    for day, widths in [
+        ("2024-01-02", [(0, 10.0), (5, 10.0), (25, 10.0)]),
+        ("2024-01-03", [(0, 10.0), (5, 10.0), (25, 10.0)]),
+        ("2024-01-04", [(0, 2.0), (5, 2.0), (25, 100.0)]),
+    ]:
+        for minute, width in widths:
+            ts = pd.Timestamp(f"{day} 14:30:00", tz="UTC") + pd.Timedelta(minutes=minute)
+            rows.append(
+                {
+                    "timestamp": ts,
+                    "symbol": "AAA",
+                    "open": 100.0,
+                    "high": 100.0 + width,
+                    "low": 100.0,
+                    "close": 100.0,
+                    "volume": 1000,
+                }
+            )
+    bars = pd.DataFrame(rows)
+
+    table = build_feature_table(
+        _trades_df(),
+        bars,
+        events=[],
+        family="orb",
+        runtime_config={"or_minutes": 30},
+    )
+
+    assert table.loc[0, "or_width_pctile"] == 0.0
+
+
+def test_build_feature_table_localizes_naive_bars_as_new_york_to_match_naive_trades(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    bars = _bars_df()
+    naive_bars = bars.drop(columns=["timestamp"]).assign(
+        timestamp=bars["timestamp"].dt.tz_convert("America/New_York").dt.tz_localize(None)
+    )
+    trades = _trades_df().assign(entry_date=pd.Timestamp("2024-01-04 09:35:00"))
+
+    table = build_feature_table(trades, naive_bars, events=[], family="ema")
+
+    assert table.loc[0, "entry_ts"] == pd.Timestamp("2024-01-04 14:35:00", tz="UTC")
+    assert table.loc[0, "bars_since_open"] == 1
+    assert table.loc[0, "entry_bar_range_pct"] == pytest.approx((0.8 / 102.6) * 100.0)
+
+
+def test_build_feature_table_uses_naive_market_time_bars_for_orb_width(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    rows = []
+    for day, width in [
+        ("2024-01-02", 10.0),
+        ("2024-01-03", 10.0),
+        ("2024-01-04", 2.0),
+    ]:
+        for minute in [0, 5]:
+            rows.append(
+                {
+                    "timestamp": pd.Timestamp(f"{day} 09:30:00") + pd.Timedelta(minutes=minute),
+                    "symbol": "AAA",
+                    "open": 100.0,
+                    "high": 100.0 + width,
+                    "low": 100.0,
+                    "close": 100.0,
+                    "volume": 1000,
+                }
+            )
+    bars = pd.DataFrame(rows)
+    trades = _trades_df().assign(entry_date=pd.Timestamp("2024-01-04 09:35:00"))
+
+    table = build_feature_table(
+        trades,
+        bars,
+        events=[],
+        family="orb",
+        runtime_config={"or_minutes": 5},
+    )
+
+    assert table.loc[0, "or_width_pctile"] == 0.0
+
+
 def test_build_feature_table_ignores_post_entry_bar_poisoning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
