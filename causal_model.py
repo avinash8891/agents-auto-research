@@ -16,7 +16,7 @@ from causal_rule import RuleExpressionError, evaluate_entry_rule
 from persistence_utils import write_json_atomic
 from research_types import AccuracyPoint, CausalFactor, CausalModel
 
-_ACTIVE_FACTOR_STATUSES = frozenset({"candidate", "supported", "harvested"})
+_ACTIVE_FACTOR_STATUSES = frozenset({"candidate", "supported"})
 
 
 @dataclass(frozen=True)

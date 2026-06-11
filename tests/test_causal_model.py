@@ -286,22 +286,17 @@ def test_predict_scores_holdout_with_pnl_weighted_skill_over_naive() -> None:
     assert garbage_score.skill == pytest.approx(0.0)
 
 
-def test_harvested_factors_remain_active_for_prediction() -> None:
+def test_harvested_factors_do_not_contribute_to_prediction() -> None:
     table = _feature_table()
-    candidate_model = CausalModel(
-        family="ema",
-        version=1,
-        factors=[_planted_factor().model_copy(update={"status": "candidate"})],
-        accuracy_history=[],
-    )
     harvested_model = CausalModel(
         family="ema",
         version=1,
         factors=[_planted_factor().model_copy(update={"status": "harvested"})],
         accuracy_history=[],
     )
+    empty_model = CausalModel(family="ema", version=1, factors=[], accuracy_history=[])
 
-    pd.testing.assert_series_equal(predict(harvested_model, table), predict(candidate_model, table))
+    pd.testing.assert_series_equal(predict(harvested_model, table), predict(empty_model, table))
 
 
 def test_holdout_mask_uses_configured_research_engine_holdout_fraction() -> None:
