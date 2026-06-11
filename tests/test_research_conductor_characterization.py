@@ -824,6 +824,53 @@ def test_conductor_mechanism_path_accepts_structured_final_output(
     assert out.thesis["story"] == "Gap-down entries reveal loss-prone inventory."
 
 
+def test_conductor_prefers_final_output_as_over_raw_structured_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+
+    class NonCanonicalOutput:
+        def __str__(self) -> str:
+            return "not-json"
+
+    class CoercedResult(_StreamedResult):
+        def __init__(self, agent: object | None = None) -> None:
+            super().__init__("", agent, final_output=NonCanonicalOutput())
+
+        def final_output_as(self, output_type):
+            return json.dumps(
+                {
+                    "story": "Canonical SDK output should win.",
+                    "rule": "gap_pct < 0",
+                    "competitor_rule": "gap_pct > 0",
+                    "competitor_story": "Opposite gap sign explains the effect.",
+                    "actionable": False,
+                    "proposed_change": None,
+                    "predictions": None,
+                }
+            )
+
+    def _run_streamed(agent, user_prompt, max_turns, run_config):
+        return CoercedResult(agent)
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "",
+        {},
+        research_round=12,
+        family_name="ema",
+        rendered_corpus="## Corpus\n- family: ema\n",
+    )
+
+    assert out is not None
+    assert out.status == "ok"
+    assert out.thesis is not None
+    assert out.thesis["story"] == "Canonical SDK output should win."
+
+
 def test_mechanism_proposal_schema_requires_actionable_change_and_distinct_predictions() -> None:
     with pytest.raises(ValueError, match="proposed_change"):
         MechanismProposal(

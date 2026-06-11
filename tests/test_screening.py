@@ -248,3 +248,61 @@ def test_write_screenings_retries_insert_after_integrity_collision(
     assert collision_seen is True
     assert len(ids) == 1
     assert ids[0].endswith(":retry-2")
+
+
+def test_write_screenings_tolerates_concurrent_job_id_migration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "backtest_runs.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE screenings (
+                screening_id TEXT PRIMARY KEY,
+                round_number INTEGER NOT NULL,
+                rule TEXT NOT NULL,
+                competitor_rule TEXT,
+                verdict TEXT NOT NULL,
+                sample_count INTEGER NOT NULL,
+                lift REAL NOT NULL,
+                p_value REAL NOT NULL,
+                overlap_with TEXT,
+                created_at_utc TEXT NOT NULL
+            )
+            """)
+        conn.commit()
+    result = screen(
+        "gap_pct < 0", "gap_pct > 0", CausalModel(family="ema", version=1), _feature_table()
+    )
+    real_connect = sqlite3.connect
+    duplicate_seen = False
+
+    class MigrationRaceConnection:
+        def __init__(self, path: Path):
+            self._conn = real_connect(path)
+
+        def __enter__(self):
+            self._conn.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self._conn.__exit__(*args)
+
+        def execute(self, sql: str, params=()):
+            nonlocal duplicate_seen
+            if sql.strip().upper() == "ALTER TABLE SCREENINGS ADD COLUMN JOB_ID INTEGER":
+                duplicate_seen = True
+                self._conn.execute(sql)
+                raise sqlite3.OperationalError("duplicate column name: job_id")
+            return self._conn.execute(sql, params)
+
+        def commit(self) -> None:
+            self._conn.commit()
+
+    monkeypatch.setattr(screening.sqlite3, "connect", MigrationRaceConnection)
+
+    write_screenings(db_path, [result], round_number=3, competitor_rule="gap_pct > 0", job_id=7)
+
+    with real_connect(db_path) as conn:
+        rows = conn.execute("SELECT job_id, rule FROM screenings").fetchall()
+    assert duplicate_seen is True
+    assert rows == [(7, "gap_pct < 0")]

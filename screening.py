@@ -330,7 +330,11 @@ def _ensure_screenings_table(conn: sqlite3.Connection) -> None:
         """)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(screenings)").fetchall()}
     if "job_id" not in columns:
-        conn.execute("ALTER TABLE screenings ADD COLUMN job_id INTEGER")
+        try:
+            conn.execute("ALTER TABLE screenings ADD COLUMN job_id INTEGER")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_screenings_round
         ON screenings (round_number)

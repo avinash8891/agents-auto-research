@@ -999,14 +999,7 @@ async def run_research_conductor(
             )
             async for _ in result.stream_events():
                 pass
-        final_output = getattr(result, "final_output", None)
-        if isinstance(final_output, MechanismProposal):
-            result_text = final_output.model_dump_json()
-        elif isinstance(final_output, str):
-            result_text = final_output
-        elif final_output is not None:
-            result_text = json.dumps(final_output, default=str)
-        if not result_text and hasattr(result, "final_output_as"):
+        if hasattr(result, "final_output_as"):
             try:
                 coerced_output = result.final_output_as(str)
             except Exception as exc:
@@ -1019,6 +1012,14 @@ async def run_research_conductor(
                     result_text = coerced_output
                 elif coerced_output is not None:
                     result_text = json.dumps(coerced_output, default=str)
+        if not result_text:
+            final_output = getattr(result, "final_output", None)
+            if isinstance(final_output, MechanismProposal):
+                result_text = final_output.model_dump_json()
+            elif isinstance(final_output, str):
+                result_text = final_output
+            elif final_output is not None:
+                result_text = json.dumps(final_output, default=str)
 
         accumulate_agents_sdk_result_usage(
             "conductor",

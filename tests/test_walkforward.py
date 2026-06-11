@@ -11,7 +11,6 @@ from causal_model import load_model, save_model
 from experiment_evaluator import evaluate_predictions
 from research_types import CausalFactor, CausalModel
 from walkforward import (
-    _run_window_backtest,
     build_windows,
     evaluate_walkforward,
     run_walkforward_queue,
@@ -227,48 +226,6 @@ def test_walkforward_direction_rules_match_registered_prediction_evaluator(
     assert report["windows"][0]["prediction_results"][0]["direction_passed"] is True
 
 
-def test_run_window_backtest_includes_nested_train_metrics(tmp_path: Path) -> None:
-    window = build_windows("2020-01-01", "2020-10-01")[0]
-
-    class Family:
-        name = "ema"
-
-        def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
-            return f"{config_path}|{output_dir}"
-
-    class Controller:
-        runtime_root = tmp_path
-        family = Family()
-
-        def run_command(self, command: str) -> tuple[int, str]:
-            return 0, json.dumps({"profit_factor": 1.2})
-
-        def parse_metric(self, output: str, name: str = "profit_factor") -> float:
-            return float(json.loads(output)[name])
-
-        def parse_benchmark_details(self, output: str) -> dict:
-            return {
-                "metrics": {"trade_count": 30},
-                "train_metrics": {"median_expectancy": 0.42},
-            }
-
-        def primary_metric_name(self) -> str:
-            return "profit_factor"
-
-    metrics = _run_window_backtest(
-        Controller(),
-        {"validation_start": "2020-01-01", "validation_end": "2020-10-01"},
-        "thesis-001",
-        0,
-        "candidate",
-        window,
-    )
-
-    assert metrics["profit_factor"] == 1.2
-    assert metrics["trade_count"] == 30
-    assert metrics["median_expectancy"] == 0.42
-
-
 def test_run_walkforward_queue_runs_windows_and_marks_graduated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -294,7 +251,8 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
             {
                 "thesis_id": "thesis-001",
                 "predictions": [
-                    {"metric": "profit_factor", "direction": "increase", "predicted": 1.2}
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 1.2},
+                    {"metric": "median_expectancy", "direction": "increase", "predicted": 0.2},
                 ],
             }
         ),
@@ -375,8 +333,16 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
 
         def run_command(self, command: str) -> tuple[int, str]:
             commands.append(command)
-            metric = 1.2 if "/candidate" in command else 1.0
-            return 0, json.dumps({"profit_factor": metric, "trade_count": 30})
+            is_candidate = "/candidate" in command
+            metric = 1.2 if is_candidate else 1.0
+            expectancy = 0.42 if is_candidate else 0.10
+            return 0, json.dumps(
+                {
+                    "profit_factor": metric,
+                    "metrics": {"trade_count": 30},
+                    "train_metrics": {"median_expectancy": expectancy},
+                }
+            )
 
         def parse_metric(self, output: str, name: str = "profit_factor") -> float:
             return float(json.loads(output)[name])
@@ -416,6 +382,8 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
     assert len(commands) == 6
     assert graduated == 1
     assert report["graduated"] is True
+    assert report["windows"][0]["prediction_results"][1]["metric"] == "median_expectancy"
+    assert report["windows"][0]["prediction_results"][1]["direction_passed"] is True
     assert written_states[-1]["walkforward_status"] == "completed"
 
 
