@@ -384,8 +384,14 @@ def _walkforward_range(
         or baseline_config.get("holdout_end")
     )
     if not end:
-        raise ValueError("walkforward requires holdout_end or walkforward_end after validation_end")
-    end_ts = pd.Timestamp(end, tz="UTC")
+        config_for_tunables = dict(baseline_config)
+        config_for_tunables.update(candidate_config)
+        end_ts = start_ts + pd.DateOffset(
+            months=research_engine_walkforward_train_months(config_for_tunables)
+            + research_engine_walkforward_test_months(config_for_tunables)
+        )
+    else:
+        end_ts = pd.Timestamp(end, tz="UTC")
     if end_ts <= start_ts:
         raise ValueError("walkforward out-of-sample end must be after validation_end")
     return start_ts.date().isoformat(), end_ts.date().isoformat()

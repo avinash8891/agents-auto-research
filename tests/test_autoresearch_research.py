@@ -39,6 +39,7 @@ from autoresearch_research import (
     _round_number_from_artifact_path,
     _round_reflexio_facts,
     _screen_mechanism_proposal,
+    _thesis_meta_from_result,
     _try_one_validation_attempt,
     accumulate_job_usage,
     execute_research_sdk,
@@ -750,6 +751,22 @@ def test_results_to_dicts_includes_trade_analysis_subkeys_when_present() -> None
     assert out["config_changes"] == {"ema_length": 3}
     assert out["insights"] == ["metric=1.5", "decision=keep"]
     assert out["next_thesis_suggestion"] == "test ema_length=4"
+
+
+def test_thesis_meta_from_mechanism_result_persists_proposed_change_for_dedupe() -> None:
+    result = {
+        "thesis_id": "job-1-round-1-attempt-1",
+        "thesis": {
+            "story": "A smoother EMA filters weak pullback crosses.",
+            "rule": "gap_pct < 0",
+            "proposed_change": {"ema_length": 8},
+        },
+    }
+
+    out = _thesis_meta_from_result(result, "ema")
+
+    assert out["config_changes"] == {"ema_length": 8}
+    assert out["proposed_change"] == {"ema_length": 8}
 
 
 def test_results_to_dicts_uses_insight_brief_from_either_layer() -> None:

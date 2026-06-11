@@ -166,7 +166,7 @@ def _feature_row(
     symbol_bars = symbol_data.bars
     entry_pos = int(symbol_data.timestamps.searchsorted(entry_ts, side="left"))
     prior_bars = symbol_bars.iloc[:entry_pos]
-    entry_bar = prior_bars.iloc[-1] if entry_pos else pd.Series(dtype=object)
+    entry_bar = _last_bar_before(prior_bars, entry_ts)
     entry_day = entry_ts.tz_convert("America/New_York").date()
     daily = symbol_data.daily
     current_day = daily[daily["date"] == entry_day]

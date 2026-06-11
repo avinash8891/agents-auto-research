@@ -301,11 +301,6 @@ def main() -> int:
         action="store_true",
         help="also flag MCP tools that are registered but not documented in the prompt",
     )
-    parser.add_argument(
-        "--family",
-        default="ema",
-        help="strategy family to render the prompt for (default: ema)",
-    )
     args = parser.parse_args()
 
     prompt = _build_mechanism_system_prompt()

@@ -89,12 +89,18 @@ def test_walkforward_range_uses_later_holdout_start_when_present() -> None:
     assert end == "2022-07-02"
 
 
-def test_walkforward_range_requires_out_of_sample_end() -> None:
-    with pytest.raises(ValueError, match="holdout_end or walkforward_end"):
-        _walkforward_range(
-            {"validation_end": "2021-04-01"},
-            {"validation_start": "2020-01-01", "validation_end": "2021-04-01"},
-        )
+def test_walkforward_range_defaults_end_from_tunables_without_explicit_holdout_end() -> None:
+    start, end = _walkforward_range(
+        {"validation_end": "2021-04-01"},
+        {
+            "validation_start": "2020-01-01",
+            "validation_end": "2021-04-01",
+            "research_engine": {"walkforward": {"train_months": 6, "test_months": 3}},
+        },
+    )
+
+    assert start == "2021-04-02"
+    assert end == "2022-01-02"
 
 
 def test_walkforward_robust_fixture_graduates_and_writes_report(

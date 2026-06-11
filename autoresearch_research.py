@@ -1639,7 +1639,11 @@ def _thesis_meta_from_result(result: dict[str, Any], family_name: str) -> dict[s
     thesis_id = _result_thesis_id(result)
     thesis_meta = result.get("thesis")
     if isinstance(thesis_meta, dict):
-        return thesis_meta
+        normalized = dict(thesis_meta)
+        proposed_change = normalized.get("proposed_change")
+        if not normalized.get("config_changes") and isinstance(proposed_change, dict):
+            normalized["config_changes"] = dict(proposed_change)
+        return normalized
     return {
         "thesis_id": thesis_id,
         "strategy_family": family_name,
