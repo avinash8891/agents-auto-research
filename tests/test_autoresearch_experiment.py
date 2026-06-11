@@ -1784,7 +1784,9 @@ def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusiv
     assert retest_action["registered_prediction_retest"]["attempt"] == 1
     assert "_preserve_next_action_once" not in persisted
     retest_config = tmp_path / retest_action["config"]
-    assert json.loads(retest_config.read_text())["validation_start"] == "2019-04-01"
+    retest_payload = json.loads(retest_config.read_text())
+    assert retest_payload["validation_start"] == "2020-01-01"
+    assert retest_payload["validation_end"] == "2024-09-30"
 
 
 def test_request_registered_prediction_retest_returns_explicit_transition_without_sentinel(
@@ -1869,13 +1871,13 @@ def test_run_experiment_forces_registered_inconclusive_after_retest_once(
 
     assert code == 0
     record = controller.backtest_run_db.all()[0]
-    assert record.prediction_verdict == "supported"
+    assert record.prediction_verdict == "refuted"
     assert "forced_after_retest" in record.lesson
     assert controller.read_state().get("next_action", {}).get("source") != (
         "registered_prediction_retest"
     )
     updated_model = load_model("ema")
-    assert updated_model.factors[0].status == "harvested"
+    assert updated_model.factors[0].status == "refuted"
     assert "forced_after_retest" in updated_model.factors[0].lesson
 
 

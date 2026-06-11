@@ -159,14 +159,9 @@ def is_registered_prediction_retest_action(state: dict[str, Any]) -> bool:
 
 
 def force_registered_inconclusive_after_retest(verdict: Any) -> Any:
-    directions_hold = all(
-        bool(result.get("direction_passed"))
-        for result in getattr(verdict, "prediction_results", [])
-    )
-    status = "supported" if directions_hold else "refuted"
     return verdict.model_copy(
         update={
-            "status": status,
+            "status": "refuted",
             "summary": f"forced_after_retest: {verdict.summary}",
             "lesson": f"forced_after_retest: {verdict.summary}",
         }
@@ -439,12 +434,12 @@ def _write_extended_retest_config(
             f"registered prediction retest runtime_config must be a mapping: {config_path}"
         )
     family_config = _family_base_config(controller)
-    validation_start = str(
-        target.get("validation_start") or family_config.get("validation_start") or ""
+    validation_end = str(
+        target.get("validation_end") or family_config.get("validation_end") or ""
     )
-    if not validation_start:
+    if not validation_end:
         raise ValueError(
-            "registered prediction retest requires validation_start in selected config "
+            "registered prediction retest requires validation_end in selected config "
             f"or configs/{controller.family.name}_base.yaml"
         )
     config_for_tunables = dict(family_config)
@@ -453,20 +448,20 @@ def _write_extended_retest_config(
 
     import pandas as pd
 
-    start = pd.Timestamp(validation_start)
-    if start.tzinfo is None:
-        start = start.tz_localize("UTC")
+    end = pd.Timestamp(validation_end)
+    if end.tzinfo is None:
+        end = end.tz_localize("UTC")
     else:
-        start = start.tz_convert("UTC")
-    shifted = (start - pd.DateOffset(months=months)).date().isoformat()
-    target["validation_start"] = shifted
+        end = end.tz_convert("UTC")
+    extended = (end + pd.DateOffset(months=months)).date().isoformat()
+    target["validation_end"] = extended
     retest_path = config_path.with_name("selected_config_retest.json")
     write_json_atomic(retest_path, raw)
     return retest_path, {
         "attempt": 1,
         "original_config": serialize_artifact_path(config_path, controller.root),
-        "original_validation_start": validation_start,
-        "validation_start": shifted,
+        "original_validation_end": validation_end,
+        "validation_end": extended,
         "retest_extension_months": months,
     }
 
