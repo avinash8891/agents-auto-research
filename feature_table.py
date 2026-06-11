@@ -7,9 +7,16 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from autoresearch_logging import get_logger
 from autoresearch_runtime_paths import research_round_root
 from backtest.data_universe import default_data_root
 from feature_table_extractors import family_entry_features
+
+log = get_logger(__name__)
+
+# Rule I: bad external trade rows are quarantined row-by-row; above this
+# fraction the data is too corrupt to trust and the build stops loudly.
+_QUARANTINE_MAX_FRACTION = 0.01
 
 # Ordered source of truth for the feature-table schema. Outcome columns are the
 # "out_"-prefixed ones; entry-time columns are the rest. The two frozensets below
@@ -100,9 +107,11 @@ def build_feature_table(
     events: list[dict],
     family: str,
     runtime_config: dict[str, Any] | None = None,
+    quarantine_path: Path | None = None,
 ) -> pd.DataFrame:
     bars = _normalize_bars(bars_df)
     trades = trades_df.copy()
+    trades = _quarantine_nonfinite_pnl_trades(trades, quarantine_path=quarantine_path)
     event_stops = _event_stop_prices(events)
     regime_labels = load_regime_labels()
     extra_regime_columns = _extra_regime_columns(regime_labels)
@@ -137,6 +146,52 @@ def build_feature_table(
     out = _coerce_feature_dtypes(out)
     _assert_leakage_guard(out, extra_entry_columns=extra_regime_columns)
     return out
+
+
+def _quarantine_nonfinite_pnl_trades(
+    trades: pd.DataFrame, *, quarantine_path: Path | None
+) -> pd.DataFrame:
+    """Drop trade rows without a finite pnl, mirroring rule I quarantine.
+
+    Uses the same column-presence fallback chain as `_feature_row`
+    (pnl -> pnl_abs -> pnl_pct). Quarantined rows are logged and written to
+    `quarantine_path`; above _QUARANTINE_MAX_FRACTION the build stops loudly.
+    """
+    if trades.empty:
+        return trades
+    pnl_column = next(
+        (column for column in ("pnl", "pnl_abs", "pnl_pct") if column in trades.columns),
+        None,
+    )
+    if pnl_column is None:
+        finite = np.zeros(len(trades), dtype=bool)
+    else:
+        pnl = pd.to_numeric(trades[pnl_column], errors="coerce")
+        finite = np.isfinite(pnl.to_numpy(dtype=float))
+    quarantined = trades.loc[~finite]
+    if quarantined.empty:
+        return trades
+    total = len(trades)
+    if quarantine_path is not None:
+        quarantine_path.parent.mkdir(parents=True, exist_ok=True)
+        quarantine_path.write_text(
+            quarantined.to_json(orient="records", date_format="iso") or "[]",
+            encoding="utf-8",
+        )
+    log.warning(
+        "feature table quarantined %d/%d trades with missing finite pnl%s "
+        "| inspect the trades artifact for malformed rows",
+        len(quarantined),
+        total,
+        f"; rows written to {quarantine_path}" if quarantine_path is not None else "",
+    )
+    if len(quarantined) / total > _QUARANTINE_MAX_FRACTION:
+        raise ValueError(
+            f"feature table quarantined {len(quarantined)}/{total} trades with "
+            f"missing finite pnl (>{_QUARANTINE_MAX_FRACTION:.0%}); "
+            "the trades artifact is too corrupt to build features from"
+        )
+    return trades.loc[finite]
 
 
 def _feature_row(

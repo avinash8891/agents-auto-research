@@ -87,16 +87,17 @@ def write_feature_table_artifact(
         if not events_path.is_absolute():
             events_file = str(artifact_dir / events_path)
     events = _load_strategy_events(events_file)
+    if feature_artifact is None:
+        round_root = artifact_dir.parent if artifact_dir.name == "backtest" else artifact_dir
+        feature_artifact = FeatureTableArtifact(round_root)
     table = build_feature_table(
         trades_df,
         bars_df,
         events,
         controller.family.name,
         runtime_config=runtime_config,
+        quarantine_path=feature_artifact.path.parent / "feature_table_quarantine.json",
     )
-    if feature_artifact is None:
-        round_root = artifact_dir.parent if artifact_dir.name == "backtest" else artifact_dir
-        feature_artifact = FeatureTableArtifact(round_root)
     feature_artifact.write(table)
     details["feature_table_file"] = str(feature_artifact.path)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -200,6 +201,56 @@ def test_build_feature_table_rejects_missing_trade_pnl(
     _write_regime_labels(data_root)
     monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
     trades = _trades_df().drop(columns=["pnl", "pnl_pct"])
+
+    with pytest.raises(ValueError, match="missing finite pnl"):
+        build_feature_table(trades, _bars_df(), events=[], family="ema")
+
+
+def _many_trades(count: int) -> pd.DataFrame:
+    base = _trades_df()
+    frames = [
+        base.assign(entry_date=pd.Timestamp("2024-01-04 14:35:00", tz="UTC") + pd.Timedelta(minutes=i))
+        for i in range(count)
+    ]
+    return pd.concat(frames, ignore_index=True)
+
+
+def test_build_feature_table_quarantines_sparse_nonfinite_pnl_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    trades = _many_trades(150)
+    trades.loc[7, "pnl"] = float("nan")  # one malformed row out of 150 (<1%)
+    quarantine_path = tmp_path / "round" / "feature_table_quarantine.json"
+
+    with caplog.at_level(logging.WARNING):
+        table = build_feature_table(
+            trades,
+            _bars_df(),
+            events=[],
+            family="ema",
+            quarantine_path=quarantine_path,
+        )
+
+    assert len(table) == 149
+    assert quarantine_path.exists()
+    quarantined = json.loads(quarantine_path.read_text())
+    assert len(quarantined) == 1
+    assert "quarantined 1/150" in caplog.text
+
+
+def test_build_feature_table_stops_when_quarantine_exceeds_one_percent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    trades = _many_trades(10)
+    trades.loc[3, "pnl"] = float("nan")  # 10% malformed: stop and surface
 
     with pytest.raises(ValueError, match="missing finite pnl"):
         build_feature_table(trades, _bars_df(), events=[], family="ema")
