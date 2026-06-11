@@ -1,0 +1,41 @@
+tests/test_feature_table.py
+  s_2240ffe9c6a9e5::t_69b814947d460d 16,307-334
+tests/test_autoresearch_research.py
+  s_2240ffe9c6a9e5::t_69b814947d460d 1094-1134
+tests/test_causal_rule.py
+  s_2240ffe9c6a9e5::t_69b814947d460d 1-38
+screening.py
+  s_2240ffe9c6a9e5::t_e833e55c6d386a 31,160-161
+tests/test_autoresearch_experiment.py
+  s_2240ffe9c6a9e5::t_69b814947d460d 42-47,1103,1142,1217,1731
+feature_table_extractors.py
+  s_2240ffe9c6a9e5::t_e833e55c6d386a 1-100
+causal_model.py
+  s_2240ffe9c6a9e5::t_e833e55c6d386a 14,283-284
+  s_2240ffe9c6a9e5::t_0114f6ef78408b 285-287
+feature_table.py
+  s_2240ffe9c6a9e5::t_d9c4be18fc6d76 12,213-222
+causal_rule.py
+  s_2240ffe9c6a9e5::t_e833e55c6d386a 1-81
+autoresearch_experiment.py
+  s_2240ffe9c6a9e5::t_aa632b880fde76 48,1430,1466,1475-1476,1481,1488
+autoresearch_research.py
+  s_2240ffe9c6a9e5::t_49283d65ff3408 1263,1265
+  s_2240ffe9c6a9e5::t_1564b22a3109d5 1039-1083,1091,1093-1106,1108-1125,1127-1130,1133,1136-1138,1140-1198,1201-1207,1209-1257,1266,1268,1282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "eb702e0a5b9e014d8e570cf75f5e2d5ca695f783",
+  "prompts": {},
+  "sessions": {
+    "s_2240ffe9c6a9e5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb68e-2b28-7be3-91b8-a3e7d8e71cb7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
