@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -530,8 +529,7 @@ def _run_controller_loop(
 
 
 def _state_hash(state: dict[str, Any]) -> str:
-    payload = json.dumps(state, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return json.dumps(state, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def _emit_prepare_result(state: dict[str, Any], job: int) -> None:

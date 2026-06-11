@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from autoresearch_artifacts import serialize_artifact_path
 from autoresearch_controller import AutoresearchController
 from autoresearch_experiment import (
     ResultJsonError,
@@ -24,7 +25,6 @@ from autoresearch_experiment import (
     _invalid_duplicate_result_summary,
     _record_baseline_checkpoint,
     _round_context_from_state,
-    _serialize_artifact_dir,
     _thesis_sidecar_path,
     _validate_backtest_request,
     artifact_dir_for,
@@ -876,7 +876,7 @@ def test_build_asi_dict_records_baseline_rerun_and_absolute_artifact_dir(tmp_pat
 
     assert asi["artifact_dir"] == outside.as_posix()
     assert asi["baseline_rerun_for_commit"] == "abcdef1"
-    assert _serialize_artifact_dir(controller, tmp_path / "runtime") == "runtime"
+    assert serialize_artifact_path(tmp_path / "runtime", controller.root) == "runtime"
 
 
 def test_contract_sidecar_drives_thesis_identity_and_diagnostics(tmp_path: Path) -> None:

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from autoresearch_artifacts import serialize_artifact_path
 from autoresearch_constants import research_engine_retest_extension_months
 from autoresearch_paths import resolve_config_path
 from causal_model import CausalModelStore
@@ -161,7 +162,7 @@ def request_registered_prediction_retest(
     next_action.update(
         {
             "type": "run_round",
-            "config": _serialize_artifact_dir(controller, retest_config_path),
+            "config": serialize_artifact_path(retest_config_path, controller.root),
             "source": "registered_prediction_retest",
             "registered_prediction_retest": metadata,
         }
@@ -281,20 +282,20 @@ def _wide_ohlcv_batch_to_long_bars(batch: dict[str, Any]) -> Any:
     missing = [name for name in required if name not in batch]
     if missing:
         raise ValueError(f"data universe batch missing OHLC fields: {missing}")
-    symbols = set(batch["close"].columns)
-    for name in required:
-        symbols &= set(batch[name].columns)
+    symbols = set.intersection(*(set(batch[n].columns) for n in required))
     volume = batch.get("volume")
     if volume is not None:
         symbols &= set(volume.columns)
 
+    raw_ts = pd.to_datetime(batch["close"].index)
+    timestamps = (
+        raw_ts.tz_localize("America/New_York").tz_convert("UTC")
+        if raw_ts.tz is None
+        else raw_ts.tz_convert("UTC")
+    )
+
     frames: list[pd.DataFrame] = []
     for symbol in sorted(symbols):
-        timestamps = pd.to_datetime(batch["close"].index)
-        if timestamps.tz is None:
-            timestamps = timestamps.tz_localize("America/New_York").tz_convert("UTC")
-        else:
-            timestamps = timestamps.tz_convert("UTC")
         frame = pd.DataFrame(
             {
                 "timestamp": timestamps,
@@ -404,7 +405,7 @@ def _write_extended_retest_config(
     write_json_atomic(retest_path, raw)
     return retest_path, {
         "attempt": 1,
-        "original_config": _serialize_artifact_dir(controller, config_path),
+        "original_config": serialize_artifact_path(config_path, controller.root),
         "original_validation_start": validation_start,
         "validation_start": shifted,
         "retest_extension_months": months,
@@ -423,10 +424,3 @@ def _family_base_config(controller: "AutoresearchController") -> dict[str, Any]:
         return {}
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return payload if isinstance(payload, dict) else {}
-
-
-def _serialize_artifact_dir(controller: "AutoresearchController", artifact_dir: Path) -> str:
-    try:
-        return artifact_dir.relative_to(controller.root).as_posix()
-    except ValueError:
-        return artifact_dir.as_posix()

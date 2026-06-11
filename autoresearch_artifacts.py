@@ -9,7 +9,7 @@ from artifact_io import read_json_artifacts as read_artifact_json_files
 from autoresearch_artifact_schemas import read_round_artifact
 
 
-def _serialize_artifact_path(path: Path, root: Path) -> str:
+def serialize_artifact_path(path: Path, root: Path) -> str:
     """Prefer a repo-relative artifact path, but preserve absolute paths.
 
     Artifact discovery can surface files stored outside the controller root,
@@ -28,7 +28,7 @@ def read_artifacts_relative_to_root(directory: Path, root: Path) -> list[dict[st
     for payload in artifacts:
         artifact_path = payload.get("artifact_path")
         if artifact_path:
-            payload["artifact_path"] = _serialize_artifact_path(Path(artifact_path), root)
+            payload["artifact_path"] = serialize_artifact_path(Path(artifact_path), root)
     return artifacts
 
 
@@ -42,7 +42,7 @@ def read_research_artifacts(
         loaded: list[tuple[Path, dict[str, Any]]] = []
         for path in research_dir.glob("round-*/round.json"):
             payload = read_round_artifact(path).to_payload()
-            payload["artifact_path"] = _serialize_artifact_path(path, root)
+            payload["artifact_path"] = serialize_artifact_path(path, root)
             loaded.append((path, payload))
         loaded.sort(key=lambda item: _research_round_sort_key(item[0], item[1]))
         artifacts.extend(payload for _, payload in loaded)

@@ -12,6 +12,7 @@ import json
 import sqlite3
 import urllib.error
 import urllib.request
+from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -1789,14 +1790,17 @@ def _screening_verdict_counts(
 
 
 def _prediction_gaps(runtime_root: Path, research_round: int) -> list[dict[str, Any]]:
-    gaps: list[dict[str, Any]] = []
+    gaps: deque[dict[str, Any]] = deque(maxlen=10)
     pattern = "runtime/jobs/*/research/round-*/harvest_verdict*.json"
     for path in sorted(runtime_root.glob(pattern)):
+        path_round = _round_number_from_artifact_path(path)
+        if path_round is not None and path_round > research_round:
+            continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        payload_round = int(payload.get("round") or _round_number_from_artifact_path(path) or 0)
+        payload_round = int(payload.get("round") or path_round or 0)
         if payload_round > research_round:
             continue
         raw_predictions = payload.get("registered_predictions") or payload.get("prediction_results")
@@ -1816,7 +1820,7 @@ def _prediction_gaps(runtime_root: Path, research_round: int) -> list[dict[str, 
                     "direction_passed": item.get("direction_passed"),
                 }
             )
-    return gaps[-10:]
+    return list(gaps)
 
 
 def _round_findings(result: dict[str, Any], outcome: str) -> list[str]:

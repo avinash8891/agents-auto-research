@@ -243,17 +243,13 @@ def _prediction_result(
         "direction": direction,
         "baseline": baseline_value,
         "candidate": candidate_value,
-        "direction_passed": _direction_passed(metric, direction, baseline_value, candidate_value),
+        "direction_passed": _registered_direction_passed(
+            metric,
+            direction,
+            baseline_value,
+            candidate_value,
+        ),
     }
-
-
-def _direction_passed(
-    metric: str,
-    direction: str,
-    baseline_value: float,
-    candidate_value: float,
-) -> bool:
-    return _registered_direction_passed(metric, direction, baseline_value, candidate_value)
 
 
 def _write_graduation_to_run_row(db_path: Path, run_id: str, graduated: bool) -> None:

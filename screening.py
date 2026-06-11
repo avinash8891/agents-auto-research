@@ -124,20 +124,20 @@ def write_screenings(
 
 def _screen_rule(rule: str, features_train: pd.DataFrame) -> ScreeningResult:
     flagged = _evaluate_rule(rule, features_train)
+    base_loss_rate = _loss_rate(features_train)
     if flagged is None:
         return ScreeningResult(
             rule=rule,
             verdict="kill_bad_rule",
             sample_count=0,
             flagged_loss_rate=0.0,
-            base_loss_rate=_loss_rate(features_train),
+            base_loss_rate=base_loss_rate,
             lift=0.0,
             p_value=1.0,
             overlap_with=None,
         )
     sample_count = int(flagged.sum())
     flagged_loss_rate = _loss_rate(features_train.loc[flagged])
-    base_loss_rate = _loss_rate(features_train)
     return ScreeningResult(
         rule=rule,
         verdict="pass",

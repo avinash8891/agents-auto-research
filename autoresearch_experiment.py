@@ -32,6 +32,7 @@ from autoresearch_constants import (
 )
 from autoresearch_logging import get_logger
 from autoresearch_paths import path_within_allowed_roots, resolve_config_path
+from autoresearch_artifacts import serialize_artifact_path
 from autoresearch_planning import build_research_failure_state
 from autoresearch_runtime_paths import research_round_backtest_root, research_round_id_or_empty
 from autoresearch_state import (
@@ -483,39 +484,6 @@ def derive_trade_analysis(
     }
 
 
-def _load_runtime_config_contents(
-    controller: "AutoresearchController",
-    config: str,
-) -> dict[str, Any]:
-    config_path = resolve_config_path(
-        config,
-        code_root=controller.root,
-        runtime_root=controller.runtime_root,
-        execution_root=_execution_root(controller),
-    )
-    if not config_path.exists():
-        return {}
-    try:
-        if config_path.suffix in (".yaml", ".yml"):
-            raw = yaml.safe_load(config_path.read_text())
-        else:
-            raw = json.loads(config_path.read_text())
-    except OSError as exc:
-        log.error(
-            f"CONFIG_READ error config={config}: {exc} "
-            f"| hint=the experiment config exists but cannot be read"
-        )
-        raise
-    if isinstance(raw, dict) and "runtime_config" in raw:
-        raw = raw["runtime_config"]
-    if isinstance(raw, dict):
-        return raw
-    from strategies import STRATEGIES
-
-    family_name = controller.family.name
-    return STRATEGIES[family_name].compile_contract(raw).runtime_config
-
-
 # ── Artifact + entry helpers ─────────────────────────────────────
 
 
@@ -668,17 +636,6 @@ def _analysis_identity(controller: "AutoresearchController", config: str) -> str
     return _resolve_identity(_contract_from_sidecar(controller, config), config)
 
 
-def _serialize_artifact_dir(controller: "AutoresearchController", artifact_dir: Path) -> str:
-    """Prefer a repo-relative artifact path, but keep absolute paths valid.
-
-    Result logging must not assume every artifact directory lives under
-    controller.root.
-    """
-    try:
-        return artifact_dir.relative_to(controller.root).as_posix()
-    except ValueError:
-        return artifact_dir.as_posix()
-
 
 def _build_asi_dict(
     controller: "AutoresearchController",
@@ -700,7 +657,7 @@ def _build_asi_dict(
         "hypothesis_id": identity,
         "hypothesis": identity,
         "config": config,
-        "artifact_dir": _serialize_artifact_dir(controller, artifact_dir),
+        "artifact_dir": serialize_artifact_path(artifact_dir, controller.root),
         "trade_analysis": analysis.get("trade_analysis", {}),
         "insights": analysis.get("insights", []),
         "next_candidates": analysis.get("next_candidates", []),

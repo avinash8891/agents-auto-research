@@ -23,16 +23,12 @@ def family_entry_features(
     entry_price: float,
     runtime_config: dict[str, Any],
 ) -> dict[str, float]:
-    features = _empty_features()
+    features: dict[str, float] = {column: np.nan for column in FAMILY_ENTRY_FEATURE_COLUMNS}
     extractor = _EXTRACTORS.get(str(family).lower())
     if extractor is None:
         return features
     features.update(extractor(symbol_bars, prior_bars, entry_ts, entry_price, runtime_config))
     return features
-
-
-def _empty_features() -> dict[str, float]:
-    return {column: np.nan for column in FAMILY_ENTRY_FEATURE_COLUMNS}
 
 
 def _ema_entry_features(
