@@ -1075,6 +1075,23 @@ def _persist_validator_challenge(
         log.warning(f"failed to persist validator_challenge: {challenge_exc}")
 
 
+def _init_attempt(
+    controller: "AutoresearchController",
+    research_round: int,
+    attempt: int,
+    conductor_result: ConductorResult,
+) -> tuple[dict[str, Any], int, str, int, str]:
+    """Compute attempt IDs and persist any validator challenge embedded in the thesis."""
+    assert conductor_result.thesis is not None
+    raw_thesis = conductor_result.thesis
+    job_id = _controller_job_id(controller)
+    research_round_id = make_research_round_id(job_id, research_round)
+    attempt_number = attempt + 1
+    thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
+    _persist_validator_challenge(controller, raw_thesis)
+    return raw_thesis, job_id, research_round_id, attempt_number, thesis_id
+
+
 def _try_mechanism_validation_attempt(
     controller: "AutoresearchController",
     research_round: int,
@@ -1083,13 +1100,9 @@ def _try_mechanism_validation_attempt(
 ) -> tuple[dict[str, Any] | None, str | None, str]:
     """Validate, screen, compile, and dispatch a structured mechanism proposal."""
 
-    assert conductor_result.thesis is not None
-    raw_thesis = conductor_result.thesis
-    job_id = _controller_job_id(controller)
-    research_round_id = make_research_round_id(job_id, research_round)
-    attempt_number = attempt + 1
-    thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
-    _persist_validator_challenge(controller, raw_thesis)
+    raw_thesis, job_id, research_round_id, attempt_number, thesis_id = _init_attempt(
+        controller, research_round, attempt, conductor_result
+    )
 
     try:
         proposal = MechanismProposal.model_validate(raw_thesis)
@@ -1186,14 +1199,10 @@ def _try_legacy_validation_attempt(
 
     from thesis_validator import ThesisValidationError
 
-    assert conductor_result.thesis is not None
-    raw_thesis = conductor_result.thesis
+    raw_thesis, job_id, research_round_id, attempt_number, thesis_id = _init_attempt(
+        controller, research_round, attempt, conductor_result
+    )
     tools_called = conductor_result.tools_called
-    job_id = _controller_job_id(controller)
-    research_round_id = make_research_round_id(job_id, research_round)
-    attempt_number = attempt + 1
-    thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
-    _persist_validator_challenge(controller, raw_thesis)
 
     try:
         raw_thesis, validated = _prepare_thesis_for_validation(

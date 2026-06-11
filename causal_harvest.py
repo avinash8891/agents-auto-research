@@ -343,15 +343,13 @@ def _load_strategy_events(value: Any) -> list[dict[str, Any]]:
 
 
 def _flatten_metrics(details: dict[str, Any]) -> dict[str, Any]:
-    metrics: dict[str, Any] = {}
-    train_metrics = details.get("train_metrics")
-    if isinstance(train_metrics, dict):
-        metrics.update(train_metrics)
+    metrics = dict(details)
     nested = details.get("metrics")
     if isinstance(nested, dict):
         metrics.update(nested)
-    if not metrics:
-        return dict(details)
+    train_metrics = details.get("train_metrics")
+    if isinstance(train_metrics, dict):
+        metrics.update(train_metrics)
     return metrics
 
 

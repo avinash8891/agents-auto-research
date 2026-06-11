@@ -19,8 +19,6 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import yaml
-
 from autoresearch_artifacts import serialize_artifact_path
 from autoresearch_constants import (
     COMMAND_NOTIFICATION_TRUNCATION,
@@ -51,6 +49,7 @@ from causal_harvest import (
     evaluate_registered_predictions,
     force_registered_inconclusive_after_retest,
     is_registered_prediction_retest_action,
+    load_runtime_config_contents,
     request_registered_prediction_retest,
     write_feature_table_artifact,
 )
@@ -437,34 +436,7 @@ def derive_trade_analysis(
 ) -> dict[str, Any]:
     details = parse_benchmark_details(output)
 
-    config_contents: dict[str, Any] = {}
-    config_path = resolve_config_path(
-        config,
-        code_root=controller.root,
-        runtime_root=controller.runtime_root,
-        execution_root=_execution_root(controller),
-    )
-    if config_path.exists():
-        try:
-            if config_path.suffix in (".yaml", ".yml"):
-                raw = yaml.safe_load(config_path.read_text())
-            else:
-                raw = json.loads(config_path.read_text())
-            if isinstance(raw, dict) and "runtime_config" in raw:
-                config_contents = raw["runtime_config"]
-            elif isinstance(raw, dict):
-                config_contents = raw
-            else:
-                from strategies import STRATEGIES
-
-                family_name = controller.family.name
-                config_contents = STRATEGIES[family_name].compile_contract(raw).runtime_config
-        except OSError as exc:
-            log.error(
-                f"CONFIG_READ error config={config}: {exc} "
-                f"| hint=the experiment config exists but cannot be read"
-            )
-            raise
+    config_contents = load_runtime_config_contents(controller, config)
 
     trade_analysis: dict[str, Any] = {
         "what_changed_vs_baseline": f"{Path(config).stem} evaluated independently.",
