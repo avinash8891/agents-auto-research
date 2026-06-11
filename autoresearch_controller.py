@@ -972,6 +972,7 @@ class AutoresearchController:
         analysis: dict[str, Any],
         next_action: dict[str, Any] | None = None,
         artifact_dir: Path | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         _round_log_experiment_result(
             self,
@@ -982,6 +983,7 @@ class AutoresearchController:
             analysis=analysis,
             next_action=next_action,
             artifact_dir=artifact_dir,
+            details=details,
         )
 
     def run_command(self, command: str) -> tuple[int, str]:

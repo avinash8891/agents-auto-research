@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from autoresearch_runtime_paths import research_round_root
 from backtest.data_universe import default_data_root
 
 ENTRY_TIME_COLUMNS = frozenset(
@@ -68,12 +70,34 @@ _FEATURE_COLUMNS = [
 ]
 
 
+@dataclass(frozen=True)
+class FeatureTableArtifact:
+    """Canonical feature-table artifact for one research round."""
+
+    round_root: Path
+
+    @classmethod
+    def for_round(cls, runtime_root: Path, job: int, research_round: int) -> "FeatureTableArtifact":
+        return cls(research_round_root(runtime_root, job, research_round))
+
+    @property
+    def path(self) -> Path:
+        return self.round_root / "feature_table.parquet"
+
+    def load(self) -> pd.DataFrame:
+        return pd.read_parquet(self.path)
+
+    def write(self, table: pd.DataFrame) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        table.to_parquet(self.path, index=False)
+
+
 def feature_table_path(round_root: Path) -> Path:
-    return round_root / "feature_table.parquet"
+    return FeatureTableArtifact(round_root).path
 
 
 def load_feature_table(round_root: Path) -> pd.DataFrame:
-    return pd.read_parquet(feature_table_path(round_root))
+    return FeatureTableArtifact(round_root).load()
 
 
 def load_regime_labels() -> pd.DataFrame:

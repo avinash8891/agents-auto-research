@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from causal_model import (
+    CausalModelStore,
     holdout_mask,
     load_model,
     predict,
@@ -164,6 +166,33 @@ def test_load_and_save_model_use_runtime_root_atomic_json(tmp_path, monkeypatch)
     )
     assert load_model("orb") == CausalModel(
         family="orb", version=0, factors=[], accuracy_history=[]
+    )
+
+
+def test_causal_model_store_uses_explicit_runtime_and_code_roots_without_env_or_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime"
+    unrelated_cwd = tmp_path / "cwd"
+    for path in (code_root / "configs", runtime_root, unrelated_cwd):
+        path.mkdir(parents=True)
+    (code_root / "configs" / "ema_base.yaml").write_text(
+        "validation_start: 2020-01-01\nvalidation_end: 2024-01-01\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("AUTORESEARCH_RUNTIME_ROOT", raising=False)
+    monkeypatch.chdir(unrelated_cwd)
+    model = CausalModel(family="ema", version=1, factors=[_planted_factor()], accuracy_history=[])
+
+    store = CausalModelStore(runtime_root=runtime_root, code_root=code_root)
+    store.save(model)
+
+    path = runtime_root / "ema_causal_model.json"
+    assert path.exists()
+    assert not (unrelated_cwd / "ema_causal_model.json").exists()
+    assert store.load("ema") == model.model_copy(
+        update={"holdout_start": json.loads(path.read_text(encoding="utf-8"))["holdout_start"]}
     )
 
 

@@ -736,7 +736,9 @@ def test_quality_score_uses_documented_skill_delta_formula() -> None:
 
 def _write_ema_base_config(root: Path) -> None:
     (root / "configs").mkdir(exist_ok=True)
-    (root / "configs" / "ema_base.yaml").write_text("ema_length: 5\n")
+    (root / "configs" / "ema_base.yaml").write_text(
+        "ema_length: 5\nvalidation_start: '2020-01-01'\nvalidation_end: '2024-01-01'\n"
+    )
 
 
 def _write_screening_feature_table(round_root: Path) -> None:

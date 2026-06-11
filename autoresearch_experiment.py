@@ -46,6 +46,7 @@ from backtest_run_db import (
     build_data_hash,
 )
 from diagnostic_contracts import build_required_diagnostic_specs, enrich_required_diagnostics
+from feature_table import FeatureTableArtifact
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic, write_text_atomic
 from research_types import BacktestContract
@@ -966,9 +967,10 @@ def log_experiment_result(
     analysis: dict[str, Any],
     next_action: dict[str, Any] | None = None,
     artifact_dir: Path | None = None,
+    details: dict[str, Any] | None = None,
 ) -> None:
     controller.sanitize_duplicate_entries(config)
-    details = parse_benchmark_details(output)
+    details = details if details is not None else parse_benchmark_details(output)
     artifact_dir = _resolve_artifact_dir(
         controller, config, details=details, artifact_dir=artifact_dir
     )
@@ -1040,6 +1042,7 @@ def _write_feature_table_artifact(
     config: str,
     details: dict[str, Any],
     artifact_dir: Path,
+    feature_artifact: FeatureTableArtifact | None = None,
 ) -> None:
     trades_file = str(details.get("trades_file") or "")
     if not trades_file:
@@ -1051,7 +1054,7 @@ def _write_feature_table_artifact(
     import pandas as pd
 
     from backtest.data_universe import load_universe_data
-    from feature_table import build_feature_table, feature_table_path
+    from feature_table import build_feature_table
 
     trades_path = Path(trades_file)
     if not trades_path.is_absolute():
@@ -1072,9 +1075,11 @@ def _write_feature_table_artifact(
         controller.family.name,
         runtime_config=runtime_config,
     )
-    path = feature_table_path(artifact_dir)
-    table.to_parquet(path, index=False)
-    details["feature_table_file"] = str(path)
+    if feature_artifact is None:
+        round_root = artifact_dir.parent if artifact_dir.name == "backtest" else artifact_dir
+        feature_artifact = FeatureTableArtifact(round_root)
+    feature_artifact.write(table)
+    details["feature_table_file"] = str(feature_artifact.path)
 
 
 def _wide_ohlcv_batch_to_long_bars(batch: dict[str, Any]) -> Any:
@@ -1515,9 +1520,10 @@ def _apply_registered_verdict_to_causal_factor(
     if not rule:
         return
 
-    from causal_model import load_model, save_model
+    from causal_model import CausalModelStore
 
-    model = load_model(controller.family.name)
+    store = CausalModelStore(runtime_root=_runtime_root(controller), code_root=controller.root)
+    model = store.load(controller.family.name)
     target_status = "harvested" if status == "supported" else "refuted"
     lesson = str(getattr(verdict, "lesson", "") or getattr(verdict, "summary", ""))
     updated_factors = []
@@ -1531,7 +1537,7 @@ def _apply_registered_verdict_to_causal_factor(
         else:
             updated_factors.append(factor)
     if matched:
-        save_model(
+        store.save(
             model.model_copy(update={"version": model.version + 1, "factors": updated_factors})
         )
 
@@ -1707,11 +1713,15 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             details = controller.parse_benchmark_details(output)
         except (ResultJsonError, ValueError):
             return _block_with_metric_parse_failed(controller, controller.read_state(), command)
+        job, round_number, _ = _round_context_from_state(state, config=config)
         _write_feature_table_artifact(
             controller,
             config=config,
             details=details,
             artifact_dir=run_output_dir,
+            feature_artifact=FeatureTableArtifact.for_round(
+                _runtime_root(controller), job, round_number
+            ),
         )
         try:
             decision = controller.evaluate_metric(metric)
@@ -1781,6 +1791,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             analysis=analysis,
             next_action=next_action,
             artifact_dir=run_output_dir,
+            details=details,
         )
 
         baseline_source = next_action.get("source") == "baseline"

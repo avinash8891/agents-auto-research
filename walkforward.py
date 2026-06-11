@@ -17,7 +17,7 @@ from autoresearch_constants import (
     research_engine_walkforward_train_months,
 )
 from autoresearch_paths import resolve_config_path
-from causal_model import load_model, save_model
+from causal_model import CausalModelStore
 from experiment_evaluator import _direction_passed as _registered_direction_passed
 from persistence_utils import write_json_atomic
 
@@ -69,6 +69,7 @@ def evaluate_walkforward(
     family: str,
     thesis_id: str,
     runtime_root: Path,
+    code_root: Path,
     db_path: Path,
     run_id: str,
     windows: Sequence[WalkForwardWindow],
@@ -118,7 +119,7 @@ def evaluate_walkforward(
     write_json_atomic(report_path, report)
     _write_graduation_to_run_row(db_path, run_id, graduated)
     if not graduated and factor_rule:
-        _demote_factor(family, factor_rule, report)
+        _demote_factor(family, factor_rule, report, runtime_root=runtime_root, code_root=code_root)
     return report
 
 
@@ -188,6 +189,7 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
                     family=controller.family.name,
                     thesis_id=record.thesis_id,
                     runtime_root=Path(controller.runtime_root),
+                    code_root=Path(controller.root),
                     db_path=controller.backtest_run_db.path,
                     run_id=record.run_id,
                     windows=windows,
@@ -196,7 +198,10 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
                     candidate_metrics=candidate_metrics,
                     config=config_for_tunables,
                     factor_rule=_factor_rule_for_round(
-                        controller.family.name, record.research_round_number
+                        controller.family.name,
+                        record.research_round_number,
+                        runtime_root=Path(controller.runtime_root),
+                        code_root=Path(controller.root),
                     ),
                 )
             )
@@ -267,8 +272,16 @@ def _write_graduation_to_run_row(db_path: Path, run_id: str, graduated: bool) ->
         conn.commit()
 
 
-def _demote_factor(family: str, factor_rule: str, report: dict[str, Any]) -> None:
-    model = load_model(family)
+def _demote_factor(
+    family: str,
+    factor_rule: str,
+    report: dict[str, Any],
+    *,
+    runtime_root: Path,
+    code_root: Path,
+) -> None:
+    store = CausalModelStore(runtime_root=runtime_root, code_root=code_root)
+    model = store.load(family)
     lesson = (
         f"Walk-forward demoted: survival_rate={report['survival_rate']:.3f} "
         f"below survival_pct={report['survival_pct']:.3f}."
@@ -282,7 +295,7 @@ def _demote_factor(family: str, factor_rule: str, report: dict[str, Any]) -> Non
         for factor in model.factors
     ]
     if updated != model.factors:
-        save_model(model.model_copy(update={"version": model.version + 1, "factors": updated}))
+        store.save(model.model_copy(update={"version": model.version + 1, "factors": updated}))
 
 
 def _coerce_job(value: Any) -> int | None:
@@ -393,8 +406,14 @@ def _run_window_backtest(
     return metrics
 
 
-def _factor_rule_for_round(family: str, round_number: int) -> str:
-    model = load_model(family)
+def _factor_rule_for_round(
+    family: str,
+    round_number: int,
+    *,
+    runtime_root: Path,
+    code_root: Path,
+) -> str:
+    model = CausalModelStore(runtime_root=runtime_root, code_root=code_root).load(family)
     for factor in model.factors:
         if round_number in factor.evidence_rounds:
             return factor.rule

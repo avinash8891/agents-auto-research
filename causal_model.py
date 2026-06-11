@@ -54,20 +54,88 @@ class _FittedNaiveBayes:
     factor_likelihoods: dict[str, dict[str, float]]
 
 
-def load_model(family: str) -> CausalModel:
-    path = _model_path(family)
-    if not path.exists():
-        return CausalModel(family=family, version=0, factors=[], accuracy_history=[])
-    return CausalModel.model_validate(json.loads(path.read_text(encoding="utf-8")))
+@dataclass(frozen=True)
+class CausalModelStore:
+    """Path owner for causal-model state and family config."""
+
+    runtime_root: Path
+    code_root: Path
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "runtime_root", self.runtime_root.resolve())
+        object.__setattr__(self, "code_root", self.code_root.resolve())
+
+    @classmethod
+    def default(cls, code_root: Path | None = None) -> "CausalModelStore":
+        root = (code_root or Path.cwd()).resolve()
+        return cls(runtime_root=resolve_runtime_root(root), code_root=root)
+
+    def model_path(self, family: str) -> Path:
+        return self.runtime_root / f"{family}_causal_model.json"
+
+    def load(self, family: str) -> CausalModel:
+        path = self.model_path(family)
+        if not path.exists():
+            return CausalModel(family=family, version=0, factors=[], accuracy_history=[])
+        return CausalModel.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+    def save(self, model: CausalModel) -> None:
+        model_to_write = model
+        if not model_to_write.holdout_start:
+            model_to_write = model_to_write.model_copy(
+                update={"holdout_start": self._holdout_start_for_family(model_to_write.family)}
+            )
+        write_json_atomic(self.model_path(model_to_write.family), model_to_write.model_dump())
+
+    def _holdout_start_for_family(self, family: str) -> str:
+        start, end = self._family_validation_bounds(family)
+        config = self._family_config(family)
+        cutoff = start + (end - start) * (1.0 - research_engine_holdout_fraction(config))
+        return cutoff.isoformat()
+
+    def _family_validation_bounds(self, family: str) -> tuple[pd.Timestamp, pd.Timestamp]:
+        config = self._family_config(family)
+        path = self._family_config_path(family)
+        missing = [key for key in ("validation_start", "validation_end") if key not in config]
+        if missing:
+            raise ValueError(f"{path} missing validation date keys: {missing}")
+        start = pd.Timestamp(config["validation_start"], tz="UTC")
+        end = pd.Timestamp(config["validation_end"], tz="UTC")
+        if end <= start:
+            raise ValueError(f"{path} validation_end must be after validation_start")
+        return start, end
+
+    def _family_config(self, family: str) -> dict:
+        path = self._family_config_path(family)
+        if not path.exists():
+            raise FileNotFoundError(f"missing strategy family config for holdout split: {path}")
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    def _family_config_path(self, family: str) -> Path:
+        return self.code_root / "configs" / f"{family}_base.yaml"
 
 
-def save_model(model: CausalModel) -> None:
-    model_to_write = model
-    if not model_to_write.holdout_start:
-        model_to_write = model_to_write.model_copy(
-            update={"holdout_start": _holdout_start_for_family(model_to_write.family)}
+def _causal_model_store(
+    *, runtime_root: Path | None = None, code_root: Path | None = None
+) -> CausalModelStore:
+    if runtime_root is not None:
+        return CausalModelStore(
+            runtime_root=runtime_root,
+            code_root=(code_root or Path.cwd()),
         )
-    write_json_atomic(_model_path(model_to_write.family), model_to_write.model_dump())
+    return CausalModelStore.default(code_root)
+
+
+def load_model(
+    family: str, *, runtime_root: Path | None = None, code_root: Path | None = None
+) -> CausalModel:
+    return _causal_model_store(runtime_root=runtime_root, code_root=code_root).load(family)
+
+
+def save_model(
+    model: CausalModel, *, runtime_root: Path | None = None, code_root: Path | None = None
+) -> None:
+    _causal_model_store(runtime_root=runtime_root, code_root=code_root).save(model)
 
 
 def predict(model: CausalModel, features: pd.DataFrame) -> pd.Series:
@@ -290,33 +358,16 @@ def _normalize_binary_log_prob(log_loss: float, log_win: float) -> float:
 
 
 def _model_path(family: str) -> Path:
-    runtime_root = resolve_runtime_root(Path.cwd())
-    return runtime_root / f"{family}_causal_model.json"
+    return CausalModelStore.default().model_path(family)
 
 
 def _holdout_start_for_family(family: str) -> str:
-    start, end = _family_validation_bounds(family)
-    config = _family_config(family)
-    cutoff = start + (end - start) * (1.0 - research_engine_holdout_fraction(config))
-    return cutoff.isoformat()
+    return CausalModelStore.default()._holdout_start_for_family(family)
 
 
 def _family_validation_bounds(family: str) -> tuple[pd.Timestamp, pd.Timestamp]:
-    config = _family_config(family)
-    missing = [key for key in ("validation_start", "validation_end") if key not in config]
-    if missing:
-        path = Path.cwd() / "configs" / f"{family}_base.yaml"
-        raise ValueError(f"{path} missing validation date keys: {missing}")
-    start = pd.Timestamp(config["validation_start"], tz="UTC")
-    end = pd.Timestamp(config["validation_end"], tz="UTC")
-    if end <= start:
-        path = Path.cwd() / "configs" / f"{family}_base.yaml"
-        raise ValueError(f"{path} validation_end must be after validation_start")
-    return start, end
+    return CausalModelStore.default()._family_validation_bounds(family)
 
 
 def _family_config(family: str) -> dict:
-    path = Path.cwd() / "configs" / f"{family}_base.yaml"
-    if not path.exists():
-        raise FileNotFoundError(f"missing strategy family config for holdout split: {path}")
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return CausalModelStore.default()._family_config(family)

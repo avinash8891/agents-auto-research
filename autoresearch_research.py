@@ -916,14 +916,15 @@ def _screen_mechanism_proposal(
     *,
     job_id: int,
 ) -> tuple[bool, str | None, Any | None]:
-    from causal_model import holdout_mask, load_model, score_on_holdout
-    from feature_table import load_feature_table
+    from causal_model import CausalModelStore, holdout_mask, score_on_holdout
+    from feature_table import FeatureTableArtifact
     from screening import screen, write_screenings
 
     runtime_root = getattr(controller, "runtime_root", None) or controller.root
-    round_root = research_round_root(runtime_root, job_id, research_round)
-    features = load_feature_table(round_root)
-    model = load_model(controller.family.name)
+    feature_artifact = FeatureTableArtifact.for_round(runtime_root, job_id, research_round)
+    features = feature_artifact.load()
+    model_store = CausalModelStore(runtime_root=runtime_root, code_root=controller.root)
+    model = model_store.load(controller.family.name)
     holdout = holdout_mask(features, family=model.family, holdout_start=model.holdout_start)
     train_features = features.loc[~holdout].copy()
     screening = screen(
@@ -1139,9 +1140,12 @@ def _try_one_validation_attempt(
         if mechanism_path:
             _merge_mechanism_fields_into_selected_thesis(round_root, raw_thesis)
             if pending_causal_model is not None:
-                from causal_model import save_model
+                from causal_model import CausalModelStore
 
-                save_model(pending_causal_model)
+                CausalModelStore(
+                    runtime_root=getattr(controller, "runtime_root", None) or controller.root,
+                    code_root=controller.root,
+                ).save(pending_causal_model)
     except (ThesisValidationError, ValueError) as exc:
         _log_validation_rejection(
             controller,
@@ -1599,10 +1603,15 @@ def _quality_score_from_skill_delta(delta: float) -> float:
     return max(0.0, min(1.0, 0.5 + 5.0 * delta))
 
 
-def _latest_model_skill_delta(family_name: str) -> float:
-    from causal_model import load_model
+def _latest_model_skill_delta(family_name: str, *, runtime_root: Path, code_root: Path) -> float:
+    from causal_model import CausalModelStore
 
-    history = sorted(load_model(family_name).accuracy_history, key=lambda item: item.round_number)
+    history = sorted(
+        CausalModelStore(runtime_root=runtime_root, code_root=code_root)
+        .load(family_name)
+        .accuracy_history,
+        key=lambda item: item.round_number,
+    )
     if len(history) < 2:
         return 0.0
     return float(history[-1].skill - history[-2].skill)
@@ -1709,7 +1718,11 @@ def _record_round_quality_and_bridges(
         for k in ("compiled", "completed", "needs_code", "stopped", "rejected", "conductor_error")
     }
     dimension_scores.update(_thesis_quality_dimension_scores(thesis_meta))
-    skill_delta = _latest_model_skill_delta(controller.family.name)
+    skill_delta = _latest_model_skill_delta(
+        controller.family.name,
+        runtime_root=getattr(controller, "runtime_root", None) or controller.root,
+        code_root=controller.root,
+    )
     overall_score = _quality_score_from_skill_delta(skill_delta)
     dimension_scores["skill_delta"] = skill_delta
     artifact_paths = []

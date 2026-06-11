@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from autoresearch_artifacts import round_number_from_path as _round_number_from_path
 from autoresearch_runtime_paths import iter_family_backtest_db_paths, resolve_runtime_root
-from causal_model import load_model, residual_map
+from causal_model import CausalModelStore, residual_map
 from feature_table import ENTRY_TIME_COLUMNS
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult
@@ -32,8 +32,9 @@ class Corpus(BaseModel):
 
 
 def build_corpus(family: str, round_number: int, job: int | None = None) -> Corpus:
-    runtime_root = resolve_runtime_root(Path.cwd())
-    model = load_model(family)
+    code_root = Path.cwd()
+    runtime_root = resolve_runtime_root(code_root)
+    model = CausalModelStore(runtime_root=runtime_root, code_root=code_root).load(family)
     features = _load_round_feature_table(runtime_root, round_number, job=job)
     residual_summary = _residual_summary(model, features) if features is not None else []
     return Corpus(

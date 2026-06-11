@@ -1208,8 +1208,8 @@ def test_write_feature_table_artifact_resolves_manifest_relative_paths(
         artifact_dir=artifact_dir,
     )
 
-    table = load_feature_table(artifact_dir)
-    assert details["feature_table_file"] == str(artifact_dir / "feature_table.parquet")
+    table = load_feature_table(artifact_dir.parent)
+    assert details["feature_table_file"] == str(artifact_dir.parent / "feature_table.parquet")
     assert table.loc[0, "trade_id"] == "AAA:2024-01-02T14:35:00+00:00"
 
 
@@ -1750,7 +1750,11 @@ def test_run_experiment_writes_feature_table_artifact(
     code = run_experiment(controller, state)
 
     assert code == 0
-    table = load_feature_table(round_root / "backtest")
+    table = load_feature_table(round_root)
+    record = controller.backtest_run_db.all()[0]
+    assert record.validation_metrics["feature_table_file"] == str(
+        round_root / "feature_table.parquet"
+    )
     assert table.loc[0, "trade_id"] == "AAA:2024-01-02T14:35:00+00:00"
     assert table.loc[0, "regime_label"] == "risk_on"
 
