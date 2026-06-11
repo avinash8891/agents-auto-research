@@ -10,7 +10,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 from autoresearch_artifacts import round_number_from_path as _round_number_from_path
-from autoresearch_runtime_paths import iter_family_backtest_db_paths, resolve_runtime_root
+from autoresearch_runtime_paths import resolve_runtime_root
 from causal_model import CausalModelStore, residual_map
 from feature_table import ENTRY_TIME_COLUMNS, FeatureTableArtifact
 from research_types import CausalFactor, CausalModel
@@ -52,7 +52,7 @@ def build_corpus(
         model=model,
         residual_summary=residual_summary,
         residual_stats=_residual_stats(residual_summary),
-        screening_history=_load_screening_history(family, round_number, job=job),
+        screening_history=_load_screening_history(runtime_root, family, round_number, job=job),
         harvest_verdicts=_load_harvest_verdicts(runtime_root, round_number, job=job),
         cross_family=_load_cross_family_factors(runtime_root, family),
         rejection_feedback=_load_rejection_feedback(runtime_root, round_number, job=job),
@@ -201,10 +201,10 @@ def _residual_stats(summary: list[dict]) -> dict:
 
 
 def _load_screening_history(
-    family: str, round_number: int, *, job: int | None = None
+    runtime_root: Path, family: str, round_number: int, *, job: int | None = None
 ) -> list[ScreeningResult]:
     results: list[ScreeningResult] = []
-    for db_path in iter_family_backtest_db_paths(Path.cwd(), family=family):
+    for db_path in sorted(runtime_root.resolve().glob(f"{family}_backtest_runs.db")):
         try:
             with sqlite3.connect(db_path) as conn:
                 columns = {

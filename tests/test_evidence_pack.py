@@ -170,6 +170,7 @@ def test_build_corpus_uses_explicit_runtime_and_code_roots(tmp_path: Path, monke
         encoding="utf-8",
     )
     monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path / "wrong-root"))
+    monkeypatch.chdir(code_root)
     save_model(
         CausalModel(
             family="ema",
@@ -181,6 +182,13 @@ def test_build_corpus_uses_explicit_runtime_and_code_roots(tmp_path: Path, monke
         code_root=code_root,
     )
     _write_feature_table(runtime_root)
+    write_screenings(
+        runtime_root / "ema_backtest_runs.db",
+        [_screening("gap_pct < 0", "pass")],
+        round_number=2,
+        competitor_rule="gap_pct > 0",
+        job_id=1,
+    )
 
     corpus = build_corpus(
         "ema",
@@ -192,6 +200,7 @@ def test_build_corpus_uses_explicit_runtime_and_code_roots(tmp_path: Path, monke
 
     assert corpus.model.factors[0].factor_id == "f001"
     assert {row["trade_id"] for row in corpus.residual_summary}
+    assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
 
 
 def test_build_corpus_keeps_harvested_cross_family_factors(tmp_path: Path, monkeypatch) -> None:

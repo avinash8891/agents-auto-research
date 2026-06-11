@@ -76,7 +76,13 @@ class CausalModelStore:
     def load(self, family: str) -> CausalModel:
         path = self.model_path(family)
         if not path.exists():
-            return CausalModel(family=family, version=0, factors=[], accuracy_history=[])
+            return CausalModel(
+                family=family,
+                version=0,
+                factors=[],
+                accuracy_history=[],
+                holdout_start=self._holdout_start_for_family(family),
+            )
         return CausalModel.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
     def save(self, model: CausalModel) -> None:
@@ -99,8 +105,8 @@ class CausalModelStore:
         missing = [key for key in ("validation_start", "validation_end") if key not in config]
         if missing:
             raise ValueError(f"{path} missing validation date keys: {missing}")
-        start = pd.Timestamp(config["validation_start"], tz="UTC")
-        end = pd.Timestamp(config["validation_end"], tz="UTC")
+        start = _utc_timestamp(config["validation_start"])
+        end = _utc_timestamp(config["validation_end"])
         if end <= start:
             raise ValueError(f"{path} validation_end must be after validation_start")
         return start, end
@@ -124,6 +130,13 @@ def _causal_model_store(
             code_root=(code_root or Path.cwd()),
         )
     return CausalModelStore.default(code_root)
+
+
+def _utc_timestamp(value: object) -> pd.Timestamp:
+    timestamp = pd.Timestamp(str(value))
+    if timestamp.tzinfo is None:
+        return timestamp.tz_localize("UTC")
+    return timestamp.tz_convert("UTC")
 
 
 def load_model(

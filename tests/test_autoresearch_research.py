@@ -75,6 +75,18 @@ def _real_controller(tmp_path: Path) -> AutoresearchController:
     )
 
 
+def _real_family_controller(tmp_path: Path, family_name: str) -> AutoresearchController:
+    family = load_family(family_name)
+    return AutoresearchController(
+        root=tmp_path,
+        runtime_root=tmp_path,
+        family=family,
+        state_path=tmp_path / f"{family_name}_autoresearch.next.json",
+        current_md_path=tmp_path / f"{family_name}_autoresearch.current.md",
+        jobs_root=tmp_path / "runtime" / "jobs",
+    )
+
+
 def _write_valid_ema_config(path: Path, **overrides: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     config = {**STRATEGIES["ema"].get_defaults(), **overrides}
@@ -102,6 +114,7 @@ def test_notify_discord_swallows_exceptions(monkeypatch) -> None:
 def test_record_round_quality_sends_round_facts_only_to_reflexio(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _write_ema_base_config(tmp_path)
     controller = _real_controller(tmp_path)
     controller.write_state({"state": "running", "job": 4, "research_round": 1})
     emitted: list[tuple[str, dict]] = []
@@ -228,6 +241,82 @@ def test_screen_mechanism_proposal_uses_latest_completed_feature_table(
     assert passed is True
     assert reason is None
     assert pending_model is not None
+
+
+def test_mechanism_proposal_rejects_undeclared_multi_key_change_before_compile(
+    tmp_path: Path,
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "Two independent EMA changes should be rejected as one proposal.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades may explain the residual instead.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8, "risk_reward": 2.5},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease", "predicted": 80},
+                ],
+            },
+            reasoning="invalid multi-key proposal",
+        ),
+        prior_theses=[],
+    )
+
+    assert result is None
+    assert stage == "stage_1"
+    assert retry_feedback is not None
+    assert "exactly one top-level key" in retry_feedback
+    assert not (round_root / "selected_config.json").exists()
+    assert not (round_root / "pending_causal_model.json").exists()
+
+
+def test_orb_mechanism_proposal_rejects_unsupported_config_key_before_compile(
+    tmp_path: Path,
+) -> None:
+    controller = _real_family_controller(tmp_path, "orb")
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "Unsupported ORB typo should not dispatch a no-op backtest.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades may explain the residual instead.",
+                "actionable": True,
+                "proposed_change": {"unsupported_orb_filter": True},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease", "predicted": 80},
+                ],
+            },
+            reasoning="invalid unsupported key proposal",
+        ),
+        prior_theses=[],
+    )
+
+    assert result is None
+    assert stage == "stage_1"
+    assert retry_feedback is not None
+    assert "unsupported config key" in retry_feedback
+    assert not (round_root / "selected_config.json").exists()
+    assert not (round_root / "pending_causal_model.json").exists()
 
 
 # ── accumulate_job_usage ────────────────────────────────────────
@@ -2056,6 +2145,7 @@ def test_handle_needs_code_close_run_called_when_prepare_thesis_raises_type_erro
 def test_execute_research_sdk_persists_research_activity_before_conductor_call(
     tmp_path: Path, monkeypatch
 ) -> None:
+    _write_ema_base_config(tmp_path)
     writes: list[dict[str, object]] = []
     started_rounds: list[dict[str, object]] = []
 

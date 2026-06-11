@@ -62,8 +62,10 @@ def screen(
     competitor_rule: str | None,
     model: CausalModel,
     features_train: pd.DataFrame,
+    *,
+    config: dict | None = None,
 ) -> ScreeningResult:
-    thresholds = _thresholds_for_family(model.family)
+    thresholds = _thresholds_for_family(model.family, config=config)
     proposal = _screen_rule(rule, features_train)
     if proposal.verdict == "kill_bad_rule":
         return proposal
@@ -247,8 +249,8 @@ def _strip_string_literals(rule: str) -> str:
     return _STRING_LITERAL_RE.sub("", rule)
 
 
-def _thresholds_for_family(family: str) -> dict[str, float]:
-    config = _load_family_config(family)
+def _thresholds_for_family(family: str, *, config: dict | None = None) -> dict[str, float]:
+    config = config if config is not None else _load_family_config(family)
     return {
         "min_sample": research_engine_min_sample(config),
         "min_abs_lift": research_engine_min_abs_lift(config),

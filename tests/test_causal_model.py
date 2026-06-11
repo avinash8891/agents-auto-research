@@ -164,9 +164,15 @@ def test_load_and_save_model_use_runtime_root_atomic_json(tmp_path, monkeypatch)
     assert load_model("ema") == model.model_copy(
         update={"holdout_start": json.loads(path.read_text(encoding="utf-8"))["holdout_start"]}
     )
-    assert load_model("orb") == CausalModel(
-        family="orb", version=0, factors=[], accuracy_history=[]
+    fresh_orb = load_model("orb")
+    assert fresh_orb == CausalModel(
+        family="orb",
+        version=0,
+        factors=[],
+        accuracy_history=[],
+        holdout_start=fresh_orb.holdout_start,
     )
+    assert fresh_orb.holdout_start.endswith("+00:00")
 
 
 def test_causal_model_store_uses_explicit_runtime_and_code_roots_without_env_or_cwd(
@@ -194,6 +200,32 @@ def test_causal_model_store_uses_explicit_runtime_and_code_roots_without_env_or_
     assert store.load("ema") == model.model_copy(
         update={"holdout_start": json.loads(path.read_text(encoding="utf-8"))["holdout_start"]}
     )
+
+
+def test_causal_model_store_seeds_fresh_model_holdout_from_code_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime"
+    unrelated_cwd = tmp_path / "cwd"
+    for path in (code_root / "configs", runtime_root, unrelated_cwd):
+        path.mkdir(parents=True)
+    (code_root / "configs" / "ema_base.yaml").write_text(
+        "validation_start: 2020-01-01\nvalidation_end: 2024-01-01\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(unrelated_cwd)
+
+    model = CausalModelStore(runtime_root=runtime_root, code_root=code_root).load("ema")
+
+    assert model == CausalModel(
+        family="ema",
+        version=0,
+        factors=[],
+        accuracy_history=[],
+        holdout_start="2022-12-31T18:00:00+00:00",
+    )
+    assert not (runtime_root / "ema_causal_model.json").exists()
 
 
 def test_predict_scores_holdout_with_pnl_weighted_skill_over_naive() -> None:

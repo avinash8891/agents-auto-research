@@ -50,6 +50,7 @@ from autoresearch_state import (
 from backtest.runtime_config import load_runtime_config
 from backtest_run_db import research_thesis_attempt_id
 from family_research_spec import (
+    get_family_research_spec,
     proposed_change_is_single_or_coupled,
     resolve_research_resolution_context,
 )
@@ -783,7 +784,7 @@ def _on_ready_to_run(
     runtime_root = getattr(controller, "runtime_root", None) or controller.root
     round_root = research_round_root(runtime_root, job_id, research_round)
     config_path = (round_root / "selected_config.json").relative_to(runtime_root).as_posix()
-    _validate_single_proposed_change(controller.family.name, raw_thesis)
+    _validate_mechanism_proposed_change(controller.family.name, raw_thesis)
     _write_registered_predictions(round_root, thesis_id, raw_thesis)
     controller.ctx.current_contract = contract
     latest_db = controller.backtest_run_db.latest(1)
@@ -808,6 +809,17 @@ def _validate_single_proposed_change(family_name: str, raw_thesis: dict[str, Any
     if not proposed_change_is_single_or_coupled(family_name, proposed_change):
         keys = ", ".join(sorted(proposed_change))
         raise ValueError(f"proposed_change must contain exactly one top-level key: {keys}")
+
+
+def _validate_mechanism_proposed_change(family_name: str, raw_thesis: dict[str, Any]) -> None:
+    _validate_single_proposed_change(family_name, raw_thesis)
+    proposed_change = raw_thesis.get("proposed_change")
+    if not isinstance(proposed_change, dict) or not proposed_change:
+        return
+    spec = get_family_research_spec(family_name)
+    invalid = sorted(set(proposed_change) - spec.allowed_config_keys)
+    if invalid:
+        raise ValueError(f"unsupported config key(s) for {family_name}: {', '.join(invalid)}")
 
 
 def _write_registered_predictions(
@@ -928,11 +940,13 @@ def _screen_mechanism_proposal(
     model = model_store.load(controller.family.name)
     holdout = holdout_mask(features, family=model.family, holdout_start=model.holdout_start)
     train_features = features.loc[~holdout].copy()
+    config = _research_engine_config_for_family(controller.root, controller.family.name)
     screening = screen(
         str(raw_thesis.get("rule") or ""),
         str(raw_thesis.get("competitor_rule") or "") or None,
         model,
         train_features,
+        config=config,
     )
     write_screenings(
         controller.backtest_run_db.path,
@@ -1087,6 +1101,20 @@ def _try_one_validation_attempt(
                 None,
                 "",
             )
+        try:
+            _validate_mechanism_proposed_change(controller.family.name, raw_thesis)
+        except ValueError as exc:
+            _log_validation_rejection(
+                controller,
+                research_round,
+                attempt,
+                raw_thesis,
+                thesis_id,
+                str(exc),
+                exc=exc,
+                stage="stage_1",
+            )
+            return None, f"Mechanism proposal '{thesis_id}' rejected by validator: {exc}", "stage_1"
         screening_passed, screening_feedback, pending_causal_model = _screen_mechanism_proposal(
             controller,
             research_round,
