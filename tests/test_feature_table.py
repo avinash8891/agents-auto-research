@@ -140,6 +140,18 @@ def test_build_feature_table_localizes_naive_trade_times_as_new_york(
     assert row["bars_since_open"] == 1
 
 
+def test_build_feature_table_rejects_missing_trade_pnl(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    trades = _trades_df().drop(columns=["pnl", "pnl_pct"])
+
+    with pytest.raises(ValueError, match="missing finite pnl"):
+        build_feature_table(trades, _bars_df(), events=[], family="ema")
+
+
 def test_build_feature_table_uses_orb_event_stop_price_when_trade_stop_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

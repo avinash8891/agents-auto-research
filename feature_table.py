@@ -156,6 +156,8 @@ def _feature_row(
 
     out_pnl = _float_or_nan(trade.get("pnl", trade.get("pnl_abs", trade.get("pnl_pct", np.nan))))
     out_pnl_pct = _float_or_nan(trade.get("pnl_pct", np.nan))
+    if not np.isfinite(out_pnl):
+        raise ValueError(f"feature table trade {symbol}:{entry_ts.isoformat()} missing finite pnl")
 
     row = {
         "trade_id": f"{symbol}:{entry_ts.isoformat()}",
