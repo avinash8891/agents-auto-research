@@ -1,0 +1,21 @@
+causal_model.py
+  s_2240c0cb12bd4a::t_03bdc32eec076c 200
+tests/test_causal_model.py
+  s_2240c0cb12bd4a::t_56cc8644133b1e 319-333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "b343a40ecbe84ed5dc16dc23768a3dea0d10a13b",
+  "prompts": {},
+  "sessions": {
+    "s_2240c0cb12bd4a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb70e-074f-7053-9a91-528a34a06a0f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
