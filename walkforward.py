@@ -16,10 +16,13 @@ from autoresearch_constants import (
     research_engine_walkforward_test_months,
     research_engine_walkforward_train_months,
 )
+from autoresearch_logging import get_logger
 from autoresearch_paths import resolve_config_path
 from causal_model import CausalModelStore
 from experiment_evaluator import _direction_passed as _registered_direction_passed
 from persistence_utils import read_config_payload, write_json_atomic
+
+log = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -87,8 +90,17 @@ def evaluate_walkforward(
         prediction_results = [
             _prediction_result(prediction, baseline, candidate) for prediction in predictions
         ]
-        directions_hold = bool(prediction_results) and all(
-            result["direction_passed"] for result in prediction_results
+        # A window where even the baseline cannot produce the predicted
+        # metrics has no evaluable data (e.g. the universe ends before the
+        # window). It is evidence about data coverage, not about the factor:
+        # exclude it from survival instead of counting it as a refutation.
+        window_inconclusive = bool(prediction_results) and all(
+            result.get("missing_baseline") for result in prediction_results
+        )
+        directions_hold = (
+            not window_inconclusive
+            and bool(prediction_results)
+            and all(result["direction_passed"] for result in prediction_results)
         )
         rows.append(
             {
@@ -97,19 +109,27 @@ def evaluate_walkforward(
                 "train_end": window.train_end,
                 "test_start": window.test_start,
                 "test_end": window.test_end,
+                "inconclusive": window_inconclusive,
                 "directions_hold": directions_hold,
                 "prediction_results": prediction_results,
             }
         )
-    passed = sum(1 for row in rows if row["directions_hold"])
-    survival_rate = (passed / len(rows)) if rows else 0.0
-    graduated = bool(rows) and survival_rate >= survival_pct
-    verdict = "graduated" if graduated else "demoted"
+    usable_rows = [row for row in rows if not row["inconclusive"]]
+    passed = sum(1 for row in usable_rows if row["directions_hold"])
+    survival_rate = (passed / len(usable_rows)) if usable_rows else 0.0
+    graduated = bool(usable_rows) and survival_rate >= survival_pct
+    if not usable_rows:
+        verdict = "inconclusive"
+    elif graduated:
+        verdict = "graduated"
+    else:
+        verdict = "demoted"
     report = {
         "family": family,
         "thesis_id": thesis_id,
         "survival_pct": survival_pct,
         "survival_rate": survival_rate,
+        "usable_windows": len(usable_rows),
         "graduated": graduated,
         "verdict": verdict,
         "windows": rows,
@@ -118,7 +138,13 @@ def evaluate_walkforward(
     report_path.parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(report_path, report)
     _write_graduation_to_run_row(db_path, run_id, graduated)
-    if not graduated and factor_rule:
+    if verdict == "inconclusive":
+        log.warning(
+            "walkforward inconclusive for thesis=%s: no window had evaluable baseline data "
+            "| extend the data universe past validation_end or configure walkforward_end",
+            thesis_id,
+        )
+    if verdict == "demoted" and factor_rule:
         _demote_factor(family, factor_rule, report, runtime_root=runtime_root, code_root=code_root)
     return report
 
@@ -140,10 +166,13 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
         and _registered_predictions_path(controller, record).exists()
     ]
     reports: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
     baseline_config = _record_runtime_config(controller, baseline)
     baseline_window_cache: dict[str, dict[str, Any]] = {}
-    try:
-        for record in sorted(candidates, key=lambda item: item.research_round_number):
+    for record in sorted(candidates, key=lambda item: item.research_round_number):
+        # One candidate's failure (a flaky window backtest, a sparse window)
+        # must not abandon graduation for every other candidate.
+        try:
             predictions = _load_registered_predictions(
                 _registered_predictions_path(controller, record)
             )
@@ -207,11 +236,25 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
                     ),
                 )
             )
-    except Exception as exc:
-        return _fail_walkforward(controller, state, f"walkforward failed: {exc}")
+        except Exception as exc:
+            log.error(
+                "walkforward candidate failed thesis=%s: %s "
+                "| remaining candidates continue; rerun walkforward for this thesis "
+                "after fixing the window backtest",
+                record.thesis_id,
+                exc,
+            )
+            errors.append({"thesis_id": record.thesis_id, "error": str(exc)})
+
+    if errors and not reports:
+        return _fail_walkforward(
+            controller, state, f"walkforward failed for all candidates: {errors}"
+        )
 
     next_state = dict(state)
-    next_state["walkforward_status"] = "completed"
+    next_state["walkforward_status"] = "completed_with_errors" if errors else "completed"
+    if errors:
+        next_state["walkforward_errors"] = errors
     next_state["walkforward_reports"] = [
         str(Path(controller.runtime_root) / "walkforward" / f"{report['thesis_id']}.json")
         for report in reports
@@ -251,6 +294,7 @@ def _prediction_result(
             "candidate": candidate_value,
             "direction_passed": False,
             "missing_metric": True,
+            "missing_baseline": baseline_value is None,
             "reason": f"missing metric: {metric}",
         }
     return {
