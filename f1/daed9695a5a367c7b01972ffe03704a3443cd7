@@ -1,0 +1,43 @@
+tests/test_screening.py
+  s_0312dc3c57502f::t_1c4686931022f2 213-214,226-227,233
+pyproject.toml
+  s_0312dc3c57502f::t_490572ab66a18e 41,56
+tests/test_dependencies.py
+  s_0312dc3c57502f::t_7a6e7460f9185f 30-38
+evidence_pack.py
+  s_0312dc3c57502f::t_4150549a11bd26 218,252
+  s_0312dc3c57502f::t_975a7f8b63419b 215-217,226-227,236-245,251,253-256
+tests/test_autoresearch_research.py
+  s_0312dc3c57502f::t_0f08f2e6282582 56,98-108
+  s_0312dc3c57502f::t_bfcc7cb402df09 173-193
+  s_0312dc3c57502f::t_c6012f373549c0 1213-1266
+  s_0312dc3c57502f::t_3de187fced239b 40
+tests/test_evidence_pack.py
+  s_0312dc3c57502f::t_db0bd3904aa8c1 158-159,310,314-353
+  s_0312dc3c57502f::t_40b3c979d523e4 3
+tests/test_compiler_implementation_verify.py
+  s_0312dc3c57502f::t_8debb41c94d878 153-175
+autoresearch_research.py
+  s_0312dc3c57502f::t_f784efa83eb568 1802-1810,1813-1820,1822,1825,1829
+  s_0312dc3c57502f::t_77427a89d0c46d 1078-1094,1640
+screening.py
+  s_0312dc3c57502f::t_068d318eec1be2 276-278,288-289,313-314,328-334
+compiler_implementation_verify.py
+  s_0312dc3c57502f::t_e10e0103a1362c 627-628
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "f1daed9695a5a367c7b01972ffe03704a3443cd7",
+  "prompts": {},
+  "sessions": {
+    "s_0312dc3c57502f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb6b5-e4e7-7da3-9e2e-d20ef5e81df4",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}
