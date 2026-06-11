@@ -204,6 +204,24 @@ def test_screen_ignores_demoted_factors_for_duplicate_detection() -> None:
     assert result.verdict == "pass"
 
 
+def test_screen_reuses_candidate_mask_for_duplicate_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    real_evaluate = screening.evaluate_entry_rule
+
+    def counting_evaluate(rule: str, features_train: pd.DataFrame):
+        calls.append(rule)
+        return real_evaluate(rule, features_train)
+
+    monkeypatch.setattr(screening, "evaluate_entry_rule", counting_evaluate)
+
+    result = screen("gap_pct < 0", None, _model(), _feature_table())
+
+    assert result.verdict == "kill_duplicate"
+    assert calls == ["gap_pct < 0", "gap_pct < -0.5"]
+
+
 def test_screen_accepts_string_literals_and_dynamic_entry_columns() -> None:
     model = CausalModel(family="ema", version=1)
 

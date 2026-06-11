@@ -60,13 +60,14 @@ def screen(
     config: dict | None = None,
 ) -> ScreeningResult:
     thresholds = _thresholds_for_family(model.family, config=config)
-    proposal = _screen_rule(rule, features_train)
+    candidate = _evaluate_rule(rule, features_train)
+    proposal = _screen_rule_from_mask(rule, features_train, candidate)
     if proposal.verdict == "kill_bad_rule":
         return proposal
     if proposal.sample_count < thresholds["min_sample"]:
         return proposal.model_copy(update={"verdict": "kill_min_sample"})
     overlap_with = _overlapping_factor_id(
-        rule,
+        candidate,
         model.factors,
         features_train,
         max_population_overlap=thresholds["max_population_overlap"],
@@ -124,6 +125,14 @@ def write_screenings(
 
 def _screen_rule(rule: str, features_train: pd.DataFrame) -> ScreeningResult:
     flagged = _evaluate_rule(rule, features_train)
+    return _screen_rule_from_mask(rule, features_train, flagged)
+
+
+def _screen_rule_from_mask(
+    rule: str,
+    features_train: pd.DataFrame,
+    flagged: pd.Series | None,
+) -> ScreeningResult:
     base_loss_rate = _loss_rate(features_train)
     if flagged is None:
         return ScreeningResult(
@@ -163,15 +172,12 @@ def _evaluate_rule(rule: str, features_train: pd.DataFrame) -> pd.Series | None:
 
 
 def _overlapping_factor_id(
-    rule: str,
+    candidate: pd.Series,
     factors: Sequence[CausalFactor],
     features_train: pd.DataFrame,
     *,
     max_population_overlap: float,
 ) -> str | None:
-    candidate = _evaluate_rule(rule, features_train)
-    if candidate is None:
-        return None
     candidate_ids = _flagged_trade_ids(features_train, candidate)
     for factor in factors:
         if factor.status in {"demoted", "refuted"}:
