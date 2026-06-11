@@ -1,0 +1,33 @@
+autoresearch_research.py
+  s_b825041d159022::t_ac5cf14be29e3f 1078,1083-1084,1092-1105
+  s_b825041d159022::t_05c6fbd3cd6923 1202-1204
+autoresearch_experiment.py
+  s_b825041d159022::t_27fe8038ed62de 52
+  s_b825041d159022::t_76abf00812cb4e 439
+causal_harvest.py
+  s_ba7c2d2987b27e::t_d5705e35b8971c 346,350-352
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "f11087590dea0f9d9d53d22c17148dd9420fc788",
+  "prompts": {},
+  "sessions": {
+    "s_b825041d159022": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d41c7810-f5bb-4d4b-82a0-3e7257ac3d38",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_ba7c2d2987b27e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb6a0-bef4-7ff0-b7ef-00ab6dc3287a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
