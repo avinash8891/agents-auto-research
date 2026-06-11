@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from backtest.data_universe import default_data_root
 
 ENTRY_TIME_COLUMNS = frozenset(
     {
@@ -76,8 +77,7 @@ def load_feature_table(round_root: Path) -> pd.DataFrame:
 
 
 def load_regime_labels() -> pd.DataFrame:
-    raw_root = os.environ.get("AUTORESEARCH_DATA_ROOT", "").strip()
-    expected = Path(raw_root).expanduser() / "regime_labels.parquet"
+    expected = default_data_root() / "regime_labels.parquet"
     if not expected.exists():
         raise FileNotFoundError(f"Missing regime labels file: {expected}")
     labels = pd.read_parquet(expected)

@@ -170,6 +170,19 @@ def test_build_feature_table_requires_external_regime_labels(
         build_feature_table(_trades_df(), _bars_df(), events=[], family="ema")
 
 
+def test_load_regime_labels_uses_default_data_root_when_env_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("AUTORESEARCH_DATA_ROOT", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    data_root = tmp_path / "autoresearch-data"
+    _write_regime_labels(data_root)
+
+    labels = load_regime_labels()
+
+    assert labels["regime_label"].tolist() == ["risk_off"]
+
+
 def test_build_feature_table_joins_extra_regime_columns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
