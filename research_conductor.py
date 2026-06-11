@@ -258,12 +258,16 @@ async def run_research_conductor(
             )
         user_prompt = base_prompt + no_trades_instruction
 
-    if rejection_feedback and not mechanism_path:
+    if rejection_feedback:
+        retry_instruction = (
+            "Use only the rendered corpus and this feedback."
+            if mechanism_path
+            else "Read the source code to understand what the strategy does."
+        )
         user_prompt += (
             f"\n\nFEEDBACK TO APPLY BEFORE PROPOSING:\n"
             f"{rejection_feedback}\n\n"
-            f"Propose a thesis that addresses this feedback. "
-            f"Read the source code to understand what the strategy does."
+            f"Propose a thesis that addresses this feedback. {retry_instruction}"
         )
 
     # Inline structured rejection summary (current-round detail + cross-round

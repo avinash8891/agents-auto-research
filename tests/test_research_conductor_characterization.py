@@ -11,6 +11,7 @@ import research_conductor as conductor
 import research_subagents as subagents
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
 from rejection_artifact import write_rejection
+from research_prompts import _build_mechanism_system_prompt
 from research_types import MechanismProposal, StructuredRejection
 
 
@@ -780,8 +781,8 @@ def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_val
     assert out.thesis is not None
     assert out.thesis["story"] == "Gap-down entries reveal loss-prone inventory."
     assert out.thesis["competitor_rule"] == "gap_pct > 0"
-    assert captured["user_prompt"] == rendered_corpus
-    assert "prior screening killed this rule" not in str(captured["user_prompt"])
+    assert str(captured["user_prompt"]).startswith(rendered_corpus)
+    assert "prior screening killed this rule" in str(captured["user_prompt"])
     assert "legacy round results" not in str(captured["user_prompt"])
     assert "feature_table" not in str(captured["system_prompt"])
     assert "residual" in str(captured["system_prompt"]).lower()
@@ -945,6 +946,14 @@ def test_mechanism_proposal_schema_requires_observable_predicted_values() -> Non
                 {"metric": "pnl_weighted_accuracy", "direction": "increase", "predicted": 0.65},
             ],
         )
+
+
+def test_mechanism_prompt_lists_only_harvest_observable_metrics() -> None:
+    prompt = _build_mechanism_system_prompt()
+
+    assert "profit_factor, trade_count, max_drawdown, median_expectancy" in (prompt)
+    assert "win_rate" not in prompt
+    assert "pnl_weighted_accuracy" not in prompt
 
 
 def test_mechanism_proposal_schema_allows_declared_orb_coupled_change() -> None:

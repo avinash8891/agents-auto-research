@@ -61,8 +61,7 @@ ACTIONABLE OUTPUT RULES
 - proposed_change must contain exactly one changed key.
 - predictions are required iff actionable=true.
 - predictions must include at least two distinct MetricName values from:
-  profit_factor, trade_count, max_drawdown, win_rate, median_expectancy,
-  pnl_weighted_accuracy.
+  profit_factor, trade_count, max_drawdown, median_expectancy.
 
 Return only JSON matching this shape:
 {

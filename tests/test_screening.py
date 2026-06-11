@@ -135,6 +135,21 @@ def test_screen_rejects_empty_and_oversized_rules_as_bad_rule() -> None:
     assert screen("gap_pct > 0 " * 60, None, model, _feature_table()).verdict == "kill_bad_rule"
 
 
+def test_screen_ignores_competitor_that_fails_thresholds() -> None:
+    features = _feature_table()
+    features.loc[features.index[:2], "tiny_competitor"] = 1.0
+    features.loc[:, "tiny_competitor"] = features["tiny_competitor"].fillna(0.0)
+
+    result = screen(
+        "gap_pct < 0",
+        "tiny_competitor == 1.0",
+        CausalModel(family="ema", version=1),
+        features,
+    )
+
+    assert result.verdict == "pass"
+
+
 def test_screen_accepts_string_literals_and_dynamic_entry_columns() -> None:
     model = CausalModel(family="ema", version=1)
 

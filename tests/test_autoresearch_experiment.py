@@ -24,8 +24,8 @@ from autoresearch_experiment import (
     _find_duplicate_artifact_output,
     _invalid_duplicate_result_summary,
     _record_baseline_checkpoint,
-    _round_context_from_state,
     _request_registered_prediction_retest,
+    _round_context_from_state,
     _serialize_artifact_dir,
     _thesis_sidecar_path,
     _validate_backtest_request,
@@ -1491,6 +1491,81 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
     assert updated_model.version == 2
     assert updated_model.factors[0].status == "harvested"
     assert "profit_factor direction=pass" in updated_model.factors[0].lesson
+
+
+def test_run_experiment_discards_refuted_registered_predictions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 20, "profit_factor": 2.1},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    round_root = _prepare_registered_prediction_round(tmp_path, controller)
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-refuted",
+                "strategy_family": "ema",
+                "hypothesis": "Gap-down entries should improve harvest metrics.",
+                "mechanism": "Gap pressure creates better mean-reversion setups.",
+                "rule": "gap_pct < 0",
+            }
+        )
+        + "\n"
+    )
+    (round_root / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-refuted",
+                "registered_at_utc": "2026-06-10T00:00:00+00:00",
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.4},
+                    {"metric": "trade_count", "direction": "not_worse_than", "predicted": 25},
+                ],
+            }
+        )
+        + "\n"
+    )
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            factors=[
+                CausalFactor(
+                    factor_id="f-gap-down",
+                    story="Gap-down entries should improve harvest metrics.",
+                    rule="gap_pct < 0",
+                    direction="win",
+                )
+            ],
+            accuracy_history=[],
+        )
+    )
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-refuted",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-command-refuted",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    record = controller.backtest_run_db.all()[0]
+    assert record.accepted is False
+    assert record.prediction_verdict == "refuted"
+    updated_model = load_model("ema")
+    assert updated_model.factors[0].status == "refuted"
 
 
 def _write_registered_prediction_result_script(tmp_path: Path, metrics: dict[str, object]) -> Path:

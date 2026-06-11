@@ -157,6 +157,22 @@ def test_build_corpus_reads_runtime_artifacts_for_refuted_harvest(
     assert corpus.cross_family[0].factor_id == "f101"
 
 
+def test_build_corpus_keeps_harvested_cross_family_factors(tmp_path: Path, monkeypatch) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    save_model(
+        CausalModel(
+            family="orb",
+            version=2,
+            factors=[_factor("f101", "gap_pct > 0", status="harvested")],
+            accuracy_history=[],
+        )
+    )
+
+    corpus = build_corpus("ema", 2)
+
+    assert [factor.factor_id for factor in corpus.cross_family] == ["f101"]
+
+
 def test_build_corpus_skips_malformed_harvest_artifacts(tmp_path: Path, monkeypatch) -> None:
     _setup_runtime(tmp_path, monkeypatch)
     bad_path = tmp_path / "runtime/jobs/job-1/research/round-2/harvest_verdict_bad.json"

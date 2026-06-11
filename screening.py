@@ -79,18 +79,27 @@ def screen(
         )
     if proposal.sample_count < thresholds["min_sample"]:
         return proposal.model_copy(update={"verdict": "kill_min_sample"})
-    if (
-        abs(proposal.lift) < thresholds["min_abs_lift"]
-        or proposal.p_value > thresholds["max_p_value"]
-    ):
+    if not _passes_screening_thresholds(proposal, thresholds):
         return proposal.model_copy(update={"verdict": "kill_no_lift"})
     if competitor_rule:
         competitor = _screen_rule(competitor_rule, features_train)
-        if competitor.verdict != "kill_bad_rule" and abs(proposal.lift) + 0.01 < abs(
-            competitor.lift
+        if (
+            competitor.verdict != "kill_bad_rule"
+            and _passes_screening_thresholds(competitor, thresholds)
+            and abs(proposal.lift) + 0.01 < abs(competitor.lift)
         ):
             return proposal.model_copy(update={"verdict": "kill_lost_to_competitor"})
     return proposal.model_copy(update={"verdict": "pass"})
+
+
+def _passes_screening_thresholds(
+    result: ScreeningResult, thresholds: dict[str, float | int]
+) -> bool:
+    return (
+        result.sample_count >= thresholds["min_sample"]
+        and abs(result.lift) >= thresholds["min_abs_lift"]
+        and result.p_value <= thresholds["max_p_value"]
+    )
 
 
 def write_screenings(

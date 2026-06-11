@@ -277,7 +277,9 @@ def _load_cross_family_factors(runtime_root: Path, family: str) -> list[CausalFa
             continue
         model = CausalModel.model_validate(json.loads(path.read_text(encoding="utf-8")))
         factors.extend(
-            factor for factor in model.factors if factor.status in {"supported", "refuted"}
+            factor
+            for factor in model.factors
+            if factor.status in {"supported", "harvested", "refuted"}
         )
     return sorted(factors, key=lambda item: item.factor_id)
 
