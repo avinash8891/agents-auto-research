@@ -8,6 +8,7 @@ BacktestRunDB.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -66,6 +67,13 @@ log = get_logger(__name__)
 
 class ResultJsonError(RuntimeError):
     """Raised when a RESULT_JSON marker exists but the referenced payload is invalid."""
+
+
+@dataclass(frozen=True)
+class RetestRequested:
+    """Explicit transition emitted when prediction validation needs one retest."""
+
+    next_state: dict[str, Any]
 
 
 def _execution_root(controller: "AutoresearchController") -> Path:
@@ -1409,12 +1417,12 @@ def _force_registered_inconclusive_after_retest(verdict: Any) -> Any:
     )
 
 
-def _schedule_registered_prediction_retest(
+def _request_registered_prediction_retest(
     controller: "AutoresearchController",
     state: dict[str, Any],
     *,
     config: str,
-) -> None:
+) -> RetestRequested:
     config_path = resolve_config_path(
         config,
         code_root=controller.root,
@@ -1443,10 +1451,9 @@ def _schedule_registered_prediction_retest(
             "selected_thesis_id": state.get("selected_thesis_id"),
             "next_action": next_action,
             "blockers": [],
-            "_preserve_next_action_once": True,
         }
     )
-    controller.write_state(persisted)
+    return RetestRequested(next_state=persisted)
 
 
 def _write_extended_retest_config(
@@ -1756,6 +1763,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             metric,
             details,
         )
+        retest_request: RetestRequested | None = None
         if registered_verdict is not None:
             if registered_verdict.status == "inconclusive":
                 if _is_registered_prediction_retest_action(state):
@@ -1764,10 +1772,12 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
                     )
                     decision = "keep" if registered_verdict.status == "supported" else "discard"
                 else:
-                    _schedule_registered_prediction_retest(controller, state, config=config)
+                    retest_request = _request_registered_prediction_retest(
+                        controller, state, config=config
+                    )
                     decision = "retest"
             verdict = registered_verdict
-            if registered_verdict.status == "degenerate":
+            if registered_verdict.status in {"degenerate", "refuted"}:
                 decision = "discard"
             _apply_registered_verdict_to_causal_factor(controller, config, registered_verdict)
 
@@ -1800,7 +1810,14 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             if not isinstance(runtime_config, dict) or not runtime_config:
                 runtime_config = getattr(controller.ctx, "latest_config_contents", {}) or {}
             _record_baseline_checkpoint(controller, details, runtime_config)
-        _finalize_round(controller, config, metric, decision, verdict)
+        _finalize_round(
+            controller,
+            config,
+            metric,
+            decision,
+            verdict,
+            retest_request=retest_request if decision == "retest" else None,
+        )
         return 0
     finally:
         controller.clear_transient_context()
@@ -1816,13 +1833,14 @@ def _finalize_round(
     metric: float,
     decision: str,
     verdict: Any | None,
+    *,
+    retest_request: RetestRequested | None = None,
 ) -> None:
     """End the hypothesis, reconcile state, log the iteration trace, and
     send the completion notification."""
     end_hypothesis(decision=decision, metric=metric)
-    pending_state = controller.read_state()
-    if pending_state.pop("_preserve_next_action_once", None):
-        state = pending_state
+    if retest_request is not None:
+        state = retest_request.next_state
         controller.write_state(state)
         controller.write_current_md(state, controller.read_results())
     else:

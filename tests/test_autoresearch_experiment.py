@@ -25,6 +25,7 @@ from autoresearch_experiment import (
     _invalid_duplicate_result_summary,
     _record_baseline_checkpoint,
     _round_context_from_state,
+    _request_registered_prediction_retest,
     _serialize_artifact_dir,
     _thesis_sidecar_path,
     _validate_backtest_request,
@@ -1611,8 +1612,40 @@ def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusiv
     retest_action = persisted["next_action"]
     assert retest_action["source"] == "registered_prediction_retest"
     assert retest_action["registered_prediction_retest"]["attempt"] == 1
+    assert "_preserve_next_action_once" not in persisted
     retest_config = tmp_path / retest_action["config"]
     assert json.loads(retest_config.read_text())["validation_start"] == "2019-04-01"
+
+
+def test_request_registered_prediction_retest_returns_explicit_transition_without_sentinel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    controller = _controller_for_experiment(tmp_path, "echo noop")
+    _prepare_registered_prediction_round(tmp_path, controller)
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    retest_request = _request_registered_prediction_retest(
+        controller,
+        state,
+        config="runtime/jobs/job-6/research/round-1/selected_config.json",
+    )
+
+    assert controller.read_state()["next_action"]["source"] == "research"
+    assert retest_request.next_state["next_action"]["source"] == "registered_prediction_retest"
+    assert "_preserve_next_action_once" not in retest_request.next_state
 
 
 def test_run_experiment_forces_registered_inconclusive_after_retest_once(

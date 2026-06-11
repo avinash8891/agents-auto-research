@@ -333,10 +333,11 @@ def _validate_process(
         missing.append("analyze_trades")
     if not missing:
         return
-    log.warning(
-        "process gate warning: required tools not called: %s tools_called=%s",
-        missing,
-        sorted(tools_called),
+    raise ThesisValidationError(
+        f"Process gate failed: required tools not called: {missing}",
+        rejection_code="process_missing_required_tools",
+        evidence={"missing_tools": missing, "tools_called": sorted(tools_called)},
+        remediation_hint="Call the required research tools before submitting the thesis.",
     )
 
 
