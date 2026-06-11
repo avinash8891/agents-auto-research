@@ -47,8 +47,7 @@ from autoresearch_state import BacktestResultRecord, write_state
 from backtest_run_db import BacktestRunDB
 from causal_model import load_model
 from feature_table import feature_table_path
-from research_types import ConductorResult
-from research_types import CausalModel
+from research_types import CausalModel, ConductorResult
 from strategies import STRATEGIES
 from strategy_family import load_family
 from thesis_validator import ThesisValidationError
