@@ -141,6 +141,7 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
     ]
     reports: list[dict[str, Any]] = []
     baseline_config = _record_runtime_config(controller, baseline)
+    baseline_window_cache: dict[str, dict[str, Any]] = {}
     try:
         for record in sorted(candidates, key=lambda item: item.research_round_number):
             predictions = _load_registered_predictions(
@@ -164,16 +165,17 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
             baseline_metrics: list[dict[str, Any]] = []
             candidate_metrics: list[dict[str, Any]] = []
             for index, window in enumerate(windows):
-                baseline_metrics.append(
-                    _run_window_backtest(
+                cache_key = _baseline_window_cache_key(baseline_config, window)
+                if cache_key not in baseline_window_cache:
+                    baseline_window_cache[cache_key] = _run_window_backtest(
                         controller,
                         baseline_config,
-                        record.thesis_id,
+                        baseline.thesis_id,
                         index,
                         "baseline",
                         window,
                     )
-                )
+                baseline_metrics.append(dict(baseline_window_cache[cache_key]))
                 candidate_metrics.append(
                     _run_window_backtest(
                         controller,
@@ -218,6 +220,18 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
     controller.write_state(next_state)
     controller.write_current_md(next_state, controller.read_results())
     return 0
+
+
+def _baseline_window_cache_key(config: dict[str, Any], window: WalkForwardWindow) -> str:
+    return json.dumps(
+        {
+            "config": config,
+            "test_start": window.test_start,
+            "test_end": window.test_end,
+        },
+        sort_keys=True,
+        default=str,
+    )
 
 
 def _prediction_result(
