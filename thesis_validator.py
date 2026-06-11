@@ -328,16 +328,35 @@ VALID_PROCESS_TOOLS: Final[frozenset[str]] = frozenset(
 def _validate_process(
     tools_called: set[str] | frozenset[str], *, require_analyst_tool: bool = False
 ) -> None:
+    signal = _process_signal(tools_called, require_analyst_tool=require_analyst_tool)
+    decision = _policy_decide([signal] if signal is not None else [])
+    if decision.action != "reject":
+        return
+    triggering = decision.triggering
+    assert triggering is not None, "reject decisions must carry a triggering signal"
+    raise ThesisValidationError(
+        triggering.summary,
+        rejection_code=triggering.code,
+        evidence=dict(triggering.evidence),
+        remediation_hint=_format_remediation(triggering.remediation),
+    )
+
+
+def _process_signal(
+    tools_called: set[str] | frozenset[str], *, require_analyst_tool: bool = False
+) -> BehaviorSignal | None:
     missing = [tool for tool in sorted(VALID_PROCESS_TOOLS) if tool not in tools_called]
     if require_analyst_tool and "analyze_trades" not in tools_called:
         missing.append("analyze_trades")
     if not missing:
-        return
-    raise ThesisValidationError(
-        f"Process gate failed: required tools not called: {missing}",
-        rejection_code="process_missing_required_tools",
+        return None
+    return BehaviorSignal(
+        code="process_missing_required_tools",
+        confidence=1.0,
+        severity="block",
+        summary=f"Process gate failed: required tools not called: {missing}",
         evidence={"missing_tools": missing, "tools_called": sorted(tools_called)},
-        remediation_hint="Call the required research tools before submitting the thesis.",
+        remediation=("Call the required research tools before submitting the thesis.",),
     )
 
 

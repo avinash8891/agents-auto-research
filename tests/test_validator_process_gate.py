@@ -4,6 +4,7 @@ import pytest
 
 from backtest_run_db import research_thesis_attempt_id
 from thesis_validator import ThesisValidationError
+from thesis_validator import _process_signal
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
 
@@ -88,6 +89,18 @@ def test_process_gate_rejects_when_web_search_not_called() -> None:
     assert "required tools not called: ['web_search']" in str(exc_info.value)
     assert exc_info.value.rejection_code == "process_missing_required_tools"
     assert exc_info.value.evidence == {
+        "missing_tools": ["web_search"],
+        "tools_called": ["list_round_results"],
+    }
+
+
+def test_process_gate_detection_returns_behavior_signal_before_policy() -> None:
+    signal = _process_signal({"list_round_results"})
+
+    assert signal is not None
+    assert signal.code == "process_missing_required_tools"
+    assert signal.severity == "block"
+    assert signal.evidence == {
         "missing_tools": ["web_search"],
         "tools_called": ["list_round_results"],
     }
