@@ -1,0 +1,22 @@
+tests/test_experiment_evaluator.py
+  s_3bfcb10840fb93::t_17d7d47a0727ca 79,87,93-108,111-117
+experiment_evaluator.py
+  s_3bfcb10840fb93::t_01431a06cf5d82 216-224
+  s_3bfcb10840fb93::t_eac56113e8d9da 28,33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "fac755b8200355ca67c7df5cf4a263086835bcc7",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
