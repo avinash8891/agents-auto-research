@@ -418,7 +418,7 @@ def test_gate_structural_evidence_citations_allow_experiment_result_when_no_trad
         ]
     )
 
-    validate_research_thesis(thesis, evidence_context="no_trades")
+    validate_research_thesis(thesis)
 
 
 def test_gate_structural_evidence_citations_no_trades_no_longer_requires_experiment_result() -> (
@@ -433,7 +433,7 @@ def test_gate_structural_evidence_citations_no_trades_no_longer_requires_experim
         ]
     )
 
-    _expect_acceptance(thesis, evidence_context="no_trades")
+    _expect_acceptance(thesis)
 
 
 def test_gate_structural_evidence_citations_cold_start_allows_web_only() -> None:
@@ -446,7 +446,7 @@ def test_gate_structural_evidence_citations_cold_start_allows_web_only() -> None
         ]
     )
 
-    validate_research_thesis(thesis, evidence_context="cold_start")
+    validate_research_thesis(thesis)
 
 
 def test_gate_structural_source_code_verification_requires_real_file_and_symbol() -> None:

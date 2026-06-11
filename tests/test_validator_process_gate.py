@@ -86,6 +86,17 @@ def test_process_gate_warns_when_web_search_not_called() -> None:
     assert thesis.thesis_id == "job-test-round-1-attempt-1"
 
 
+def test_process_gate_warning_is_logged(caplog) -> None:
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        thesis = validate_thesis_dict(_valid_thesis(), tools_called={"list_round_results"})
+
+    assert thesis.thesis_id == "job-test-round-1-attempt-1"
+    assert "process_missing_required_tools" in caplog.text
+    assert "web_search" in caplog.text
+
+
 def test_process_gate_warning_is_sent_to_policy(monkeypatch) -> None:
     captured_codes: list[str] = []
     original_decide = thesis_validator._policy_decide

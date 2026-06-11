@@ -153,14 +153,6 @@ def _render_resolution_context(resolution_context: dict[str, Any] | None) -> str
     return "\n".join(lines)
 
 
-def _evidence_context_for_round(trades_file: str, latest_outcome: dict[str, Any]) -> str:
-    if trades_file:
-        return "trades"
-    if latest_outcome:
-        return "no_trades"
-    return "cold_start"
-
-
 def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     """Extract single thesis dict from conductor response. Returns (thesis, validation_error).
 
