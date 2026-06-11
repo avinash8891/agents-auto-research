@@ -156,6 +156,8 @@ def attach_harvest_lesson(
                 selected_thesis=selected,
                 prediction_results=prediction_results,
             )
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            log.warning("harvest lesson LLM synthesis timed out; using metric fallback: %s", exc)
         except Exception as exc:  # noqa: BLE001
             log.warning("harvest lesson LLM synthesis failed; using metric fallback: %s", exc)
         else:
