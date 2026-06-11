@@ -1,0 +1,21 @@
+.compound-engineering/config.local.example.yaml
+  s_8b1d2d0dada2d3::t_7fe9069dace1e1 1-49
+.gitignore
+  s_8b1d2d0dada2d3::t_5a4a6a002fc1ec 245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "c42a43504758b12019b958fef11d1607a433cb66",
+  "prompts": {},
+  "sessions": {
+    "s_8b1d2d0dada2d3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb6b3-fa87-7340-8885-810ec41a0aab",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
