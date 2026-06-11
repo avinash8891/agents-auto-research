@@ -29,7 +29,7 @@ The user-visible win is the elimination of re-litigation ("`EMA crossover 9/21` 
 
 ### 3.1 Where the system prompt and user prompt are built
 
-**System prompt — static per family.** `research_prompts._build_conductor_system_prompt(strategy_description)` (line 18) takes a single argument: the static per-family description. It contains identity, tools list, schema, doctrine. It does **not** vary round-to-round.
+**System prompt — static per family.** `research_prompts._build_mechanism_system_prompt()` builds the mechanism-only conductor instructions. It contains the structured `MechanismProposal` contract and residual-mechanism doctrine. It does **not** vary round-to-round.
 
 **User prompt — round-specific.** Built inline in `research_conductor.py:131–175`. Composed from:
 - `research_round` (number)
@@ -38,7 +38,7 @@ The user-visible win is the elimination of re-litigation ("`EMA crossover 9/21` 
 - `EXPERIMENT RESULTS SUMMARY:` — `experiment_results` string
 - Trades / events / diagnostics file paths
 - `rejection_feedback` (when set)
-- `rejection_artifact.render_rejection_block` + `compute_escalation_directive` (current-job context)
+- `rejection_artifact.render_rejection_block` (current-job context)
 
 **There is no `round_goal_text` or `round_intent` field.** The "goal" is implicit: "propose the next thesis." Round-specific intent is carried by `latest_outcome`, `rejection_feedback`, and the rejection-pattern block.
 
@@ -381,18 +381,18 @@ Validator rejects when:
 - `matched_thesis_id` doesn't resolve to a real prior in the corpus.
 - A round has more than 1 override attempt (capped per round).
 
-### 5.8 Tool-description edit in `research_prompts.py`
+### 5.8 Mechanism prompt context wording in `research_prompts.py`
 
-The conductor's system prompt currently advertises `list_past_theses` / `get_past_thesis` / `list_experiment_results` / `get_experiment_result` as if they were the primary path to prior context. Once pre-flight pre-loads the top-K relevant priors in the user prompt, those tools become **follow-up tools**, not primary-context tools. Without an edit, the agent will sometimes call them redundantly, wasting tokens and round-trips.
+The conductor's mechanism prompt should treat the rendered corpus as the primary context. Once pre-flight pre-loads the top-K relevant priors in the user prompt, extra context retrieval is follow-up work, not the primary planning path.
 
-**Change.** Replace lines 50–58 of `research_prompts.py` with reworded text that:
+**Change.** Keep the mechanism prompt wording aligned with the rendered corpus contract:
 - States explicitly that the round's user prompt already contains top-K relevant priors + landscape + dimension pairs.
-- Repositions the tools as for deep follow-up: "use only when you need a thesis NOT in the pre-flight block, or a level of detail beyond the summary."
-- Leaves the tool signatures unchanged — only the description text changes. No tool registration touched.
+- Repositions extra retrieval as deep follow-up: use only when the rendered corpus is insufficient.
+- Leaves the mechanism output schema unchanged.
 
-This is a static reword. It does not change MCP wiring or `research_tools_mcp.py`. The tools remain fully available; their advertised purpose is sharpened.
+This is a static reword. It does not change MCP wiring or `research_tools_mcp.py`.
 
-Test: a unit test on `_build_conductor_system_prompt` asserts the new wording is present, mentions "pre-loaded", and removes the impression that calling these tools is the agent's primary path to context.
+Test: a unit test on `_build_mechanism_system_prompt` asserts the wording keeps the rendered corpus as the primary path to context.
 
 ## 6. Validator changes
 
@@ -546,7 +546,7 @@ No staged rollout flag. Behavior change is contained to thesis-creation rounds; 
 - When the corpus has theses in multiple dimensions, at least one entry in the returned K is from a dimension **other than** `latest_outcome.mechanism_dimension`. (Two-pass retrieval working.)
 - MMR re-ranking demoted at least one near-clone in a synthetic 5-clones + 5-spread test fixture at `lambda_mult=0.5`.
 - Rendered prior-attempts entries show `config_changes` key→value pairs (up to the cap), not just key names — verified by asserting a specific value (e.g. `"ema_period": 8`) appears in the block for a fixture prior known to have changed that key.
-- Updated system-prompt tool description (§5.8) is detectable in `_build_conductor_system_prompt` output and references "pre-loaded".
+- Updated mechanism-prompt context wording (§5.8) is detectable in `_build_mechanism_system_prompt` output and references the rendered corpus.
 - A near-duplicate proposed thesis (paraphrased version of a known prior) is caught by dedup, with the matched `thesis_id` and similarity surfaced to the agent.
 - A thesis with a hallucinated `prior_lever_outcomes[].prior_thesis_id` is hard-rejected by the validator.
 - A thesis whose chosen dimension has more attempts than every "underexplored" alternative receives a `thesis_quality_underexplored_misclassification` warn signal (not a reject).

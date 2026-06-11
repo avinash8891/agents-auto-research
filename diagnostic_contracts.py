@@ -17,6 +17,13 @@ def normalize_diagnostic_requirement(requirement: str) -> str:
 
 _REGISTERED_SPECS: dict[str, DiagnosticRequirementSpec] = {}
 ANALYSIS_ONLY_DIAGNOSTIC_PREFIXES = ("definition_check_", "implementation_")
+RETIRED_DIAGNOSTIC_KEYS = frozenset(
+    {
+        "max_drawdown_and_pct_profitable_windows_vs_base",
+        "max_drawdown_and_pct_profitable_windows_versus_base",
+        "pct_profitable_windows_and_max_drawdown_change_relative_to_base",
+    }
+)
 
 
 def _register(spec: DiagnosticRequirementSpec) -> None:
@@ -37,7 +44,6 @@ _register(
         aliases=[
             "max_drawdown_change_relative_to_base",
             "max_drawdown_versus_base",
-            "max_drawdown_and_pct_profitable_windows_vs_base",
         ],
         description=(
             "Compare candidate vs baseline max_drawdown after the run has baseline "
@@ -76,6 +82,7 @@ def build_required_diagnostic_specs(
         normalized = normalize_diagnostic_requirement(requirement)
         if not normalized or normalized in seen:
             continue
+        _raise_if_retired_diagnostic(normalized)
         if normalized.startswith(ANALYSIS_ONLY_DIAGNOSTIC_PREFIXES):
             continue
         registered = registered_diagnostic_spec(normalized)
@@ -108,7 +115,8 @@ def enrich_required_diagnostics(
             if isinstance(item, DiagnosticRequirementSpec)
             else DiagnosticRequirementSpec.model_validate(item)
         )
-        if spec.key in {"max_drawdown_vs_base", "max_drawdown_and_pct_profitable_windows_vs_base"}:
+        _raise_if_retired_diagnostic(spec.key)
+        if spec.key == "max_drawdown_vs_base":
             b_md = baseline_metrics.get("max_drawdown")
             c_md = candidate_metrics.get("max_drawdown")
             if None in {b_md, c_md}:
@@ -125,6 +133,15 @@ def enrich_required_diagnostics(
                 "delta_max_drawdown": round(float(c_md) - float(b_md), 6),
             }
     return enriched
+
+
+def _raise_if_retired_diagnostic(key: str) -> None:
+    normalized = normalize_diagnostic_requirement(key)
+    if normalized in RETIRED_DIAGNOSTIC_KEYS:
+        raise ValueError(
+            f"retired diagnostic '{normalized}' references pct_profitable_windows, "
+            "which is no longer emitted"
+        )
 
 
 def diagnostic_spec_debug_dump(specs: list[DiagnosticRequirementSpec]) -> str:

@@ -66,6 +66,13 @@ class FeatureTableArtifact:
         table.to_parquet(self.path, index=False)
 
 
+@dataclass(frozen=True)
+class SymbolBars:
+    bars: pd.DataFrame
+    daily: pd.DataFrame
+    timestamps: pd.Series
+
+
 def feature_table_path(round_root: Path) -> Path:
     return FeatureTableArtifact(round_root).path
 
@@ -100,10 +107,27 @@ def build_feature_table(
     regime_labels = load_regime_labels()
     extra_regime_columns = _extra_regime_columns(regime_labels)
     config = runtime_config or {}
+    bars_by_symbol = {
+        str(symbol): SymbolBars(
+            bars=symbol_bars.reset_index(drop=True),
+            daily=_daily_bars(symbol_bars),
+            timestamps=symbol_bars["timestamp"].reset_index(drop=True),
+        )
+        for symbol, symbol_bars in bars.groupby("symbol", sort=False)
+    }
+    feature_cache: dict[tuple[Any, ...], Any] = {}
 
     rows = [
-        _feature_row(trade, bars, regime_labels, str(family).lower(), config, event_stops)
-        for _, trade in trades.iterrows()
+        _feature_row(
+            trade,
+            bars_by_symbol,
+            regime_labels,
+            str(family).lower(),
+            config,
+            event_stops,
+            feature_cache,
+        )
+        for trade in trades.to_dict("records")
     ]
     columns = _feature_columns(extra_regime_columns)
     out = pd.DataFrame(rows, columns=columns)
@@ -116,12 +140,13 @@ def build_feature_table(
 
 
 def _feature_row(
-    trade: pd.Series,
-    bars: pd.DataFrame,
+    trade: dict[str, Any],
+    bars_by_symbol: dict[str, SymbolBars],
     regime_labels: pd.DataFrame,
     family: str,
     runtime_config: dict[str, Any],
     event_stops: dict[tuple[str, pd.Timestamp], float],
+    feature_cache: dict[tuple[Any, ...], Any],
 ) -> dict[str, Any]:
     symbol = str(trade.get("symbol", ""))
     side = str(trade.get("side") or trade.get("direction") or "").lower()
@@ -129,11 +154,21 @@ def _feature_row(
     if entry_local.tzinfo is None:
         entry_local = entry_local.tz_localize("America/New_York")
     entry_ts = entry_local.tz_convert("UTC")
-    symbol_bars = bars[bars["symbol"] == symbol].sort_values("timestamp")
-    prior_bars = symbol_bars[symbol_bars["timestamp"] <= entry_ts]
-    entry_bar = _last_bar_at_or_before(prior_bars, entry_ts)
+    symbol_data = bars_by_symbol.get(symbol)
+    if symbol_data is None:
+        symbol_data = SymbolBars(
+            bars=pd.DataFrame(
+                columns=["symbol", "timestamp", "date", "open", "high", "low", "close"]
+            ),
+            daily=pd.DataFrame(columns=["date", "open", "high", "low", "close"]),
+            timestamps=pd.Series(dtype="datetime64[ns, UTC]"),
+        )
+    symbol_bars = symbol_data.bars
+    entry_pos = int(symbol_data.timestamps.searchsorted(entry_ts, side="left"))
+    prior_bars = symbol_bars.iloc[:entry_pos]
+    entry_bar = _last_bar_before(prior_bars, entry_ts)
     entry_day = entry_ts.tz_convert("America/New_York").date()
-    daily = _daily_bars(symbol_bars[symbol_bars["timestamp"] <= entry_ts])
+    daily = symbol_data.daily
     current_day = daily[daily["date"] == entry_day]
     prior_days = daily[daily["date"] < entry_day]
     current_open = _first_float(current_day, "open")
@@ -156,6 +191,8 @@ def _feature_row(
 
     out_pnl = _float_or_nan(trade.get("pnl", trade.get("pnl_abs", trade.get("pnl_pct", np.nan))))
     out_pnl_pct = _float_or_nan(trade.get("pnl_pct", np.nan))
+    if not np.isfinite(out_pnl):
+        raise ValueError(f"feature table trade {symbol}:{entry_ts.isoformat()} missing finite pnl")
 
     row = {
         "trade_id": f"{symbol}:{entry_ts.isoformat()}",
@@ -164,7 +201,7 @@ def _feature_row(
         "entry_ts": entry_ts,
         "time_of_day_min": _time_of_day_min(entry_ts),
         "day_of_week": entry_ts.tz_convert("America/New_York").dayofweek,
-        "bars_since_open": max(len(prior_bars[prior_bars["date"] == entry_day]) - 1, 0),
+        "bars_since_open": len(prior_bars[prior_bars["date"] == entry_day]),
         "gap_pct": gap_pct,
         "prior_day_range_pct": prior_day_range_pct,
         "overnight_move_pct": overnight_move_pct,
@@ -191,6 +228,7 @@ def _feature_row(
             entry_ts=entry_ts,
             entry_price=entry_price,
             runtime_config=runtime_config,
+            feature_cache=feature_cache,
         )
     )
     row.update(_regime_columns_for_date(regime_labels, entry_day))
@@ -255,13 +293,13 @@ def _daily_bars(bars: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _last_bar_at_or_before(prior_bars: pd.DataFrame, entry_ts: pd.Timestamp) -> pd.Series:
+def _last_bar_before(prior_bars: pd.DataFrame, entry_ts: pd.Timestamp) -> pd.Series:
     if prior_bars.empty:
         return pd.Series(dtype=object)
-    at_or_before = prior_bars[prior_bars["timestamp"] <= entry_ts]
-    if at_or_before.empty:
+    before = prior_bars[prior_bars["timestamp"] < entry_ts]
+    if before.empty:
         return pd.Series(dtype=object)
-    return at_or_before.iloc[-1]
+    return before.iloc[-1]
 
 
 def _first_float(frame: pd.DataFrame, column: str) -> float:
@@ -310,21 +348,28 @@ def _vol_pctile_20d(daily: pd.DataFrame, entry_day: object) -> float:
 
 
 def _regime_label_for_date(labels: pd.DataFrame, entry_day: object) -> str:
-    matches = labels[labels["date"] == entry_day]
-    if matches.empty:
+    row = _prior_regime_row(labels, entry_day)
+    if row is None:
         return ""
-    return str(matches.iloc[0]["regime_label"])
+    return str(row["regime_label"])
 
 
 def _regime_columns_for_date(labels: pd.DataFrame, entry_day: object) -> dict[str, Any]:
     columns = _extra_regime_columns(labels)
     if not columns:
         return {}
-    matches = labels[labels["date"] == entry_day]
-    if matches.empty:
+    row = _prior_regime_row(labels, entry_day)
+    if row is None:
         return {column: np.nan for column in columns}
-    row = matches.iloc[0]
     return {column: row[column] for column in columns}
+
+
+def _prior_regime_row(labels: pd.DataFrame, entry_day: object) -> pd.Series | None:
+    prior = labels[labels["date"] < entry_day]
+    if prior.empty:
+        return None
+    latest_date = prior["date"].max()
+    return prior.loc[prior["date"] == latest_date].iloc[-1]
 
 
 def _extra_regime_columns(labels: pd.DataFrame) -> frozenset[str]:

@@ -158,7 +158,7 @@ def test_build_corpus_reads_runtime_artifacts_for_refuted_harvest(
     assert corpus.screening_history[0].flagged_loss_rate == 0.8
     assert corpus.screening_history[0].base_loss_rate == 0.56
     assert corpus.harvest_verdicts[0]["registered_predictions"][0]["gap"] == -0.23
-    assert corpus.residual_summary[0]["trade_id"] in {"holdout-loss", "holdout-win"}
+    assert {row["trade_id"] for row in corpus.residual_summary} == {"train-loss", "train-win"}
     assert corpus.cross_family[0].factor_id == "f101"
 
 
@@ -202,7 +202,7 @@ def test_build_corpus_uses_explicit_runtime_and_code_roots(tmp_path: Path, monke
     )
 
     assert corpus.model.factors[0].factor_id == "f001"
-    assert {row["trade_id"] for row in corpus.residual_summary}
+    assert {row["trade_id"] for row in corpus.residual_summary} == {"train-loss", "train-win"}
     assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
 
 
@@ -264,7 +264,7 @@ def test_build_corpus_feature_table_is_scoped_to_active_job(tmp_path: Path, monk
 
     corpus = build_corpus("ema", 2, job=1)
 
-    assert {row["trade_id"] for row in corpus.residual_summary}
+    assert {row["trade_id"] for row in corpus.residual_summary} == {"train-loss", "train-win"}
     assert "other-job" not in {row["trade_id"] for row in corpus.residual_summary}
 
 
@@ -373,6 +373,54 @@ def test_build_corpus_screening_history_is_scoped_to_active_job(
     corpus = build_corpus("ema", 2, job=1)
 
     assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
+
+
+def test_build_corpus_caps_screening_history_and_aggregates_older_verdicts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    db_path = tmp_path / "ema_backtest_runs.db"
+    db_path.unlink()
+    BacktestRunDB(db_path)
+    for round_number in range(1, 13):
+        write_screenings(
+            db_path,
+            [
+                _screening(
+                    f"rule_{round_number}", "pass" if round_number % 2 == 0 else "kill_no_lift"
+                )
+            ],
+            round_number=round_number,
+            competitor_rule="gap_pct > 0",
+            job_id=1,
+        )
+
+    corpus = build_corpus("ema", 12, job=1)
+    rendered = render_corpus(corpus)
+
+    assert corpus.screening_history_omitted_count == 2
+    assert corpus.screening_history_omitted_verdict_counts == {"kill_no_lift": 1, "pass": 1}
+    assert "rule_1" not in [item.rule for item in corpus.screening_history]
+    assert "rule_2" not in [item.rule for item in corpus.screening_history]
+    assert "rule_3" in [item.rule for item in corpus.screening_history]
+    assert "- omitted_older_screening_rows: 2" in rendered
+    assert "- omitted_older_screening_verdict_counts: kill_no_lift=1, pass=1" in rendered
+
+
+def test_render_corpus_shows_omitted_screenings_without_recent_rows() -> None:
+    corpus = Corpus(
+        family="ema",
+        round_number=14,
+        model=CausalModel(family="ema", version=1),
+        screening_history=[],
+        screening_history_omitted_count=3,
+        screening_history_omitted_verdict_counts={"kill_no_lift": 2, "pass": 1},
+    )
+
+    rendered = render_corpus(corpus)
+
+    assert "- omitted_older_screening_rows: 3" in rendered
+    assert "- omitted_older_screening_verdict_counts: kill_no_lift=2, pass=1" in rendered
 
 
 def test_render_corpus_is_deterministic_and_ordered(tmp_path: Path, monkeypatch) -> None:

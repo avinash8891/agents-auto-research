@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 from collections import deque
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -823,6 +824,19 @@ def _validate_mechanism_proposed_change(family_name: str, raw_thesis: dict[str, 
         raise ValueError(f"unsupported config key(s) for {family_name}: {', '.join(invalid)}")
 
 
+def _validate_mechanism_dedupe(raw_thesis: dict[str, Any], prior_theses: Any) -> None:
+    proposed_change = raw_thesis.get("proposed_change")
+    if not isinstance(proposed_change, dict) or not proposed_change or not prior_theses:
+        return
+    from thesis_validator import _detect_config_key_overlap, _detect_neighboring_threshold
+
+    thesis_view = SimpleNamespace(config_changes=proposed_change)
+    for detector in (_detect_neighboring_threshold, _detect_config_key_overlap):
+        signal = detector(thesis_view, prior_theses)
+        if signal is not None:
+            raise ValueError(signal.summary)
+
+
 def _write_registered_predictions(
     round_root: Path,
     thesis_id: str,
@@ -861,16 +875,7 @@ def _retry_budget_exhausted(
     return attempt >= max_retries or _per_stage_budget_exhausted(stage_1, stage_2, compile_n)
 
 
-def _is_mechanism_proposal(raw_thesis: dict[str, Any]) -> bool:
-    return bool(
-        raw_thesis.get("story")
-        and raw_thesis.get("rule")
-        and "proposed_change" in raw_thesis
-        and "predictions" in raw_thesis
-    )
-
-
-def _mechanism_proposal_to_research_thesis(
+def _mechanism_proposal_to_compiler_payload(
     raw_thesis: dict[str, Any],
     *,
     strategy_family: str,
@@ -879,45 +884,16 @@ def _mechanism_proposal_to_research_thesis(
     proposed_change = raw_thesis.get("proposed_change")
     if not isinstance(proposed_change, dict) or not proposed_change:
         raise ValueError("mechanism proposal requires non-empty proposed_change")
-    predictions = raw_thesis.get("predictions") or []
     story = str(raw_thesis.get("story") or "")
-    expected_effects = [
-        {
-            "metric": prediction.get("metric"),
-            "direction": prediction.get("direction"),
-            "threshold": None,
-            "rationale": prediction.get("rationale", ""),
-        }
-        for prediction in predictions
-        if isinstance(prediction, dict)
-    ]
     return {
         **raw_thesis,
         "thesis_id": thesis_id,
         "strategy_family": strategy_family,
         "hypothesis": story,
         "mechanism": story,
-        "mechanism_dimension": raw_thesis.get("mechanism_dimension") or "emergent",
-        "new_dimension_name": raw_thesis.get("new_dimension_name") or "causal_residual_rule",
-        "why_existing_dimensions_do_not_fit": (
-            raw_thesis.get("why_existing_dimensions_do_not_fit")
-            or "Generated from residual evidence rather than the legacy dimension taxonomy."
-        ),
-        "mechanism_family_definition": (
-            raw_thesis.get("mechanism_family_definition")
-            or "Causal rule over entry-time feature-table columns."
-        ),
-        "expected_reuse_across_future_theses": (
-            raw_thesis.get("expected_reuse_across_future_theses")
-            or "Future rounds can keep, refute, or extend this exact rule."
-        ),
         "config_changes": proposed_change,
-        "expected_effects": expected_effects,
+        "expected_effects": [],
         "disqualifiers": [],
-        "why_not_overfit": (
-            "Mechanism proposal is screened on entry-time features and judged "
-            "by registered out-of-sample prediction direction."
-        ),
     }
 
 
@@ -949,13 +925,29 @@ def _screen_mechanism_proposal(
         train_features,
         config=config,
     )
+    competitor_rule = str(raw_thesis.get("competitor_rule") or "") or None
     write_screenings(
         controller.backtest_run_db.path,
         [screening],
         round_number=research_round,
-        competitor_rule=str(raw_thesis.get("competitor_rule") or "") or None,
+        competitor_rule=competitor_rule,
         job_id=job_id,
     )
+    if competitor_rule:
+        competitor_screening = screen(
+            competitor_rule,
+            None,
+            model,
+            train_features,
+            config=config,
+        )
+        write_screenings(
+            controller.backtest_run_db.path,
+            [competitor_screening],
+            round_number=research_round,
+            competitor_rule=screening.rule,
+            job_id=job_id,
+        )
     if screening.verdict != "pass":
         return (
             False,
@@ -1038,22 +1030,12 @@ def _try_one_validation_attempt(
     - `failed_stage` is "stage_1" / "stage_2" / "compile" on failure, "" on success.
     """
     assert conductor_result.thesis is not None
-    raw_thesis = conductor_result.thesis
-    if _is_mechanism_proposal(raw_thesis):
-        return _try_mechanism_validation_attempt(
-            controller,
-            research_round,
-            attempt,
-            conductor_result,
-        )
-    return _try_legacy_validation_attempt(
+    return _try_mechanism_validation_attempt(
         controller,
         research_round,
         attempt,
         conductor_result,
         prior_theses,
-        require_analyst_evidence=require_analyst_evidence,
-        evidence_context=evidence_context,
         require_analyst_tool=require_analyst_tool,
     )
 
@@ -1114,12 +1096,32 @@ def _try_mechanism_validation_attempt(
     research_round: int,
     attempt: int,
     conductor_result: ConductorResult,
+    prior_theses: Any,
+    *,
+    require_analyst_tool: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None, str]:
     """Validate, screen, compile, and dispatch a structured mechanism proposal."""
 
     raw_thesis, job_id, research_round_id, attempt_number, thesis_id = _init_attempt(
         controller, research_round, attempt, conductor_result
     )
+    if (
+        require_analyst_tool
+        and conductor_result.tools_called is not None
+        and "analyze_trades" not in conductor_result.tools_called
+    ):
+        reason = "trades-backed mechanism proposals must call analyze_trades before validation"
+        _log_validation_rejection(
+            controller,
+            research_round,
+            attempt,
+            raw_thesis,
+            thesis_id,
+            reason,
+            exc=ValueError(reason),
+            stage="stage_1",
+        )
+        return None, f"Mechanism proposal '{thesis_id}' rejected by validator: {reason}", "stage_1"
 
     try:
         proposal = MechanismProposal.model_validate(raw_thesis)
@@ -1138,6 +1140,22 @@ def _try_mechanism_validation_attempt(
 
     raw_thesis = proposal.model_dump(mode="json")
     if not bool(raw_thesis.get("actionable")):
+        from causal_model import save_model
+
+        screening_passed, screening_feedback, causal_model = _screen_mechanism_proposal(
+            controller,
+            research_round,
+            raw_thesis,
+            thesis_id,
+            job_id=job_id,
+        )
+        if not screening_passed:
+            return None, screening_feedback, "stage_1"
+        if causal_model is not None:
+            runtime_root = resolve_runtime_root(
+                getattr(controller, "runtime_root", controller.root)
+            )
+            save_model(causal_model, runtime_root=runtime_root, code_root=controller.root)
         return (
             {
                 "status": "completed",
@@ -1157,6 +1175,7 @@ def _try_mechanism_validation_attempt(
 
     try:
         _validate_mechanism_proposed_change(controller.family.name, raw_thesis)
+        _validate_mechanism_dedupe(raw_thesis, prior_theses)
     except ValueError as exc:
         _log_validation_rejection(
             controller,
@@ -1180,7 +1199,7 @@ def _try_mechanism_validation_attempt(
     if not screening_passed:
         return None, screening_feedback, "stage_1"
 
-    research_thesis = _mechanism_proposal_to_research_thesis(
+    research_thesis = _mechanism_proposal_to_compiler_payload(
         raw_thesis,
         strategy_family=controller.family.name,
         thesis_id=thesis_id,
@@ -1198,71 +1217,6 @@ def _try_mechanism_validation_attempt(
         job_id=job_id,
         pending_causal_model=pending_causal_model,
         validate_stage_2_contract=False,
-    )
-
-
-def _try_legacy_validation_attempt(
-    controller: "AutoresearchController",
-    research_round: int,
-    attempt: int,
-    conductor_result: ConductorResult,
-    prior_theses: Any,
-    *,
-    require_analyst_evidence: bool = True,
-    evidence_context: str | None = None,
-    require_analyst_tool: bool = False,
-) -> tuple[dict[str, Any] | None, str | None, str]:
-    """Validate, compile, and dispatch the legacy ResearchThesis conductor output."""
-
-    from thesis_validator import ThesisValidationError
-
-    raw_thesis, job_id, research_round_id, attempt_number, thesis_id = _init_attempt(
-        controller, research_round, attempt, conductor_result
-    )
-    tools_called = conductor_result.tools_called
-
-    try:
-        raw_thesis, validated = _prepare_thesis_for_validation(
-            raw_thesis,
-            strategy_family=controller.family.name,
-            research_round_id=research_round_id,
-            attempt_number=attempt_number,
-            prior_theses=prior_theses,
-            tools_called=tools_called,
-            require_analyst_evidence=require_analyst_evidence,
-            evidence_context=evidence_context,
-            require_analyst_tool=require_analyst_tool,
-        )
-        thesis_id = validated.thesis_id
-        log.info(
-            f"RESEARCH_RAW thesis_id={thesis_id} "
-            f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
-        )
-    except (ThesisValidationError, ValueError) as exc:
-        _log_validation_rejection(
-            controller,
-            research_round,
-            attempt,
-            raw_thesis,
-            thesis_id,
-            str(exc),
-            exc=exc,
-            stage="stage_1",
-        )
-        return None, f"Thesis '{thesis_id}' rejected by validator: {exc}", "stage_1"
-
-    return _compile_and_dispatch_validated_thesis(
-        controller,
-        research_round,
-        attempt,
-        conductor_result,
-        raw_thesis,
-        validated,
-        thesis_id,
-        research_round_id=research_round_id,
-        job_id=job_id,
-        pending_causal_model=None,
-        validate_stage_2_contract=True,
     )
 
 
@@ -1462,7 +1416,6 @@ def _call_conductor(
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
     rendered_corpus: str = "",
-    conductor_mode: str = "legacy",
 ) -> ConductorResult | None:
     """One conductor HTTP/SDK call with the per-attempt log preamble."""
     from research_conductor import run_research_conductor_sync
@@ -1493,7 +1446,6 @@ def _call_conductor(
         agent_reflexions=agent_reflexions,
         current_job=current_job,
         rendered_corpus=rendered_corpus,
-        conductor_mode=conductor_mode,
     )
 
 
@@ -1613,7 +1565,6 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             agent_reflexions=agent_reflexions,
             current_job=current_job,
             rendered_corpus=rendered_corpus,
-            conductor_mode="mechanism",
         )
         terminal = _check_parsed_for_terminal(conductor_result)
         if terminal is not None:
@@ -1688,7 +1639,11 @@ def _thesis_meta_from_result(result: dict[str, Any], family_name: str) -> dict[s
     thesis_id = _result_thesis_id(result)
     thesis_meta = result.get("thesis")
     if isinstance(thesis_meta, dict):
-        return thesis_meta
+        normalized = dict(thesis_meta)
+        proposed_change = normalized.get("proposed_change")
+        if not normalized.get("config_changes") and isinstance(proposed_change, dict):
+            normalized["config_changes"] = dict(proposed_change)
+        return normalized
     return {
         "thesis_id": thesis_id,
         "strategy_family": family_name,
@@ -1712,7 +1667,6 @@ def _thesis_quality_dimension_scores(thesis_meta: dict[str, Any]) -> dict[str, f
 
     orthogonality_defense = str(thesis_meta.get("orthogonality_defense") or "").strip()
     evidence_strength = str(thesis_meta.get("evidence_strength") or "").strip()
-    thesis_role = str(thesis_meta.get("thesis_role") or "").strip()
     falsification = str(thesis_meta.get("falsification_or_alternative") or "").strip()
     requires_code_change = bool(thesis_meta.get("requires_code_change"))
 
@@ -1721,12 +1675,7 @@ def _thesis_quality_dimension_scores(thesis_meta: dict[str, Any]) -> dict[str, f
         "orthogonality_defense": 1.0 if orthogonality_defense else 0.0,
         "evidence_strength_labeled": 1.0 if evidence_strength else 0.0,
         "falsification_discipline": 1.0 if falsification else 0.0,
-        "thesis_role_labeled": 1.0 if thesis_role else 0.0,
     }
-    if thesis_role == "winning_cluster_follow_up":
-        dimension_scores["follow_up_honesty"] = 1.0 if orthogonality_defense else 0.0
-    elif thesis_role:
-        dimension_scores["follow_up_honesty"] = 1.0
     if requires_code_change:
         dimension_scores["code_change_contract"] = 1.0 if requested_primitives else 0.0
     return dimension_scores
@@ -1778,9 +1727,11 @@ def _round_reflexio_facts(
     research_round: int,
 ) -> dict[str, Any]:
     runtime_root = Path(getattr(controller, "runtime_root", None) or controller.root)
+    job_id = _controller_job_id(controller)
     facts = {
         "screening_verdict_counts": _screening_verdict_counts(controller, research_round),
-        "prediction_gaps": _prediction_gaps(runtime_root, research_round),
+        "prediction_gaps": _prediction_gaps(runtime_root, research_round, job_id=job_id),
+        "harvest_lessons": _harvest_lessons(runtime_root, research_round, job_id=job_id),
     }
     return {key: value for key, value in facts.items() if value}
 
@@ -1833,20 +1784,11 @@ def _screening_verdict_counts(
     return {str(verdict): int(count) for verdict, count in rows if verdict and int(count)}
 
 
-def _prediction_gaps(runtime_root: Path, research_round: int) -> list[dict[str, Any]]:
+def _prediction_gaps(
+    runtime_root: Path, research_round: int, *, job_id: int | None = None
+) -> list[dict[str, Any]]:
     gaps: deque[dict[str, Any]] = deque(maxlen=10)
-    pattern = "runtime/jobs/*/research/round-*/harvest_verdict*.json"
-    for path in sorted(runtime_root.glob(pattern)):
-        path_round = _round_number_from_artifact_path(path)
-        if path_round is not None and path_round > research_round:
-            continue
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        payload_round = int(payload.get("round") or path_round or 0)
-        if payload_round > research_round:
-            continue
+    for payload in _harvest_verdict_payloads(runtime_root, research_round, job_id=job_id):
         raw_predictions = payload.get("registered_predictions") or payload.get("prediction_results")
         if not isinstance(raw_predictions, list):
             continue
@@ -1865,6 +1807,51 @@ def _prediction_gaps(runtime_root: Path, research_round: int) -> list[dict[str, 
                 }
             )
     return list(gaps)
+
+
+def _harvest_lessons(
+    runtime_root: Path, research_round: int, *, job_id: int | None = None
+) -> list[dict[str, Any]]:
+    lessons: deque[dict[str, Any]] = deque(maxlen=10)
+    for payload in _harvest_verdict_payloads(runtime_root, research_round, job_id=job_id):
+        lesson = str(payload.get("lesson") or payload.get("summary") or "").strip()
+        if not lesson:
+            continue
+        lessons.append(
+            {
+                "round": int(payload.get("round") or 0),
+                "thesis_id": str(payload.get("thesis_id") or ""),
+                "status": str(payload.get("status") or ""),
+                "lesson": lesson,
+            }
+        )
+    return list(lessons)
+
+
+def _harvest_verdict_payloads(
+    runtime_root: Path, research_round: int, *, job_id: int | None = None
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    pattern = (
+        f"runtime/jobs/job-{job_id}/research/round-*/harvest_verdict*.json"
+        if job_id and job_id > 0
+        else "runtime/jobs/*/research/round-*/harvest_verdict*.json"
+    )
+    for path in sorted(runtime_root.glob(pattern)):
+        path_round = _round_number_from_artifact_path(path)
+        if path_round is not None and path_round > research_round:
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        payload_round = int(payload.get("round") or path_round or 0)
+        if payload_round > research_round:
+            continue
+        payloads.append(payload)
+    return payloads
 
 
 def _round_findings(result: dict[str, Any], outcome: str) -> list[str]:
@@ -2500,17 +2487,13 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
                 "closest_prior_theses_considered",
                 "orthogonality_defense",
                 "evidence_strength",
-                "thesis_role",
                 "falsification_or_alternative",
                 "new_dimension_name",
                 "why_existing_dimensions_do_not_fit",
                 "mechanism_family_definition",
                 "expected_reuse_across_future_theses",
-                # See companion comment in the rejection-path persistence:
-                # _theme_keywords_from_prior reads this field for the
-                # dominant-cluster overlap gate. Must round-trip through
-                # SQLite so accepted theses contribute to overlap detection
-                # for subsequent rounds.
+                # _theme_keywords_from_prior reads this field so accepted
+                # theses contribute to subsequent diversity checks.
                 "theme_keywords",
             )
             if key in thesis_meta

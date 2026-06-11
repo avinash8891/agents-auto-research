@@ -44,7 +44,6 @@ import ast
 import json
 import re
 from collections.abc import Callable
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
 
@@ -327,17 +326,25 @@ VALID_PROCESS_TOOLS: Final[frozenset[str]] = frozenset(
 
 def _validate_process(
     tools_called: set[str] | frozenset[str], *, require_analyst_tool: bool = False
-) -> None:
+) -> BehaviorSignal | None:
+    return _process_signal(tools_called, require_analyst_tool=require_analyst_tool)
+
+
+def _process_signal(
+    tools_called: set[str] | frozenset[str], *, require_analyst_tool: bool = False
+) -> BehaviorSignal | None:
     missing = [tool for tool in sorted(VALID_PROCESS_TOOLS) if tool not in tools_called]
     if require_analyst_tool and "analyze_trades" not in tools_called:
         missing.append("analyze_trades")
     if not missing:
-        return
-    raise ThesisValidationError(
-        f"Process gate failed: required tools not called: {missing}",
-        rejection_code="process_missing_required_tools",
+        return None
+    return BehaviorSignal(
+        code="process_missing_required_tools",
+        confidence=1.0,
+        severity="warn",
+        summary=f"Process gate failed: required tools not called: {missing}",
         evidence={"missing_tools": missing, "tools_called": sorted(tools_called)},
-        remediation_hint="Call the required research tools before submitting the thesis.",
+        remediation=("Call the required research tools before submitting the thesis.",),
     )
 
 
@@ -377,40 +384,6 @@ def _theme_keywords_from_prior(prior: dict[str, Any]) -> set[str]:
     if not isinstance(raw, list):
         return set()
     return {str(kw).strip() for kw in raw if str(kw).strip()}
-
-
-# Thresholds for the computed dominant-cluster overlap. The cutoffs are tuned
-# to match operator intuition: "high" means more than half the recent priors
-# share a keyword with the proposed thesis.
-_OVERLAP_HIGH_RATIO: Final[float] = 0.5
-_OVERLAP_MEDIUM_RATIO: Final[float] = 0.25
-
-
-def _computed_dominant_cluster_overlap(
-    thesis: ResearchThesis, prior_theses: list[dict[str, Any]]
-) -> str:
-    """Compute overlap level from theme_keywords data, not LLM self-report.
-
-    Returns "high" / "medium" / "low" based on the fraction of priors whose
-    theme_keywords intersect the proposed thesis's theme_keywords.
-
-    The LLM's `dominant_cluster_overlap` field is informational only — this
-    function is the authoritative source for downstream gates.
-    """
-    if not prior_theses:
-        return "low"
-    proposed_kw = {kw.strip() for kw in thesis.theme_keywords if kw.strip()}
-    if not proposed_kw:
-        return "low"
-    overlap_count = sum(
-        1 for prior in prior_theses if _theme_keywords_from_prior(prior) & proposed_kw
-    )
-    ratio = overlap_count / len(prior_theses)
-    if ratio >= _OVERLAP_HIGH_RATIO:
-        return "high"
-    if ratio >= _OVERLAP_MEDIUM_RATIO:
-        return "medium"
-    return "low"
 
 
 def _prior_required_code_change(prior: dict[str, Any]) -> bool:
@@ -791,138 +764,6 @@ def _detect_config_key_overlap(
         evidence={"reason": reason},
         remediation=("Change different config keys to explore a new dimension",),
     )
-
-
-# ---------------------------------------------------------------------------
-# Guardrail 2: Hypothesis-config alignment scoring
-# ---------------------------------------------------------------------------
-
-
-class MissingFamilyKeyConceptsError(LookupError):
-    """Raised when a family's `key_concepts` map is missing or empty.
-
-    Stage 2 alignment is unenforceable without it; surfacing as a hard error
-    forces operators to populate the map at the strategy level rather than
-    silently disabling alignment for that family.
-    """
-
-
-@lru_cache(maxsize=None)
-def _load_family_key_concepts(family_name: str) -> dict[str, tuple[str, ...]]:
-    """Return the concept regex map for a family.
-
-    Raises ``MissingFamilyKeyConceptsError`` when the family is unknown or
-    has no `key_concepts` populated. Callers that need a permissive default
-    must catch the error explicitly — there is no silent fail-open path here
-    on purpose. The old fail-open behavior let entire families skip Stage 2
-    alignment enforcement undetected.
-    """
-    if not family_name:
-        raise MissingFamilyKeyConceptsError(
-            "family_name is empty; cannot enforce hypothesis-config alignment"
-        )
-    try:
-        from family_research_spec import get_family_research_spec
-    except Exception as exc:  # noqa: BLE001
-        raise MissingFamilyKeyConceptsError(
-            f"family_research_spec module not importable: {exc}"
-        ) from exc
-    try:
-        spec = get_family_research_spec(family_name)
-    except (KeyError, ValueError) as exc:
-        raise MissingFamilyKeyConceptsError(
-            f"no FamilyResearchSpec registered for family '{family_name}'"
-        ) from exc
-    key_concepts = dict(getattr(spec, "key_concepts", {}) or {})
-    if not key_concepts:
-        # Documented fail-open: FamilyResearchSpec.key_concepts defaults to
-        # empty. Families opt INTO Stage 2 alignment by populating it. Log
-        # so operators can see opt-outs without breaking valid families
-        # (e.g. the _demo skeleton, newly scaffolded families).
-        log.warning(
-            "family %r has empty FamilyResearchSpec.key_concepts — Stage 2 "
-            "hypothesis-config alignment will fail-open. Populate key_concepts "
-            "to enable enforcement.",
-            family_name,
-        )
-        return {}
-    return key_concepts
-
-
-def check_hypothesis_alignment(
-    hypothesis: str,
-    mechanism: str,
-    config_changes: dict[str, Any],
-    *,
-    family_name: str = "",
-) -> tuple[float, str]:
-    """Score whether config_changes actually test the stated hypothesis.
-
-    Uses a heuristic keyword approach (no LLM call needed for v1) driven by
-    the family-specific `key_concepts` map declared on the strategy's
-    `FamilyResearchSpec`. Strategy-specific data lives on the strategy spec,
-    not in the validator — the validator reads, never hardcodes.
-
-    Returns (score 0-1, explanation).
-
-    Score meanings:
-      1.0 = every config key referenced a concept in hypothesis/mechanism
-            (or the family ships no concept map → rule fails open)
-      0.0 = no connection between story and implementation
-    """
-    import re
-
-    if not config_changes:
-        return 1.0, "No config changes (code change thesis)"
-
-    # _load_family_key_concepts raises MissingFamilyKeyConceptsError only when
-    # the family is unknown / unregistered (a configuration error). When the
-    # family is registered but has empty key_concepts (the documented
-    # fail-open default), the function logs and returns {} — we then
-    # short-circuit to score 1.0 so families that haven't opted into Stage 2
-    # alignment scoring don't get hard-rejected. See _load_family_key_concepts
-    # for the policy rationale.
-    key_concepts = _load_family_key_concepts(family_name)
-    if not key_concepts:
-        return (
-            1.0,
-            f"family '{family_name}' has empty key_concepts — alignment fails open",
-        )
-
-    hyp_lower = (hypothesis + " " + mechanism).lower()
-    config_keys = set(config_changes.keys())
-
-    aligned_keys = 0
-    misaligned_keys: list[str] = []
-
-    for key in config_keys:
-        concepts = key_concepts.get(key, ())
-        if not concepts:
-            # Key isn't catalogued for this family — give benefit of doubt
-            # rather than penalize agent-emitted bookkeeping or new keys.
-            aligned_keys += 1
-            continue
-        matched = any(re.search(pattern, hyp_lower) for pattern in concepts)
-        if matched:
-            aligned_keys += 1
-        else:
-            misaligned_keys.append(key)
-
-    score = aligned_keys / len(config_keys) if config_keys else 1.0
-
-    if misaligned_keys:
-        explanation = (
-            f"Config keys {misaligned_keys} don't relate to the hypothesis. "
-            f"Hypothesis mentions: {hypothesis[:100]}... "
-            f"but config changes touch {sorted(config_keys)}."
-        )
-    else:
-        explanation = "Config changes align with hypothesis."
-
-    return score, explanation
-
-
-ALIGNMENT_THRESHOLD = 0.4  # reject if less than 40% of keys align
 
 
 # ---------------------------------------------------------------------------
@@ -1469,7 +1310,17 @@ def validate_research_thesis(
         evidence_context=evidence_context,
     )
     if tools_called is not None:
-        _validate_process(tools_called, require_analyst_tool=require_analyst_tool)
+        process_signal = _validate_process(tools_called, require_analyst_tool=require_analyst_tool)
+        process_decision = _policy_decide([process_signal] if process_signal is not None else [])
+        if process_decision.action == "reject":
+            triggering = process_decision.triggering
+            assert triggering is not None, "reject decisions must carry a triggering signal"
+            raise ThesisValidationError(
+                triggering.summary,
+                rejection_code=triggering.code,
+                evidence=dict(triggering.evidence),
+                remediation_hint=_format_remediation(triggering.remediation),
+            )
     _run_behavioral_pass(thesis, prior_theses)
     mechanical_failures = _collect_mechanical_failures(
         thesis,
@@ -1565,26 +1416,6 @@ def _collect_runtime_config_keys(value: Any) -> set[str]:
 
     walk(value)
     return keys
-
-
-def _detect_stage_2_hypothesis_config_misalignment(
-    hypothesis: str,
-    mechanism: str,
-    config_changes: dict[str, Any],
-    strategy_family: str,
-) -> BehaviorSignal | None:
-    score, explanation = check_hypothesis_alignment(
-        hypothesis, mechanism, config_changes, family_name=strategy_family
-    )
-    if score >= ALIGNMENT_THRESHOLD:
-        return None
-    return BehaviorSignal(
-        code="hypothesis_config_misalignment",
-        confidence=1.0,
-        severity="block",
-        summary=f"Hypothesis-config misalignment (score={score:.2f}): {explanation}",
-        evidence={"score": round(score, 4), "explanation": explanation},
-    )
 
 
 def _collect_stage_2_required_diagnostic_failures(

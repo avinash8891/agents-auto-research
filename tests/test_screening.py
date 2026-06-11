@@ -72,6 +72,23 @@ def _model() -> CausalModel:
     )
 
 
+def _empty_population_model() -> CausalModel:
+    return CausalModel(
+        family="ema",
+        version=1,
+        factors=[
+            CausalFactor(
+                factor_id="f-empty",
+                story="Prior empty mechanism.",
+                rule="gap_pct < -3",
+                direction="loss",
+                status="supported",
+            )
+        ],
+        accuracy_history=[],
+    )
+
+
 def test_research_engine_screening_thresholds_read_from_config_block() -> None:
     config = {
         "research_engine": {
@@ -108,6 +125,7 @@ def test_research_engine_screening_thresholds_read_from_config_block() -> None:
         ),
         ("vol_pctile_20d > 0.5", None, CausalModel(family="ema", version=1), "kill_no_lift", None),
         ("gap_pct < -2", None, CausalModel(family="ema", version=1), "kill_min_sample", None),
+        ("gap_pct < -2", None, _empty_population_model(), "kill_min_sample", None),
         ("out_pnl < 0", None, CausalModel(family="ema", version=1), "kill_bad_rule", None),
     ],
 )
@@ -184,6 +202,24 @@ def test_screen_ignores_demoted_factors_for_duplicate_detection() -> None:
     result = screen("gap_pct < 0", None, model, _feature_table())
 
     assert result.verdict == "pass"
+
+
+def test_screen_reuses_candidate_mask_for_duplicate_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    real_evaluate = screening.evaluate_entry_rule
+
+    def counting_evaluate(rule: str, features_train: pd.DataFrame):
+        calls.append(rule)
+        return real_evaluate(rule, features_train)
+
+    monkeypatch.setattr(screening, "evaluate_entry_rule", counting_evaluate)
+
+    result = screen("gap_pct < 0", None, _model(), _feature_table())
+
+    assert result.verdict == "kill_duplicate"
+    assert calls == ["gap_pct < 0", "gap_pct < -0.5"]
 
 
 def test_screen_accepts_string_literals_and_dynamic_entry_columns() -> None:

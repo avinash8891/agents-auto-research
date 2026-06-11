@@ -46,6 +46,12 @@ def evaluate_predictions(
     tolerance_pct = research_engine_prediction_tolerance_pct(effective_config)
     thesis_id = str(payload.get("thesis_id") or "")
     predictions = payload.get("predictions") or []
+    if not predictions:
+        return HarvestVerdict(
+            thesis_id=thesis_id,
+            status="degenerate",
+            summary="degenerate: empty predictions list",
+        )
 
     trade_count = candidate.get("trade_count")
     trade_count_value = _finite_metric(trade_count)
@@ -205,8 +211,7 @@ def evaluate_effect(
 
 
 def _lower_is_better_metric(metric: str) -> bool:
-    normalized = metric.lower()
-    return any(token in normalized for token in ("drawdown", "loss", "risk", "cost"))
+    return metric.lower() in LOWER_IS_BETTER
 
 
 def evaluate_disqualifier(

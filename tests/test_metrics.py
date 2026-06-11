@@ -49,7 +49,6 @@ def test_fabricated_window_metric_names_are_absent_from_runtime_sources() -> Non
         root / "thesis_validator.py",
         root / "autoresearch_experiment.py",
         root / "research_prompts.py",
-        root / "old_conductor_prompt.md",
     )
 
     remaining: list[str] = []

@@ -245,7 +245,6 @@ def test_compute_metrics_omits_fabricated_window_metrics() -> None:
 def test_prompts_do_not_advertise_fabricated_window_metrics() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     prompt_paths = [
-        repo_root / "old_conductor_prompt.md",
         repo_root / "research_prompts.py",
     ]
 

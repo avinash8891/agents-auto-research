@@ -130,6 +130,7 @@ def _merge_round_facts(
 ) -> dict[str, Any]:
     counts: dict[str, int] = {}
     prediction_gaps: list[dict[str, Any]] = []
+    harvest_lessons: list[dict[str, Any]] = []
     for source in [explicit or {}, *trajectory]:
         if not isinstance(source, dict):
             continue
@@ -148,9 +149,11 @@ def _merge_round_facts(
                     counts[key] = counts.get(key, 0) + parsed_count
         prediction_gaps.extend(_prediction_gap_items(source.get("prediction_gaps")))
         prediction_gaps.extend(_prediction_gap_items(source.get("prediction_results")))
+        harvest_lessons.extend(_harvest_lesson_items(source.get("harvest_lessons")))
     return {
         "screening_verdict_counts": counts,
         "prediction_gaps": prediction_gaps,
+        "harvest_lessons": harvest_lessons,
     }
 
 
@@ -184,6 +187,27 @@ def _prediction_gap_items(raw: Any) -> list[dict[str, Any]]:
     return items
 
 
+def _harvest_lesson_items(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    items: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        lesson = str(item.get("lesson") or "").strip()
+        if not lesson:
+            continue
+        items.append(
+            {
+                "round": item.get("round"),
+                "thesis_id": str(item.get("thesis_id") or "").strip(),
+                "status": str(item.get("status") or "").strip(),
+                "lesson": lesson,
+            }
+        )
+    return items
+
+
 def _round_fact_evidence(round_facts: dict[str, Any]) -> list[str]:
     evidence: list[str] = []
     counts = round_facts.get("screening_verdict_counts")
@@ -196,6 +220,10 @@ def _round_fact_evidence(round_facts: dict[str, Any]) -> list[str]:
     if isinstance(gaps, list) and gaps:
         rendered_gaps = "; ".join(_render_prediction_gap(item) for item in gaps[:5])
         evidence.append(f"prediction gaps: {rendered_gaps}")
+    lessons = round_facts.get("harvest_lessons")
+    if isinstance(lessons, list) and lessons:
+        rendered_lessons = "; ".join(_render_harvest_lesson(item) for item in lessons[:5])
+        evidence.append(f"harvest lessons: {rendered_lessons}")
     return evidence
 
 
@@ -221,6 +249,13 @@ def _render_prediction_gap(item: dict[str, Any]) -> str:
     else:
         direction = "unknown"
     return f"{metric} gap={rendered_gap} direction={direction}"
+
+
+def _render_harvest_lesson(item: dict[str, Any]) -> str:
+    thesis_id = str(item.get("thesis_id") or "unknown")
+    status = str(item.get("status") or "unknown")
+    lesson = _redact_text(str(item.get("lesson") or "").strip())[:180]
+    return f"{thesis_id} status={status}: {lesson}"
 
 
 def _analyst_lesson(action_counts: dict[str, int], errors: list[str]) -> str:

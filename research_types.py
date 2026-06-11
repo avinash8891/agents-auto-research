@@ -117,6 +117,18 @@ class DiagnosticRequirementSpec(BaseModel):
     description: str = ""
 
 
+FACTOR_STATUS_DESCRIPTIONS = {
+    "candidate": "screened rule awaiting registered prediction harvest",
+    "supported": "validated by registered predictions but not yet harvested into the model",
+    "refuted": "failed registered prediction harvest; excluded from prediction and duplicate screening",
+    "harvested": "validated factor retained for audit history after harvest",
+    "demoted": (
+        "failed walk-forward survival after being harvested; excluded from prediction and "
+        "duplicate screening"
+    ),
+}
+
+
 class CausalFactor(BaseModel):
     """A candidate causal rule over entry-time feature-table columns."""
 
@@ -160,18 +172,24 @@ class MetricName(str, Enum):
     pnl_weighted_accuracy = "pnl_weighted_accuracy"
 
 
-HARVEST_OBSERVABLE_METRICS = frozenset(
-    {
-        MetricName.profit_factor,
-        MetricName.trade_count,
-        MetricName.max_drawdown,
-        MetricName.median_expectancy,
-    }
+HARVEST_OBSERVABLE_METRIC_NAMES = (
+    "profit_factor",
+    "trade_count",
+    "max_drawdown",
+    "median_expectancy",
 )
+HARVEST_OBSERVABLE_METRICS = frozenset(MetricName(name) for name in HARVEST_OBSERVABLE_METRIC_NAMES)
 
 
 class Prediction(BaseModel):
-    metric: MetricName
+    metric: MetricName = Field(
+        description=(
+            "Registered-prediction metric. Harvest evaluation can observe only "
+            f"{', '.join(HARVEST_OBSERVABLE_METRIC_NAMES)} from backtest outputs; "
+            "win_rate and pnl_weighted_accuracy are MetricName values but unavailable "
+            "to the harvest evaluator."
+        )
+    )
     direction: Literal[
         "increase",
         "decrease",
@@ -276,19 +294,11 @@ class ResearchThesis(BaseModel):
     mechanism_dimension: str = ""  # core dimension, emergent, or a prior emergent name
     dimension_novelty: str = ""  # why this is not a parameter variation of prior work
     causal_cluster: str = ""  # causal family this thesis belongs to, for diversity audits
-    dominant_cluster_overlap: Literal["", "low", "medium", "high"] = ""
     underexplored_dimensions_considered: list[str] = Field(default_factory=list)
     novel_connection: str = ""  # why this connects evidence in a materially new way
     closest_prior_theses_considered: list[str] = Field(default_factory=list)
     orthogonality_defense: str = ""  # why this is orthogonal vs merely adjacent
     evidence_strength: Literal["", "direct", "proxy", "mixed", "speculative"] = ""
-    thesis_role: Literal[
-        "",
-        "orthogonal_discovery",
-        "implementation_unlock",
-        "cleanup_validation_follow_up",
-        "winning_cluster_follow_up",
-    ] = ""
     falsification_or_alternative: str = ""  # what would weaken this mechanism
     new_dimension_name: str = ""  # required when mechanism_dimension == emergent
     why_existing_dimensions_do_not_fit: str = ""

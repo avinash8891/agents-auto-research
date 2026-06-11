@@ -144,15 +144,10 @@ def test_process_gate_skips_when_tools_called_unobserved() -> None:
     assert thesis.thesis_id == "ema-tier-batching-v1"
 
 
-def test_process_gate_rejects_when_tools_called_observed_empty() -> None:
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(_thesis(), tools_called=set())
+def test_process_gate_warns_when_tools_called_observed_empty() -> None:
+    thesis = validate_research_thesis(_thesis(), tools_called=set())
 
-    assert "required tools not called: ['list_round_results', 'web_search']" in str(exc_info.value)
-    assert exc_info.value.evidence == {
-        "missing_tools": ["list_round_results", "web_search"],
-        "tools_called": [],
-    }
+    assert thesis.thesis_id == "ema-tier-batching-v1"
 
 
 def test_validate_stage_1_accepts_process_tools() -> None:

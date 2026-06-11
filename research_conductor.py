@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from time import monotonic
-from typing import Any, Literal
+from typing import Any
 
 from agents import Agent as OAIAgent
 from agents import ModelSettings as OAIModelSettings
@@ -17,7 +17,6 @@ from agent_infra import _run_coroutine_sync
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import get_round_usage, reset_round_usage
 from autoresearch_logging import get_logger
-from backtest_run_db import research_thesis_attempt_id
 from research_memory import (
     _palace_status,
 )
@@ -38,7 +37,7 @@ from research_paths import (
     _get_openai_client,
     _parse_json,
 )
-from research_prompts import _build_conductor_system_prompt, _build_mechanism_system_prompt
+from research_prompts import _build_mechanism_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
 from research_tools_schema import (
     AnalyzeTradesArgs,
@@ -56,7 +55,6 @@ from research_tools_schema import (
 )
 from research_types import ConductorResult, MechanismProposal
 from strategy_family import load_family
-from thesis_validator import validate_thesis_dict
 from trace_refinement import RefinementRecorder
 from trace_sdk import (
     trace,
@@ -195,106 +193,20 @@ async def run_research_conductor(
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
     rendered_corpus: str = "",
-    conductor_mode: Literal["legacy", "mechanism"] = "legacy",
 ) -> ConductorResult:
-    strategy_desc = _strategy_description_for(family_name)
-    resolution_context = latest_outcome.get("resolution_context")
-
-    mechanism_path = conductor_mode == "mechanism"
-    if mechanism_path and not rendered_corpus:
+    if not rendered_corpus:
         raise ValueError("mechanism conductor mode requires rendered_corpus")
-    system_prompt = (
-        _build_mechanism_system_prompt()
-        if mechanism_path
-        else _build_conductor_system_prompt(
-            strategy_desc,
-            backtest_contract=_backtest_contract_for(family_name),
-        )
-    )
+    system_prompt = _build_mechanism_system_prompt()
 
-    outcome_lines = json.dumps(latest_outcome, indent=2) if latest_outcome else "(no results yet)"
-    base_prompt = (
-        f"Research round: {research_round}\n\n"
-        f"{_render_resolution_context(resolution_context)}\n\n"
-        f"LATEST ROUND OUTCOME:\n{outcome_lines}\n\n"
-        f"PRIOR ROUNDS — RESULTS SUMMARY:\n{round_results}\n\n"
-    )
-
-    if mechanism_path:
-        user_prompt = rendered_corpus
-    elif trades_file:
-        evidence_lines = f"Trades file for analysis: {trades_file}"
-        if strategy_events_file:
-            evidence_lines += (
-                f"\nStrategy events file: {strategy_events_file}"
-                "\n  (Contains EVERY setup the strategy considered — accepted AND rejected."
-                "  Use this to understand WHY signals were filtered out.)"
-            )
-        if diagnostics_file:
-            evidence_lines += (
-                f"\nDiagnostics file: {diagnostics_file}"
-                "\n  (Quick summary of event counts and rejection breakdown. Read this FIRST.)"
-            )
-        evidence_lines += (
-            "\nAnalyst capabilities:"
-            "\n  - default anchor: baseline artifacts for mechanism discovery when available"
-            "\n  - can fetch latest/current/best or specific round artifacts for comparison"
-        )
-        user_prompt = (
-            base_prompt + f"{evidence_lines}\n\n"
-            f"Analyze the trades, check your data-fact memory, and propose your next thesis."
-        )
-    else:
-        if latest_outcome:
-            no_trades_instruction = (
-                "No trades file is available for the latest/current round. "
-                "This is not a cold start: use the latest outcome and round-result "
-                "tools to understand what happened. Do not call analyze_trades this round; "
-                "use web research, past theses, round-result tools, memory, and source-code "
-                "reasoning to propose the next thesis only if the evidence is sufficient."
-            )
-        else:
-            no_trades_instruction = (
-                "No current-job backtests have completed yet. No trades file is available. "
-                "Check memory for data facts, do web research on the strategy, and propose "
-                "the first thesis."
-            )
-        user_prompt = base_prompt + no_trades_instruction
+    user_prompt = rendered_corpus
 
     if rejection_feedback:
-        retry_instruction = (
-            "Use only the rendered corpus and this feedback."
-            if mechanism_path
-            else "Read the source code to understand what the strategy does."
-        )
         user_prompt += (
             f"\n\nFEEDBACK TO APPLY BEFORE PROPOSING:\n"
             f"{rejection_feedback}\n\n"
-            f"Propose a thesis that addresses this feedback. {retry_instruction}"
+            "Propose a mechanism that addresses this feedback. Use only the rendered "
+            "corpus and this feedback."
         )
-
-    # Inline structured rejection summary (current-round detail + cross-round
-    # pattern counts). Cheap disk read; small block; high signal.
-    if current_job is not None and not mechanism_path:
-        try:
-            from rejection_artifact import (
-                compute_escalation_directive,
-                render_rejection_block,
-            )
-
-            rejection_block = render_rejection_block(
-                _ROOT, job=current_job, current_round=research_round
-            )
-            if rejection_block:
-                user_prompt += f"\n\n{rejection_block}\n"
-
-            escalation = compute_escalation_directive(
-                _ROOT, job=current_job, current_round=research_round
-            )
-            if escalation:
-                user_prompt += f"\n\n{escalation}\n"
-        except Exception as render_exc:  # noqa: BLE001
-            log.warning(f"failed to render rejection block: {render_exc}")
 
     trace(
         "CONDUCTOR",
@@ -307,8 +219,7 @@ async def run_research_conductor(
         objective="produce the next thesis proposal",
         initial_context={
             "research_round": research_round,
-            "family_name": family_name,
-            "has_trades_file": bool(trades_file),
+            "has_rendered_corpus": bool(rendered_corpus),
             "rejection_feedback": rejection_feedback,
         },
     )
@@ -321,6 +232,7 @@ async def run_research_conductor(
     )
     result_text = ""
     session_finished = False
+    resolution_context = latest_outcome.get("resolution_context")
     # Track which tools have been called so the thesis validator can enforce
     # per-thesis process requirements after the conductor proposes a thesis.
     tools_called_this_round: set[str] = set()
@@ -970,28 +882,11 @@ async def run_research_conductor(
         agent = OAIAgent(
             name="research-conductor",
             instructions=system_prompt,
-            tools=(
-                []
-                if mechanism_path
-                else [
-                    analyze_trades,
-                    web_search,
-                    save_finding,
-                    search_findings,
-                    memory_status,
-                    list_past_theses,
-                    get_past_thesis,
-                    list_round_results,
-                    get_round_result,
-                    list_rejections_tool,
-                    get_rejection_tool,
-                    rejection_pattern_summary_tool,
-                ]
-            ),
+            tools=[analyze_trades] if trades_file else [],
             model=model,
-            output_type=MechanismProposal if mechanism_path else None,
+            output_type=MechanismProposal,
         )
-        if mechanism_path and not hasattr(agent, "output_type"):
+        if not hasattr(agent, "output_type"):
             setattr(agent, "output_type", MechanismProposal)
 
         async with asyncio.timeout(_conductor_timeout_seconds()):
@@ -1095,24 +990,29 @@ async def run_research_conductor(
     )
 
     if parsed:
-        if mechanism_path:
-            try:
-                proposal = MechanismProposal.model_validate(parsed)
-            except Exception as exc:
-                validation_reason = str(exc)
-            else:
-                _REFINEMENT_RECORDER.finish_session(
-                    session_id=refinement_session["session_id"],
-                    stopping_reason="mechanism_proposal",
-                    final_outcome="accepted",
-                )
-                session_finished = True
-                return ConductorResult(
-                    status="ok",
-                    thesis=proposal.model_dump(mode="json"),
-                    reasoning=proposal.story,
-                    tools_called=frozenset(tools_called_this_round),
-                )
+        if parsed.get("should_stop"):
+            _REFINEMENT_RECORDER.finish_session(
+                session_id=refinement_session["session_id"],
+                stopping_reason="should_stop",
+                final_outcome="completed",
+            )
+            session_finished = True
+            return ConductorResult(
+                status="should_stop",
+                should_stop=True,
+                reasoning=str(parsed.get("reasoning", "")),
+                tools_called=frozenset(tools_called_this_round),
+            )
+        try:
+            proposal = MechanismProposal.model_validate(parsed)
+        except Exception as exc:
+            validation_reason = str(exc)
+            trace(
+                "CONDUCTOR",
+                f"mechanism proposal validation failed (len={len(result_text)})",
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
             failure = ConductorResult(
                 status="conductor_error",
                 error="validation_failed",
@@ -1121,102 +1021,19 @@ async def run_research_conductor(
                 thesis=parsed if isinstance(parsed, dict) else None,
                 tools_called=frozenset(tools_called_this_round),
             )
-            if not session_finished:
-                _REFINEMENT_RECORDER.finish_session(
-                    session_id=refinement_session["session_id"],
-                    stopping_reason="invalid_output",
-                    final_outcome="retry_required",
-                )
-            return failure
-        if parsed.get("should_stop"):
-            trace(
-                "CONDUCTOR",
-                "recommends STOP",
-                model_provider="openai",
-                model_name=_CONDUCTOR_MODEL,
-            )
+        else:
             _REFINEMENT_RECORDER.finish_session(
                 session_id=refinement_session["session_id"],
-                stopping_reason="should_stop",
-                final_outcome="stop",
+                stopping_reason="mechanism_proposal",
+                final_outcome="accepted",
             )
             session_finished = True
             return ConductorResult(
-                status="should_stop",
-                should_stop=True,
-                reasoning=parsed.get("reasoning", ""),
+                status="ok",
+                thesis=proposal.model_dump(mode="json"),
+                reasoning=proposal.story,
+                tools_called=frozenset(tools_called_this_round),
             )
-        thesis, validation_reason = _extract_thesis(parsed)
-        if validation_reason:
-            trace(
-                "CONDUCTOR",
-                f"validate failed: {validation_reason}",
-                model_provider="openai",
-                model_name=_CONDUCTOR_MODEL,
-            )
-        elif thesis is not None:
-            candidate = dict(thesis)
-            candidate["strategy_family"] = family_name
-            try:
-                validated = validate_thesis_dict(
-                    candidate,
-                    research_round_id=_lenient_research_round_id(current_job, research_round),
-                    attempt_number=1,
-                    assign_thesis_id=research_thesis_attempt_id,
-                    tools_called=tools_called_this_round,
-                    require_analyst_evidence=bool(trades_file),
-                    evidence_context=_evidence_context_for_round(trades_file, latest_outcome),
-                    require_analyst_tool=bool(trades_file),
-                )
-            except Exception as exc:
-                # Capture failure so the outer retry loop can re-validate and
-                # consume one of its Stage 1 attempts, instead of being
-                # short-circuited by a conductor_error terminal state.
-                validation_reason = str(exc)
-                trace(
-                    "CONDUCTOR",
-                    f"validate failed proposal={thesis.get('proposal_label', 'unknown')}: {exc}",
-                    model_provider="openai",
-                    model_name=_CONDUCTOR_MODEL,
-                )
-            else:
-                trace(
-                    "CONDUCTOR",
-                    f"OK thesis={validated.thesis_id}",
-                    model_provider="openai",
-                    model_name=_CONDUCTOR_MODEL,
-                )
-                _REFINEMENT_RECORDER.finish_session(
-                    session_id=refinement_session["session_id"],
-                    stopping_reason="valid_thesis",
-                    final_outcome="accepted",
-                )
-                session_finished = True
-                # Preserve reasoning on success — downstream readers
-                # (_dispatch_compiled_contract, _on_ready_to_run) use it
-                # for round result, artifacts, and trace/reflexion payloads.
-                return ConductorResult(
-                    status="ok",
-                    thesis=thesis,
-                    reasoning=parsed.get("reasoning", ""),
-                    tools_called=frozenset(tools_called_this_round),
-                )
-        trace(
-            "CONDUCTOR",
-            f"validate failed (len={len(result_text)})",
-            model_provider="openai",
-            model_name=_CONDUCTOR_MODEL,
-        )
-        failure = ConductorResult(
-            status="conductor_error",
-            error="validation_failed",
-            validation_reason=validation_reason,
-            reasoning=parsed.get("reasoning", ""),
-            # Attach parsed thesis + tools so the outer validation loop can
-            # retry through Stage 1 instead of treating this as terminal.
-            thesis=thesis if isinstance(thesis, dict) else None,
-            tools_called=frozenset(tools_called_this_round),
-        )
     else:
         trace(
             "CONDUCTOR",
@@ -1248,7 +1065,6 @@ def run_research_conductor_sync(
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
     rendered_corpus: str = "",
-    conductor_mode: Literal["legacy", "mechanism"] = "legacy",
 ) -> ConductorResult | None:
     return _run_coroutine_sync(
         run_research_conductor(
@@ -1263,6 +1079,5 @@ def run_research_conductor_sync(
             agent_reflexions=agent_reflexions,
             current_job=current_job,
             rendered_corpus=rendered_corpus,
-            conductor_mode=conductor_mode,
         )
     )

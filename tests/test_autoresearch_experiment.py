@@ -41,13 +41,14 @@ from autoresearch_paths import resolve_config_path
 from backtest_run_db import BacktestRunRecord, BaselineCheckpoint
 from causal_harvest import (
     PendingCausalModelArtifact,
+    apply_registered_verdict_to_causal_factor,
     evaluate_registered_predictions,
     request_registered_prediction_retest,
     write_feature_table_artifact,
 )
-from causal_model import load_model
+from causal_model import load_model, save_model
 from feature_table import load_feature_table
-from research_types import BacktestContract, CausalFactor, CausalModel
+from research_types import BacktestContract, CausalFactor, CausalModel, HarvestVerdict
 from strategy_family import load_family
 
 
@@ -137,7 +138,7 @@ def _write_feature_table_data_universe(data_root: Path) -> None:
     )
     pd.DataFrame(
         {
-            "date": [pd.Timestamp("2024-01-02").date()],
+            "date": [pd.Timestamp("2024-01-01").date()],
             "regime_label": ["risk_on"],
         }
     ).to_parquet(data_root / "regime_labels.parquet", index=False)
@@ -1111,7 +1112,9 @@ def test_registered_predictions_use_family_research_engine_thresholds(tmp_path: 
     assert "min_trades 50" in verdict.summary
 
 
-def test_registered_predictions_merge_metrics_payload_before_evaluation(tmp_path: Path) -> None:
+def test_registered_predictions_use_validation_metrics_before_train_metrics(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "configs").mkdir()
     (tmp_path / "configs" / "ema_base.yaml").write_text("research_engine: {}\n", encoding="utf-8")
     run_output_dir = tmp_path / "runtime/jobs/job-1/research/round-1/backtest"
@@ -1143,11 +1146,71 @@ def test_registered_predictions_merge_metrics_payload_before_evaluation(tmp_path
         controller,
         run_output_dir,
         metric=1.1,
-        details={"trade_count": 25, "train_metrics": {"median_expectancy": 1.4}},
+        details={
+            "trade_count": 25,
+            "train_metrics": {"median_expectancy": 0.5},
+            "validation_metrics": {"median_expectancy": 1.4},
+        },
     )
 
     assert verdict.status == "supported"
     assert verdict.prediction_results[0]["metric"] == "median_expectancy"
+
+
+def test_registered_verdict_promotion_merges_into_live_model_without_snapshot_overwrite(
+    tmp_path: Path,
+) -> None:
+    controller = _controller_for_experiment(tmp_path, "")
+    _write_causal_model_base_config(tmp_path)
+    round_root = tmp_path / "runtime/jobs/job-1/research/round-1"
+    round_root.mkdir(parents=True)
+    config_path = round_root / "selected_config.json"
+    config_path.write_text(json.dumps({"ema_length": 10}) + "\n", encoding="utf-8")
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps({"thesis_id": "thesis-001", "rule": "gap_pct < 0"}) + "\n",
+        encoding="utf-8",
+    )
+    pending_factor = CausalFactor(
+        factor_id="pending-gap",
+        story="Pending gap rule",
+        rule="gap_pct < 0",
+        direction="loss",
+        status="candidate",
+    )
+    PendingCausalModelArtifact(round_root).write(
+        CausalModel(family="ema", version=1, factors=[pending_factor], accuracy_history=[])
+    )
+    live_factor = CausalFactor(
+        factor_id="live-other",
+        story="Live factor added after pending snapshot",
+        rule="vol_pctile_20d > 0.5",
+        direction="loss",
+        status="supported",
+    )
+    save_model(
+        CausalModel(family="ema", version=9, factors=[live_factor], accuracy_history=[]),
+        runtime_root=tmp_path,
+        code_root=tmp_path,
+    )
+
+    apply_registered_verdict_to_causal_factor(
+        controller,
+        "runtime/jobs/job-1/research/round-1/selected_config.json",
+        HarvestVerdict(
+            thesis_id="thesis-001",
+            status="supported",
+            summary="supported: gap rule passed",
+        ),
+    )
+
+    model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
+    assert model.version == 9
+    assert [factor.rule for factor in model.factors] == [
+        "vol_pctile_20d > 0.5",
+        "gap_pct < 0",
+    ]
+    assert model.factors[1].status == "harvested"
+    assert model.factors[1].lesson == "supported: gap rule passed"
 
 
 def test_record_baseline_checkpoint_persists_critical_drift_and_clears_rerun_marker(
@@ -1436,6 +1499,14 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
         )
     )
     monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    monkeypatch.setattr("causal_harvest._harvest_lesson_llm_enabled", lambda: True)
+    monkeypatch.setattr(
+        "causal_harvest._generate_harvest_lesson",
+        lambda **kwargs: (
+            "LLM lesson: profit_factor passed while max_drawdown missed, so keep the "
+            "gap-down story but tighten the risk prediction."
+        ),
+    )
     round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
     round_root.mkdir(parents=True)
     (round_root / "selected_config.json").write_text(json.dumps({"ema_length": 10}) + "\n")
@@ -1447,6 +1518,16 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
                 "hypothesis": "Gap-down entries should improve harvest metrics.",
                 "mechanism": "Gap pressure creates better mean-reversion setups.",
                 "rule": "gap_pct < 0",
+                "expected_effects": [
+                    {"metric": "profit_factor", "direction": "increase", "threshold": 0.1}
+                ],
+                "disqualifiers": [
+                    {
+                        "name": "legacy_drawdown_limit",
+                        "condition": "max_drawdown > 0.05",
+                        "severity": "hard_fail",
+                    }
+                ],
             }
         )
         + "\n"
@@ -1497,14 +1578,20 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
 
     assert code == 0
     record = controller.backtest_run_db.all()[0]
+    harvest = json.loads((round_root / "harvest_verdict.json").read_text())
     assert record.accepted is True
     assert record.prediction_verdict == "supported"
-    assert "profit_factor direction=pass" in record.lesson
+    assert record.lesson.startswith("LLM lesson: profit_factor passed")
     assert record.verdict_status != "inconclusive"
+    assert harvest["round"] == 1
+    assert harvest["status"] == "supported"
+    assert harvest["registered_predictions"][0]["metric"] == "profit_factor"
+    assert "gap" in harvest["registered_predictions"][0]
+    assert harvest["lesson"].startswith("LLM lesson: profit_factor passed")
     updated_model = load_model("ema")
     assert updated_model.version == 1
     assert updated_model.factors[0].status == "harvested"
-    assert "profit_factor direction=pass" in updated_model.factors[0].lesson
+    assert updated_model.factors[0].lesson.startswith("LLM lesson: profit_factor passed")
 
 
 def test_run_experiment_discards_refuted_registered_predictions(
@@ -1705,7 +1792,9 @@ def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusiv
     assert retest_action["registered_prediction_retest"]["attempt"] == 1
     assert "_preserve_next_action_once" not in persisted
     retest_config = tmp_path / retest_action["config"]
-    assert json.loads(retest_config.read_text())["validation_start"] == "2019-04-01"
+    retest_payload = json.loads(retest_config.read_text())
+    assert retest_payload["validation_start"] == "2020-01-01"
+    assert retest_payload["validation_end"] == "2024-09-30"
 
 
 def test_request_registered_prediction_retest_returns_explicit_transition_without_sentinel(
@@ -1790,13 +1879,16 @@ def test_run_experiment_forces_registered_inconclusive_after_retest_once(
 
     assert code == 0
     record = controller.backtest_run_db.all()[0]
-    assert record.prediction_verdict == "supported"
+    harvest = json.loads((round_root / "harvest_verdict.json").read_text())
+    assert record.prediction_verdict == "refuted"
     assert "forced_after_retest" in record.lesson
+    assert harvest["status"] == "refuted"
+    assert "forced_after_retest" in harvest["lesson"]
     assert controller.read_state().get("next_action", {}).get("source") != (
         "registered_prediction_retest"
     )
     updated_model = load_model("ema")
-    assert updated_model.factors[0].status == "harvested"
+    assert updated_model.factors[0].status == "refuted"
     assert "forced_after_retest" in updated_model.factors[0].lesson
 
 

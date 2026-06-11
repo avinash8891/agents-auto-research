@@ -132,6 +132,38 @@ def test_decide_rejects_with_first_signal_code_when_multiple_present() -> None:
     assert decision.signals == (first, second)
 
 
+def test_decide_accepts_with_warning_when_only_warn_signals_present() -> None:
+    sig = BehaviorSignal(
+        code="thesis_quality_soft_overlap",
+        confidence=0.55,
+        severity="warn",
+        summary="soft overlap",
+    )
+
+    decision = decide([sig])
+
+    assert decision.action == "accept_with_warning"
+    assert decision.rejection_code == ""
+    assert decision.triggering is None
+    assert decision.signals == (sig,)
+    assert decision.warnings == (sig,)
+
+
+def test_decide_accepts_when_only_info_signals_present() -> None:
+    sig = BehaviorSignal(
+        code="thesis_quality_note",
+        confidence=0.25,
+        severity="info",
+        summary="informational note",
+    )
+
+    decision = decide([sig])
+
+    assert decision.action == "accept"
+    assert decision.signals == (sig,)
+    assert decision.warnings == ()
+
+
 def test_policy_decision_action_is_typed_literal() -> None:
     """A decision's action must be one of the three documented values."""
     decision = PolicyDecision(action="accept")

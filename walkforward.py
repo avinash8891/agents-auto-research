@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -140,6 +141,7 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
     ]
     reports: list[dict[str, Any]] = []
     baseline_config = _record_runtime_config(controller, baseline)
+    baseline_window_cache: dict[str, dict[str, Any]] = {}
     try:
         for record in sorted(candidates, key=lambda item: item.research_round_number):
             predictions = _load_registered_predictions(
@@ -163,16 +165,17 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
             baseline_metrics: list[dict[str, Any]] = []
             candidate_metrics: list[dict[str, Any]] = []
             for index, window in enumerate(windows):
-                baseline_metrics.append(
-                    _run_window_backtest(
+                cache_key = _baseline_window_cache_key(baseline_config, window)
+                if cache_key not in baseline_window_cache:
+                    baseline_window_cache[cache_key] = _run_window_backtest(
                         controller,
                         baseline_config,
-                        record.thesis_id,
+                        baseline.thesis_id,
                         index,
                         "baseline",
                         window,
                     )
-                )
+                baseline_metrics.append(dict(baseline_window_cache[cache_key]))
                 candidate_metrics.append(
                     _run_window_backtest(
                         controller,
@@ -219,6 +222,18 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
     return 0
 
 
+def _baseline_window_cache_key(config: dict[str, Any], window: WalkForwardWindow) -> str:
+    return json.dumps(
+        {
+            "config": config,
+            "test_start": window.test_start,
+            "test_end": window.test_end,
+        },
+        sort_keys=True,
+        default=str,
+    )
+
+
 def _prediction_result(
     prediction: dict[str, Any],
     baseline: dict[str, Any],
@@ -226,8 +241,18 @@ def _prediction_result(
 ) -> dict[str, Any]:
     metric = str(prediction.get("metric") or "")
     direction = str(prediction.get("direction") or "")
-    baseline_value = float(baseline[metric])
-    candidate_value = float(candidate[metric])
+    baseline_value = _finite_metric_value(baseline, metric)
+    candidate_value = _finite_metric_value(candidate, metric)
+    if baseline_value is None or candidate_value is None:
+        return {
+            "metric": metric,
+            "direction": direction,
+            "baseline": baseline_value,
+            "candidate": candidate_value,
+            "direction_passed": False,
+            "missing_metric": True,
+            "reason": f"missing metric: {metric}",
+        }
     return {
         "metric": metric,
         "direction": direction,
@@ -240,6 +265,16 @@ def _prediction_result(
             candidate_value,
         ),
     }
+
+
+def _finite_metric_value(metrics: dict[str, Any], metric: str) -> float | None:
+    try:
+        value = float(metrics[metric])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    return value
 
 
 def _write_graduation_to_run_row(db_path: Path, run_id: str, graduated: bool) -> None:
@@ -335,11 +370,31 @@ def _resolve_record_config_path(controller: Any, record: Any) -> Path:
 def _walkforward_range(
     candidate_config: dict[str, Any], baseline_config: dict[str, Any]
 ) -> tuple[str, str]:
-    start = candidate_config.get("validation_start") or baseline_config.get("validation_start")
-    end = candidate_config.get("validation_end") or baseline_config.get("validation_end")
-    if not start or not end:
-        raise ValueError("walkforward requires validation_start and validation_end in config")
-    return str(start), str(end)
+    validation_end = candidate_config.get("validation_end") or baseline_config.get("validation_end")
+    if not validation_end:
+        raise ValueError("walkforward requires validation_end in config")
+    holdout_start = candidate_config.get("holdout_start") or baseline_config.get("holdout_start")
+    start_ts = pd.Timestamp(validation_end, tz="UTC") + pd.Timedelta(days=1)
+    if holdout_start:
+        start_ts = max(start_ts, pd.Timestamp(holdout_start, tz="UTC"))
+    end = (
+        candidate_config.get("walkforward_end")
+        or baseline_config.get("walkforward_end")
+        or candidate_config.get("holdout_end")
+        or baseline_config.get("holdout_end")
+    )
+    if not end:
+        config_for_tunables = dict(baseline_config)
+        config_for_tunables.update(candidate_config)
+        end_ts = start_ts + pd.DateOffset(
+            months=research_engine_walkforward_train_months(config_for_tunables)
+            + research_engine_walkforward_test_months(config_for_tunables)
+        )
+    else:
+        end_ts = pd.Timestamp(end, tz="UTC")
+    if end_ts <= start_ts:
+        raise ValueError("walkforward out-of-sample end must be after validation_end")
+    return start_ts.date().isoformat(), end_ts.date().isoformat()
 
 
 def _run_window_backtest(

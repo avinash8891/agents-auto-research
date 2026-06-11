@@ -11,6 +11,7 @@ from causal_model import load_model, save_model
 from experiment_evaluator import evaluate_predictions
 from research_types import CausalFactor, CausalModel
 from walkforward import (
+    _walkforward_range,
     build_windows,
     evaluate_walkforward,
     run_walkforward_queue,
@@ -62,6 +63,44 @@ def test_build_windows_records_train_window_but_uses_test_window_geometry() -> N
     ]
     assert windows[0].train_start == "2020-01-01T00:00:00+00:00"
     assert windows[0].train_end == windows[0].test_start
+
+
+def test_walkforward_range_starts_after_validation_end() -> None:
+    start, end = _walkforward_range(
+        {"validation_end": "2021-04-01", "ema_length": 8},
+        {
+            "validation_start": "2020-01-01",
+            "validation_end": "2021-04-01",
+            "holdout_end": "2022-07-02",
+        },
+    )
+
+    assert start == "2021-04-02"
+    assert end == "2022-07-02"
+
+
+def test_walkforward_range_uses_later_holdout_start_when_present() -> None:
+    start, end = _walkforward_range(
+        {"validation_end": "2021-04-01", "holdout_start": "2021-05-01"},
+        {"validation_end": "2021-04-01", "holdout_end": "2022-07-02"},
+    )
+
+    assert start == "2021-05-01"
+    assert end == "2022-07-02"
+
+
+def test_walkforward_range_defaults_end_from_tunables_without_explicit_holdout_end() -> None:
+    start, end = _walkforward_range(
+        {"validation_end": "2021-04-01"},
+        {
+            "validation_start": "2020-01-01",
+            "validation_end": "2021-04-01",
+            "research_engine": {"walkforward": {"train_months": 6, "test_months": 3}},
+        },
+    )
+
+    assert start == "2021-04-02"
+    assert end == "2022-01-02"
 
 
 def test_walkforward_robust_fixture_graduates_and_writes_report(
@@ -189,6 +228,33 @@ def test_walkforward_empty_predictions_do_not_vacuously_graduate(tmp_path: Path)
     assert report["survival_rate"] == 0.0
 
 
+def test_walkforward_missing_prediction_metric_demotes_without_interrupt(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "ema_backtest_runs.db"
+    _seed_run(db_path)
+
+    report = evaluate_walkforward(
+        family="ema",
+        thesis_id="thesis-001",
+        runtime_root=tmp_path,
+        code_root=tmp_path,
+        db_path=db_path,
+        run_id="run-thesis",
+        windows=build_windows("2020-01-01", "2020-10-01"),
+        predictions=[{"metric": "profit_factor", "direction": "increase", "predicted": 1.0}],
+        baseline_metrics=[{"trade_count": 30}],
+        candidate_metrics=[{"profit_factor": 1.2, "trade_count": 30}],
+    )
+
+    result = report["windows"][0]["prediction_results"][0]
+    assert report["verdict"] == "demoted"
+    assert result["metric"] == "profit_factor"
+    assert result["direction_passed"] is False
+    assert result["missing_metric"] is True
+    assert result["reason"] == "missing metric: profit_factor"
+
+
 def test_walkforward_direction_rules_match_registered_prediction_evaluator(
     tmp_path: Path,
 ) -> None:
@@ -243,6 +309,7 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
         "data_universe": "tiny",
         "validation_start": "2020-01-01",
         "validation_end": "2021-04-01",
+        "holdout_end": "2022-07-02",
     }
     baseline_config.write_text(json.dumps(config_payload), encoding="utf-8")
     candidate_config.write_text(
@@ -390,6 +457,155 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
     assert written_states[-1]["walkforward_status"] == "completed"
 
 
+def test_run_walkforward_queue_memoizes_baseline_window_backtests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    db_path = tmp_path / "ema_backtest_runs.db"
+    db = BacktestRunDB(db_path)
+    config_payload = {
+        "data_universe": "tiny",
+        "validation_start": "2020-01-01",
+        "validation_end": "2021-04-01",
+        "holdout_end": "2022-07-02",
+    }
+    baseline_config = tmp_path / "runtime/jobs/job-1/research/round-0-baseline/selected_config.json"
+    baseline_config.parent.mkdir(parents=True)
+    baseline_config.write_text(json.dumps(config_payload), encoding="utf-8")
+    for round_number, ema_length in [(1, 8), (2, 13)]:
+        candidate_config = (
+            tmp_path
+            / "runtime/jobs/job-1/research"
+            / f"round-{round_number}"
+            / "selected_config.json"
+        )
+        candidate_config.parent.mkdir(parents=True)
+        candidate_config.write_text(
+            json.dumps({**config_payload, "ema_length": ema_length}),
+            encoding="utf-8",
+        )
+        (candidate_config.parent / "registered_predictions.json").write_text(
+            json.dumps(
+                {
+                    "thesis_id": f"thesis-00{round_number}",
+                    "predictions": [
+                        {"metric": "profit_factor", "direction": "increase", "predicted": 1.2}
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+    db.add_from_sqlite_fields(
+        run_id="run-baseline",
+        thesis_id="baseline",
+        config_path="runtime/jobs/job-1/research/round-0-baseline/selected_config.json",
+        runtime_config=config_payload,
+        code_commit="abcdef1",
+        data_hash="data",
+        metrics={"profit_factor": 1.0, "trade_count": 30},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="supported",
+        verdict_summary="supported",
+        family="ema",
+        job_id=1,
+        primary_metric_name="profit_factor",
+        primary_metric_value=1.0,
+        research_round_id="job-1-round-0",
+        research_round_number=0,
+        is_baseline=True,
+    )
+    for round_number, ema_length in [(1, 8), (2, 13)]:
+        db.add_from_sqlite_fields(
+            run_id=f"run-thesis-{round_number}",
+            thesis_id=f"thesis-00{round_number}",
+            config_path=f"runtime/jobs/job-1/research/round-{round_number}/selected_config.json",
+            runtime_config={**config_payload, "ema_length": ema_length},
+            code_commit="abcdef1",
+            data_hash="data",
+            metrics={"profit_factor": 1.2, "trade_count": 30},
+            trade_analysis={},
+            strategy_diagnostics={},
+            decision_status="keep",
+            verdict_status="supported",
+            verdict_summary="supported",
+            family="ema",
+            job_id=1,
+            primary_metric_name="profit_factor",
+            primary_metric_value=1.2,
+            research_round_id=f"job-1-round-{round_number}",
+            research_round_number=round_number,
+        )
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            factors=[
+                CausalFactor(
+                    factor_id="f001",
+                    story="durable PF lift",
+                    rule="gap_pct < 0",
+                    direction="win",
+                    evidence_rounds=[1, 2],
+                    status="harvested",
+                )
+            ],
+            accuracy_history=[],
+        )
+    )
+
+    commands: list[str] = []
+
+    class Family:
+        name = "ema"
+
+        def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
+            return f"{config_path}|{output_dir}"
+
+    class Controller:
+        root = tmp_path
+        runtime_root = tmp_path
+        family = Family()
+        backtest_run_db = db
+
+        def run_command(self, command: str) -> tuple[int, str]:
+            commands.append(command)
+            is_candidate = "/candidate" in command
+            return 0, json.dumps(
+                {"profit_factor": 1.2 if is_candidate else 1.0, "metrics": {"trade_count": 30}}
+            )
+
+        def parse_metric(self, output: str, name: str = "profit_factor") -> float:
+            return float(json.loads(output)[name])
+
+        def parse_benchmark_details(self, output: str) -> dict:
+            return json.loads(output)
+
+        def primary_metric_name(self) -> str:
+            return "profit_factor"
+
+        def write_state(self, state: dict) -> None:
+            pass
+
+        def write_current_md(self, state: dict, results: list) -> None:
+            pass
+
+        def read_results(self) -> list:
+            return []
+
+    exit_code = run_walkforward_queue(
+        Controller(),
+        {"state": "running", "job": 1, "research_round": 6, "next_action": {"type": "walkforward"}},
+    )
+
+    baseline_commands = [command for command in commands if "/baseline" in command]
+    candidate_commands = [command for command in commands if "/candidate" in command]
+    assert exit_code == 0
+    assert len(baseline_commands) == 3
+    assert len(candidate_commands) == 6
+
+
 def test_run_walkforward_queue_skips_candidates_without_windows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -403,6 +619,7 @@ def test_run_walkforward_queue_skips_candidates_without_windows(
         "data_universe": "tiny",
         "validation_start": "2020-01-01",
         "validation_end": "2020-02-01",
+        "holdout_end": "2020-04-01",
     }
     baseline_config.write_text(json.dumps(config_payload), encoding="utf-8")
     candidate_config.write_text(json.dumps({**config_payload, "ema_length": 8}), encoding="utf-8")

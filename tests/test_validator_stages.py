@@ -8,9 +8,6 @@ import pytest
 
 from backtest_run_db import research_thesis_attempt_id
 from research_types import BacktestContract, DiagnosticRequirementSpec
-from thesis_validator import (
-    ALIGNMENT_THRESHOLD,
-)
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import (
     ThesisValidationError,
@@ -320,9 +317,3 @@ def test_validate_stage_2_accepts_when_required_diagnostic_appears_in_runtime_co
         required_diagnostic_specs=[],
     )
     validate_stage_2(contract)
-
-
-def test_validate_stage_2_alignment_constant_unchanged() -> None:
-    """Sanity: ALIGNMENT_THRESHOLD remains 0.4 — the gate logic is unchanged,
-    only the input source moved."""
-    assert ALIGNMENT_THRESHOLD == 0.4

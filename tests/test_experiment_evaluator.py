@@ -76,6 +76,24 @@ def test_not_worse_than_max_drawdown_keeps_lower_is_better_direction() -> None:
     )
 
 
+def test_not_worse_than_win_loss_ratio_is_not_treated_as_lower_is_better() -> None:
+    effect = ExpectedEffect(
+        metric="win_loss_ratio",
+        direction="not_worse_than",
+        threshold=10.0,
+        rationale="Win/loss ratio should not fall materially.",
+    )
+
+    assert (
+        evaluate_effect(
+            effect,
+            baseline={"win_loss_ratio": 2.0},
+            candidate={"win_loss_ratio": 2.3},
+        )
+        is True
+    )
+
+
 def _registered_predictions(tmp_path, predictions: list[dict]) -> object:
     path = tmp_path / "registered_predictions.json"
     path.write_text(
@@ -126,6 +144,19 @@ def test_evaluate_predictions_refutes_opposite_direction(tmp_path) -> None:
 
     assert verdict.status == "refuted"
     assert verdict.prediction_results[0]["direction_passed"] is False
+
+
+def test_evaluate_predictions_rejects_empty_prediction_list(tmp_path) -> None:
+    registered = _registered_predictions(tmp_path, [])
+
+    verdict = evaluate_predictions(
+        registered,
+        baseline={"profit_factor": 2.0, "trade_count": 25},
+        candidate={"profit_factor": 2.1, "trade_count": 25},
+    )
+
+    assert verdict.status == "degenerate"
+    assert "empty predictions" in verdict.summary
 
 
 def test_evaluate_predictions_treats_invalid_trade_count_as_degenerate(tmp_path) -> None:
