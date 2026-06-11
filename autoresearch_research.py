@@ -942,13 +942,29 @@ def _screen_mechanism_proposal(
         train_features,
         config=config,
     )
+    competitor_rule = str(raw_thesis.get("competitor_rule") or "") or None
     write_screenings(
         controller.backtest_run_db.path,
         [screening],
         round_number=research_round,
-        competitor_rule=str(raw_thesis.get("competitor_rule") or "") or None,
+        competitor_rule=competitor_rule,
         job_id=job_id,
     )
+    if competitor_rule:
+        competitor_screening = screen(
+            competitor_rule,
+            None,
+            model,
+            train_features,
+            config=config,
+        )
+        write_screenings(
+            controller.backtest_run_db.path,
+            [competitor_screening],
+            round_number=research_round,
+            competitor_rule=screening.rule,
+            job_id=job_id,
+        )
     if screening.verdict != "pass":
         return (
             False,
