@@ -57,7 +57,6 @@ def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
             "parameter variation seen earlier."
         ),
         "causal_cluster": "close-confirmed adverse-selection reduction",
-        "dominant_cluster_overlap": "medium",
         "underexplored_dimensions_considered": [
             "portfolio_construction",
             "regime_conditioning",

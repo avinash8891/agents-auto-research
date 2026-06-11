@@ -34,7 +34,6 @@ def _base_thesis(thesis_id: str, config_changes: dict) -> dict:
             "mechanism requires structural justification, not a number nudge."
         ),
         "causal_cluster": "gap-up regime exclusion",
-        "dominant_cluster_overlap": "low",
         "underexplored_dimensions_considered": ["portfolio_construction", "risk_structure"],
         "novel_connection": "Connects gap-magnitude to overnight-imbalance decay rate.",
         "closest_prior_theses_considered": ["prior_gap_filter"],

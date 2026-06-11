@@ -51,6 +51,26 @@ def test_agent_reflections_include_computed_screening_and_prediction_facts() -> 
     assert "prediction gaps: profit_factor gap=-0.23 direction=fail" in serialized
 
 
+def test_agent_reflections_include_harvest_lessons() -> None:
+    reflections = build_agent_reflections(
+        [],
+        round_facts={
+            "harvest_lessons": [
+                {
+                    "round": 2,
+                    "thesis_id": "gap-down-harvest",
+                    "status": "refuted",
+                    "lesson": "Gap-down rule passed screening but missed its registered PF target.",
+                }
+            ],
+        },
+    )
+
+    serialized = json.dumps(reflections["conductor"], sort_keys=True)
+    assert "harvest lessons: gap-down-harvest status=refuted" in serialized
+    assert "missed its registered PF target" in serialized
+
+
 def test_agent_reflections_create_conductor_entry_for_facts_without_trajectory() -> None:
     reflections = build_agent_reflections(
         [],

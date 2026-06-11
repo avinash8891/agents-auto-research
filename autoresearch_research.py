@@ -1504,7 +1504,7 @@ def _call_conductor(
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
     rendered_corpus: str = "",
-    conductor_mode: str = "legacy",
+    conductor_mode: str = "mechanism",
 ) -> ConductorResult | None:
     """One conductor HTTP/SDK call with the per-attempt log preamble."""
     from research_conductor import run_research_conductor_sync
@@ -1754,7 +1754,6 @@ def _thesis_quality_dimension_scores(thesis_meta: dict[str, Any]) -> dict[str, f
 
     orthogonality_defense = str(thesis_meta.get("orthogonality_defense") or "").strip()
     evidence_strength = str(thesis_meta.get("evidence_strength") or "").strip()
-    thesis_role = str(thesis_meta.get("thesis_role") or "").strip()
     falsification = str(thesis_meta.get("falsification_or_alternative") or "").strip()
     requires_code_change = bool(thesis_meta.get("requires_code_change"))
 
@@ -1763,12 +1762,7 @@ def _thesis_quality_dimension_scores(thesis_meta: dict[str, Any]) -> dict[str, f
         "orthogonality_defense": 1.0 if orthogonality_defense else 0.0,
         "evidence_strength_labeled": 1.0 if evidence_strength else 0.0,
         "falsification_discipline": 1.0 if falsification else 0.0,
-        "thesis_role_labeled": 1.0 if thesis_role else 0.0,
     }
-    if thesis_role == "winning_cluster_follow_up":
-        dimension_scores["follow_up_honesty"] = 1.0 if orthogonality_defense else 0.0
-    elif thesis_role:
-        dimension_scores["follow_up_honesty"] = 1.0
     if requires_code_change:
         dimension_scores["code_change_contract"] = 1.0 if requested_primitives else 0.0
     return dimension_scores
@@ -1823,6 +1817,7 @@ def _round_reflexio_facts(
     facts = {
         "screening_verdict_counts": _screening_verdict_counts(controller, research_round),
         "prediction_gaps": _prediction_gaps(runtime_root, research_round),
+        "harvest_lessons": _harvest_lessons(runtime_root, research_round),
     }
     return {key: value for key, value in facts.items() if value}
 
@@ -1877,18 +1872,7 @@ def _screening_verdict_counts(
 
 def _prediction_gaps(runtime_root: Path, research_round: int) -> list[dict[str, Any]]:
     gaps: deque[dict[str, Any]] = deque(maxlen=10)
-    pattern = "runtime/jobs/*/research/round-*/harvest_verdict*.json"
-    for path in sorted(runtime_root.glob(pattern)):
-        path_round = _round_number_from_artifact_path(path)
-        if path_round is not None and path_round > research_round:
-            continue
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        payload_round = int(payload.get("round") or path_round or 0)
-        if payload_round > research_round:
-            continue
+    for payload in _harvest_verdict_payloads(runtime_root, research_round):
         raw_predictions = payload.get("registered_predictions") or payload.get("prediction_results")
         if not isinstance(raw_predictions, list):
             continue
@@ -1907,6 +1891,43 @@ def _prediction_gaps(runtime_root: Path, research_round: int) -> list[dict[str, 
                 }
             )
     return list(gaps)
+
+
+def _harvest_lessons(runtime_root: Path, research_round: int) -> list[dict[str, Any]]:
+    lessons: deque[dict[str, Any]] = deque(maxlen=10)
+    for payload in _harvest_verdict_payloads(runtime_root, research_round):
+        lesson = str(payload.get("lesson") or payload.get("summary") or "").strip()
+        if not lesson:
+            continue
+        lessons.append(
+            {
+                "round": int(payload.get("round") or 0),
+                "thesis_id": str(payload.get("thesis_id") or ""),
+                "status": str(payload.get("status") or ""),
+                "lesson": lesson,
+            }
+        )
+    return list(lessons)
+
+
+def _harvest_verdict_payloads(runtime_root: Path, research_round: int) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    pattern = "runtime/jobs/*/research/round-*/harvest_verdict*.json"
+    for path in sorted(runtime_root.glob(pattern)):
+        path_round = _round_number_from_artifact_path(path)
+        if path_round is not None and path_round > research_round:
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        payload_round = int(payload.get("round") or path_round or 0)
+        if payload_round > research_round:
+            continue
+        payloads.append(payload)
+    return payloads
 
 
 def _round_findings(result: dict[str, Any], outcome: str) -> list[str]:
@@ -2542,17 +2563,13 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
                 "closest_prior_theses_considered",
                 "orthogonality_defense",
                 "evidence_strength",
-                "thesis_role",
                 "falsification_or_alternative",
                 "new_dimension_name",
                 "why_existing_dimensions_do_not_fit",
                 "mechanism_family_definition",
                 "expected_reuse_across_future_theses",
-                # See companion comment in the rejection-path persistence:
-                # _theme_keywords_from_prior reads this field for the
-                # dominant-cluster overlap gate. Must round-trip through
-                # SQLite so accepted theses contribute to overlap detection
-                # for subsequent rounds.
+                # _theme_keywords_from_prior reads this field so accepted
+                # theses contribute to subsequent diversity checks.
                 "theme_keywords",
             )
             if key in thesis_meta

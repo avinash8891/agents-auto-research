@@ -100,9 +100,21 @@ def build_feature_table(
     regime_labels = load_regime_labels()
     extra_regime_columns = _extra_regime_columns(regime_labels)
     config = runtime_config or {}
+    bars_by_symbol = {
+        str(symbol): symbol_bars for symbol, symbol_bars in bars.groupby("symbol", sort=False)
+    }
+    feature_cache: dict[tuple[Any, ...], Any] = {}
 
     rows = [
-        _feature_row(trade, bars, regime_labels, str(family).lower(), config, event_stops)
+        _feature_row(
+            trade,
+            bars_by_symbol,
+            regime_labels,
+            str(family).lower(),
+            config,
+            event_stops,
+            feature_cache,
+        )
         for _, trade in trades.iterrows()
     ]
     columns = _feature_columns(extra_regime_columns)
@@ -117,11 +129,12 @@ def build_feature_table(
 
 def _feature_row(
     trade: pd.Series,
-    bars: pd.DataFrame,
+    bars_by_symbol: dict[str, pd.DataFrame],
     regime_labels: pd.DataFrame,
     family: str,
     runtime_config: dict[str, Any],
     event_stops: dict[tuple[str, pd.Timestamp], float],
+    feature_cache: dict[tuple[Any, ...], Any],
 ) -> dict[str, Any]:
     symbol = str(trade.get("symbol", ""))
     side = str(trade.get("side") or trade.get("direction") or "").lower()
@@ -129,7 +142,11 @@ def _feature_row(
     if entry_local.tzinfo is None:
         entry_local = entry_local.tz_localize("America/New_York")
     entry_ts = entry_local.tz_convert("UTC")
-    symbol_bars = bars[bars["symbol"] == symbol].sort_values("timestamp")
+    symbol_bars = bars_by_symbol.get(symbol)
+    if symbol_bars is None:
+        symbol_bars = pd.DataFrame(
+            columns=["symbol", "timestamp", "date", "open", "high", "low", "close"]
+        )
     prior_bars = symbol_bars[symbol_bars["timestamp"] < entry_ts]
     entry_bar = _last_bar_before(prior_bars, entry_ts)
     entry_day = entry_ts.tz_convert("America/New_York").date()
@@ -193,6 +210,7 @@ def _feature_row(
             entry_ts=entry_ts,
             entry_price=entry_price,
             runtime_config=runtime_config,
+            feature_cache=feature_cache,
         )
     )
     row.update(_regime_columns_for_date(regime_labels, entry_day))

@@ -195,7 +195,7 @@ async def run_research_conductor(
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
     rendered_corpus: str = "",
-    conductor_mode: Literal["legacy", "mechanism"] = "legacy",
+    conductor_mode: Literal["legacy", "mechanism"] = "mechanism",
 ) -> ConductorResult:
     strategy_desc = _strategy_description_for(family_name)
     resolution_context = latest_outcome.get("resolution_context")
@@ -1248,7 +1248,7 @@ def run_research_conductor_sync(
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
     rendered_corpus: str = "",
-    conductor_mode: Literal["legacy", "mechanism"] = "legacy",
+    conductor_mode: Literal["legacy", "mechanism"] = "mechanism",
 ) -> ConductorResult | None:
     return _run_coroutine_sync(
         run_research_conductor(

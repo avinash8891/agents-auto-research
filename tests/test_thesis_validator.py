@@ -6,7 +6,6 @@ from backtest_run_db import BacktestRunDB, research_thesis_attempt_id
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import (
     ThesisValidationError,
-    check_hypothesis_alignment,
     config_key_overlap,
     load_prior_theses,
 )
@@ -102,7 +101,6 @@ def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
             "parameter variation of a previous thesis."
         ),
         "causal_cluster": "close-confirmed adverse-selection reduction",
-        "dominant_cluster_overlap": "medium",
         "underexplored_dimensions_considered": [
             "portfolio_construction",
             "regime_conditioning",
@@ -476,7 +474,6 @@ def test_validate_thesis_accepts_quality_accounting_fields() -> None:
         "payoff capture rather than relabeling the same open-whipsaw story."
     )
     thesis["evidence_strength"] = "mixed"
-    thesis["thesis_role"] = "orthogonal_discovery"
     thesis["falsification_or_alternative"] = (
         "If the observed improvement disappears when compared to the current best "
         "trailing configuration, the right-tail story is weaker than a simpler "
@@ -490,7 +487,7 @@ def test_validate_thesis_accepts_quality_accounting_fields() -> None:
         "prior_trailing_stop_follow_up",
     ]
     assert validated.evidence_strength == "mixed"
-    assert validated.thesis_role == "orthogonal_discovery"
+    assert validated.falsification_or_alternative.startswith("If the observed improvement")
 
 
 def test_validate_thesis_does_not_require_base_config_for_unrelated_best_or_preserve_language() -> (
@@ -557,9 +554,6 @@ def test_validate_thesis_no_longer_rejects_high_overlap_without_novel_connection
     thesis.update(
         {
             "causal_cluster": "opening-session short adverse-selection filters",
-            # Field is ignored by the gate now; left blank to prove the gate
-            # fires regardless of what the LLM reports.
-            "dominant_cluster_overlap": "",
             "underexplored_dimensions_considered": [
                 "portfolio_construction",
                 "regime_conditioning",
@@ -587,7 +581,6 @@ def test_validate_thesis_allows_high_overlap_with_novel_connection() -> None:
     thesis.update(
         {
             "causal_cluster": "opening-session short adverse-selection filters",
-            "dominant_cluster_overlap": "",
             "underexplored_dimensions_considered": [
                 "portfolio_construction",
                 "regime_conditioning",
@@ -714,20 +707,3 @@ def test_validate_normalizes_reused_prior_emergent_dimension_name() -> None:
     validated = validate_thesis_dict(thesis, prior_theses=prior)
 
     assert validated.mechanism_dimension == "liquidity_decay"
-
-
-def test_hypothesis_alignment_accepts_first_trade_only_for_max_trades_per_day() -> None:
-    score, explanation = check_hypothesis_alignment(
-        hypothesis=(
-            "If the strategy's edge is concentrated in the first executed trade per symbol per day, "
-            "then taking only that first trade should improve profit factor."
-        ),
-        mechanism=(
-            "Capture the opening dislocation only and avoid lower-quality subsequent setups later in the day."
-        ),
-        config_changes={"max_trades_per_day": 1},
-        family_name="ema",
-    )
-
-    assert score == 1.0
-    assert explanation == "Config changes align with hypothesis."

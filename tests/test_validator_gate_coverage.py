@@ -290,8 +290,6 @@ def test_gate_structural_novel_connection_too_short_when_overlap_high_no_longer_
         causal_cluster="opening-session noise",
         underexplored_dimensions_considered=["risk_structure"],
         theme_keywords=["opening", "stop_distance"],
-        # LLM-self-reported field is ignored now; left empty intentionally.
-        dominant_cluster_overlap="",
         novel_connection="too short",
     )
     priors = [

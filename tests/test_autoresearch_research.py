@@ -191,6 +191,49 @@ def test_round_reflexio_facts_scopes_screening_counts_to_active_job(tmp_path: Pa
     assert facts["screening_verdict_counts"] == {"pass": 1}
 
 
+def test_round_reflexio_facts_include_harvest_lessons(tmp_path: Path) -> None:
+    controller = _real_controller(tmp_path)
+    round_root = tmp_path / "runtime" / "jobs" / "job-4" / "research" / "round-2"
+    round_root.mkdir(parents=True)
+    (round_root / "harvest_verdict.json").write_text(
+        json.dumps(
+            {
+                "round": 2,
+                "thesis_id": "gap-down-harvest",
+                "status": "refuted",
+                "registered_predictions": [
+                    {
+                        "metric": "profit_factor",
+                        "magnitude_gap": -0.23,
+                        "direction_passed": False,
+                    }
+                ],
+                "lesson": "Gap-down rule passed screening but missed its registered PF target.",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    facts = _round_reflexio_facts(controller, 2)
+
+    assert facts["prediction_gaps"] == [
+        {
+            "metric": "profit_factor",
+            "magnitude_gap": -0.23,
+            "direction_passed": False,
+        }
+    ]
+    assert facts["harvest_lessons"] == [
+        {
+            "round": 2,
+            "thesis_id": "gap-down-harvest",
+            "status": "refuted",
+            "lesson": "Gap-down rule passed screening but missed its registered PF target.",
+        }
+    ]
+
+
 def test_screen_mechanism_proposal_reads_feature_table_from_runtime_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -967,7 +1010,6 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
             "web evidence rather than a neighboring threshold retry."
         ),
         "causal_cluster": "ema smoothing signal quality",
-        "dominant_cluster_overlap": "low",
         "underexplored_dimensions_considered": [
             "entry_timing",
             "regime_conditioning",
@@ -979,7 +1021,6 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
         "closest_prior_theses_considered": ["ema-baseline"],
         "orthogonality_defense": "Changes signal smoothness, not exit logic or session timing.",
         "evidence_strength": "mixed",
-        "thesis_role": "orthogonal_discovery",
         "falsification_or_alternative": (
             "Reject this mechanism if trade count collapses by more than half, "
             "profit_factor does not improve versus baseline, or losses are not "
@@ -2027,7 +2068,6 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
                 ],
                 "orthogonality_defense": "uses acceptance provenance rather than price impulse",
                 "evidence_strength": "mixed",
-                "thesis_role": "orthogonal_discovery",
                 "falsification_or_alternative": "if 09:30 setup days still fail, trend-open narrative is weak",
                 "config_changes": {"symbol_day_opening_setup_gate_enabled": True},
                 "expected_effects": [],

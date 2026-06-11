@@ -205,6 +205,7 @@ def test_conductor_prompt_includes_trade_artifacts_and_returns_stop(
         diagnostics_file=str(diagnostics_file),
         rejection_feedback="previous thesis reused the same filter family",
         current_job=1,
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -229,7 +230,7 @@ def test_conductor_returns_timeout_error_when_runner_times_out(
 
     monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _raise_timeout)
 
-    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema")
+    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema", conductor_mode="legacy")
 
     assert out is not None
     assert out.status == "conductor_error"
@@ -251,7 +252,7 @@ def test_conductor_applies_timeout_to_hung_stream(
     monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
     monkeypatch.setattr(conductor.OAIRunner, "run_streamed", lambda *args, **kwargs: _HungResult())
 
-    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema")
+    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema", conductor_mode="legacy")
 
     assert out is not None
     assert out.status == "conductor_error"
@@ -269,7 +270,9 @@ def test_live_conductor_tools_use_shared_schema_validation(
         tool_outputs=tool_outputs,
     )
 
-    out = conductor.run_research_conductor_sync("", "", {}, 8, "ema", current_job=1)
+    out = conductor.run_research_conductor_sync(
+        "", "", {}, 8, "ema", current_job=1, conductor_mode="legacy"
+    )
 
     assert out is not None
     assert out.status == "should_stop"
@@ -287,7 +290,7 @@ def test_conductor_marks_oauth_proxy_failure_as_proxy_unavailable(
         lambda: (_ for _ in ()).throw(RuntimeError("openai-oauth proxy unavailable")),
     )
 
-    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema")
+    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema", conductor_mode="legacy")
 
     assert out is not None
     assert out.status == "conductor_error"
@@ -308,6 +311,7 @@ def test_conductor_prompt_without_trades_uses_latest_outcome_without_analyst(
         {"status": "rejected", "profit_factor": 0.7},
         research_round=5,
         family_name="unknown-family",
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -395,6 +399,7 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
         {"status": "keep"},
         research_round=8,
         family_name="ema",
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -476,6 +481,7 @@ def test_conductor_tools_read_current_job_rejections_and_error_statuses(
         research_round=8,
         family_name="ema",
         current_job=12,
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -545,6 +551,7 @@ def test_conductor_tool_errors_and_final_output_fallback_are_reported(
         {"status": "keep"},
         research_round=10,
         family_name="ema",
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -592,6 +599,7 @@ def test_conductor_tolerates_rejection_prompt_failure_and_memory_status_error(
         research_round=12,
         family_name="ema",
         current_job=3,
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -632,6 +640,7 @@ def test_conductor_reports_structural_validation_failures_after_required_tool_ga
         {"status": "keep"},
         research_round=7,
         family_name="ema",
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -679,6 +688,7 @@ def test_conductor_accepts_single_valid_thesis_after_required_tool_gate(
         {"status": "keep"},
         research_round=9,
         family_name="ema",
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -723,6 +733,7 @@ def test_conductor_marks_cold_start_evidence_context_without_latest_outcome(
         {},
         research_round=1,
         family_name="ema",
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -775,7 +786,6 @@ def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_val
         family_name="ema",
         rejection_feedback="prior screening killed this rule",
         rendered_corpus=rendered_corpus,
-        conductor_mode="mechanism",
     )
 
     assert out is not None
@@ -1081,6 +1091,7 @@ def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
         {"status": "keep"},
         research_round=11,
         family_name="ema",
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -1105,6 +1116,7 @@ def test_conductor_reports_parse_failed_for_non_json_runner_output(
         {},
         research_round=1,
         family_name="ema",
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -1145,6 +1157,7 @@ def test_conductor_accepts_thesis_returned_directly_without_suggested_theses_wra
         {"status": "keep"},
         research_round=1,
         family_name="ema",
+        conductor_mode="legacy",
     )
 
     assert out is not None
@@ -1186,6 +1199,7 @@ def test_conductor_default_job_context_preserves_round_id_for_thesis_assignment(
         {"status": "keep"},
         research_round=3,
         family_name="ema",
+        conductor_mode="legacy",
     )
 
     assert out is not None

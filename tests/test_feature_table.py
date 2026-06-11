@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import feature_table_extractors as extractors
 from feature_table import (
     ENTRY_TIME_COLUMNS,
     OUTCOME_COLUMNS,
@@ -121,6 +122,41 @@ def test_build_feature_table_emits_exact_entry_time_and_outcome_columns(
     assert row["stop_distance_pct"] == pytest.approx((1.0 / 102.6) * 100.0)
     assert row["entry_bar_range_pct"] == pytest.approx((0.8 / 102.2) * 100.0)
     assert bool(row["out_is_loss"]) is True
+
+
+def test_build_feature_table_reuses_orb_opening_widths_for_repeated_symbol(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    trades = pd.concat(
+        [
+            _trades_df().assign(entry_date=pd.Timestamp("2024-01-04 15:05:00", tz="UTC")),
+            _trades_df().assign(entry_date=pd.Timestamp("2024-01-04 15:10:00", tz="UTC")),
+        ],
+        ignore_index=True,
+    )
+    full_width_days: list[object] = []
+    original = extractors._entry_day_orb_width
+
+    def _counting_entry_day_orb_width(day_bars, entry_ts, or_minutes):
+        if entry_ts is None:
+            full_width_days.append(day_bars["date"].iloc[0])
+        return original(day_bars, entry_ts, or_minutes)
+
+    monkeypatch.setattr(extractors, "_entry_day_orb_width", _counting_entry_day_orb_width)
+
+    table = build_feature_table(
+        trades,
+        _bars_df(),
+        events=[],
+        family="orb",
+        runtime_config={"or_minutes": 30},
+    )
+
+    assert len(table) == 2
+    assert len(full_width_days) == len(set(full_width_days))
 
 
 def test_build_feature_table_localizes_naive_trade_times_as_new_york(
