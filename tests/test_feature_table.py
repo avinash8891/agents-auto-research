@@ -209,7 +209,9 @@ def test_build_feature_table_rejects_missing_trade_pnl(
 def _many_trades(count: int) -> pd.DataFrame:
     base = _trades_df()
     frames = [
-        base.assign(entry_date=pd.Timestamp("2024-01-04 14:35:00", tz="UTC") + pd.Timedelta(minutes=i))
+        base.assign(
+            entry_date=pd.Timestamp("2024-01-04 14:35:00", tz="UTC") + pd.Timedelta(minutes=i)
+        )
         for i in range(count)
     ]
     return pd.concat(frames, ignore_index=True)
