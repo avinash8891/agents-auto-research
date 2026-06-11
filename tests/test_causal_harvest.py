@@ -7,8 +7,25 @@ from types import SimpleNamespace
 
 import pytest
 
-from causal_harvest import _drain_stream_with_timeout, attach_harvest_lesson
+from causal_harvest import _drain_stream_with_timeout, _flatten_metrics, attach_harvest_lesson
 from research_types import HarvestVerdict
+
+
+def test_flatten_metrics_validation_wins_over_train_and_top_level_duplicates() -> None:
+    details = {
+        "max_drawdown": 0.05,  # divergent top-level copy must not shadow validation
+        "trades_file": "trades.csv",
+        "metrics": {"max_drawdown": 0.30, "trade_count": 25},
+        "train_metrics": {"max_drawdown": 0.08, "profit_factor": 2.0},
+        "validation_metrics": {"max_drawdown": 0.31, "profit_factor": 1.1},
+    }
+
+    flat = _flatten_metrics(details)
+
+    assert flat["max_drawdown"] == 0.31
+    assert flat["profit_factor"] == 1.1
+    assert flat["trade_count"] == 25
+    assert flat["trades_file"] == "trades.csv"
 
 
 class _NeverEndingStream:

@@ -424,18 +424,25 @@ def _run_window_backtest(
         raise RuntimeError(f"{role} window {window_index + 1} backtest failed with exit {code}")
     metric = controller.parse_metric(output, name=controller.primary_metric_name())
     details = controller.parse_benchmark_details(output)
+    # Merge order is precedence order: validation_metrics must win over train
+    # values and over ambiguous top-level copies (window metrics describe the
+    # test window, which is the validation range of the window config).
     metrics = dict(details.get("metrics") if isinstance(details.get("metrics"), dict) else {})
-    for nested_key in ("train_metrics", "validation_metrics"):
-        nested_metrics = details.get(nested_key)
-        if isinstance(nested_metrics, dict):
-            metrics.update(
-                {
-                    key: value
-                    for key, value in nested_metrics.items()
-                    if isinstance(value, int | float)
-                }
-            )
+    train_metrics = details.get("train_metrics")
+    if isinstance(train_metrics, dict):
+        metrics.update(
+            {key: value for key, value in train_metrics.items() if isinstance(value, int | float)}
+        )
     metrics.update({key: value for key, value in details.items() if isinstance(value, int | float)})
+    validation_metrics = details.get("validation_metrics")
+    if isinstance(validation_metrics, dict):
+        metrics.update(
+            {
+                key: value
+                for key, value in validation_metrics.items()
+                if isinstance(value, int | float)
+            }
+        )
     if metric is not None:
         metrics[controller.primary_metric_name()] = metric
     return metrics

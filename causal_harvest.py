@@ -508,19 +508,22 @@ def _load_strategy_events(value: Any) -> list[dict[str, Any]]:
 
 
 def _flatten_metrics(details: dict[str, Any]) -> dict[str, Any]:
+    # Merge order is precedence order: validation_metrics must win over train
+    # values and over ambiguous top-level copies, because registered
+    # predictions are judged against the validation period.
     metrics: dict[str, Any] = {}
     train_metrics = details.get("train_metrics")
     if isinstance(train_metrics, dict):
         metrics.update(train_metrics)
-    validation_metrics = details.get("validation_metrics")
-    if isinstance(validation_metrics, dict):
-        metrics.update(validation_metrics)
     nested = details.get("metrics")
     if isinstance(nested, dict):
         metrics.update(nested)
     for key, value in details.items():
         if key not in {"train_metrics", "validation_metrics", "metrics"}:
             metrics[key] = value
+    validation_metrics = details.get("validation_metrics")
+    if isinstance(validation_metrics, dict):
+        metrics.update(validation_metrics)
     return metrics
 
 

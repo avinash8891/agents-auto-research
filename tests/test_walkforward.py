@@ -11,6 +11,8 @@ from causal_model import load_model, save_model
 from experiment_evaluator import evaluate_predictions
 from research_types import CausalFactor, CausalModel
 from walkforward import (
+    WalkForwardWindow,
+    _run_window_backtest,
     _walkforward_range,
     build_windows,
     evaluate_walkforward,
@@ -101,6 +103,56 @@ def test_walkforward_range_defaults_end_from_tunables_without_explicit_holdout_e
 
     assert start == "2021-04-02"
     assert end == "2022-01-02"
+
+
+def test_run_window_backtest_validation_metrics_win_over_top_level_duplicates(
+    tmp_path: Path,
+) -> None:
+    class Family:
+        name = "ema"
+
+        def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
+            return f"{config_path}|{output_dir}"
+
+    class Controller:
+        root = tmp_path
+        runtime_root = tmp_path
+        family = Family()
+
+        def run_command(self, command: str) -> tuple[int, str]:
+            return 0, json.dumps(
+                {
+                    "median_expectancy": 0.05,  # divergent top-level copy
+                    "metrics": {"median_expectancy": 0.06},
+                    "train_metrics": {"median_expectancy": 0.99},
+                    "validation_metrics": {"median_expectancy": 0.42},
+                }
+            )
+
+        def parse_metric(self, output: str, name: str = "profit_factor") -> float | None:
+            return None
+
+        def parse_benchmark_details(self, output: str) -> dict:
+            return json.loads(output)
+
+        def primary_metric_name(self) -> str:
+            return "profit_factor"
+
+    metrics = _run_window_backtest(
+        Controller(),
+        {"validation_start": "2020-01-01", "validation_end": "2021-04-01"},
+        "thesis-001",
+        0,
+        "candidate",
+        WalkForwardWindow(
+            train_start="2021-04-02T00:00:00+00:00",
+            train_end="2021-10-02T00:00:00+00:00",
+            test_start="2021-10-02T00:00:00+00:00",
+            test_end="2022-01-02T00:00:00+00:00",
+        ),
+    )
+
+    assert metrics["median_expectancy"] == 0.42
 
 
 def test_walkforward_robust_fixture_graduates_and_writes_report(
