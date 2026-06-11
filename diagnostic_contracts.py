@@ -17,7 +17,13 @@ def normalize_diagnostic_requirement(requirement: str) -> str:
 
 _REGISTERED_SPECS: dict[str, DiagnosticRequirementSpec] = {}
 ANALYSIS_ONLY_DIAGNOSTIC_PREFIXES = ("definition_check_", "implementation_")
-RETIRED_DIAGNOSTIC_KEYS = frozenset({"max_drawdown_and_pct_profitable_windows_vs_base"})
+RETIRED_DIAGNOSTIC_KEYS = frozenset(
+    {
+        "max_drawdown_and_pct_profitable_windows_vs_base",
+        "max_drawdown_and_pct_profitable_windows_versus_base",
+        "pct_profitable_windows_and_max_drawdown_change_relative_to_base",
+    }
+)
 
 
 def _register(spec: DiagnosticRequirementSpec) -> None:

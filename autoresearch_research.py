@@ -1036,6 +1036,7 @@ def _try_one_validation_attempt(
         attempt,
         conductor_result,
         prior_theses,
+        require_analyst_tool=require_analyst_tool,
     )
 
 
@@ -1096,12 +1097,27 @@ def _try_mechanism_validation_attempt(
     attempt: int,
     conductor_result: ConductorResult,
     prior_theses: Any,
+    *,
+    require_analyst_tool: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None, str]:
     """Validate, screen, compile, and dispatch a structured mechanism proposal."""
 
     raw_thesis, job_id, research_round_id, attempt_number, thesis_id = _init_attempt(
         controller, research_round, attempt, conductor_result
     )
+    if require_analyst_tool and "analyze_trades" not in (conductor_result.tools_called or set()):
+        reason = "trades-backed mechanism proposals must call analyze_trades before validation"
+        _log_validation_rejection(
+            controller,
+            research_round,
+            attempt,
+            raw_thesis,
+            thesis_id,
+            reason,
+            exc=ValueError(reason),
+            stage="stage_1",
+        )
+        return None, f"Mechanism proposal '{thesis_id}' rejected by validator: {reason}", "stage_1"
 
     try:
         proposal = MechanismProposal.model_validate(raw_thesis)
@@ -1703,10 +1719,11 @@ def _round_reflexio_facts(
     research_round: int,
 ) -> dict[str, Any]:
     runtime_root = Path(getattr(controller, "runtime_root", None) or controller.root)
+    job_id = _controller_job_id(controller)
     facts = {
         "screening_verdict_counts": _screening_verdict_counts(controller, research_round),
-        "prediction_gaps": _prediction_gaps(runtime_root, research_round),
-        "harvest_lessons": _harvest_lessons(runtime_root, research_round),
+        "prediction_gaps": _prediction_gaps(runtime_root, research_round, job_id=job_id),
+        "harvest_lessons": _harvest_lessons(runtime_root, research_round, job_id=job_id),
     }
     return {key: value for key, value in facts.items() if value}
 
@@ -1759,9 +1776,11 @@ def _screening_verdict_counts(
     return {str(verdict): int(count) for verdict, count in rows if verdict and int(count)}
 
 
-def _prediction_gaps(runtime_root: Path, research_round: int) -> list[dict[str, Any]]:
+def _prediction_gaps(
+    runtime_root: Path, research_round: int, *, job_id: int | None = None
+) -> list[dict[str, Any]]:
     gaps: deque[dict[str, Any]] = deque(maxlen=10)
-    for payload in _harvest_verdict_payloads(runtime_root, research_round):
+    for payload in _harvest_verdict_payloads(runtime_root, research_round, job_id=job_id):
         raw_predictions = payload.get("registered_predictions") or payload.get("prediction_results")
         if not isinstance(raw_predictions, list):
             continue
@@ -1782,9 +1801,11 @@ def _prediction_gaps(runtime_root: Path, research_round: int) -> list[dict[str, 
     return list(gaps)
 
 
-def _harvest_lessons(runtime_root: Path, research_round: int) -> list[dict[str, Any]]:
+def _harvest_lessons(
+    runtime_root: Path, research_round: int, *, job_id: int | None = None
+) -> list[dict[str, Any]]:
     lessons: deque[dict[str, Any]] = deque(maxlen=10)
-    for payload in _harvest_verdict_payloads(runtime_root, research_round):
+    for payload in _harvest_verdict_payloads(runtime_root, research_round, job_id=job_id):
         lesson = str(payload.get("lesson") or payload.get("summary") or "").strip()
         if not lesson:
             continue
@@ -1799,9 +1820,15 @@ def _harvest_lessons(runtime_root: Path, research_round: int) -> list[dict[str, 
     return list(lessons)
 
 
-def _harvest_verdict_payloads(runtime_root: Path, research_round: int) -> list[dict[str, Any]]:
+def _harvest_verdict_payloads(
+    runtime_root: Path, research_round: int, *, job_id: int | None = None
+) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
-    pattern = "runtime/jobs/*/research/round-*/harvest_verdict*.json"
+    pattern = (
+        f"runtime/jobs/job-{job_id}/research/round-*/harvest_verdict*.json"
+        if job_id and job_id > 0
+        else "runtime/jobs/*/research/round-*/harvest_verdict*.json"
+    )
     for path in sorted(runtime_root.glob(pattern)):
         path_round = _round_number_from_artifact_path(path)
         if path_round is not None and path_round > research_round:

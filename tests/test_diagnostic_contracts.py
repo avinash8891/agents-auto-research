@@ -19,9 +19,19 @@ def test_enrich_required_diagnostics_rejects_retired_window_metric_key() -> None
         )
 
 
-def test_build_required_diagnostic_specs_rejects_retired_window_metric_alias() -> None:
+@pytest.mark.parametrize(
+    "diagnostic_key",
+    [
+        "max_drawdown_and_pct_profitable_windows_vs_base",
+        "max_drawdown_and_pct_profitable_windows_versus_base",
+        "pct_profitable_windows_and_max_drawdown_change_relative_to_base",
+    ],
+)
+def test_build_required_diagnostic_specs_rejects_retired_window_metric_aliases(
+    diagnostic_key: str,
+) -> None:
     with pytest.raises(ValueError, match="retired diagnostic"):
-        build_required_diagnostic_specs(["max_drawdown_and_pct_profitable_windows_vs_base"])
+        build_required_diagnostic_specs([diagnostic_key])
 
 
 def test_enrich_required_diagnostics_supports_max_drawdown_key() -> None:

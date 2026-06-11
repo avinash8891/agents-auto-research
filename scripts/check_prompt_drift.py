@@ -133,16 +133,25 @@ def extract_output_fields_from_prompt(prompt: str) -> set[str]:
         re.MULTILINE | re.DOTALL,
     )
     if not section_match:
+        section_match = re.search(
+            r"Return only JSON matching this shape:\s*(\{.*?\})",
+            prompt,
+            re.MULTILINE | re.DOTALL,
+        )
+    if not section_match:
         return set()
     section = section_match.group(0)
 
     fields: set[str] = set()
     # Look for indented snake_case identifiers followed by 2+ spaces and prose.
-    pattern = re.compile(
+    prose_pattern = re.compile(
         r"^\s{2,}([a-z_][a-z0-9_]*)\s{2,}\S",
         re.MULTILINE,
     )
-    for match in pattern.finditer(section):
+    for match in prose_pattern.finditer(section):
+        fields.add(match.group(1))
+    json_key_pattern = re.compile(r'^\s*"([a-z_][a-z0-9_]*)"\s*:', re.MULTILINE)
+    for match in json_key_pattern.finditer(section):
         fields.add(match.group(1))
     return fields
 
@@ -255,7 +264,7 @@ def _prefix_matches(mcp_tools: set[str]) -> set[str]:
 
 def check_output_fields(prompt: str) -> list[str]:
     findings: list[str] = []
-    documented = {field for field in MECHANISM_PROMPT_FIELDS if field in prompt}
+    documented = extract_output_fields_from_prompt(prompt)
 
     missing = sorted(MECHANISM_PROMPT_FIELDS - documented)
     for name in missing:

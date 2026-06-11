@@ -37,6 +37,16 @@ def test_mechanism_prompt_lists_required_output_fields() -> None:
     assert check_output_fields(prompt) == []
 
 
+def test_mechanism_prompt_field_check_only_counts_output_shape() -> None:
+    prompt = _build_mechanism_system_prompt()
+    prompt_without_rule_output = prompt.replace('  "rule": "...",\n', "")
+    prompt_with_global_rule_mention = prompt_without_rule_output + "\nOutside output: rule\n"
+
+    findings = check_output_fields(prompt_with_global_rule_mention)
+
+    assert any("'rule'" in finding for finding in findings)
+
+
 def test_safety_rails_named_in_prompts_have_production_callers() -> None:
     findings = check_safety_rail_wiring(REQUIRED_WIRED_SAFETY_RAILS)
 

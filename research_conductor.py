@@ -882,7 +882,7 @@ async def run_research_conductor(
         agent = OAIAgent(
             name="research-conductor",
             instructions=system_prompt,
-            tools=[],
+            tools=[analyze_trades] if trades_file else [],
             model=model,
             output_type=MechanismProposal,
         )

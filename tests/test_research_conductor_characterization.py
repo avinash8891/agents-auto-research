@@ -149,6 +149,48 @@ def test_conductor_uses_rendered_corpus_only_and_skips_thesis_validator(
     assert getattr(captured["output_type"], "__name__", "") == "MechanismProposal"
 
 
+def test_conductor_exposes_analyst_tool_when_trades_are_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+
+    def _run_streamed(agent, user_prompt, max_turns, run_config):
+        captured["tools"] = list(getattr(agent, "tools", []))
+        return _StreamedResult(
+            json.dumps(
+                {
+                    "story": "Gap-down entries reveal loss-prone inventory.",
+                    "rule": "gap_pct < 0",
+                    "competitor_rule": "gap_pct > 0",
+                    "competitor_story": "Gap-up entries are the real adverse-selection source.",
+                    "actionable": False,
+                    "proposed_change": None,
+                    "predictions": None,
+                }
+            ),
+            agent,
+        )
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
+
+    out = conductor.run_research_conductor_sync(
+        "trades.parquet",
+        "",
+        {"status": "keep"},
+        research_round=12,
+        family_name="ema",
+        rendered_corpus="## Corpus\n",
+    )
+
+    assert out is not None
+    assert out.status == "ok"
+    tools = captured["tools"]
+    assert isinstance(tools, list)
+    assert len(tools) == 1
+
+
 def test_conductor_accepts_structured_final_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

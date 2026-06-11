@@ -193,6 +193,7 @@ def test_round_reflexio_facts_scopes_screening_counts_to_active_job(tmp_path: Pa
 
 def test_round_reflexio_facts_include_harvest_lessons(tmp_path: Path) -> None:
     controller = _real_controller(tmp_path)
+    controller.write_state({"state": "running", "job": 4, "research_round": 2})
     round_root = tmp_path / "runtime" / "jobs" / "job-4" / "research" / "round-2"
     round_root.mkdir(parents=True)
     (round_root / "harvest_verdict.json").write_text(
@@ -209,6 +210,27 @@ def test_round_reflexio_facts_include_harvest_lessons(tmp_path: Path) -> None:
                     }
                 ],
                 "lesson": "Gap-down rule passed screening but missed its registered PF target.",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    other_round_root = tmp_path / "runtime" / "jobs" / "job-5" / "research" / "round-2"
+    other_round_root.mkdir(parents=True)
+    (other_round_root / "harvest_verdict.json").write_text(
+        json.dumps(
+            {
+                "round": 2,
+                "thesis_id": "other-job",
+                "status": "supported",
+                "registered_predictions": [
+                    {
+                        "metric": "trade_count",
+                        "magnitude_gap": 999,
+                        "direction_passed": False,
+                    }
+                ],
+                "lesson": "This other job must not contaminate active-job facts.",
             }
         )
         + "\n",
@@ -1261,6 +1283,30 @@ def test_partial_mechanism_proposal_returns_schema_retry_feedback(tmp_path: Path
     assert result is None
     assert stage == "stage_1"
     assert "predictions" in str(retry_feedback)
+
+
+def test_mechanism_validation_requires_analyst_tool_when_trades_exist(tmp_path: Path) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis=_ema_mechanism_proposal(),
+            reasoning="proposal skipped analyst",
+            tools_called=frozenset({"web_search", "list_round_results"}),
+        ),
+        prior_theses=[],
+        require_analyst_tool=True,
+    )
+
+    assert result is None
+    assert stage == "stage_1"
+    assert retry_feedback is not None
+    assert "must call analyze_trades" in retry_feedback
 
 
 def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
