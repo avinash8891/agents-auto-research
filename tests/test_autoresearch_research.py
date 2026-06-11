@@ -31,8 +31,10 @@ from autoresearch_research import (
     _handle_success,
     _on_ready_to_run,
     _quality_score_from_skill_delta,
+    _record_round_quality_and_bridges,
     _research_feedback_from_verdict,
     _resolve_conductor_inputs,
+    _screen_mechanism_proposal,
     _try_one_validation_attempt,
     accumulate_job_usage,
     execute_research_sdk,
@@ -46,6 +48,7 @@ from backtest_run_db import BacktestRunDB
 from causal_model import load_model
 from feature_table import feature_table_path
 from research_types import ConductorResult
+from research_types import CausalModel
 from strategies import STRATEGIES
 from strategy_family import load_family
 from thesis_validator import ThesisValidationError
@@ -87,6 +90,96 @@ def test_notify_discord_swallows_exceptions(monkeypatch) -> None:
     monkeypatch.setattr(urllib.request, "urlopen", boom)
     # Must complete cleanly even though urllib raised.
     notify_discord("title", "body", webhook="https://example.invalid/hook")
+
+
+def test_record_round_quality_sends_round_facts_only_to_reflexio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "running", "job": 4, "research_round": 1})
+    emitted: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        "autoresearch_research._round_reflexio_facts",
+        lambda *_args, **_kwargs: {
+            "registered_predictions": [
+                {"metric": "profit_factor", "magnitude_gap": -0.4, "direction_passed": False}
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        "autoresearch_research.emit_halo_event",
+        lambda **kwargs: emitted.append(("halo", kwargs["payload"])),
+    )
+    monkeypatch.setattr(
+        "autoresearch_research.emit_recursive_improve_event",
+        lambda **kwargs: emitted.append(("recursive", kwargs["payload"])),
+    )
+    monkeypatch.setattr(
+        "autoresearch_research.emit_reflexio_event",
+        lambda **kwargs: emitted.append(("reflexio", kwargs["payload"])),
+    )
+
+    _record_round_quality_and_bridges(
+        controller,
+        1,
+        {"generated_config": "runtime/jobs/job-4/research/round-1/selected_config.json"},
+        {"total": {"total_tokens": 1}},
+    )
+
+    by_name = dict(emitted)
+    assert "round_facts" not in by_name["halo"]
+    assert "round_facts" not in by_name["recursive"]
+    assert (
+        by_name["reflexio"]["reflection"]["round_facts"]["registered_predictions"][0]["metric"]
+        == "profit_factor"
+    )
+
+
+def test_screen_mechanism_proposal_reads_feature_table_from_runtime_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime-root"
+    code_root.mkdir()
+    runtime_root.mkdir()
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+    family = load_family("ema")
+    controller = AutoresearchController(
+        root=code_root,
+        runtime_root=runtime_root,
+        family=family,
+        state_path=runtime_root / "ema_autoresearch.next.json",
+        current_md_path=runtime_root / "ema_autoresearch.current.md",
+        jobs_root=runtime_root / "runtime" / "jobs",
+    )
+    round_root = runtime_root / "runtime/jobs/job-9/research/round-1"
+    _write_screening_feature_table(round_root)
+    from causal_model import save_model
+
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            holdout_start="2023-01-01T00:00:00+00:00",
+            factors=[],
+            accuracy_history=[],
+        )
+    )
+
+    passed, reason = _screen_mechanism_proposal(
+        controller,
+        1,
+        {
+            "rule": "gap_pct < 0",
+            "competitor_rule": "gap_pct > 0",
+            "story": "gap-down losses",
+        },
+        "thesis-001",
+        job_id=9,
+    )
+
+    assert passed is True
+    assert reason is None
 
 
 # ── accumulate_job_usage ────────────────────────────────────────

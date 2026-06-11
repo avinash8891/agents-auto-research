@@ -45,7 +45,8 @@ def evaluate_predictions(
     predictions = payload.get("predictions") or []
 
     trade_count = candidate.get("trade_count")
-    if trade_count is None or int(trade_count) < min_trades:
+    trade_count_value = _finite_metric(trade_count)
+    if trade_count_value is None or trade_count_value < float(min_trades):
         return HarvestVerdict(
             thesis_id=thesis_id,
             status="degenerate",

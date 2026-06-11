@@ -167,6 +167,44 @@ def test_build_feature_table_joins_extra_regime_columns(
     assert list(load_regime_labels().columns) == ["date", "regime_label", "volatility_regime"]
 
 
+def test_build_feature_table_preserves_numeric_missing_extra_regime_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2024-01-03").date()],
+            "regime_label": ["risk_on"],
+            "volatility_score": [0.73],
+        }
+    ).to_parquet(data_root / "regime_labels.parquet", index=False)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+
+    table = build_feature_table(_trades_df(), _bars_df(), events=[], family="ema")
+
+    assert pd.isna(table.loc[0, "volatility_score"])
+    assert pd.api.types.is_numeric_dtype(table["volatility_score"])
+
+
+def test_build_feature_table_handles_nan_hold_bars_and_nan_entry_bar_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    trades = _trades_df()
+    trades.loc[0, "hold_bars"] = float("nan")
+    bars = _bars_df()
+    entry_bar = bars["timestamp"] == pd.Timestamp("2024-01-04 14:35:00", tz="UTC")
+    bars.loc[entry_bar, "close"] = float("nan")
+
+    table = build_feature_table(trades, bars, events=[], family="ema")
+
+    assert table.loc[0, "out_hold_bars"] == -1
+    assert table.loc[0, "entry_bar_range_pct"] == pytest.approx((0.8 / 102.6) * 100.0)
+
+
 def test_build_feature_table_ignores_post_entry_bar_poisoning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

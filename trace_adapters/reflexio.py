@@ -197,6 +197,8 @@ def _screening_verdict_counts(payload: dict[str, Any]) -> dict[str, int]:
 def _prediction_gaps(payload: dict[str, Any]) -> list[dict[str, Any]]:
     raw = _round_fact_value(payload, "prediction_gaps")
     if not isinstance(raw, list):
+        raw = _round_fact_value(payload, "registered_predictions")
+    if not isinstance(raw, list):
         raw = _round_fact_value(payload, "prediction_results")
     if not isinstance(raw, list):
         return []

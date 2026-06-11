@@ -919,7 +919,8 @@ def _screen_mechanism_proposal(
     from feature_table import load_feature_table
     from screening import screen, write_screenings
 
-    round_root = research_round_root(controller.root, job_id, research_round)
+    runtime_root = getattr(controller, "runtime_root", None) or controller.root
+    round_root = research_round_root(runtime_root, job_id, research_round)
     features = load_feature_table(round_root)
     model = load_model(controller.family.name)
     holdout = holdout_mask(features, family=model.family, holdout_start=model.holdout_start)
@@ -1697,7 +1698,7 @@ def _record_round_quality_and_bridges(
         overall_score=overall_score,
         artifact_paths=artifact_paths,
     )
-    payload_kwargs = {
+    common_payload_kwargs = {
         "research_round": research_round,
         "thesis_id": thesis_id,
         "outcome": outcome,
@@ -1706,11 +1707,12 @@ def _record_round_quality_and_bridges(
         "validation_failure_reason": validation_failure_reason,
         "usage": round_usage,
         "quality": quality_event,
-        "round_facts": _round_reflexio_facts(controller, research_round),
     }
+    round_facts = _round_reflexio_facts(controller, research_round)
+    reflexio_payload_kwargs = {**common_payload_kwargs, "round_facts": round_facts}
     canonical_trace_path = get_event_file()
     reflexio_package = build_reflexio_export_package(
-        **payload_kwargs,
+        **reflexio_payload_kwargs,
         canonical_trace_path=canonical_trace_path,
     )
     for emit_fn, build_fn, label in [
@@ -1720,7 +1722,7 @@ def _record_round_quality_and_bridges(
         emit_fn(
             action="research_round",
             summary=f"{label} round {research_round}",
-            payload=build_fn(**payload_kwargs),
+            payload=build_fn(**common_payload_kwargs),
         )
     emit_reflexio_event(
         action="research_round",
@@ -1730,7 +1732,7 @@ def _record_round_quality_and_bridges(
     state = controller.read_state()
     runtime_root = getattr(controller, "runtime_root", None) or controller.root
     round_root = research_round_root(runtime_root, int(state.get("job")), research_round)
-    _write_adapter_exports(round_root, **payload_kwargs)
+    _write_adapter_exports(round_root, **common_payload_kwargs, round_facts=round_facts)
 
 
 def _write_export_package(export_root: Path, directory_name: str, package: dict[str, Any]) -> None:
@@ -1758,6 +1760,7 @@ def _write_adapter_exports(
     validation_failure_reason: str,
     usage: dict[str, Any],
     quality: Any,
+    round_facts: dict[str, Any] | None = None,
 ) -> None:
     kwargs = dict(
         research_round=research_round,
@@ -1778,6 +1781,8 @@ def _write_adapter_exports(
         adapter_kwargs = dict(kwargs)
         if dir_name in {"recursive_improve", "reflexio"}:
             adapter_kwargs["canonical_trace_path"] = get_event_file()
+        if dir_name == "reflexio":
+            adapter_kwargs["round_facts"] = round_facts or {}
         _write_export_package(export_root, dir_name, build_fn(**adapter_kwargs))
 
 

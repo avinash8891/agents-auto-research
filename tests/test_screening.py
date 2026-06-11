@@ -32,8 +32,10 @@ def _feature_table() -> pd.DataFrame:
         rows.append(
             {
                 "trade_id": f"gap-down-{index}",
+                "symbol": "AAA",
                 "gap_pct": -1.0,
                 "vol_pctile_20d": 0.2 if index % 2 else 0.8,
+                "custom_entry_feature": 1.0,
                 "out_is_loss": index < 32,
                 "out_pnl": -2.0 if index < 32 else 1.0,
             }
@@ -42,8 +44,10 @@ def _feature_table() -> pd.DataFrame:
         rows.append(
             {
                 "trade_id": f"gap-up-{index}",
+                "symbol": "BBB",
                 "gap_pct": 0.7,
                 "vol_pctile_20d": 0.2 if index % 2 else 0.8,
+                "custom_entry_feature": 0.0,
                 "out_is_loss": index < 24,
                 "out_pnl": -1.0 if index < 24 else 2.0,
             }
@@ -129,6 +133,18 @@ def test_screen_rejects_empty_and_oversized_rules_as_bad_rule() -> None:
 
     assert screen("", None, model, _feature_table()).verdict == "kill_bad_rule"
     assert screen("gap_pct > 0 " * 60, None, model, _feature_table()).verdict == "kill_bad_rule"
+
+
+def test_screen_accepts_string_literals_and_dynamic_entry_columns() -> None:
+    model = CausalModel(family="ema", version=1)
+
+    literal = screen("symbol == 'AAA'", "symbol == 'BBB'", model, _feature_table())
+    dynamic = screen(
+        "custom_entry_feature > 0", "custom_entry_feature == 0", model, _feature_table()
+    )
+
+    assert literal.verdict == "pass"
+    assert dynamic.verdict == "pass"
 
 
 def test_screenings_table_exists_and_write_screenings_appends_spec_rows(tmp_path: Path) -> None:

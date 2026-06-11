@@ -107,7 +107,7 @@ def enrich_required_diagnostics(
             if isinstance(item, DiagnosticRequirementSpec)
             else DiagnosticRequirementSpec.model_validate(item)
         )
-        if spec.key == "max_drawdown_vs_base":
+        if spec.key in {"max_drawdown_vs_base", "max_drawdown_and_pct_profitable_windows_vs_base"}:
             b_md = baseline_metrics.get("max_drawdown")
             c_md = candidate_metrics.get("max_drawdown")
             if None in {b_md, c_md}:

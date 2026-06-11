@@ -8,7 +8,6 @@ COUPLED_KEYS: dict[str, frozenset[frozenset[str]]] = {
     "orb": frozenset(
         {
             frozenset({"use_volatility_trail", "vol_trail_atr_mult"}),
-            frozenset({"use_volatility_trail", "trail_atr_multiple"}),
         }
     )
 }

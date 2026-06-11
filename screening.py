@@ -29,12 +29,13 @@ from autoresearch_constants import (
     research_engine_min_abs_lift,
     research_engine_min_sample,
 )
-from feature_table import ENTRY_TIME_COLUMNS, OUTCOME_COLUMNS
+from feature_table import OUTCOME_COLUMNS
 from persistence_utils import utc_now_iso8601
 from research_types import CausalFactor, CausalModel
 
 _QUERY_KEYWORDS = frozenset({"and", "or", "not", "in", "True", "False", "None", "is", "abs"})
 _QUERY_NAME_RE = re.compile(r"`([^`]+)`|\b[A-Za-z_]\w*\b")
+_STRING_LITERAL_RE = re.compile(r"(?s)'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"")
 _MAX_RULE_CHARS = 500
 
 
@@ -163,7 +164,7 @@ def _evaluate_rule(rule: str, features_train: pd.DataFrame) -> pd.Series | None:
     if not rule.strip() or len(rule) > _MAX_RULE_CHARS:
         return None
     try:
-        _validate_rule_references(rule)
+        _validate_rule_references(rule, features_train.columns)
         matching = features_train.query(rule)
     except Exception:
         return None
@@ -231,15 +232,20 @@ def _two_proportion_p_value(
     return float(math.erfc(z_score / math.sqrt(2.0)))
 
 
-def _validate_rule_references(rule: str) -> None:
-    for match in _QUERY_NAME_RE.finditer(rule):
+def _validate_rule_references(rule: str, columns: Sequence[str]) -> None:
+    allowed_columns = set(columns) - OUTCOME_COLUMNS
+    for match in _QUERY_NAME_RE.finditer(_strip_string_literals(rule)):
         name = match.group(1) or match.group(0)
         if name in _QUERY_KEYWORDS:
             continue
         if name in OUTCOME_COLUMNS:
             raise ValueError(f"screening rule references outcome column: {name}")
-        if name not in ENTRY_TIME_COLUMNS:
+        if name not in allowed_columns:
             raise ValueError(f"screening rule references unknown entry column: {name}")
+
+
+def _strip_string_literals(rule: str) -> str:
+    return _STRING_LITERAL_RE.sub("", rule)
 
 
 def _thresholds_for_family(family: str) -> dict[str, float]:

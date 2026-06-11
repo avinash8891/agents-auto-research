@@ -58,8 +58,7 @@ alternative_data, alpha_decay, emergent.
 
 ACTIONABLE OUTPUT RULES
 - proposed_change is required iff actionable=true.
-- proposed_change must contain one changed key unless the story explicitly
-  requires an inseparable pair.
+- proposed_change must contain exactly one changed key.
 - predictions are required iff actionable=true.
 - predictions must include at least two distinct MetricName values from:
   profit_factor, trade_count, max_drawdown, win_rate, median_expectancy,

@@ -115,7 +115,9 @@ def run_backtest(config: dict) -> dict:
         return {**empty_metrics(), "_trades_df": trades_df, "_event_logger": event_logger}
 
     trades_df = (
-        trades_df[trades_df["pnl_pct"].notna()].sort_values("entry_date").reset_index(drop=True)
+        trades_df[trades_df["pnl_pct"].notna()]
+        .sort_values("entry_date", kind="mergesort")
+        .reset_index(drop=True)
     )
 
     if "stop" not in trades_df.columns:

@@ -12,7 +12,7 @@ import yaml
 
 from autoresearch_constants import research_engine_holdout_fraction
 from autoresearch_runtime_paths import resolve_runtime_root
-from feature_table import ENTRY_TIME_COLUMNS, OUTCOME_COLUMNS
+from feature_table import OUTCOME_COLUMNS
 from persistence_utils import write_json_atomic
 from research_types import AccuracyPoint, CausalFactor, CausalModel
 
@@ -31,6 +31,7 @@ _QUERY_KEYWORDS = frozenset(
     }
 )
 _QUERY_NAME_RE = re.compile(r"`([^`]+)`|\b[A-Za-z_]\w*\b")
+_STRING_LITERAL_RE = re.compile(r"(?s)'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"")
 
 
 @dataclass(frozen=True)
@@ -211,7 +212,9 @@ def _factor_flags(
 ) -> dict[str, pd.Series]:
     flags: dict[str, pd.Series] = {}
     for factor in factors:
-        _validate_rule_references(factor.rule)
+        if factor.factor_id in flags:
+            raise ValueError(f"duplicate factor_id in model: {factor.factor_id}")
+        _validate_rule_references(factor.rule, feature_table.columns)
         try:
             matching = feature_table.query(factor.rule)
         except Exception as exc:
@@ -224,15 +227,20 @@ def _factor_flags(
     return flags
 
 
-def _validate_rule_references(rule: str) -> None:
-    for match in _QUERY_NAME_RE.finditer(rule):
+def _validate_rule_references(rule: str, columns: Sequence[str]) -> None:
+    allowed_columns = set(columns) - OUTCOME_COLUMNS
+    for match in _QUERY_NAME_RE.finditer(_strip_string_literals(rule)):
         name = match.group(1) or match.group(0)
         if name in _QUERY_KEYWORDS:
             continue
         if name in OUTCOME_COLUMNS:
             raise ValueError(f"causal factor rule references outcome column: {name}")
-        if name not in ENTRY_TIME_COLUMNS:
+        if name not in allowed_columns:
             raise ValueError(f"causal factor rule references unknown entry column: {name}")
+
+
+def _strip_string_literals(rule: str) -> str:
+    return _STRING_LITERAL_RE.sub("", rule)
 
 
 def _validate_feature_table(feature_table: pd.DataFrame) -> None:

@@ -25,3 +25,13 @@ def test_proposed_change_allows_declared_family_coupled_pair() -> None:
         )
         is True
     )
+
+
+def test_proposed_change_rejects_unsupported_orb_trail_alias() -> None:
+    assert (
+        proposed_change_is_single_or_coupled(
+            "orb",
+            {"use_volatility_trail": True, "trail_atr_multiple": 1.2},
+        )
+        is False
+    )

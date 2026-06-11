@@ -21,6 +21,7 @@ def _feature_table() -> pd.DataFrame:
         [
             {
                 "trade_id": "train-1",
+                "symbol": "AAA",
                 "entry_ts": pd.Timestamp("2020-01-02 14:35:00", tz="UTC"),
                 "gap_pct": -1.2,
                 "vol_pctile_20d": 0.8,
@@ -29,6 +30,7 @@ def _feature_table() -> pd.DataFrame:
             },
             {
                 "trade_id": "train-2",
+                "symbol": "BBB",
                 "entry_ts": pd.Timestamp("2020-02-02 14:35:00", tz="UTC"),
                 "gap_pct": 0.3,
                 "vol_pctile_20d": 0.2,
@@ -37,6 +39,7 @@ def _feature_table() -> pd.DataFrame:
             },
             {
                 "trade_id": "train-3",
+                "symbol": "AAA",
                 "entry_ts": pd.Timestamp("2021-01-03 14:35:00", tz="UTC"),
                 "gap_pct": -0.8,
                 "vol_pctile_20d": 0.7,
@@ -45,6 +48,7 @@ def _feature_table() -> pd.DataFrame:
             },
             {
                 "trade_id": "train-4",
+                "symbol": "BBB",
                 "entry_ts": pd.Timestamp("2021-02-04 14:35:00", tz="UTC"),
                 "gap_pct": 0.4,
                 "vol_pctile_20d": 0.2,
@@ -53,6 +57,7 @@ def _feature_table() -> pd.DataFrame:
             },
             {
                 "trade_id": "train-5",
+                "symbol": "BBB",
                 "entry_ts": pd.Timestamp("2022-03-04 14:35:00", tz="UTC"),
                 "gap_pct": 0.6,
                 "vol_pctile_20d": 0.4,
@@ -61,6 +66,7 @@ def _feature_table() -> pd.DataFrame:
             },
             {
                 "trade_id": "holdout-loss-1",
+                "symbol": "AAA",
                 "entry_ts": pd.Timestamp("2023-01-05 14:35:00", tz="UTC"),
                 "gap_pct": -1.1,
                 "vol_pctile_20d": 0.9,
@@ -69,6 +75,7 @@ def _feature_table() -> pd.DataFrame:
             },
             {
                 "trade_id": "holdout-win-1",
+                "symbol": "BBB",
                 "entry_ts": pd.Timestamp("2023-02-06 14:35:00", tz="UTC"),
                 "gap_pct": 0.2,
                 "vol_pctile_20d": 0.3,
@@ -77,6 +84,7 @@ def _feature_table() -> pd.DataFrame:
             },
             {
                 "trade_id": "holdout-loss-2",
+                "symbol": "AAA",
                 "entry_ts": pd.Timestamp("2023-03-01 14:35:00", tz="UTC"),
                 "gap_pct": -0.7,
                 "vol_pctile_20d": 0.8,
@@ -85,6 +93,7 @@ def _feature_table() -> pd.DataFrame:
             },
             {
                 "trade_id": "holdout-win-2",
+                "symbol": "BBB",
                 "entry_ts": pd.Timestamp("2023-04-01 14:35:00", tz="UTC"),
                 "gap_pct": 0.6,
                 "vol_pctile_20d": 0.6,
@@ -263,3 +272,38 @@ def test_causal_model_rejects_rules_that_reference_outcome_columns() -> None:
             ),
             _feature_table(),
         )
+
+
+def test_causal_model_accepts_string_literal_rule_values() -> None:
+    model = CausalModel(
+        family="ema",
+        version=1,
+        factors=[
+            CausalFactor(
+                factor_id="symbol-rule",
+                story="AAA entries carry loss risk.",
+                rule="symbol == 'AAA'",
+                direction="loss",
+                evidence_rounds=[],
+                status="candidate",
+            )
+        ],
+        accuracy_history=[],
+    )
+
+    predictions = predict(model, _feature_table())
+
+    assert predictions.loc[5] > predictions.loc[6]
+
+
+def test_causal_model_rejects_duplicate_factor_ids() -> None:
+    duplicate = _planted_factor()
+    model = CausalModel(
+        family="ema",
+        version=1,
+        factors=[duplicate, duplicate.model_copy(update={"rule": "vol_pctile_20d > 0.5"})],
+        accuracy_history=[],
+    )
+
+    with pytest.raises(ValueError, match="duplicate factor_id"):
+        predict(model, _feature_table())

@@ -1053,10 +1053,18 @@ def _write_feature_table_artifact(
     from backtest.data_universe import load_universe_data
     from feature_table import build_feature_table, feature_table_path
 
-    trades_df = pd.read_csv(trades_file)
+    trades_path = Path(trades_file)
+    if not trades_path.is_absolute():
+        trades_path = artifact_dir / trades_path
+    trades_df = pd.read_csv(trades_path)
     batch = load_universe_data(runtime_config)
     bars_df = _wide_ohlcv_batch_to_long_bars(batch)
-    events = _load_strategy_events(details.get("strategy_events_file"))
+    events_file = details.get("strategy_events_file")
+    if isinstance(events_file, str) and events_file:
+        events_path = Path(events_file)
+        if not events_path.is_absolute():
+            events_file = str(artifact_dir / events_path)
+    events = _load_strategy_events(events_file)
     table = build_feature_table(trades_df, bars_df, events, controller.family.name)
     path = feature_table_path(artifact_dir)
     table.to_parquet(path, index=False)

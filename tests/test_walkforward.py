@@ -8,6 +8,7 @@ import pytest
 
 from backtest_run_db import BacktestRunDB
 from causal_model import load_model, save_model
+from experiment_evaluator import evaluate_predictions
 from research_types import CausalFactor, CausalModel
 from walkforward import build_windows, evaluate_walkforward, walkforward_config
 
@@ -151,6 +152,73 @@ def test_walkforward_curve_fit_fixture_demotes_factor_and_run(
     assert graduated == 0
     assert model.factors[0].status == "demoted"
     assert "survival_rate=0.333" in model.factors[0].lesson
+
+
+def test_walkforward_empty_predictions_do_not_vacuously_graduate(tmp_path: Path) -> None:
+    db_path = tmp_path / "ema_backtest_runs.db"
+    _seed_run(db_path)
+
+    report = evaluate_walkforward(
+        family="ema",
+        thesis_id="thesis-001",
+        runtime_root=tmp_path,
+        db_path=db_path,
+        run_id="run-thesis",
+        windows=_windows(),
+        predictions=[],
+        baseline_metrics=[
+            {"profit_factor": 1.0, "trade_count": 30},
+            {"profit_factor": 1.0, "trade_count": 30},
+            {"profit_factor": 1.0, "trade_count": 30},
+        ],
+        candidate_metrics=[
+            {"profit_factor": 1.2, "trade_count": 30},
+            {"profit_factor": 1.1, "trade_count": 30},
+            {"profit_factor": 1.3, "trade_count": 30},
+        ],
+    )
+
+    assert report["graduated"] is False
+    assert report["survival_rate"] == 0.0
+
+
+def test_walkforward_direction_rules_match_registered_prediction_evaluator(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "ema_backtest_runs.db"
+    _seed_run(db_path)
+    registered = tmp_path / "registered_predictions.json"
+    registered.write_text(
+        json.dumps(
+            {
+                "thesis_id": "thesis-001",
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 1.0}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    harvest = evaluate_predictions(
+        registered,
+        baseline={"profit_factor": 1.0, "trade_count": 30},
+        candidate={"profit_factor": 1.0, "trade_count": 30},
+    )
+    report = evaluate_walkforward(
+        family="ema",
+        thesis_id="thesis-001",
+        runtime_root=tmp_path,
+        db_path=db_path,
+        run_id="run-thesis",
+        windows=build_windows("2020-01-01", "2020-10-01"),
+        predictions=[{"metric": "profit_factor", "direction": "increase", "predicted": 1.0}],
+        baseline_metrics=[{"profit_factor": 1.0, "trade_count": 30}],
+        candidate_metrics=[{"profit_factor": 1.0, "trade_count": 30}],
+    )
+
+    assert harvest.prediction_results[0]["direction_passed"] is True
+    assert report["windows"][0]["prediction_results"][0]["direction_passed"] is True
 
 
 def test_walkforward_config_reads_nested_defaults() -> None:

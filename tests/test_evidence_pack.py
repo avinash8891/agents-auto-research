@@ -156,6 +156,28 @@ def test_build_corpus_reads_runtime_artifacts_for_refuted_harvest(
     assert corpus.cross_family[0].factor_id == "f101"
 
 
+def test_build_corpus_skips_malformed_harvest_artifacts(tmp_path: Path, monkeypatch) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    bad_path = tmp_path / "runtime/jobs/job-1/research/round-2/harvest_verdict_bad.json"
+    bad_path.write_text("{not-json", encoding="utf-8")
+
+    corpus = build_corpus("ema", 2)
+
+    assert len(corpus.harvest_verdicts) == 1
+    assert corpus.harvest_verdicts[0]["lesson"].startswith("Gap-down rule")
+
+
+def test_build_corpus_does_not_fabricate_missing_screening_rates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+
+    corpus = build_corpus("ema", 2)
+
+    assert pd.isna(corpus.screening_history[0].flagged_loss_rate)
+    assert pd.isna(corpus.screening_history[0].base_loss_rate)
+
+
 def test_render_corpus_is_deterministic_and_ordered(tmp_path: Path, monkeypatch) -> None:
     _setup_runtime(tmp_path, monkeypatch)
     left = build_corpus("ema", 2)

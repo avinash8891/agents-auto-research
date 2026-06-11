@@ -128,6 +128,22 @@ def test_evaluate_predictions_refutes_opposite_direction(tmp_path) -> None:
     assert verdict.prediction_results[0]["direction_passed"] is False
 
 
+def test_evaluate_predictions_treats_invalid_trade_count_as_degenerate(tmp_path) -> None:
+    registered = _registered_predictions(
+        tmp_path,
+        [{"metric": "profit_factor", "direction": "increase", "predicted": 2.4}],
+    )
+
+    verdict = evaluate_predictions(
+        registered,
+        baseline={"profit_factor": 2.0, "trade_count": 25},
+        candidate={"profit_factor": 2.1, "trade_count": "not-a-number"},
+    )
+
+    assert verdict.status == "degenerate"
+    assert "trade_count" in verdict.summary
+
+
 def test_evaluate_predictions_marks_noise_floor_inconclusive(tmp_path) -> None:
     registered = _registered_predictions(
         tmp_path,

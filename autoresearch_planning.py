@@ -154,6 +154,7 @@ def should_terminate(
 def _load_research_engine_config(root: Path, family: StrategyFamily) -> dict[str, Any]:
     candidates = [
         root / "configs" / family.base_config_filename,
+        Path(__file__).resolve().parent / "configs" / family.base_config_filename,
         Path.cwd() / "configs" / family.base_config_filename,
     ]
     for path in candidates:

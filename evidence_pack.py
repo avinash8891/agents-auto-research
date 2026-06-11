@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,8 @@ from causal_model import load_model, residual_map
 from feature_table import ENTRY_TIME_COLUMNS
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult
+
+log = logging.getLogger(__name__)
 
 
 class Corpus(BaseModel):
@@ -204,8 +207,8 @@ def _load_screening_history(family: str, round_number: int) -> list[ScreeningRes
                     rule=rule,
                     verdict=verdict,
                     sample_count=int(sample_count),
-                    flagged_loss_rate=0.0,
-                    base_loss_rate=0.0,
+                    flagged_loss_rate=float("nan"),
+                    base_loss_rate=float("nan"),
                     lift=float(lift),
                     p_value=float(p_value),
                     overlap_with=overlap_with,
@@ -217,8 +220,12 @@ def _load_screening_history(family: str, round_number: int) -> list[ScreeningRes
 def _load_harvest_verdicts(runtime_root: Path, round_number: int) -> list[dict]:
     verdicts: list[dict] = []
     for path in sorted(runtime_root.glob("runtime/jobs/*/research/round-*/harvest_verdict*.json")):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        payload_round = int(payload.get("round") or _round_number_from_path(path) or 0)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload_round = int(payload.get("round") or _round_number_from_path(path) or 0)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            log.warning("skipping unreadable harvest verdict artifact %s: %s", path, exc)
+            continue
         if payload_round <= round_number:
             payload["round"] = payload_round
             verdicts.append(payload)

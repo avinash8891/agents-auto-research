@@ -14,6 +14,7 @@ from autoresearch_constants import (
     research_engine_walkforward_train_months,
 )
 from causal_model import load_model, save_model
+from experiment_evaluator import _direction_passed as _registered_direction_passed
 from persistence_utils import write_json_atomic
 
 LOWER_IS_BETTER = {"max_drawdown"}
@@ -83,7 +84,9 @@ def evaluate_walkforward(
         prediction_results = [
             _prediction_result(prediction, baseline, candidate) for prediction in predictions
         ]
-        directions_hold = all(result["direction_passed"] for result in prediction_results)
+        directions_hold = bool(prediction_results) and all(
+            result["direction_passed"] for result in prediction_results
+        )
         rows.append(
             {
                 "window": index + 1,
@@ -150,19 +153,7 @@ def _direction_passed(
     baseline_value: float,
     candidate_value: float,
 ) -> bool:
-    if direction == "increase":
-        return candidate_value > baseline_value
-    if direction == "decrease":
-        return candidate_value < baseline_value
-    if direction == "increase_or_same":
-        return candidate_value >= baseline_value
-    if direction == "decrease_or_same":
-        return candidate_value <= baseline_value
-    if direction == "not_worse_than":
-        if metric in LOWER_IS_BETTER:
-            return candidate_value <= baseline_value
-        return candidate_value >= baseline_value
-    raise ValueError(f"unsupported prediction direction: {direction}")
+    return _registered_direction_passed(metric, direction, baseline_value, candidate_value)
 
 
 def _write_graduation_to_run_row(db_path: Path, run_id: str, graduated: bool) -> None:

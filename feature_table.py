@@ -147,7 +147,7 @@ def _feature_row(
     entry_bar_close = _float_or_nan(entry_bar.get("close", np.nan))
     entry_bar_range_pct = _pct(
         _float_or_nan(entry_bar.get("high", np.nan)) - _float_or_nan(entry_bar.get("low", np.nan)),
-        entry_bar_close or entry_price,
+        entry_bar_close if np.isfinite(entry_bar_close) else entry_price,
     )
 
     out_pnl = _float_or_nan(trade.get("pnl", trade.get("pnl_abs", trade.get("pnl_pct", np.nan))))
@@ -175,7 +175,10 @@ def _feature_row(
         "out_mae": _float_or_nan(trade.get("mae", trade.get("out_mae", np.nan))),
         "out_mfe": _float_or_nan(trade.get("mfe", trade.get("out_mfe", np.nan))),
         "out_exit_reason": str(trade.get("exit_reason", "")),
-        "out_hold_bars": int(_float_or_nan(trade.get("hold_bars", trade.get("out_hold_bars", -1)))),
+        "out_hold_bars": _int_or_default(
+            trade.get("hold_bars", trade.get("out_hold_bars", -1)),
+            -1,
+        ),
         "out_is_loss": bool(out_pnl < 0),
     }
     row.update(_regime_columns_for_date(regime_labels, entry_day))
@@ -308,7 +311,7 @@ def _regime_columns_for_date(labels: pd.DataFrame, entry_day: object) -> dict[st
         return {}
     matches = labels[labels["date"] == entry_day]
     if matches.empty:
-        return {column: "" for column in columns}
+        return {column: np.nan for column in columns}
     row = matches.iloc[0]
     return {column: row[column] for column in columns}
 
@@ -328,6 +331,13 @@ def _feature_columns(extra_regime_columns: frozenset[str]) -> list[str]:
         columns.insert(insert_at, column)
         insert_at += 1
     return columns
+
+
+def _int_or_default(value: object, default: int) -> int:
+    parsed = _float_or_nan(value)
+    if not np.isfinite(parsed):
+        return default
+    return int(parsed)
 
 
 def _coerce_feature_dtypes(out: pd.DataFrame) -> pd.DataFrame:

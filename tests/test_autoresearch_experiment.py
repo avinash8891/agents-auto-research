@@ -27,6 +27,7 @@ from autoresearch_experiment import (
     _serialize_artifact_dir,
     _thesis_sidecar_path,
     _validate_backtest_request,
+    _write_feature_table_artifact,
     artifact_dir_for,
     derive_trade_analysis,
     log_experiment_result,
@@ -1095,6 +1096,41 @@ def test_record_baseline_checkpoint_persists_critical_drift_and_clears_rerun_mar
         "profit_factor": 1.5,
         "trade_count": 6.0,
     }
+
+
+def test_write_feature_table_artifact_resolves_manifest_relative_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_feature_table_data_universe(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    controller = _controller_for_experiment(tmp_path, "")
+    artifact_dir = tmp_path / "runtime/jobs/job-1/research/round-1/backtest"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "trades.csv").write_text(
+        "symbol,direction,entry_date,entry_price,stop,pnl,pnl_pct,hold_bars\n"
+        "AAA,long,2024-01-02T14:35:00+00:00,100.6,99.6,1.0,0.01,3\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame([{"timestamp": "2024-01-02T14:35:00+00:00", "symbol": "AAA"}]).to_parquet(
+        artifact_dir / "strategy_events.parquet",
+        index=False,
+    )
+    config_path = tmp_path / "runtime/jobs/job-1/research/round-1/selected_config.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps({"data_universe": "tiny_feature_data"}) + "\n")
+    details = {"trades_file": "trades.csv", "strategy_events_file": "strategy_events.parquet"}
+
+    _write_feature_table_artifact(
+        controller,
+        config=str(config_path),
+        details=details,
+        artifact_dir=artifact_dir,
+    )
+
+    table = load_feature_table(artifact_dir)
+    assert details["feature_table_file"] == str(artifact_dir / "feature_table.parquet")
+    assert table.loc[0, "trade_id"] == "AAA:2024-01-02T14:35:00+00:00"
 
 
 def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Path) -> None:
