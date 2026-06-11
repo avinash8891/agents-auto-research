@@ -131,7 +131,7 @@ def should_terminate(
     results: list[BacktestResultRecord],
     job: int | None = None,
 ) -> bool:
-    del run_queue_dir, research_dir, results, job
+    del run_queue_dir, research_dir, results
     config = _load_research_engine_config(root, family)
     plateau_rounds = research_engine_plateau_rounds(config)
     min_skill_gain = research_engine_plateau_min_skill_gain(config)
@@ -145,7 +145,7 @@ def should_terminate(
     if max_improvement >= min_skill_gain:
         return False
 
-    if not _latest_screening_pass_rate_is_zero(root, family.name, plateau_rounds):
+    if not _latest_screening_pass_rate_is_zero(root, family.name, plateau_rounds, job=job):
         return False
     return True
 
@@ -169,7 +169,9 @@ def _load_causal_model(root: Path, family_name: str) -> CausalModel | None:
     return CausalModel.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
-def _latest_screening_pass_rate_is_zero(root: Path, family_name: str, plateau_rounds: int) -> bool:
+def _latest_screening_pass_rate_is_zero(
+    root: Path, family_name: str, plateau_rounds: int, *, job: int | None = None
+) -> bool:
     if plateau_rounds <= 0:
         return False
     for db_path in iter_family_backtest_db_paths(root, family=family_name):
@@ -179,14 +181,23 @@ def _latest_screening_pass_rate_is_zero(root: Path, family_name: str, plateau_ro
             ).fetchone()
             if table_exists is None:
                 continue
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(screenings)").fetchall()}
+            if job is not None and "job_id" not in columns:
+                continue
+            where = ""
+            params: list[int] = [plateau_rounds]
+            if job is not None:
+                where = "WHERE job_id = ?"
+                params = [job, plateau_rounds]
             round_rows = conn.execute(
-                """
+                f"""
                 SELECT DISTINCT round_number
                 FROM screenings
+                {where}
                 ORDER BY round_number DESC
                 LIMIT ?
                 """,
-                (plateau_rounds,),
+                params,
             ).fetchall()
             round_numbers = sorted(int(row[0]) for row in round_rows)
             if len(round_numbers) < plateau_rounds:
@@ -197,8 +208,9 @@ def _latest_screening_pass_rate_is_zero(root: Path, family_name: str, plateau_ro
                 SELECT verdict
                 FROM screenings
                 WHERE round_number IN ({placeholders})
+                {"AND job_id = ?" if job is not None else ""}
                 """,
-                round_numbers,
+                [*round_numbers, job] if job is not None else round_numbers,
             ).fetchall()
         if rows and all(row[0] != "pass" for row in rows):
             return True

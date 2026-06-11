@@ -377,6 +377,16 @@ def _run_window_backtest(
     metric = controller.parse_metric(output, name=controller.primary_metric_name())
     details = controller.parse_benchmark_details(output)
     metrics = dict(details.get("metrics") if isinstance(details.get("metrics"), dict) else {})
+    for nested_key in ("train_metrics", "validation_metrics"):
+        nested_metrics = details.get(nested_key)
+        if isinstance(nested_metrics, dict):
+            metrics.update(
+                {
+                    key: value
+                    for key, value in nested_metrics.items()
+                    if isinstance(value, int | float)
+                }
+            )
     metrics.update({key: value for key, value in details.items() if isinstance(value, int | float)})
     if metric is not None:
         metrics[controller.primary_metric_name()] = metric

@@ -134,6 +134,7 @@ def _setup_runtime(tmp_path: Path, monkeypatch) -> None:
         [_screening("gap_pct < 0", "pass")],
         round_number=2,
         competitor_rule="gap_pct > 0",
+        job_id=1,
     )
 
 
@@ -249,6 +250,23 @@ def test_build_corpus_does_not_fabricate_missing_screening_rates(
 
     assert pd.isna(corpus.screening_history[0].flagged_loss_rate)
     assert pd.isna(corpus.screening_history[0].base_loss_rate)
+
+
+def test_build_corpus_screening_history_is_scoped_to_active_job(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    write_screenings(
+        tmp_path / "ema_backtest_runs.db",
+        [_screening("other_job_rule", "pass")],
+        round_number=2,
+        competitor_rule="gap_pct > 0",
+        job_id=2,
+    )
+
+    corpus = build_corpus("ema", 2, job=1)
+
+    assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
 
 
 def test_render_corpus_is_deterministic_and_ordered(tmp_path: Path, monkeypatch) -> None:

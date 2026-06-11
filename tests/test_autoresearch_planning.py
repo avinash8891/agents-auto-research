@@ -210,7 +210,7 @@ def test_should_terminate_uses_model_plateau_and_zero_screening_pass_rate(
     _save_plateau_model()
     db_path = tmp_path / "ema_backtest_runs.db"
     for round_number in range(1, 6):
-        write_screenings(db_path, [_killed_screening()], round_number=round_number)
+        write_screenings(db_path, [_killed_screening()], round_number=round_number, job_id=7)
 
     assert (
         should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
@@ -225,7 +225,7 @@ def test_should_terminate_uses_latest_screening_window_when_kills_do_not_append_
     _save_plateau_model()
     db_path = tmp_path / "ema_backtest_runs.db"
     for round_number in range(6, 11):
-        write_screenings(db_path, [_killed_screening()], round_number=round_number)
+        write_screenings(db_path, [_killed_screening()], round_number=round_number, job_id=7)
 
     assert (
         should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
@@ -240,7 +240,7 @@ def test_should_terminate_keeps_running_when_last_plateau_window_has_screening_p
     _save_plateau_model()
     db_path = tmp_path / "ema_backtest_runs.db"
     for round_number in range(1, 5):
-        write_screenings(db_path, [_killed_screening()], round_number=round_number)
+        write_screenings(db_path, [_killed_screening()], round_number=round_number, job_id=7)
     write_screenings(
         db_path,
         [
@@ -249,6 +249,7 @@ def test_should_terminate_keeps_running_when_last_plateau_window_has_screening_p
             )
         ],
         round_number=5,
+        job_id=7,
     )
 
     assert (
@@ -284,6 +285,21 @@ def test_should_terminate_returns_false_without_screening_rows(
 ) -> None:
     monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
     _save_plateau_model()
+
+    assert (
+        should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
+        is False
+    )
+
+
+def test_should_terminate_ignores_screening_rows_from_other_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    _save_plateau_model()
+    db_path = tmp_path / "ema_backtest_runs.db"
+    for round_number in range(1, 6):
+        write_screenings(db_path, [_killed_screening()], round_number=round_number, job_id=6)
 
     assert (
         should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
@@ -383,7 +399,7 @@ def test_plan_next_action_queues_walkforward_when_model_plateaus(
     _save_plateau_model()
     db_path = tmp_path / "ema_backtest_runs.db"
     for round_number in range(1, 6):
-        write_screenings(db_path, [_killed_screening()], round_number=round_number)
+        write_screenings(db_path, [_killed_screening()], round_number=round_number, job_id=3)
     research_dir = tmp_path / "research" / "round-2"
     research_dir.mkdir(parents=True)
     (research_dir / "round.json").write_text(
@@ -428,7 +444,7 @@ def test_plan_next_action_finishes_after_plateau_walkforward_completes(
     _save_plateau_model()
     db_path = tmp_path / "ema_backtest_runs.db"
     for round_number in range(1, 6):
-        write_screenings(db_path, [_killed_screening()], round_number=round_number)
+        write_screenings(db_path, [_killed_screening()], round_number=round_number, job_id=3)
     state = {
         "state": "running",
         "job": 3,

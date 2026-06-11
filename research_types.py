@@ -162,6 +162,16 @@ class MetricName(str, Enum):
     pnl_weighted_accuracy = "pnl_weighted_accuracy"
 
 
+HARVEST_OBSERVABLE_METRICS = frozenset(
+    {
+        MetricName.profit_factor,
+        MetricName.trade_count,
+        MetricName.max_drawdown,
+        MetricName.median_expectancy,
+    }
+)
+
+
 class Prediction(BaseModel):
     metric: MetricName
     direction: Literal[
@@ -203,6 +213,28 @@ class MechanismProposal(BaseModel):
         metrics = [prediction.metric for prediction in self.predictions]
         if len(set(metrics)) != len(metrics):
             raise ValueError("predictions must use distinct MetricName values")
+        missing_predicted = [
+            prediction.metric.value
+            for prediction in self.predictions
+            if prediction.predicted is None
+        ]
+        if missing_predicted:
+            raise ValueError(
+                "predictions must include predicted values for: "
+                + ", ".join(sorted(missing_predicted))
+            )
+        unsupported_metrics = sorted(
+            {
+                prediction.metric.value
+                for prediction in self.predictions
+                if prediction.metric not in HARVEST_OBSERVABLE_METRICS
+            }
+        )
+        if unsupported_metrics:
+            raise ValueError(
+                "predictions use metrics unavailable to harvest evaluator: "
+                + ", ".join(unsupported_metrics)
+            )
         return self
 
 

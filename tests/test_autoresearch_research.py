@@ -1032,6 +1032,101 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
     assert rows == [("gap_pct < 0", "gap_pct > 0", "pass")]
 
 
+def test_mechanism_proposal_retry_revalidates_schema_before_screening(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    _write_screening_feature_table(round_root)
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades might be the actual source of edge.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease"},
+                ],
+            },
+            reasoning="proposal from parsed retry path",
+        ),
+        prior_theses=[],
+    )
+
+    assert result is None
+    assert stage == "stage_1"
+    assert retry_feedback is not None
+    assert "predicted" in retry_feedback
+    assert not (round_root / "selected_config.json").exists()
+    with sqlite3.connect(controller.backtest_run_db.path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM screenings").fetchone()[0] == 0
+
+
+def test_mechanism_proposal_compiles_under_runtime_root_when_code_root_is_separate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime-root"
+    code_root.mkdir()
+    runtime_root.mkdir()
+    _write_ema_base_config(code_root)
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+    controller = AutoresearchController(
+        root=code_root,
+        runtime_root=runtime_root,
+        family=load_family("ema"),
+        state_path=runtime_root / "ema_autoresearch.next.json",
+        current_md_path=runtime_root / "ema_autoresearch.current.md",
+        jobs_root=runtime_root / "runtime" / "jobs",
+    )
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    round_root = runtime_root / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    _write_screening_feature_table(round_root)
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades might be the actual source of edge.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease", "predicted": 80},
+                ],
+            },
+            reasoning="proposal from corpus",
+        ),
+        prior_theses=[],
+    )
+
+    assert retry_feedback is None
+    assert stage == ""
+    assert result is not None
+    assert (round_root / "selected_config.json").exists()
+    assert not (
+        code_root / "runtime" / "jobs" / "job-12" / "research" / "round-1" / "selected_config.json"
+    ).exists()
+
+
 def test_mechanism_proposal_expected_effects_do_not_use_absolute_predictions_as_thresholds() -> (
     None
 ):
@@ -1132,6 +1227,7 @@ def test_run_research_non_actionable_mechanism_continues_without_interrupt(
                     "story": "Gap-down entries explain residual losses.",
                     "rule": "gap_pct < 0",
                     "competitor_rule": "gap_pct > 0",
+                    "competitor_story": "Gap-up entries may explain the residual instead.",
                     "actionable": False,
                     "proposed_change": {},
                     "predictions": [],

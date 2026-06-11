@@ -999,18 +999,26 @@ async def run_research_conductor(
             )
             async for _ in result.stream_events():
                 pass
-        if hasattr(result, "final_output_as"):
+        final_output = getattr(result, "final_output", None)
+        if isinstance(final_output, MechanismProposal):
+            result_text = final_output.model_dump_json()
+        elif isinstance(final_output, str):
+            result_text = final_output
+        elif final_output is not None:
+            result_text = json.dumps(final_output, default=str)
+        if not result_text and hasattr(result, "final_output_as"):
             try:
-                result_text = result.final_output_as(str) or ""
+                coerced_output = result.final_output_as(str)
             except Exception as exc:
                 log.warning("final_output_as failed for conductor: %s", exc)
                 result_text = ""
-        if not result_text:
-            final_output = getattr(result, "final_output", None)
-            if isinstance(final_output, str):
-                result_text = final_output
-            elif final_output is not None:
-                result_text = json.dumps(final_output, default=str)
+            else:
+                if isinstance(coerced_output, MechanismProposal):
+                    result_text = coerced_output.model_dump_json()
+                elif isinstance(coerced_output, str):
+                    result_text = coerced_output
+                elif coerced_output is not None:
+                    result_text = json.dumps(coerced_output, default=str)
 
         accumulate_agents_sdk_result_usage(
             "conductor",

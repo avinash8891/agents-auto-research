@@ -57,7 +57,7 @@ from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_memory import latest_thesis_details as _latest_thesis_details
-from research_types import CausalFactor, ConductorResult, ResearchThesis
+from research_types import CausalFactor, ConductorResult, MechanismProposal, ResearchThesis
 from strategy_family import StrategyFamily
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
 from trace_adapters.halo import build_halo_export_package, build_halo_payload
@@ -937,6 +937,7 @@ def _screen_mechanism_proposal(
         [screening],
         round_number=research_round,
         competitor_rule=str(raw_thesis.get("competitor_rule") or "") or None,
+        job_id=job_id,
     )
     if screening.verdict != "pass":
         return (
@@ -1052,6 +1053,21 @@ def _try_one_validation_attempt(
     # path is already pydantic-validated by the conductor boundary and must not
     # call the old thesis validator.
     if mechanism_path:
+        try:
+            proposal = MechanismProposal.model_validate(raw_thesis)
+        except ValueError as exc:
+            _log_validation_rejection(
+                controller,
+                research_round,
+                attempt,
+                raw_thesis,
+                thesis_id,
+                str(exc),
+                exc=exc,
+                stage="stage_1",
+            )
+            return None, f"Mechanism proposal '{thesis_id}' rejected by schema: {exc}", "stage_1"
+        raw_thesis = proposal.model_dump(mode="json")
         if not bool(raw_thesis.get("actionable")):
             return (
                 {
@@ -1117,7 +1133,8 @@ def _try_one_validation_attempt(
 
     # Compile.
     try:
-        round_root = research_round_root(controller.root, job_id, research_round)
+        runtime_root = getattr(controller, "runtime_root", None) or controller.root
+        round_root = research_round_root(runtime_root, job_id, research_round)
         contract = compile_research_thesis(validated, controller.root, artifact_root=round_root)
         if mechanism_path:
             _merge_mechanism_fields_into_selected_thesis(round_root, raw_thesis)

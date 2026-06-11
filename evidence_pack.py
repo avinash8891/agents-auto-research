@@ -42,7 +42,7 @@ def build_corpus(family: str, round_number: int, job: int | None = None) -> Corp
         model=model,
         residual_summary=residual_summary,
         residual_stats=_residual_stats(residual_summary),
-        screening_history=_load_screening_history(family, round_number),
+        screening_history=_load_screening_history(family, round_number, job=job),
         harvest_verdicts=_load_harvest_verdicts(runtime_root, round_number, job=job),
         cross_family=_load_cross_family_factors(runtime_root, family),
         rejection_feedback=_load_rejection_feedback(runtime_root, round_number, job=job),
@@ -200,19 +200,31 @@ def _residual_stats(summary: list[dict]) -> dict:
     return stats
 
 
-def _load_screening_history(family: str, round_number: int) -> list[ScreeningResult]:
+def _load_screening_history(
+    family: str, round_number: int, *, job: int | None = None
+) -> list[ScreeningResult]:
     results: list[ScreeningResult] = []
     for db_path in iter_family_backtest_db_paths(Path.cwd(), family=family):
         try:
             with sqlite3.connect(db_path) as conn:
+                columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(screenings)").fetchall()
+                }
+                if job is not None and "job_id" not in columns:
+                    continue
+                where = "round_number <= ?"
+                params: list[int] = [round_number]
+                if job is not None:
+                    where += " AND job_id = ?"
+                    params.append(job)
                 rows = conn.execute(
-                    """
+                    f"""
                     SELECT rule, verdict, sample_count, lift, p_value, overlap_with
                     FROM screenings
-                    WHERE round_number <= ?
+                    WHERE {where}
                     ORDER BY round_number, created_at_utc, screening_id
                     """,
-                    (round_number,),
+                    params,
                 ).fetchall()
         except sqlite3.Error:
             continue

@@ -36,8 +36,10 @@ py-modules = [
     "autoresearch_state",
     "backtest_5ema",
     "backtest_orb_v2",
+    "causal_model",
     "compiler_builder",
     "compiler_defaults",
+    "compiler_implementation_verify",
     "compiler_operationalize",
     "compiler_pipeline",
     "compiler_research",
@@ -45,8 +47,10 @@ py-modules = [
     "config_hash",
     "data_loader",
     "backtest_run_db",
+    "evidence_pack",
     "experiment_evaluator",
     "family_research_spec",
+    "feature_table",
     "metrics",
     "numba_kernels",
     "orb_contract",
@@ -59,6 +63,7 @@ py-modules = [
     "research_tools_mcp",
     "research_tools_schema",
     "research_types",
+    "screening",
     "strategy_event_logger",
     "strategy_family",
     "thesis_validator",
@@ -69,6 +74,7 @@ py-modules = [
     "trace_rule_proposals",
     "trace_sdk",
     "vps_runner",
+    "walkforward",
 ]
 
 [tool.setuptools.data-files]

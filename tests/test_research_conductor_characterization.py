@@ -789,6 +789,41 @@ def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_val
     assert getattr(captured["output_type"], "__name__", "") == "MechanismProposal"
 
 
+def test_conductor_mechanism_path_accepts_structured_final_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+    proposal = MechanismProposal(
+        story="Gap-down entries reveal loss-prone inventory.",
+        rule="gap_pct < 0",
+        competitor_rule="gap_pct > 0",
+        competitor_story="Gap-up entries are the real adverse-selection source.",
+        actionable=False,
+        proposed_change=None,
+        predictions=None,
+    )
+
+    def _run_streamed(agent, user_prompt, max_turns, run_config):
+        return _StreamedResult("", agent, final_output=proposal)
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "legacy round results must not be included",
+        {"status": "keep"},
+        research_round=12,
+        family_name="ema",
+        rendered_corpus="## Corpus\n- family: ema\n",
+    )
+
+    assert out is not None
+    assert out.status == "ok"
+    assert out.thesis is not None
+    assert out.thesis["story"] == "Gap-down entries reveal loss-prone inventory."
+
+
 def test_mechanism_proposal_schema_requires_actionable_change_and_distinct_predictions() -> None:
     with pytest.raises(ValueError, match="proposed_change"):
         MechanismProposal(
@@ -824,15 +859,45 @@ def test_mechanism_proposal_schema_requires_actionable_change_and_distinct_predi
         proposed_change={"gap_filter": True},
         predictions=[
             {"metric": "profit_factor", "direction": "increase", "predicted": 1.2},
-            {"metric": "pnl_weighted_accuracy", "direction": "increase", "predicted": 0.65},
+            {"metric": "median_expectancy", "direction": "increase", "predicted": 0.65},
         ],
     )
 
     assert proposal.predictions is not None
     assert {prediction.metric.value for prediction in proposal.predictions} == {
         "profit_factor",
-        "pnl_weighted_accuracy",
+        "median_expectancy",
     }
+
+
+def test_mechanism_proposal_schema_requires_observable_predicted_values() -> None:
+    with pytest.raises(ValueError, match="predicted"):
+        MechanismProposal(
+            story="Harvest this now.",
+            rule="gap_pct < 0",
+            competitor_rule="gap_pct > 0",
+            competitor_story="Opposite gap sign explains the effect.",
+            actionable=True,
+            proposed_change={"gap_filter": True},
+            predictions=[
+                {"metric": "profit_factor", "direction": "increase", "predicted": 1.2},
+                {"metric": "trade_count", "direction": "decrease"},
+            ],
+        )
+
+    with pytest.raises(ValueError, match="harvest evaluator"):
+        MechanismProposal(
+            story="Harvest this now.",
+            rule="gap_pct < 0",
+            competitor_rule="gap_pct > 0",
+            competitor_story="Opposite gap sign explains the effect.",
+            actionable=True,
+            proposed_change={"gap_filter": True},
+            predictions=[
+                {"metric": "profit_factor", "direction": "increase", "predicted": 1.2},
+                {"metric": "pnl_weighted_accuracy", "direction": "increase", "predicted": 0.65},
+            ],
+        )
 
 
 def test_mechanism_proposal_schema_allows_declared_orb_coupled_change() -> None:
