@@ -106,18 +106,18 @@ def render_corpus(corpus: Corpus) -> str:
         lines.append("- none")
 
     lines.extend(["", "## Screening History"])
+    if corpus.screening_history_omitted_count:
+        verdict_counts = ", ".join(
+            f"{key}={value}"
+            for key, value in sorted(corpus.screening_history_omitted_verdict_counts.items())
+        )
+        lines.extend(
+            [
+                f"- omitted_older_screening_rows: {corpus.screening_history_omitted_count}",
+                f"- omitted_older_screening_verdict_counts: {verdict_counts}",
+            ]
+        )
     if corpus.screening_history:
-        if corpus.screening_history_omitted_count:
-            verdict_counts = ", ".join(
-                f"{key}={value}"
-                for key, value in sorted(corpus.screening_history_omitted_verdict_counts.items())
-            )
-            lines.extend(
-                [
-                    f"- omitted_older_screening_rows: {corpus.screening_history_omitted_count}",
-                    f"- omitted_older_screening_verdict_counts: {verdict_counts}",
-                ]
-            )
         for screening in corpus.screening_history:
             lines.extend(
                 [
@@ -132,7 +132,8 @@ def render_corpus(corpus: Corpus) -> str:
                 ]
             )
     else:
-        lines.append("- none")
+        if not corpus.screening_history_omitted_count:
+            lines.append("- none")
 
     lines.extend(["", "## Harvest Verdicts"])
     if corpus.harvest_verdicts:

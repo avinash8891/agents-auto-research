@@ -407,6 +407,22 @@ def test_build_corpus_caps_screening_history_and_aggregates_older_verdicts(
     assert "- omitted_older_screening_verdict_counts: kill_no_lift=1, pass=1" in rendered
 
 
+def test_render_corpus_shows_omitted_screenings_without_recent_rows() -> None:
+    corpus = Corpus(
+        family="ema",
+        round_number=14,
+        model=CausalModel(family="ema", version=1),
+        screening_history=[],
+        screening_history_omitted_count=3,
+        screening_history_omitted_verdict_counts={"kill_no_lift": 2, "pass": 1},
+    )
+
+    rendered = render_corpus(corpus)
+
+    assert "- omitted_older_screening_rows: 3" in rendered
+    assert "- omitted_older_screening_verdict_counts: kill_no_lift=2, pass=1" in rendered
+
+
 def test_render_corpus_is_deterministic_and_ordered(tmp_path: Path, monkeypatch) -> None:
     _setup_runtime(tmp_path, monkeypatch)
     left = build_corpus("ema", 2)

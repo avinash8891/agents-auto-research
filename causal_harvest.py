@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from dataclasses import dataclass
@@ -20,6 +21,8 @@ from persistence_utils import read_config_payload, write_json_atomic
 from research_types import CausalModel
 
 log = get_logger(__name__)
+
+_HARVEST_LESSON_TIMEOUT_ENV = "AUTORESEARCH_HARVEST_LESSON_TIMEOUT_SECONDS"
 
 if TYPE_CHECKING:
     from autoresearch_controller import AutoresearchController
@@ -171,6 +174,17 @@ def _harvest_lesson_llm_enabled() -> bool:
     return "PYTEST_CURRENT_TEST" not in os.environ
 
 
+def _harvest_lesson_timeout_seconds() -> float:
+    raw = os.environ.get(_HARVEST_LESSON_TIMEOUT_ENV, "60")
+    try:
+        timeout = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{_HARVEST_LESSON_TIMEOUT_ENV} must be a positive number") from exc
+    if timeout <= 0:
+        raise ValueError(f"{_HARVEST_LESSON_TIMEOUT_ENV} must be greater than zero")
+    return timeout
+
+
 def _generate_harvest_lesson(
     *,
     controller: "AutoresearchController",
@@ -218,11 +232,18 @@ def _generate_harvest_lesson(
             prompt,
             run_config=OAIRunConfig(tracing_disabled=True),
         )
-        async for _ in result.stream_events():
-            pass
+        await _drain_stream_with_timeout(result, timeout_seconds=_harvest_lesson_timeout_seconds())
         return str(getattr(result, "final_output", "") or "")
 
     return _run_coroutine_sync(_run())
+
+
+async def _drain_stream_with_timeout(result: Any, *, timeout_seconds: float) -> None:
+    async def _drain() -> None:
+        async for _ in result.stream_events():
+            pass
+
+    await asyncio.wait_for(_drain(), timeout=timeout_seconds)
 
 
 def write_harvest_verdict_artifact(
