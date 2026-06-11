@@ -274,6 +274,31 @@ def test_causal_model_rejects_rules_that_reference_outcome_columns() -> None:
         )
 
 
+def test_causal_model_rejects_outcome_like_dynamic_rule_columns() -> None:
+    table = _feature_table()
+    table["future_pnl"] = 1.0
+
+    with pytest.raises(ValueError, match="leakage column"):
+        predict(
+            CausalModel(
+                family="ema",
+                version=1,
+                factors=[
+                    CausalFactor(
+                        factor_id="f997",
+                        story="Future pnl leakage should not be allowed.",
+                        rule="future_pnl > 0",
+                        direction="loss",
+                        evidence_rounds=[],
+                        status="candidate",
+                    )
+                ],
+                accuracy_history=[],
+            ),
+            table,
+        )
+
+
 def test_causal_model_accepts_string_literal_rule_values() -> None:
     model = CausalModel(
         family="ema",

@@ -32,6 +32,19 @@ _QUERY_KEYWORDS = frozenset(
 )
 _QUERY_NAME_RE = re.compile(r"`([^`]+)`|\b[A-Za-z_]\w*\b")
 _STRING_LITERAL_RE = re.compile(r"(?s)'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"")
+_LEAKAGE_COLUMN_NAMES = frozenset(
+    {
+        "pnl",
+        "pnl_abs",
+        "pnl_pct",
+        "mae",
+        "mfe",
+        "exit_reason",
+        "hold_bars",
+        "is_loss",
+    }
+)
+_LEAKAGE_COLUMN_PREFIXES = ("out_", "future_", "post_exit_", "post_trade_")
 
 
 @dataclass(frozen=True)
@@ -233,6 +246,8 @@ def _validate_rule_references(rule: str, columns: Sequence[str]) -> None:
         name = match.group(1) or match.group(0)
         if name in _QUERY_KEYWORDS:
             continue
+        if _is_leakage_column_name(name):
+            raise ValueError(f"causal factor rule references leakage column: {name}")
         if name in OUTCOME_COLUMNS:
             raise ValueError(f"causal factor rule references outcome column: {name}")
         if name not in allowed_columns:
@@ -241,6 +256,11 @@ def _validate_rule_references(rule: str, columns: Sequence[str]) -> None:
 
 def _strip_string_literals(rule: str) -> str:
     return _STRING_LITERAL_RE.sub("", rule)
+
+
+def _is_leakage_column_name(name: str) -> bool:
+    lowered = name.lower()
+    return lowered in _LEAKAGE_COLUMN_NAMES or lowered.startswith(_LEAKAGE_COLUMN_PREFIXES)
 
 
 def _validate_feature_table(feature_table: pd.DataFrame) -> None:

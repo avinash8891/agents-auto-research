@@ -37,6 +37,7 @@ _register(
         aliases=[
             "max_drawdown_change_relative_to_base",
             "max_drawdown_versus_base",
+            "max_drawdown_and_pct_profitable_windows_vs_base",
         ],
         description=(
             "Compare candidate vs baseline max_drawdown after the run has baseline "

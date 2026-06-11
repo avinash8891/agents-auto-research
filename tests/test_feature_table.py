@@ -205,6 +205,66 @@ def test_build_feature_table_handles_nan_hold_bars_and_nan_entry_bar_close(
     assert table.loc[0, "entry_bar_range_pct"] == pytest.approx((0.8 / 102.6) * 100.0)
 
 
+def test_build_feature_table_uses_runtime_ema_length_for_distance_feature(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+
+    table = build_feature_table(
+        _trades_df(),
+        _bars_df(),
+        events=[],
+        family="ema",
+        runtime_config={"ema_length": 2},
+    )
+
+    closes = _bars_df()[_bars_df()["timestamp"] <= pd.Timestamp("2024-01-04 14:35:00", tz="UTC")][
+        "close"
+    ].astype(float)
+    ema = closes.ewm(span=2, adjust=False).mean().iloc[-1]
+    assert table.loc[0, "dist_to_ema_pct"] == pytest.approx((102.6 - ema) / 102.6 * 100.0)
+
+
+def test_build_feature_table_uses_runtime_or_minutes_for_orb_width(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    rows = []
+    for day, first_width, second_width in [
+        ("2024-01-02", 10.0, 100.0),
+        ("2024-01-03", 10.0, 100.0),
+        ("2024-01-04", 2.0, 100.0),
+    ]:
+        for minute, width in [(0, first_width), (5, second_width), (390, 1.0)]:
+            ts = pd.Timestamp(f"{day} 14:30:00", tz="UTC") + pd.Timedelta(minutes=minute)
+            rows.append(
+                {
+                    "timestamp": ts,
+                    "symbol": "AAA",
+                    "open": 100.0,
+                    "high": 100.0 + width,
+                    "low": 100.0,
+                    "close": 100.0,
+                    "volume": 1000,
+                }
+            )
+    bars = pd.DataFrame(rows)
+
+    table = build_feature_table(
+        _trades_df(),
+        bars,
+        events=[],
+        family="orb",
+        runtime_config={"or_minutes": 5},
+    )
+
+    assert table.loc[0, "or_width_pctile"] == 0.0
+
+
 def test_build_feature_table_ignores_post_entry_bar_poisoning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

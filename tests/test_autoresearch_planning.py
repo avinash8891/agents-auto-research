@@ -218,6 +218,21 @@ def test_should_terminate_uses_model_plateau_and_zero_screening_pass_rate(
     )
 
 
+def test_should_terminate_uses_latest_screening_window_when_kills_do_not_append_accuracy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    _save_plateau_model()
+    db_path = tmp_path / "ema_backtest_runs.db"
+    for round_number in range(6, 11):
+        write_screenings(db_path, [_killed_screening()], round_number=round_number)
+
+    assert (
+        should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
+        is True
+    )
+
+
 def test_should_terminate_keeps_running_when_last_plateau_window_has_screening_pass(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
 ) -> None:

@@ -145,8 +145,7 @@ def should_terminate(
     if max_improvement >= min_skill_gain:
         return False
 
-    round_numbers = [point.round_number for point in recent]
-    if not _screening_pass_rate_is_zero(root, family.name, round_numbers):
+    if not _latest_screening_pass_rate_is_zero(root, family.name, plateau_rounds):
         return False
     return True
 
@@ -170,10 +169,9 @@ def _load_causal_model(root: Path, family_name: str) -> CausalModel | None:
     return CausalModel.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
-def _screening_pass_rate_is_zero(root: Path, family_name: str, round_numbers: list[int]) -> bool:
-    if not round_numbers:
+def _latest_screening_pass_rate_is_zero(root: Path, family_name: str, plateau_rounds: int) -> bool:
+    if plateau_rounds <= 0:
         return False
-    placeholders = ",".join("?" for _ in round_numbers)
     for db_path in iter_family_backtest_db_paths(root, family=family_name):
         with sqlite3.connect(db_path) as conn:
             table_exists = conn.execute(
@@ -181,20 +179,28 @@ def _screening_pass_rate_is_zero(root: Path, family_name: str, round_numbers: li
             ).fetchone()
             if table_exists is None:
                 continue
+            round_rows = conn.execute(
+                """
+                SELECT DISTINCT round_number
+                FROM screenings
+                ORDER BY round_number DESC
+                LIMIT ?
+                """,
+                (plateau_rounds,),
+            ).fetchall()
+            round_numbers = sorted(int(row[0]) for row in round_rows)
+            if len(round_numbers) < plateau_rounds:
+                continue
+            placeholders = ",".join("?" for _ in round_numbers)
             rows = conn.execute(
                 f"""
-                SELECT round_number, verdict
+                SELECT verdict
                 FROM screenings
                 WHERE round_number IN ({placeholders})
                 """,
                 round_numbers,
             ).fetchall()
-        covered_rounds = {int(row[0]) for row in rows}
-        if not set(round_numbers).issubset(covered_rounds):
-            continue
-        total = len(rows)
-        passed = sum(1 for row in rows if row[1] == "pass")
-        if total > 0 and passed == 0:
+        if rows and all(row[0] != "pass" for row in rows):
             return True
     return False
 

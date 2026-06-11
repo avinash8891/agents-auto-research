@@ -21,8 +21,6 @@ from causal_model import load_model, save_model
 from experiment_evaluator import _direction_passed as _registered_direction_passed
 from persistence_utils import write_json_atomic
 
-LOWER_IS_BETTER = {"max_drawdown"}
-
 
 @dataclass(frozen=True)
 class WalkForwardWindow:

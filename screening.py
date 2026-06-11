@@ -104,6 +104,7 @@ def write_screenings(
     with sqlite3.connect(db_path) as conn:
         _ensure_screenings_table(conn)
         for index, result in enumerate(results, start=1):
+            screening_id = _unique_screening_id(conn, _screening_id(round_number, index, result))
             conn.execute(
                 """
                 INSERT INTO screenings (
@@ -112,7 +113,7 @@ def write_screenings(
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    _screening_id(round_number, index, result),
+                    screening_id,
                     round_number,
                     result.rule,
                     competitor_rule,
@@ -278,6 +279,18 @@ def _screening_id(round_number: int, index: int, result: ScreeningResult) -> str
         ).encode("utf-8")
     ).hexdigest()[:16]
     return f"round-{round_number}:{index}:{digest}"
+
+
+def _unique_screening_id(conn: sqlite3.Connection, base_id: str) -> str:
+    candidate = base_id
+    suffix = 2
+    while (
+        conn.execute("SELECT 1 FROM screenings WHERE screening_id = ?", (candidate,)).fetchone()
+        is not None
+    ):
+        candidate = f"{base_id}:retry-{suffix}"
+        suffix += 1
+    return candidate
 
 
 def _ensure_screenings_table(conn: sqlite3.Connection) -> None:

@@ -1065,7 +1065,13 @@ def _write_feature_table_artifact(
         if not events_path.is_absolute():
             events_file = str(artifact_dir / events_path)
     events = _load_strategy_events(events_file)
-    table = build_feature_table(trades_df, bars_df, events, controller.family.name)
+    table = build_feature_table(
+        trades_df,
+        bars_df,
+        events,
+        controller.family.name,
+        runtime_config=runtime_config,
+    )
     path = feature_table_path(artifact_dir)
     table.to_parquet(path, index=False)
     details["feature_table_file"] = str(path)
@@ -1350,7 +1356,7 @@ def _evaluate_registered_predictions(
         return None
     from experiment_evaluator import evaluate_predictions
 
-    candidate_metrics = dict(details)
+    candidate_metrics = _flatten_metrics(details)
     primary_metric_name = (
         controller.primary_metric_name()
         if hasattr(controller, "primary_metric_name")
@@ -1361,7 +1367,19 @@ def _evaluate_registered_predictions(
         registered_path,
         baseline=_baseline_metrics_from_first_result(controller),
         candidate=candidate_metrics,
+        config=_family_base_config(controller),
     )
+
+
+def _flatten_metrics(details: dict[str, Any]) -> dict[str, Any]:
+    metrics = dict(details)
+    nested = details.get("metrics")
+    if isinstance(nested, dict):
+        metrics.update(nested)
+    train_metrics = details.get("train_metrics")
+    if isinstance(train_metrics, dict):
+        metrics.update(train_metrics)
+    return metrics
 
 
 def _is_registered_prediction_retest_action(state: dict[str, Any]) -> bool:

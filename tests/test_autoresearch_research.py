@@ -30,6 +30,7 @@ from autoresearch_research import (
     _handle_needs_code,
     _handle_round_failure,
     _handle_success,
+    _mechanism_proposal_to_research_thesis,
     _on_ready_to_run,
     _quality_score_from_skill_delta,
     _record_round_quality_and_bridges,
@@ -910,7 +911,9 @@ def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
         }
     )
     captured: dict[str, object] = {}
-    monkeypatch.setattr("evidence_pack.build_corpus", lambda family, round_number: object())
+    monkeypatch.setattr(
+        "evidence_pack.build_corpus", lambda family, round_number, job=None: object()
+    )
     monkeypatch.setattr("evidence_pack.render_corpus", lambda corpus: "RENDERED-CORPUS")
 
     def _run_conductor(*args, **kwargs):
@@ -924,6 +927,39 @@ def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
     assert result["status"] == "completed"
     assert result["should_stop"] is True
     assert captured["rendered_corpus"] == "RENDERED-CORPUS"
+
+
+def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 12,
+            "research_round": 0,
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    calls: list[tuple[str, int, int | None]] = []
+
+    def fake_build_corpus(family: str, round_number: int, job: int | None = None) -> object:
+        calls.append((family, round_number, job))
+        return object()
+
+    monkeypatch.setattr("evidence_pack.build_corpus", fake_build_corpus)
+    monkeypatch.setattr("evidence_pack.render_corpus", lambda corpus: "RENDERED-CORPUS")
+    monkeypatch.setattr(
+        "research_conductor.run_research_conductor_sync",
+        lambda *args, **kwargs: ConductorResult(
+            status="should_stop", should_stop=True, reasoning="stop"
+        ),
+    )
+
+    execute_research_sdk(controller)
+
+    assert calls == [("ema", 0, 12)]
 
 
 def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
@@ -993,6 +1029,69 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
     with sqlite3.connect(controller.backtest_run_db.path) as conn:
         rows = conn.execute("SELECT rule, competitor_rule, verdict FROM screenings").fetchall()
     assert rows == [("gap_pct < 0", "gap_pct > 0", "pass")]
+
+
+def test_mechanism_proposal_expected_effects_do_not_use_absolute_predictions_as_thresholds() -> (
+    None
+):
+    thesis = _mechanism_proposal_to_research_thesis(
+        {
+            "story": "Gap-down entries improve PF.",
+            "rule": "gap_pct < 0",
+            "actionable": True,
+            "proposed_change": {"ema_length": 8},
+            "predictions": [{"metric": "profit_factor", "direction": "increase", "predicted": 2.4}],
+        },
+        strategy_family="ema",
+        thesis_id="job-1-round-1-attempt-1",
+    )
+
+    assert thesis["expected_effects"][0]["metric"] == "profit_factor"
+    assert thesis["expected_effects"][0]["threshold"] is None
+
+
+def test_run_research_non_actionable_mechanism_continues_without_interrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 12,
+            "research_round": 0,
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    _write_screening_feature_table(round_root)
+    _patch_conductor_round(
+        monkeypatch,
+        {
+            "reasoning": "Screened but not actionable.",
+            "suggested_theses": [
+                {
+                    "story": "Gap-down entries explain residual losses.",
+                    "rule": "gap_pct < 0",
+                    "competitor_rule": "gap_pct > 0",
+                    "actionable": False,
+                    "proposed_change": {},
+                    "predictions": [],
+                }
+            ],
+            "should_stop": False,
+        },
+    )
+    monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
+    monkeypatch.setattr("research_conductor.get_round_usage", lambda: {})
+
+    updated = run_research(controller, controller.read_state())
+
+    assert updated["state"] == "blocked"
+    assert updated["research_round"] == 1
+    assert updated["next_action"]["type"] == "research"
+    assert updated["blockers"][0]["kind"] == "research_required"
 
 
 def test_run_research_success_persists_round_artifacts_and_next_action(

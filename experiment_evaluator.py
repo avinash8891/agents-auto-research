@@ -35,12 +35,15 @@ def evaluate_predictions(
     registered_path: Path,
     baseline: dict[str, Any],
     candidate: dict[str, Any],
+    config: dict[str, Any] | None = None,
 ) -> HarvestVerdict:
     payload = json.loads(registered_path.read_text(encoding="utf-8"))
-    config = {"research_engine": payload.get("research_engine", {})}
-    min_trades = research_engine_min_trades(config)
-    noise_floor_pct = research_engine_noise_floor_pct(config)
-    tolerance_pct = research_engine_prediction_tolerance_pct(config)
+    effective_config = dict(config or {})
+    if "research_engine" not in effective_config:
+        effective_config["research_engine"] = payload.get("research_engine", {})
+    min_trades = research_engine_min_trades(effective_config)
+    noise_floor_pct = research_engine_noise_floor_pct(effective_config)
+    tolerance_pct = research_engine_prediction_tolerance_pct(effective_config)
     thesis_id = str(payload.get("thesis_id") or "")
     predictions = payload.get("predictions") or []
 

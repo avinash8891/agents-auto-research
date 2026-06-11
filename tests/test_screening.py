@@ -176,3 +176,18 @@ def test_screenings_table_exists_and_write_screenings_appends_spec_rows(tmp_path
         "created_at_utc",
     ]
     assert rows == [(3, "gap_pct < 0", "gap_pct > 0", "pass", 40, 0.24, None)]
+
+
+def test_write_screenings_is_retry_safe_for_repeated_rule_same_round(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / "backtest_runs.db")
+    result = screen(
+        "gap_pct < 0", "gap_pct > 0", CausalModel(family="ema", version=1), _feature_table()
+    )
+
+    write_screenings(db.path, [result], round_number=3, competitor_rule="gap_pct > 0")
+    write_screenings(db.path, [result], round_number=3, competitor_rule="gap_pct > 0")
+
+    with sqlite3.connect(db.path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM screenings").fetchone()[0]
+
+    assert count == 2

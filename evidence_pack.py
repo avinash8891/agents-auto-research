@@ -31,10 +31,10 @@ class Corpus(BaseModel):
     rejection_feedback: str | None = None
 
 
-def build_corpus(family: str, round_number: int) -> Corpus:
+def build_corpus(family: str, round_number: int, job: int | None = None) -> Corpus:
     runtime_root = resolve_runtime_root(Path.cwd())
     model = load_model(family)
-    features = _load_round_feature_table(runtime_root, round_number)
+    features = _load_round_feature_table(runtime_root, round_number, job=job)
     residual_summary = _residual_summary(model, features) if features is not None else []
     return Corpus(
         family=family,
@@ -118,11 +118,25 @@ def render_corpus(corpus: Corpus) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _load_round_feature_table(runtime_root: Path, round_number: int) -> pd.DataFrame | None:
-    candidates = sorted(
-        runtime_root.glob(
-            f"runtime/jobs/*/research/round-{round_number}/backtest/feature_table.parquet"
+def _load_round_feature_table(
+    runtime_root: Path, round_number: int, *, job: int | None = None
+) -> pd.DataFrame | None:
+    if job is not None:
+        round_dir = "round-0-baseline" if round_number == 0 else f"round-{round_number}"
+        path = (
+            runtime_root
+            / "runtime"
+            / "jobs"
+            / f"job-{job}"
+            / "research"
+            / round_dir
+            / "backtest"
+            / "feature_table.parquet"
         )
+        return pd.read_parquet(path) if path.exists() else None
+    round_glob = "round-0-baseline" if round_number == 0 else f"round-{round_number}"
+    candidates = sorted(
+        runtime_root.glob(f"runtime/jobs/*/research/{round_glob}/backtest/feature_table.parquet")
     )
     if not candidates:
         return None
@@ -223,6 +237,8 @@ def _load_harvest_verdicts(runtime_root: Path, round_number: int) -> list[dict]:
     for path in sorted(runtime_root.glob("runtime/jobs/*/research/round-*/harvest_verdict*.json")):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise TypeError("harvest verdict payload must be a JSON object")
             payload_round = int(payload.get("round") or _round_number_from_path(path) or 0)
         except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
             log.warning("skipping unreadable harvest verdict artifact %s: %s", path, exc)

@@ -872,7 +872,7 @@ def _mechanism_proposal_to_research_thesis(
         {
             "metric": prediction.get("metric"),
             "direction": prediction.get("direction"),
-            "threshold": prediction.get("predicted"),
+            "threshold": None,
             "rationale": prediction.get("rationale", ""),
         }
         for prediction in predictions
@@ -1048,6 +1048,23 @@ def _try_one_validation_attempt(
     # path is already pydantic-validated by the conductor boundary and must not
     # call the old thesis validator.
     if mechanism_path:
+        if not bool(raw_thesis.get("actionable")):
+            return (
+                {
+                    "status": "completed",
+                    "generated_config": None,
+                    "generated_config_needs_build": False,
+                    "generated_thesis_id": thesis_id,
+                    "research_round_id": research_round_id,
+                    "attempt_number": attempt_number,
+                    "thesis_id": thesis_id,
+                    "thesis": raw_thesis,
+                    "should_stop": False,
+                    "reasoning": conductor_result.reasoning,
+                },
+                None,
+                "",
+            )
         screening_passed, screening_feedback = _screen_mechanism_proposal(
             controller,
             research_round,
@@ -1057,21 +1074,6 @@ def _try_one_validation_attempt(
         )
         if not screening_passed:
             return None, screening_feedback, "stage_1"
-        if not bool(raw_thesis.get("actionable")):
-            return (
-                {
-                    "status": "completed",
-                    "generated_config": None,
-                    "generated_config_needs_build": False,
-                    "generated_thesis_id": thesis_id,
-                    "thesis_id": thesis_id,
-                    "thesis": raw_thesis,
-                    "should_stop": False,
-                    "reasoning": conductor_result.reasoning,
-                },
-                None,
-                "",
-            )
         raw_thesis = _mechanism_proposal_to_research_thesis(
             raw_thesis,
             strategy_family=controller.family.name,
@@ -1396,7 +1398,10 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     conductor_result: ConductorResult | None = None
     from evidence_pack import build_corpus, render_corpus
 
-    rendered_corpus = render_corpus(build_corpus(controller.family.name, research_round))
+    corpus_round = max(int(research_round) - 1, 0)
+    rendered_corpus = render_corpus(
+        build_corpus(controller.family.name, corpus_round, job=current_job)
+    )
     # Per-stage failure counters. Loop exits when any stage's budget is hit.
     stage_1_failures = 0
     stage_2_failures = 0
@@ -2179,6 +2184,34 @@ def _handle_round_failure(
     return state
 
 
+def _handle_completed_without_config(
+    controller: "AutoresearchController",
+    state: dict[str, Any],
+    result: dict[str, Any],
+    research_round: int,
+) -> dict[str, Any]:
+    reason = result.get("reasoning") or "mechanism proposal was not actionable"
+    trace("LOOP", f"research round {research_round} completed without config: {reason}")
+    state["state"] = "blocked"
+    state["research_round"] = research_round
+    state.pop("research_round_in_progress", None)
+    state.pop("activity", None)
+    state["next_action"] = {
+        "type": "research",
+        "reason": "Mechanism was recorded but not actionable; research will continue.",
+        "requires_subagent": True,
+        "artifact_dir": str(controller.research_dir),
+    }
+    state["blockers"] = [
+        {
+            "kind": "research_required",
+            "detail": "Previous mechanism was non-actionable; generate the next thesis.",
+        }
+    ]
+    controller.write_state(state)
+    return state
+
+
 def _invoke_conductor_round(
     controller: "AutoresearchController", research_round: int
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -2289,4 +2322,6 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         )
     if result.get("generated_config"):
         return _handle_success(controller, state, result, research_round)
+    if result.get("status") == "completed":
+        return _handle_completed_without_config(controller, state, result, research_round)
     return _handle_round_failure(controller, state, result, research_round)

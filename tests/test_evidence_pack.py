@@ -167,6 +167,40 @@ def test_build_corpus_skips_malformed_harvest_artifacts(tmp_path: Path, monkeypa
     assert corpus.harvest_verdicts[0]["lesson"].startswith("Gap-down rule")
 
 
+def test_build_corpus_skips_non_object_harvest_artifacts(tmp_path: Path, monkeypatch) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    bad_path = tmp_path / "runtime/jobs/job-1/research/round-2/harvest_verdict_list.json"
+    bad_path.write_text("[]", encoding="utf-8")
+
+    corpus = build_corpus("ema", 2)
+
+    assert len(corpus.harvest_verdicts) == 1
+    assert corpus.harvest_verdicts[0]["lesson"].startswith("Gap-down rule")
+
+
+def test_build_corpus_feature_table_is_scoped_to_active_job(tmp_path: Path, monkeypatch) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    other_path = tmp_path / "runtime/jobs/job-2/research/round-2/backtest/feature_table.parquet"
+    other_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "trade_id": "other-job",
+                "entry_ts": pd.Timestamp("2023-01-05 14:35:00", tz="UTC"),
+                "gap_pct": -9.0,
+                "regime_label": "trend",
+                "out_is_loss": True,
+                "out_pnl": -50.0,
+            }
+        ]
+    ).to_parquet(other_path)
+
+    corpus = build_corpus("ema", 2, job=1)
+
+    assert {row["trade_id"] for row in corpus.residual_summary}
+    assert "other-job" not in {row["trade_id"] for row in corpus.residual_summary}
+
+
 def test_build_corpus_does_not_fabricate_missing_screening_rates(
     tmp_path: Path, monkeypatch
 ) -> None:

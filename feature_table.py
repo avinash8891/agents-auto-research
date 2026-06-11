@@ -94,15 +94,17 @@ def build_feature_table(
     bars_df: pd.DataFrame,
     events: list[dict],
     family: str,
+    runtime_config: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     del events
     bars = _normalize_bars(bars_df)
     trades = trades_df.copy()
     regime_labels = load_regime_labels()
     extra_regime_columns = _extra_regime_columns(regime_labels)
+    config = runtime_config or {}
 
     rows = [
-        _feature_row(trade, bars, regime_labels, str(family).lower())
+        _feature_row(trade, bars, regime_labels, str(family).lower(), config)
         for _, trade in trades.iterrows()
     ]
     columns = _feature_columns(extra_regime_columns)
@@ -120,6 +122,7 @@ def _feature_row(
     bars: pd.DataFrame,
     regime_labels: pd.DataFrame,
     family: str,
+    runtime_config: dict[str, Any],
 ) -> dict[str, Any]:
     symbol = str(trade.get("symbol", ""))
     side = str(trade.get("side") or trade.get("direction") or "").lower()
@@ -164,8 +167,8 @@ def _feature_row(
         "gap_pct": gap_pct,
         "prior_day_range_pct": prior_day_range_pct,
         "overnight_move_pct": overnight_move_pct,
-        "or_width_pctile": _or_width_pctile(symbol_bars, entry_ts, family),
-        "dist_to_ema_pct": _dist_to_ema_pct(prior_bars, entry_price, family),
+        "or_width_pctile": _or_width_pctile(symbol_bars, entry_ts, family, runtime_config),
+        "dist_to_ema_pct": _dist_to_ema_pct(prior_bars, entry_price, family, runtime_config),
         "vol_pctile_20d": _vol_pctile_20d(daily, entry_day),
         "regime_label": _regime_label_for_date(regime_labels, entry_day),
         "stop_distance_pct": _pct(abs(entry_price - stop_price), entry_price),
@@ -257,14 +260,23 @@ def _time_of_day_min(entry_ts: pd.Timestamp) -> int:
     return int((local.hour * 60 + local.minute) - (9 * 60 + 30))
 
 
-def _or_width_pctile(symbol_bars: pd.DataFrame, entry_ts: pd.Timestamp, family: str) -> float:
+def _or_width_pctile(
+    symbol_bars: pd.DataFrame,
+    entry_ts: pd.Timestamp,
+    family: str,
+    runtime_config: dict[str, Any],
+) -> float:
     if family != "orb":
+        return np.nan
+    or_minutes = _int_or_default(runtime_config.get("or_minutes", 30), 30)
+    if or_minutes <= 0:
         return np.nan
     local_day = entry_ts.tz_convert("America/New_York").date()
     daily_widths: list[float] = []
     for _, day_bars in symbol_bars[symbol_bars["date"] <= local_day].groupby("date", sort=True):
         local_times = day_bars["timestamp"].dt.tz_convert("America/New_York")
-        opening = day_bars[local_times.dt.time <= pd.Timestamp("10:00").time()]
+        minutes_since_open = (local_times.dt.hour * 60 + local_times.dt.minute) - (9 * 60 + 30)
+        opening = day_bars[(minutes_since_open >= 0) & (minutes_since_open < or_minutes)]
         if opening.empty:
             daily_widths.append(np.nan)
         else:
@@ -276,10 +288,18 @@ def _or_width_pctile(symbol_bars: pd.DataFrame, entry_ts: pd.Timestamp, family: 
     return float(sum(value <= current for value in prior) / len(prior))
 
 
-def _dist_to_ema_pct(prior_bars: pd.DataFrame, entry_price: float, family: str) -> float:
+def _dist_to_ema_pct(
+    prior_bars: pd.DataFrame,
+    entry_price: float,
+    family: str,
+    runtime_config: dict[str, Any],
+) -> float:
     if family != "ema" or prior_bars.empty or not np.isfinite(entry_price) or entry_price == 0:
         return np.nan
-    ema = prior_bars["close"].astype(float).ewm(span=5, adjust=False).mean().iloc[-1]
+    ema_length = _int_or_default(runtime_config.get("ema_length", 5), 5)
+    if ema_length <= 0:
+        return np.nan
+    ema = prior_bars["close"].astype(float).ewm(span=ema_length, adjust=False).mean().iloc[-1]
     return float((entry_price - ema) / entry_price * 100.0)
 
 

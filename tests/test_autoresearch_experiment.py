@@ -20,6 +20,7 @@ from autoresearch_experiment import (
     _compute_run_output_dir,
     _contract_from_sidecar,
     _evaluate_against_thesis,
+    _evaluate_registered_predictions,
     _find_duplicate_artifact_output,
     _invalid_duplicate_result_summary,
     _record_baseline_checkpoint,
@@ -1055,6 +1056,85 @@ def test_baseline_metrics_prefer_tracker_then_fall_back_to_first_result(tmp_path
         "profit_factor": 1.2,
         "max_drawdown": -0.1,
     }
+
+
+def test_registered_predictions_use_family_research_engine_thresholds(tmp_path: Path) -> None:
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "ema_base.yaml").write_text(
+        "research_engine:\n  min_trades: 50\n",
+        encoding="utf-8",
+    )
+    run_output_dir = tmp_path / "runtime/jobs/job-1/research/round-1/backtest"
+    run_output_dir.mkdir(parents=True)
+    (run_output_dir.parent / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "thesis-001",
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 1.2}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    controller = SimpleNamespace(
+        root=tmp_path,
+        family=SimpleNamespace(name="ema", base_config_filename="ema_base.yaml"),
+        primary_metric_name=lambda: "profit_factor",
+        baseline_tracker=SimpleNamespace(
+            latest=lambda: SimpleNamespace(metrics={"profit_factor": 1.0, "trade_count": 100})
+        ),
+        read_results=lambda: [],
+    )
+
+    verdict = _evaluate_registered_predictions(
+        controller,
+        run_output_dir,
+        metric=1.3,
+        details={"trade_count": 25, "profit_factor": 1.3},
+    )
+
+    assert verdict.status == "degenerate"
+    assert "min_trades 50" in verdict.summary
+
+
+def test_registered_predictions_merge_metrics_payload_before_evaluation(tmp_path: Path) -> None:
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "ema_base.yaml").write_text("research_engine: {}\n", encoding="utf-8")
+    run_output_dir = tmp_path / "runtime/jobs/job-1/research/round-1/backtest"
+    run_output_dir.mkdir(parents=True)
+    (run_output_dir.parent / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "thesis-001",
+                "predictions": [
+                    {"metric": "median_expectancy", "direction": "increase", "predicted": 1.3}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    controller = SimpleNamespace(
+        root=tmp_path,
+        family=SimpleNamespace(name="ema", base_config_filename="ema_base.yaml"),
+        primary_metric_name=lambda: "profit_factor",
+        baseline_tracker=SimpleNamespace(
+            latest=lambda: SimpleNamespace(
+                metrics={"profit_factor": 1.0, "trade_count": 100, "median_expectancy": 1.0}
+            )
+        ),
+        read_results=lambda: [],
+    )
+
+    verdict = _evaluate_registered_predictions(
+        controller,
+        run_output_dir,
+        metric=1.1,
+        details={"trade_count": 25, "train_metrics": {"median_expectancy": 1.4}},
+    )
+
+    assert verdict.status == "supported"
+    assert verdict.prediction_results[0]["metric"] == "median_expectancy"
 
 
 def test_record_baseline_checkpoint_persists_critical_drift_and_clears_rerun_marker(
