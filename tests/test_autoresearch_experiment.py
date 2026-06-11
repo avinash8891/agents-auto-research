@@ -48,7 +48,13 @@ from causal_harvest import (
 )
 from causal_model import load_model, save_model
 from feature_table import load_feature_table
-from research_types import BacktestContract, CausalFactor, CausalModel, HarvestVerdict
+from research_types import (
+    AccuracyPoint,
+    BacktestContract,
+    CausalFactor,
+    CausalModel,
+    HarvestVerdict,
+)
 from strategy_family import load_family
 
 
@@ -1204,13 +1210,81 @@ def test_registered_verdict_promotion_merges_into_live_model_without_snapshot_ov
     )
 
     model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
-    assert model.version == 9
+    assert model.version == 10
     assert [factor.rule for factor in model.factors] == [
         "vol_pctile_20d > 0.5",
         "gap_pct < 0",
     ]
     assert model.factors[1].status == "harvested"
     assert model.factors[1].lesson == "supported: gap rule passed"
+
+
+def test_registered_verdict_promotion_bumps_version_and_merges_accuracy_history(
+    tmp_path: Path,
+) -> None:
+    controller = _controller_for_experiment(tmp_path, "")
+    _write_causal_model_base_config(tmp_path)
+    round_root = tmp_path / "runtime/jobs/job-1/research/round-2"
+    round_root.mkdir(parents=True)
+    config_path = round_root / "selected_config.json"
+    config_path.write_text(json.dumps({"ema_length": 10}) + "\n", encoding="utf-8")
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps({"thesis_id": "thesis-002", "rule": "gap_pct < 0"}) + "\n",
+        encoding="utf-8",
+    )
+    pending_point = AccuracyPoint(
+        round_number=2,
+        model_version=2,
+        pnl_weighted_accuracy=0.71,
+        naive_accuracy=0.55,
+        skill=0.16,
+        holdout_trade_count=40,
+    )
+    live_point = AccuracyPoint(
+        round_number=1,
+        model_version=1,
+        pnl_weighted_accuracy=0.62,
+        naive_accuracy=0.55,
+        skill=0.07,
+        holdout_trade_count=40,
+    )
+    pending_factor = CausalFactor(
+        factor_id="pending-gap",
+        story="Pending gap rule",
+        rule="gap_pct < 0",
+        direction="loss",
+        status="candidate",
+    )
+    PendingCausalModelArtifact(round_root).write(
+        CausalModel(
+            family="ema",
+            version=2,
+            factors=[pending_factor],
+            accuracy_history=[live_point, pending_point],
+        )
+    )
+    # Live model advanced past the pending snapshot (e.g. walkforward demotion bumped it).
+    save_model(
+        CausalModel(family="ema", version=5, factors=[], accuracy_history=[live_point]),
+        runtime_root=tmp_path,
+        code_root=tmp_path,
+    )
+
+    apply_registered_verdict_to_causal_factor(
+        controller,
+        "runtime/jobs/job-1/research/round-2/selected_config.json",
+        HarvestVerdict(
+            thesis_id="thesis-002",
+            status="supported",
+            summary="supported: gap rule passed",
+        ),
+    )
+
+    model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
+    # Distinct model state must get a distinct version, even when live already advanced.
+    assert model.version == 6
+    # Pending's newly scored accuracy point is preserved; live's history is not duplicated.
+    assert model.accuracy_history == [live_point, pending_point]
 
 
 def test_record_baseline_checkpoint_persists_critical_drift_and_clears_rerun_marker(

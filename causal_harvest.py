@@ -376,12 +376,14 @@ def apply_registered_verdict_to_causal_factor(
             live_factors.append(factor)
     if not matched_live:
         live_factors.append(updated_pending_factor)
+    merged_history = list(live.accuracy_history)
+    merged_history.extend(point for point in pending.accuracy_history if point not in merged_history)
     store.save(
         live.model_copy(
             update={
-                "version": max(live.version, pending.version),
+                "version": live.version + 1,
                 "factors": live_factors,
-                "accuracy_history": live.accuracy_history or pending.accuracy_history,
+                "accuracy_history": merged_history,
             }
         )
     )
