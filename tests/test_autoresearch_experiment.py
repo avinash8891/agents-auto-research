@@ -1507,10 +1507,16 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
 
     assert code == 0
     record = controller.backtest_run_db.all()[0]
+    harvest = json.loads((round_root / "harvest_verdict.json").read_text())
     assert record.accepted is True
     assert record.prediction_verdict == "supported"
     assert "profit_factor direction=pass" in record.lesson
     assert record.verdict_status != "inconclusive"
+    assert harvest["round"] == 1
+    assert harvest["status"] == "supported"
+    assert harvest["registered_predictions"][0]["metric"] == "profit_factor"
+    assert "gap" in harvest["registered_predictions"][0]
+    assert "profit_factor direction=pass" in harvest["lesson"]
     updated_model = load_model("ema")
     assert updated_model.version == 1
     assert updated_model.factors[0].status == "harvested"

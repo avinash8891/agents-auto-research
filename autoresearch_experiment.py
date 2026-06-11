@@ -52,6 +52,7 @@ from causal_harvest import (
     load_runtime_config_contents,
     request_registered_prediction_retest,
     write_feature_table_artifact,
+    write_harvest_verdict_artifact,
 )
 from diagnostic_contracts import build_required_diagnostic_specs, enrich_required_diagnostics
 from feature_table import FeatureTableArtifact
@@ -1399,6 +1400,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         )
         retest_request: RetestRequested | None = None
         if registered_verdict is not None:
+            write_harvest_verdict_artifact(controller, run_output_dir, registered_verdict)
             if registered_verdict.status == "inconclusive":
                 if is_registered_prediction_retest_action(state):
                     registered_verdict = force_registered_inconclusive_after_retest(

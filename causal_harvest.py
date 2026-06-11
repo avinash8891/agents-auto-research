@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from autoresearch_artifacts import serialize_artifact_path
+from autoresearch_artifacts import round_number_from_path, serialize_artifact_path
 from autoresearch_constants import research_engine_retest_extension_months
 from autoresearch_logging import get_logger
 from autoresearch_paths import resolve_config_path
@@ -121,6 +121,34 @@ def evaluate_registered_predictions(
         candidate=candidate_metrics,
         config=_family_base_config(controller),
     )
+
+
+def write_harvest_verdict_artifact(
+    controller: "AutoresearchController",
+    run_output_dir: Path,
+    verdict: Any,
+) -> Path:
+    round_root = run_output_dir.parent
+    selected = _selected_thesis_payload(round_root)
+    prediction_rows = []
+    for result in getattr(verdict, "prediction_results", []):
+        row = dict(result)
+        if "gap" not in row and "magnitude_gap" in row:
+            row["gap"] = row["magnitude_gap"]
+        prediction_rows.append(row)
+    payload = {
+        "round": round_number_from_path(round_root) or 0,
+        "thesis_id": str(getattr(verdict, "thesis_id", "") or selected.get("thesis_id") or ""),
+        "status": str(getattr(verdict, "status", "")),
+        "change": selected.get("proposed_change") or selected.get("config_changes") or {},
+        "rule": str(selected.get("rule") or ""),
+        "registered_predictions": prediction_rows,
+        "summary": str(getattr(verdict, "summary", "")),
+        "lesson": str(getattr(verdict, "lesson", "") or getattr(verdict, "summary", "")),
+    }
+    path = round_root / "harvest_verdict.json"
+    write_json_atomic(path, payload)
+    return path
 
 
 def is_registered_prediction_retest_action(state: dict[str, Any]) -> bool:
