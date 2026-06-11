@@ -67,7 +67,7 @@ def _orb_entry_features(
         opening = day_bars[
             (minutes_since_open >= 0)
             & (minutes_since_open < or_minutes)
-            & ((day_bars["date"] < local_day) | (day_bars["timestamp"] <= entry_ts))
+            & ((day_bars["date"] < local_day) | (day_bars["timestamp"] < entry_ts))
         ]
         if opening.empty:
             daily_widths.append(np.nan)

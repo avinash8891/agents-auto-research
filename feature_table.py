@@ -130,10 +130,10 @@ def _feature_row(
         entry_local = entry_local.tz_localize("America/New_York")
     entry_ts = entry_local.tz_convert("UTC")
     symbol_bars = bars[bars["symbol"] == symbol].sort_values("timestamp")
-    prior_bars = symbol_bars[symbol_bars["timestamp"] <= entry_ts]
-    entry_bar = _last_bar_at_or_before(prior_bars, entry_ts)
+    prior_bars = symbol_bars[symbol_bars["timestamp"] < entry_ts]
+    entry_bar = _last_bar_before(prior_bars, entry_ts)
     entry_day = entry_ts.tz_convert("America/New_York").date()
-    daily = _daily_bars(symbol_bars[symbol_bars["timestamp"] <= entry_ts])
+    daily = _daily_bars(prior_bars)
     current_day = daily[daily["date"] == entry_day]
     prior_days = daily[daily["date"] < entry_day]
     current_open = _first_float(current_day, "open")
@@ -166,7 +166,7 @@ def _feature_row(
         "entry_ts": entry_ts,
         "time_of_day_min": _time_of_day_min(entry_ts),
         "day_of_week": entry_ts.tz_convert("America/New_York").dayofweek,
-        "bars_since_open": max(len(prior_bars[prior_bars["date"] == entry_day]) - 1, 0),
+        "bars_since_open": len(prior_bars[prior_bars["date"] == entry_day]),
         "gap_pct": gap_pct,
         "prior_day_range_pct": prior_day_range_pct,
         "overnight_move_pct": overnight_move_pct,
@@ -257,13 +257,13 @@ def _daily_bars(bars: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _last_bar_at_or_before(prior_bars: pd.DataFrame, entry_ts: pd.Timestamp) -> pd.Series:
+def _last_bar_before(prior_bars: pd.DataFrame, entry_ts: pd.Timestamp) -> pd.Series:
     if prior_bars.empty:
         return pd.Series(dtype=object)
-    at_or_before = prior_bars[prior_bars["timestamp"] <= entry_ts]
-    if at_or_before.empty:
+    before = prior_bars[prior_bars["timestamp"] < entry_ts]
+    if before.empty:
         return pd.Series(dtype=object)
-    return at_or_before.iloc[-1]
+    return before.iloc[-1]
 
 
 def _first_float(frame: pd.DataFrame, column: str) -> float:

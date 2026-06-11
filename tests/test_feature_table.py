@@ -117,9 +117,9 @@ def test_build_feature_table_emits_exact_entry_time_and_outcome_columns(
     assert row["side"] == "long"
     assert row["regime_label"] == "risk_off"
     assert pd.isna(row["or_width_pctile"])
-    assert row["dist_to_ema_pct"] == pytest.approx(0.6218, abs=0.0001)
+    assert row["dist_to_ema_pct"] == pytest.approx(0.9327, abs=0.0001)
     assert row["stop_distance_pct"] == pytest.approx((1.0 / 102.6) * 100.0)
-    assert row["entry_bar_range_pct"] == pytest.approx((0.8 / 102.6) * 100.0)
+    assert row["entry_bar_range_pct"] == pytest.approx((0.8 / 102.2) * 100.0)
     assert bool(row["out_is_loss"]) is True
 
 
@@ -314,7 +314,7 @@ def test_build_feature_table_handles_nan_hold_bars_and_nan_entry_bar_close(
     table = build_feature_table(trades, bars, events=[], family="ema")
 
     assert table.loc[0, "out_hold_bars"] == -1
-    assert table.loc[0, "entry_bar_range_pct"] == pytest.approx((0.8 / 102.6) * 100.0)
+    assert table.loc[0, "entry_bar_range_pct"] == pytest.approx((0.8 / 102.2) * 100.0)
 
 
 def test_build_feature_table_uses_runtime_ema_length_for_distance_feature(
@@ -332,7 +332,7 @@ def test_build_feature_table_uses_runtime_ema_length_for_distance_feature(
         runtime_config={"ema_length": 2},
     )
 
-    closes = _bars_df()[_bars_df()["timestamp"] <= pd.Timestamp("2024-01-04 14:35:00", tz="UTC")][
+    closes = _bars_df()[_bars_df()["timestamp"] < pd.Timestamp("2024-01-04 14:35:00", tz="UTC")][
         "close"
     ].astype(float)
     ema = closes.ewm(span=2, adjust=False).mean().iloc[-1]
@@ -341,7 +341,7 @@ def test_build_feature_table_uses_runtime_ema_length_for_distance_feature(
 
 def test_family_specific_feature_ownership_lives_in_extractor_registry() -> None:
     bars = _bars_df()
-    prior_bars = bars[bars["timestamp"] <= pd.Timestamp("2024-01-04 14:35:00", tz="UTC")]
+    prior_bars = bars[bars["timestamp"] < pd.Timestamp("2024-01-04 14:35:00", tz="UTC")]
 
     ema_features = family_entry_features(
         "ema",
@@ -461,7 +461,7 @@ def test_build_feature_table_localizes_naive_bars_as_new_york_to_match_naive_tra
 
     assert table.loc[0, "entry_ts"] == pd.Timestamp("2024-01-04 14:35:00", tz="UTC")
     assert table.loc[0, "bars_since_open"] == 1
-    assert table.loc[0, "entry_bar_range_pct"] == pytest.approx((0.8 / 102.6) * 100.0)
+    assert table.loc[0, "entry_bar_range_pct"] == pytest.approx((0.8 / 102.2) * 100.0)
 
 
 def test_build_feature_table_uses_naive_market_time_bars_for_orb_width(
@@ -512,6 +512,23 @@ def test_build_feature_table_ignores_post_entry_bar_poisoning(
     poisoned = bars.copy()
     post_entry = poisoned["timestamp"] > pd.Timestamp("2024-01-04 14:35:00", tz="UTC")
     poisoned.loc[post_entry, ["high", "low", "close", "volume"]] = [9999.0, 1.0, 5000.0, 99]
+
+    clean_table = build_feature_table(_trades_df(), bars, events=[], family="ema")
+    poisoned_table = build_feature_table(_trades_df(), poisoned, events=[], family="ema")
+
+    pd.testing.assert_frame_equal(clean_table, poisoned_table)
+
+
+def test_build_feature_table_ignores_entry_stamped_bar_poisoning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    bars = _bars_df()
+    poisoned = bars.copy()
+    entry_bar = poisoned["timestamp"] == pd.Timestamp("2024-01-04 14:35:00", tz="UTC")
+    poisoned.loc[entry_bar, ["high", "low", "close", "volume"]] = [9999.0, 1.0, 5000.0, 99]
 
     clean_table = build_feature_table(_trades_df(), bars, events=[], family="ema")
     poisoned_table = build_feature_table(_trades_df(), poisoned, events=[], family="ema")
