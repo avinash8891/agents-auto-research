@@ -197,7 +197,7 @@ def holdout_mask(
     if entry_ts.empty:
         return pd.Series([], index=feature_table.index, dtype=bool)
     if holdout_start:
-        cutoff = pd.Timestamp(holdout_start)
+        cutoff = _utc_timestamp(holdout_start)
     elif holdout_fraction is not None:
         start = entry_ts.min()
         end = entry_ts.max()

@@ -316,6 +316,21 @@ def test_holdout_mask_uses_configured_research_engine_holdout_fraction() -> None
     assert half_mask.tolist() == [False, True, True]
 
 
+def test_holdout_mask_treats_naive_holdout_start_as_utc() -> None:
+    table = pd.DataFrame(
+        {
+            "trade_id": ["a", "b"],
+            "entry_ts": pd.to_datetime(["2022-12-31T23:59:00Z", "2023-01-01T00:00:00Z"]),
+            "out_is_loss": [False, True],
+            "out_pnl": [1.0, -1.0],
+        }
+    )
+
+    mask = holdout_mask(table, holdout_start="2023-01-01T00:00:00")
+
+    assert mask.tolist() == [False, True]
+
+
 def test_residual_map_uses_pre_holdout_training_trades_only() -> None:
     table = _feature_table()
     model = CausalModel(family="ema", version=1, factors=[_planted_factor()], accuracy_history=[])
