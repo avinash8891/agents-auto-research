@@ -20,16 +20,13 @@ from autoresearch_experiment import (
     _compute_run_output_dir,
     _contract_from_sidecar,
     _evaluate_against_thesis,
-    _evaluate_registered_predictions,
     _find_duplicate_artifact_output,
     _invalid_duplicate_result_summary,
     _record_baseline_checkpoint,
-    _request_registered_prediction_retest,
     _round_context_from_state,
     _serialize_artifact_dir,
     _thesis_sidecar_path,
     _validate_backtest_request,
-    _write_feature_table_artifact,
     artifact_dir_for,
     derive_trade_analysis,
     log_experiment_result,
@@ -42,7 +39,12 @@ from autoresearch_experiment import (
 )
 from autoresearch_paths import resolve_config_path
 from backtest_run_db import BacktestRunRecord, BaselineCheckpoint
-from causal_harvest import PendingCausalModelArtifact
+from causal_harvest import (
+    PendingCausalModelArtifact,
+    evaluate_registered_predictions,
+    request_registered_prediction_retest,
+    write_feature_table_artifact,
+)
 from causal_model import load_model
 from feature_table import load_feature_table
 from research_types import BacktestContract, CausalFactor, CausalModel
@@ -1098,7 +1100,7 @@ def test_registered_predictions_use_family_research_engine_thresholds(tmp_path: 
         read_results=lambda: [],
     )
 
-    verdict = _evaluate_registered_predictions(
+    verdict = evaluate_registered_predictions(
         controller,
         run_output_dir,
         metric=1.3,
@@ -1137,7 +1139,7 @@ def test_registered_predictions_merge_metrics_payload_before_evaluation(tmp_path
         read_results=lambda: [],
     )
 
-    verdict = _evaluate_registered_predictions(
+    verdict = evaluate_registered_predictions(
         controller,
         run_output_dir,
         metric=1.1,
@@ -1212,7 +1214,7 @@ def test_write_feature_table_artifact_resolves_manifest_relative_paths(
     config_path.write_text(json.dumps({"data_universe": "tiny_feature_data"}) + "\n")
     details = {"trades_file": "trades.csv", "strategy_events_file": "strategy_events.parquet"}
 
-    _write_feature_table_artifact(
+    write_feature_table_artifact(
         controller,
         config=str(config_path),
         details=details,
@@ -1726,7 +1728,7 @@ def test_request_registered_prediction_retest_returns_explicit_transition_withou
     }
     controller.write_state(state)
 
-    retest_request = _request_registered_prediction_retest(
+    retest_request = request_registered_prediction_retest(
         controller,
         state,
         config="runtime/jobs/job-6/research/round-1/selected_config.json",

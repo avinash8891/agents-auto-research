@@ -1091,6 +1091,49 @@ def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
     ]
 
 
+def test_validation_attempt_dispatches_to_named_mechanism_flow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    calls: list[str] = []
+
+    def fake_mechanism(*args, **kwargs):
+        calls.append("mechanism")
+        return {"status": "completed"}, None, ""
+
+    def fake_legacy(*args, **kwargs):
+        calls.append("legacy")
+        return {"status": "legacy"}, None, ""
+
+    monkeypatch.setattr("autoresearch_research._try_mechanism_validation_attempt", fake_mechanism)
+    monkeypatch.setattr("autoresearch_research._try_legacy_validation_attempt", fake_legacy)
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up continuation dominates.",
+                "actionable": False,
+                "proposed_change": None,
+                "predictions": None,
+            },
+        ),
+        [],
+    )
+
+    assert result == {"status": "completed"}
+    assert retry_feedback is None
+    assert stage == ""
+    assert calls == ["mechanism"]
+
+
 def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

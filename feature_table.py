@@ -9,6 +9,7 @@ import pandas as pd
 
 from autoresearch_runtime_paths import research_round_root
 from backtest.data_universe import default_data_root
+from feature_table_extractors import family_entry_features
 
 ENTRY_TIME_COLUMNS = frozenset(
     {
@@ -194,8 +195,6 @@ def _feature_row(
         "gap_pct": gap_pct,
         "prior_day_range_pct": prior_day_range_pct,
         "overnight_move_pct": overnight_move_pct,
-        "or_width_pctile": _or_width_pctile(symbol_bars, entry_ts, family, runtime_config),
-        "dist_to_ema_pct": _dist_to_ema_pct(prior_bars, entry_price, family, runtime_config),
         "vol_pctile_20d": _vol_pctile_20d(daily, entry_day),
         "regime_label": _regime_label_for_date(regime_labels, entry_day),
         "stop_distance_pct": _pct(abs(entry_price - stop_price), entry_price),
@@ -211,6 +210,16 @@ def _feature_row(
         ),
         "out_is_loss": bool(out_pnl < 0),
     }
+    row.update(
+        family_entry_features(
+            family,
+            symbol_bars=symbol_bars,
+            prior_bars=prior_bars,
+            entry_ts=entry_ts,
+            entry_price=entry_price,
+            runtime_config=runtime_config,
+        )
+    )
     row.update(_regime_columns_for_date(regime_labels, entry_day))
     return row
 
@@ -310,53 +319,6 @@ def _pct(numerator: float, denominator: float) -> float:
 def _time_of_day_min(entry_ts: pd.Timestamp) -> int:
     local = entry_ts.tz_convert("America/New_York")
     return int((local.hour * 60 + local.minute) - (9 * 60 + 30))
-
-
-def _or_width_pctile(
-    symbol_bars: pd.DataFrame,
-    entry_ts: pd.Timestamp,
-    family: str,
-    runtime_config: dict[str, Any],
-) -> float:
-    if family != "orb":
-        return np.nan
-    or_minutes = _int_or_default(runtime_config.get("or_minutes", 30), 30)
-    if or_minutes <= 0:
-        return np.nan
-    local_day = entry_ts.tz_convert("America/New_York").date()
-    daily_widths: list[float] = []
-    for _, day_bars in symbol_bars[symbol_bars["date"] <= local_day].groupby("date", sort=True):
-        local_times = day_bars["timestamp"].dt.tz_convert("America/New_York")
-        minutes_since_open = (local_times.dt.hour * 60 + local_times.dt.minute) - (9 * 60 + 30)
-        opening = day_bars[
-            (minutes_since_open >= 0)
-            & (minutes_since_open < or_minutes)
-            & ((day_bars["date"] < local_day) | (day_bars["timestamp"] <= entry_ts))
-        ]
-        if opening.empty:
-            daily_widths.append(np.nan)
-        else:
-            daily_widths.append(float(opening["high"].max() - opening["low"].min()))
-    current = daily_widths[-1] if daily_widths else np.nan
-    prior = [value for value in daily_widths[-21:-1] if np.isfinite(value)]
-    if not np.isfinite(current) or not prior:
-        return np.nan
-    return float(sum(value <= current for value in prior) / len(prior))
-
-
-def _dist_to_ema_pct(
-    prior_bars: pd.DataFrame,
-    entry_price: float,
-    family: str,
-    runtime_config: dict[str, Any],
-) -> float:
-    if family != "ema" or prior_bars.empty or not np.isfinite(entry_price) or entry_price == 0:
-        return np.nan
-    ema_length = _int_or_default(runtime_config.get("ema_length", 5), 5)
-    if ema_length <= 0:
-        return np.nan
-    ema = prior_bars["close"].astype(float).ewm(span=ema_length, adjust=False).mean().iloc[-1]
-    return float((entry_price - ema) / entry_price * 100.0)
 
 
 def _vol_pctile_20d(daily: pd.DataFrame, entry_day: object) -> float:

@@ -1036,8 +1036,154 @@ def _try_one_validation_attempt(
     - `retry_feedback` is set on failure for the next conductor call.
     - `failed_stage` is "stage_1" / "stage_2" / "compile" on failure, "" on success.
     """
-    from compiler_pipeline import compile_research_thesis
-    from thesis_validator import ThesisValidationError, validate_stage_2
+    assert conductor_result.thesis is not None
+    raw_thesis = conductor_result.thesis
+    if _is_mechanism_proposal(raw_thesis):
+        return _try_mechanism_validation_attempt(
+            controller,
+            research_round,
+            attempt,
+            conductor_result,
+        )
+    return _try_legacy_validation_attempt(
+        controller,
+        research_round,
+        attempt,
+        conductor_result,
+        prior_theses,
+        require_analyst_evidence=require_analyst_evidence,
+        evidence_context=evidence_context,
+        require_analyst_tool=require_analyst_tool,
+    )
+
+
+def _persist_validator_challenge(
+    controller: "AutoresearchController", raw_thesis: dict[str, Any]
+) -> None:
+    challenge_payload = raw_thesis.get("validator_challenge")
+    if not isinstance(challenge_payload, dict):
+        return
+    try:
+        from rejection_artifact import write_challenge
+
+        state = controller.read_state()
+        job_value = state.get("job") if isinstance(state, dict) else None
+        if job_value is not None:
+            write_challenge(controller.root, job=int(job_value), payload=challenge_payload)
+    except Exception as challenge_exc:  # noqa: BLE001
+        log.warning(f"failed to persist validator_challenge: {challenge_exc}")
+
+
+def _try_mechanism_validation_attempt(
+    controller: "AutoresearchController",
+    research_round: int,
+    attempt: int,
+    conductor_result: ConductorResult,
+) -> tuple[dict[str, Any] | None, str | None, str]:
+    """Validate, screen, compile, and dispatch a structured mechanism proposal."""
+
+    assert conductor_result.thesis is not None
+    raw_thesis = conductor_result.thesis
+    job_id = _controller_job_id(controller)
+    research_round_id = make_research_round_id(job_id, research_round)
+    attempt_number = attempt + 1
+    thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
+    _persist_validator_challenge(controller, raw_thesis)
+
+    try:
+        proposal = MechanismProposal.model_validate(raw_thesis)
+    except ValueError as exc:
+        _log_validation_rejection(
+            controller,
+            research_round,
+            attempt,
+            raw_thesis,
+            thesis_id,
+            str(exc),
+            exc=exc,
+            stage="stage_1",
+        )
+        return None, f"Mechanism proposal '{thesis_id}' rejected by schema: {exc}", "stage_1"
+
+    raw_thesis = proposal.model_dump(mode="json")
+    if not bool(raw_thesis.get("actionable")):
+        return (
+            {
+                "status": "completed",
+                "generated_config": None,
+                "generated_config_needs_build": False,
+                "generated_thesis_id": thesis_id,
+                "research_round_id": research_round_id,
+                "attempt_number": attempt_number,
+                "thesis_id": thesis_id,
+                "thesis": raw_thesis,
+                "should_stop": False,
+                "reasoning": conductor_result.reasoning,
+            },
+            None,
+            "",
+        )
+
+    try:
+        _validate_mechanism_proposed_change(controller.family.name, raw_thesis)
+    except ValueError as exc:
+        _log_validation_rejection(
+            controller,
+            research_round,
+            attempt,
+            raw_thesis,
+            thesis_id,
+            str(exc),
+            exc=exc,
+            stage="stage_1",
+        )
+        return None, f"Mechanism proposal '{thesis_id}' rejected by validator: {exc}", "stage_1"
+
+    screening_passed, screening_feedback, pending_causal_model = _screen_mechanism_proposal(
+        controller,
+        research_round,
+        raw_thesis,
+        thesis_id,
+        job_id=job_id,
+    )
+    if not screening_passed:
+        return None, screening_feedback, "stage_1"
+
+    research_thesis = _mechanism_proposal_to_research_thesis(
+        raw_thesis,
+        strategy_family=controller.family.name,
+        thesis_id=thesis_id,
+    )
+    validated = ResearchThesis.model_validate(research_thesis)
+    return _compile_and_dispatch_validated_thesis(
+        controller,
+        research_round,
+        attempt,
+        conductor_result,
+        research_thesis,
+        validated,
+        thesis_id,
+        research_round_id=research_round_id,
+        job_id=job_id,
+        pending_causal_model=pending_causal_model,
+        validate_stage_2_contract=False,
+    )
+
+
+def _try_legacy_validation_attempt(
+    controller: "AutoresearchController",
+    research_round: int,
+    attempt: int,
+    conductor_result: ConductorResult,
+    prior_theses: Any,
+    *,
+    require_analyst_evidence: bool = True,
+    evidence_context: str | None = None,
+    require_analyst_tool: bool = False,
+) -> tuple[dict[str, Any] | None, str | None, str]:
+    """Validate, compile, and dispatch the legacy ResearchThesis conductor output."""
+
+    from thesis_validator import ThesisValidationError
 
     assert conductor_result.thesis is not None
     raw_thesis = conductor_result.thesis
@@ -1045,133 +1191,81 @@ def _try_one_validation_attempt(
     job_id = _controller_job_id(controller)
     research_round_id = make_research_round_id(job_id, research_round)
     attempt_number = attempt + 1
-
     thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
-    pending_causal_model = None
+    _persist_validator_challenge(controller, raw_thesis)
 
-    mechanism_path = _is_mechanism_proposal(raw_thesis)
-
-    # If the conductor attached a validator_challenge, persist it before any
-    # validation work. Logged for human review; does not alter the decision.
-    challenge_payload = raw_thesis.get("validator_challenge")
-    if isinstance(challenge_payload, dict):
-        try:
-            from rejection_artifact import write_challenge
-
-            state = controller.read_state()
-            job_value = state.get("job") if isinstance(state, dict) else None
-            if job_value is not None:
-                write_challenge(controller.root, job=int(job_value), payload=challenge_payload)
-        except Exception as challenge_exc:  # noqa: BLE001
-            log.warning(f"failed to persist validator_challenge: {challenge_exc}")
-
-    # Stage 1: legacy thesis structural validation. The v2 mechanism-proposal
-    # path is already pydantic-validated by the conductor boundary and must not
-    # call the old thesis validator.
-    if mechanism_path:
-        try:
-            proposal = MechanismProposal.model_validate(raw_thesis)
-        except ValueError as exc:
-            _log_validation_rejection(
-                controller,
-                research_round,
-                attempt,
-                raw_thesis,
-                thesis_id,
-                str(exc),
-                exc=exc,
-                stage="stage_1",
-            )
-            return None, f"Mechanism proposal '{thesis_id}' rejected by schema: {exc}", "stage_1"
-        raw_thesis = proposal.model_dump(mode="json")
-        if not bool(raw_thesis.get("actionable")):
-            return (
-                {
-                    "status": "completed",
-                    "generated_config": None,
-                    "generated_config_needs_build": False,
-                    "generated_thesis_id": thesis_id,
-                    "research_round_id": research_round_id,
-                    "attempt_number": attempt_number,
-                    "thesis_id": thesis_id,
-                    "thesis": raw_thesis,
-                    "should_stop": False,
-                    "reasoning": conductor_result.reasoning,
-                },
-                None,
-                "",
-            )
-        try:
-            _validate_mechanism_proposed_change(controller.family.name, raw_thesis)
-        except ValueError as exc:
-            _log_validation_rejection(
-                controller,
-                research_round,
-                attempt,
-                raw_thesis,
-                thesis_id,
-                str(exc),
-                exc=exc,
-                stage="stage_1",
-            )
-            return None, f"Mechanism proposal '{thesis_id}' rejected by validator: {exc}", "stage_1"
-        screening_passed, screening_feedback, pending_causal_model = _screen_mechanism_proposal(
-            controller,
-            research_round,
-            raw_thesis,
-            thesis_id,
-            job_id=job_id,
-        )
-        if not screening_passed:
-            return None, screening_feedback, "stage_1"
-        raw_thesis = _mechanism_proposal_to_research_thesis(
+    try:
+        raw_thesis, validated = _prepare_thesis_for_validation(
             raw_thesis,
             strategy_family=controller.family.name,
-            thesis_id=thesis_id,
+            research_round_id=research_round_id,
+            attempt_number=attempt_number,
+            prior_theses=prior_theses,
+            tools_called=tools_called,
+            require_analyst_evidence=require_analyst_evidence,
+            evidence_context=evidence_context,
+            require_analyst_tool=require_analyst_tool,
         )
-        validated = ResearchThesis.model_validate(raw_thesis)
-    else:
-        try:
-            raw_thesis, validated = _prepare_thesis_for_validation(
-                raw_thesis,
-                strategy_family=controller.family.name,
-                research_round_id=research_round_id,
-                attempt_number=attempt_number,
-                prior_theses=prior_theses,
-                tools_called=tools_called,
-                require_analyst_evidence=require_analyst_evidence,
-                evidence_context=evidence_context,
-                require_analyst_tool=require_analyst_tool,
-            )
-            thesis_id = validated.thesis_id
-            log.info(
-                f"RESEARCH_RAW thesis_id={thesis_id} "
-                f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
-            )
-        except (ThesisValidationError, ValueError) as exc:
-            _log_validation_rejection(
-                controller,
-                research_round,
-                attempt,
-                raw_thesis,
-                thesis_id,
-                str(exc),
-                exc=exc,
-                stage="stage_1",
-            )
-            return None, f"Thesis '{thesis_id}' rejected by validator: {exc}", "stage_1"
+        thesis_id = validated.thesis_id
+        log.info(
+            f"RESEARCH_RAW thesis_id={thesis_id} "
+            f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
+        )
+    except (ThesisValidationError, ValueError) as exc:
+        _log_validation_rejection(
+            controller,
+            research_round,
+            attempt,
+            raw_thesis,
+            thesis_id,
+            str(exc),
+            exc=exc,
+            stage="stage_1",
+        )
+        return None, f"Thesis '{thesis_id}' rejected by validator: {exc}", "stage_1"
 
-    # Compile.
+    return _compile_and_dispatch_validated_thesis(
+        controller,
+        research_round,
+        attempt,
+        conductor_result,
+        raw_thesis,
+        validated,
+        thesis_id,
+        research_round_id=research_round_id,
+        job_id=job_id,
+        pending_causal_model=None,
+        validate_stage_2_contract=True,
+    )
+
+
+def _compile_and_dispatch_validated_thesis(
+    controller: "AutoresearchController",
+    research_round: int,
+    attempt: int,
+    conductor_result: ConductorResult,
+    raw_thesis: dict[str, Any],
+    validated: Any,
+    thesis_id: str,
+    *,
+    research_round_id: str,
+    job_id: int,
+    pending_causal_model: Any | None,
+    validate_stage_2_contract: bool,
+) -> tuple[dict[str, Any] | None, str | None, str]:
+    from compiler_pipeline import compile_research_thesis
+    from thesis_validator import ThesisValidationError, validate_stage_2
+
     try:
         runtime_root = getattr(controller, "runtime_root", None) or controller.root
         round_root = research_round_root(runtime_root, job_id, research_round)
         contract = compile_research_thesis(validated, controller.root, artifact_root=round_root)
-        if mechanism_path:
+        if not validate_stage_2_contract:
             _merge_mechanism_fields_into_selected_thesis(round_root, raw_thesis)
-            if pending_causal_model is not None:
-                from causal_harvest import PendingCausalModelArtifact
+        if pending_causal_model is not None:
+            from causal_harvest import PendingCausalModelArtifact
 
-                PendingCausalModelArtifact(round_root).write(pending_causal_model)
+            PendingCausalModelArtifact(round_root).write(pending_causal_model)
     except (ThesisValidationError, ValueError) as exc:
         _log_validation_rejection(
             controller,
@@ -1185,8 +1279,7 @@ def _try_one_validation_attempt(
         )
         return None, f"Thesis '{thesis_id}' rejected at compile: {exc}", "compile"
 
-    # Stage 2: post-compile semantic rules for legacy theses only.
-    if not mechanism_path:
+    if validate_stage_2_contract:
         try:
             contract = validate_stage_2(contract)
         except (ThesisValidationError, ValueError) as exc:

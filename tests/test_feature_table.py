@@ -13,6 +13,7 @@ from feature_table import (
     load_feature_table,
     load_regime_labels,
 )
+from feature_table_extractors import family_entry_features
 
 EXPECTED_COLUMNS = [
     "trade_id",
@@ -301,6 +302,36 @@ def test_build_feature_table_uses_runtime_ema_length_for_distance_feature(
     ].astype(float)
     ema = closes.ewm(span=2, adjust=False).mean().iloc[-1]
     assert table.loc[0, "dist_to_ema_pct"] == pytest.approx((102.6 - ema) / 102.6 * 100.0)
+
+
+def test_family_specific_feature_ownership_lives_in_extractor_registry() -> None:
+    bars = _bars_df()
+    prior_bars = bars[bars["timestamp"] <= pd.Timestamp("2024-01-04 14:35:00", tz="UTC")]
+
+    ema_features = family_entry_features(
+        "ema",
+        symbol_bars=bars,
+        prior_bars=prior_bars,
+        entry_ts=pd.Timestamp("2024-01-04 14:35:00", tz="UTC"),
+        entry_price=102.6,
+        runtime_config={"ema_length": 2},
+    )
+    unknown_features = family_entry_features(
+        "unknown",
+        symbol_bars=bars,
+        prior_bars=prior_bars,
+        entry_ts=pd.Timestamp("2024-01-04 14:35:00", tz="UTC"),
+        entry_price=102.6,
+        runtime_config={},
+    )
+
+    assert ema_features["dist_to_ema_pct"] == pytest.approx(
+        (102.6 - prior_bars["close"].astype(float).ewm(span=2, adjust=False).mean().iloc[-1])
+        / 102.6
+        * 100.0
+    )
+    assert pd.isna(unknown_features["dist_to_ema_pct"])
+    assert pd.isna(unknown_features["or_width_pctile"])
 
 
 def test_build_feature_table_uses_runtime_or_minutes_for_orb_width(

@@ -16,7 +16,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -46,6 +45,7 @@ from backtest_run_db import (
     build_data_hash,
 )
 from causal_harvest import (
+    RetestRequested,
     apply_registered_verdict_to_causal_factor,
     evaluate_registered_predictions,
     force_registered_inconclusive_after_retest,
@@ -74,13 +74,6 @@ log = get_logger(__name__)
 
 class ResultJsonError(RuntimeError):
     """Raised when a RESULT_JSON marker exists but the referenced payload is invalid."""
-
-
-@dataclass(frozen=True)
-class RetestRequested:
-    """Explicit transition emitted when prediction validation needs one retest."""
-
-    next_state: dict[str, Any]
 
 
 def _execution_root(controller: "AutoresearchController") -> Path:
@@ -1051,23 +1044,6 @@ def _compute_run_output_dir(controller: "AutoresearchController", config: str) -
     return run_output_dir, config_path_full
 
 
-def _write_feature_table_artifact(
-    controller: "AutoresearchController",
-    *,
-    config: str,
-    details: dict[str, Any],
-    artifact_dir: Path,
-    feature_artifact: FeatureTableArtifact | None = None,
-) -> None:
-    write_feature_table_artifact(
-        controller,
-        config=config,
-        details=details,
-        artifact_dir=artifact_dir,
-        feature_artifact=feature_artifact,
-    )
-
-
 def _block_with_command_failed(
     controller: "AutoresearchController",
     state: dict[str, Any],
@@ -1279,49 +1255,6 @@ def _evaluate_against_thesis(
         raise
 
 
-def _evaluate_registered_predictions(
-    controller: "AutoresearchController",
-    run_output_dir: Path,
-    metric: float,
-    details: dict[str, Any],
-) -> Any | None:
-    return evaluate_registered_predictions(controller, run_output_dir, metric, details)
-
-
-def _is_registered_prediction_retest_action(state: dict[str, Any]) -> bool:
-    return is_registered_prediction_retest_action(state)
-
-
-def _force_registered_inconclusive_after_retest(verdict: Any) -> Any:
-    return force_registered_inconclusive_after_retest(verdict)
-
-
-def _request_registered_prediction_retest(
-    controller: "AutoresearchController",
-    state: dict[str, Any],
-    *,
-    config: str,
-) -> RetestRequested:
-    return request_registered_prediction_retest(controller, state, config=config)
-
-
-def _write_extended_retest_config(
-    controller: "AutoresearchController",
-    config_path: Path,
-) -> tuple[Path, dict[str, Any]]:
-    from causal_harvest import _write_extended_retest_config as write_extended_retest_config
-
-    return write_extended_retest_config(controller, config_path)
-
-
-def _apply_registered_verdict_to_causal_factor(
-    controller: "AutoresearchController",
-    config: str,
-    verdict: Any,
-) -> None:
-    apply_registered_verdict_to_causal_factor(controller, config, verdict)
-
-
 def _record_baseline_checkpoint(
     controller: "AutoresearchController",
     details: dict[str, Any],
@@ -1494,7 +1427,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         except (ResultJsonError, ValueError):
             return _block_with_metric_parse_failed(controller, controller.read_state(), command)
         job, round_number, _ = _round_context_from_state(state, config=config)
-        _write_feature_table_artifact(
+        write_feature_table_artifact(
             controller,
             config=config,
             details=details,
@@ -1530,7 +1463,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             verdict, decision = _evaluate_against_thesis(
                 controller, contract, config, metric, decision, details
             )
-        registered_verdict = _evaluate_registered_predictions(
+        registered_verdict = evaluate_registered_predictions(
             controller,
             run_output_dir,
             metric,
@@ -1539,20 +1472,20 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         retest_request: RetestRequested | None = None
         if registered_verdict is not None:
             if registered_verdict.status == "inconclusive":
-                if _is_registered_prediction_retest_action(state):
-                    registered_verdict = _force_registered_inconclusive_after_retest(
+                if is_registered_prediction_retest_action(state):
+                    registered_verdict = force_registered_inconclusive_after_retest(
                         registered_verdict
                     )
                     decision = "keep" if registered_verdict.status == "supported" else "discard"
                 else:
-                    retest_request = _request_registered_prediction_retest(
+                    retest_request = request_registered_prediction_retest(
                         controller, state, config=config
                     )
                     decision = "retest"
             verdict = registered_verdict
             if registered_verdict.status in {"degenerate", "refuted"}:
                 decision = "discard"
-            _apply_registered_verdict_to_causal_factor(controller, config, registered_verdict)
+            apply_registered_verdict_to_causal_factor(controller, config, registered_verdict)
 
         analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
         if verdict:
