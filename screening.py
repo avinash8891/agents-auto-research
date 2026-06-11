@@ -63,6 +63,8 @@ def screen(
     proposal = _screen_rule(rule, features_train)
     if proposal.verdict == "kill_bad_rule":
         return proposal
+    if proposal.sample_count < thresholds["min_sample"]:
+        return proposal.model_copy(update={"verdict": "kill_min_sample"})
     overlap_with = _overlapping_factor_id(
         rule,
         model.factors,
@@ -73,8 +75,6 @@ def screen(
         return proposal.model_copy(
             update={"verdict": "kill_duplicate", "overlap_with": overlap_with}
         )
-    if proposal.sample_count < thresholds["min_sample"]:
-        return proposal.model_copy(update={"verdict": "kill_min_sample"})
     if not _passes_screening_thresholds(proposal, thresholds):
         return proposal.model_copy(update={"verdict": "kill_no_lift"})
     if competitor_rule:
@@ -191,7 +191,7 @@ def _flagged_trade_ids(features_train: pd.DataFrame, flagged: pd.Series) -> set[
 
 def _jaccard(left: set[str], right: set[str]) -> float:
     if not left and not right:
-        return 1.0
+        return 0.0
     union = left | right
     if not union:
         return 0.0

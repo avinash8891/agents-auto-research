@@ -72,6 +72,23 @@ def _model() -> CausalModel:
     )
 
 
+def _empty_population_model() -> CausalModel:
+    return CausalModel(
+        family="ema",
+        version=1,
+        factors=[
+            CausalFactor(
+                factor_id="f-empty",
+                story="Prior empty mechanism.",
+                rule="gap_pct < -3",
+                direction="loss",
+                status="supported",
+            )
+        ],
+        accuracy_history=[],
+    )
+
+
 def test_research_engine_screening_thresholds_read_from_config_block() -> None:
     config = {
         "research_engine": {
@@ -108,6 +125,7 @@ def test_research_engine_screening_thresholds_read_from_config_block() -> None:
         ),
         ("vol_pctile_20d > 0.5", None, CausalModel(family="ema", version=1), "kill_no_lift", None),
         ("gap_pct < -2", None, CausalModel(family="ema", version=1), "kill_min_sample", None),
+        ("gap_pct < -2", None, _empty_population_model(), "kill_min_sample", None),
         ("out_pnl < 0", None, CausalModel(family="ema", version=1), "kill_bad_rule", None),
     ],
 )
