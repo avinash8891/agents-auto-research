@@ -1170,6 +1170,42 @@ def test_validation_attempt_dispatches_to_named_mechanism_flow(
     assert calls == ["mechanism"]
 
 
+def test_partial_mechanism_proposal_does_not_fall_back_to_legacy_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+
+    def fake_legacy(*args, **kwargs):
+        raise AssertionError("partial mechanism proposal must not use legacy validator")
+
+    monkeypatch.setattr("autoresearch_research._try_legacy_validation_attempt", fake_legacy)
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "Gap-down entries explain residual losses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up entries may explain residual wins.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+            },
+            reasoning="malformed mechanism proposal",
+        ),
+        prior_theses=[],
+    )
+
+    assert result is None
+    assert stage == "stage_1"
+    assert "predictions" in str(retry_feedback)
+
+
 def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -862,12 +862,16 @@ def _retry_budget_exhausted(
 
 
 def _is_mechanism_proposal(raw_thesis: dict[str, Any]) -> bool:
-    return bool(
-        raw_thesis.get("story")
-        and raw_thesis.get("rule")
-        and "proposed_change" in raw_thesis
-        and "predictions" in raw_thesis
-    )
+    mechanism_keys = {
+        "story",
+        "rule",
+        "competitor_rule",
+        "competitor_story",
+        "actionable",
+        "proposed_change",
+        "predictions",
+    }
+    return bool(mechanism_keys & set(raw_thesis))
 
 
 def _mechanism_proposal_to_research_thesis(
