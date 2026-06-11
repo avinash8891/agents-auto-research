@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from autoresearch_artifacts import round_number_from_path as _round_number_from_path
 from autoresearch_runtime_paths import iter_family_backtest_db_paths, resolve_runtime_root
 from causal_model import CausalModelStore, residual_map
-from feature_table import ENTRY_TIME_COLUMNS
+from feature_table import ENTRY_TIME_COLUMNS, FeatureTableArtifact
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult
 
@@ -132,21 +132,11 @@ def _load_round_feature_table(
     runtime_root: Path, round_number: int, *, job: int | None = None
 ) -> pd.DataFrame | None:
     if job is not None:
-        round_dir = "round-0-baseline" if round_number == 0 else f"round-{round_number}"
-        path = (
-            runtime_root
-            / "runtime"
-            / "jobs"
-            / f"job-{job}"
-            / "research"
-            / round_dir
-            / "backtest"
-            / "feature_table.parquet"
-        )
+        path = FeatureTableArtifact.for_round(runtime_root, job, round_number).path
         return pd.read_parquet(path) if path.exists() else None
     round_glob = "round-0-baseline" if round_number == 0 else f"round-{round_number}"
     candidates = sorted(
-        runtime_root.glob(f"runtime/jobs/*/research/{round_glob}/backtest/feature_table.parquet")
+        runtime_root.glob(f"runtime/jobs/*/research/{round_glob}/feature_table.parquet")
     )
     if not candidates:
         return None

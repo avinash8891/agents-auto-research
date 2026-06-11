@@ -7,6 +7,7 @@ import pandas as pd
 from backtest_run_db import BacktestRunDB
 from causal_model import save_model
 from evidence_pack import Corpus, build_corpus, render_corpus
+from feature_table import FeatureTableArtifact
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult, write_screenings
 
@@ -43,44 +44,45 @@ def _screening(rule: str, verdict: str) -> ScreeningResult:
 
 
 def _write_feature_table(runtime_root: Path) -> None:
-    path = runtime_root / "runtime/jobs/job-1/research/round-2/backtest/feature_table.parquet"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(
-        [
-            {
-                "trade_id": "train-loss",
-                "entry_ts": pd.Timestamp("2020-01-02 14:35:00", tz="UTC"),
-                "gap_pct": -1.0,
-                "regime_label": "trend",
-                "out_is_loss": True,
-                "out_pnl": -2.0,
-            },
-            {
-                "trade_id": "train-win",
-                "entry_ts": pd.Timestamp("2020-02-02 15:35:00", tz="UTC"),
-                "gap_pct": 0.4,
-                "regime_label": "chop",
-                "out_is_loss": False,
-                "out_pnl": 1.0,
-            },
-            {
-                "trade_id": "holdout-loss",
-                "entry_ts": pd.Timestamp("2023-01-05 14:35:00", tz="UTC"),
-                "gap_pct": -1.2,
-                "regime_label": "trend",
-                "out_is_loss": True,
-                "out_pnl": -5.0,
-            },
-            {
-                "trade_id": "holdout-win",
-                "entry_ts": pd.Timestamp("2023-02-06 15:35:00", tz="UTC"),
-                "gap_pct": 0.8,
-                "regime_label": "chop",
-                "out_is_loss": False,
-                "out_pnl": 3.0,
-            },
-        ]
-    ).to_parquet(path)
+    artifact = FeatureTableArtifact.for_round(runtime_root, 1, 2)
+    artifact.write(
+        pd.DataFrame(
+            [
+                {
+                    "trade_id": "train-loss",
+                    "entry_ts": pd.Timestamp("2020-01-02 14:35:00", tz="UTC"),
+                    "gap_pct": -1.0,
+                    "regime_label": "trend",
+                    "out_is_loss": True,
+                    "out_pnl": -2.0,
+                },
+                {
+                    "trade_id": "train-win",
+                    "entry_ts": pd.Timestamp("2020-02-02 15:35:00", tz="UTC"),
+                    "gap_pct": 0.4,
+                    "regime_label": "chop",
+                    "out_is_loss": False,
+                    "out_pnl": 1.0,
+                },
+                {
+                    "trade_id": "holdout-loss",
+                    "entry_ts": pd.Timestamp("2023-01-05 14:35:00", tz="UTC"),
+                    "gap_pct": -1.2,
+                    "regime_label": "trend",
+                    "out_is_loss": True,
+                    "out_pnl": -5.0,
+                },
+                {
+                    "trade_id": "holdout-win",
+                    "entry_ts": pd.Timestamp("2023-02-06 15:35:00", tz="UTC"),
+                    "gap_pct": 0.8,
+                    "regime_label": "chop",
+                    "out_is_loss": False,
+                    "out_pnl": 3.0,
+                },
+            ]
+        )
+    )
 
 
 def _write_harvest(runtime_root: Path) -> None:
@@ -232,20 +234,21 @@ def test_build_corpus_skips_non_object_harvest_artifacts(tmp_path: Path, monkeyp
 
 def test_build_corpus_feature_table_is_scoped_to_active_job(tmp_path: Path, monkeypatch) -> None:
     _setup_runtime(tmp_path, monkeypatch)
-    other_path = tmp_path / "runtime/jobs/job-2/research/round-2/backtest/feature_table.parquet"
-    other_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(
-        [
-            {
-                "trade_id": "other-job",
-                "entry_ts": pd.Timestamp("2023-01-05 14:35:00", tz="UTC"),
-                "gap_pct": -9.0,
-                "regime_label": "trend",
-                "out_is_loss": True,
-                "out_pnl": -50.0,
-            }
-        ]
-    ).to_parquet(other_path)
+    other_artifact = FeatureTableArtifact.for_round(tmp_path, 2, 2)
+    other_artifact.write(
+        pd.DataFrame(
+            [
+                {
+                    "trade_id": "other-job",
+                    "entry_ts": pd.Timestamp("2023-01-05 14:35:00", tz="UTC"),
+                    "gap_pct": -9.0,
+                    "regime_label": "trend",
+                    "out_is_loss": True,
+                    "out_pnl": -50.0,
+                }
+            ]
+        )
+    )
 
     corpus = build_corpus("ema", 2, job=1)
 
