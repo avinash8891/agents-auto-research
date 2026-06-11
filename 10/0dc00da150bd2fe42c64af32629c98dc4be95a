@@ -1,0 +1,25 @@
+walkforward.py
+  s_3bfcb10840fb93::t_fee812a667e9ff 25
+  s_3bfcb10840fb93::t_1ca15ba89975f2 93-103,112,117-126,132,141-147
+  s_3bfcb10840fb93::t_6033825bcc448c 169,172-175,239-252,255-257
+  s_3bfcb10840fb93::t_7bbac0f7a0309c 297
+tests/test_walkforward.py
+  s_3bfcb10840fb93::t_12f61c33a2d292 593-727
+  s_3bfcb10840fb93::t_e4139e70d382b6 283-331,337-338,348-349,354-388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "100dc00da150bd2fe42c64af32629c98dc4be95a",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
