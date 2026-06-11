@@ -31,9 +31,18 @@ class Corpus(BaseModel):
     rejection_feedback: str | None = None
 
 
-def build_corpus(family: str, round_number: int, job: int | None = None) -> Corpus:
-    code_root = Path.cwd()
-    runtime_root = resolve_runtime_root(code_root)
+def build_corpus(
+    family: str,
+    round_number: int,
+    job: int | None = None,
+    *,
+    runtime_root: Path | None = None,
+    code_root: Path | None = None,
+) -> Corpus:
+    code_root = (code_root or Path.cwd()).resolve()
+    runtime_root = (
+        runtime_root.resolve() if runtime_root is not None else resolve_runtime_root(code_root)
+    )
     model = CausalModelStore(runtime_root=runtime_root, code_root=code_root).load(family)
     features = _load_round_feature_table(runtime_root, round_number, job=job)
     residual_summary = _residual_summary(model, features) if features is not None else []

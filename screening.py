@@ -182,7 +182,7 @@ def _overlapping_factor_id(
         return None
     candidate_ids = _flagged_trade_ids(features_train, candidate)
     for factor in factors:
-        if factor.status == "refuted":
+        if factor.status in {"demoted", "refuted"}:
             continue
         existing = _evaluate_rule(factor.rule, features_train)
         if existing is None:

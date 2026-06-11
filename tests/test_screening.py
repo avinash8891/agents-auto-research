@@ -150,6 +150,26 @@ def test_screen_ignores_competitor_that_fails_thresholds() -> None:
     assert result.verdict == "pass"
 
 
+def test_screen_ignores_demoted_factors_for_duplicate_detection() -> None:
+    model = CausalModel(
+        family="ema",
+        version=1,
+        factors=[
+            CausalFactor(
+                factor_id="f-demoted",
+                story="Retired gap-down mechanism.",
+                rule="gap_pct < -0.5",
+                direction="loss",
+                status="demoted",
+            )
+        ],
+    )
+
+    result = screen("gap_pct < 0", None, model, _feature_table())
+
+    assert result.verdict == "pass"
+
+
 def test_screen_accepts_string_literals_and_dynamic_entry_columns() -> None:
     model = CausalModel(family="ema", version=1)
 

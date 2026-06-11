@@ -921,7 +921,8 @@ def _screen_mechanism_proposal(
     from screening import screen, write_screenings
 
     runtime_root = getattr(controller, "runtime_root", None) or controller.root
-    feature_artifact = FeatureTableArtifact.for_round(runtime_root, job_id, research_round)
+    completed_round = max(int(research_round) - 1, 0)
+    feature_artifact = FeatureTableArtifact.for_round(runtime_root, job_id, completed_round)
     features = feature_artifact.load()
     model_store = CausalModelStore(runtime_root=runtime_root, code_root=controller.root)
     model = model_store.load(controller.family.name)
@@ -1429,7 +1430,13 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
 
     corpus_round = max(int(research_round) - 1, 0)
     rendered_corpus = render_corpus(
-        build_corpus(controller.family.name, corpus_round, job=current_job)
+        build_corpus(
+            controller.family.name,
+            corpus_round,
+            job=current_job,
+            runtime_root=getattr(controller, "runtime_root", None) or controller.root,
+            code_root=controller.root,
+        )
     )
     # Per-stage failure counters. Loop exits when any stage's budget is hit.
     stage_1_failures = 0

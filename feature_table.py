@@ -120,15 +120,15 @@ def build_feature_table(
     family: str,
     runtime_config: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
-    del events
     bars = _normalize_bars(bars_df)
     trades = trades_df.copy()
+    event_stops = _event_stop_prices(events)
     regime_labels = load_regime_labels()
     extra_regime_columns = _extra_regime_columns(regime_labels)
     config = runtime_config or {}
 
     rows = [
-        _feature_row(trade, bars, regime_labels, str(family).lower(), config)
+        _feature_row(trade, bars, regime_labels, str(family).lower(), config, event_stops)
         for _, trade in trades.iterrows()
     ]
     columns = _feature_columns(extra_regime_columns)
@@ -147,6 +147,7 @@ def _feature_row(
     regime_labels: pd.DataFrame,
     family: str,
     runtime_config: dict[str, Any],
+    event_stops: dict[tuple[str, pd.Timestamp], float],
 ) -> dict[str, Any]:
     symbol = str(trade.get("symbol", ""))
     side = str(trade.get("side") or trade.get("direction") or "").lower()
@@ -171,6 +172,8 @@ def _feature_row(
     overnight_move_pct = gap_pct
     entry_price = _float_or_nan(trade.get("entry_price", np.nan))
     stop_price = _float_or_nan(trade.get("stop", trade.get("stop_price", np.nan)))
+    if not np.isfinite(stop_price):
+        stop_price = event_stops.get((symbol, entry_ts), np.nan)
     entry_bar_close = _float_or_nan(entry_bar.get("close", np.nan))
     entry_bar_range_pct = _pct(
         _float_or_nan(entry_bar.get("high", np.nan)) - _float_or_nan(entry_bar.get("low", np.nan)),
@@ -210,6 +213,27 @@ def _feature_row(
     }
     row.update(_regime_columns_for_date(regime_labels, entry_day))
     return row
+
+
+def _event_stop_prices(events: list[dict]) -> dict[tuple[str, pd.Timestamp], float]:
+    stops: dict[tuple[str, pd.Timestamp], float] = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        symbol = str(event.get("symbol", ""))
+        if not symbol:
+            continue
+        stop_price = _float_or_nan(event.get("stop_price", event.get("stop", np.nan)))
+        if not np.isfinite(stop_price):
+            continue
+        raw_ts = event.get("timestamp", event.get("entry_ts", event.get("entry_date")))
+        if raw_ts is None:
+            continue
+        timestamp = pd.Timestamp(raw_ts)
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.tz_localize("America/New_York")
+        stops[(symbol, timestamp.tz_convert("UTC"))] = stop_price
+    return stops
 
 
 def _normalize_bars(bars_df: pd.DataFrame) -> pd.DataFrame:

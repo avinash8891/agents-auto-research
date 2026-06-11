@@ -157,6 +157,41 @@ def test_build_corpus_reads_runtime_artifacts_for_refuted_harvest(
     assert corpus.cross_family[0].factor_id == "f101"
 
 
+def test_build_corpus_uses_explicit_runtime_and_code_roots(tmp_path: Path, monkeypatch) -> None:
+    runtime_root = tmp_path / "runtime-root"
+    code_root = tmp_path / "code-root"
+    runtime_root.mkdir()
+    code_root.mkdir()
+    (code_root / "configs").mkdir()
+    (code_root / "configs" / "ema_base.yaml").write_text(
+        "validation_start: '2020-01-01'\nvalidation_end: '2024-01-01'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path / "wrong-root"))
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            factors=[_factor("f001", "gap_pct < 0", status="supported")],
+            accuracy_history=[],
+        ),
+        runtime_root=runtime_root,
+        code_root=code_root,
+    )
+    _write_feature_table(runtime_root)
+
+    corpus = build_corpus(
+        "ema",
+        2,
+        job=1,
+        runtime_root=runtime_root,
+        code_root=code_root,
+    )
+
+    assert corpus.model.factors[0].factor_id == "f001"
+    assert {row["trade_id"] for row in corpus.residual_summary}
+
+
 def test_build_corpus_keeps_harvested_cross_family_factors(tmp_path: Path, monkeypatch) -> None:
     _setup_runtime(tmp_path, monkeypatch)
     save_model(

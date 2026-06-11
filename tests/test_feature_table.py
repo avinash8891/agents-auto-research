@@ -139,6 +139,27 @@ def test_build_feature_table_localizes_naive_trade_times_as_new_york(
     assert row["bars_since_open"] == 1
 
 
+def test_build_feature_table_uses_orb_event_stop_price_when_trade_stop_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    trades = _trades_df().drop(columns=["stop"])
+    events = [
+        {
+            "timestamp": pd.Timestamp("2024-01-04 14:35:00", tz="UTC"),
+            "symbol": "AAA",
+            "event_type": "executed_trade",
+            "stop_price": 101.6,
+        }
+    ]
+
+    table = build_feature_table(trades, _bars_df(), events=events, family="orb")
+
+    assert table.iloc[0]["stop_distance_pct"] == pytest.approx((1.0 / 102.6) * 100.0)
+
+
 def test_build_feature_table_writes_deterministic_parquet_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

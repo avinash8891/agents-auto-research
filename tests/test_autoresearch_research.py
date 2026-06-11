@@ -48,7 +48,7 @@ from autoresearch_research import (
 )
 from autoresearch_state import BacktestResultRecord, write_state
 from backtest_run_db import BacktestRunDB
-from causal_model import load_model
+from causal_model import load_model, save_model
 from feature_table import feature_table_path
 from research_types import CausalModel, ConductorResult
 from strategies import STRATEGIES
@@ -158,10 +158,8 @@ def test_screen_mechanism_proposal_reads_feature_table_from_runtime_root(
         current_md_path=runtime_root / "ema_autoresearch.current.md",
         jobs_root=runtime_root / "runtime" / "jobs",
     )
-    round_root = runtime_root / "runtime/jobs/job-9/research/round-1"
-    _write_screening_feature_table(round_root)
-    from causal_model import save_model
-
+    completed_round_root = runtime_root / "runtime/jobs/job-9/research/round-0-baseline"
+    _write_screening_feature_table(completed_round_root)
     save_model(
         CausalModel(
             family="ema",
@@ -169,7 +167,9 @@ def test_screen_mechanism_proposal_reads_feature_table_from_runtime_root(
             holdout_start="2023-01-01T00:00:00+00:00",
             factors=[],
             accuracy_history=[],
-        )
+        ),
+        runtime_root=runtime_root,
+        code_root=code_root,
     )
 
     passed, reason, pending_model = _screen_mechanism_proposal(
@@ -182,6 +182,46 @@ def test_screen_mechanism_proposal_reads_feature_table_from_runtime_root(
         },
         "thesis-001",
         job_id=9,
+    )
+
+    assert passed is True
+    assert reason is None
+    assert pending_model is not None
+
+
+def test_screen_mechanism_proposal_uses_latest_completed_feature_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    monkeypatch.delenv("AUTORESEARCH_RUNTIME_ROOT", raising=False)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    completed_round_root = tmp_path / "runtime/jobs/job-12/research/round-0-baseline"
+    proposed_round_root = tmp_path / "runtime/jobs/job-12/research/round-1"
+    _write_screening_feature_table(completed_round_root)
+    proposed_round_root.mkdir(parents=True)
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            holdout_start="2023-01-01T00:00:00+00:00",
+            factors=[],
+            accuracy_history=[],
+        ),
+        runtime_root=tmp_path,
+        code_root=tmp_path,
+    )
+
+    passed, reason, pending_model = _screen_mechanism_proposal(
+        controller,
+        1,
+        {
+            "rule": "gap_pct < 0",
+            "competitor_rule": "gap_pct > 0",
+            "story": "gap-down losses",
+        },
+        "thesis-001",
+        job_id=12,
     )
 
     assert passed is True
@@ -914,9 +954,28 @@ def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
         }
     )
     captured: dict[str, object] = {}
-    monkeypatch.setattr(
-        "evidence_pack.build_corpus", lambda family, round_number, job=None: object()
-    )
+    corpus_calls: list[dict[str, object]] = []
+
+    def fake_build_corpus(
+        family: str,
+        round_number: int,
+        job: int | None = None,
+        *,
+        runtime_root: Path | None = None,
+        code_root: Path | None = None,
+    ) -> object:
+        corpus_calls.append(
+            {
+                "family": family,
+                "round_number": round_number,
+                "job": job,
+                "runtime_root": runtime_root,
+                "code_root": code_root,
+            }
+        )
+        return object()
+
+    monkeypatch.setattr("evidence_pack.build_corpus", fake_build_corpus)
     monkeypatch.setattr("evidence_pack.render_corpus", lambda corpus: "RENDERED-CORPUS")
 
     def _run_conductor(*args, **kwargs):
@@ -930,6 +989,15 @@ def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
     assert result["status"] == "completed"
     assert result["should_stop"] is True
     assert captured["rendered_corpus"] == "RENDERED-CORPUS"
+    assert corpus_calls == [
+        {
+            "family": "ema",
+            "round_number": 0,
+            "job": 12,
+            "runtime_root": tmp_path,
+            "code_root": tmp_path,
+        }
+    ]
 
 
 def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
@@ -945,10 +1013,17 @@ def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
             "next_action": {"type": "research"},
         }
     )
-    calls: list[tuple[str, int, int | None]] = []
+    calls: list[tuple[str, int, int | None, Path | None, Path | None]] = []
 
-    def fake_build_corpus(family: str, round_number: int, job: int | None = None) -> object:
-        calls.append((family, round_number, job))
+    def fake_build_corpus(
+        family: str,
+        round_number: int,
+        job: int | None = None,
+        *,
+        runtime_root: Path | None = None,
+        code_root: Path | None = None,
+    ) -> object:
+        calls.append((family, round_number, job, runtime_root, code_root))
         return object()
 
     monkeypatch.setattr("evidence_pack.build_corpus", fake_build_corpus)
@@ -962,7 +1037,7 @@ def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
 
     execute_research_sdk(controller)
 
-    assert calls == [("ema", 0, 12)]
+    assert calls == [("ema", 0, 12, tmp_path, tmp_path)]
 
 
 def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
@@ -973,7 +1048,9 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
     monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
     controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
     round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
-    _write_screening_feature_table(round_root)
+    _write_screening_feature_table(
+        tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
+    )
 
     def _legacy_validator_called(*args, **kwargs):
         raise AssertionError("legacy thesis validator must not run for MechanismProposal")
@@ -1095,7 +1172,9 @@ def test_mechanism_proposal_compiles_under_runtime_root_when_code_root_is_separa
     )
     controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
     round_root = runtime_root / "runtime" / "jobs" / "job-12" / "research" / "round-1"
-    _write_screening_feature_table(round_root)
+    _write_screening_feature_table(
+        runtime_root / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
+    )
 
     result, retry_feedback, stage = _try_one_validation_attempt(
         controller,
@@ -1155,8 +1234,9 @@ def test_mechanism_proposal_does_not_update_model_when_compile_fails(
     controller = _real_controller(tmp_path)
     _write_ema_base_config(tmp_path)
     controller.write_state({"job": 12, "research_round": 1})
-    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
-    _write_screening_feature_table(round_root)
+    _write_screening_feature_table(
+        tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
+    )
 
     def fail_compile(*args, **kwargs):
         raise ValueError("compiled config is invalid")
