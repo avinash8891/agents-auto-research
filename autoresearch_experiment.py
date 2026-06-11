@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from autoresearch_artifacts import serialize_artifact_path
 from autoresearch_constants import (
     COMMAND_NOTIFICATION_TRUNCATION,
     COMMAND_PREVIEW_TRUNCATION,
@@ -32,7 +33,6 @@ from autoresearch_constants import (
 )
 from autoresearch_logging import get_logger
 from autoresearch_paths import path_within_allowed_roots, resolve_config_path
-from autoresearch_artifacts import serialize_artifact_path
 from autoresearch_planning import build_research_failure_state
 from autoresearch_runtime_paths import research_round_backtest_root, research_round_id_or_empty
 from autoresearch_state import (
@@ -634,7 +634,6 @@ def _resolve_identity(contract: Any | None, config: str) -> str:
 
 def _analysis_identity(controller: "AutoresearchController", config: str) -> str:
     return _resolve_identity(_contract_from_sidecar(controller, config), config)
-
 
 
 def _build_asi_dict(
