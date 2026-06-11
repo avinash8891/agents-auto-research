@@ -18,6 +18,7 @@ import sqlite3
 from pathlib import Path
 from typing import Literal, Sequence
 
+import numpy as np
 import pandas as pd
 import yaml
 from pydantic import BaseModel
@@ -59,34 +60,62 @@ def screen(
     *,
     config: dict | None = None,
 ) -> ScreeningResult:
+    proposal, _ = screen_pair(rule, competitor_rule, model, features_train, config=config)
+    return proposal
+
+
+def screen_pair(
+    rule: str,
+    competitor_rule: str | None,
+    model: CausalModel,
+    features_train: pd.DataFrame,
+    *,
+    config: dict | None = None,
+) -> tuple[ScreeningResult, ScreeningResult | None]:
+    """Screen the proposal and its competitor with one evaluation per rule.
+
+    The competitor's full ScreeningResult is returned so callers can persist
+    it without re-screening.
+    """
     thresholds = _thresholds_for_family(model.family, config=config)
-    candidate = _evaluate_rule(rule, features_train)
-    proposal = _screen_rule_from_mask(rule, features_train, candidate)
-    if proposal.verdict == "kill_bad_rule":
-        return proposal
-    if proposal.sample_count < thresholds["min_sample"]:
-        return proposal.model_copy(update={"verdict": "kill_min_sample"})
-    overlap_with = _overlapping_factor_id(
-        candidate,
-        model.factors,
-        features_train,
-        max_population_overlap=thresholds["max_population_overlap"],
-    )
-    if overlap_with is not None:
-        return proposal.model_copy(
-            update={"verdict": "kill_duplicate", "overlap_with": overlap_with}
-        )
-    if not _passes_screening_thresholds(proposal, thresholds):
-        return proposal.model_copy(update={"verdict": "kill_no_lift"})
+    factor_masks = _factor_masks(model.factors, features_train)
+    proposal = _full_screen(rule, features_train, thresholds, factor_masks)
+    competitor: ScreeningResult | None = None
     if competitor_rule:
-        competitor = _screen_rule(competitor_rule, features_train)
+        competitor = _full_screen(competitor_rule, features_train, thresholds, factor_masks)
         if (
-            competitor.verdict != "kill_bad_rule"
+            proposal.verdict == "pass"
+            and competitor.verdict != "kill_bad_rule"
             and _passes_screening_thresholds(competitor, thresholds)
             and abs(proposal.lift) + 0.01 < abs(competitor.lift)
         ):
-            return proposal.model_copy(update={"verdict": "kill_lost_to_competitor"})
-    return proposal.model_copy(update={"verdict": "pass"})
+            proposal = proposal.model_copy(update={"verdict": "kill_lost_to_competitor"})
+    return proposal, competitor
+
+
+def _full_screen(
+    rule: str,
+    features_train: pd.DataFrame,
+    thresholds: dict[str, float | int],
+    factor_masks: Sequence[tuple[str, np.ndarray]],
+) -> ScreeningResult:
+    mask = _evaluate_rule(rule, features_train)
+    result = _screen_rule_from_mask(rule, features_train, mask)
+    if result.verdict == "kill_bad_rule":
+        return result
+    if result.sample_count < thresholds["min_sample"]:
+        return result.model_copy(update={"verdict": "kill_min_sample"})
+    assert mask is not None  # kill_bad_rule returned above when evaluation failed
+    overlap_with = _overlapping_factor_id(
+        mask,
+        factor_masks,
+        max_population_overlap=thresholds["max_population_overlap"],
+    )
+    if overlap_with is not None:
+        return result.model_copy(update={"verdict": "kill_duplicate", "overlap_with": overlap_with})
+    if not _passes_screening_thresholds(result, thresholds):
+        return result.model_copy(update={"verdict": "kill_no_lift"})
+    return result.model_copy(update={"verdict": "pass"})
 
 
 def _passes_screening_thresholds(
@@ -121,11 +150,6 @@ def write_screenings(
                 created_at=created_at,
             )
         conn.commit()
-
-
-def _screen_rule(rule: str, features_train: pd.DataFrame) -> ScreeningResult:
-    flagged = _evaluate_rule(rule, features_train)
-    return _screen_rule_from_mask(rule, features_train, flagged)
 
 
 def _screen_rule_from_mask(
@@ -171,37 +195,37 @@ def _evaluate_rule(rule: str, features_train: pd.DataFrame) -> pd.Series | None:
         return None
 
 
-def _overlapping_factor_id(
-    candidate: pd.Series,
+def _factor_masks(
     factors: Sequence[CausalFactor],
     features_train: pd.DataFrame,
-    *,
-    max_population_overlap: float,
-) -> str | None:
-    candidate_ids = _flagged_trade_ids(features_train, candidate)
+) -> list[tuple[str, np.ndarray]]:
+    """Evaluate every active factor rule once; reused across overlap checks."""
+    masks: list[tuple[str, np.ndarray]] = []
     for factor in factors:
         if factor.status in {"demoted", "refuted"}:
             continue
         existing = _evaluate_rule(factor.rule, features_train)
         if existing is None:
             continue
-        overlap = _jaccard(candidate_ids, _flagged_trade_ids(features_train, existing))
+        masks.append((factor.factor_id, existing.to_numpy(dtype=bool)))
+    return masks
+
+
+def _overlapping_factor_id(
+    candidate: pd.Series,
+    factor_masks: Sequence[tuple[str, np.ndarray]],
+    *,
+    max_population_overlap: float,
+) -> str | None:
+    candidate_mask = candidate.to_numpy(dtype=bool)
+    for factor_id, existing_mask in factor_masks:
+        union = int((candidate_mask | existing_mask).sum())
+        if union == 0:
+            continue
+        overlap = int((candidate_mask & existing_mask).sum()) / union
         if overlap > max_population_overlap:
-            return factor.factor_id
+            return factor_id
     return None
-
-
-def _flagged_trade_ids(features_train: pd.DataFrame, flagged: pd.Series) -> set[str]:
-    return set(features_train.loc[flagged, "trade_id"].astype(str))
-
-
-def _jaccard(left: set[str], right: set[str]) -> float:
-    if not left and not right:
-        return 0.0
-    union = left | right
-    if not union:
-        return 0.0
-    return len(left & right) / len(union)
 
 
 def _loss_rate(frame: pd.DataFrame) -> float:

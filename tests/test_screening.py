@@ -18,7 +18,7 @@ from autoresearch_constants import (
 )
 from backtest_run_db import BacktestRunDB
 from research_types import CausalFactor, CausalModel
-from screening import screen, write_screenings
+from screening import screen, screen_pair, write_screenings
 
 
 def test_screening_module_docstring_documents_two_proportion_z_test_formula() -> None:
@@ -219,7 +219,37 @@ def test_screen_reuses_candidate_mask_for_duplicate_detection(
     result = screen("gap_pct < 0", None, _model(), _feature_table())
 
     assert result.verdict == "kill_duplicate"
-    assert calls == ["gap_pct < 0", "gap_pct < -0.5"]
+    assert sorted(calls) == ["gap_pct < -0.5", "gap_pct < 0"]
+
+
+def test_screen_pair_returns_persistable_competitor_with_one_evaluation_per_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    real_evaluate = screening.evaluate_entry_rule
+
+    def counting_evaluate(rule: str, features_train: pd.DataFrame):
+        calls.append(rule)
+        return real_evaluate(rule, features_train)
+
+    monkeypatch.setattr(screening, "evaluate_entry_rule", counting_evaluate)
+    model = CausalModel(family="ema", version=1)
+
+    proposal, competitor = screen_pair("gap_pct < 0", "gap_pct > 0", model, _feature_table())
+
+    assert competitor is not None
+    assert competitor.rule == "gap_pct > 0"
+    assert competitor.verdict in {
+        "pass",
+        "kill_min_sample",
+        "kill_no_lift",
+        "kill_duplicate",
+        "kill_bad_rule",
+    }
+    assert calls.count("gap_pct < 0") == 1
+    assert calls.count("gap_pct > 0") == 1
+    # screen() stays behavior-compatible with screen_pair's proposal result.
+    assert screen("gap_pct < 0", "gap_pct > 0", model, _feature_table()) == proposal
 
 
 def test_screen_accepts_string_literals_and_dynamic_entry_columns() -> None:

@@ -903,7 +903,7 @@ def _screen_mechanism_proposal(
 ) -> tuple[bool, str | None, Any | None]:
     from causal_model import CausalModelStore, holdout_mask, score_on_holdout
     from feature_table import FeatureTableArtifact
-    from screening import screen, write_screenings
+    from screening import screen_pair, write_screenings
 
     runtime_root = getattr(controller, "runtime_root", None) or controller.root
     completed_round = max(int(research_round) - 1, 0)
@@ -914,14 +914,14 @@ def _screen_mechanism_proposal(
     holdout = holdout_mask(features, family=model.family, holdout_start=model.holdout_start)
     train_features = features.loc[~holdout].copy()
     config = _research_engine_config_for_family(controller.root, controller.family.name)
-    screening = screen(
+    competitor_rule = str(raw_thesis.get("competitor_rule") or "") or None
+    screening, competitor_screening = screen_pair(
         str(raw_thesis.get("rule") or ""),
-        str(raw_thesis.get("competitor_rule") or "") or None,
+        competitor_rule,
         model,
         train_features,
         config=config,
     )
-    competitor_rule = str(raw_thesis.get("competitor_rule") or "") or None
     write_screenings(
         controller.backtest_run_db.path,
         [screening],
@@ -929,14 +929,7 @@ def _screen_mechanism_proposal(
         competitor_rule=competitor_rule,
         job_id=job_id,
     )
-    if competitor_rule:
-        competitor_screening = screen(
-            competitor_rule,
-            None,
-            model,
-            train_features,
-            config=config,
-        )
+    if competitor_screening is not None:
         write_screenings(
             controller.backtest_run_db.path,
             [competitor_screening],
