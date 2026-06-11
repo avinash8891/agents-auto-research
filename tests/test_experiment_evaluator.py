@@ -128,6 +128,19 @@ def test_evaluate_predictions_refutes_opposite_direction(tmp_path) -> None:
     assert verdict.prediction_results[0]["direction_passed"] is False
 
 
+def test_evaluate_predictions_rejects_empty_prediction_list(tmp_path) -> None:
+    registered = _registered_predictions(tmp_path, [])
+
+    verdict = evaluate_predictions(
+        registered,
+        baseline={"profit_factor": 2.0, "trade_count": 25},
+        candidate={"profit_factor": 2.1, "trade_count": 25},
+    )
+
+    assert verdict.status == "degenerate"
+    assert "empty predictions" in verdict.summary
+
+
 def test_evaluate_predictions_treats_invalid_trade_count_as_degenerate(tmp_path) -> None:
     registered = _registered_predictions(
         tmp_path,

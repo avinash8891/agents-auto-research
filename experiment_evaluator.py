@@ -46,6 +46,12 @@ def evaluate_predictions(
     tolerance_pct = research_engine_prediction_tolerance_pct(effective_config)
     thesis_id = str(payload.get("thesis_id") or "")
     predictions = payload.get("predictions") or []
+    if not predictions:
+        return HarvestVerdict(
+            thesis_id=thesis_id,
+            status="degenerate",
+            summary="degenerate: empty predictions list",
+        )
 
     trade_count = candidate.get("trade_count")
     trade_count_value = _finite_metric(trade_count)

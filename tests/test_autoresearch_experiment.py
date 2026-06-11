@@ -41,13 +41,14 @@ from autoresearch_paths import resolve_config_path
 from backtest_run_db import BacktestRunRecord, BaselineCheckpoint
 from causal_harvest import (
     PendingCausalModelArtifact,
+    apply_registered_verdict_to_causal_factor,
     evaluate_registered_predictions,
     request_registered_prediction_retest,
     write_feature_table_artifact,
 )
-from causal_model import load_model
+from causal_model import load_model, save_model
 from feature_table import load_feature_table
-from research_types import BacktestContract, CausalFactor, CausalModel
+from research_types import BacktestContract, CausalFactor, CausalModel, HarvestVerdict
 from strategy_family import load_family
 
 
@@ -1111,7 +1112,9 @@ def test_registered_predictions_use_family_research_engine_thresholds(tmp_path: 
     assert "min_trades 50" in verdict.summary
 
 
-def test_registered_predictions_merge_metrics_payload_before_evaluation(tmp_path: Path) -> None:
+def test_registered_predictions_use_validation_metrics_before_train_metrics(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "configs").mkdir()
     (tmp_path / "configs" / "ema_base.yaml").write_text("research_engine: {}\n", encoding="utf-8")
     run_output_dir = tmp_path / "runtime/jobs/job-1/research/round-1/backtest"
@@ -1143,11 +1146,71 @@ def test_registered_predictions_merge_metrics_payload_before_evaluation(tmp_path
         controller,
         run_output_dir,
         metric=1.1,
-        details={"trade_count": 25, "train_metrics": {"median_expectancy": 1.4}},
+        details={
+            "trade_count": 25,
+            "train_metrics": {"median_expectancy": 0.5},
+            "validation_metrics": {"median_expectancy": 1.4},
+        },
     )
 
     assert verdict.status == "supported"
     assert verdict.prediction_results[0]["metric"] == "median_expectancy"
+
+
+def test_registered_verdict_promotion_merges_into_live_model_without_snapshot_overwrite(
+    tmp_path: Path,
+) -> None:
+    controller = _controller_for_experiment(tmp_path, "")
+    _write_causal_model_base_config(tmp_path)
+    round_root = tmp_path / "runtime/jobs/job-1/research/round-1"
+    round_root.mkdir(parents=True)
+    config_path = round_root / "selected_config.json"
+    config_path.write_text(json.dumps({"ema_length": 10}) + "\n", encoding="utf-8")
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps({"thesis_id": "thesis-001", "rule": "gap_pct < 0"}) + "\n",
+        encoding="utf-8",
+    )
+    pending_factor = CausalFactor(
+        factor_id="pending-gap",
+        story="Pending gap rule",
+        rule="gap_pct < 0",
+        direction="loss",
+        status="candidate",
+    )
+    PendingCausalModelArtifact(round_root).write(
+        CausalModel(family="ema", version=1, factors=[pending_factor], accuracy_history=[])
+    )
+    live_factor = CausalFactor(
+        factor_id="live-other",
+        story="Live factor added after pending snapshot",
+        rule="vol_pctile_20d > 0.5",
+        direction="loss",
+        status="supported",
+    )
+    save_model(
+        CausalModel(family="ema", version=9, factors=[live_factor], accuracy_history=[]),
+        runtime_root=tmp_path,
+        code_root=tmp_path,
+    )
+
+    apply_registered_verdict_to_causal_factor(
+        controller,
+        "runtime/jobs/job-1/research/round-1/selected_config.json",
+        HarvestVerdict(
+            thesis_id="thesis-001",
+            status="supported",
+            summary="supported: gap rule passed",
+        ),
+    )
+
+    model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
+    assert model.version == 9
+    assert [factor.rule for factor in model.factors] == [
+        "vol_pctile_20d > 0.5",
+        "gap_pct < 0",
+    ]
+    assert model.factors[1].status == "harvested"
+    assert model.factors[1].lesson == "supported: gap rule passed"
 
 
 def test_record_baseline_checkpoint_persists_critical_drift_and_clears_rerun_marker(

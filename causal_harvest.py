@@ -234,21 +234,36 @@ def apply_registered_verdict_to_causal_factor(
 
     target_status = "harvested" if status == "supported" else "refuted"
     lesson = str(getattr(verdict, "lesson", "") or getattr(verdict, "summary", ""))
-    updated_factors = []
-    matched = False
+    updated_pending_factor = None
     for factor in pending.factors:
         if factor.rule == rule:
-            updated_factors.append(
-                factor.model_copy(update={"status": target_status, "lesson": lesson})
+            updated_pending_factor = factor.model_copy(
+                update={"status": target_status, "lesson": lesson}
             )
-            matched = True
-        else:
-            updated_factors.append(factor)
-    if not matched:
+            break
+    if updated_pending_factor is None:
         return
 
-    CausalModelStore(runtime_root=_runtime_root(controller), code_root=controller.root).save(
-        pending.model_copy(update={"factors": updated_factors})
+    store = CausalModelStore(runtime_root=_runtime_root(controller), code_root=controller.root)
+    live = store.load(pending.family)
+    live_factors = []
+    matched_live = False
+    for factor in live.factors:
+        if factor.rule == rule:
+            live_factors.append(updated_pending_factor)
+            matched_live = True
+        else:
+            live_factors.append(factor)
+    if not matched_live:
+        live_factors.append(updated_pending_factor)
+    store.save(
+        live.model_copy(
+            update={
+                "version": max(live.version, pending.version),
+                "factors": live_factors,
+                "accuracy_history": live.accuracy_history or pending.accuracy_history,
+            }
+        )
     )
 
 
@@ -371,13 +386,19 @@ def _load_strategy_events(value: Any) -> list[dict[str, Any]]:
 
 
 def _flatten_metrics(details: dict[str, Any]) -> dict[str, Any]:
-    metrics = dict(details)
-    nested = details.get("metrics")
-    if isinstance(nested, dict):
-        metrics.update(nested)
+    metrics: dict[str, Any] = {}
     train_metrics = details.get("train_metrics")
     if isinstance(train_metrics, dict):
         metrics.update(train_metrics)
+    validation_metrics = details.get("validation_metrics")
+    if isinstance(validation_metrics, dict):
+        metrics.update(validation_metrics)
+    nested = details.get("metrics")
+    if isinstance(nested, dict):
+        metrics.update(nested)
+    for key, value in details.items():
+        if key not in {"train_metrics", "validation_metrics", "metrics"}:
+            metrics[key] = value
     return metrics
 
 
