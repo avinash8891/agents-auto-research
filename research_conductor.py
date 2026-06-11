@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from time import monotonic
-from typing import Any
+from typing import Any, Literal
 
 from agents import Agent as OAIAgent
 from agents import ModelSettings as OAIModelSettings
@@ -195,11 +195,14 @@ async def run_research_conductor(
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
     rendered_corpus: str = "",
+    conductor_mode: Literal["legacy", "mechanism"] = "legacy",
 ) -> ConductorResult:
     strategy_desc = _strategy_description_for(family_name)
     resolution_context = latest_outcome.get("resolution_context")
 
-    mechanism_path = bool(rendered_corpus)
+    mechanism_path = conductor_mode == "mechanism"
+    if mechanism_path and not rendered_corpus:
+        raise ValueError("mechanism conductor mode requires rendered_corpus")
     system_prompt = (
         _build_mechanism_system_prompt()
         if mechanism_path
@@ -1245,6 +1248,7 @@ def run_research_conductor_sync(
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
     rendered_corpus: str = "",
+    conductor_mode: Literal["legacy", "mechanism"] = "legacy",
 ) -> ConductorResult | None:
     return _run_coroutine_sync(
         run_research_conductor(
@@ -1259,5 +1263,6 @@ def run_research_conductor_sync(
             agent_reflexions=agent_reflexions,
             current_job=current_job,
             rendered_corpus=rendered_corpus,
+            conductor_mode=conductor_mode,
         )
     )

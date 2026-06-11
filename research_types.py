@@ -16,8 +16,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from family_research_spec import COUPLED_KEYS
-
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -202,10 +200,6 @@ class MechanismProposal(BaseModel):
             return self
         if not self.proposed_change:
             raise ValueError("proposed_change is required when actionable is true")
-        proposed_keys = frozenset(self.proposed_change)
-        declared_coupled_keys = set().union(*COUPLED_KEYS.values()) if COUPLED_KEYS else set()
-        if len(proposed_keys) != 1 and proposed_keys not in declared_coupled_keys:
-            raise ValueError("proposed_change must contain a single change key")
         if self.predictions is None or len(self.predictions) < 2:
             raise ValueError(
                 "predictions must contain at least two entries when actionable is true"

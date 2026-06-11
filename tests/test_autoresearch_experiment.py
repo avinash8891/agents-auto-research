@@ -42,7 +42,8 @@ from autoresearch_experiment import (
 )
 from autoresearch_paths import resolve_config_path
 from backtest_run_db import BacktestRunRecord, BaselineCheckpoint
-from causal_model import load_model, save_model
+from causal_harvest import PendingCausalModelArtifact
+from causal_model import load_model
 from feature_table import load_feature_table
 from research_types import BacktestContract, CausalFactor, CausalModel
 from strategy_family import load_family
@@ -96,6 +97,15 @@ def _controller_for_experiment(tmp_path: Path, command: str) -> AutoresearchCont
         direction="higher",
     )
     return controller
+
+
+def _write_causal_model_base_config(root: Path) -> None:
+    config_dir = root / "configs"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "ema_base.yaml").write_text(
+        "validation_start: '2020-01-01'\nvalidation_end: '2024-01-01'\n",
+        encoding="utf-8",
+    )
 
 
 def _write_feature_table_data_universe(data_root: Path) -> None:
@@ -1336,6 +1346,7 @@ def test_run_experiment_executes_command_logs_result_and_reconciles_state(
         + "\n"
     )
     controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
     monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
     round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
     round_root.mkdir(parents=True)
@@ -1412,6 +1423,7 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
         + "\n"
     )
     controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
     controller.baseline_tracker.record(
         BaselineCheckpoint(
             code_commit="abc1234",
@@ -1450,7 +1462,7 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
         )
         + "\n"
     )
-    save_model(
+    PendingCausalModelArtifact(round_root).write(
         CausalModel(
             family="ema",
             version=1,
@@ -1488,7 +1500,7 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
     assert "profit_factor direction=pass" in record.lesson
     assert record.verdict_status != "inconclusive"
     updated_model = load_model("ema")
-    assert updated_model.version == 2
+    assert updated_model.version == 1
     assert updated_model.factors[0].status == "harvested"
     assert "profit_factor direction=pass" in updated_model.factors[0].lesson
 
@@ -1502,6 +1514,7 @@ def test_run_experiment_discards_refuted_registered_predictions(
         {"trade_count": 20, "profit_factor": 2.1},
     )
     controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
     monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
     round_root = _prepare_registered_prediction_round(tmp_path, controller)
     (round_root / "selected_thesis.json").write_text(
@@ -1529,7 +1542,7 @@ def test_run_experiment_discards_refuted_registered_predictions(
         )
         + "\n"
     )
-    save_model(
+    PendingCausalModelArtifact(round_root).write(
         CausalModel(
             family="ema",
             version=1,
@@ -1662,6 +1675,7 @@ def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusiv
         {"trade_count": 25, "profit_factor": 2.01},
     )
     controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
     monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
     _prepare_registered_prediction_round(tmp_path, controller)
     state = {
@@ -1732,13 +1746,15 @@ def test_run_experiment_forces_registered_inconclusive_after_retest_once(
         {"trade_count": 25, "profit_factor": 2.01},
     )
     controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
     monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
     _prepare_registered_prediction_round(
         tmp_path,
         controller,
         selected_config_name="selected_config_retest.json",
     )
-    save_model(
+    round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
+    PendingCausalModelArtifact(round_root).write(
         CausalModel(
             family="ema",
             version=1,

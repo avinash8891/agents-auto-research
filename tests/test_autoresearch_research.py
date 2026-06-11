@@ -48,6 +48,7 @@ from autoresearch_research import (
 )
 from autoresearch_state import BacktestResultRecord, write_state
 from backtest_run_db import BacktestRunDB
+from causal_harvest import PendingCausalModelArtifact
 from causal_model import load_model, save_model
 from feature_table import feature_table_path
 from research_types import CausalModel, ConductorResult
@@ -989,6 +990,7 @@ def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
     assert result["status"] == "completed"
     assert result["should_stop"] is True
     assert captured["rendered_corpus"] == "RENDERED-CORPUS"
+    assert captured["conductor_mode"] == "mechanism"
     assert corpus_calls == [
         {
             "family": "ema",
@@ -1095,6 +1097,7 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
     registered = json.loads((round_root / "registered_predictions.json").read_text())
     selected_config = json.loads((round_root / "selected_config.json").read_text())
     model = load_model("ema")
+    pending_model = PendingCausalModelArtifact(round_root).load()
     assert retry_feedback is None
     assert stage == ""
     assert result is not None
@@ -1103,9 +1106,12 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
     assert selected_thesis["rule"] == "gap_pct < 0"
     assert selected_thesis["proposed_change"] == {"ema_length": 8}
     assert registered["predictions"][0]["metric"] == "profit_factor"
-    assert model.factors[-1].rule == "gap_pct < 0"
-    assert model.factors[-1].status == "candidate"
-    assert model.accuracy_history[-1].round_number == 1
+    assert model.factors == []
+    assert model.accuracy_history == []
+    assert pending_model is not None
+    assert pending_model.factors[-1].rule == "gap_pct < 0"
+    assert pending_model.factors[-1].status == "candidate"
+    assert pending_model.accuracy_history[-1].round_number == 1
     with sqlite3.connect(controller.backtest_run_db.path) as conn:
         rows = conn.execute("SELECT rule, competitor_rule, verdict FROM screenings").fetchall()
     assert rows == [("gap_pct < 0", "gap_pct > 0", "pass")]

@@ -9,6 +9,7 @@ from agents.tool_context import ToolContext
 
 import research_conductor as conductor
 import research_subagents as subagents
+from autoresearch_research import _validate_single_proposed_change
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
 from rejection_artifact import write_rejection
 from research_prompts import _build_mechanism_system_prompt
@@ -774,6 +775,7 @@ def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_val
         family_name="ema",
         rejection_feedback="prior screening killed this rule",
         rendered_corpus=rendered_corpus,
+        conductor_mode="mechanism",
     )
 
     assert out is not None
@@ -788,6 +790,58 @@ def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_val
     assert "residual" in str(captured["system_prompt"]).lower()
     assert "story, rule, competitor_rule" in str(captured["system_prompt"])
     assert getattr(captured["output_type"], "__name__", "") == "MechanismProposal"
+
+
+def test_rendered_corpus_does_not_implicitly_disable_legacy_conductor_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+
+    class _ValidatedThesis:
+        thesis_id = "legacy-thesis"
+
+    monkeypatch.setattr(
+        conductor, "validate_thesis_dict", lambda thesis, *args, **kwargs: _ValidatedThesis()
+    )
+
+    def _run_streamed(agent, user_prompt, max_turns, run_config):
+        captured["tools"] = list(getattr(agent, "tools", []))
+        captured["output_type"] = getattr(agent, "output_type", None)
+        captured["user_prompt"] = user_prompt
+        return _StreamedResult(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "suggested_theses": [
+                        {
+                            "thesis_id": "legacy-thesis",
+                            "hypothesis": "Legacy path still has tools.",
+                        }
+                    ],
+                }
+            ),
+            agent,
+        )
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "legacy round results",
+        {"status": "keep"},
+        research_round=12,
+        family_name="ema",
+        rendered_corpus="## Corpus that should not choose mode by itself\n",
+        conductor_mode="legacy",
+    )
+
+    assert out is not None
+    assert out.status == "ok"
+    assert captured["output_type"] is None
+    assert captured["tools"]
+    assert "legacy round results" in str(captured["user_prompt"])
 
 
 def test_conductor_mechanism_path_accepts_structured_final_output(
@@ -817,6 +871,7 @@ def test_conductor_mechanism_path_accepts_structured_final_output(
         research_round=12,
         family_name="ema",
         rendered_corpus="## Corpus\n- family: ema\n",
+        conductor_mode="mechanism",
     )
 
     assert out is not None
@@ -864,6 +919,7 @@ def test_conductor_prefers_final_output_as_over_raw_structured_output(
         research_round=12,
         family_name="ema",
         rendered_corpus="## Corpus\n- family: ema\n",
+        conductor_mode="mechanism",
     )
 
     assert out is not None
@@ -956,7 +1012,7 @@ def test_mechanism_prompt_lists_only_harvest_observable_metrics() -> None:
     assert "pnl_weighted_accuracy" not in prompt
 
 
-def test_mechanism_proposal_schema_allows_declared_orb_coupled_change() -> None:
+def test_mechanism_proposal_schema_is_generic_about_coupled_change_keys() -> None:
     proposal = MechanismProposal(
         story="Volatility trails should protect failed ORB extensions.",
         rule="or_width_pctile > 0.8",
@@ -971,6 +1027,25 @@ def test_mechanism_proposal_schema_allows_declared_orb_coupled_change() -> None:
     )
 
     assert proposal.proposed_change == {"use_volatility_trail": True, "vol_trail_atr_mult": 1.5}
+
+
+def test_family_validator_rejects_coupled_change_for_wrong_family() -> None:
+    proposal = MechanismProposal(
+        story="Volatility trails should protect failed ORB extensions.",
+        rule="or_width_pctile > 0.8",
+        competitor_rule="or_width_pctile <= 0.8",
+        competitor_story="Narrow ranges may explain the edge instead.",
+        actionable=True,
+        proposed_change={"use_volatility_trail": True, "vol_trail_atr_mult": 1.5},
+        predictions=[
+            {"metric": "profit_factor", "direction": "increase", "predicted": 1.4},
+            {"metric": "max_drawdown", "direction": "decrease", "predicted": 0.2},
+        ],
+    )
+
+    _validate_single_proposed_change("orb", proposal.model_dump())
+    with pytest.raises(ValueError, match="exactly one top-level key"):
+        _validate_single_proposed_change("ema", proposal.model_dump())
 
 
 def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(

@@ -36,6 +36,7 @@ py-modules = [
     "autoresearch_state",
     "backtest_5ema",
     "backtest_orb_v2",
+    "causal_harvest",
     "causal_model",
     "compiler_builder",
     "compiler_defaults",

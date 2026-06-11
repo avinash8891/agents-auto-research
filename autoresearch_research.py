@@ -1141,12 +1141,9 @@ def _try_one_validation_attempt(
         if mechanism_path:
             _merge_mechanism_fields_into_selected_thesis(round_root, raw_thesis)
             if pending_causal_model is not None:
-                from causal_model import CausalModelStore
+                from causal_harvest import PendingCausalModelArtifact
 
-                CausalModelStore(
-                    runtime_root=getattr(controller, "runtime_root", None) or controller.root,
-                    code_root=controller.root,
-                ).save(pending_causal_model)
+                PendingCausalModelArtifact(round_root).write(pending_causal_model)
     except (ThesisValidationError, ValueError) as exc:
         _log_validation_rejection(
             controller,
@@ -1317,6 +1314,7 @@ def _call_conductor(
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
     rendered_corpus: str = "",
+    conductor_mode: str = "legacy",
 ) -> ConductorResult | None:
     """One conductor HTTP/SDK call with the per-attempt log preamble."""
     from research_conductor import run_research_conductor_sync
@@ -1347,6 +1345,7 @@ def _call_conductor(
         agent_reflexions=agent_reflexions,
         current_job=current_job,
         rendered_corpus=rendered_corpus,
+        conductor_mode=conductor_mode,
     )
 
 
@@ -1466,6 +1465,7 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             agent_reflexions=agent_reflexions,
             current_job=current_job,
             rendered_corpus=rendered_corpus,
+            conductor_mode="mechanism",
         )
         terminal = _check_parsed_for_terminal(conductor_result)
         if terminal is not None:

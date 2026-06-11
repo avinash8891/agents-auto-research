@@ -30,7 +30,6 @@ from autoresearch_constants import (
     DISCORD_COLOR_DISCARD,
     DISCORD_COLOR_SUCCESS,
     DISCORD_COLOR_WARNING,
-    research_engine_retest_extension_months,
 )
 from autoresearch_logging import get_logger
 from autoresearch_paths import path_within_allowed_roots, resolve_config_path
@@ -45,6 +44,14 @@ from backtest_run_db import (
     BaselineCheckpoint,
     build_config_hash,
     build_data_hash,
+)
+from causal_harvest import (
+    apply_registered_verdict_to_causal_factor,
+    evaluate_registered_predictions,
+    force_registered_inconclusive_after_retest,
+    is_registered_prediction_retest_action,
+    request_registered_prediction_retest,
+    write_feature_table_artifact,
 )
 from diagnostic_contracts import build_required_diagnostic_specs, enrich_required_diagnostics
 from feature_table import FeatureTableArtifact
@@ -1052,99 +1059,13 @@ def _write_feature_table_artifact(
     artifact_dir: Path,
     feature_artifact: FeatureTableArtifact | None = None,
 ) -> None:
-    trades_file = str(details.get("trades_file") or "")
-    if not trades_file:
-        return
-    runtime_config = _load_runtime_config_contents(controller, config)
-    if not runtime_config.get("data_universe"):
-        return
-
-    import pandas as pd
-
-    from backtest.data_universe import load_universe_data
-    from feature_table import build_feature_table
-
-    trades_path = Path(trades_file)
-    if not trades_path.is_absolute():
-        trades_path = artifact_dir / trades_path
-    trades_df = pd.read_csv(trades_path)
-    batch = load_universe_data(runtime_config)
-    bars_df = _wide_ohlcv_batch_to_long_bars(batch)
-    events_file = details.get("strategy_events_file")
-    if isinstance(events_file, str) and events_file:
-        events_path = Path(events_file)
-        if not events_path.is_absolute():
-            events_file = str(artifact_dir / events_path)
-    events = _load_strategy_events(events_file)
-    table = build_feature_table(
-        trades_df,
-        bars_df,
-        events,
-        controller.family.name,
-        runtime_config=runtime_config,
+    write_feature_table_artifact(
+        controller,
+        config=config,
+        details=details,
+        artifact_dir=artifact_dir,
+        feature_artifact=feature_artifact,
     )
-    if feature_artifact is None:
-        round_root = artifact_dir.parent if artifact_dir.name == "backtest" else artifact_dir
-        feature_artifact = FeatureTableArtifact(round_root)
-    feature_artifact.write(table)
-    details["feature_table_file"] = str(feature_artifact.path)
-
-
-def _wide_ohlcv_batch_to_long_bars(batch: dict[str, Any]) -> Any:
-    import pandas as pd
-
-    required = ("open", "high", "low", "close")
-    missing = [name for name in required if name not in batch]
-    if missing:
-        raise ValueError(f"data universe batch missing OHLC fields: {missing}")
-    symbols = set(batch["close"].columns)
-    for name in required:
-        symbols &= set(batch[name].columns)
-    volume = batch.get("volume")
-    if volume is not None:
-        symbols &= set(volume.columns)
-
-    frames: list[pd.DataFrame] = []
-    for symbol in sorted(symbols):
-        timestamps = pd.to_datetime(batch["close"].index)
-        if timestamps.tz is None:
-            timestamps = timestamps.tz_localize("America/New_York").tz_convert("UTC")
-        else:
-            timestamps = timestamps.tz_convert("UTC")
-        frame = pd.DataFrame(
-            {
-                "timestamp": timestamps,
-                "symbol": symbol,
-                "open": batch["open"][symbol].to_numpy(),
-                "high": batch["high"][symbol].to_numpy(),
-                "low": batch["low"][symbol].to_numpy(),
-                "close": batch["close"][symbol].to_numpy(),
-            }
-        )
-        if volume is not None:
-            frame["volume"] = volume[symbol].to_numpy()
-        frames.append(frame)
-    if not frames:
-        return pd.DataFrame(
-            columns=["timestamp", "symbol", "open", "high", "low", "close", "volume"]
-        )
-    return pd.concat(frames, ignore_index=True)
-
-
-def _load_strategy_events(value: Any) -> list[dict[str, Any]]:
-    if not isinstance(value, str) or not value:
-        return []
-    path = Path(value)
-    if not path.exists():
-        return []
-    if path.suffix == ".parquet":
-        import pandas as pd
-
-        return pd.read_parquet(path).to_dict("records")
-    if path.suffix == ".json":
-        payload = json.loads(path.read_text())
-        return payload if isinstance(payload, list) else []
-    return []
 
 
 def _block_with_command_failed(
@@ -1364,57 +1285,15 @@ def _evaluate_registered_predictions(
     metric: float,
     details: dict[str, Any],
 ) -> Any | None:
-    registered_path = run_output_dir.parent / "registered_predictions.json"
-    if not registered_path.exists():
-        return None
-    from experiment_evaluator import evaluate_predictions
-
-    candidate_metrics = _flatten_metrics(details)
-    primary_metric_name = (
-        controller.primary_metric_name()
-        if hasattr(controller, "primary_metric_name")
-        else "profit_factor"
-    )
-    candidate_metrics[primary_metric_name] = metric
-    return evaluate_predictions(
-        registered_path,
-        baseline=_baseline_metrics_from_first_result(controller),
-        candidate=candidate_metrics,
-        config=_family_base_config(controller),
-    )
-
-
-def _flatten_metrics(details: dict[str, Any]) -> dict[str, Any]:
-    metrics = dict(details)
-    nested = details.get("metrics")
-    if isinstance(nested, dict):
-        metrics.update(nested)
-    train_metrics = details.get("train_metrics")
-    if isinstance(train_metrics, dict):
-        metrics.update(train_metrics)
-    return metrics
+    return evaluate_registered_predictions(controller, run_output_dir, metric, details)
 
 
 def _is_registered_prediction_retest_action(state: dict[str, Any]) -> bool:
-    next_action = state.get("next_action")
-    return isinstance(next_action, dict) and next_action.get("source") == (
-        "registered_prediction_retest"
-    )
+    return is_registered_prediction_retest_action(state)
 
 
 def _force_registered_inconclusive_after_retest(verdict: Any) -> Any:
-    directions_hold = all(
-        bool(result.get("direction_passed"))
-        for result in getattr(verdict, "prediction_results", [])
-    )
-    status = "supported" if directions_hold else "refuted"
-    return verdict.model_copy(
-        update={
-            "status": status,
-            "summary": f"forced_after_retest: {verdict.summary}",
-            "lesson": f"forced_after_retest: {verdict.summary}",
-        }
-    )
+    return force_registered_inconclusive_after_retest(verdict)
 
 
 def _request_registered_prediction_retest(
@@ -1423,96 +1302,16 @@ def _request_registered_prediction_retest(
     *,
     config: str,
 ) -> RetestRequested:
-    config_path = resolve_config_path(
-        config,
-        code_root=controller.root,
-        runtime_root=_runtime_root(controller),
-        execution_root=_execution_root(controller),
-    )
-    retest_config_path, metadata = _write_extended_retest_config(
-        controller,
-        config_path,
-    )
-    next_action = dict(state.get("next_action") or {})
-    next_action.update(
-        {
-            "type": "run_round",
-            "config": _serialize_artifact_dir(controller, retest_config_path),
-            "source": "registered_prediction_retest",
-            "registered_prediction_retest": metadata,
-        }
-    )
-    persisted = controller.read_state()
-    persisted.update(
-        {
-            "state": "running",
-            "job": state.get("job"),
-            "research_round": state.get("research_round"),
-            "selected_thesis_id": state.get("selected_thesis_id"),
-            "next_action": next_action,
-            "blockers": [],
-        }
-    )
-    return RetestRequested(next_state=persisted)
+    return request_registered_prediction_retest(controller, state, config=config)
 
 
 def _write_extended_retest_config(
     controller: "AutoresearchController",
     config_path: Path,
 ) -> tuple[Path, dict[str, Any]]:
-    raw = _read_config_payload(config_path)
-    if not isinstance(raw, dict):
-        raise ValueError(f"registered prediction retest config must be a mapping: {config_path}")
-    target = raw.get("runtime_config") if isinstance(raw.get("runtime_config"), dict) else raw
-    if not isinstance(target, dict):
-        raise ValueError(
-            f"registered prediction retest runtime_config must be a mapping: {config_path}"
-        )
-    family_config = _family_base_config(controller)
-    validation_start = str(
-        target.get("validation_start") or family_config.get("validation_start") or ""
-    )
-    if not validation_start:
-        raise ValueError(
-            "registered prediction retest requires validation_start in selected config "
-            f"or configs/{controller.family.name}_base.yaml"
-        )
-    config_for_tunables = dict(family_config)
-    config_for_tunables.update(target)
-    months = research_engine_retest_extension_months(config_for_tunables)
+    from causal_harvest import _write_extended_retest_config as write_extended_retest_config
 
-    import pandas as pd
-
-    start = pd.Timestamp(validation_start)
-    if start.tzinfo is None:
-        start = start.tz_localize("UTC")
-    else:
-        start = start.tz_convert("UTC")
-    shifted = (start - pd.DateOffset(months=months)).date().isoformat()
-    target["validation_start"] = shifted
-    retest_path = config_path.with_name("selected_config_retest.json")
-    write_json_atomic(retest_path, raw)
-    return retest_path, {
-        "attempt": 1,
-        "original_config": _serialize_artifact_dir(controller, config_path),
-        "original_validation_start": validation_start,
-        "validation_start": shifted,
-        "retest_extension_months": months,
-    }
-
-
-def _read_config_payload(path: Path) -> Any:
-    if path.suffix in (".yaml", ".yml"):
-        return yaml.safe_load(path.read_text(encoding="utf-8"))
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _family_base_config(controller: "AutoresearchController") -> dict[str, Any]:
-    path = controller.root / "configs" / controller.family.base_config_filename
-    if not path.exists():
-        return {}
-    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return payload if isinstance(payload, dict) else {}
+    return write_extended_retest_config(controller, config_path)
 
 
 def _apply_registered_verdict_to_causal_factor(
@@ -1520,33 +1319,7 @@ def _apply_registered_verdict_to_causal_factor(
     config: str,
     verdict: Any,
 ) -> None:
-    status = getattr(verdict, "status", "")
-    if status not in {"supported", "refuted"}:
-        return
-    rule = str(_selected_thesis_payload(controller, config).get("rule") or "")
-    if not rule:
-        return
-
-    from causal_model import CausalModelStore
-
-    store = CausalModelStore(runtime_root=_runtime_root(controller), code_root=controller.root)
-    model = store.load(controller.family.name)
-    target_status = "harvested" if status == "supported" else "refuted"
-    lesson = str(getattr(verdict, "lesson", "") or getattr(verdict, "summary", ""))
-    updated_factors = []
-    matched = False
-    for factor in model.factors:
-        if factor.rule == rule:
-            updated_factors.append(
-                factor.model_copy(update={"status": target_status, "lesson": lesson})
-            )
-            matched = True
-        else:
-            updated_factors.append(factor)
-    if matched:
-        store.save(
-            model.model_copy(update={"version": model.version + 1, "factors": updated_factors})
-        )
+    apply_registered_verdict_to_causal_factor(controller, config, verdict)
 
 
 def _record_baseline_checkpoint(
