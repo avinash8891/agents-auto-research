@@ -385,7 +385,11 @@ def test_build_corpus_caps_screening_history_and_aggregates_older_verdicts(
     for round_number in range(1, 13):
         write_screenings(
             db_path,
-            [_screening(f"rule_{round_number}", "pass" if round_number % 2 == 0 else "kill_no_lift")],
+            [
+                _screening(
+                    f"rule_{round_number}", "pass" if round_number % 2 == 0 else "kill_no_lift"
+                )
+            ],
             round_number=round_number,
             competitor_rule="gap_pct > 0",
             job_id=1,

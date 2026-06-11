@@ -7,11 +7,11 @@ from pydantic import ValidationError
 
 from backtest_run_db import research_thesis_attempt_id
 from research_types import (
-    Disqualifier,
     FACTOR_STATUS_DESCRIPTIONS,
     HARVEST_OBSERVABLE_METRIC_NAMES,
-    PriorLeverOutcome,
+    Disqualifier,
     Prediction,
+    PriorLeverOutcome,
     ResearchThesis,
 )
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS

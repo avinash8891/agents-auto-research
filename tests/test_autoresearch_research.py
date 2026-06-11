@@ -1371,13 +1371,11 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
     assert pending_model.factors[-1].status == "candidate"
     assert pending_model.accuracy_history[-1].round_number == 1
     with sqlite3.connect(controller.backtest_run_db.path) as conn:
-        rows = conn.execute(
-            """
+        rows = conn.execute("""
             SELECT rule, competitor_rule, verdict
             FROM screenings
             ORDER BY rule
-            """
-        ).fetchall()
+            """).fetchall()
     assert rows == [
         ("gap_pct < 0", "gap_pct > 0", "pass"),
         ("gap_pct > 0", "gap_pct < 0", "pass"),
@@ -1640,14 +1638,12 @@ def test_run_research_non_actionable_mechanism_continues_without_interrupt(
 
     model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
     with sqlite3.connect(controller.backtest_run_db.path) as conn:
-        screenings = conn.execute(
-            """
+        screenings = conn.execute("""
             SELECT rule, competitor_rule, verdict
             FROM screenings
             WHERE job_id = 12 AND round_number = 1
             ORDER BY rule
-            """
-        ).fetchall()
+            """).fetchall()
     assert updated["state"] == "blocked"
     assert updated["research_round"] == 1
     assert updated["next_action"]["type"] == "research"

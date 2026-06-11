@@ -3,8 +3,7 @@ from __future__ import annotations
 import pytest
 
 from backtest_run_db import research_thesis_attempt_id
-from thesis_validator import ThesisValidationError
-from thesis_validator import _process_signal
+from thesis_validator import ThesisValidationError, _process_signal
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
 

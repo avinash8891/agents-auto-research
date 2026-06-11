@@ -1175,7 +1175,9 @@ def _try_mechanism_validation_attempt(
         if not screening_passed:
             return None, screening_feedback, "stage_1"
         if causal_model is not None:
-            runtime_root = resolve_runtime_root(getattr(controller, "runtime_root", controller.root))
+            runtime_root = resolve_runtime_root(
+                getattr(controller, "runtime_root", controller.root)
+            )
             save_model(causal_model, runtime_root=runtime_root, code_root=controller.root)
         return (
             {

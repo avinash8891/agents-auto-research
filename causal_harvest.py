@@ -434,9 +434,7 @@ def _write_extended_retest_config(
             f"registered prediction retest runtime_config must be a mapping: {config_path}"
         )
     family_config = _family_base_config(controller)
-    validation_end = str(
-        target.get("validation_end") or family_config.get("validation_end") or ""
-    )
+    validation_end = str(target.get("validation_end") or family_config.get("validation_end") or "")
     if not validation_end:
         raise ValueError(
             "registered prediction retest requires validation_end in selected config "
