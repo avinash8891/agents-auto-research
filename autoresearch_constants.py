@@ -81,3 +81,145 @@ PREPARE_RESULT_MARKER = "AUTORESEARCH_PREPARE_RESULT"
 
 # Default location of the held-out task list relative to the repo root.
 HOLDOUT_TASKS_PATH = "configs/eval/holdout_tasks.yaml"
+
+
+def _research_engine_block(config: dict) -> dict:
+    block = config.get("research_engine") if isinstance(config, dict) else None
+    return block if isinstance(block, dict) else {}
+
+
+def _research_engine_walkforward_block(config: dict) -> dict:
+    block = _research_engine_block(config).get("walkforward")
+    return block if isinstance(block, dict) else {}
+
+
+def _research_engine_int(config: dict, key: str, default: int, *, minimum: int = 1) -> int:
+    value = _research_engine_block(config).get(key, default)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"research_engine.{key} must be an integer") from exc
+    if parsed < minimum:
+        raise ValueError(f"research_engine.{key} must be >= {minimum}")
+    return parsed
+
+
+def _research_engine_float(
+    config: dict,
+    key: str,
+    default: float,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    exclusive_minimum: bool = False,
+) -> float:
+    value = _research_engine_block(config).get(key, default)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"research_engine.{key} must be a number") from exc
+    if minimum is not None:
+        below_minimum = parsed <= minimum if exclusive_minimum else parsed < minimum
+        if below_minimum:
+            comparator = ">" if exclusive_minimum else ">="
+            raise ValueError(f"research_engine.{key} must be {comparator} {minimum:g}")
+    if maximum is not None and parsed > maximum:
+        if minimum == 0.0 and maximum == 1.0:
+            raise ValueError(f"research_engine.{key} must be between 0 and 1")
+        raise ValueError(f"research_engine.{key} must be <= {maximum:g}")
+    return parsed
+
+
+def research_engine_min_sample(config: dict) -> int:
+    return _research_engine_int(config, "min_sample", 30)
+
+
+def research_engine_min_abs_lift(config: dict) -> float:
+    return _research_engine_float(config, "min_abs_lift", 0.10, minimum=0.0, maximum=1.0)
+
+
+def research_engine_max_p_value(config: dict) -> float:
+    return _research_engine_float(config, "max_p_value", 0.05, minimum=0.0, maximum=1.0)
+
+
+def research_engine_max_population_overlap(config: dict) -> float:
+    return _research_engine_float(
+        config,
+        "max_population_overlap",
+        0.70,
+        minimum=0.0,
+        maximum=1.0,
+    )
+
+
+def research_engine_max_retries(config: dict) -> int:
+    return _research_engine_int(config, "max_retries", 3)
+
+
+def research_engine_prediction_tolerance_pct(config: dict) -> float:
+    return _research_engine_float(config, "prediction_tolerance_pct", 20, minimum=0.0)
+
+
+def research_engine_noise_floor_pct(config: dict) -> float:
+    return _research_engine_float(config, "noise_floor_pct", 2, minimum=0.0)
+
+
+def research_engine_retest_extension_months(config: dict) -> int:
+    return _research_engine_int(config, "retest_extension_months", 6)
+
+
+def research_engine_min_trades(config: dict) -> int:
+    return _research_engine_int(config, "min_trades", 20)
+
+
+def research_engine_plateau_rounds(config: dict) -> int:
+    return _research_engine_int(config, "plateau_rounds", 5)
+
+
+def research_engine_plateau_min_skill_gain(config: dict) -> float:
+    return _research_engine_float(config, "plateau_min_skill_gain", 0.01, minimum=0.0)
+
+
+def research_engine_holdout_fraction(config: dict) -> float:
+    return _research_engine_float(
+        config,
+        "holdout_fraction",
+        0.25,
+        minimum=0.0,
+        maximum=1.0,
+        exclusive_minimum=True,
+    )
+
+
+def research_engine_walkforward_train_months(config: dict) -> int:
+    return _research_engine_walkforward_int(config, "train_months", 6)
+
+
+def research_engine_walkforward_test_months(config: dict) -> int:
+    return _research_engine_walkforward_int(config, "test_months", 3)
+
+
+def research_engine_walkforward_step_months(config: dict) -> int:
+    return _research_engine_walkforward_int(config, "step_months", 3)
+
+
+def research_engine_walkforward_survival_pct(config: dict) -> float:
+    value = _research_engine_walkforward_block(config).get("survival_pct", 0.60)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("research_engine.walkforward.survival_pct must be a number") from exc
+    if parsed < 0.0 or parsed > 1.0:
+        raise ValueError("research_engine.walkforward.survival_pct must be between 0 and 1")
+    return parsed
+
+
+def _research_engine_walkforward_int(config: dict, key: str, default: int) -> int:
+    value = _research_engine_walkforward_block(config).get(key, default)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"research_engine.walkforward.{key} must be an integer") from exc
+    if parsed < 1:
+        raise ValueError(f"research_engine.walkforward.{key} must be >= 1")
+    return parsed

@@ -177,6 +177,14 @@ def _expect_rejection(
     )
 
 
+def _expect_acceptance(
+    thesis: ResearchThesis,
+    prior_theses: list[dict[str, Any]] | None = None,
+    **kwargs: Any,
+) -> None:
+    validate_research_thesis(thesis, prior_theses=prior_theses, **kwargs)
+
+
 # ===========================================================================
 # Stage 1A — Structural (18 gates)
 # ===========================================================================
@@ -197,34 +205,33 @@ def test_gate_structural_missing_mechanism() -> None:
     _expect_rejection(thesis, None, "structural_missing_mechanism")
 
 
-def test_gate_structural_missing_mechanism_dimension() -> None:
+def test_gate_structural_missing_mechanism_dimension_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(mechanism_dimension="")
-    _expect_rejection(thesis, None, "structural_missing_mechanism_dimension")
+    _expect_acceptance(thesis)
 
 
-def test_gate_structural_mechanism_dimension_invalid() -> None:
+def test_gate_structural_mechanism_dimension_invalid_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(mechanism_dimension="totally_not_a_dimension")
-    _expect_rejection(thesis, None, "structural_mechanism_dimension_invalid")
+    _expect_acceptance(thesis)
 
 
-def test_gate_structural_emergent_malformed_missing_new_dimension_name() -> None:
+def test_gate_structural_emergent_missing_new_dimension_name_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         mechanism_dimension="emergent",
         new_dimension_name="",
     )
-    _expect_rejection(thesis, None, "structural_emergent_thesis_malformed")
+    _expect_acceptance(thesis)
 
 
-def test_gate_structural_emergent_malformed_duplicates_core() -> None:
+def test_gate_structural_emergent_duplicates_core_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         mechanism_dimension="emergent",
         new_dimension_name="entry_timing",  # a core dimension
     )
-    _expect_rejection(thesis, None, "structural_emergent_thesis_malformed")
+    _expect_acceptance(thesis)
 
 
-def test_gate_structural_emergent_malformed_short_fields() -> None:
-    # All three emergent justification fields must be ≥40 chars when dimension is emergent.
+def test_gate_structural_emergent_short_fields_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         mechanism_dimension="emergent",
         new_dimension_name="liquidity_regime_classifier",
@@ -232,73 +239,53 @@ def test_gate_structural_emergent_malformed_short_fields() -> None:
         mechanism_family_definition="x" * 50,
         expected_reuse_across_future_theses="x" * 50,
     )
-    _expect_rejection(thesis, None, "structural_emergent_thesis_malformed")
+    _expect_acceptance(thesis)
 
 
-def test_gate_structural_dimension_novelty_empty() -> None:
+def test_gate_structural_dimension_novelty_empty_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(dimension_novelty="")
-    _expect_rejection(thesis, None, "structural_dimension_novelty_invalid")
+    validate_research_thesis(thesis)
 
 
-def test_gate_structural_dimension_novelty_too_short_without_priors() -> None:
-    """Without same-dim priors: novelty must still be ≥30 chars (was previously the
-    only-non-empty bar — letting "x" pass)."""
+def test_gate_structural_dimension_novelty_too_short_without_priors_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(dimension_novelty="x")  # 1 char, no priors
-    _expect_rejection(thesis, None, "structural_dimension_novelty_invalid")
+    validate_research_thesis(thesis)
 
 
-def test_gate_structural_missing_causal_cluster_when_priors_exist() -> None:
+def test_gate_structural_missing_causal_cluster_when_priors_exist_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(causal_cluster="")
     priors = [_prior("ema-prior-1", config_changes={"some_other_key": 10})]
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(thesis, prior_theses=priors)
-
-    assert exc_info.value.rejection_code == "structural_mechanical_batch_failures"
-    assert [failure["code"] for failure in exc_info.value.evidence["failures"]] == [
-        "structural_missing_causal_cluster",
-        "structural_underexplored_dimensions_invalid",
-    ]
+    _expect_acceptance(thesis, priors)
 
 
-def test_gate_structural_underexplored_dimensions_invalid_empty() -> None:
+def test_gate_structural_underexplored_dimensions_empty_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         causal_cluster="opening-session noise",
         underexplored_dimensions_considered=[],
     )
     priors = [_prior("ema-prior-1", config_changes={"some_other_key": 10})]
-    _expect_rejection(thesis, priors, "structural_underexplored_dimensions_invalid")
+    _expect_acceptance(thesis, priors)
 
 
-def test_gate_structural_underexplored_dimensions_invalid_garbage_value() -> None:
-    """List must contain only valid mechanism dimensions, not arbitrary strings."""
+def test_gate_structural_underexplored_dimensions_garbage_value_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         causal_cluster="opening-session noise",
         underexplored_dimensions_considered=["not_a_real_dimension"],
     )
     priors = [_prior("ema-prior-1", config_changes={"some_other_key": 10})]
-    _expect_rejection(thesis, priors, "structural_underexplored_dimensions_invalid")
+    _expect_acceptance(thesis, priors)
 
 
-def test_gate_structural_underexplored_dimensions_invalid_includes_chosen() -> None:
-    """The chosen mechanism_dimension cannot be in the underexplored list — that
-    would be self-contradictory (it's the dimension being used)."""
+def test_gate_structural_underexplored_dimensions_includes_chosen_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         causal_cluster="opening-session noise",
         underexplored_dimensions_considered=[SAMPLE_MECHANISM_DIMENSION, "risk_structure"],
     )
     priors = [_prior("ema-prior-1", config_changes={"some_other_key": 10})]
-    _expect_rejection(thesis, priors, "structural_underexplored_dimensions_invalid")
+    _expect_acceptance(thesis, priors)
 
 
-def test_gate_structural_novel_connection_too_short_when_computed_overlap_high() -> None:
-    """novel_connection is now required based on COMPUTED theme_keywords overlap
-    with priors, not the LLM-volunteered dominant_cluster_overlap field. This
-    closes the previous evasion where the LLM could simply set the field to
-    'low' to bypass the gate.
-
-    Setup: 2 of 2 priors share at least one keyword with the proposal → 100%
-    overlap → computed_overlap='high' → novel_connection must be ≥40 chars.
-    """
+def test_gate_structural_novel_connection_too_short_when_overlap_high_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         causal_cluster="opening-session noise",
         underexplored_dimensions_considered=["risk_structure"],
@@ -319,7 +306,7 @@ def test_gate_structural_novel_connection_too_short_when_computed_overlap_high()
             theme_keywords=["stop_distance", "beta"],
         ),
     ]
-    _expect_rejection(thesis, priors, "structural_novel_connection_too_short")
+    _expect_acceptance(thesis, priors)
 
 
 def test_gate_structural_missing_config_or_code_change() -> None:
@@ -344,17 +331,16 @@ def test_gate_structural_missing_expected_effects() -> None:
     _expect_rejection(thesis, None, "structural_missing_expected_effects")
 
 
-def test_gate_structural_falsification_invalid_when_empty() -> None:
-    """falsification_or_alternative is unconditionally required."""
+def test_gate_structural_falsification_empty_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(falsification_or_alternative="")
-    _expect_rejection(thesis, None, "structural_falsification_invalid")
+    validate_research_thesis(thesis)
 
 
-def test_gate_structural_falsification_invalid_when_too_short() -> None:
+def test_gate_structural_falsification_too_short_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         falsification_or_alternative="short text",  # set but <80 chars
     )
-    _expect_rejection(thesis, None, "structural_falsification_invalid")
+    validate_research_thesis(thesis)
 
 
 def test_gate_structural_missing_disqualifiers() -> None:
@@ -370,17 +356,17 @@ def test_gate_structural_expected_effect_metric_unbacked() -> None:
     _expect_rejection(thesis, None, "structural_expected_effect_metric_unbacked")
 
 
-def test_gate_structural_missing_evidence_strength() -> None:
+def test_gate_structural_missing_evidence_strength_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(evidence_strength="")
-    _expect_rejection(thesis, None, "structural_missing_evidence_strength")
+    validate_research_thesis(thesis)
 
 
-def test_gate_structural_missing_alternatives_considered() -> None:
+def test_gate_structural_missing_alternatives_considered_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(alternatives_considered=[])
-    _expect_rejection(thesis, None, "structural_alternatives_considered_invalid")
+    validate_research_thesis(thesis)
 
 
-def test_gate_structural_alternatives_considered_rejects_blank_mechanisms() -> None:
+def test_gate_structural_alternatives_considered_blank_mechanisms_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         alternatives_considered=[
             {
@@ -400,15 +386,15 @@ def test_gate_structural_alternatives_considered_rejects_blank_mechanisms() -> N
         ]
     )
 
-    _expect_rejection(thesis, None, "structural_alternatives_considered_invalid")
+    _expect_acceptance(thesis)
 
 
-def test_gate_structural_missing_evidence_citations() -> None:
+def test_gate_structural_missing_evidence_citations_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(evidence_citations=[])
-    _expect_rejection(thesis, None, "structural_evidence_citations_invalid")
+    _expect_acceptance(thesis)
 
 
-def test_gate_structural_evidence_citations_need_web_and_analyst_sources() -> None:
+def test_gate_structural_evidence_citations_missing_analyst_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         evidence_citations=[
             EvidenceCitation(
@@ -417,7 +403,7 @@ def test_gate_structural_evidence_citations_need_web_and_analyst_sources() -> No
             )
         ]
     )
-    _expect_rejection(thesis, None, "structural_evidence_citations_invalid")
+    _expect_acceptance(thesis)
 
 
 def test_gate_structural_evidence_citations_allow_experiment_result_when_no_trades() -> None:
@@ -437,7 +423,9 @@ def test_gate_structural_evidence_citations_allow_experiment_result_when_no_trad
     validate_research_thesis(thesis, evidence_context="no_trades")
 
 
-def test_gate_structural_evidence_citations_no_trades_still_requires_experiment_result() -> None:
+def test_gate_structural_evidence_citations_no_trades_no_longer_requires_experiment_result() -> (
+    None
+):
     thesis = _minimal_valid_thesis(
         evidence_citations=[
             EvidenceCitation(
@@ -447,11 +435,7 @@ def test_gate_structural_evidence_citations_no_trades_still_requires_experiment_
         ]
     )
 
-    with pytest.raises(ThesisValidationError) as excinfo:
-        validate_research_thesis(thesis, evidence_context="no_trades")
-
-    assert excinfo.value.rejection_code == "structural_evidence_citations_invalid"
-    assert excinfo.value.evidence["missing_sources"] == ["round_result"]
+    _expect_acceptance(thesis, evidence_context="no_trades")
 
 
 def test_gate_structural_evidence_citations_cold_start_allows_web_only() -> None:
@@ -550,12 +534,12 @@ def test_prior_winner_language_no_longer_a_gate() -> None:
     validate_research_thesis(thesis)
 
 
-def test_gate_thesis_quality_theme_cluster_fixation() -> None:
-    """4 of last 7 (including current) sharing keyword 'opening' tripped.
+def test_gate_thesis_quality_theme_cluster_fixation_no_longer_rejects() -> None:
+    """Theme repetition is no longer a validator gate.
 
     This setup has high computed theme overlap (3 of 4 priors share keywords)
-    so novel_connection must be substantive for the structural gate to pass;
-    only then does the later quality gate get to fire.
+    but the v2 objective and population dedupe handle fixation instead of
+    rejecting on keyword sets.
     """
     thesis = _minimal_valid_thesis(
         causal_cluster="opening-session noise",
@@ -572,7 +556,7 @@ def test_gate_thesis_quality_theme_cluster_fixation() -> None:
         _prior("ema-p3", config_changes={"k3": 1}, theme_keywords=["opening", "gamma"]),
         _prior("ema-p4", config_changes={"k4": 1}, theme_keywords=["delta"]),
     ]
-    _expect_rejection(thesis, priors, "thesis_quality_theme_cluster_fixation")
+    _expect_acceptance(thesis, priors)
 
 
 def test_gate_thesis_quality_needs_code_starvation() -> None:
@@ -607,17 +591,12 @@ def test_gate_thesis_quality_needs_code_starvation() -> None:
     _expect_rejection(thesis, priors, "thesis_quality_needs_code_starvation")
 
 
-def test_gate_thesis_quality_direction_whipsaw() -> None:
-    """Prior tightened a theme; this thesis loosens it without citing prior.
+def test_gate_thesis_quality_direction_whipsaw_no_longer_rejects() -> None:
+    """Direction-token whipsaw is prompt guidance, not a validator gate.
 
-    FINDING — direction-token collision: the validator's `_b2_direction_of`
-    uses substring matching on token lists. Common config-key prefixes like
-    `min_` are TIGHTEN tokens; `max_` is a WIDEN token. A thesis_id like
-    `ema-widen-min_stop-v1` registers BOTH tighten (min_) and widen (widen)
-    and is classified as ambiguous → the gate silently does nothing.
-
-    Avoid this in production thesis_ids by either (a) not including config-key
-    prefixes in the id, or (b) ensuring only one direction token appears.
+    The old heuristic inferred tighten/widen intent from thesis IDs. The v2
+    path removes that text gate and lets the causal objective decide whether
+    the mechanism adds predictive skill.
     """
     thesis = _minimal_valid_thesis(
         thesis_id="ema-loosen-stops-v1",  # 'loosen' only (widen token)
@@ -641,10 +620,10 @@ def test_gate_thesis_quality_direction_whipsaw() -> None:
             theme_keywords=["stop_distance"],
         ),
     ]
-    _expect_rejection(thesis, priors, "thesis_quality_direction_whipsaw")
+    _expect_acceptance(thesis, priors)
 
 
-def test_gate_thesis_quality_missing_mechanism_evidence_disqualifier() -> None:
+def test_gate_thesis_quality_missing_mechanism_evidence_disqualifier_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         disqualifiers=[
             Disqualifier(
@@ -654,13 +633,10 @@ def test_gate_thesis_quality_missing_mechanism_evidence_disqualifier() -> None:
             )
         ],
     )
-    _expect_rejection(thesis, None, "thesis_quality_missing_mechanism_evidence_disqualifier")
+    validate_research_thesis(thesis)
 
 
-def test_gate_thesis_quality_mechanism_evidence_disqualifier_too_short() -> None:
-    """A mechanism_evidence disqualifier with a trivially-short condition does
-    not satisfy the gate. Without a content threshold the LLM could pass with
-    {"kind": "mechanism_evidence", "condition": "x"}, which is theater."""
+def test_gate_thesis_quality_mechanism_evidence_disqualifier_too_short_no_longer_rejects() -> None:
     thesis = _minimal_valid_thesis(
         disqualifiers=[
             Disqualifier(
@@ -670,7 +646,7 @@ def test_gate_thesis_quality_mechanism_evidence_disqualifier_too_short() -> None
             )
         ],
     )
-    _expect_rejection(thesis, None, "thesis_quality_missing_mechanism_evidence_disqualifier")
+    validate_research_thesis(thesis)
 
 
 def test_gate_structural_repeated_llm_thesis_id_no_longer_rejects() -> None:
@@ -688,7 +664,9 @@ def test_gate_structural_repeated_llm_thesis_id_no_longer_rejects() -> None:
     assert validated.thesis_id == SAMPLE_THESIS_ID
 
 
-def test_gate_structural_dimension_novelty_too_short_with_same_dim_priors() -> None:
+def test_gate_structural_dimension_novelty_too_short_with_same_dim_priors_no_longer_rejects() -> (
+    None
+):
     thesis = _minimal_valid_thesis(
         thesis_id="ema-new-v1",
         causal_cluster="opening-session noise",
@@ -703,7 +681,7 @@ def test_gate_structural_dimension_novelty_too_short_with_same_dim_priors() -> N
             mechanism_dimension=SAMPLE_MECHANISM_DIMENSION,
         ),
     ]
-    _expect_rejection(thesis, priors, "structural_dimension_novelty_invalid")
+    _expect_acceptance(thesis, priors)
 
 
 # ===========================================================================

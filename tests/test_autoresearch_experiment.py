@@ -6,8 +6,10 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
+from autoresearch_artifacts import serialize_artifact_path
 from autoresearch_controller import AutoresearchController
 from autoresearch_experiment import (
     ResultJsonError,
@@ -23,7 +25,6 @@ from autoresearch_experiment import (
     _invalid_duplicate_result_summary,
     _record_baseline_checkpoint,
     _round_context_from_state,
-    _serialize_artifact_dir,
     _thesis_sidecar_path,
     _validate_backtest_request,
     artifact_dir_for,
@@ -38,7 +39,15 @@ from autoresearch_experiment import (
 )
 from autoresearch_paths import resolve_config_path
 from backtest_run_db import BacktestRunRecord, BaselineCheckpoint
-from research_types import BacktestContract
+from causal_harvest import (
+    PendingCausalModelArtifact,
+    evaluate_registered_predictions,
+    request_registered_prediction_retest,
+    write_feature_table_artifact,
+)
+from causal_model import load_model
+from feature_table import load_feature_table
+from research_types import BacktestContract, CausalFactor, CausalModel
 from strategy_family import load_family
 
 
@@ -90,6 +99,48 @@ def _controller_for_experiment(tmp_path: Path, command: str) -> AutoresearchCont
         direction="higher",
     )
     return controller
+
+
+def _write_causal_model_base_config(root: Path) -> None:
+    config_dir = root / "configs"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "ema_base.yaml").write_text(
+        "validation_start: '2020-01-01'\nvalidation_end: '2024-01-01'\n",
+        encoding="utf-8",
+    )
+
+
+def _write_feature_table_data_universe(data_root: Path) -> None:
+    universe = data_root / "universes" / "tiny_feature_data"
+    universe.mkdir(parents=True)
+    index = pd.to_datetime(["2024-01-02 14:30", "2024-01-02 14:35", "2024-01-02 14:40"], utc=True)
+    frames = {
+        "open": [100.0, 100.0, 100.0],
+        "high": [100.5, 100.8, 101.0],
+        "low": [99.5, 100.0, 100.2],
+        "close": [100.2, 100.6, 100.9],
+        "volume": [1000, 1100, 1200],
+    }
+    for name, values in frames.items():
+        pd.DataFrame({"AAA": values}, index=index).to_parquet(universe / f"{name}.parquet")
+    (universe / "manifest.json").write_text(
+        json.dumps(
+            {
+                "data_universe": "tiny_feature_data",
+                "symbol_count": 1,
+                "symbols": ["AAA"],
+                "start": "2024-01-02",
+                "end": "2024-01-02",
+            }
+        )
+        + "\n"
+    )
+    pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2024-01-02").date()],
+            "regime_label": ["risk_on"],
+        }
+    ).to_parquet(data_root / "regime_labels.parquet", index=False)
 
 
 def test_round_context_requires_baseline_only_in_round_zero() -> None:
@@ -825,7 +876,7 @@ def test_build_asi_dict_records_baseline_rerun_and_absolute_artifact_dir(tmp_pat
 
     assert asi["artifact_dir"] == outside.as_posix()
     assert asi["baseline_rerun_for_commit"] == "abcdef1"
-    assert _serialize_artifact_dir(controller, tmp_path / "runtime") == "runtime"
+    assert serialize_artifact_path(tmp_path / "runtime", controller.root) == "runtime"
 
 
 def test_contract_sidecar_drives_thesis_identity_and_diagnostics(tmp_path: Path) -> None:
@@ -1020,6 +1071,85 @@ def test_baseline_metrics_prefer_tracker_then_fall_back_to_first_result(tmp_path
     }
 
 
+def test_registered_predictions_use_family_research_engine_thresholds(tmp_path: Path) -> None:
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "ema_base.yaml").write_text(
+        "research_engine:\n  min_trades: 50\n",
+        encoding="utf-8",
+    )
+    run_output_dir = tmp_path / "runtime/jobs/job-1/research/round-1/backtest"
+    run_output_dir.mkdir(parents=True)
+    (run_output_dir.parent / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "thesis-001",
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 1.2}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    controller = SimpleNamespace(
+        root=tmp_path,
+        family=SimpleNamespace(name="ema", base_config_filename="ema_base.yaml"),
+        primary_metric_name=lambda: "profit_factor",
+        baseline_tracker=SimpleNamespace(
+            latest=lambda: SimpleNamespace(metrics={"profit_factor": 1.0, "trade_count": 100})
+        ),
+        read_results=lambda: [],
+    )
+
+    verdict = evaluate_registered_predictions(
+        controller,
+        run_output_dir,
+        metric=1.3,
+        details={"trade_count": 25, "profit_factor": 1.3},
+    )
+
+    assert verdict.status == "degenerate"
+    assert "min_trades 50" in verdict.summary
+
+
+def test_registered_predictions_merge_metrics_payload_before_evaluation(tmp_path: Path) -> None:
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "ema_base.yaml").write_text("research_engine: {}\n", encoding="utf-8")
+    run_output_dir = tmp_path / "runtime/jobs/job-1/research/round-1/backtest"
+    run_output_dir.mkdir(parents=True)
+    (run_output_dir.parent / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "thesis-001",
+                "predictions": [
+                    {"metric": "median_expectancy", "direction": "increase", "predicted": 1.3}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    controller = SimpleNamespace(
+        root=tmp_path,
+        family=SimpleNamespace(name="ema", base_config_filename="ema_base.yaml"),
+        primary_metric_name=lambda: "profit_factor",
+        baseline_tracker=SimpleNamespace(
+            latest=lambda: SimpleNamespace(
+                metrics={"profit_factor": 1.0, "trade_count": 100, "median_expectancy": 1.0}
+            )
+        ),
+        read_results=lambda: [],
+    )
+
+    verdict = evaluate_registered_predictions(
+        controller,
+        run_output_dir,
+        metric=1.1,
+        details={"trade_count": 25, "train_metrics": {"median_expectancy": 1.4}},
+    )
+
+    assert verdict.status == "supported"
+    assert verdict.prediction_results[0]["metric"] == "median_expectancy"
+
+
 def test_record_baseline_checkpoint_persists_critical_drift_and_clears_rerun_marker(
     tmp_path: Path,
 ) -> None:
@@ -1059,6 +1189,41 @@ def test_record_baseline_checkpoint_persists_critical_drift_and_clears_rerun_mar
         "profit_factor": 1.5,
         "trade_count": 6.0,
     }
+
+
+def test_write_feature_table_artifact_resolves_manifest_relative_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_feature_table_data_universe(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    controller = _controller_for_experiment(tmp_path, "")
+    artifact_dir = tmp_path / "runtime/jobs/job-1/research/round-1/backtest"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "trades.csv").write_text(
+        "symbol,direction,entry_date,entry_price,stop,pnl,pnl_pct,hold_bars\n"
+        "AAA,long,2024-01-02T14:35:00+00:00,100.6,99.6,1.0,0.01,3\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame([{"timestamp": "2024-01-02T14:35:00+00:00", "symbol": "AAA"}]).to_parquet(
+        artifact_dir / "strategy_events.parquet",
+        index=False,
+    )
+    config_path = tmp_path / "runtime/jobs/job-1/research/round-1/selected_config.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps({"data_universe": "tiny_feature_data"}) + "\n")
+    details = {"trades_file": "trades.csv", "strategy_events_file": "strategy_events.parquet"}
+
+    write_feature_table_artifact(
+        controller,
+        config=str(config_path),
+        details=details,
+        artifact_dir=artifact_dir,
+    )
+
+    table = load_feature_table(artifact_dir.parent)
+    assert details["feature_table_file"] == str(artifact_dir.parent / "feature_table.parquet")
+    assert table.loc[0, "trade_id"] == "AAA:2024-01-02T14:35:00+00:00"
 
 
 def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Path) -> None:
@@ -1117,6 +1282,8 @@ def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Pa
             "insights": ["metric=1.9"],
             "next_candidates": [],
             "why_not_data_fit": "Independent thesis evaluation only.",
+            "prediction_verdict": "supported",
+            "lesson": "Prediction gap confirmed the harvest.",
         },
         artifact_dir=round_root / "backtest",
     )
@@ -1129,6 +1296,8 @@ def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Pa
     assert record.accepted is True
     assert record.runtime_config == {"ema_length": 9}
     assert record.usage == {"total_tokens": 11}
+    assert record.prediction_verdict == "supported"
+    assert record.lesson == "Prediction gap confirmed the harvest."
     assert (round_root / "backtest" / "benchmark_output.txt").read_text() == (
         f"RESULT_JSON {result_path}\n"
     )
@@ -1179,6 +1348,7 @@ def test_run_experiment_executes_command_logs_result_and_reconciles_state(
         + "\n"
     )
     controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
     monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
     round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
     round_root.mkdir(parents=True)
@@ -1223,6 +1393,496 @@ def test_run_experiment_executes_command_logs_result_and_reconciles_state(
     assert (round_root / "backtest" / "benchmark_output.txt").exists()
     assert controller.ctx.current_contract is None
     assert controller.ctx.execution_root is None
+
+
+def test_run_experiment_uses_registered_predictions_without_force_discard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    script = tmp_path / "write_result.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import json, sys",
+                "from pathlib import Path",
+                "out = Path(sys.argv[1])",
+                "out.mkdir(parents=True, exist_ok=True)",
+                "metrics = {'trade_count': 25, 'profit_factor': 2.1, 'max_drawdown': 0.1}",
+                "(out / 'metrics.json').write_text(json.dumps(metrics) + '\\n')",
+                "(out / 'trades.csv').write_text('entry_date,pnl_pct\\n2026-01-01,1.0\\n')",
+                "(out / 'diagnostics.json').write_text(json.dumps({'accepted': 25}) + '\\n')",
+                "payload = {",
+                "  'metrics_file': str(out / 'metrics.json'),",
+                "  'trades_file': str(out / 'trades.csv'),",
+                "  'diagnostics_file': str(out / 'diagnostics.json'),",
+                "  'strategy_events_file': '',",
+                "  'git_sha': 'abcdef1',",
+                "}",
+                "(out / 'result.json').write_text(json.dumps(payload) + '\\n')",
+                "print('RESULT_JSON ' + str(out / 'result.json'))",
+            ]
+        )
+        + "\n"
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    controller.baseline_tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="data",
+            config_hash="config",
+            metrics={"profit_factor": 2.0, "max_drawdown": 0.2, "trade_count": 25},
+            timestamp="2026-05-09T00:00:00+00:00",
+        )
+    )
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
+    round_root.mkdir(parents=True)
+    (round_root / "selected_config.json").write_text(json.dumps({"ema_length": 10}) + "\n")
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-success",
+                "strategy_family": "ema",
+                "hypothesis": "Gap-down entries should improve harvest metrics.",
+                "mechanism": "Gap pressure creates better mean-reversion setups.",
+                "rule": "gap_pct < 0",
+            }
+        )
+        + "\n"
+    )
+    (round_root / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-success",
+                "registered_at_utc": "2026-06-10T00:00:00+00:00",
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.4},
+                    {"metric": "max_drawdown", "direction": "decrease", "predicted": 0.15},
+                ],
+            }
+        )
+        + "\n"
+    )
+    PendingCausalModelArtifact(round_root).write(
+        CausalModel(
+            family="ema",
+            version=1,
+            factors=[
+                CausalFactor(
+                    factor_id="f-gap-down",
+                    story="Gap-down entries should improve harvest metrics.",
+                    rule="gap_pct < 0",
+                    direction="win",
+                )
+            ],
+            accuracy_history=[],
+        )
+    )
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-success",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-command-success",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    record = controller.backtest_run_db.all()[0]
+    assert record.accepted is True
+    assert record.prediction_verdict == "supported"
+    assert "profit_factor direction=pass" in record.lesson
+    assert record.verdict_status != "inconclusive"
+    updated_model = load_model("ema")
+    assert updated_model.version == 1
+    assert updated_model.factors[0].status == "harvested"
+    assert "profit_factor direction=pass" in updated_model.factors[0].lesson
+
+
+def test_run_experiment_discards_refuted_registered_predictions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 20, "profit_factor": 2.1},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    round_root = _prepare_registered_prediction_round(tmp_path, controller)
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-refuted",
+                "strategy_family": "ema",
+                "hypothesis": "Gap-down entries should improve harvest metrics.",
+                "mechanism": "Gap pressure creates better mean-reversion setups.",
+                "rule": "gap_pct < 0",
+            }
+        )
+        + "\n"
+    )
+    (round_root / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-refuted",
+                "registered_at_utc": "2026-06-10T00:00:00+00:00",
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.4},
+                    {"metric": "trade_count", "direction": "not_worse_than", "predicted": 25},
+                ],
+            }
+        )
+        + "\n"
+    )
+    PendingCausalModelArtifact(round_root).write(
+        CausalModel(
+            family="ema",
+            version=1,
+            factors=[
+                CausalFactor(
+                    factor_id="f-gap-down",
+                    story="Gap-down entries should improve harvest metrics.",
+                    rule="gap_pct < 0",
+                    direction="win",
+                )
+            ],
+            accuracy_history=[],
+        )
+    )
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-refuted",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-command-refuted",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    record = controller.backtest_run_db.all()[0]
+    assert record.accepted is False
+    assert record.prediction_verdict == "refuted"
+    updated_model = load_model("ema")
+    assert updated_model.factors[0].status == "refuted"
+
+
+def _write_registered_prediction_result_script(tmp_path: Path, metrics: dict[str, object]) -> Path:
+    script = tmp_path / "write_registered_result.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import json, sys",
+                "from pathlib import Path",
+                "out = Path(sys.argv[1])",
+                "out.mkdir(parents=True, exist_ok=True)",
+                f"metrics = {metrics!r}",
+                "(out / 'metrics.json').write_text(json.dumps(metrics) + '\\n')",
+                "(out / 'trades.csv').write_text('entry_date,pnl_pct\\n2026-01-01,1.0\\n')",
+                "(out / 'diagnostics.json').write_text(json.dumps({'accepted': 25}) + '\\n')",
+                "payload = {",
+                "  'metrics_file': str(out / 'metrics.json'),",
+                "  'trades_file': str(out / 'trades.csv'),",
+                "  'diagnostics_file': str(out / 'diagnostics.json'),",
+                "  'strategy_events_file': '',",
+                "  'git_sha': 'abcdef1',",
+                "}",
+                "(out / 'result.json').write_text(json.dumps(payload) + '\\n')",
+                "print('RESULT_JSON ' + str(out / 'result.json'))",
+            ]
+        )
+        + "\n"
+    )
+    return script
+
+
+def _prepare_registered_prediction_round(
+    tmp_path: Path,
+    controller: AutoresearchController,
+    *,
+    selected_config_name: str = "selected_config.json",
+) -> Path:
+    controller.baseline_tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="data",
+            config_hash="config",
+            metrics={"profit_factor": 2.0, "trade_count": 25},
+            timestamp="2026-05-09T00:00:00+00:00",
+        )
+    )
+    round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
+    round_root.mkdir(parents=True)
+    (round_root / selected_config_name).write_text(
+        json.dumps(
+            {
+                "ema_length": 10,
+                "validation_start": "2020-01-01",
+                "validation_end": "2023-12-31",
+                "research_engine": {"retest_extension_months": 9},
+            }
+        )
+        + "\n"
+    )
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-inconclusive",
+                "strategy_family": "ema",
+                "hypothesis": "Small PF lift should be retested on extended data.",
+                "mechanism": "Gap pressure creates better mean-reversion setups.",
+                "rule": "gap_pct < 0",
+            }
+        )
+        + "\n"
+    )
+    (round_root / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-command-inconclusive",
+                "registered_at_utc": "2026-06-10T00:00:00+00:00",
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.4},
+                    {"metric": "trade_count", "direction": "not_worse_than", "predicted": 25},
+                ],
+            }
+        )
+        + "\n"
+    )
+    return round_root
+
+
+def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 25, "profit_factor": 2.01},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(tmp_path, controller)
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    record = controller.backtest_run_db.all()[0]
+    assert record.prediction_verdict == "inconclusive"
+    persisted = controller.read_state()
+    retest_action = persisted["next_action"]
+    assert retest_action["source"] == "registered_prediction_retest"
+    assert retest_action["registered_prediction_retest"]["attempt"] == 1
+    assert "_preserve_next_action_once" not in persisted
+    retest_config = tmp_path / retest_action["config"]
+    assert json.loads(retest_config.read_text())["validation_start"] == "2019-04-01"
+
+
+def test_request_registered_prediction_retest_returns_explicit_transition_without_sentinel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    controller = _controller_for_experiment(tmp_path, "echo noop")
+    _prepare_registered_prediction_round(tmp_path, controller)
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    retest_request = request_registered_prediction_retest(
+        controller,
+        state,
+        config="runtime/jobs/job-6/research/round-1/selected_config.json",
+    )
+
+    assert controller.read_state()["next_action"]["source"] == "research"
+    assert retest_request.next_state["next_action"]["source"] == "registered_prediction_retest"
+    assert "_preserve_next_action_once" not in retest_request.next_state
+
+
+def test_run_experiment_forces_registered_inconclusive_after_retest_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 25, "profit_factor": 2.01},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(
+        tmp_path,
+        controller,
+        selected_config_name="selected_config_retest.json",
+    )
+    round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
+    PendingCausalModelArtifact(round_root).write(
+        CausalModel(
+            family="ema",
+            version=1,
+            factors=[
+                CausalFactor(
+                    factor_id="f-gap-down",
+                    story="Small PF lift should be retested on extended data.",
+                    rule="gap_pct < 0",
+                    direction="win",
+                )
+            ],
+            accuracy_history=[],
+        )
+    )
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "registered_prediction_retest",
+            "registered_prediction_retest": {"attempt": 1},
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    record = controller.backtest_run_db.all()[0]
+    assert record.prediction_verdict == "supported"
+    assert "forced_after_retest" in record.lesson
+    assert controller.read_state().get("next_action", {}).get("source") != (
+        "registered_prediction_retest"
+    )
+    updated_model = load_model("ema")
+    assert updated_model.factors[0].status == "harvested"
+    assert "forced_after_retest" in updated_model.factors[0].lesson
+
+
+def test_run_experiment_writes_feature_table_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_feature_table_data_universe(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    script = tmp_path / "write_result.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import json, sys",
+                "from pathlib import Path",
+                "out = Path(sys.argv[1])",
+                "out.mkdir(parents=True, exist_ok=True)",
+                "metrics = {'trade_count': 1, 'profit_factor': 0.0, 'max_drawdown': 0.02}",
+                "(out / 'metrics.json').write_text(json.dumps(metrics) + '\\n')",
+                "trades = (",
+                "  'symbol,direction,entry_date,entry_price,stop,pnl,pnl_pct,mae,mfe,exit_reason,hold_bars\\n'",
+                "  'AAA,long,2024-01-02T14:35:00+00:00,100.6,99.6,-2.0,-0.02,0.03,0.01,stop,3\\n'",
+                ")",
+                "(out / 'trades.csv').write_text(trades)",
+                "(out / 'diagnostics.json').write_text(json.dumps({'accepted': 1}) + '\\n')",
+                "payload = {",
+                "  'metrics_file': str(out / 'metrics.json'),",
+                "  'trades_file': str(out / 'trades.csv'),",
+                "  'diagnostics_file': str(out / 'diagnostics.json'),",
+                "  'strategy_events_file': '',",
+                "  'git_sha': 'abcdef1',",
+                "}",
+                "(out / 'result.json').write_text(json.dumps(payload) + '\\n')",
+                "print('RESULT_JSON ' + str(out / 'result.json'))",
+            ]
+        )
+        + "\n"
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    round_root = tmp_path / "runtime" / "jobs" / "job-7" / "research" / "round-1"
+    round_root.mkdir(parents=True)
+    runtime_config = {
+        "family": "ema",
+        "data_universe": "tiny_feature_data",
+        "symbols": ["AAA"],
+        "validation_start": "2024-01-02",
+        "validation_end": "2024-01-02 23:59:59",
+        "ema_length": 2,
+    }
+    (round_root / "selected_config.json").write_text(json.dumps(runtime_config) + "\n")
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "ema-feature-table",
+                "hypothesis": "Use feature table artifact.",
+                "mechanism": "Record entry-time state.",
+                "config_changes": {"ema_length": 2},
+            }
+        )
+        + "\n"
+    )
+    state = {
+        "state": "running",
+        "job": 7,
+        "research_round": 1,
+        "selected_thesis_id": "ema-feature-table",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-7/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-feature-table",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    table = load_feature_table(round_root)
+    record = controller.backtest_run_db.all()[0]
+    assert record.validation_metrics["feature_table_file"] == str(
+        round_root / "feature_table.parquet"
+    )
+    assert table.loc[0, "trade_id"] == "AAA:2024-01-02T14:35:00+00:00"
+    assert table.loc[0, "regime_label"] == "risk_on"
 
 
 def test_run_experiment_blocks_when_command_exits_nonzero(

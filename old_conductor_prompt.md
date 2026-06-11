@@ -406,8 +406,7 @@ THESIS REQUIREMENTS:
   cite web_search plus experiment-result/source-code evidence instead.
 - expected_effects: at least TWO measurable predictions with direction
   Valid directions: "increase", "decrease", "increase_or_same", "decrease_or_same", "not_worse_than"
-  Metrics: profit_factor, max_drawdown, trade_count, median_expectancy,
-  pct_profitable_windows, avg_sharpe_across_windows
+  Metrics: profit_factor, max_drawdown, trade_count, median_expectancy
   Any other metric must be listed in required_diagnostics.
 - disqualifiers: at least ONE condition that would disprove the thesis
   severity: "hard_fail" (auto-reject) or "soft_fail" (flag for review)

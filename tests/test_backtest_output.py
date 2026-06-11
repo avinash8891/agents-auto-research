@@ -85,8 +85,6 @@ def test_write_all_serializes_infinite_profit_factor_as_strict_json(
         "trade_count": 1,
         "profit_factor": inf,
         "max_drawdown": 0.0,
-        "pct_profitable_windows": 1.0,
-        "avg_sharpe_across_windows": 0.0,
         "diagnostics": {},
         "_trades_df": pd.DataFrame([{"trade_id": 1}]),
         "_event_logger": _FakeEventLogger(),
@@ -132,8 +130,6 @@ def test_write_all_allows_missing_diagnostics_file_and_parser_accepts_it(
         "trade_count": 0,
         "profit_factor": 1.0,
         "max_drawdown": 0.0,
-        "pct_profitable_windows": 0.0,
-        "avg_sharpe_across_windows": 0.0,
         "diagnostics": {},
         "_trades_df": pd.DataFrame(),
     }
@@ -160,8 +156,6 @@ def test_write_all_rejects_event_frames_missing_core_schema_columns(tmp_path: Pa
         "trade_count": 0,
         "profit_factor": 0.0,
         "max_drawdown": 0.0,
-        "pct_profitable_windows": 0.0,
-        "avg_sharpe_across_windows": 0.0,
         "_trades_df": pd.DataFrame(),
         "_event_logger": _InvalidEventLogger(),
     }
@@ -182,8 +176,6 @@ def test_write_all_omits_strategy_events_path_for_empty_event_frames(tmp_path: P
         "trade_count": 0,
         "profit_factor": 0.0,
         "max_drawdown": 0.0,
-        "pct_profitable_windows": 0.0,
-        "avg_sharpe_across_windows": 0.0,
         "_trades_df": pd.DataFrame(),
         "_event_logger": _EmptyEventLogger(),
     }
@@ -208,8 +200,6 @@ def test_write_all_omits_missing_strategy_events_path_for_empty_parquet_logger(
         "trade_count": 0,
         "profit_factor": 0.0,
         "max_drawdown": 0.0,
-        "pct_profitable_windows": 0.0,
-        "avg_sharpe_across_windows": 0.0,
         "_trades_df": pd.DataFrame(),
         "_event_logger": _EmptyParquetEventLogger(),
     }

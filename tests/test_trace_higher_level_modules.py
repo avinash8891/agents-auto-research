@@ -235,6 +235,32 @@ def test_adapter_payload_builders_produce_target_specific_shapes() -> None:
     assert halo["evaluation"]["quality"]["trend"] == "up"
 
 
+def test_reflexio_prediction_gaps_reads_registered_predictions_round_facts() -> None:
+    from trace_adapters.reflexio import _prediction_gaps
+
+    gaps = _prediction_gaps(
+        {
+            "round_facts": {
+                "registered_predictions": [
+                    {
+                        "metric": "profit_factor",
+                        "magnitude_gap": -0.4,
+                        "direction_passed": False,
+                    }
+                ]
+            }
+        }
+    )
+
+    assert gaps == [
+        {
+            "metric": "profit_factor",
+            "magnitude_gap": -0.4,
+            "direction_passed": False,
+        }
+    ]
+
+
 def test_adapter_export_packages_include_target_files_and_metadata() -> None:
     from trace_adapters.halo import build_halo_export_package
     from trace_adapters.recursive_improve import build_recursive_improve_export_package

@@ -12,7 +12,6 @@ from research_types import (
     ResearchThesis,
 )
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
-from thesis_validator import ThesisValidationError
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
 
@@ -172,16 +171,11 @@ def test_disqualifier_rejects_invalid_kind() -> None:
         Disqualifier(name="x", condition="y", kind="some_other_kind")
 
 
-def test_validator_enforces_falsification_or_alternative_min_length_when_present() -> None:
-    """If falsification_or_alternative is set, it must be substantive (≥80 chars).
-
-    Existing theses with empty falsification_or_alternative are still allowed
-    (until C1 hard-requires the field as a separate change).
-    """
+def test_validator_no_longer_enforces_falsification_or_alternative_min_length() -> None:
     payload = _base_engine_change_thesis("t5", "signal_quality")
     payload["falsification_or_alternative"] = "too short to be a real disconfirmer"
-    with pytest.raises(ThesisValidationError, match="falsification_or_alternative"):
-        validate_thesis_dict(payload)
+    obj = validate_thesis_dict(payload)
+    assert obj.falsification_or_alternative == "too short to be a real disconfirmer"
 
 
 def test_validator_accepts_substantive_falsification_or_alternative() -> None:

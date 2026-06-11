@@ -200,6 +200,8 @@ class BacktestRunRecord:
     primary_metric_value: float | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
     trade_analysis: dict[str, Any] = field(default_factory=dict)
+    prediction_verdict: str = ""
+    lesson: str = ""
 
 
 class BacktestRunDB:
@@ -296,6 +298,9 @@ class BacktestRunDB:
                     UNIQUE (research_round_id, attempt_number)
                 )
                 """)
+            from screening import _ensure_screenings_table
+
+            _ensure_screenings_table(conn)
             self._ensure_column(
                 conn,
                 "research_thesis_attempts",
@@ -370,6 +375,10 @@ class BacktestRunDB:
             self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "trace_run_id", "TEXT NOT NULL DEFAULT ''"
             )
+            self._ensure_column(
+                conn, BACKTEST_RUNS_TABLE, "prediction_verdict", "TEXT NOT NULL DEFAULT ''"
+            )
+            self._ensure_column(conn, BACKTEST_RUNS_TABLE, "lesson", "TEXT NOT NULL DEFAULT ''")
             conn.execute(f"""
                 UPDATE {BACKTEST_RUNS_TABLE}
                 SET decision_status = CASE WHEN accepted = 1 THEN 'keep' ELSE 'discard' END
@@ -582,6 +591,8 @@ class BacktestRunDB:
         research_round_id: str,
         research_round_number: int,
         is_baseline: bool = False,
+        prediction_verdict: str = "",
+        lesson: str = "",
     ) -> None:
         if not research_round_id:
             raise ValueError(
@@ -635,6 +646,8 @@ class BacktestRunDB:
                 primary_metric_value=primary_metric_value,
                 metrics=merged_metrics,
                 trade_analysis=trade_analysis,
+                prediction_verdict=prediction_verdict,
+                lesson=lesson,
             )
         )
 
@@ -659,8 +672,8 @@ class BacktestRunDB:
                 mechanism, job, usage_json, asi_json, description,
                 decision_status, created_at_utc, strategy_family, job_id,
                 primary_metric_name, primary_metric_value, metrics_json,
-                trade_analysis_json, trace_run_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                trade_analysis_json, trace_run_id, prediction_verdict, lesson
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.run_id,
@@ -702,6 +715,8 @@ class BacktestRunDB:
                 json_dumps_strict(metrics),
                 json_dumps_strict(trade_analysis),
                 "",
+                record.prediction_verdict,
+                record.lesson,
             ),
         )
 
@@ -1068,7 +1083,8 @@ class BacktestRunDB:
                        strategy_diagnostics_json, accepted, rejection_reason, verdict_status,
                        verdict_summary, parent_backtest_run_id, timestamp, family, hypothesis,
                        mechanism, job, usage_json, asi_json, description, created_at_utc,
-                       primary_metric_name, primary_metric_value, metrics_json, trade_analysis_json
+                       primary_metric_name, primary_metric_value, metrics_json,
+                       trade_analysis_json, prediction_verdict, lesson
                 FROM backtest_runs
                 """).fetchall()
         self._records = []
@@ -1112,6 +1128,8 @@ class BacktestRunDB:
                 primary_metric_value=row["primary_metric_value"],
                 metrics=_load_metric_json(row["metrics_json"]),
                 trade_analysis=_load_json_object(row["trade_analysis_json"]),
+                prediction_verdict=row["prediction_verdict"],
+                lesson=row["lesson"],
             )
             setattr(record, "_asi_export", _load_json_object(row["asi_json"]))
             setattr(record, "_description_export", row["description"])
@@ -1236,8 +1254,6 @@ class BacktestRunDB:
                 parts.append(f"PF={m['profit_factor']}")
             if m.get("max_drawdown") is not None:
                 parts.append(f"maxDD={m['max_drawdown']}")
-            if m.get("avg_sharpe_across_windows") is not None:
-                parts.append(f"sharpe={m['avg_sharpe_across_windows']}")
             if r.verdict_status and r.verdict_status != "none":
                 parts.append(f"verdict={r.verdict_status}")
             if r.rejection_reason:
@@ -1534,6 +1550,8 @@ def _entry_to_record(entry: dict[str, Any]) -> BacktestRunRecord | None:
         primary_metric_value=_coerce_metric_float(primary_metric_value),
         metrics=metrics,
         trade_analysis=trade_analysis if isinstance(trade_analysis, dict) else {},
+        prediction_verdict=str(entry.get("prediction_verdict") or ""),
+        lesson=str(entry.get("lesson") or ""),
     )
     setattr(record, "_asi_export", asi)
     setattr(record, "_description_export", entry.get("description", ""))
@@ -1574,6 +1592,8 @@ def _record_to_entry(
         "timestamp": record.timestamp,
         "hypothesis": record.hypothesis,
         "mechanism": record.mechanism,
+        "prediction_verdict": record.prediction_verdict,
+        "lesson": record.lesson,
         "asi": asi,
     }
 

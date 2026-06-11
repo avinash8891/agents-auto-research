@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pandas as pd
 
@@ -15,7 +16,7 @@ def test_profit_factor_is_zero_when_there_are_no_winners_and_no_losses() -> None
     assert _profit_factor_from_pnl([0.0, 0.0]) == 0.0
 
 
-def test_window_metrics_use_six_month_calendar_windows_not_trade_level_statistics() -> None:
+def test_compute_metrics_omits_window_metrics_until_walkforward_computes_them() -> None:
     trades = pd.DataFrame(
         {
             "entry_date": pd.to_datetime(
@@ -33,5 +34,29 @@ def test_window_metrics_use_six_month_calendar_windows_not_trade_level_statistic
 
     metrics = compute_metrics(trades)
 
-    assert metrics["pct_profitable_windows"] == 0.5
-    assert metrics["avg_sharpe_across_windows"] == 0.0
+    assert "pct_profitable" + "_windows" not in metrics
+    assert "avg_sharpe" + "_across_windows" not in metrics
+
+
+def test_fabricated_window_metric_names_are_absent_from_runtime_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    forbidden = (
+        "pct_profitable" + "_windows",
+        "avg_sharpe" + "_across_windows",
+    )
+    runtime_sources = (
+        root / "metrics.py",
+        root / "thesis_validator.py",
+        root / "autoresearch_experiment.py",
+        root / "research_prompts.py",
+        root / "old_conductor_prompt.md",
+    )
+
+    remaining: list[str] = []
+    for path in runtime_sources:
+        text = path.read_text()
+        for metric_name in forbidden:
+            if metric_name in text:
+                remaining.append(f"{path.relative_to(root)}:{metric_name}")
+
+    assert remaining == []

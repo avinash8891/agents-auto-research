@@ -9,16 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from behavior_signals import BehaviorSignal, PolicyDecision, decide
 from research_types import Disqualifier, ExpectedEffect, ResearchThesis
 from thesis_validator import (
-    ThesisValidationError,
-    _detect_direction_whipsaw,
-    _detect_missing_mechanism_evidence_disqualifier,
     _detect_needs_code_starvation,
-    _detect_theme_cluster_fixation,
     validate_research_thesis,
 )
 
@@ -144,50 +138,6 @@ def test_policy_decision_action_is_typed_literal() -> None:
     assert decision.action in ("accept", "accept_with_warning", "reject")
 
 
-def test_theme_cluster_fixation_detector_returns_signal_when_pattern_fires() -> None:
-    """When 4 of last 7 priors share keywords with the proposal, the detector
-    returns a signal. Signal carries the same code that the pre-refactor
-    raise produced."""
-    proposal = _make_thesis(
-        thesis_id="ema-new-v1",
-        theme_keywords=["opening", "stop_distance"],
-    )
-
-    def prior(thesis_id: str, kw: list[str]) -> dict:
-        return {
-            "thesis_id": thesis_id,
-            "config_changes": {f"k_{thesis_id}": 1},
-            "outcome": "compiled",
-            "thesis_details": {"theme_keywords": kw},
-        }
-
-    priors = [
-        prior("p1", ["opening", "a"]),
-        prior("p2", ["opening", "b"]),
-        prior("p3", ["opening", "c"]),
-        prior("p4", ["d"]),
-    ]
-    sig = _detect_theme_cluster_fixation(proposal, priors)
-    assert sig is not None
-    assert sig.code == "thesis_quality_theme_cluster_fixation"
-    assert sig.severity == "block"
-    assert sig.confidence > 0.5  # >=4/7 overlap
-    assert "overlap_count" in sig.evidence
-    assert sig.evidence["overlap_count"] == 4
-
-
-def test_theme_cluster_fixation_detector_returns_none_when_pattern_absent() -> None:
-    """When fewer than 4 priors share keywords, the detector returns None."""
-    proposal = _make_thesis(
-        thesis_id="ema-new-v1",
-        theme_keywords=["unique"],
-    )
-    priors = [
-        {"thesis_id": "p1", "config_changes": {}, "thesis_details": {"theme_keywords": ["other"]}}
-    ]
-    assert _detect_theme_cluster_fixation(proposal, priors) is None
-
-
 def test_needs_code_starvation_detector_returns_signal_at_streak_3() -> None:
     """Three consecutive priors with requires_code_change=true and no run
     in between → signal fired."""
@@ -214,67 +164,17 @@ def test_needs_code_starvation_detector_returns_signal_at_streak_3() -> None:
     assert sig.confidence == 1.0
 
 
-def test_direction_whipsaw_detector_returns_signal_on_flip() -> None:
-    """Prior tightened a theme; this thesis loosens it without citation."""
-    proposal = _make_thesis(
-        thesis_id="ema-loosen-stops-v1",
-        theme_keywords=["stop_distance"],
-        prior_lever_outcomes=[],
-        config_changes={"different_key": 1},
-        novel_connection=(
-            "Stop-distance lever is approached as a regime-dependent floor "
-            "rather than an absolute threshold tested previously."
-        ),
-        causal_cluster="stop-distance",
-        underexplored_dimensions_considered=["risk_structure"],
-    )
-    prior = {
-        "thesis_id": "ema-tighten-stops-v0",
-        "config_changes": {"some_other_key": 5},
-        "outcome": "compiled",
-        "thesis_details": {"theme_keywords": ["stop_distance"]},
-    }
-    sig = _detect_direction_whipsaw(proposal, [prior])
-    assert sig is not None
-    assert sig.code == "thesis_quality_direction_whipsaw"
-    assert sig.severity == "block"
-
-
-def test_missing_mechanism_evidence_disqualifier_detector_fires_when_all_metric_threshold() -> None:
+def test_live_behavioral_pass_no_longer_raises_for_missing_mechanism_evidence() -> None:
     proposal = _make_thesis(
         config_changes={"k": 1},
         disqualifiers=[Disqualifier(name="x", condition="y" * 100, kind="metric_threshold")],
     )
-    sig = _detect_missing_mechanism_evidence_disqualifier(proposal)
-    assert sig is not None
-    assert sig.code == "thesis_quality_missing_mechanism_evidence_disqualifier"
-    assert sig.severity == "block"
+    validated = validate_research_thesis(proposal, prior_theses=[])
+
+    assert validated.thesis_id == proposal.thesis_id
 
 
-def test_missing_mechanism_evidence_disqualifier_detector_returns_none_when_substantive_present() -> (
-    None
-):
-    proposal = _make_thesis(
-        config_changes={"k": 1},
-        disqualifiers=[Disqualifier(name="x", condition="z" * 50, kind="mechanism_evidence")],
-    )
-    assert _detect_missing_mechanism_evidence_disqualifier(proposal) is None
-
-
-def test_validate_thesis_quality_translates_policy_reject_to_raise() -> None:
-    """End-to-end: when a detector fires, the validator raises with the
-    detector's code (mediated by the policy)."""
-    proposal = _make_thesis(
-        config_changes={"k": 1},
-        # Only metric_threshold → mechanism_evidence detector fires
-        disqualifiers=[Disqualifier(name="x", condition="y" * 100, kind="metric_threshold")],
-    )
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(proposal, prior_theses=[])
-    assert exc_info.value.rejection_code == "thesis_quality_missing_mechanism_evidence_disqualifier"
-
-
-def test_validate_thesis_quality_does_not_raise_when_no_signals_fire() -> None:
+def test_run_behavioral_pass_does_not_raise_when_no_signals_fire() -> None:
     """End-to-end: with no signals, the validator returns without raising."""
     proposal = _make_thesis(
         config_changes={"k": 1},

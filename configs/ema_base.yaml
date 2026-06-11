@@ -60,3 +60,22 @@ max_hold_bars: 78
 # false = disabled.
 use_range_shift: false
 range_shift_lookback: 20
+
+research_engine:
+  min_sample: 30
+  min_abs_lift: 0.10
+  max_p_value: 0.05
+  max_population_overlap: 0.70
+  max_retries: 3
+  prediction_tolerance_pct: 20
+  noise_floor_pct: 2
+  retest_extension_months: 6
+  min_trades: 20
+  plateau_rounds: 5
+  plateau_min_skill_gain: 0.01
+  holdout_fraction: 0.25
+  walkforward:
+    train_months: 6
+    test_months: 3
+    step_months: 3
+    survival_pct: 0.60

@@ -3,8 +3,6 @@
   "trade_count": 287,
   "profit_factor": 1.61,
   "max_drawdown": 0.184,
-  "pct_profitable_windows": 0.62,
-  "avg_sharpe_across_windows": 0.91,
   "win_rate": 0.541,
   "diagnostics": {}
 }

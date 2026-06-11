@@ -4,7 +4,7 @@
 
 **Goal:** Introduce a 2-layer abstraction (signals + policy) underneath the validator's 4 behavioral checks WITHOUT changing any external behavior. The validator continues to raise `ThesisValidationError` with the same `rejection_code` values; the new abstraction makes future calibration possible.
 
-**Architecture:** The 4 behavioral checks in `_validate_thesis_quality` (theme_cluster_fixation, needs_code_starvation, direction_whipsaw, missing_mechanism_evidence_disqualifier) are converted from `raise` to `return BehaviorSignal | None`. A new policy layer maps lists of signals to decisions. The default policy is "block on any signal" — which exactly matches today's behavior. The validator then translates the policy decision back to a raise/no-raise outcome so callers see no API change.
+**Architecture:** The 4 behavioral checks in `_run_behavioral_pass` (theme_cluster_fixation, needs_code_starvation, direction_whipsaw, missing_mechanism_evidence_disqualifier) are converted from `raise` to `return BehaviorSignal | None`. A new policy layer maps lists of signals to decisions. The default policy is "block on any signal" — which exactly matches today's behavior. The validator then translates the policy decision back to a raise/no-raise outcome so callers see no API change.
 
 **Tech Stack:** Python 3.13, dataclasses, no new dependencies.
 
@@ -14,7 +14,7 @@
 
 ## Background — what we're introducing
 
-Today the 4 behavioral checks are pure-function rules embedded in `_validate_thesis_quality`. Each one raises directly when its pattern fires. Phase A+B+C inverts this:
+Today the 4 behavioral checks are pure-function rules embedded in `_run_behavioral_pass`. Each one raises directly when its pattern fires. Phase A+B+C inverts this:
 
 1. **Phase A** — Detectors emit `BehaviorSignal` objects instead of raising. Each signal carries `code`, `confidence` (0–1), `severity` (`info|warn|block`), `summary`, `evidence`, `remediation`. The signal IS the data the validator would have put in the rejection.
 
@@ -22,7 +22,7 @@ Today the 4 behavioral checks are pure-function rules embedded in `_validate_the
 
 3. **Phase C** — The default policy is hard-coded to "any signal → reject" (matching today). The first signal's `code` becomes the rejection_code so external callers receive identical errors.
 
-The external contract is unchanged: `_validate_thesis_quality(thesis, priors)` raises `ThesisValidationError(rejection_code="thesis_quality_*", ...)` for the same inputs that raised today.
+The external contract is unchanged: `_run_behavioral_pass(thesis, priors)` raises `ThesisValidationError(rejection_code="thesis_quality_*", ...)` for the same inputs that raised today.
 
 ## File Structure
 
@@ -30,7 +30,7 @@ The external contract is unchanged: `_validate_thesis_quality(thesis, priors)` r
 - `behavior_signals.py` — `BehaviorSignal`, `PolicyDecision`, `decide()`. Small module (~80 lines).
 
 **Files modified:**
-- `thesis_validator.py` — refactor 4 `_check_*` functions to `_detect_*` returning `BehaviorSignal | None`; rewrite `_validate_thesis_quality` to call detectors → policy → translate.
+- `thesis_validator.py` — refactor 4 `_check_*` functions to `_detect_*` returning `BehaviorSignal | None`; rewrite `_run_behavioral_pass` to call detectors → policy → translate.
 
 **Files NOT touched:**
 - `research_types.py` — schema unchanged
@@ -436,12 +436,12 @@ Add at the top of `thesis_validator.py`:
 from behavior_signals import BehaviorSignal, PolicyDecision, decide as _policy_decide
 ```
 
-- [ ] **Step 5: Wire `_validate_thesis_quality` to use the detector + policy**
+- [ ] **Step 5: Wire `_run_behavioral_pass` to use the detector + policy**
 
-Find `_validate_thesis_quality` (around line 1390). It currently calls `_check_theme_cluster_fixation` directly (which raises). Update it to use the new shape — but ONLY for theme_cluster (we'll do the other 3 in subsequent tasks):
+Find `_run_behavioral_pass` (around line 1390). It currently calls `_check_theme_cluster_fixation` directly (which raises). Update it to use the new shape — but ONLY for theme_cluster (we'll do the other 3 in subsequent tasks):
 
 ```python
-def _validate_thesis_quality(
+def _run_behavioral_pass(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
 ) -> None:
@@ -491,7 +491,7 @@ refactor(validator): theme_cluster_fixation through behavior_signals
 
 Converts _check_theme_cluster_fixation → _detect_theme_cluster_fixation:
 the detector now returns a BehaviorSignal instead of raising. The validator's
-_validate_thesis_quality collects signals and routes them through the
+_run_behavioral_pass collects signals and routes them through the
 default policy, which translates back to a raise with the same
 rejection_code and evidence as before.
 
@@ -600,7 +600,7 @@ def _detect_needs_code_starvation(
     )
 ```
 
-Update `_validate_thesis_quality` to call the detector:
+Update `_run_behavioral_pass` to call the detector:
 
 ```python
     if prior_theses:
@@ -746,7 +746,7 @@ def _detect_direction_whipsaw(
     return None
 ```
 
-Update `_validate_thesis_quality`:
+Update `_run_behavioral_pass`:
 
 ```python
     if prior_theses:
@@ -877,10 +877,10 @@ def _detect_missing_mechanism_evidence_disqualifier(
     )
 ```
 
-Update `_validate_thesis_quality`:
+Update `_run_behavioral_pass`:
 
 ```python
-def _validate_thesis_quality(
+def _run_behavioral_pass(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
 ) -> None:
@@ -949,11 +949,11 @@ EOF
 - [ ] **Step 1: Add an integration test that exercises the full path**
 
 ```python
-def test_validate_thesis_quality_translates_policy_reject_to_raise() -> None:
+def test_run_behavioral_pass_translates_policy_reject_to_raise() -> None:
     """End-to-end: when a detector fires, the validator raises with the
     detector's code (mediated by the policy)."""
     from research_types import ExpectedEffect, Disqualifier, ResearchThesis
-    from thesis_validator import ThesisValidationError, _validate_thesis_quality
+    from thesis_validator import ThesisValidationError, _run_behavioral_pass
 
     proposal = ResearchThesis(
         thesis_id="ema-x", strategy_family="ema",
@@ -968,14 +968,14 @@ def test_validate_thesis_quality_translates_policy_reject_to_raise() -> None:
     )
     import pytest
     with pytest.raises(ThesisValidationError) as exc_info:
-        _validate_thesis_quality(proposal, prior_theses=[])
+        _run_behavioral_pass(proposal, prior_theses=[])
     assert exc_info.value.rejection_code == "thesis_quality_missing_mechanism_evidence_disqualifier"
 
 
-def test_validate_thesis_quality_does_not_raise_when_no_signals_fire() -> None:
+def test_run_behavioral_pass_does_not_raise_when_no_signals_fire() -> None:
     """End-to-end: with no signals, the validator returns without raising."""
     from research_types import ExpectedEffect, Disqualifier, ResearchThesis
-    from thesis_validator import _validate_thesis_quality
+    from thesis_validator import _run_behavioral_pass
 
     proposal = ResearchThesis(
         thesis_id="ema-x", strategy_family="ema",
@@ -987,7 +987,7 @@ def test_validate_thesis_quality_does_not_raise_when_no_signals_fire() -> None:
         disqualifiers=[Disqualifier(name="x", condition="z" * 50, kind="mechanism_evidence")],
         falsification_or_alternative="z" * 100,
     )
-    _validate_thesis_quality(proposal, prior_theses=[])  # no raise expected
+    _run_behavioral_pass(proposal, prior_theses=[])  # no raise expected
 ```
 
 - [ ] **Step 2: Run**
@@ -1007,7 +1007,7 @@ git add tests/test_behavior_signals.py
 git commit -m "$(cat <<'EOF'
 test(validator): end-to-end seam test for behavior_signals translation
 
-Pins the behavior that _validate_thesis_quality translates a policy
+Pins the behavior that _run_behavioral_pass translates a policy
 reject decision into the same ThesisValidationError shape as before the
 refactor. Anchors Phase A+B+C against accidental regression.
 

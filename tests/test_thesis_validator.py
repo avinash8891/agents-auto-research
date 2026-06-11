@@ -8,7 +8,6 @@ from thesis_validator import (
     ThesisValidationError,
     check_hypothesis_alignment,
     config_key_overlap,
-    generate_variants,
     load_prior_theses,
 )
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
@@ -536,7 +535,7 @@ def test_validate_real_config_overlap_still_rejected_with_sentinel() -> None:
         validate_thesis_dict(thesis, prior_theses=prior)
 
 
-def test_validate_thesis_requires_diversity_reasoning_when_prior_context_exists() -> None:
+def test_validate_thesis_no_longer_requires_diversity_reasoning_when_prior_context_exists() -> None:
     thesis = _base_engine_change_thesis("new_signal_quality_gate", "signal_quality")
     thesis["causal_cluster"] = ""
     thesis["underexplored_dimensions_considered"] = []
@@ -548,19 +547,12 @@ def test_validate_thesis_requires_diversity_reasoning_when_prior_context_exists(
         }
     ]
 
-    with pytest.raises(ThesisValidationError, match="causal_cluster is required"):
-        validate_thesis_dict(thesis, prior_theses=prior)
+    validated = validate_thesis_dict(thesis, prior_theses=prior)
+
+    assert validated.thesis_id == "job-test-round-1-attempt-1"
 
 
-def test_validate_thesis_rejects_high_overlap_without_novel_connection() -> None:
-    """Overlap is now COMPUTED from theme_keywords data, not LLM self-reported.
-
-    The thesis's `dominant_cluster_overlap` field is informational only after
-    the refactor — the validator computes overlap from theme_keywords vs
-    prior theme_keywords. Setup: 100% of priors share at least one keyword
-    with the proposal → computed overlap = "high" → novel_connection
-    required to be substantive.
-    """
+def test_validate_thesis_no_longer_rejects_high_overlap_without_novel_connection() -> None:
     thesis = _base_engine_change_thesis("opening_gate_followup", "signal_quality")
     thesis.update(
         {
@@ -585,8 +577,9 @@ def test_validate_thesis_rejects_high_overlap_without_novel_connection() -> None
         }
     ]
 
-    with pytest.raises(ThesisValidationError, match="novel_connection"):
-        validate_thesis_dict(thesis, prior_theses=prior)
+    validated = validate_thesis_dict(thesis, prior_theses=prior)
+
+    assert validated.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_validate_thesis_allows_high_overlap_with_novel_connection() -> None:
@@ -646,12 +639,13 @@ def test_validate_emergent_mechanism_dimension_requires_autonomous_definition() 
     assert validated.new_dimension_name == "liquidity_decay"
 
 
-def test_validate_emergent_mechanism_dimension_rejects_missing_definition() -> None:
+def test_validate_emergent_mechanism_dimension_missing_definition_no_longer_rejects() -> None:
     thesis = _base_engine_change_thesis("undefined_new_dimension", "emergent")
     thesis["new_dimension_name"] = "liquidity_decay"
 
-    with pytest.raises(ThesisValidationError, match="why_existing_dimensions_do_not_fit"):
-        validate_thesis_dict(thesis)
+    validated = validate_thesis_dict(thesis)
+
+    assert validated.new_dimension_name == "liquidity_decay"
 
 
 def test_validate_reuses_prior_emergent_dimension_name() -> None:
@@ -720,29 +714,6 @@ def test_validate_normalizes_reused_prior_emergent_dimension_name() -> None:
     validated = validate_thesis_dict(thesis, prior_theses=prior)
 
     assert validated.mechanism_dimension == "liquidity_decay"
-
-
-def test_generate_variants_does_not_extrapolate_max_trades_below_valid_bound() -> None:
-    variants = generate_variants(
-        {"max_trades_per_day": 1},
-        {"max_trades_per_day": 3},
-    )
-
-    by_label = {variant["_variant_label"]: variant for variant in variants}
-
-    assert by_label["conservative"]["max_trades_per_day"] == 2
-    assert by_label["proposed"]["max_trades_per_day"] == 1
-    assert "aggressive" not in by_label
-    assert all(variant["max_trades_per_day"] >= 1 for variant in variants)
-
-
-def test_generate_variants_does_not_extrapolate_max_hold_bars_below_valid_bound() -> None:
-    variants = generate_variants(
-        {"max_hold_bars": 40},
-        {"max_hold_bars": 78},
-    )
-
-    assert all(variant["max_hold_bars"] >= 1 for variant in variants)
 
 
 def test_hypothesis_alignment_accepts_first_trade_only_for_max_trades_per_day() -> None:

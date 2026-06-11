@@ -16,8 +16,6 @@ FINDING_TYPES = (
 
 FINDING_STATUSES = ("unvalidated", "validated", "rejected", "stale")
 
-RESULT_ORDER_VALUES = ("latest", "best", "worst")
-
 FindingType = Literal[
     "observation",
     "hypothesis",

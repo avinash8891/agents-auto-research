@@ -9,9 +9,11 @@ from agents.tool_context import ToolContext
 
 import research_conductor as conductor
 import research_subagents as subagents
+from autoresearch_research import _validate_single_proposed_change
 from backtest_run_db import BacktestRunDB, BacktestRunRecord
 from rejection_artifact import write_rejection
-from research_types import StructuredRejection
+from research_prompts import _build_mechanism_system_prompt
+from research_types import MechanismProposal, StructuredRejection
 
 
 def _record(
@@ -384,8 +386,6 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
             ("list_rejections", {"round_number": None, "rejection_code": None, "limit": 3}),
             ("get_rejection", {"round_number": 8, "thesis_id": "missing"}),
             ("rejection_pattern_summary", {"window_rounds": 4}),
-            ("get_dimension_examples_tool", {}),
-            ("get_tuning_examples_tool", {}),
         ],
     )
 
@@ -412,8 +412,6 @@ def test_conductor_stream_tools_apply_order_gates_and_return_memory_results(
     assert output_by_tool["list_round_results"] == "experiment list"
     assert "missing thesis" in output_by_tool["get_round_result"]
     assert '"error": "no current job"' in output_by_tool["list_rejections"]
-    assert output_by_tool["get_dimension_examples_tool"]
-    assert output_by_tool["get_tuning_examples_tool"]
 
 
 def test_conductor_tools_read_current_job_rejections_and_error_statuses(
@@ -731,6 +729,323 @@ def test_conductor_marks_cold_start_evidence_context_without_latest_outcome(
     assert out.thesis is not None
     assert captured["evidence_context"] == "cold_start"
     assert captured["require_analyst_tool"] is False
+
+
+def test_conductor_mechanism_path_uses_rendered_corpus_only_and_skips_thesis_validator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rendered_corpus = "## Corpus\n- family: ema\n\n## Causal Factors\n- f001\n"
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+    monkeypatch.setattr(
+        conductor,
+        "validate_thesis_dict",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("old thesis validator must not run")
+        ),
+    )
+
+    def _run_streamed(agent, user_prompt, max_turns, run_config):
+        captured["user_prompt"] = user_prompt
+        captured["system_prompt"] = agent.instructions
+        captured["output_type"] = getattr(agent, "output_type", None)
+        return _StreamedResult(
+            json.dumps(
+                {
+                    "story": "Gap-down entries reveal loss-prone inventory.",
+                    "rule": "gap_pct < 0",
+                    "competitor_rule": "gap_pct > 0",
+                    "competitor_story": "Gap-up entries are the real adverse-selection source.",
+                    "actionable": False,
+                    "proposed_change": None,
+                    "predictions": None,
+                }
+            ),
+            agent,
+        )
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "legacy round results must not be included",
+        {"status": "keep"},
+        research_round=12,
+        family_name="ema",
+        rejection_feedback="prior screening killed this rule",
+        rendered_corpus=rendered_corpus,
+        conductor_mode="mechanism",
+    )
+
+    assert out is not None
+    assert out.status == "ok"
+    assert out.thesis is not None
+    assert out.thesis["story"] == "Gap-down entries reveal loss-prone inventory."
+    assert out.thesis["competitor_rule"] == "gap_pct > 0"
+    assert str(captured["user_prompt"]).startswith(rendered_corpus)
+    assert "prior screening killed this rule" in str(captured["user_prompt"])
+    assert "legacy round results" not in str(captured["user_prompt"])
+    assert "feature_table" not in str(captured["system_prompt"])
+    assert "residual" in str(captured["system_prompt"]).lower()
+    assert "story, rule, competitor_rule" in str(captured["system_prompt"])
+    assert getattr(captured["output_type"], "__name__", "") == "MechanismProposal"
+
+
+def test_rendered_corpus_does_not_implicitly_disable_legacy_conductor_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+
+    class _ValidatedThesis:
+        thesis_id = "legacy-thesis"
+
+    monkeypatch.setattr(
+        conductor, "validate_thesis_dict", lambda thesis, *args, **kwargs: _ValidatedThesis()
+    )
+
+    def _run_streamed(agent, user_prompt, max_turns, run_config):
+        captured["tools"] = list(getattr(agent, "tools", []))
+        captured["output_type"] = getattr(agent, "output_type", None)
+        captured["user_prompt"] = user_prompt
+        return _StreamedResult(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "suggested_theses": [
+                        {
+                            "thesis_id": "legacy-thesis",
+                            "hypothesis": "Legacy path still has tools.",
+                        }
+                    ],
+                }
+            ),
+            agent,
+        )
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "legacy round results",
+        {"status": "keep"},
+        research_round=12,
+        family_name="ema",
+        rendered_corpus="## Corpus that should not choose mode by itself\n",
+        conductor_mode="legacy",
+    )
+
+    assert out is not None
+    assert out.status == "ok"
+    assert captured["output_type"] is None
+    assert captured["tools"]
+    assert "legacy round results" in str(captured["user_prompt"])
+
+
+def test_conductor_mechanism_path_accepts_structured_final_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+    proposal = MechanismProposal(
+        story="Gap-down entries reveal loss-prone inventory.",
+        rule="gap_pct < 0",
+        competitor_rule="gap_pct > 0",
+        competitor_story="Gap-up entries are the real adverse-selection source.",
+        actionable=False,
+        proposed_change=None,
+        predictions=None,
+    )
+
+    def _run_streamed(agent, user_prompt, max_turns, run_config):
+        return _StreamedResult("", agent, final_output=proposal)
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "legacy round results must not be included",
+        {"status": "keep"},
+        research_round=12,
+        family_name="ema",
+        rendered_corpus="## Corpus\n- family: ema\n",
+        conductor_mode="mechanism",
+    )
+
+    assert out is not None
+    assert out.status == "ok"
+    assert out.thesis is not None
+    assert out.thesis["story"] == "Gap-down entries reveal loss-prone inventory."
+
+
+def test_conductor_prefers_final_output_as_over_raw_structured_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(conductor, "_ensure_oauth_proxy", lambda: None)
+    monkeypatch.setattr(conductor, "_get_openai_client", lambda url: object())
+
+    class NonCanonicalOutput:
+        def __str__(self) -> str:
+            return "not-json"
+
+    class CoercedResult(_StreamedResult):
+        def __init__(self, agent: object | None = None) -> None:
+            super().__init__("", agent, final_output=NonCanonicalOutput())
+
+        def final_output_as(self, output_type):
+            return json.dumps(
+                {
+                    "story": "Canonical SDK output should win.",
+                    "rule": "gap_pct < 0",
+                    "competitor_rule": "gap_pct > 0",
+                    "competitor_story": "Opposite gap sign explains the effect.",
+                    "actionable": False,
+                    "proposed_change": None,
+                    "predictions": None,
+                }
+            )
+
+    def _run_streamed(agent, user_prompt, max_turns, run_config):
+        return CoercedResult(agent)
+
+    monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _run_streamed)
+
+    out = conductor.run_research_conductor_sync(
+        "",
+        "",
+        {},
+        research_round=12,
+        family_name="ema",
+        rendered_corpus="## Corpus\n- family: ema\n",
+        conductor_mode="mechanism",
+    )
+
+    assert out is not None
+    assert out.status == "ok"
+    assert out.thesis is not None
+    assert out.thesis["story"] == "Canonical SDK output should win."
+
+
+def test_mechanism_proposal_schema_requires_actionable_change_and_distinct_predictions() -> None:
+    with pytest.raises(ValueError, match="proposed_change"):
+        MechanismProposal(
+            story="Harvest this now.",
+            rule="gap_pct < 0",
+            competitor_rule="gap_pct > 0",
+            competitor_story="Opposite gap sign explains the effect.",
+            actionable=True,
+            proposed_change=None,
+            predictions=None,
+        )
+
+    with pytest.raises(ValueError, match="distinct"):
+        MechanismProposal(
+            story="Harvest this now.",
+            rule="gap_pct < 0",
+            competitor_rule="gap_pct > 0",
+            competitor_story="Opposite gap sign explains the effect.",
+            actionable=True,
+            proposed_change={"gap_filter": True},
+            predictions=[
+                {"metric": "profit_factor", "direction": "increase", "predicted": 1.2},
+                {"metric": "profit_factor", "direction": "increase", "predicted": 1.3},
+            ],
+        )
+
+    proposal = MechanismProposal(
+        story="Harvest this now.",
+        rule="gap_pct < 0",
+        competitor_rule="gap_pct > 0",
+        competitor_story="Opposite gap sign explains the effect.",
+        actionable=True,
+        proposed_change={"gap_filter": True},
+        predictions=[
+            {"metric": "profit_factor", "direction": "increase", "predicted": 1.2},
+            {"metric": "median_expectancy", "direction": "increase", "predicted": 0.65},
+        ],
+    )
+
+    assert proposal.predictions is not None
+    assert {prediction.metric.value for prediction in proposal.predictions} == {
+        "profit_factor",
+        "median_expectancy",
+    }
+
+
+def test_mechanism_proposal_schema_requires_observable_predicted_values() -> None:
+    with pytest.raises(ValueError, match="predicted"):
+        MechanismProposal(
+            story="Harvest this now.",
+            rule="gap_pct < 0",
+            competitor_rule="gap_pct > 0",
+            competitor_story="Opposite gap sign explains the effect.",
+            actionable=True,
+            proposed_change={"gap_filter": True},
+            predictions=[
+                {"metric": "profit_factor", "direction": "increase", "predicted": 1.2},
+                {"metric": "trade_count", "direction": "decrease"},
+            ],
+        )
+
+    with pytest.raises(ValueError, match="harvest evaluator"):
+        MechanismProposal(
+            story="Harvest this now.",
+            rule="gap_pct < 0",
+            competitor_rule="gap_pct > 0",
+            competitor_story="Opposite gap sign explains the effect.",
+            actionable=True,
+            proposed_change={"gap_filter": True},
+            predictions=[
+                {"metric": "profit_factor", "direction": "increase", "predicted": 1.2},
+                {"metric": "pnl_weighted_accuracy", "direction": "increase", "predicted": 0.65},
+            ],
+        )
+
+
+def test_mechanism_prompt_lists_only_harvest_observable_metrics() -> None:
+    prompt = _build_mechanism_system_prompt()
+
+    assert "profit_factor, trade_count, max_drawdown, median_expectancy" in (prompt)
+    assert "win_rate" not in prompt
+    assert "pnl_weighted_accuracy" not in prompt
+
+
+def test_mechanism_proposal_schema_is_generic_about_coupled_change_keys() -> None:
+    proposal = MechanismProposal(
+        story="Volatility trails should protect failed ORB extensions.",
+        rule="or_width_pctile > 0.8",
+        competitor_rule="or_width_pctile <= 0.8",
+        competitor_story="Narrow ranges may explain the edge instead.",
+        actionable=True,
+        proposed_change={"use_volatility_trail": True, "vol_trail_atr_mult": 1.5},
+        predictions=[
+            {"metric": "profit_factor", "direction": "increase", "predicted": 1.4},
+            {"metric": "max_drawdown", "direction": "decrease", "predicted": 0.2},
+        ],
+    )
+
+    assert proposal.proposed_change == {"use_volatility_trail": True, "vol_trail_atr_mult": 1.5}
+
+
+def test_family_validator_rejects_coupled_change_for_wrong_family() -> None:
+    proposal = MechanismProposal(
+        story="Volatility trails should protect failed ORB extensions.",
+        rule="or_width_pctile > 0.8",
+        competitor_rule="or_width_pctile <= 0.8",
+        competitor_story="Narrow ranges may explain the edge instead.",
+        actionable=True,
+        proposed_change={"use_volatility_trail": True, "vol_trail_atr_mult": 1.5},
+        predictions=[
+            {"metric": "profit_factor", "direction": "increase", "predicted": 1.4},
+            {"metric": "max_drawdown", "direction": "decrease", "predicted": 0.2},
+        ],
+    )
+
+    _validate_single_proposed_change("orb", proposal.model_dump())
+    with pytest.raises(ValueError, match="exactly one top-level key"):
+        _validate_single_proposed_change("ema", proposal.model_dump())
 
 
 def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(

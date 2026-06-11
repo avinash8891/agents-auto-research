@@ -19,7 +19,6 @@ import family_research_spec
 from family_research_spec import FamilyResearchSpec, get_family_research_spec
 from research_types import BacktestContract
 from thesis_validator import (
-    ThesisValidationError,
     check_hypothesis_alignment,
     validate_stage_2,
 )
@@ -214,13 +213,10 @@ def test_check_hypothesis_alignment_ema_misaligned_still_rejects() -> None:
     assert score < 0.4
 
 
-# ── Stage 2 routes the strategy_family to the alignment check ────────────
+# ── Stage 2 no longer enforces alignment ────────────────────────────────
 
 
-def test_validate_stage_2_passes_strategy_family_to_alignment() -> None:
-    """Stage 2 reads contract.strategy_family and uses the family's concept map.
-    A misaligned EMA contract is rejected; the same misaligned config under an
-    unregistered family fails open."""
+def test_validate_stage_2_no_longer_enforces_family_alignment() -> None:
     misaligned_runtime = {
         "entry_cutoff_time": "10:00",
         "rr_ratio": 2.5,
@@ -233,9 +229,7 @@ def test_validate_stage_2_passes_strategy_family_to_alignment() -> None:
         hypothesis="Filter setups by minimum opening volatility to avoid noise.",
         mechanism="Low-volatility opens have weaker microstructure signals.",
     )
-    with pytest.raises(ThesisValidationError) as excinfo:
-        validate_stage_2(ema_contract)
-    assert excinfo.value.rejection_code == "hypothesis_config_misalignment"
+    assert validate_stage_2(ema_contract) is ema_contract
 
     unwired_contract = _make_contract(
         strategy_family="nonexistent_family",
@@ -243,9 +237,4 @@ def test_validate_stage_2_passes_strategy_family_to_alignment() -> None:
         hypothesis="Filter setups by minimum opening volatility to avoid noise.",
         mechanism="Low-volatility opens have weaker microstructure signals.",
     )
-    # Unregistered family used to fall open silently; the harness now raises
-    # `hypothesis_config_alignment_unconfigured` so operators MUST populate
-    # FamilyResearchSpec.key_concepts for each family before Stage 2 runs.
-    with pytest.raises(ThesisValidationError) as unwired_exc:
-        validate_stage_2(unwired_contract)
-    assert unwired_exc.value.rejection_code == "hypothesis_config_alignment_unconfigured"
+    assert validate_stage_2(unwired_contract) is unwired_contract

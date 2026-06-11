@@ -27,23 +27,21 @@ def _register(spec: DiagnosticRequirementSpec) -> None:
 
 _register(
     DiagnosticRequirementSpec(
-        key="max_drawdown_and_pct_profitable_windows_vs_base",
+        key="max_drawdown_vs_base",
         surface="experiment_evaluation",
         payload_fields=[
             "candidate_max_drawdown",
             "base_max_drawdown",
             "delta_max_drawdown",
-            "candidate_pct_profitable_windows",
-            "base_pct_profitable_windows",
-            "delta_pct_profitable_windows",
         ],
         aliases=[
-            "pct_profitable_windows_and_max_drawdown_change_relative_to_base",
-            "max_drawdown_and_pct_profitable_windows_versus_base",
+            "max_drawdown_change_relative_to_base",
+            "max_drawdown_versus_base",
+            "max_drawdown_and_pct_profitable_windows_vs_base",
         ],
         description=(
-            "Compare candidate vs baseline max_drawdown and pct_profitable_windows "
-            "after the run has baseline metrics available."
+            "Compare candidate vs baseline max_drawdown after the run has baseline "
+            "metrics available."
         ),
     )
 )
@@ -110,30 +108,21 @@ def enrich_required_diagnostics(
             if isinstance(item, DiagnosticRequirementSpec)
             else DiagnosticRequirementSpec.model_validate(item)
         )
-        if spec.key == "max_drawdown_and_pct_profitable_windows_vs_base":
+        if spec.key in {"max_drawdown_vs_base", "max_drawdown_and_pct_profitable_windows_vs_base"}:
             b_md = baseline_metrics.get("max_drawdown")
             c_md = candidate_metrics.get("max_drawdown")
-            b_ppw = baseline_metrics.get("pct_profitable_windows")
-            c_ppw = candidate_metrics.get("pct_profitable_windows")
-            if None in {b_md, c_md, b_ppw, c_ppw}:
+            if None in {b_md, c_md}:
                 missing_inputs: list[str] = []
                 if b_md is None:
                     missing_inputs.append("base_max_drawdown")
                 if c_md is None:
                     missing_inputs.append("candidate_max_drawdown")
-                if b_ppw is None:
-                    missing_inputs.append("base_pct_profitable_windows")
-                if c_ppw is None:
-                    missing_inputs.append("candidate_pct_profitable_windows")
                 enriched[spec.key] = {"missing_inputs": missing_inputs}
                 continue
             enriched[spec.key] = {
                 "candidate_max_drawdown": float(c_md),
                 "base_max_drawdown": float(b_md),
                 "delta_max_drawdown": round(float(c_md) - float(b_md), 6),
-                "candidate_pct_profitable_windows": float(c_ppw),
-                "base_pct_profitable_windows": float(b_ppw),
-                "delta_pct_profitable_windows": round(float(c_ppw) - float(b_ppw), 6),
             }
     return enriched
 

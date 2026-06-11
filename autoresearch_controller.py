@@ -82,6 +82,7 @@ from config_hash import _git_sha
 from strategy_family import StrategyFamily, load_family
 from trace_autonomy_ledger import AutonomyLedger
 from trace_sdk import trace, trace_state_change
+from walkforward import run_walkforward_queue as _walkforward_run_walkforward_queue
 
 log = get_logger(__name__)
 
@@ -491,8 +492,8 @@ def _run_controller_loop(
         "MAIN",
         f"Autoresearch loop starting family={family_name} job={job} session={get_session_id()} log={get_log_file()}",
     )
-    consecutive_research_required = 0
-    last_research_required_round: object = None
+    unchanged_research_required_count = 0
+    last_research_required_state_hash = ""
     while True:
         code = controller.execute_once()
         if code != 0:
@@ -504,18 +505,18 @@ def _run_controller_loop(
         if current == "blocked":
             blockers = state.get("blockers", [])
             if any(b.get("kind") in _RESEARCH_BLOCKER_KINDS for b in blockers):
-                current_round = state.get("research_round_in_progress")
-                if current_round is None:
-                    current_round = state.get("research_round")
-                if current_round == last_research_required_round:
-                    consecutive_research_required += 1
+                current_hash = _state_hash(state)
+                if current_hash == last_research_required_state_hash:
+                    unchanged_research_required_count += 1
                 else:
-                    consecutive_research_required = 1
-                    last_research_required_round = current_round
-                if consecutive_research_required >= max_consecutive_research_required():
+                    unchanged_research_required_count = 0
+                    last_research_required_state_hash = current_hash
+                if unchanged_research_required_count >= max_consecutive_research_required():
                     trace(
                         "MAIN",
-                        f"research_required blocker persisted for {consecutive_research_required} consecutive iterations; treating as terminal",
+                        "research_required blocker state did not change for "
+                        f"{unchanged_research_required_count} consecutive iterations; "
+                        "treating as terminal",
                     )
                     return 1
                 continue
@@ -523,7 +524,12 @@ def _run_controller_loop(
             # transition (`research_required`). Any remaining blocked state is
             # terminal for the process.
             return 1
-        consecutive_research_required = 0
+        unchanged_research_required_count = 0
+        last_research_required_state_hash = ""
+
+
+def _state_hash(state: dict[str, Any]) -> str:
+    return json.dumps(state, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def _emit_prepare_result(state: dict[str, Any], job: int) -> None:
@@ -964,6 +970,7 @@ class AutoresearchController:
         analysis: dict[str, Any],
         next_action: dict[str, Any] | None = None,
         artifact_dir: Path | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         _round_log_experiment_result(
             self,
@@ -974,6 +981,7 @@ class AutoresearchController:
             analysis=analysis,
             next_action=next_action,
             artifact_dir=artifact_dir,
+            details=details,
         )
 
     def run_command(self, command: str) -> tuple[int, str]:
@@ -1061,6 +1069,9 @@ class AutoresearchController:
     def _run_round(self, state: dict[str, Any]) -> int:
         return _round_run_experiment(self, state)
 
+    def _run_walkforward(self, state: dict[str, Any]) -> int:
+        return _walkforward_run_walkforward_queue(self, state)
+
     def execute_once(self) -> int:
         """Run one iteration of the autoresearch loop.
 
@@ -1112,6 +1123,10 @@ class AutoresearchController:
         if state.get("state") != "running":
             log.info(f"LOOP_STOP state={state.get('state')}")
             return 0
+
+        next_action = state.get("next_action")
+        if isinstance(next_action, dict) and next_action.get("type") == "walkforward":
+            return self._run_walkforward(state)
 
         # We have a config to run
         return self._run_round(state)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -197,11 +198,6 @@ def _default_runtime_keys(family_name: str) -> set[str]:
         return set(STRATEGIES[family_name].get_defaults())
     except Exception:
         return set()
-
-
-def _runtime_code_text(strategy_dir: Path) -> str:
-    text, _failures = _runtime_code_text_with_failures(strategy_dir)
-    return text
 
 
 def _runtime_code_modules_with_failures(strategy_dir: Path) -> tuple[list[str], list[str]]:
@@ -425,26 +421,6 @@ def _config_key_consumed_by_runtime(text: str, token: str) -> bool:
     return False
 
 
-def _active_string_token_present(text: str, token: str) -> bool:
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return False
-    for node in _reachable_ast_nodes(tree):
-        if isinstance(node, ast.Dict):
-            for key in node.keys:
-                if isinstance(key, ast.Constant) and key.value == token:
-                    return True
-        if isinstance(node, ast.Call):
-            for arg in list(node.args) + [kw.value for kw in node.keywords]:
-                if isinstance(arg, ast.Constant) and arg.value == token:
-                    return True
-        if isinstance(node, ast.Subscript):
-            if _subscript_string_key(node) == token:
-                return True
-    return False
-
-
 def _test_function_asserts_token(text: str, token: str) -> bool:
     try:
         tree = ast.parse(text)
@@ -624,13 +600,18 @@ def _verify_tests_cover_behavior(
     tests_dir = root / "tests"
     if not tests_dir.exists():
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
+    changed_test_paths = _changed_test_files(root)
+    if not changed_test_paths:
+        return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
+
     test_texts: list[str] = []
-    for path in sorted(tests_dir.rglob("test*.py")):
+    for path in changed_test_paths:
         text, _failure = _read_source_text(path)
         if text is not None:
             test_texts.append(text)
     if not test_texts:
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
+
     if not any(
         _test_function_asserts_token(test_text, token)
         for token in unique_tokens
@@ -638,3 +619,93 @@ def _verify_tests_cover_behavior(
     ):
         return [f"tests_covering_behavior_missing:{unique_tokens[0]}"]
     return []
+
+
+def _changed_test_files(root: Path) -> list[Path]:
+    paths = _git_status_changed_files(root, "tests")
+    paths.extend(_git_committed_changed_files(root, "tests"))
+    if not paths and not (root / ".git").exists():
+        paths.extend((root / "tests").rglob("test*.py"))
+    return sorted({path for path in paths if _is_existing_test_file(path)})
+
+
+def _git_status_changed_files(root: Path, pathspec: str) -> list[Path]:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "--", pathspec],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return []
+    if completed.returncode != 0:
+        return []
+
+    paths: list[Path] = []
+    for line in completed.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        status = line[:2]
+        if "D" in status:
+            continue
+        raw_path = line[3:].strip()
+        if " -> " in raw_path:
+            raw_path = raw_path.rsplit(" -> ", 1)[1].strip()
+        paths.append((root / raw_path).resolve())
+    return paths
+
+
+def _git_committed_changed_files(root: Path, pathspec: str) -> list[Path]:
+    base = _git_diff_base(root)
+    if base is None:
+        return []
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "diff", "--name-status", f"{base}..HEAD", "--", pathspec],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return []
+    if completed.returncode != 0:
+        return []
+
+    paths: list[Path] = []
+    for line in completed.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        status = parts[0]
+        if status.startswith("D"):
+            continue
+        raw_path = parts[-1].strip()
+        paths.append((root / raw_path).resolve())
+    return paths
+
+
+def _git_diff_base(root: Path) -> str | None:
+    candidates = [
+        ["merge-base", "origin/main", "HEAD"],
+        ["rev-parse", "HEAD~1"],
+    ]
+    for args in candidates:
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(root), *args],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            continue
+        if completed.returncode == 0:
+            base = completed.stdout.strip()
+            if base:
+                return base
+    return None
+
+
+def _is_existing_test_file(path: Path) -> bool:
+    return path.suffix == ".py" and path.name.startswith("test") and path.exists()

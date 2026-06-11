@@ -185,10 +185,10 @@ def test_activate_builder_config_reads_selected_thesis_sidecar(tmp_path: Path) -
                 "strategy_family": "ema",
                 "hypothesis": "h",
                 "mechanism": "m",
-                "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
+                "required_diagnostics": ["Max_drawdown vs base"],
                 "required_diagnostic_specs": [
                     {
-                        "key": "max_drawdown_and_pct_profitable_windows_vs_base",
+                        "key": "max_drawdown_vs_base",
                         "surface": "experiment_evaluation",
                         "payload_fields": ["candidate_max_drawdown"],
                         "aliases": [],
@@ -212,9 +212,7 @@ def test_activate_builder_config_reads_selected_thesis_sidecar(tmp_path: Path) -
 
     assert out["selected_thesis_id"] == thesis_id
     assert written[-1]["backtest_target_path"] == "runtime/jobs/job-5/research/round-3/backtest"
-    assert ctrl.ctx.current_contract.required_diagnostic_specs[0].key == (
-        "max_drawdown_and_pct_profitable_windows_vs_base"
-    )
+    assert ctrl.ctx.current_contract.required_diagnostic_specs[0].key == ("max_drawdown_vs_base")
 
 
 def test_build_missing_primitives_for_state_uses_round_root(tmp_path: Path, monkeypatch) -> None:
@@ -238,10 +236,10 @@ def test_build_missing_primitives_for_state_uses_round_root(tmp_path: Path, monk
                 "strategy_family": "ema",
                 "hypothesis": "h",
                 "mechanism": "m",
-                "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
+                "required_diagnostics": ["Max_drawdown vs base"],
                 "required_diagnostic_specs": [
                     {
-                        "key": "max_drawdown_and_pct_profitable_windows_vs_base",
+                        "key": "max_drawdown_vs_base",
                         "surface": "experiment_evaluation",
                         "payload_fields": ["candidate_max_drawdown"],
                         "aliases": [],
@@ -297,10 +295,10 @@ def test_build_missing_primitives_for_state_uses_runtime_root_when_split(
                 "strategy_family": "ema",
                 "hypothesis": "h",
                 "mechanism": "m",
-                "required_diagnostics": ["Max_drawdown and pct_profitable_windows vs base"],
+                "required_diagnostics": ["Max_drawdown vs base"],
                 "required_diagnostic_specs": [
                     {
-                        "key": "max_drawdown_and_pct_profitable_windows_vs_base",
+                        "key": "max_drawdown_vs_base",
                         "surface": "experiment_evaluation",
                         "payload_fields": ["candidate_max_drawdown"],
                         "aliases": [],
@@ -486,6 +484,26 @@ def test_resolve_next_action_prioritizes_baseline_rerun_before_state_reconcile(
 
     assert orch.resolve_next_action(controller) == {"applied": baseline_action}
     assert calls == ["baseline"]
+
+
+def test_resolve_next_action_preserves_registered_prediction_retest_before_reconcile() -> None:
+    state = {
+        "state": "running",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
+            "source": "registered_prediction_retest",
+            "registered_prediction_retest": {"attempt": 1},
+        },
+    }
+    controller = SimpleNamespace(
+        _check_baseline_rerun=lambda: None,
+        read_state=lambda: state,
+        read_results=lambda: [object()],
+        reconcile_state=lambda: (_ for _ in ()).throw(AssertionError("reconcile should not run")),
+    )
+
+    assert orch.resolve_next_action(controller) is state
 
 
 def test_resolve_next_action_resumes_halted_thesis_with_real_controller(

@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
-from autoresearch_artifacts import read_research_artifacts
+import yaml
+
+from autoresearch_constants import (
+    research_engine_plateau_min_skill_gain,
+    research_engine_plateau_rounds,
+)
 from autoresearch_logging import get_logger
+from autoresearch_runtime_paths import iter_family_backtest_db_paths
 from autoresearch_state import BacktestResultRecord
+from research_types import CausalModel
 from strategy_family import StrategyFamily
 from trace_sdk import trace
 
@@ -122,22 +131,90 @@ def should_terminate(
     results: list[BacktestResultRecord],
     job: int | None = None,
 ) -> bool:
-    research = read_research_artifacts(research_dir, root, job=job)
-    if not research:
+    del run_queue_dir, research_dir, results
+    config = _load_research_engine_config(root, family)
+    plateau_rounds = research_engine_plateau_rounds(config)
+    min_skill_gain = research_engine_plateau_min_skill_gain(config)
+    model = _load_causal_model(root, family.name)
+    if model is None or len(model.accuracy_history) < plateau_rounds:
         return False
-    latest = research[-1]
-    status = latest.get("status")
-    outcome = latest.get("outcome")
-    if status != "completed" and outcome != "research_exhausted":
+
+    recent = sorted(model.accuracy_history, key=lambda point: point.round_number)[-plateau_rounds:]
+    improvements = [max(0.0, right.skill - left.skill) for left, right in zip(recent, recent[1:])]
+    max_improvement = max(improvements, default=0.0)
+    if max_improvement >= min_skill_gain:
         return False
-    generated = latest.get("generated_configs") or latest.get("generated_config_path")
-    if generated:
+
+    if not _latest_screening_pass_rate_is_zero(root, family.name, plateau_rounds, job=job):
         return False
-    if latest.get("new_theses_generated", 0):
+    return True
+
+
+def _load_research_engine_config(root: Path, family: StrategyFamily) -> dict[str, Any]:
+    candidates = [
+        root / "configs" / family.base_config_filename,
+        Path(__file__).resolve().parent / "configs" / family.base_config_filename,
+        Path.cwd() / "configs" / family.base_config_filename,
+    ]
+    for path in candidates:
+        if path.exists():
+            return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return {}
+
+
+def _load_causal_model(root: Path, family_name: str) -> CausalModel | None:
+    path = root / f"{family_name}_causal_model.json"
+    if not path.exists():
+        return None
+    return CausalModel.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _latest_screening_pass_rate_is_zero(
+    root: Path, family_name: str, plateau_rounds: int, *, job: int | None = None
+) -> bool:
+    if plateau_rounds <= 0:
         return False
-    if latest.get("suggested_theses"):
-        return False
-    return bool(latest.get("findings"))
+    for db_path in iter_family_backtest_db_paths(root, family=family_name):
+        with sqlite3.connect(db_path) as conn:
+            table_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='screenings'"
+            ).fetchone()
+            if table_exists is None:
+                continue
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(screenings)").fetchall()}
+            if job is not None and "job_id" not in columns:
+                continue
+            where = ""
+            params: list[int] = [plateau_rounds]
+            if job is not None:
+                where = "WHERE job_id = ?"
+                params = [job, plateau_rounds]
+            round_rows = conn.execute(
+                f"""
+                SELECT DISTINCT round_number
+                FROM screenings
+                {where}
+                ORDER BY round_number DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+            round_numbers = sorted(int(row[0]) for row in round_rows)
+            if len(round_numbers) < plateau_rounds:
+                continue
+            placeholders = ",".join("?" for _ in round_numbers)
+            rows = conn.execute(
+                f"""
+                SELECT verdict
+                FROM screenings
+                WHERE round_number IN ({placeholders})
+                {"AND job_id = ?" if job is not None else ""}
+                """,
+                [*round_numbers, job] if job is not None else round_numbers,
+            ).fetchall()
+        if rows and all(row[0] != "pass" for row in rows):
+            return True
+    return False
 
 
 # ── Research-next-action waterfall + plan_next_action ────────────
@@ -233,8 +310,21 @@ def select_research_next_action(
     if baseline is not None:
         return baseline
     if should_terminate(runtime_root, family, run_queue_dir, research_dir, results, job=job):
-        return _finished_state()
+        return _walkforward_state(runtime_root)
     return _blocked_for_research_state(runtime_root, research_dir)
+
+
+def _walkforward_state(root: Path) -> dict[str, Any]:
+    return {
+        "state": "running",
+        "next_action": {
+            "type": "walkforward",
+            "reason": "model_plateau",
+            "artifact_dir": _serialize_path(root, root / "walkforward"),
+        },
+        "blockers": [],
+        "finished_reason": "model_plateau_pending_walkforward",
+    }
 
 
 def _finished_state() -> dict[str, Any]:
@@ -242,10 +332,10 @@ def _finished_state() -> dict[str, Any]:
         "state": "finished",
         "next_action": {
             "type": "terminated",
-            "reason": "Research completed with no further justified theses.",
+            "reason": "Model plateau: holdout skill stopped improving and screening pass-rate is zero.",
         },
         "blockers": [],
-        "finished_reason": "research_completed_no_new_theses",
+        "finished_reason": "model_plateau",
     }
 
 
@@ -298,6 +388,13 @@ def plan_next_action(
     proposals_dir: Path,
     research_dir: Path,
 ) -> dict[str, Any]:
+    if (
+        state.get("finished_reason") == "model_plateau_pending_walkforward"
+        and state.get("walkforward_status") == "completed"
+    ):
+        state.update(_finished_state())
+        state.pop("walkforward_status", None)
+        return state
     # Respect forced baseline reruns — don't overwrite them
     if state.get("next_action", {}).get("baseline_rerun_for_commit"):
         return state
@@ -327,7 +424,10 @@ def plan_next_action(
             job=job,
         )
     )
-    if state.get("state") == "running":
+    if (
+        state.get("state") == "running"
+        and state.get("finished_reason") != "model_plateau_pending_walkforward"
+    ):
         state.pop("finished_reason", None)
         state.pop("research_stop_reasoning", None)
     return state

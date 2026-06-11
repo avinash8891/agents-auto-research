@@ -84,25 +84,35 @@ def test_process_gate_passes_when_all_required_tools_called() -> None:
 def test_process_gate_rejects_when_web_search_not_called() -> None:
     with pytest.raises(ThesisValidationError) as exc_info:
         validate_thesis_dict(_valid_thesis(), tools_called={"list_round_results"})
-    assert exc_info.value.rejection_code == "process_required_tools_not_called"
-    assert exc_info.value.evidence["missing_tools"] == ["web_search"]
+
+    assert "required tools not called: ['web_search']" in str(exc_info.value)
+    assert exc_info.value.rejection_code == "process_missing_required_tools"
+    assert exc_info.value.evidence == {
+        "missing_tools": ["web_search"],
+        "tools_called": ["list_round_results"],
+    }
 
 
 def test_process_gate_rejects_when_experiment_results_not_called() -> None:
     with pytest.raises(ThesisValidationError) as exc_info:
         validate_thesis_dict(_valid_thesis(), tools_called={"web_search"})
-    assert exc_info.value.rejection_code == "process_required_tools_not_called"
-    assert exc_info.value.evidence["missing_tools"] == ["list_round_results"]
+
+    assert "required tools not called: ['list_round_results']" in str(exc_info.value)
+    assert exc_info.value.evidence == {
+        "missing_tools": ["list_round_results"],
+        "tools_called": ["web_search"],
+    }
 
 
-def test_process_gate_batches_multiple_missing_tools() -> None:
+def test_process_gate_rejects_with_multiple_missing_tools() -> None:
     with pytest.raises(ThesisValidationError) as exc_info:
         validate_thesis_dict(_valid_thesis(), tools_called=set())
-    assert exc_info.value.rejection_code == "process_required_tools_not_called"
-    assert exc_info.value.evidence["missing_tools"] == [
-        "list_round_results",
-        "web_search",
-    ]
+
+    assert "required tools not called: ['list_round_results', 'web_search']" in str(exc_info.value)
+    assert exc_info.value.evidence == {
+        "missing_tools": ["list_round_results", "web_search"],
+        "tools_called": [],
+    }
 
 
 def test_process_gate_succeeds_with_extra_tools_called() -> None:
@@ -113,7 +123,7 @@ def test_process_gate_succeeds_with_extra_tools_called() -> None:
     assert thesis.config_changes == {"opening_skip_minutes": 5}
 
 
-def test_process_gate_requires_analyze_trades_when_analyst_tool_required() -> None:
+def test_process_gate_rejects_when_analyst_tool_required() -> None:
     with pytest.raises(ThesisValidationError) as exc_info:
         validate_thesis_dict(
             _valid_thesis(),
@@ -121,8 +131,11 @@ def test_process_gate_requires_analyze_trades_when_analyst_tool_required() -> No
             require_analyst_tool=True,
         )
 
-    assert exc_info.value.rejection_code == "process_required_tools_not_called"
-    assert exc_info.value.evidence["missing_tools"] == ["analyze_trades"]
+    assert "required tools not called: ['analyze_trades']" in str(exc_info.value)
+    assert exc_info.value.evidence == {
+        "missing_tools": ["analyze_trades"],
+        "tools_called": ["list_round_results", "web_search"],
+    }
 
 
 def test_process_gate_passes_analyst_tool_requirement_when_analyze_trades_called() -> None:

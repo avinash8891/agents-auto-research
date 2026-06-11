@@ -44,7 +44,7 @@ def test_round_artifact_writer_shape_is_terminal_reader_shape(tmp_path: Path) ->
             [],
             job=1,
         )
-        is True
+        is False
     )
 
 

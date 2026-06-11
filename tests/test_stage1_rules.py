@@ -127,11 +127,11 @@ def _prior(
     }
 
 
-# ── B1 theme-cluster fixation ─────────────────────────────────────────────
+# ── Removed B1 theme-cluster fixation ─────────────────────────────────────
 
 
-def test_b1_rejects_thesis_when_4_of_last_7_share_theme_keywords() -> None:
-    """4 of last 7 (including current) share at least one keyword → reject."""
+def test_b1_no_longer_rejects_when_4_of_last_7_share_theme_keywords() -> None:
+    """Theme keyword repetition is handled by the v2 objective, not token gates."""
     prior_theses = [
         _prior("p1", theme_keywords=["volatility_floor", "noise_filter"]),
         _prior("p2", theme_keywords=["other_a"]),
@@ -143,10 +143,8 @@ def test_b1_rejects_thesis_when_4_of_last_7_share_theme_keywords() -> None:
     ]
     new = _base_thesis("p7")  # has volatility_floor + alert_candle
 
-    # Overlap: p1 (volatility_floor), p3 (volatility_floor), p5 (alert_candle), and p7 itself
-    # → 4 of last 7 → should reject.
-    with pytest.raises(ThesisValidationError, match="(?i)theme.cluster"):
-        validate_thesis_dict(new, prior_theses=prior_theses)
+    obj = validate_thesis_dict(new, prior_theses=prior_theses)
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_b1_accepts_when_only_3_of_last_7_share_theme_keywords() -> None:

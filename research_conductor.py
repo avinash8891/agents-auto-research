@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from time import monotonic
-from typing import Any
+from typing import Any, Literal
 
 from agents import Agent as OAIAgent
 from agents import ModelSettings as OAIModelSettings
@@ -38,7 +38,7 @@ from research_paths import (
     _get_openai_client,
     _parse_json,
 )
-from research_prompts import _build_conductor_system_prompt
+from research_prompts import _build_conductor_system_prompt, _build_mechanism_system_prompt
 from research_subagents import _call_analyst, _call_web_researcher
 from research_tools_schema import (
     AnalyzeTradesArgs,
@@ -54,7 +54,7 @@ from research_tools_schema import (
     SearchFindingsArgs,
     WebSearchArgs,
 )
-from research_types import ConductorResult
+from research_types import ConductorResult, MechanismProposal
 from strategy_family import load_family
 from thesis_validator import validate_thesis_dict
 from trace_refinement import RefinementRecorder
@@ -194,13 +194,22 @@ async def run_research_conductor(
     rejection_feedback: str = "",
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
+    rendered_corpus: str = "",
+    conductor_mode: Literal["legacy", "mechanism"] = "legacy",
 ) -> ConductorResult:
     strategy_desc = _strategy_description_for(family_name)
     resolution_context = latest_outcome.get("resolution_context")
 
-    system_prompt = _build_conductor_system_prompt(
-        strategy_desc,
-        backtest_contract=_backtest_contract_for(family_name),
+    mechanism_path = conductor_mode == "mechanism"
+    if mechanism_path and not rendered_corpus:
+        raise ValueError("mechanism conductor mode requires rendered_corpus")
+    system_prompt = (
+        _build_mechanism_system_prompt()
+        if mechanism_path
+        else _build_conductor_system_prompt(
+            strategy_desc,
+            backtest_contract=_backtest_contract_for(family_name),
+        )
     )
 
     outcome_lines = json.dumps(latest_outcome, indent=2) if latest_outcome else "(no results yet)"
@@ -211,7 +220,9 @@ async def run_research_conductor(
         f"PRIOR ROUNDS — RESULTS SUMMARY:\n{round_results}\n\n"
     )
 
-    if trades_file:
+    if mechanism_path:
+        user_prompt = rendered_corpus
+    elif trades_file:
         evidence_lines = f"Trades file for analysis: {trades_file}"
         if strategy_events_file:
             evidence_lines += (
@@ -251,16 +262,20 @@ async def run_research_conductor(
         user_prompt = base_prompt + no_trades_instruction
 
     if rejection_feedback:
+        retry_instruction = (
+            "Use only the rendered corpus and this feedback."
+            if mechanism_path
+            else "Read the source code to understand what the strategy does."
+        )
         user_prompt += (
             f"\n\nFEEDBACK TO APPLY BEFORE PROPOSING:\n"
             f"{rejection_feedback}\n\n"
-            f"Propose a thesis that addresses this feedback. "
-            f"Read the source code to understand what the strategy does."
+            f"Propose a thesis that addresses this feedback. {retry_instruction}"
         )
 
     # Inline structured rejection summary (current-round detail + cross-round
     # pattern counts). Cheap disk read; small block; high signal.
-    if current_job is not None:
+    if current_job is not None and not mechanism_path:
         try:
             from rejection_artifact import (
                 compute_escalation_directive,
@@ -952,51 +967,32 @@ async def run_research_conductor(
             )
             return output
 
-        @function_tool
-        async def get_dimension_examples_tool() -> str:
-            """Return the catalog of mechanism-research dimensions with examples.
-
-            Use when classifying a thesis into a mechanism_dimension or when
-            choosing among under-explored dimensions.
-            """
-            from research_doctrine import DIMENSION_EXAMPLES
-
-            return DIMENSION_EXAMPLES
-
-        @function_tool
-        async def get_tuning_examples_tool() -> str:
-            """Return concrete examples of what counts as parameter tuning vs
-            a real mechanism change.
-
-            Consult before proposing a thesis that touches an existing config
-            key — the validator's neighboring-threshold and config-overlap rules
-            mirror these examples.
-            """
-            from research_doctrine import PARAMETER_TUNING_EXAMPLES
-
-            return PARAMETER_TUNING_EXAMPLES
-
         agent = OAIAgent(
             name="research-conductor",
             instructions=system_prompt,
-            tools=[
-                analyze_trades,
-                web_search,
-                save_finding,
-                search_findings,
-                memory_status,
-                list_past_theses,
-                get_past_thesis,
-                list_round_results,
-                get_round_result,
-                list_rejections_tool,
-                get_rejection_tool,
-                rejection_pattern_summary_tool,
-                get_dimension_examples_tool,
-                get_tuning_examples_tool,
-            ],
+            tools=(
+                []
+                if mechanism_path
+                else [
+                    analyze_trades,
+                    web_search,
+                    save_finding,
+                    search_findings,
+                    memory_status,
+                    list_past_theses,
+                    get_past_thesis,
+                    list_round_results,
+                    get_round_result,
+                    list_rejections_tool,
+                    get_rejection_tool,
+                    rejection_pattern_summary_tool,
+                ]
+            ),
             model=model,
+            output_type=MechanismProposal if mechanism_path else None,
         )
+        if mechanism_path and not hasattr(agent, "output_type"):
+            setattr(agent, "output_type", MechanismProposal)
 
         async with asyncio.timeout(_conductor_timeout_seconds()):
             result = OAIRunner.run_streamed(
@@ -1012,13 +1008,22 @@ async def run_research_conductor(
                 pass
         if hasattr(result, "final_output_as"):
             try:
-                result_text = result.final_output_as(str) or ""
+                coerced_output = result.final_output_as(str)
             except Exception as exc:
                 log.warning("final_output_as failed for conductor: %s", exc)
                 result_text = ""
+            else:
+                if isinstance(coerced_output, MechanismProposal):
+                    result_text = coerced_output.model_dump_json()
+                elif isinstance(coerced_output, str):
+                    result_text = coerced_output
+                elif coerced_output is not None:
+                    result_text = json.dumps(coerced_output, default=str)
         if not result_text:
             final_output = getattr(result, "final_output", None)
-            if isinstance(final_output, str):
+            if isinstance(final_output, MechanismProposal):
+                result_text = final_output.model_dump_json()
+            elif isinstance(final_output, str):
                 result_text = final_output
             elif final_output is not None:
                 result_text = json.dumps(final_output, default=str)
@@ -1090,6 +1095,39 @@ async def run_research_conductor(
     )
 
     if parsed:
+        if mechanism_path:
+            try:
+                proposal = MechanismProposal.model_validate(parsed)
+            except Exception as exc:
+                validation_reason = str(exc)
+            else:
+                _REFINEMENT_RECORDER.finish_session(
+                    session_id=refinement_session["session_id"],
+                    stopping_reason="mechanism_proposal",
+                    final_outcome="accepted",
+                )
+                session_finished = True
+                return ConductorResult(
+                    status="ok",
+                    thesis=proposal.model_dump(mode="json"),
+                    reasoning=proposal.story,
+                    tools_called=frozenset(tools_called_this_round),
+                )
+            failure = ConductorResult(
+                status="conductor_error",
+                error="validation_failed",
+                validation_reason=validation_reason,
+                reasoning=str(parsed.get("story", "")),
+                thesis=parsed if isinstance(parsed, dict) else None,
+                tools_called=frozenset(tools_called_this_round),
+            )
+            if not session_finished:
+                _REFINEMENT_RECORDER.finish_session(
+                    session_id=refinement_session["session_id"],
+                    stopping_reason="invalid_output",
+                    final_outcome="retry_required",
+                )
+            return failure
         if parsed.get("should_stop"):
             trace(
                 "CONDUCTOR",
@@ -1209,6 +1247,8 @@ def run_research_conductor_sync(
     rejection_feedback: str = "",
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
+    rendered_corpus: str = "",
+    conductor_mode: Literal["legacy", "mechanism"] = "legacy",
 ) -> ConductorResult | None:
     return _run_coroutine_sync(
         run_research_conductor(
@@ -1222,5 +1262,7 @@ def run_research_conductor_sync(
             rejection_feedback=rejection_feedback,
             agent_reflexions=agent_reflexions,
             current_job=current_job,
+            rendered_corpus=rendered_corpus,
+            conductor_mode=conductor_mode,
         )
     )

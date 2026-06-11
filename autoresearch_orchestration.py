@@ -768,6 +768,13 @@ def resolve_next_action(controller: "AutoresearchController") -> dict[str, Any]:
 
     state = controller.read_state()
     results = controller.read_results()
+    next_action = state.get("next_action")
+    if (
+        state.get("state") == "running"
+        and isinstance(next_action, dict)
+        and next_action.get("source") == "registered_prediction_retest"
+    ):
+        return state
 
     # Fresh jobs must always plan baseline first when the controller has been
     # reset to `running`, even if a previous halted thesis was preserved in

@@ -13,13 +13,11 @@ from compiler_operationalize import (
 from compiler_research import compile_research_thesis as compile_research_thesis
 from compiler_thesis_io import mark_request_completed as mark_request_completed
 from compiler_thesis_io import write_research_artifact as write_research_artifact
-from compiler_validate import validate_orb_runtime_config as validate_orb_runtime_config
 
 __all__ = [
     "compile_research_thesis",
     "write_research_artifact",
     "mark_request_completed",
-    "validate_orb_runtime_config",
     "thesis_needs_operationalization",
     "operationalize_thesis",
     "build_missing_primitives",

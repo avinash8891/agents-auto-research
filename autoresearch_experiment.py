@@ -19,8 +19,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import yaml
-
+from autoresearch_artifacts import serialize_artifact_path
 from autoresearch_constants import (
     COMMAND_NOTIFICATION_TRUNCATION,
     COMMAND_PREVIEW_TRUNCATION,
@@ -44,7 +43,18 @@ from backtest_run_db import (
     build_config_hash,
     build_data_hash,
 )
+from causal_harvest import (
+    RetestRequested,
+    apply_registered_verdict_to_causal_factor,
+    evaluate_registered_predictions,
+    force_registered_inconclusive_after_retest,
+    is_registered_prediction_retest_action,
+    load_runtime_config_contents,
+    request_registered_prediction_retest,
+    write_feature_table_artifact,
+)
 from diagnostic_contracts import build_required_diagnostic_specs, enrich_required_diagnostics
+from feature_table import FeatureTableArtifact
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic, write_text_atomic
 from research_types import BacktestContract
@@ -299,8 +309,6 @@ def parse_benchmark_details(output: str, *, allow_legacy: bool = False) -> dict[
             "trade_count",
             "profit_factor",
             "max_drawdown",
-            "pct_profitable_windows",
-            "avg_sharpe_across_windows",
             "win_rate",
         ):
             if key in metrics:
@@ -311,8 +319,6 @@ def parse_benchmark_details(output: str, *, allow_legacy: bool = False) -> dict[
                 "trade_count",
                 "profit_factor",
                 "max_drawdown",
-                "pct_profitable_windows",
-                "avg_sharpe_across_windows",
                 "win_rate",
                 "diagnostics",
                 "exit_reason_counts",
@@ -357,8 +363,6 @@ def parse_benchmark_details_legacy(output: str) -> dict[str, Any]:
         "trade_count": r"^METRIC trade_count=(\d+)",
         "profit_factor": r"^METRIC profit_factor=([-+]?\d*\.?\d+)",
         "max_drawdown": r"^METRIC max_drawdown=([-+]?\d*\.?\d+)",
-        "pct_profitable_windows": r"^METRIC pct_profitable_windows=([-+]?\d*\.?\d+)",
-        "avg_sharpe_across_windows": r"^METRIC avg_sharpe_across_windows=([-+]?\d*\.?\d+)",
         "win_rate": r"^METRIC win_rate=([-+]?\d*\.?\d+)",
     }
     for key, pattern in patterns.items():
@@ -432,34 +436,7 @@ def derive_trade_analysis(
 ) -> dict[str, Any]:
     details = parse_benchmark_details(output)
 
-    config_contents: dict[str, Any] = {}
-    config_path = resolve_config_path(
-        config,
-        code_root=controller.root,
-        runtime_root=controller.runtime_root,
-        execution_root=_execution_root(controller),
-    )
-    if config_path.exists():
-        try:
-            if config_path.suffix in (".yaml", ".yml"):
-                raw = yaml.safe_load(config_path.read_text())
-            else:
-                raw = json.loads(config_path.read_text())
-            if isinstance(raw, dict) and "runtime_config" in raw:
-                config_contents = raw["runtime_config"]
-            elif isinstance(raw, dict):
-                config_contents = raw
-            else:
-                from strategies import STRATEGIES
-
-                family_name = controller.family.name
-                config_contents = STRATEGIES[family_name].compile_contract(raw).runtime_config
-        except OSError as exc:
-            log.error(
-                f"CONFIG_READ error config={config}: {exc} "
-                f"| hint=the experiment config exists but cannot be read"
-            )
-            raise
+    config_contents = load_runtime_config_contents(controller, config)
 
     trade_analysis: dict[str, Any] = {
         "what_changed_vs_baseline": f"{Path(config).stem} evaluated independently.",
@@ -598,6 +575,29 @@ def _contract_from_sidecar(controller: "AutoresearchController", config: str) ->
     )
 
 
+def _selected_thesis_payload(controller: "AutoresearchController", config: str) -> dict[str, Any]:
+    contract = controller.ctx.current_contract
+    experiment_slug = contract.contract_id if contract else Path(config).parent.name
+    thesis_json_path = _thesis_sidecar_path(controller, config, experiment_slug)
+    if not thesis_json_path.exists():
+        return {}
+    try:
+        payload = json.loads(thesis_json_path.read_text())
+    except json.JSONDecodeError as exc:
+        log.error(
+            f"THESIS_METADATA_MALFORMED path={thesis_json_path}: {exc} "
+            f"| hint=repair or delete the malformed thesis sidecar JSON"
+        )
+        raise ValueError(f"THESIS_METADATA_MALFORMED path={thesis_json_path}: {exc}") from exc
+    except OSError as exc:
+        log.error(
+            f"THESIS_METADATA_READ error path={thesis_json_path}: {exc} "
+            f"| hint=the thesis sidecar exists but cannot be read"
+        )
+        raise
+    return payload if isinstance(payload, dict) else {}
+
+
 def _resolve_identity(contract: Any | None, config: str) -> str:
     return (
         contract.thesis_id if contract and getattr(contract, "thesis_id", "") else Path(config).stem
@@ -606,18 +606,6 @@ def _resolve_identity(contract: Any | None, config: str) -> str:
 
 def _analysis_identity(controller: "AutoresearchController", config: str) -> str:
     return _resolve_identity(_contract_from_sidecar(controller, config), config)
-
-
-def _serialize_artifact_dir(controller: "AutoresearchController", artifact_dir: Path) -> str:
-    """Prefer a repo-relative artifact path, but keep absolute paths valid.
-
-    Result logging must not assume every artifact directory lives under
-    controller.root.
-    """
-    try:
-        return artifact_dir.relative_to(controller.root).as_posix()
-    except ValueError:
-        return artifact_dir.as_posix()
 
 
 def _build_asi_dict(
@@ -640,7 +628,7 @@ def _build_asi_dict(
         "hypothesis_id": identity,
         "hypothesis": identity,
         "config": config,
-        "artifact_dir": _serialize_artifact_dir(controller, artifact_dir),
+        "artifact_dir": serialize_artifact_path(artifact_dir, controller.root),
         "trade_analysis": analysis.get("trade_analysis", {}),
         "insights": analysis.get("insights", []),
         "next_candidates": analysis.get("next_candidates", []),
@@ -735,6 +723,8 @@ def _build_db_record(
         research_round_id=round_id,
         research_round_number=round_number,
         is_baseline=is_baseline,
+        prediction_verdict=str(analysis.get("prediction_verdict") or ""),
+        lesson=str(analysis.get("lesson") or ""),
     )
     return record
 
@@ -913,9 +903,10 @@ def log_experiment_result(
     analysis: dict[str, Any],
     next_action: dict[str, Any] | None = None,
     artifact_dir: Path | None = None,
+    details: dict[str, Any] | None = None,
 ) -> None:
     controller.sanitize_duplicate_entries(config)
-    details = parse_benchmark_details(output)
+    details = details if details is not None else parse_benchmark_details(output)
     artifact_dir = _resolve_artifact_dir(
         controller, config, details=details, artifact_dir=artifact_dir
     )
@@ -1072,8 +1063,6 @@ def _baseline_metrics_from_first_result(controller: "AutoresearchController") ->
         "trade_count",
         "profit_factor",
         "max_drawdown",
-        "pct_profitable_windows",
-        "avg_sharpe_across_windows",
         "median_expectancy",
     ):
         if bta.get(k) is not None:
@@ -1365,6 +1354,16 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             details = controller.parse_benchmark_details(output)
         except (ResultJsonError, ValueError):
             return _block_with_metric_parse_failed(controller, controller.read_state(), command)
+        job, round_number, _ = _round_context_from_state(state, config=config)
+        write_feature_table_artifact(
+            controller,
+            config=config,
+            details=details,
+            artifact_dir=run_output_dir,
+            feature_artifact=FeatureTableArtifact.for_round(
+                _runtime_root(controller), job, round_number
+            ),
+        )
         try:
             decision = controller.evaluate_metric(metric)
         except TimeoutError as exc:
@@ -1392,10 +1391,36 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             verdict, decision = _evaluate_against_thesis(
                 controller, contract, config, metric, decision, details
             )
+        registered_verdict = evaluate_registered_predictions(
+            controller,
+            run_output_dir,
+            metric,
+            details,
+        )
+        retest_request: RetestRequested | None = None
+        if registered_verdict is not None:
+            if registered_verdict.status == "inconclusive":
+                if is_registered_prediction_retest_action(state):
+                    registered_verdict = force_registered_inconclusive_after_retest(
+                        registered_verdict
+                    )
+                    decision = "keep" if registered_verdict.status == "supported" else "discard"
+                else:
+                    retest_request = request_registered_prediction_retest(
+                        controller, state, config=config
+                    )
+                    decision = "retest"
+            verdict = registered_verdict
+            if registered_verdict.status in {"degenerate", "refuted"}:
+                decision = "discard"
+            apply_registered_verdict_to_causal_factor(controller, config, registered_verdict)
 
         analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
         if verdict:
             analysis["trade_analysis"]["verdict"] = verdict.model_dump()
+        if registered_verdict is not None:
+            analysis["prediction_verdict"] = registered_verdict.status
+            analysis["lesson"] = registered_verdict.lesson or registered_verdict.summary
         if controller.ctx.current_contract is None:
             controller.ctx.parent_backtest_run_id = ""
             controller.ctx.execution_root = None
@@ -1410,6 +1435,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             analysis=analysis,
             next_action=next_action,
             artifact_dir=run_output_dir,
+            details=details,
         )
 
         baseline_source = next_action.get("source") == "baseline"
@@ -1418,7 +1444,14 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             if not isinstance(runtime_config, dict) or not runtime_config:
                 runtime_config = getattr(controller.ctx, "latest_config_contents", {}) or {}
             _record_baseline_checkpoint(controller, details, runtime_config)
-        _finalize_round(controller, config, metric, decision, verdict)
+        _finalize_round(
+            controller,
+            config,
+            metric,
+            decision,
+            verdict,
+            retest_request=retest_request if decision == "retest" else None,
+        )
         return 0
     finally:
         controller.clear_transient_context()
@@ -1434,11 +1467,18 @@ def _finalize_round(
     metric: float,
     decision: str,
     verdict: Any | None,
+    *,
+    retest_request: RetestRequested | None = None,
 ) -> None:
     """End the hypothesis, reconcile state, log the iteration trace, and
     send the completion notification."""
     end_hypothesis(decision=decision, metric=metric)
-    state = controller.reconcile_state()
+    if retest_request is not None:
+        state = retest_request.next_state
+        controller.write_state(state)
+        controller.write_current_md(state, controller.read_results())
+    else:
+        state = controller.reconcile_state()
     if "activity" in state:
         state.pop("activity", None)
         controller.write_state(state)

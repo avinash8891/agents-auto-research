@@ -389,10 +389,10 @@ def _attempt_detail(entry: dict[str, Any]) -> dict[str, Any]:
 def _iter_thesis_attempts(
     root: Path, *, job_id: int | None = None, thesis_id: str | None = None
 ) -> list[dict[str, Any]]:
+    from backtest_run_db import BacktestRunDB
+
     entries: list[dict[str, Any]] = []
     for db_path in _iter_backtest_db_paths(root):
-        from backtest_run_db import BacktestRunDB
-
         db = BacktestRunDB(db_path)
         entries.extend(db.list_research_thesis_attempts(job_id=job_id, thesis_id=thesis_id))
     # Per-DB rows arrive sorted, but concatenating across multiple family DBs
@@ -537,14 +537,14 @@ def _iter_round_records(
     job_id: int | None = None,
     family: str | None = None,
 ) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
-    for db_path in _iter_backtest_db_paths(root):
-        from backtest_run_db import (
-            INVALID_RESULT_VERDICTS,
-            BacktestRunDB,
-            is_metric_rankable_backtest_run,
-        )
+    from backtest_run_db import (
+        INVALID_RESULT_VERDICTS,
+        BacktestRunDB,
+        is_metric_rankable_backtest_run,
+    )
 
+    records: list[dict[str, Any]] = []
+    for db_path in _iter_backtest_db_paths(root, family=family):
         db = BacktestRunDB(db_path)
         metric_name = db.primary_metric_name()
         direction = db.best_direction()
@@ -590,7 +590,6 @@ def _round_index_entry(item: dict[str, Any]) -> dict[str, Any]:
         "trade_count": getattr(record, "trade_count", 0),
         "profit_factor": metrics.get("profit_factor"),
         "max_drawdown": metrics.get("max_drawdown"),
-        "pct_profitable_windows": metrics.get("pct_profitable_windows"),
         "config_path": getattr(record, "config_path", ""),
         "config_change_keys": sorted(
             (dict(getattr(record, "_asi_export", {}) or {}).get("config_changes") or {}).keys()

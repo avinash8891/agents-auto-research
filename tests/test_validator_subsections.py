@@ -185,7 +185,7 @@ def test_structural_section_rejects_missing_mechanism_with_prefixed_code() -> No
 # ── Thesis-quality section: prefixed codes ───────────────────────────────
 
 
-def test_thesis_quality_section_rejects_theme_cluster_fixation_with_prefixed_code() -> None:
+def test_thesis_quality_section_no_longer_rejects_theme_cluster_fixation() -> None:
     prior = [
         _prior("p1", theme_keywords=["volatility_floor"]),
         _prior("p2", theme_keywords=["other_a"]),
@@ -210,10 +210,8 @@ def test_thesis_quality_section_rejects_theme_cluster_fixation_with_prefixed_cod
         "an absolute threshold, which prior theses on this theme did not test."
     )
 
-    with pytest.raises(ThesisValidationError) as excinfo:
-        validate_thesis_dict(raw, prior_theses=prior)
-
-    assert excinfo.value.rejection_code == "thesis_quality_theme_cluster_fixation"
+    obj = validate_thesis_dict(raw, prior_theses=prior)
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_structural_section_ignores_repeated_llm_thesis_id() -> None:
@@ -234,11 +232,11 @@ def test_config_validity_section_rejects_jaccard_overlap_with_prefixed_code() ->
     """Jaccard overlap fires for non-trivial key overlap when no shared numeric
     key falls within the neighboring-threshold band.
 
-    Gate ordering note: `_check_neighboring_threshold` now runs BEFORE the
-    Jaccard check so single-key value-tweak theses get the more specific
-    finding. To isolate Jaccard, the shared numeric key here uses a value
-    well outside the 2x neighboring band (10.0 → 2.5 = 0.25x), so the
-    neighboring gate passes and Jaccard fires next.
+    Gate ordering note: the behavioral pass checks neighboring-threshold
+    before Jaccard overlap so single-key value-tweak theses get the more
+    specific finding. To isolate Jaccard, the shared numeric key here uses
+    a value well outside the 2x neighboring band (10.0 → 2.5 = 0.25x), so
+    the neighboring gate passes and Jaccard fires next.
     """
     raw = _base_thesis("dup_keys")
     raw["theme_keywords"] = ["unrelated"]

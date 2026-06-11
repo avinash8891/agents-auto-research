@@ -12,10 +12,13 @@ exported entry shape.
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
+from autoresearch_artifacts import round_number_from_path
 from autoresearch_constants import MAX_RESEARCH_ROUNDS
 from autoresearch_controller import AutoresearchController
 from autoresearch_research import (
@@ -27,8 +30,15 @@ from autoresearch_research import (
     _handle_needs_code,
     _handle_round_failure,
     _handle_success,
+    _mechanism_proposal_to_research_thesis,
+    _on_ready_to_run,
+    _quality_score_from_skill_delta,
+    _record_round_quality_and_bridges,
     _research_feedback_from_verdict,
     _resolve_conductor_inputs,
+    _round_number_from_artifact_path,
+    _round_reflexio_facts,
+    _screen_mechanism_proposal,
     _try_one_validation_attempt,
     accumulate_job_usage,
     execute_research_sdk,
@@ -39,12 +49,20 @@ from autoresearch_research import (
 )
 from autoresearch_state import BacktestResultRecord, write_state
 from backtest_run_db import BacktestRunDB
-from research_types import ConductorResult
+from causal_harvest import PendingCausalModelArtifact
+from causal_model import load_model, save_model
+from feature_table import feature_table_path
+from research_types import CausalModel, ConductorResult
+from screening import ScreeningResult, write_screenings
 from strategies import STRATEGIES
 from strategy_family import load_family
 from thesis_validator import ThesisValidationError
 
 # ── notify_discord fail-open contract ────────────────────────────
+
+
+def test_research_round_number_parser_reuses_artifact_helper() -> None:
+    assert _round_number_from_artifact_path is round_number_from_path
 
 
 def _real_controller(tmp_path: Path) -> AutoresearchController:
@@ -59,10 +77,35 @@ def _real_controller(tmp_path: Path) -> AutoresearchController:
     )
 
 
+def _real_family_controller(tmp_path: Path, family_name: str) -> AutoresearchController:
+    family = load_family(family_name)
+    return AutoresearchController(
+        root=tmp_path,
+        runtime_root=tmp_path,
+        family=family,
+        state_path=tmp_path / f"{family_name}_autoresearch.next.json",
+        current_md_path=tmp_path / f"{family_name}_autoresearch.current.md",
+        jobs_root=tmp_path / "runtime" / "jobs",
+    )
+
+
 def _write_valid_ema_config(path: Path, **overrides: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     config = {**STRATEGIES["ema"].get_defaults(), **overrides}
     path.write_text(json.dumps(config) + "\n")
+
+
+def _screening_result(rule: str, verdict: str) -> ScreeningResult:
+    return ScreeningResult(
+        rule=rule,
+        verdict=verdict,
+        sample_count=40,
+        flagged_loss_rate=0.8,
+        base_loss_rate=0.56,
+        lift=0.24,
+        p_value=0.004,
+        overlap_with=None,
+    )
 
 
 def test_notify_discord_no_op_when_webhook_empty() -> None:
@@ -81,6 +124,235 @@ def test_notify_discord_swallows_exceptions(monkeypatch) -> None:
     monkeypatch.setattr(urllib.request, "urlopen", boom)
     # Must complete cleanly even though urllib raised.
     notify_discord("title", "body", webhook="https://example.invalid/hook")
+
+
+def test_record_round_quality_sends_round_facts_only_to_reflexio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_ema_base_config(tmp_path)
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "running", "job": 4, "research_round": 1})
+    emitted: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        "autoresearch_research._round_reflexio_facts",
+        lambda *_args, **_kwargs: {
+            "registered_predictions": [
+                {"metric": "profit_factor", "magnitude_gap": -0.4, "direction_passed": False}
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        "autoresearch_research.emit_halo_event",
+        lambda **kwargs: emitted.append(("halo", kwargs["payload"])),
+    )
+    monkeypatch.setattr(
+        "autoresearch_research.emit_recursive_improve_event",
+        lambda **kwargs: emitted.append(("recursive", kwargs["payload"])),
+    )
+    monkeypatch.setattr(
+        "autoresearch_research.emit_reflexio_event",
+        lambda **kwargs: emitted.append(("reflexio", kwargs["payload"])),
+    )
+
+    _record_round_quality_and_bridges(
+        controller,
+        1,
+        {"generated_config": "runtime/jobs/job-4/research/round-1/selected_config.json"},
+        {"total": {"total_tokens": 1}},
+    )
+
+    by_name = dict(emitted)
+    assert "round_facts" not in by_name["halo"]
+    assert "round_facts" not in by_name["recursive"]
+    assert (
+        by_name["reflexio"]["reflection"]["round_facts"]["registered_predictions"][0]["metric"]
+        == "profit_factor"
+    )
+
+
+def test_round_reflexio_facts_scopes_screening_counts_to_active_job(tmp_path: Path) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "running", "job": 4, "research_round": 2})
+    write_screenings(
+        controller.backtest_run_db.path,
+        [_screening_result("own_rule", "pass")],
+        round_number=2,
+        job_id=4,
+    )
+    write_screenings(
+        controller.backtest_run_db.path,
+        [_screening_result("other_rule", "kill_no_lift")],
+        round_number=2,
+        job_id=5,
+    )
+
+    facts = _round_reflexio_facts(controller, 2)
+
+    assert facts["screening_verdict_counts"] == {"pass": 1}
+
+
+def test_screen_mechanism_proposal_reads_feature_table_from_runtime_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime-root"
+    code_root.mkdir()
+    runtime_root.mkdir()
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+    family = load_family("ema")
+    controller = AutoresearchController(
+        root=code_root,
+        runtime_root=runtime_root,
+        family=family,
+        state_path=runtime_root / "ema_autoresearch.next.json",
+        current_md_path=runtime_root / "ema_autoresearch.current.md",
+        jobs_root=runtime_root / "runtime" / "jobs",
+    )
+    completed_round_root = runtime_root / "runtime/jobs/job-9/research/round-0-baseline"
+    _write_screening_feature_table(completed_round_root)
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            holdout_start="2023-01-01T00:00:00+00:00",
+            factors=[],
+            accuracy_history=[],
+        ),
+        runtime_root=runtime_root,
+        code_root=code_root,
+    )
+
+    passed, reason, pending_model = _screen_mechanism_proposal(
+        controller,
+        1,
+        {
+            "rule": "gap_pct < 0",
+            "competitor_rule": "gap_pct > 0",
+            "story": "gap-down losses",
+        },
+        "thesis-001",
+        job_id=9,
+    )
+
+    assert passed is True
+    assert reason is None
+    assert pending_model is not None
+
+
+def test_screen_mechanism_proposal_uses_latest_completed_feature_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    monkeypatch.delenv("AUTORESEARCH_RUNTIME_ROOT", raising=False)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    completed_round_root = tmp_path / "runtime/jobs/job-12/research/round-0-baseline"
+    proposed_round_root = tmp_path / "runtime/jobs/job-12/research/round-1"
+    _write_screening_feature_table(completed_round_root)
+    proposed_round_root.mkdir(parents=True)
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            holdout_start="2023-01-01T00:00:00+00:00",
+            factors=[],
+            accuracy_history=[],
+        ),
+        runtime_root=tmp_path,
+        code_root=tmp_path,
+    )
+
+    passed, reason, pending_model = _screen_mechanism_proposal(
+        controller,
+        1,
+        {
+            "rule": "gap_pct < 0",
+            "competitor_rule": "gap_pct > 0",
+            "story": "gap-down losses",
+        },
+        "thesis-001",
+        job_id=12,
+    )
+
+    assert passed is True
+    assert reason is None
+    assert pending_model is not None
+
+
+def test_mechanism_proposal_rejects_undeclared_multi_key_change_before_compile(
+    tmp_path: Path,
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "Two independent EMA changes should be rejected as one proposal.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades may explain the residual instead.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8, "risk_reward": 2.5},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease", "predicted": 80},
+                ],
+            },
+            reasoning="invalid multi-key proposal",
+        ),
+        prior_theses=[],
+    )
+
+    assert result is None
+    assert stage == "stage_1"
+    assert retry_feedback is not None
+    assert "exactly one top-level key" in retry_feedback
+    assert not (round_root / "selected_config.json").exists()
+    assert not (round_root / "pending_causal_model.json").exists()
+
+
+def test_orb_mechanism_proposal_rejects_unsupported_config_key_before_compile(
+    tmp_path: Path,
+) -> None:
+    controller = _real_family_controller(tmp_path, "orb")
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "Unsupported ORB typo should not dispatch a no-op backtest.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades may explain the residual instead.",
+                "actionable": True,
+                "proposed_change": {"unsupported_orb_filter": True},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease", "predicted": 80},
+                ],
+            },
+            reasoning="invalid unsupported key proposal",
+        ),
+        prior_theses=[],
+    )
+
+    assert result is None
+    assert stage == "stage_1"
+    assert retry_feedback is not None
+    assert "unsupported config key" in retry_feedback
+    assert not (round_root / "selected_config.json").exists()
+    assert not (round_root / "pending_causal_model.json").exists()
 
 
 # ── accumulate_job_usage ────────────────────────────────────────
@@ -621,9 +893,62 @@ def test_research_feedback_from_verdict_preserves_prefixed_summary() -> None:
     assert feedback == "Previous candidate was rejected: trade count collapsed?"
 
 
+def test_quality_score_uses_documented_skill_delta_formula() -> None:
+    assert _quality_score_from_skill_delta(0.02) == pytest.approx(0.60)
+    assert _quality_score_from_skill_delta(0.0) == pytest.approx(0.50)
+    assert _quality_score_from_skill_delta(-0.20) == pytest.approx(0.0)
+    assert _quality_score_from_skill_delta(0.20) == pytest.approx(1.0)
+
+
 def _write_ema_base_config(root: Path) -> None:
     (root / "configs").mkdir(exist_ok=True)
-    (root / "configs" / "ema_base.yaml").write_text("ema_length: 5\n")
+    (root / "configs" / "ema_base.yaml").write_text(
+        "ema_length: 5\nvalidation_start: '2020-01-01'\nvalidation_end: '2024-01-01'\n"
+    )
+
+
+def _write_screening_feature_table(round_root: Path) -> None:
+    rows = []
+    for index in range(80):
+        is_holdout = index >= 60
+        flagged = index % 2 == 0
+        if is_holdout:
+            is_loss = flagged
+        else:
+            is_loss = flagged and index < 56
+        rows.append(
+            {
+                "trade_id": f"trade-{index}",
+                "symbol": "SPY",
+                "side": "long",
+                "entry_ts": (
+                    pd.Timestamp("2022-01-03", tz="UTC") + pd.Timedelta(days=index * 5)
+                    if not is_holdout
+                    else pd.Timestamp("2023-01-03", tz="UTC") + pd.Timedelta(days=(index - 60) * 5)
+                ),
+                "time_of_day_min": 15,
+                "day_of_week": 1,
+                "bars_since_open": 3,
+                "gap_pct": -1.0 if flagged else 1.0,
+                "prior_day_range_pct": 2.0,
+                "overnight_move_pct": -1.0 if flagged else 1.0,
+                "or_width_pctile": 0.5,
+                "dist_to_ema_pct": -0.2,
+                "vol_pctile_20d": 0.7,
+                "regime_label": "trend",
+                "stop_distance_pct": 0.4,
+                "entry_bar_range_pct": 0.1,
+                "out_pnl": -100.0 if is_loss else 100.0,
+                "out_pnl_pct": -1.0 if is_loss else 1.0,
+                "out_mae": 1.0,
+                "out_mfe": 1.0,
+                "out_exit_reason": "target" if not is_loss else "stop",
+                "out_hold_bars": 5,
+                "out_is_loss": is_loss,
+            }
+        )
+    round_root.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_parquet(feature_table_path(round_root))
 
 
 def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
@@ -741,6 +1066,497 @@ def _patch_conductor_round(monkeypatch: pytest.MonkeyPatch, *outputs: dict) -> N
     monkeypatch.setattr("research_conductor.run_research_conductor_sync", _run_conductor)
 
 
+def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 12,
+            "research_round": 0,
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    captured: dict[str, object] = {}
+    corpus_calls: list[dict[str, object]] = []
+
+    def fake_build_corpus(
+        family: str,
+        round_number: int,
+        job: int | None = None,
+        *,
+        runtime_root: Path | None = None,
+        code_root: Path | None = None,
+    ) -> object:
+        corpus_calls.append(
+            {
+                "family": family,
+                "round_number": round_number,
+                "job": job,
+                "runtime_root": runtime_root,
+                "code_root": code_root,
+            }
+        )
+        return object()
+
+    monkeypatch.setattr("evidence_pack.build_corpus", fake_build_corpus)
+    monkeypatch.setattr("evidence_pack.render_corpus", lambda corpus: "RENDERED-CORPUS")
+
+    def _run_conductor(*args, **kwargs):
+        captured.update(kwargs)
+        return ConductorResult(status="should_stop", should_stop=True, reasoning="stop")
+
+    monkeypatch.setattr("research_conductor.run_research_conductor_sync", _run_conductor)
+
+    result = execute_research_sdk(controller)
+
+    assert result["status"] == "completed"
+    assert result["should_stop"] is True
+    assert captured["rendered_corpus"] == "RENDERED-CORPUS"
+    assert captured["conductor_mode"] == "mechanism"
+    assert corpus_calls == [
+        {
+            "family": "ema",
+            "round_number": 0,
+            "job": 12,
+            "runtime_root": tmp_path,
+            "code_root": tmp_path,
+        }
+    ]
+
+
+def test_validation_attempt_dispatches_to_named_mechanism_flow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    calls: list[str] = []
+
+    def fake_mechanism(*args, **kwargs):
+        calls.append("mechanism")
+        return {"status": "completed"}, None, ""
+
+    def fake_legacy(*args, **kwargs):
+        calls.append("legacy")
+        return {"status": "legacy"}, None, ""
+
+    monkeypatch.setattr("autoresearch_research._try_mechanism_validation_attempt", fake_mechanism)
+    monkeypatch.setattr("autoresearch_research._try_legacy_validation_attempt", fake_legacy)
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up continuation dominates.",
+                "actionable": False,
+                "proposed_change": None,
+                "predictions": None,
+            },
+        ),
+        [],
+    )
+
+    assert result == {"status": "completed"}
+    assert retry_feedback is None
+    assert stage == ""
+    assert calls == ["mechanism"]
+
+
+def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 12,
+            "research_round": 0,
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    calls: list[tuple[str, int, int | None, Path | None, Path | None]] = []
+
+    def fake_build_corpus(
+        family: str,
+        round_number: int,
+        job: int | None = None,
+        *,
+        runtime_root: Path | None = None,
+        code_root: Path | None = None,
+    ) -> object:
+        calls.append((family, round_number, job, runtime_root, code_root))
+        return object()
+
+    monkeypatch.setattr("evidence_pack.build_corpus", fake_build_corpus)
+    monkeypatch.setattr("evidence_pack.render_corpus", lambda corpus: "RENDERED-CORPUS")
+    monkeypatch.setattr(
+        "research_conductor.run_research_conductor_sync",
+        lambda *args, **kwargs: ConductorResult(
+            status="should_stop", should_stop=True, reasoning="stop"
+        ),
+    )
+
+    execute_research_sdk(controller)
+
+    assert calls == [("ema", 0, 12, tmp_path, tmp_path)]
+
+
+def test_execute_research_sdk_persists_retry_feedback_for_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_ema_base_config(tmp_path)
+    controller = _real_controller(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 12,
+            "research_round": 0,
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    calls = [
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades might be the actual source of edge.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease"},
+                ],
+            },
+            reasoning="invalid first proposal",
+        ),
+        ConductorResult(status="should_stop", should_stop=True, reasoning="stop after feedback"),
+    ]
+    monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root, **kwargs: [])
+    monkeypatch.setattr(
+        "autoresearch_research._resolve_conductor_inputs",
+        lambda *args, **kwargs: ("trades.csv", "events.parquet", "diagnostics.json", {}),
+    )
+    monkeypatch.setattr("improvement_flags.reflexion_enabled", lambda: False)
+    monkeypatch.setattr(
+        "research_conductor.run_research_conductor_sync",
+        lambda *args, **kwargs: calls.pop(0),
+    )
+
+    result = execute_research_sdk(controller)
+
+    feedback_path = (
+        tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1" / "rejection_feedback.txt"
+    )
+    assert result["should_stop"] is True
+    assert feedback_path.exists()
+    assert "predicted" in feedback_path.read_text(encoding="utf-8")
+
+
+def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    _write_screening_feature_table(
+        tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
+    )
+
+    def _legacy_validator_called(*args, **kwargs):
+        raise AssertionError("legacy thesis validator must not run for MechanismProposal")
+
+    monkeypatch.setattr("thesis_validator.validate_thesis_dict", _legacy_validator_called)
+    monkeypatch.setattr("thesis_validator.validate_stage_2", _legacy_validator_called)
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades might be the actual source of edge.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {
+                        "metric": "profit_factor",
+                        "direction": "increase",
+                        "predicted": 2.2,
+                        "rationale": "Fewer weak crosses should raise PF.",
+                    },
+                    {
+                        "metric": "trade_count",
+                        "direction": "decrease",
+                        "predicted": 80,
+                        "rationale": "Filter removes marginal entries.",
+                    },
+                ],
+            },
+            reasoning="proposal from corpus",
+        ),
+        prior_theses=[],
+    )
+
+    selected_thesis = json.loads((round_root / "selected_thesis.json").read_text())
+    registered = json.loads((round_root / "registered_predictions.json").read_text())
+    selected_config = json.loads((round_root / "selected_config.json").read_text())
+    model = load_model("ema")
+    pending_model = PendingCausalModelArtifact(round_root).load()
+    assert retry_feedback is None
+    assert stage == ""
+    assert result is not None
+    assert result["generated_config"] == "runtime/jobs/job-12/research/round-1/selected_config.json"
+    assert selected_config["ema_length"] == 8
+    assert selected_thesis["rule"] == "gap_pct < 0"
+    assert selected_thesis["proposed_change"] == {"ema_length": 8}
+    assert registered["predictions"][0]["metric"] == "profit_factor"
+    assert model.factors == []
+    assert model.accuracy_history == []
+    assert pending_model is not None
+    assert pending_model.factors[-1].rule == "gap_pct < 0"
+    assert pending_model.factors[-1].status == "candidate"
+    assert pending_model.accuracy_history[-1].round_number == 1
+    with sqlite3.connect(controller.backtest_run_db.path) as conn:
+        rows = conn.execute("SELECT rule, competitor_rule, verdict FROM screenings").fetchall()
+    assert rows == [("gap_pct < 0", "gap_pct > 0", "pass")]
+
+
+def test_mechanism_proposal_retry_revalidates_schema_before_screening(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    _write_screening_feature_table(round_root)
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades might be the actual source of edge.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease"},
+                ],
+            },
+            reasoning="proposal from parsed retry path",
+        ),
+        prior_theses=[],
+    )
+
+    assert result is None
+    assert stage == "stage_1"
+    assert retry_feedback is not None
+    assert "predicted" in retry_feedback
+    assert not (round_root / "selected_config.json").exists()
+    with sqlite3.connect(controller.backtest_run_db.path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM screenings").fetchone()[0] == 0
+
+
+def test_mechanism_proposal_compiles_under_runtime_root_when_code_root_is_separate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code_root = tmp_path / "code"
+    runtime_root = tmp_path / "runtime-root"
+    code_root.mkdir()
+    runtime_root.mkdir()
+    _write_ema_base_config(code_root)
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+    controller = AutoresearchController(
+        root=code_root,
+        runtime_root=runtime_root,
+        family=load_family("ema"),
+        state_path=runtime_root / "ema_autoresearch.next.json",
+        current_md_path=runtime_root / "ema_autoresearch.current.md",
+        jobs_root=runtime_root / "runtime" / "jobs",
+    )
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    round_root = runtime_root / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    _write_screening_feature_table(
+        runtime_root / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
+    )
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up trades might be the actual source of edge.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+                    {"metric": "trade_count", "direction": "decrease", "predicted": 80},
+                ],
+            },
+            reasoning="proposal from corpus",
+        ),
+        prior_theses=[],
+    )
+
+    assert retry_feedback is None
+    assert stage == ""
+    assert result is not None
+    assert (round_root / "selected_config.json").exists()
+    assert not (
+        code_root / "runtime" / "jobs" / "job-12" / "research" / "round-1" / "selected_config.json"
+    ).exists()
+
+
+def test_mechanism_proposal_expected_effects_do_not_use_absolute_predictions_as_thresholds() -> (
+    None
+):
+    thesis = _mechanism_proposal_to_research_thesis(
+        {
+            "story": "Gap-down entries improve PF.",
+            "rule": "gap_pct < 0",
+            "actionable": True,
+            "proposed_change": {"ema_length": 8},
+            "predictions": [{"metric": "profit_factor", "direction": "increase", "predicted": 2.4}],
+        },
+        strategy_family="ema",
+        thesis_id="job-1-round-1-attempt-1",
+    )
+
+    assert thesis["expected_effects"][0]["metric"] == "profit_factor"
+    assert thesis["expected_effects"][0]["threshold"] is None
+
+
+def test_mechanism_proposal_does_not_update_model_when_compile_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    controller.write_state({"job": 12, "research_round": 1})
+    _write_screening_feature_table(
+        tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
+    )
+
+    def fail_compile(*args, **kwargs):
+        raise ValueError("compiled config is invalid")
+
+    monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fail_compile)
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up entries might be the actual source.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {
+                        "metric": "profit_factor",
+                        "direction": "increase",
+                        "predicted": 2.2,
+                        "rationale": "Fewer weak crosses should raise PF.",
+                    },
+                    {
+                        "metric": "trade_count",
+                        "direction": "decrease",
+                        "predicted": 80,
+                        "rationale": "Filter removes marginal entries.",
+                    },
+                ],
+            },
+            reasoning="proposal from corpus",
+        ),
+        prior_theses=[],
+    )
+
+    model = load_model("ema")
+    assert result is None
+    assert stage == "compile"
+    assert "compiled config is invalid" in str(retry_feedback)
+    assert model.factors == []
+    assert model.accuracy_history == []
+
+
+def test_run_research_non_actionable_mechanism_continues_without_interrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    controller.write_state(
+        {
+            "state": "blocked",
+            "job": 12,
+            "research_round": 0,
+            "blockers": [{"kind": "research_required"}],
+            "next_action": {"type": "research"},
+        }
+    )
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    _write_screening_feature_table(round_root)
+    _patch_conductor_round(
+        monkeypatch,
+        {
+            "reasoning": "Screened but not actionable.",
+            "suggested_theses": [
+                {
+                    "story": "Gap-down entries explain residual losses.",
+                    "rule": "gap_pct < 0",
+                    "competitor_rule": "gap_pct > 0",
+                    "competitor_story": "Gap-up entries may explain the residual instead.",
+                    "actionable": False,
+                    "proposed_change": {},
+                    "predictions": [],
+                }
+            ],
+            "should_stop": False,
+        },
+    )
+    monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
+    monkeypatch.setattr("research_conductor.get_round_usage", lambda: {})
+
+    updated = run_research(controller, controller.read_state())
+
+    assert updated["state"] == "blocked"
+    assert updated["research_round"] == 1
+    assert updated["next_action"]["type"] == "research"
+    assert updated["blockers"][0]["kind"] == "research_required"
+
+
 def test_run_research_success_persists_round_artifacts_and_next_action(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -788,6 +1604,69 @@ def test_run_research_success_persists_round_artifacts_and_next_action(
     assert attempts[0]["validator_status"] == "compiled"
     assert attempts[0]["thesis_details"]["closest_prior_theses_considered"] == ["ema-baseline"]
     assert controller.read_state()["job_usage"]["total_tokens"] == 321
+
+
+def test_ready_to_run_writes_registered_predictions_before_backtest_dispatch(
+    tmp_path: Path,
+) -> None:
+    controller = _real_controller(tmp_path)
+
+    class Contract:
+        contract_id = "contract-001"
+
+    result = _on_ready_to_run(
+        controller,
+        research_round=2,
+        contract=Contract(),
+        raw_thesis={
+            "predictions": [
+                {"metric": "profit_factor", "direction": "increase", "predicted": 2.4},
+                {
+                    "metric": "pnl_weighted_accuracy",
+                    "direction": "increase",
+                    "predicted": 0.65,
+                },
+            ]
+        },
+        thesis_id="thesis-001",
+        conductor_result=ConductorResult(status="ok", reasoning="harvest now"),
+        should_stop=False,
+        job_id=12,
+    )
+
+    registered_path = (
+        tmp_path
+        / "runtime"
+        / "jobs"
+        / "job-12"
+        / "research"
+        / "round-2"
+        / "registered_predictions.json"
+    )
+    registered = json.loads(registered_path.read_text(encoding="utf-8"))
+    assert result["generated_config"] == "runtime/jobs/job-12/research/round-2/selected_config.json"
+    assert registered["thesis_id"] == "thesis-001"
+    assert registered["predictions"][0]["metric"] == "profit_factor"
+    assert registered["registered_at_utc"].endswith("+00:00")
+
+
+def test_ready_to_run_rejects_undeclared_multi_key_proposed_change(tmp_path: Path) -> None:
+    controller = _real_controller(tmp_path)
+
+    class Contract:
+        contract_id = "contract-001"
+
+    with pytest.raises(ValueError, match="exactly one top-level key"):
+        _on_ready_to_run(
+            controller,
+            research_round=2,
+            contract=Contract(),
+            raw_thesis={"proposed_change": {"gap_filter": True, "gap_pct": 0.01}},
+            thesis_id="thesis-001",
+            conductor_result=ConductorResult(status="ok", reasoning="harvest now"),
+            should_stop=False,
+            job_id=12,
+        )
 
 
 def test_run_research_should_stop_closes_job_with_finished_state(
@@ -1399,6 +2278,7 @@ def test_handle_needs_code_close_run_called_when_prepare_thesis_raises_type_erro
 def test_execute_research_sdk_persists_research_activity_before_conductor_call(
     tmp_path: Path, monkeypatch
 ) -> None:
+    _write_ema_base_config(tmp_path)
     writes: list[dict[str, object]] = []
     started_rounds: list[dict[str, object]] = []
 

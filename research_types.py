@@ -10,9 +10,15 @@ The evaluator checks the result against predictions and produces an BacktestVerd
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class ExpectedEffect(BaseModel):
@@ -109,6 +115,121 @@ class DiagnosticRequirementSpec(BaseModel):
     payload_fields: list[str] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list)
     description: str = ""
+
+
+class CausalFactor(BaseModel):
+    """A candidate causal rule over entry-time feature-table columns."""
+
+    factor_id: str
+    story: str
+    rule: str
+    direction: Literal["loss", "win"]
+    evidence_rounds: list[int] = Field(default_factory=list)
+    status: Literal["candidate", "supported", "refuted", "harvested", "demoted"] = "candidate"
+    created_at: str = Field(default_factory=_utc_now_iso)
+    lesson: str = ""
+
+
+class AccuracyPoint(BaseModel):
+    """One holdout accuracy observation for a causal model version."""
+
+    round_number: int
+    model_version: int
+    pnl_weighted_accuracy: float
+    naive_accuracy: float
+    skill: float
+    holdout_trade_count: int
+
+
+class CausalModel(BaseModel):
+    """Persisted causal model state for one strategy family."""
+
+    family: str
+    version: int
+    factors: list[CausalFactor] = Field(default_factory=list)
+    accuracy_history: list[AccuracyPoint] = Field(default_factory=list)
+    holdout_start: str = ""
+
+
+class MetricName(str, Enum):
+    profit_factor = "profit_factor"
+    trade_count = "trade_count"
+    max_drawdown = "max_drawdown"
+    win_rate = "win_rate"
+    median_expectancy = "median_expectancy"
+    pnl_weighted_accuracy = "pnl_weighted_accuracy"
+
+
+HARVEST_OBSERVABLE_METRICS = frozenset(
+    {
+        MetricName.profit_factor,
+        MetricName.trade_count,
+        MetricName.max_drawdown,
+        MetricName.median_expectancy,
+    }
+)
+
+
+class Prediction(BaseModel):
+    metric: MetricName
+    direction: Literal[
+        "increase",
+        "decrease",
+        "increase_or_same",
+        "decrease_or_same",
+        "not_worse_than",
+    ]
+    predicted: float | None = None
+    rationale: str = ""
+
+
+class MechanismProposal(BaseModel):
+    """Conductor output for the causal-engine research path."""
+
+    story: str
+    rule: str
+    competitor_rule: str
+    competitor_story: str
+    actionable: bool
+    proposed_change: dict[str, Any] | None = None
+    predictions: list[Prediction] | None = None
+
+    @model_validator(mode="after")
+    def _validate_actionable_contract(self) -> "MechanismProposal":
+        if not self.actionable:
+            return self
+        if not self.proposed_change:
+            raise ValueError("proposed_change is required when actionable is true")
+        if self.predictions is None or len(self.predictions) < 2:
+            raise ValueError(
+                "predictions must contain at least two entries when actionable is true"
+            )
+        metrics = [prediction.metric for prediction in self.predictions]
+        if len(set(metrics)) != len(metrics):
+            raise ValueError("predictions must use distinct MetricName values")
+        missing_predicted = [
+            prediction.metric.value
+            for prediction in self.predictions
+            if prediction.predicted is None
+        ]
+        if missing_predicted:
+            raise ValueError(
+                "predictions must include predicted values for: "
+                + ", ".join(sorted(missing_predicted))
+            )
+        unsupported_metrics = sorted(
+            {
+                prediction.metric.value
+                for prediction in self.predictions
+                if prediction.metric not in HARVEST_OBSERVABLE_METRICS
+            }
+        )
+        if unsupported_metrics:
+            raise ValueError(
+                "predictions use metrics unavailable to harvest evaluator: "
+                + ", ".join(unsupported_metrics)
+            )
+        return self
 
 
 EMERGENT_MECHANISM_DIMENSION = "emergent"
@@ -339,3 +460,13 @@ class BacktestVerdict(BaseModel):
     missing_required_diagnostics: list[str] = Field(default_factory=list)
 
     summary: str = ""
+
+
+class HarvestVerdict(BaseModel):
+    """Result of evaluating registered v2 harvest predictions."""
+
+    thesis_id: str
+    status: Literal["supported", "refuted", "inconclusive", "degenerate"]
+    prediction_results: list[dict[str, Any]] = Field(default_factory=list)
+    summary: str = ""
+    lesson: str = ""
