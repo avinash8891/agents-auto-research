@@ -158,7 +158,7 @@ def test_build_corpus_reads_runtime_artifacts_for_refuted_harvest(
     assert corpus.screening_history[0].flagged_loss_rate == 0.8
     assert corpus.screening_history[0].base_loss_rate == 0.56
     assert corpus.harvest_verdicts[0]["registered_predictions"][0]["gap"] == -0.23
-    assert corpus.residual_summary[0]["trade_id"] in {"holdout-loss", "holdout-win"}
+    assert {row["trade_id"] for row in corpus.residual_summary} == {"train-loss", "train-win"}
     assert corpus.cross_family[0].factor_id == "f101"
 
 
@@ -202,7 +202,7 @@ def test_build_corpus_uses_explicit_runtime_and_code_roots(tmp_path: Path, monke
     )
 
     assert corpus.model.factors[0].factor_id == "f001"
-    assert {row["trade_id"] for row in corpus.residual_summary}
+    assert {row["trade_id"] for row in corpus.residual_summary} == {"train-loss", "train-win"}
     assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
 
 
@@ -264,7 +264,7 @@ def test_build_corpus_feature_table_is_scoped_to_active_job(tmp_path: Path, monk
 
     corpus = build_corpus("ema", 2, job=1)
 
-    assert {row["trade_id"] for row in corpus.residual_summary}
+    assert {row["trade_id"] for row in corpus.residual_summary} == {"train-loss", "train-win"}
     assert "other-job" not in {row["trade_id"] for row in corpus.residual_summary}
 
 

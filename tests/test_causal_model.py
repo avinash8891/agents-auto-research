@@ -321,7 +321,7 @@ def test_holdout_mask_uses_configured_research_engine_holdout_fraction() -> None
     assert half_mask.tolist() == [False, True, True]
 
 
-def test_residual_map_ranks_unexplained_pnl_before_explained_pattern_trades() -> None:
+def test_residual_map_uses_pre_holdout_training_trades_only() -> None:
     table = _feature_table()
     model = CausalModel(family="ema", version=1, factors=[_planted_factor()], accuracy_history=[])
 
@@ -335,19 +335,14 @@ def test_residual_map_ranks_unexplained_pnl_before_explained_pattern_trades() ->
         "unexplained_abs_pnl",
     ]
     assert residuals["trade_id"].tolist() == [
-        "holdout-win-1",
-        "holdout-win-2",
-        "holdout-loss-1",
-        "holdout-loss-2",
+        "train-3",
+        "train-1",
+        "train-5",
+        "train-4",
+        "train-2",
     ]
-    assert (
-        residuals.loc[residuals["trade_id"] == "holdout-loss-1", "unexplained_abs_pnl"].item()
-        == 0.0
-    )
-    assert (
-        residuals.loc[residuals["trade_id"] == "holdout-loss-2", "unexplained_abs_pnl"].item()
-        == 0.0
-    )
+    assert residuals.loc[residuals["trade_id"] == "train-1", "unexplained_abs_pnl"].item() == 0.0
+    assert residuals.loc[residuals["trade_id"] == "train-3", "unexplained_abs_pnl"].item() == 0.0
 
 
 def test_refuted_factors_contribute_nothing_to_prediction() -> None:

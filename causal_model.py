@@ -160,14 +160,17 @@ def score_on_holdout(model: CausalModel, features: pd.DataFrame) -> AccuracyPoin
 def residual_map(model: CausalModel, features: pd.DataFrame) -> pd.DataFrame:
     predictions = predict(model, features)
     holdout = holdout_mask(features, family=model.family, holdout_start=model.holdout_start)
-    actual_loss = features.loc[holdout, "out_is_loss"].astype(bool)
-    predicted_loss = predictions.loc[holdout] > 0.5
+    train = ~holdout
+    if not train.any():
+        raise ValueError("causal model requires at least one pre-holdout training row")
+    actual_loss = features.loc[train, "out_is_loss"].astype(bool)
+    predicted_loss = predictions.loc[train] > 0.5
     residuals = pd.DataFrame(
         {
-            "trade_id": features.loc[holdout, "trade_id"].astype(str),
+            "trade_id": features.loc[train, "trade_id"].astype(str),
             "predicted": predicted_loss.map({True: "loss", False: "win"}),
             "actual": actual_loss.map({True: "loss", False: "win"}),
-            "abs_pnl": features.loc[holdout, "out_pnl"].astype(float).abs(),
+            "abs_pnl": features.loc[train, "out_pnl"].astype(float).abs(),
         }
     ).reset_index(drop=True)
     residuals = residuals.assign(
