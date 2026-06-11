@@ -879,18 +879,7 @@ def _mechanism_proposal_to_research_thesis(
     proposed_change = raw_thesis.get("proposed_change")
     if not isinstance(proposed_change, dict) or not proposed_change:
         raise ValueError("mechanism proposal requires non-empty proposed_change")
-    predictions = raw_thesis.get("predictions") or []
     story = str(raw_thesis.get("story") or "")
-    expected_effects = [
-        {
-            "metric": prediction.get("metric"),
-            "direction": prediction.get("direction"),
-            "threshold": None,
-            "rationale": prediction.get("rationale", ""),
-        }
-        for prediction in predictions
-        if isinstance(prediction, dict)
-    ]
     return {
         **raw_thesis,
         "thesis_id": thesis_id,
@@ -912,7 +901,7 @@ def _mechanism_proposal_to_research_thesis(
             or "Future rounds can keep, refute, or extend this exact rule."
         ),
         "config_changes": proposed_change,
-        "expected_effects": expected_effects,
+        "expected_effects": [],
         "disqualifiers": [],
         "why_not_overfit": (
             "Mechanism proposal is screened on entry-time features and judged "

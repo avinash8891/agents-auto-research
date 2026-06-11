@@ -1447,6 +1447,16 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
                 "hypothesis": "Gap-down entries should improve harvest metrics.",
                 "mechanism": "Gap pressure creates better mean-reversion setups.",
                 "rule": "gap_pct < 0",
+                "expected_effects": [
+                    {"metric": "profit_factor", "direction": "increase", "threshold": 0.1}
+                ],
+                "disqualifiers": [
+                    {
+                        "name": "legacy_drawdown_limit",
+                        "condition": "max_drawdown > 0.05",
+                        "severity": "hard_fail",
+                    }
+                ],
             }
         )
         + "\n"

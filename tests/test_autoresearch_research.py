@@ -1436,9 +1436,7 @@ def test_mechanism_proposal_compiles_under_runtime_root_when_code_root_is_separa
     ).exists()
 
 
-def test_mechanism_proposal_expected_effects_do_not_use_absolute_predictions_as_thresholds() -> (
-    None
-):
+def test_mechanism_proposal_does_not_populate_legacy_expected_effects() -> None:
     thesis = _mechanism_proposal_to_research_thesis(
         {
             "story": "Gap-down entries improve PF.",
@@ -1451,8 +1449,10 @@ def test_mechanism_proposal_expected_effects_do_not_use_absolute_predictions_as_
         thesis_id="job-1-round-1-attempt-1",
     )
 
-    assert thesis["expected_effects"][0]["metric"] == "profit_factor"
-    assert thesis["expected_effects"][0]["threshold"] is None
+    assert thesis["expected_effects"] == []
+    assert thesis["predictions"] == [
+        {"metric": "profit_factor", "direction": "increase", "predicted": 2.4}
+    ]
 
 
 def test_mechanism_proposal_does_not_update_model_when_compile_fails(
