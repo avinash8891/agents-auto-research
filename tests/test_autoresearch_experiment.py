@@ -1499,6 +1499,14 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
         )
     )
     monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    monkeypatch.setattr("causal_harvest._harvest_lesson_llm_enabled", lambda: True)
+    monkeypatch.setattr(
+        "causal_harvest._generate_harvest_lesson",
+        lambda **kwargs: (
+            "LLM lesson: profit_factor passed while max_drawdown missed, so keep the "
+            "gap-down story but tighten the risk prediction."
+        ),
+    )
     round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
     round_root.mkdir(parents=True)
     (round_root / "selected_config.json").write_text(json.dumps({"ema_length": 10}) + "\n")
@@ -1573,17 +1581,17 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
     harvest = json.loads((round_root / "harvest_verdict.json").read_text())
     assert record.accepted is True
     assert record.prediction_verdict == "supported"
-    assert "profit_factor direction=pass" in record.lesson
+    assert record.lesson.startswith("LLM lesson: profit_factor passed")
     assert record.verdict_status != "inconclusive"
     assert harvest["round"] == 1
     assert harvest["status"] == "supported"
     assert harvest["registered_predictions"][0]["metric"] == "profit_factor"
     assert "gap" in harvest["registered_predictions"][0]
-    assert "profit_factor direction=pass" in harvest["lesson"]
+    assert harvest["lesson"].startswith("LLM lesson: profit_factor passed")
     updated_model = load_model("ema")
     assert updated_model.version == 1
     assert updated_model.factors[0].status == "harvested"
-    assert "profit_factor direction=pass" in updated_model.factors[0].lesson
+    assert updated_model.factors[0].lesson.startswith("LLM lesson: profit_factor passed")
 
 
 def test_run_experiment_discards_refuted_registered_predictions(

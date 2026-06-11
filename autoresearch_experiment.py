@@ -46,6 +46,7 @@ from backtest_run_db import (
 from causal_harvest import (
     RetestRequested,
     apply_registered_verdict_to_causal_factor,
+    attach_harvest_lesson,
     evaluate_registered_predictions,
     force_registered_inconclusive_after_retest,
     is_registered_prediction_retest_action,
@@ -1400,6 +1401,11 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         )
         retest_request: RetestRequested | None = None
         if registered_verdict is not None:
+            registered_verdict = attach_harvest_lesson(
+                controller,
+                run_output_dir,
+                registered_verdict,
+            )
             write_harvest_verdict_artifact(controller, run_output_dir, registered_verdict)
             if registered_verdict.status == "inconclusive":
                 if is_registered_prediction_retest_action(state):

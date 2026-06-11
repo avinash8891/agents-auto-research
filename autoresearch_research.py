@@ -875,20 +875,7 @@ def _retry_budget_exhausted(
     return attempt >= max_retries or _per_stage_budget_exhausted(stage_1, stage_2, compile_n)
 
 
-def _is_mechanism_proposal(raw_thesis: dict[str, Any]) -> bool:
-    mechanism_keys = {
-        "story",
-        "rule",
-        "competitor_rule",
-        "competitor_story",
-        "actionable",
-        "proposed_change",
-        "predictions",
-    }
-    return bool(mechanism_keys & set(raw_thesis))
-
-
-def _mechanism_proposal_to_research_thesis(
+def _mechanism_proposal_to_compiler_payload(
     raw_thesis: dict[str, Any],
     *,
     strategy_family: str,
@@ -904,27 +891,9 @@ def _mechanism_proposal_to_research_thesis(
         "strategy_family": strategy_family,
         "hypothesis": story,
         "mechanism": story,
-        "mechanism_dimension": raw_thesis.get("mechanism_dimension") or "emergent",
-        "new_dimension_name": raw_thesis.get("new_dimension_name") or "causal_residual_rule",
-        "why_existing_dimensions_do_not_fit": (
-            raw_thesis.get("why_existing_dimensions_do_not_fit")
-            or "Generated from residual evidence rather than the legacy dimension taxonomy."
-        ),
-        "mechanism_family_definition": (
-            raw_thesis.get("mechanism_family_definition")
-            or "Causal rule over entry-time feature-table columns."
-        ),
-        "expected_reuse_across_future_theses": (
-            raw_thesis.get("expected_reuse_across_future_theses")
-            or "Future rounds can keep, refute, or extend this exact rule."
-        ),
         "config_changes": proposed_change,
         "expected_effects": [],
         "disqualifiers": [],
-        "why_not_overfit": (
-            "Mechanism proposal is screened on entry-time features and judged "
-            "by registered out-of-sample prediction direction."
-        ),
     }
 
 
@@ -1061,24 +1030,12 @@ def _try_one_validation_attempt(
     - `failed_stage` is "stage_1" / "stage_2" / "compile" on failure, "" on success.
     """
     assert conductor_result.thesis is not None
-    raw_thesis = conductor_result.thesis
-    if _is_mechanism_proposal(raw_thesis):
-        return _try_mechanism_validation_attempt(
-            controller,
-            research_round,
-            attempt,
-            conductor_result,
-            prior_theses,
-        )
-    return _try_legacy_validation_attempt(
+    return _try_mechanism_validation_attempt(
         controller,
         research_round,
         attempt,
         conductor_result,
         prior_theses,
-        require_analyst_evidence=require_analyst_evidence,
-        evidence_context=evidence_context,
-        require_analyst_tool=require_analyst_tool,
     )
 
 
@@ -1222,7 +1179,7 @@ def _try_mechanism_validation_attempt(
     if not screening_passed:
         return None, screening_feedback, "stage_1"
 
-    research_thesis = _mechanism_proposal_to_research_thesis(
+    research_thesis = _mechanism_proposal_to_compiler_payload(
         raw_thesis,
         strategy_family=controller.family.name,
         thesis_id=thesis_id,
@@ -1240,71 +1197,6 @@ def _try_mechanism_validation_attempt(
         job_id=job_id,
         pending_causal_model=pending_causal_model,
         validate_stage_2_contract=False,
-    )
-
-
-def _try_legacy_validation_attempt(
-    controller: "AutoresearchController",
-    research_round: int,
-    attempt: int,
-    conductor_result: ConductorResult,
-    prior_theses: Any,
-    *,
-    require_analyst_evidence: bool = True,
-    evidence_context: str | None = None,
-    require_analyst_tool: bool = False,
-) -> tuple[dict[str, Any] | None, str | None, str]:
-    """Validate, compile, and dispatch the legacy ResearchThesis conductor output."""
-
-    from thesis_validator import ThesisValidationError
-
-    raw_thesis, job_id, research_round_id, attempt_number, thesis_id = _init_attempt(
-        controller, research_round, attempt, conductor_result
-    )
-    tools_called = conductor_result.tools_called
-
-    try:
-        raw_thesis, validated = _prepare_thesis_for_validation(
-            raw_thesis,
-            strategy_family=controller.family.name,
-            research_round_id=research_round_id,
-            attempt_number=attempt_number,
-            prior_theses=prior_theses,
-            tools_called=tools_called,
-            require_analyst_evidence=require_analyst_evidence,
-            evidence_context=evidence_context,
-            require_analyst_tool=require_analyst_tool,
-        )
-        thesis_id = validated.thesis_id
-        log.info(
-            f"RESEARCH_RAW thesis_id={thesis_id} "
-            f"config_changes={json.dumps(raw_thesis.get('config_changes', 'MISSING'))}"
-        )
-    except (ThesisValidationError, ValueError) as exc:
-        _log_validation_rejection(
-            controller,
-            research_round,
-            attempt,
-            raw_thesis,
-            thesis_id,
-            str(exc),
-            exc=exc,
-            stage="stage_1",
-        )
-        return None, f"Thesis '{thesis_id}' rejected by validator: {exc}", "stage_1"
-
-    return _compile_and_dispatch_validated_thesis(
-        controller,
-        research_round,
-        attempt,
-        conductor_result,
-        raw_thesis,
-        validated,
-        thesis_id,
-        research_round_id=research_round_id,
-        job_id=job_id,
-        pending_causal_model=None,
-        validate_stage_2_contract=True,
     )
 
 
@@ -1504,7 +1396,6 @@ def _call_conductor(
     agent_reflexions: dict[str, str] | None = None,
     current_job: int | None = None,
     rendered_corpus: str = "",
-    conductor_mode: str = "mechanism",
 ) -> ConductorResult | None:
     """One conductor HTTP/SDK call with the per-attempt log preamble."""
     from research_conductor import run_research_conductor_sync
@@ -1535,7 +1426,6 @@ def _call_conductor(
         agent_reflexions=agent_reflexions,
         current_job=current_job,
         rendered_corpus=rendered_corpus,
-        conductor_mode=conductor_mode,
     )
 
 
@@ -1655,7 +1545,6 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             agent_reflexions=agent_reflexions,
             current_job=current_job,
             rendered_corpus=rendered_corpus,
-            conductor_mode="mechanism",
         )
         terminal = _check_parsed_for_terminal(conductor_result)
         if terminal is not None:

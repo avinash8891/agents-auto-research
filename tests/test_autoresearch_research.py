@@ -30,7 +30,7 @@ from autoresearch_research import (
     _handle_needs_code,
     _handle_round_failure,
     _handle_success,
-    _mechanism_proposal_to_research_thesis,
+    _mechanism_proposal_to_compiler_payload,
     _on_ready_to_run,
     _quality_score_from_skill_delta,
     _record_round_quality_and_bridges,
@@ -1082,8 +1082,36 @@ def _compiled_ema_thesis(thesis_id: str, *, ema_length: int = 8) -> dict:
     }
 
 
+def _ema_mechanism_proposal(*, ema_length: int = 8) -> dict:
+    return {
+        "story": (
+            f"A slower ema_length={ema_length} signal filters noisy pullback crosses "
+            "before entry."
+        ),
+        "rule": "gap_pct < 0",
+        "competitor_rule": "gap_pct > 0",
+        "competitor_story": "Gap-up trades may explain the residual instead.",
+        "actionable": True,
+        "proposed_change": {"ema_length": ema_length},
+        "predictions": [
+            {
+                "metric": "profit_factor",
+                "direction": "increase",
+                "predicted": 2.2,
+                "rationale": "Filtering weak crosses should improve realized edge.",
+            },
+            {
+                "metric": "trade_count",
+                "direction": "decrease",
+                "predicted": 80,
+                "rationale": "A smoother EMA should reject marginal cross signals.",
+            },
+        ],
+    }
+
+
 def _dict_to_conductor_result(d: dict) -> ConductorResult:
-    """Convert legacy test dict (suggested_theses wrapper) to ConductorResult."""
+    """Convert test dicts using the historical suggested_theses wrapper."""
     if d.get("should_stop"):
         return ConductorResult(
             status="should_stop", should_stop=True, reasoning=d.get("reasoning", "")
@@ -1156,7 +1184,7 @@ def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
     assert result["status"] == "completed"
     assert result["should_stop"] is True
     assert captured["rendered_corpus"] == "RENDERED-CORPUS"
-    assert captured["conductor_mode"] == "mechanism"
+    assert all(key != "conductor" + "_mode" for key in captured)
     assert corpus_calls == [
         {
             "family": "ema",
@@ -1179,12 +1207,7 @@ def test_validation_attempt_dispatches_to_named_mechanism_flow(
         calls.append("mechanism")
         return {"status": "completed"}, None, ""
 
-    def fake_legacy(*args, **kwargs):
-        calls.append("legacy")
-        return {"status": "legacy"}, None, ""
-
     monkeypatch.setattr("autoresearch_research._try_mechanism_validation_attempt", fake_mechanism)
-    monkeypatch.setattr("autoresearch_research._try_legacy_validation_attempt", fake_legacy)
 
     result, retry_feedback, stage = _try_one_validation_attempt(
         controller,
@@ -1211,17 +1234,10 @@ def test_validation_attempt_dispatches_to_named_mechanism_flow(
     assert calls == ["mechanism"]
 
 
-def test_partial_mechanism_proposal_does_not_fall_back_to_legacy_validation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_partial_mechanism_proposal_returns_schema_retry_feedback(tmp_path: Path) -> None:
     controller = _real_controller(tmp_path)
     _write_ema_base_config(tmp_path)
     controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
-
-    def fake_legacy(*args, **kwargs):
-        raise AssertionError("partial mechanism proposal must not use legacy validator")
-
-    monkeypatch.setattr("autoresearch_research._try_legacy_validation_attempt", fake_legacy)
 
     result, retry_feedback, stage = _try_one_validation_attempt(
         controller,
@@ -1562,8 +1578,8 @@ def test_mechanism_proposal_compiles_under_runtime_root_when_code_root_is_separa
     ).exists()
 
 
-def test_mechanism_proposal_does_not_populate_legacy_expected_effects() -> None:
-    thesis = _mechanism_proposal_to_research_thesis(
+def test_mechanism_proposal_compiler_payload_has_no_legacy_filler() -> None:
+    thesis = _mechanism_proposal_to_compiler_payload(
         {
             "story": "Gap-down entries improve PF.",
             "rule": "gap_pct < 0",
@@ -1576,6 +1592,9 @@ def test_mechanism_proposal_does_not_populate_legacy_expected_effects() -> None:
     )
 
     assert thesis["expected_effects"] == []
+    assert "why_not_overfit" not in thesis
+    assert "new_dimension_name" not in thesis
+    assert "why_existing_dimensions_do_not_fit" not in thesis
     assert thesis["predictions"] == [
         {"metric": "profit_factor", "direction": "increase", "predicted": 2.4}
     ]
@@ -1715,12 +1734,15 @@ def test_run_research_success_persists_round_artifacts_and_next_action(
         }
     )
     generated_config = "runtime/jobs/job-12/research/round-1/selected_config.json"
-    thesis = _compiled_ema_thesis("ema-tight-entry", ema_length=8)
+    _write_screening_feature_table(
+        tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
+    )
+    proposal = _ema_mechanism_proposal(ema_length=8)
     _patch_conductor_round(
         monkeypatch,
         {
             "reasoning": "Tighter entry filter should reduce weak crosses.",
-            "suggested_theses": [thesis],
+            "suggested_theses": [proposal],
             "should_stop": False,
         },
     )
@@ -1744,7 +1766,7 @@ def test_run_research_success_persists_round_artifacts_and_next_action(
         thesis_id="job-12-round-1-attempt-1",
     )
     assert attempts[0]["validator_status"] == "compiled"
-    assert attempts[0]["thesis_details"]["closest_prior_theses_considered"] == ["ema-baseline"]
+    assert attempts[0]["config_changes"] == {"ema_length": 8}
     assert controller.read_state()["job_usage"]["total_tokens"] == 321
 
 
@@ -1866,13 +1888,13 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
             "next_action": {"type": "research"},
         }
     )
-    invalid_thesis = _compiled_ema_thesis("ema-duplicate", ema_length=8)
-    invalid_thesis["config_changes"] = {"requires_code_change": True}
+    invalid_proposal = _ema_mechanism_proposal(ema_length=8)
+    invalid_proposal["proposed_change"] = {"unsupported_ema_filter": True}
     _patch_conductor_round(
         monkeypatch,
         {
             "reasoning": "Duplicate EMA idea.",
-            "suggested_theses": [invalid_thesis],
+            "suggested_theses": [invalid_proposal],
             "should_stop": False,
         },
     )
@@ -1895,9 +1917,7 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
         thesis_id="job-14-round-3-attempt-1",
     )
     assert attempts[0]["validator_status"] == "rejected_attempt_1"
-    assert (
-        "config_changes contains thesis metadata key" in attempts[-1]["validation_failure_reason"]
-    )
+    assert "unsupported config key(s) for ema" in attempts[-1]["validation_failure_reason"]
 
 
 def test_run_research_max_rounds_finishes_without_conductor_call(tmp_path: Path) -> None:
@@ -1924,9 +1944,7 @@ def test_run_research_max_rounds_finishes_without_conductor_call(tmp_path: Path)
     assert "activity" not in updated
 
 
-def test_try_one_validation_attempt_operationalizes_code_change_before_validation(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_try_one_validation_attempt_compiles_mechanism_payload(tmp_path: Path, monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     class _Controller:
@@ -1940,33 +1958,23 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
         def log_research_round(self, *args, **kwargs):
             raise AssertionError("should not reject after operationalization")
 
-    def fake_operationalize(thesis):
-        updated = dict(thesis)
-        updated["requested_primitives"] = ["opening_range_resolution_gate_enabled"]
-        updated["config_changes"] = {"opening_range_resolution_gate_enabled": True}
-        return updated
-
-    class _Validated:
-        thesis_id = "opening_range_gate"
-
     class _Contract:
         status = "needs_code"
         contract_id = "opening_range_gate"
 
-    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
-        captured["validated_raw"] = dict(raw)
-        return _Validated()
-
     def fake_compile(validated, root, artifact_root=None):
         captured["compiled"] = {
             "thesis_id": validated.thesis_id,
+            "config_changes": dict(validated.config_changes),
             "root": root,
             "artifact_root": artifact_root,
         }
         return _Contract()
 
-    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
-    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
+    monkeypatch.setattr(
+        "autoresearch_research._screen_mechanism_proposal",
+        lambda *args, **kwargs: (True, None, None),
+    )
     monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
 
     result, retry_feedback, _stage = _try_one_validation_attempt(
@@ -1975,29 +1983,7 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
         0,
         ConductorResult(
             status="ok",
-            thesis={
-                "thesis_id": "opening_range_gate",
-                "hypothesis": "need a new opening range gate",
-                "mechanism": "gate post-open entries on opening range resolution",
-                "mechanism_dimension": "signal_quality",
-                "dimension_novelty": "new gate",
-                "expected_effects": [
-                    {
-                        "metric": "profit_factor",
-                        "direction": "increase",
-                        "rationale": "better quality",
-                    }
-                ],
-                "disqualifiers": [
-                    {
-                        "name": "trade_count_collapse",
-                        "condition": "trade_count falls too much",
-                        "severity": "hard_fail",
-                    }
-                ],
-                "requires_code_change": True,
-                "requested_primitives": [],
-            },
+            thesis=_ema_mechanism_proposal(ema_length=8),
             reasoning="code change thesis",
         ),
         prior_theses=[],
@@ -2005,12 +1991,8 @@ def test_try_one_validation_attempt_operationalizes_code_change_before_validatio
 
     assert retry_feedback is None
     assert result is not None
-    assert captured["validated_raw"]["requested_primitives"] == [  # type: ignore[index]
-        "opening_range_resolution_gate_enabled"
-    ]
-    assert captured["validated_raw"]["config_changes"] == {  # type: ignore[index]
-        "opening_range_resolution_gate_enabled": True
-    }
+    assert captured["compiled"]["thesis_id"] == "job-2-round-2-attempt-1"  # type: ignore[index]
+    assert captured["compiled"]["config_changes"] == {"ema_length": 8}  # type: ignore[index]
 
 
 def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
@@ -2046,6 +2028,10 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
         "compiler_pipeline.compile_research_thesis",
         lambda validated, root, artifact_root=None: _Contract(),
     )
+    monkeypatch.setattr(
+        "autoresearch_research._screen_mechanism_proposal",
+        lambda *args, **kwargs: (True, None, None),
+    )
     monkeypatch.setattr("autoresearch_research.load_baseline_config", lambda root, family: {})
 
     controller = _Controller()
@@ -2057,22 +2043,7 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
         0,
         ConductorResult(
             status="ok",
-            thesis={
-                "thesis_id": "symbol_day_gate",
-                "hypothesis": "gate later shorts on 09:30 raw setup presence",
-                "mechanism": "symbol-day setup gate",
-                "mechanism_dimension": "regime_conditioning",
-                "dimension_novelty": "uses symbol-day acceptance history",
-                "closest_prior_theses_considered": [
-                    "block_shorts_on_early_impulse_trend_open_days"
-                ],
-                "orthogonality_defense": "uses acceptance provenance rather than price impulse",
-                "evidence_strength": "mixed",
-                "falsification_or_alternative": "if 09:30 setup days still fail, trend-open narrative is weak",
-                "config_changes": {"symbol_day_opening_setup_gate_enabled": True},
-                "expected_effects": [],
-                "disqualifiers": [],
-            },
+            thesis=_ema_mechanism_proposal(ema_length=8),
             reasoning="candidate looks good",
         ),
         prior_theses=[],
@@ -2081,13 +2052,11 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
     assert retry_feedback is None
     assert result is not None
     assert result["generated_config"] == "runtime/jobs/job-8/research/round-8/selected_config.json"
-    assert result["thesis"]["closest_prior_theses_considered"] == [
-        "block_shorts_on_early_impulse_trend_open_days"
-    ]
-    assert result["thesis"]["falsification_or_alternative"].startswith("if 09:30 setup days")
+    assert result["thesis"]["rule"] == "gap_pct < 0"
+    assert result["thesis"]["proposed_change"] == {"ema_length": 8}
 
 
-def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_feedback(
+def test_try_one_validation_attempt_treats_proposed_change_error_as_retry_feedback(
     tmp_path: Path, monkeypatch
 ) -> None:
     class _Controller:
@@ -2102,10 +2071,8 @@ def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_f
         def log_research_round(self, *args, **kwargs):
             self.rejected.append((args, kwargs))
 
-    def fake_operationalize(thesis):
-        raise ValueError("missing_primitives must be a list of strings")
-
-    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
+    proposal = _ema_mechanism_proposal()
+    proposal["proposed_change"] = {"unsupported_ema_filter": True}
 
     result, retry_feedback, _stage = _try_one_validation_attempt(
         _Controller(),
@@ -2113,29 +2080,7 @@ def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_f
         0,
         ConductorResult(
             status="ok",
-            thesis={
-                "thesis_id": "opening_range_gate",
-                "hypothesis": "need a new opening range gate",
-                "mechanism": "gate post-open entries on opening range resolution",
-                "mechanism_dimension": "signal_quality",
-                "dimension_novelty": "new gate",
-                "expected_effects": [
-                    {
-                        "metric": "profit_factor",
-                        "direction": "increase",
-                        "rationale": "better quality",
-                    }
-                ],
-                "disqualifiers": [
-                    {
-                        "name": "trade_count_collapse",
-                        "condition": "trade_count falls too much",
-                        "severity": "hard_fail",
-                    }
-                ],
-                "requires_code_change": True,
-                "requested_primitives": [],
-            },
+            thesis=proposal,
             reasoning="code change thesis",
         ),
         prior_theses=[],
@@ -2144,7 +2089,7 @@ def test_try_one_validation_attempt_treats_operationalize_value_error_as_retry_f
     assert result is None
     assert retry_feedback is not None
     assert "rejected by validator" in retry_feedback
-    assert "missing_primitives must be a list of strings" in retry_feedback
+    assert "unsupported config key(s) for ema" in retry_feedback
 
 
 def test_handle_needs_code_uses_full_validation_contract_before_compile(

@@ -30,40 +30,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from research_prompts import _build_conductor_system_prompt  # noqa: E402
-from research_types import ResearchThesis  # noqa: E402
+from research_prompts import _build_mechanism_system_prompt  # noqa: E402
+from research_types import MechanismProposal  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Ground truth — what the validator actually enforces.
 # ---------------------------------------------------------------------------
 
-# Fields the validator inspects directly. If absent from the prompt, the
-# conductor has no idea the field is required and will omit it.
-# Sourced from validate_research_thesis and its mechanical/behavioral
-# collectors in thesis_validator.py — keep in sync when validator rules change.
-VALIDATOR_INSPECTED_FIELDS: set[str] = {
-    "thesis_id",
-    "hypothesis",
-    "mechanism",
-    "mechanism_dimension",
-    "dimension_novelty",
-    "causal_cluster",
-    "novel_connection",
-    "underexplored_dimensions_considered",
-    "config_changes",
-    "requires_code_change",
-    "requested_primitives",
-    "expected_effects",
-    "evidence_citations",
-    "evidence_strength",
-    "disqualifiers",
-    "required_diagnostics",
-    "falsification_or_alternative",
-    "alternatives_considered",
-    "source_code_verification",
-    "theme_keywords",
-    "prior_lever_outcomes",
-}
+MECHANISM_PROMPT_FIELDS: set[str] = set(MechanismProposal.model_fields)
 
 # Named rules the prompt may reference → rejection_code that must still exist
 # in thesis_validator.py for the reference to be live.
@@ -281,23 +255,13 @@ def _prefix_matches(mcp_tools: set[str]) -> set[str]:
 
 def check_output_fields(prompt: str) -> list[str]:
     findings: list[str] = []
-    documented = extract_output_fields_from_prompt(prompt)
-    model_fields = set(ResearchThesis.model_fields.keys())
+    documented = {field for field in MECHANISM_PROMPT_FIELDS if field in prompt}
 
-    # Required-but-missing: validator inspects it, prompt doesn't document it.
-    missing = sorted(VALIDATOR_INSPECTED_FIELDS - documented)
+    missing = sorted(MECHANISM_PROMPT_FIELDS - documented)
     for name in missing:
         findings.append(
-            f"FIELD_MISSING_FROM_PROMPT: '{name}' is inspected by the validator "
-            f"but not documented in the prompt's OUTPUT section"
-        )
-
-    # Phantom fields: prompt documents a name that isn't on the model.
-    phantom = sorted(documented - model_fields)
-    for name in phantom:
-        findings.append(
-            f"FIELD_PHANTOM_IN_PROMPT: prompt documents '{name}' but no such "
-            f"field exists on ResearchThesis"
+            f"FIELD_MISSING_FROM_PROMPT: '{name}' is required by MechanismProposal "
+            f"but not documented in the mechanism prompt"
         )
     return findings
 
@@ -335,7 +299,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    prompt = _build_conductor_system_prompt(f"<{args.family} strategy description>")
+    prompt = _build_mechanism_system_prompt()
     mcp_tools = discover_mcp_tools(REPO_ROOT / "research_tools_mcp.py")
     validator_codes = discover_validator_rejection_codes(REPO_ROOT / "thesis_validator.py")
 

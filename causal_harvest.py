@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -121,6 +122,107 @@ def evaluate_registered_predictions(
         candidate=candidate_metrics,
         config=_family_base_config(controller),
     )
+
+
+def attach_harvest_lesson(
+    controller: "AutoresearchController",
+    run_output_dir: Path,
+    verdict: Any,
+) -> Any:
+    """Attach an LLM-synthesized harvest lesson when prediction gaps exist.
+
+    Falls back to the deterministic evaluator summary if the LLM path is
+    unavailable, disabled, or returns an empty response.
+    """
+
+    fallback = str(getattr(verdict, "lesson", "") or getattr(verdict, "summary", ""))
+    prediction_results = [dict(item) for item in getattr(verdict, "prediction_results", [])]
+    if not prediction_results:
+        return (
+            verdict.model_copy(update={"lesson": fallback})
+            if hasattr(verdict, "model_copy")
+            else verdict
+        )
+    selected = _selected_thesis_payload(run_output_dir.parent)
+    lesson = fallback
+    if _harvest_lesson_llm_enabled():
+        try:
+            generated = _generate_harvest_lesson(
+                controller=controller,
+                verdict=verdict,
+                selected_thesis=selected,
+                prediction_results=prediction_results,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("harvest lesson LLM synthesis failed; using metric fallback: %s", exc)
+        else:
+            if generated.strip():
+                lesson = generated.strip()
+    if hasattr(verdict, "model_copy"):
+        return verdict.model_copy(update={"lesson": lesson})
+    return verdict
+
+
+def _harvest_lesson_llm_enabled() -> bool:
+    if os.environ.get("AUTORESEARCH_DISABLE_HARVEST_LLM_LESSON") == "1":
+        return False
+    if os.environ.get("AUTORESEARCH_ENABLE_HARVEST_LLM_LESSON") == "1":
+        return True
+    return "PYTEST_CURRENT_TEST" not in os.environ
+
+
+def _generate_harvest_lesson(
+    *,
+    controller: "AutoresearchController",
+    verdict: Any,
+    selected_thesis: dict[str, Any],
+    prediction_results: list[dict[str, Any]],
+) -> str:
+    from agents import Agent as OAIAgent
+    from agents import RunConfig as OAIRunConfig
+    from agents import Runner as OAIRunner
+    from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+
+    from agent_infra import _OAUTH_PROXY_URL, _get_openai_client, _run_coroutine_sync
+    from autoresearch_constants import DEFAULT_AGENT_MODEL
+
+    async def _run() -> str:
+        client = _get_openai_client(_OAUTH_PROXY_URL)
+        model = OpenAIChatCompletionsModel(model=DEFAULT_AGENT_MODEL, openai_client=client)
+        agent = OAIAgent(
+            name="harvest-lesson-synthesizer",
+            instructions=(
+                "You convert registered prediction verdicts into one durable lesson "
+                "for the next causal mechanism proposal. Be concrete, mention the "
+                "prediction gaps, and return only one sentence."
+            ),
+            tools=[],
+            model=model,
+        )
+        prompt = json.dumps(
+            {
+                "family": getattr(getattr(controller, "family", None), "name", ""),
+                "thesis_id": getattr(verdict, "thesis_id", ""),
+                "status": getattr(verdict, "status", ""),
+                "summary": getattr(verdict, "summary", ""),
+                "story": selected_thesis.get("story") or selected_thesis.get("hypothesis"),
+                "rule": selected_thesis.get("rule"),
+                "change": selected_thesis.get("proposed_change")
+                or selected_thesis.get("config_changes"),
+                "prediction_results": prediction_results,
+            },
+            default=str,
+        )
+        result = OAIRunner.run_streamed(
+            agent,
+            prompt,
+            run_config=OAIRunConfig(tracing_disabled=True),
+        )
+        async for _ in result.stream_events():
+            pass
+        return str(getattr(result, "final_output", "") or "")
+
+    return _run_coroutine_sync(_run())
 
 
 def write_harvest_verdict_artifact(

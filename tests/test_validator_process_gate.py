@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import pytest
-
 from backtest_run_db import research_thesis_attempt_id
-from thesis_validator import ThesisValidationError, _process_signal
+from thesis_validator import _process_signal
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
 
@@ -81,16 +79,10 @@ def test_process_gate_passes_when_all_required_tools_called() -> None:
     assert thesis.thesis_id == "job-test-round-1-attempt-1"
 
 
-def test_process_gate_rejects_when_web_search_not_called() -> None:
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_thesis_dict(_valid_thesis(), tools_called={"list_round_results"})
+def test_process_gate_warns_when_web_search_not_called() -> None:
+    thesis = validate_thesis_dict(_valid_thesis(), tools_called={"list_round_results"})
 
-    assert "required tools not called: ['web_search']" in str(exc_info.value)
-    assert exc_info.value.rejection_code == "process_missing_required_tools"
-    assert exc_info.value.evidence == {
-        "missing_tools": ["web_search"],
-        "tools_called": ["list_round_results"],
-    }
+    assert thesis.thesis_id == "job-test-round-1-attempt-1"
 
 
 def test_process_gate_detection_returns_behavior_signal_before_policy() -> None:
@@ -98,30 +90,26 @@ def test_process_gate_detection_returns_behavior_signal_before_policy() -> None:
 
     assert signal is not None
     assert signal.code == "process_missing_required_tools"
-    assert signal.severity == "block"
+    assert signal.severity == "warn"
     assert signal.evidence == {
         "missing_tools": ["web_search"],
         "tools_called": ["list_round_results"],
     }
 
 
-def test_process_gate_rejects_when_experiment_results_not_called() -> None:
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_thesis_dict(_valid_thesis(), tools_called={"web_search"})
+def test_process_gate_warns_when_experiment_results_not_called() -> None:
+    thesis = validate_thesis_dict(_valid_thesis(), tools_called={"web_search"})
 
-    assert "required tools not called: ['list_round_results']" in str(exc_info.value)
-    assert exc_info.value.evidence == {
-        "missing_tools": ["list_round_results"],
-        "tools_called": ["web_search"],
-    }
+    assert thesis.thesis_id == "job-test-round-1-attempt-1"
 
 
-def test_process_gate_rejects_with_multiple_missing_tools() -> None:
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_thesis_dict(_valid_thesis(), tools_called=set())
+def test_process_gate_warns_with_multiple_missing_tools() -> None:
+    thesis = validate_thesis_dict(_valid_thesis(), tools_called=set())
 
-    assert "required tools not called: ['list_round_results', 'web_search']" in str(exc_info.value)
-    assert exc_info.value.evidence == {
+    assert thesis.thesis_id == "job-test-round-1-attempt-1"
+    signal = _process_signal(set())
+    assert signal is not None
+    assert signal.evidence == {
         "missing_tools": ["list_round_results", "web_search"],
         "tools_called": [],
     }
@@ -135,16 +123,17 @@ def test_process_gate_succeeds_with_extra_tools_called() -> None:
     assert thesis.config_changes == {"opening_skip_minutes": 5}
 
 
-def test_process_gate_rejects_when_analyst_tool_required() -> None:
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_thesis_dict(
-            _valid_thesis(),
-            tools_called={"list_round_results", "web_search"},
-            require_analyst_tool=True,
-        )
+def test_process_gate_warns_when_analyst_tool_required() -> None:
+    thesis = validate_thesis_dict(
+        _valid_thesis(),
+        tools_called={"list_round_results", "web_search"},
+        require_analyst_tool=True,
+    )
 
-    assert "required tools not called: ['analyze_trades']" in str(exc_info.value)
-    assert exc_info.value.evidence == {
+    assert thesis.thesis_id == "job-test-round-1-attempt-1"
+    signal = _process_signal({"list_round_results", "web_search"}, require_analyst_tool=True)
+    assert signal is not None
+    assert signal.evidence == {
         "missing_tools": ["analyze_trades"],
         "tools_called": ["list_round_results", "web_search"],
     }

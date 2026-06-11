@@ -352,7 +352,7 @@ def _process_signal(
     return BehaviorSignal(
         code="process_missing_required_tools",
         confidence=1.0,
-        severity="block",
+        severity="warn",
         summary=f"Process gate failed: required tools not called: {missing}",
         evidence={"missing_tools": missing, "tools_called": sorted(tools_called)},
         remediation=("Call the required research tools before submitting the thesis.",),
