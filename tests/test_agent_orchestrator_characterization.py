@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-import time
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -630,8 +630,12 @@ def test_run_web_research_openai_does_not_block_event_loop(monkeypatch):
     monkeypatch.setattr(trace_sdk, "trace_agent_prompt", lambda *a, **k: "trace-id")
     monkeypatch.setattr(trace_sdk, "trace_agent_response", lambda *a, **k: None)
 
+    release_subprocess = threading.Event()
+    fake_subprocess_entered = threading.Event()
+
     def fake_run_codex_web_research(prompt, *, instructions, model):
-        time.sleep(0.05)
+        fake_subprocess_entered.set()
+        assert release_subprocess.wait(timeout=1.0)
         return (
             json.dumps(
                 {
@@ -647,11 +651,10 @@ def test_run_web_research_openai_does_not_block_event_loop(monkeypatch):
         for _ in range(3):
             await asyncio.sleep(0.01)
             ticks += 1
+        release_subprocess.set()
         return ticks
 
     monkeypatch.setattr(agent_openai_calls, "run_codex_web_research", fake_run_codex_web_research)
-
-    started = time.monotonic()
 
     async def run_both():
         return await asyncio.gather(
@@ -662,7 +665,7 @@ def test_run_web_research_openai_does_not_block_event_loop(monkeypatch):
 
     assert result["summary"] == "ok"
     assert ticks == 3
-    assert time.monotonic() - started < 0.075
+    assert fake_subprocess_entered.is_set()
 
 
 def test_run_single_agent_timeout_records_partial_result_usage(monkeypatch):
