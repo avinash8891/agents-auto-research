@@ -19,7 +19,7 @@ Properties preserved across the abstraction:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Final, Literal
+from typing import Any, Literal
 
 SignalSeverity = Literal["info", "warn", "block"]
 DecisionAction = Literal["accept", "accept_with_warning", "reject"]
@@ -42,9 +42,8 @@ class BehaviorSignal:
                    1.0 when fired. For graded detectors (e.g. cluster
                    fixation), this is the proportion of evidence found.
       severity     "info" | "warn" | "block" — detector's recommendation.
-                   Phase C: all behavior detectors emit "block" to match
-                   pre-refactor behavior. Future phases will lower some
-                   to "warn" once outcome data shows they over-fire.
+                   "block" rejects, "warn" accepts with warnings, and
+                   "info" records non-blocking context.
       summary      one-line human description (becomes the exception
                    message when the policy rejects)
       evidence     structured data the conductor can use to fix
@@ -86,42 +85,29 @@ class PolicyDecision:
     warnings: tuple[BehaviorSignal, ...] = ()
 
 
-# Phase C policy: block on any signal. Matches the pre-refactor behavior
-# where each detector raised directly. The constant exists so future
-# phases can toggle the default without searching for magic numbers.
-_BLOCK_ON_ANY_SIGNAL: Final[bool] = True
-
-
 def decide(signals: list[BehaviorSignal]) -> PolicyDecision:
     """Apply the default policy to a list of detected signals.
 
-    Today: any signal → reject (mirrors pre-refactor validator behavior
-    where each detector raised on the first match). The first signal's
-    code becomes the rejection_code, matching the pre-refactor "first
-    check that fires wins" semantics.
-
-    Future phases will introduce confidence/severity-driven decisions
-    and per-strategy configuration. For now the function is intentionally
-    a one-liner so the seam is obvious.
+    Block signals reject, with the first block signal becoming the
+    rejection_code. Warn signals accept with warnings, and info-only signals
+    accept while preserving the observed signals for logs/future calibration.
     """
     signal_tuple = tuple(signals)
     if not signal_tuple:
         return PolicyDecision(action="accept")
-    if _BLOCK_ON_ANY_SIGNAL:
-        first = signal_tuple[0]
+    for signal in signal_tuple:
+        if signal.severity == "block":
+            return PolicyDecision(
+                action="reject",
+                rejection_code=signal.code,
+                triggering=signal,
+                signals=signal_tuple,
+            )
+    warnings = tuple(signal for signal in signal_tuple if signal.severity == "warn")
+    if warnings:
         return PolicyDecision(
-            action="reject",
-            rejection_code=first.code,
-            triggering=first,
+            action="accept_with_warning",
             signals=signal_tuple,
+            warnings=warnings,
         )
-    # Unreachable today because _BLOCK_ON_ANY_SIGNAL is True. Phase D
-    # will flip the constant to False and replace this branch with
-    # severity-routed decisions. See
-    # docs/superpowers/plans/2026-05-27-behavior-signals-phase-abc.md
-    # under "Out of scope (Phase D and beyond)".
-    return PolicyDecision(
-        action="accept_with_warning",
-        signals=signal_tuple,
-        warnings=signal_tuple,
-    )
+    return PolicyDecision(action="accept", signals=signal_tuple)
