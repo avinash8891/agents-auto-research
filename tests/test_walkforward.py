@@ -189,6 +189,33 @@ def test_walkforward_empty_predictions_do_not_vacuously_graduate(tmp_path: Path)
     assert report["survival_rate"] == 0.0
 
 
+def test_walkforward_missing_prediction_metric_demotes_without_interrupt(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "ema_backtest_runs.db"
+    _seed_run(db_path)
+
+    report = evaluate_walkforward(
+        family="ema",
+        thesis_id="thesis-001",
+        runtime_root=tmp_path,
+        code_root=tmp_path,
+        db_path=db_path,
+        run_id="run-thesis",
+        windows=build_windows("2020-01-01", "2020-10-01"),
+        predictions=[{"metric": "profit_factor", "direction": "increase", "predicted": 1.0}],
+        baseline_metrics=[{"trade_count": 30}],
+        candidate_metrics=[{"profit_factor": 1.2, "trade_count": 30}],
+    )
+
+    result = report["windows"][0]["prediction_results"][0]
+    assert report["verdict"] == "demoted"
+    assert result["metric"] == "profit_factor"
+    assert result["direction_passed"] is False
+    assert result["missing_metric"] is True
+    assert result["reason"] == "missing metric: profit_factor"
+
+
 def test_walkforward_direction_rules_match_registered_prediction_evaluator(
     tmp_path: Path,
 ) -> None:

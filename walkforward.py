@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -226,8 +227,18 @@ def _prediction_result(
 ) -> dict[str, Any]:
     metric = str(prediction.get("metric") or "")
     direction = str(prediction.get("direction") or "")
-    baseline_value = float(baseline[metric])
-    candidate_value = float(candidate[metric])
+    baseline_value = _finite_metric_value(baseline, metric)
+    candidate_value = _finite_metric_value(candidate, metric)
+    if baseline_value is None or candidate_value is None:
+        return {
+            "metric": metric,
+            "direction": direction,
+            "baseline": baseline_value,
+            "candidate": candidate_value,
+            "direction_passed": False,
+            "missing_metric": True,
+            "reason": f"missing metric: {metric}",
+        }
     return {
         "metric": metric,
         "direction": direction,
@@ -240,6 +251,16 @@ def _prediction_result(
             candidate_value,
         ),
     }
+
+
+def _finite_metric_value(metrics: dict[str, Any], metric: str) -> float | None:
+    try:
+        value = float(metrics[metric])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    return value
 
 
 def _write_graduation_to_run_row(db_path: Path, run_id: str, graduated: bool) -> None:
