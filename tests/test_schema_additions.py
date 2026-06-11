@@ -8,7 +8,10 @@ from pydantic import ValidationError
 from backtest_run_db import research_thesis_attempt_id
 from research_types import (
     Disqualifier,
+    FACTOR_STATUS_DESCRIPTIONS,
+    HARVEST_OBSERVABLE_METRIC_NAMES,
     PriorLeverOutcome,
+    Prediction,
     ResearchThesis,
 )
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
@@ -21,6 +24,25 @@ def validate_thesis_dict(*args: object, **kwargs: object) -> object:
     kwargs.setdefault("attempt_number", 1)
     kwargs.setdefault("assign_thesis_id", research_thesis_attempt_id)
     return _validate_thesis_dict(*args, **kwargs)
+
+
+def test_causal_factor_schema_documents_demoted_status() -> None:
+    assert FACTOR_STATUS_DESCRIPTIONS["demoted"] == (
+        "failed walk-forward survival after being harvested; excluded from prediction and "
+        "duplicate screening"
+    )
+
+
+def test_prediction_schema_documents_harvest_observable_metric_subset() -> None:
+    assert HARVEST_OBSERVABLE_METRIC_NAMES == (
+        "profit_factor",
+        "trade_count",
+        "max_drawdown",
+        "median_expectancy",
+    )
+    metric_schema = Prediction.model_json_schema()["properties"]["metric"]
+    assert "win_rate" in metric_schema["description"]
+    assert "pnl_weighted_accuracy" in metric_schema["description"]
 
 
 def _base_engine_change_thesis(thesis_id: str, dimension: str) -> dict:
