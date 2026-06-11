@@ -72,13 +72,14 @@ def _orb_entry_features(
         or_minutes,
         feature_cache=feature_cache,
     )
+    day_bars_by_date = _day_bars_by_date(symbol_bars, feature_cache=feature_cache)
     daily_widths: list[float] = []
     for day, width in daily_widths_by_date.items():
         if day > local_day:
             continue
         if day == local_day:
             width = _entry_day_orb_width(
-                symbol_bars[symbol_bars["date"] == day], entry_ts, or_minutes
+                day_bars_by_date.get(day, pd.DataFrame()), entry_ts, or_minutes
             )
         daily_widths.append(width)
     current = daily_widths[-1] if daily_widths else np.nan
@@ -109,6 +110,25 @@ def _full_orb_opening_widths(
         widths[day] = _entry_day_orb_width(day_bars, None, or_minutes)
     feature_cache[cache_key] = widths
     return widths
+
+
+def _day_bars_by_date(
+    symbol_bars: pd.DataFrame,
+    *,
+    feature_cache: dict[tuple[Any, ...], Any],
+) -> dict[object, pd.DataFrame]:
+    symbol = (
+        str(symbol_bars["symbol"].iloc[0])
+        if not symbol_bars.empty and "symbol" in symbol_bars
+        else ""
+    )
+    cache_key = ("bars_by_date", symbol)
+    cached = feature_cache.get(cache_key)
+    if isinstance(cached, dict):
+        return cached
+    grouped = {day: day_bars for day, day_bars in symbol_bars.groupby("date", sort=False)}
+    feature_cache[cache_key] = grouped
+    return grouped
 
 
 def _entry_day_orb_width(

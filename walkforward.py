@@ -370,11 +370,25 @@ def _resolve_record_config_path(controller: Any, record: Any) -> Path:
 def _walkforward_range(
     candidate_config: dict[str, Any], baseline_config: dict[str, Any]
 ) -> tuple[str, str]:
-    start = candidate_config.get("validation_start") or baseline_config.get("validation_start")
-    end = candidate_config.get("validation_end") or baseline_config.get("validation_end")
-    if not start or not end:
-        raise ValueError("walkforward requires validation_start and validation_end in config")
-    return str(start), str(end)
+    validation_end = candidate_config.get("validation_end") or baseline_config.get("validation_end")
+    if not validation_end:
+        raise ValueError("walkforward requires validation_end in config")
+    holdout_start = candidate_config.get("holdout_start") or baseline_config.get("holdout_start")
+    start_ts = pd.Timestamp(validation_end, tz="UTC") + pd.Timedelta(days=1)
+    if holdout_start:
+        start_ts = max(start_ts, pd.Timestamp(holdout_start, tz="UTC"))
+    end = (
+        candidate_config.get("walkforward_end")
+        or baseline_config.get("walkforward_end")
+        or candidate_config.get("holdout_end")
+        or baseline_config.get("holdout_end")
+    )
+    if not end:
+        raise ValueError("walkforward requires holdout_end or walkforward_end after validation_end")
+    end_ts = pd.Timestamp(end, tz="UTC")
+    if end_ts <= start_ts:
+        raise ValueError("walkforward out-of-sample end must be after validation_end")
+    return start_ts.date().isoformat(), end_ts.date().isoformat()
 
 
 def _run_window_backtest(

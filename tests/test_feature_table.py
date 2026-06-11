@@ -159,6 +159,23 @@ def test_build_feature_table_reuses_orb_opening_widths_for_repeated_symbol(
     assert len(full_width_days) == len(set(full_width_days))
 
 
+def test_build_feature_table_does_not_use_iterrows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+
+    def fail_iterrows(self):
+        raise AssertionError("build_feature_table must not use DataFrame.iterrows")
+
+    monkeypatch.setattr(pd.DataFrame, "iterrows", fail_iterrows)
+
+    table = build_feature_table(_trades_df(), _bars_df(), events=[], family="ema")
+
+    assert len(table) == 1
+
+
 def test_build_feature_table_localizes_naive_trade_times_as_new_york(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -66,6 +66,13 @@ class FeatureTableArtifact:
         table.to_parquet(self.path, index=False)
 
 
+@dataclass(frozen=True)
+class SymbolBars:
+    bars: pd.DataFrame
+    daily: pd.DataFrame
+    timestamps: pd.Series
+
+
 def feature_table_path(round_root: Path) -> Path:
     return FeatureTableArtifact(round_root).path
 
@@ -101,7 +108,12 @@ def build_feature_table(
     extra_regime_columns = _extra_regime_columns(regime_labels)
     config = runtime_config or {}
     bars_by_symbol = {
-        str(symbol): symbol_bars for symbol, symbol_bars in bars.groupby("symbol", sort=False)
+        str(symbol): SymbolBars(
+            bars=symbol_bars.reset_index(drop=True),
+            daily=_daily_bars(symbol_bars),
+            timestamps=symbol_bars["timestamp"].reset_index(drop=True),
+        )
+        for symbol, symbol_bars in bars.groupby("symbol", sort=False)
     }
     feature_cache: dict[tuple[Any, ...], Any] = {}
 
@@ -115,7 +127,7 @@ def build_feature_table(
             event_stops,
             feature_cache,
         )
-        for _, trade in trades.iterrows()
+        for trade in trades.to_dict("records")
     ]
     columns = _feature_columns(extra_regime_columns)
     out = pd.DataFrame(rows, columns=columns)
@@ -128,8 +140,8 @@ def build_feature_table(
 
 
 def _feature_row(
-    trade: pd.Series,
-    bars_by_symbol: dict[str, pd.DataFrame],
+    trade: dict[str, Any],
+    bars_by_symbol: dict[str, SymbolBars],
     regime_labels: pd.DataFrame,
     family: str,
     runtime_config: dict[str, Any],
@@ -142,15 +154,21 @@ def _feature_row(
     if entry_local.tzinfo is None:
         entry_local = entry_local.tz_localize("America/New_York")
     entry_ts = entry_local.tz_convert("UTC")
-    symbol_bars = bars_by_symbol.get(symbol)
-    if symbol_bars is None:
-        symbol_bars = pd.DataFrame(
-            columns=["symbol", "timestamp", "date", "open", "high", "low", "close"]
+    symbol_data = bars_by_symbol.get(symbol)
+    if symbol_data is None:
+        symbol_data = SymbolBars(
+            bars=pd.DataFrame(
+                columns=["symbol", "timestamp", "date", "open", "high", "low", "close"]
+            ),
+            daily=pd.DataFrame(columns=["date", "open", "high", "low", "close"]),
+            timestamps=pd.Series(dtype="datetime64[ns, UTC]"),
         )
-    prior_bars = symbol_bars[symbol_bars["timestamp"] < entry_ts]
-    entry_bar = _last_bar_before(prior_bars, entry_ts)
+    symbol_bars = symbol_data.bars
+    entry_pos = int(symbol_data.timestamps.searchsorted(entry_ts, side="left"))
+    prior_bars = symbol_bars.iloc[:entry_pos]
+    entry_bar = prior_bars.iloc[-1] if entry_pos else pd.Series(dtype=object)
     entry_day = entry_ts.tz_convert("America/New_York").date()
-    daily = _daily_bars(prior_bars)
+    daily = symbol_data.daily
     current_day = daily[daily["date"] == entry_day]
     prior_days = daily[daily["date"] < entry_day]
     current_open = _first_float(current_day, "open")

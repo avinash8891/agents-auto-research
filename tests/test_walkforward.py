@@ -11,6 +11,7 @@ from causal_model import load_model, save_model
 from experiment_evaluator import evaluate_predictions
 from research_types import CausalFactor, CausalModel
 from walkforward import (
+    _walkforward_range,
     build_windows,
     evaluate_walkforward,
     run_walkforward_queue,
@@ -62,6 +63,38 @@ def test_build_windows_records_train_window_but_uses_test_window_geometry() -> N
     ]
     assert windows[0].train_start == "2020-01-01T00:00:00+00:00"
     assert windows[0].train_end == windows[0].test_start
+
+
+def test_walkforward_range_starts_after_validation_end() -> None:
+    start, end = _walkforward_range(
+        {"validation_end": "2021-04-01", "ema_length": 8},
+        {
+            "validation_start": "2020-01-01",
+            "validation_end": "2021-04-01",
+            "holdout_end": "2022-07-02",
+        },
+    )
+
+    assert start == "2021-04-02"
+    assert end == "2022-07-02"
+
+
+def test_walkforward_range_uses_later_holdout_start_when_present() -> None:
+    start, end = _walkforward_range(
+        {"validation_end": "2021-04-01", "holdout_start": "2021-05-01"},
+        {"validation_end": "2021-04-01", "holdout_end": "2022-07-02"},
+    )
+
+    assert start == "2021-05-01"
+    assert end == "2022-07-02"
+
+
+def test_walkforward_range_requires_out_of_sample_end() -> None:
+    with pytest.raises(ValueError, match="holdout_end or walkforward_end"):
+        _walkforward_range(
+            {"validation_end": "2021-04-01"},
+            {"validation_start": "2020-01-01", "validation_end": "2021-04-01"},
+        )
 
 
 def test_walkforward_robust_fixture_graduates_and_writes_report(
@@ -270,6 +303,7 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
         "data_universe": "tiny",
         "validation_start": "2020-01-01",
         "validation_end": "2021-04-01",
+        "holdout_end": "2022-07-02",
     }
     baseline_config.write_text(json.dumps(config_payload), encoding="utf-8")
     candidate_config.write_text(
@@ -427,6 +461,7 @@ def test_run_walkforward_queue_memoizes_baseline_window_backtests(
         "data_universe": "tiny",
         "validation_start": "2020-01-01",
         "validation_end": "2021-04-01",
+        "holdout_end": "2022-07-02",
     }
     baseline_config = tmp_path / "runtime/jobs/job-1/research/round-0-baseline/selected_config.json"
     baseline_config.parent.mkdir(parents=True)
@@ -578,6 +613,7 @@ def test_run_walkforward_queue_skips_candidates_without_windows(
         "data_universe": "tiny",
         "validation_start": "2020-01-01",
         "validation_end": "2020-02-01",
+        "holdout_end": "2020-04-01",
     }
     baseline_config.write_text(json.dumps(config_payload), encoding="utf-8")
     candidate_config.write_text(json.dumps({**config_payload, "ema_length": 8}), encoding="utf-8")

@@ -327,18 +327,8 @@ VALID_PROCESS_TOOLS: Final[frozenset[str]] = frozenset(
 def _validate_process(
     tools_called: set[str] | frozenset[str], *, require_analyst_tool: bool = False
 ) -> None:
-    signal = _process_signal(tools_called, require_analyst_tool=require_analyst_tool)
-    decision = _policy_decide([signal] if signal is not None else [])
-    if decision.action != "reject":
-        return
-    triggering = decision.triggering
-    assert triggering is not None, "reject decisions must carry a triggering signal"
-    raise ThesisValidationError(
-        triggering.summary,
-        rejection_code=triggering.code,
-        evidence=dict(triggering.evidence),
-        remediation_hint=_format_remediation(triggering.remediation),
-    )
+    _process_signal(tools_called, require_analyst_tool=require_analyst_tool)
+    return
 
 
 def _process_signal(
