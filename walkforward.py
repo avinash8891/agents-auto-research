@@ -158,6 +158,8 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
                 test_months=research_engine_walkforward_test_months(config_for_tunables),
                 step_months=research_engine_walkforward_step_months(config_for_tunables),
             )
+            if not windows:
+                continue
             baseline_metrics: list[dict[str, Any]] = []
             candidate_metrics: list[dict[str, Any]] = []
             for index, window in enumerate(windows):

@@ -56,14 +56,14 @@ def read_research_artifacts(
 
 
 def round_number_from_path(path: Path) -> int | None:
-    for part in path.parts:
+    for part in reversed(path.parts):
         if not part.startswith("round-"):
             continue
         raw_round = part.removeprefix("round-").split("-", 1)[0]
         try:
             return int(raw_round)
         except ValueError:
-            return None
+            continue
     return None
 
 

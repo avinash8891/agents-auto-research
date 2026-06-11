@@ -835,6 +835,23 @@ def test_mechanism_proposal_schema_requires_actionable_change_and_distinct_predi
     }
 
 
+def test_mechanism_proposal_schema_allows_declared_orb_coupled_change() -> None:
+    proposal = MechanismProposal(
+        story="Volatility trails should protect failed ORB extensions.",
+        rule="or_width_pctile > 0.8",
+        competitor_rule="or_width_pctile <= 0.8",
+        competitor_story="Narrow ranges may explain the edge instead.",
+        actionable=True,
+        proposed_change={"use_volatility_trail": True, "vol_trail_atr_mult": 1.5},
+        predictions=[
+            {"metric": "profit_factor", "direction": "increase", "predicted": 1.4},
+            {"metric": "max_drawdown", "direction": "decrease", "predicted": 0.2},
+        ],
+    )
+
+    assert proposal.proposed_change == {"use_volatility_trail": True, "vol_trail_atr_mult": 1.5}
+
+
 def test_conductor_reports_thesis_validator_failure_after_required_tool_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

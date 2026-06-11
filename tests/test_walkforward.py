@@ -376,6 +376,128 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
     assert written_states[-1]["walkforward_status"] == "completed"
 
 
+def test_run_walkforward_queue_skips_candidates_without_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    baseline_config = tmp_path / "runtime/jobs/job-1/research/round-0-baseline/selected_config.json"
+    candidate_config = tmp_path / "runtime/jobs/job-1/research/round-1/selected_config.json"
+    baseline_config.parent.mkdir(parents=True)
+    candidate_config.parent.mkdir(parents=True)
+    config_payload = {
+        "data_universe": "tiny",
+        "validation_start": "2020-01-01",
+        "validation_end": "2020-02-01",
+    }
+    baseline_config.write_text(json.dumps(config_payload), encoding="utf-8")
+    candidate_config.write_text(json.dumps({**config_payload, "ema_length": 8}), encoding="utf-8")
+    (candidate_config.parent / "registered_predictions.json").write_text(
+        json.dumps(
+            {
+                "thesis_id": "thesis-001",
+                "predictions": [
+                    {"metric": "profit_factor", "direction": "increase", "predicted": 1.2}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    db.add_from_sqlite_fields(
+        run_id="run-baseline",
+        thesis_id="baseline",
+        config_path="runtime/jobs/job-1/research/round-0-baseline/selected_config.json",
+        runtime_config=config_payload,
+        code_commit="abcdef1",
+        data_hash="data",
+        metrics={"profit_factor": 1.0, "trade_count": 30},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="supported",
+        verdict_summary="supported",
+        family="ema",
+        job_id=1,
+        primary_metric_name="profit_factor",
+        primary_metric_value=1.0,
+        research_round_id="job-1-round-0",
+        research_round_number=0,
+        is_baseline=True,
+    )
+    db.add_from_sqlite_fields(
+        run_id="run-thesis",
+        thesis_id="thesis-001",
+        config_path="runtime/jobs/job-1/research/round-1/selected_config.json",
+        runtime_config={**config_payload, "ema_length": 8},
+        code_commit="abcdef1",
+        data_hash="data",
+        metrics={"profit_factor": 1.2, "trade_count": 30},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="supported",
+        verdict_summary="supported",
+        family="ema",
+        job_id=1,
+        primary_metric_name="profit_factor",
+        primary_metric_value=1.2,
+        research_round_id="job-1-round-1",
+        research_round_number=1,
+    )
+    commands: list[str] = []
+    written_states: list[dict] = []
+
+    class Family:
+        name = "ema"
+
+        def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
+            return f"{config_path}|{output_dir}"
+
+    class Controller:
+        root = tmp_path
+        runtime_root = tmp_path
+        family = Family()
+        backtest_run_db = db
+
+        def run_command(self, command: str) -> tuple[int, str]:
+            commands.append(command)
+            return 0, json.dumps({"profit_factor": 1.0, "trade_count": 30})
+
+        def parse_metric(self, output: str, name: str = "profit_factor") -> float:
+            return float(json.loads(output)[name])
+
+        def parse_benchmark_details(self, output: str) -> dict:
+            return json.loads(output)
+
+        def primary_metric_name(self) -> str:
+            return "profit_factor"
+
+        def write_state(self, state: dict) -> None:
+            written_states.append(dict(state))
+
+        def write_current_md(self, state: dict, results: list) -> None:
+            pass
+
+        def read_results(self) -> list:
+            return []
+
+    exit_code = run_walkforward_queue(
+        Controller(),
+        {
+            "state": "running",
+            "job": 1,
+            "research_round": 6,
+            "next_action": {"type": "walkforward"},
+            "finished_reason": "model_plateau_pending_walkforward",
+        },
+    )
+
+    assert exit_code == 0
+    assert commands == []
+    assert not (tmp_path / "walkforward" / "thesis-001.json").exists()
+    assert written_states[-1]["walkforward_status"] == "completed"
+
+
 def test_walkforward_config_reads_nested_defaults() -> None:
     config = {"research_engine": {"walkforward": {"survival_pct": 0.75}}}
 

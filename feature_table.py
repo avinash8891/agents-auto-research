@@ -128,7 +128,7 @@ def _feature_row(
     side = str(trade.get("side") or trade.get("direction") or "").lower()
     entry_local = pd.Timestamp(trade.get("entry_ts", trade.get("entry_date")))
     if entry_local.tzinfo is None:
-        entry_local = entry_local.tz_localize("UTC")
+        entry_local = entry_local.tz_localize("America/New_York")
     entry_ts = entry_local.tz_convert("UTC")
     symbol_bars = bars[bars["symbol"] == symbol].sort_values("timestamp")
     prior_bars = symbol_bars[symbol_bars["timestamp"] <= entry_ts]

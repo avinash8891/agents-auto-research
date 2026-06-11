@@ -486,6 +486,26 @@ def test_resolve_next_action_prioritizes_baseline_rerun_before_state_reconcile(
     assert calls == ["baseline"]
 
 
+def test_resolve_next_action_preserves_registered_prediction_retest_before_reconcile() -> None:
+    state = {
+        "state": "running",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
+            "source": "registered_prediction_retest",
+            "registered_prediction_retest": {"attempt": 1},
+        },
+    }
+    controller = SimpleNamespace(
+        _check_baseline_rerun=lambda: None,
+        read_state=lambda: state,
+        read_results=lambda: [object()],
+        reconcile_state=lambda: (_ for _ in ()).throw(AssertionError("reconcile should not run")),
+    )
+
+    assert orch.resolve_next_action(controller) is state
+
+
 def test_resolve_next_action_resumes_halted_thesis_with_real_controller(
     tmp_path: Path,
 ) -> None:

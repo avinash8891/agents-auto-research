@@ -172,7 +172,7 @@ def test_screen_mechanism_proposal_reads_feature_table_from_runtime_root(
         )
     )
 
-    passed, reason = _screen_mechanism_proposal(
+    passed, reason, pending_model = _screen_mechanism_proposal(
         controller,
         1,
         {
@@ -186,6 +186,7 @@ def test_screen_mechanism_proposal_reads_feature_table_from_runtime_root(
 
     assert passed is True
     assert reason is None
+    assert pending_model is not None
 
 
 # ── accumulate_job_usage ────────────────────────────────────────
@@ -1048,6 +1049,62 @@ def test_mechanism_proposal_expected_effects_do_not_use_absolute_predictions_as_
 
     assert thesis["expected_effects"][0]["metric"] == "profit_factor"
     assert thesis["expected_effects"][0]["threshold"] is None
+
+
+def test_mechanism_proposal_does_not_update_model_when_compile_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    controller = _real_controller(tmp_path)
+    _write_ema_base_config(tmp_path)
+    controller.write_state({"job": 12, "research_round": 1})
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    _write_screening_feature_table(round_root)
+
+    def fail_compile(*args, **kwargs):
+        raise ValueError("compiled config is invalid")
+
+    monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fail_compile)
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "A smoother EMA filters weak pullback crosses.",
+                "rule": "gap_pct < 0",
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up entries might be the actual source.",
+                "actionable": True,
+                "proposed_change": {"ema_length": 8},
+                "predictions": [
+                    {
+                        "metric": "profit_factor",
+                        "direction": "increase",
+                        "predicted": 2.2,
+                        "rationale": "Fewer weak crosses should raise PF.",
+                    },
+                    {
+                        "metric": "trade_count",
+                        "direction": "decrease",
+                        "predicted": 80,
+                        "rationale": "Filter removes marginal entries.",
+                    },
+                ],
+            },
+            reasoning="proposal from corpus",
+        ),
+        prior_theses=[],
+    )
+
+    model = load_model("ema")
+    assert result is None
+    assert stage == "compile"
+    assert "compiled config is invalid" in str(retry_feedback)
+    assert model.factors == []
+    assert model.accuracy_history == []
 
 
 def test_run_research_non_actionable_mechanism_continues_without_interrupt(

@@ -915,8 +915,8 @@ def _screen_mechanism_proposal(
     thesis_id: str,
     *,
     job_id: int,
-) -> tuple[bool, str | None]:
-    from causal_model import holdout_mask, load_model, save_model, score_on_holdout
+) -> tuple[bool, str | None, Any | None]:
+    from causal_model import holdout_mask, load_model, score_on_holdout
     from feature_table import load_feature_table
     from screening import screen, write_screenings
 
@@ -939,10 +939,12 @@ def _screen_mechanism_proposal(
         competitor_rule=str(raw_thesis.get("competitor_rule") or "") or None,
     )
     if screening.verdict != "pass":
-        return False, (
+        return (
+            False,
             f"Screening killed rule '{screening.rule}' with verdict {screening.verdict}: "
             f"sample_count={screening.sample_count}, lift={screening.lift:.6f}, "
-            f"p_value={screening.p_value:.6f}, overlap_with={screening.overlap_with}"
+            f"p_value={screening.p_value:.6f}, overlap_with={screening.overlap_with}",
+            None,
         )
 
     factor = CausalFactor(
@@ -960,10 +962,11 @@ def _screen_mechanism_proposal(
         }
     )
     accuracy = score_on_holdout(rescored, features)
-    save_model(
-        rescored.model_copy(update={"accuracy_history": [*model.accuracy_history, accuracy]})
+    return (
+        True,
+        None,
+        rescored.model_copy(update={"accuracy_history": [*model.accuracy_history, accuracy]}),
     )
-    return True, None
 
 
 def _research_engine_config_for_family(root: Path, family_name: str) -> dict[str, Any]:
@@ -1027,6 +1030,7 @@ def _try_one_validation_attempt(
     attempt_number = attempt + 1
 
     thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
+    pending_causal_model = None
 
     mechanism_path = _is_mechanism_proposal(raw_thesis)
 
@@ -1065,7 +1069,7 @@ def _try_one_validation_attempt(
                 None,
                 "",
             )
-        screening_passed, screening_feedback = _screen_mechanism_proposal(
+        screening_passed, screening_feedback, pending_causal_model = _screen_mechanism_proposal(
             controller,
             research_round,
             raw_thesis,
@@ -1117,6 +1121,10 @@ def _try_one_validation_attempt(
         contract = compile_research_thesis(validated, controller.root, artifact_root=round_root)
         if mechanism_path:
             _merge_mechanism_fields_into_selected_thesis(round_root, raw_thesis)
+            if pending_causal_model is not None:
+                from causal_model import save_model
+
+                save_model(pending_causal_model)
     except (ThesisValidationError, ValueError) as exc:
         _log_validation_rejection(
             controller,

@@ -16,7 +16,7 @@ from feature_table import OUTCOME_COLUMNS
 from persistence_utils import write_json_atomic
 from research_types import AccuracyPoint, CausalFactor, CausalModel
 
-_ACTIVE_FACTOR_STATUSES = frozenset({"candidate", "supported"})
+_ACTIVE_FACTOR_STATUSES = frozenset({"candidate", "supported", "harvested"})
 _QUERY_KEYWORDS = frozenset(
     {
         "and",

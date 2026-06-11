@@ -75,6 +75,12 @@ def test_round_number_from_path_handles_baseline_and_malformed_round_dirs(tmp_pa
     assert round_number_from_path(tmp_path / "research" / "round-latest" / "x.json") is None
 
 
+def test_round_number_from_path_uses_nearest_round_directory(tmp_path: Path) -> None:
+    path = tmp_path / "round-99-archive" / "research" / "round-2" / "round.json"
+
+    assert round_number_from_path(path) == 2
+
+
 def test_read_research_artifacts_sorts_round_directories_numerically(tmp_path: Path) -> None:
     research_dir = tmp_path / "runtime" / "jobs" / "job-1" / "research"
     _write_artifact(research_dir / "round-10", "round.json", {"job_id": 1, "round_number": 10})

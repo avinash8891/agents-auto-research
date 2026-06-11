@@ -122,6 +122,23 @@ def test_build_feature_table_emits_exact_entry_time_and_outcome_columns(
     assert bool(row["out_is_loss"]) is True
 
 
+def test_build_feature_table_localizes_naive_trade_times_as_new_york(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    trades = _trades_df().assign(entry_date=pd.Timestamp("2024-01-04 09:35:00"))
+
+    table = build_feature_table(trades, _bars_df(), events=[], family="ema")
+
+    row = table.iloc[0]
+    assert row["trade_id"] == "AAA:2024-01-04T14:35:00+00:00"
+    assert row["entry_ts"] == pd.Timestamp("2024-01-04 14:35:00", tz="UTC")
+    assert row["time_of_day_min"] == 5
+    assert row["bars_since_open"] == 1
+
+
 def test_build_feature_table_writes_deterministic_parquet_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
