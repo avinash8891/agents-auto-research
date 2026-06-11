@@ -195,6 +195,19 @@ def test_load_regime_labels_strips_padded_data_root_env(
     assert labels["regime_label"].tolist() == ["risk_off"]
 
 
+def test_load_regime_labels_treats_blank_data_root_env_as_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", "   ")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    data_root = tmp_path / "autoresearch-data"
+    _write_regime_labels(data_root)
+
+    labels = load_regime_labels()
+
+    assert labels["regime_label"].tolist() == ["risk_off"]
+
+
 def test_build_feature_table_joins_extra_regime_columns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

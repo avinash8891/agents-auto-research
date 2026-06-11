@@ -16,7 +16,9 @@ LEGACY_PATH_SELECTOR = "data" + "_" + "dir"
 
 
 def default_data_root() -> Path:
-    return Path(os.environ.get(DATA_ROOT_ENV, "~/autoresearch-data").strip()).expanduser()
+    return Path(
+        os.environ.get(DATA_ROOT_ENV, "~/autoresearch-data").strip() or "~/autoresearch-data"
+    ).expanduser()
 
 
 def resolve_data_universe(config: dict[str, Any]) -> dict[str, Any]:
