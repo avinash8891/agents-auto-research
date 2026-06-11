@@ -326,9 +326,8 @@ VALID_PROCESS_TOOLS: Final[frozenset[str]] = frozenset(
 
 def _validate_process(
     tools_called: set[str] | frozenset[str], *, require_analyst_tool: bool = False
-) -> None:
-    _process_signal(tools_called, require_analyst_tool=require_analyst_tool)
-    return
+) -> BehaviorSignal | None:
+    return _process_signal(tools_called, require_analyst_tool=require_analyst_tool)
 
 
 def _process_signal(
@@ -1311,7 +1310,17 @@ def validate_research_thesis(
         evidence_context=evidence_context,
     )
     if tools_called is not None:
-        _validate_process(tools_called, require_analyst_tool=require_analyst_tool)
+        process_signal = _validate_process(tools_called, require_analyst_tool=require_analyst_tool)
+        process_decision = _policy_decide([process_signal] if process_signal is not None else [])
+        if process_decision.action == "reject":
+            triggering = process_decision.triggering
+            assert triggering is not None, "reject decisions must carry a triggering signal"
+            raise ThesisValidationError(
+                triggering.summary,
+                rejection_code=triggering.code,
+                evidence=dict(triggering.evidence),
+                remediation_hint=_format_remediation(triggering.remediation),
+            )
     _run_behavioral_pass(thesis, prior_theses)
     mechanical_failures = _collect_mechanical_failures(
         thesis,

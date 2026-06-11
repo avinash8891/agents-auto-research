@@ -332,6 +332,28 @@ def test_build_feature_table_lags_regime_labels_to_completed_prior_session(
     assert table.loc[0, "volatility_regime"] == "prior_vol"
 
 
+def test_build_feature_table_uses_latest_prior_regime_from_unsorted_labels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    pd.DataFrame(
+        {
+            "date": [
+                pd.Timestamp("2024-01-04").date(),
+                pd.Timestamp("2024-01-02").date(),
+                pd.Timestamp("2024-01-03").date(),
+            ],
+            "regime_label": ["same_day_poison", "older_prior", "latest_prior"],
+        }
+    ).to_parquet(data_root / "regime_labels.parquet", index=False)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+
+    table = build_feature_table(_trades_df(), _bars_df(), events=[], family="ema")
+
+    assert table.loc[0, "regime_label"] == "latest_prior"
+
+
 def test_build_feature_table_preserves_numeric_missing_extra_regime_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

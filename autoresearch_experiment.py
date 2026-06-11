@@ -1406,7 +1406,6 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
                 run_output_dir,
                 registered_verdict,
             )
-            write_harvest_verdict_artifact(controller, run_output_dir, registered_verdict)
             if registered_verdict.status == "inconclusive":
                 if is_registered_prediction_retest_action(state):
                     registered_verdict = force_registered_inconclusive_after_retest(
@@ -1418,6 +1417,7 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
                         controller, state, config=config
                     )
                     decision = "retest"
+            write_harvest_verdict_artifact(controller, run_output_dir, registered_verdict)
             verdict = registered_verdict
             if registered_verdict.status in {"degenerate", "refuted"}:
                 decision = "discard"

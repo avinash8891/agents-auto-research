@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import thesis_validator
 from backtest_run_db import research_thesis_attempt_id
 from thesis_validator import _process_signal
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
@@ -83,6 +84,22 @@ def test_process_gate_warns_when_web_search_not_called() -> None:
     thesis = validate_thesis_dict(_valid_thesis(), tools_called={"list_round_results"})
 
     assert thesis.thesis_id == "job-test-round-1-attempt-1"
+
+
+def test_process_gate_warning_is_sent_to_policy(monkeypatch) -> None:
+    captured_codes: list[str] = []
+    original_decide = thesis_validator._policy_decide
+
+    def spy_decide(signals: list[object]) -> object:
+        captured_codes.extend(signal.code for signal in signals)
+        return original_decide(signals)
+
+    monkeypatch.setattr(thesis_validator, "_policy_decide", spy_decide)
+
+    thesis = validate_thesis_dict(_valid_thesis(), tools_called={"list_round_results"})
+
+    assert thesis.thesis_id == "job-test-round-1-attempt-1"
+    assert "process_missing_required_tools" in captured_codes
 
 
 def test_process_gate_detection_returns_behavior_signal_before_policy() -> None:

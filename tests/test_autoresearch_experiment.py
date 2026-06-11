@@ -1879,8 +1879,11 @@ def test_run_experiment_forces_registered_inconclusive_after_retest_once(
 
     assert code == 0
     record = controller.backtest_run_db.all()[0]
+    harvest = json.loads((round_root / "harvest_verdict.json").read_text())
     assert record.prediction_verdict == "refuted"
     assert "forced_after_retest" in record.lesson
+    assert harvest["status"] == "refuted"
+    assert "forced_after_retest" in harvest["lesson"]
     assert controller.read_state().get("next_action", {}).get("source") != (
         "registered_prediction_retest"
     )

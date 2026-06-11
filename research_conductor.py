@@ -990,6 +990,19 @@ async def run_research_conductor(
     )
 
     if parsed:
+        if parsed.get("should_stop"):
+            _REFINEMENT_RECORDER.finish_session(
+                session_id=refinement_session["session_id"],
+                stopping_reason="should_stop",
+                final_outcome="completed",
+            )
+            session_finished = True
+            return ConductorResult(
+                status="should_stop",
+                should_stop=True,
+                reasoning=str(parsed.get("reasoning", "")),
+                tools_called=frozenset(tools_called_this_round),
+            )
         try:
             proposal = MechanismProposal.model_validate(parsed)
         except Exception as exc:

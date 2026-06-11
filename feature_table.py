@@ -365,10 +365,10 @@ def _regime_columns_for_date(labels: pd.DataFrame, entry_day: object) -> dict[st
 
 
 def _prior_regime_row(labels: pd.DataFrame, entry_day: object) -> pd.Series | None:
-    prior = labels[labels["date"] < entry_day].sort_values("date")
+    prior = labels[labels["date"] < entry_day]
     if prior.empty:
         return None
-    return prior.iloc[-1]
+    return prior.loc[prior["date"].idxmax()]
 
 
 def _extra_regime_columns(labels: pd.DataFrame) -> frozenset[str]:
