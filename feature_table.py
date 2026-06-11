@@ -368,7 +368,8 @@ def _prior_regime_row(labels: pd.DataFrame, entry_day: object) -> pd.Series | No
     prior = labels[labels["date"] < entry_day]
     if prior.empty:
         return None
-    return prior.loc[prior["date"].idxmax()]
+    latest_date = prior["date"].max()
+    return prior.loc[prior["date"] == latest_date].iloc[-1]
 
 
 def _extra_regime_columns(labels: pd.DataFrame) -> frozenset[str]:

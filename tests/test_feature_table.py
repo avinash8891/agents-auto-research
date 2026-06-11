@@ -354,6 +354,28 @@ def test_build_feature_table_uses_latest_prior_regime_from_unsorted_labels(
     assert table.loc[0, "regime_label"] == "latest_prior"
 
 
+def test_build_feature_table_uses_last_duplicate_latest_prior_regime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    pd.DataFrame(
+        {
+            "date": [
+                pd.Timestamp("2024-01-03").date(),
+                pd.Timestamp("2024-01-02").date(),
+                pd.Timestamp("2024-01-03").date(),
+            ],
+            "regime_label": ["first_duplicate", "older_prior", "last_duplicate"],
+        }
+    ).to_parquet(data_root / "regime_labels.parquet", index=False)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+
+    table = build_feature_table(_trades_df(), _bars_df(), events=[], family="ema")
+
+    assert table.loc[0, "regime_label"] == "last_duplicate"
+
+
 def test_build_feature_table_preserves_numeric_missing_extra_regime_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
