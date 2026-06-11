@@ -1318,7 +1318,7 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
     selected_thesis = json.loads((round_root / "selected_thesis.json").read_text())
     registered = json.loads((round_root / "registered_predictions.json").read_text())
     selected_config = json.loads((round_root / "selected_config.json").read_text())
-    model = load_model("ema")
+    model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
     pending_model = PendingCausalModelArtifact(round_root).load()
     assert retry_feedback is None
     assert stage == ""
@@ -1504,7 +1504,7 @@ def test_mechanism_proposal_does_not_update_model_when_compile_fails(
         prior_theses=[],
     )
 
-    model = load_model("ema")
+    model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
     assert result is None
     assert stage == "compile"
     assert "compiled config is invalid" in str(retry_feedback)
@@ -1526,7 +1526,7 @@ def test_run_research_non_actionable_mechanism_continues_without_interrupt(
             "next_action": {"type": "research"},
         }
     )
-    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1"
+    round_root = tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
     _write_screening_feature_table(round_root)
     _patch_conductor_round(
         monkeypatch,
@@ -1551,10 +1551,20 @@ def test_run_research_non_actionable_mechanism_continues_without_interrupt(
 
     updated = run_research(controller, controller.read_state())
 
+    model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
+    with sqlite3.connect(controller.backtest_run_db.path) as conn:
+        screenings = conn.execute(
+            "SELECT rule, competitor_rule, verdict FROM screenings WHERE job_id = 12 AND round_number = 1"
+        ).fetchall()
     assert updated["state"] == "blocked"
     assert updated["research_round"] == 1
     assert updated["next_action"]["type"] == "research"
     assert updated["blockers"][0]["kind"] == "research_required"
+    assert screenings == [("gap_pct < 0", "gap_pct > 0", "pass")]
+    assert model.version == 1
+    assert model.factors[0].rule == "gap_pct < 0"
+    assert model.factors[0].status == "candidate"
+    assert len(model.accuracy_history) == 1
 
 
 def test_run_research_success_persists_round_artifacts_and_next_action(

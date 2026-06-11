@@ -1127,6 +1127,20 @@ def _try_mechanism_validation_attempt(
 
     raw_thesis = proposal.model_dump(mode="json")
     if not bool(raw_thesis.get("actionable")):
+        from causal_model import save_model
+
+        screening_passed, screening_feedback, causal_model = _screen_mechanism_proposal(
+            controller,
+            research_round,
+            raw_thesis,
+            thesis_id,
+            job_id=job_id,
+        )
+        if not screening_passed:
+            return None, screening_feedback, "stage_1"
+        if causal_model is not None:
+            runtime_root = resolve_runtime_root(getattr(controller, "runtime_root", controller.root))
+            save_model(causal_model, runtime_root=runtime_root, code_root=controller.root)
         return (
             {
                 "status": "completed",
