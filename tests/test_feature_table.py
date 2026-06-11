@@ -88,7 +88,7 @@ def _trades_df() -> pd.DataFrame:
 def _write_regime_labels(data_root: Path, **extra_columns: object) -> None:
     data_root.mkdir()
     payload = {
-        "date": [pd.Timestamp("2024-01-04").date()],
+        "date": [pd.Timestamp("2024-01-03").date()],
         "regime_label": ["risk_off"],
     }
     for key, value in extra_columns.items():
@@ -244,6 +244,29 @@ def test_build_feature_table_joins_extra_regime_columns(
     assert list(load_regime_labels().columns) == ["date", "regime_label", "volatility_regime"]
 
 
+def test_build_feature_table_lags_regime_labels_to_completed_prior_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    pd.DataFrame(
+        {
+            "date": [
+                pd.Timestamp("2024-01-03").date(),
+                pd.Timestamp("2024-01-04").date(),
+            ],
+            "regime_label": ["prior_completed", "same_day_poison"],
+            "volatility_regime": ["prior_vol", "same_day_poison"],
+        }
+    ).to_parquet(data_root / "regime_labels.parquet", index=False)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+
+    table = build_feature_table(_trades_df(), _bars_df(), events=[], family="ema")
+
+    assert table.loc[0, "regime_label"] == "prior_completed"
+    assert table.loc[0, "volatility_regime"] == "prior_vol"
+
+
 def test_build_feature_table_preserves_numeric_missing_extra_regime_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -251,7 +274,7 @@ def test_build_feature_table_preserves_numeric_missing_extra_regime_values(
     data_root.mkdir()
     pd.DataFrame(
         {
-            "date": [pd.Timestamp("2024-01-03").date()],
+            "date": [pd.Timestamp("2024-01-04").date()],
             "regime_label": ["risk_on"],
             "volatility_score": [0.73],
         }

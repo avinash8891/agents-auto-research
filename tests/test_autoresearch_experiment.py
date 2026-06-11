@@ -137,7 +137,7 @@ def _write_feature_table_data_universe(data_root: Path) -> None:
     )
     pd.DataFrame(
         {
-            "date": [pd.Timestamp("2024-01-02").date()],
+            "date": [pd.Timestamp("2024-01-01").date()],
             "regime_label": ["risk_on"],
         }
     ).to_parquet(data_root / "regime_labels.parquet", index=False)

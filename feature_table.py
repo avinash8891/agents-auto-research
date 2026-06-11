@@ -310,21 +310,27 @@ def _vol_pctile_20d(daily: pd.DataFrame, entry_day: object) -> float:
 
 
 def _regime_label_for_date(labels: pd.DataFrame, entry_day: object) -> str:
-    matches = labels[labels["date"] == entry_day]
-    if matches.empty:
+    row = _prior_regime_row(labels, entry_day)
+    if row is None:
         return ""
-    return str(matches.iloc[0]["regime_label"])
+    return str(row["regime_label"])
 
 
 def _regime_columns_for_date(labels: pd.DataFrame, entry_day: object) -> dict[str, Any]:
     columns = _extra_regime_columns(labels)
     if not columns:
         return {}
-    matches = labels[labels["date"] == entry_day]
-    if matches.empty:
+    row = _prior_regime_row(labels, entry_day)
+    if row is None:
         return {column: np.nan for column in columns}
-    row = matches.iloc[0]
     return {column: row[column] for column in columns}
+
+
+def _prior_regime_row(labels: pd.DataFrame, entry_day: object) -> pd.Series | None:
+    prior = labels[labels["date"] < entry_day].sort_values("date")
+    if prior.empty:
+        return None
+    return prior.iloc[-1]
 
 
 def _extra_regime_columns(labels: pd.DataFrame) -> frozenset[str]:
