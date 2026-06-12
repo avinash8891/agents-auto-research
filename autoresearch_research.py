@@ -936,6 +936,7 @@ def _screen_mechanism_proposal(
             round_number=research_round,
             competitor_rule=screening.rule,
             job_id=job_id,
+            is_competitor=True,
         )
     if screening.verdict != "pass":
         return (

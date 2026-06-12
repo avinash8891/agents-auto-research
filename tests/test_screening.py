@@ -295,6 +295,7 @@ def test_screenings_table_exists_and_write_screenings_appends_spec_rows(tmp_path
         "p_value",
         "overlap_with",
         "created_at_utc",
+        "is_competitor",
     ]
     assert rows == [(3, None, "gap_pct < 0", "gap_pct > 0", "pass", 40, 0.8, 0.56, 0.24, None)]
 

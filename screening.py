@@ -135,6 +135,7 @@ def write_screenings(
     round_number: int,
     competitor_rule: str | None = None,
     job_id: int | None = None,
+    is_competitor: bool = False,
 ) -> None:
     created_at = utc_now_iso8601()
     with sqlite3.connect(db_path) as conn:
@@ -148,6 +149,7 @@ def write_screenings(
                 result=result,
                 competitor_rule=competitor_rule,
                 created_at=created_at,
+                is_competitor=is_competitor,
             )
         conn.commit()
 
@@ -294,6 +296,7 @@ def _insert_screening_with_retry(
     result: ScreeningResult,
     competitor_rule: str | None,
     created_at: str,
+    is_competitor: bool = False,
 ) -> None:
     suffix = 1
     while True:
@@ -304,8 +307,8 @@ def _insert_screening_with_retry(
                 INSERT INTO screenings (
                     screening_id, round_number, job_id, rule, competitor_rule, verdict,
                     sample_count, flagged_loss_rate, base_loss_rate, lift, p_value,
-                    overlap_with, created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    overlap_with, created_at_utc, is_competitor
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     screening_id,
@@ -321,6 +324,7 @@ def _insert_screening_with_retry(
                     result.p_value,
                     result.overlap_with,
                     created_at,
+                    1 if is_competitor else 0,
                 ),
             )
             return
@@ -345,7 +349,8 @@ def _ensure_screenings_table(conn: sqlite3.Connection) -> None:
             lift REAL NOT NULL,
             p_value REAL NOT NULL,
             overlap_with TEXT,
-            created_at_utc TEXT NOT NULL
+            created_at_utc TEXT NOT NULL,
+            is_competitor INTEGER NOT NULL DEFAULT 0
         )
         """)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(screenings)").fetchall()}
@@ -362,6 +367,14 @@ def _ensure_screenings_table(conn: sqlite3.Connection) -> None:
             except sqlite3.OperationalError as exc:
                 if "duplicate column name" not in str(exc).lower():
                     raise
+    if "is_competitor" not in columns:
+        try:
+            conn.execute(
+                "ALTER TABLE screenings ADD COLUMN is_competitor INTEGER NOT NULL DEFAULT 0"
+            )
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_screenings_round
         ON screenings (round_number)

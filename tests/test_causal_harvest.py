@@ -108,6 +108,28 @@ def test_retest_baseline_metrics_falls_back_on_parse_failure(
     assert "retest baseline rerun parse failed" in caplog.text
 
 
+def test_flatten_metrics_validation_wins_over_parsed_primary_metric() -> None:
+    details = {
+        "metrics": {"profit_factor": 2.0},
+        "validation_metrics": {"profit_factor": 1.1},
+    }
+
+    flat = _flatten_metrics(details, primary_metric=("profit_factor", 9.9))
+
+    # The parsed primary metric is the ambiguous raw-output value; an explicit
+    # validation value must win for prediction judging.
+    assert flat["profit_factor"] == 1.1
+
+
+def test_flatten_metrics_parsed_primary_metric_used_when_validation_lacks_it() -> None:
+    details = {"metrics": {"trade_count": 30}, "validation_metrics": {"trade_count": 28}}
+
+    flat = _flatten_metrics(details, primary_metric=("profit_factor", 9.9))
+
+    assert flat["profit_factor"] == 9.9
+    assert flat["trade_count"] == 28
+
+
 def test_flatten_metrics_validation_wins_over_train_and_top_level_duplicates() -> None:
     details = {
         "max_drawdown": 0.05,  # divergent top-level copy must not shadow validation

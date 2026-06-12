@@ -204,12 +204,19 @@ def _latest_screening_pass_rate_is_zero(
             if len(round_numbers) < plateau_rounds:
                 continue
             placeholders = ",".join("?" for _ in round_numbers)
+            # Competitor rows record the alternative hypothesis, not a
+            # successful proposal: exclude them or competitor passes keep the
+            # plateau stopper from ever firing.
+            competitor_filter = (
+                "AND COALESCE(is_competitor, 0) = 0" if "is_competitor" in columns else ""
+            )
             rows = conn.execute(
                 f"""
                 SELECT verdict
                 FROM screenings
                 WHERE round_number IN ({placeholders})
                 {"AND job_id = ?" if job is not None else ""}
+                {competitor_filter}
                 """,
                 [*round_numbers, job] if job is not None else round_numbers,
             ).fetchall()

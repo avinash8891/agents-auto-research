@@ -115,13 +115,12 @@ def evaluate_registered_predictions(
         return None
     from experiment_evaluator import evaluate_predictions
 
-    candidate_metrics = _flatten_metrics(details)
     primary_metric_name = (
         controller.primary_metric_name()
         if hasattr(controller, "primary_metric_name")
         else "profit_factor"
     )
-    candidate_metrics[primary_metric_name] = metric
+    candidate_metrics = _flatten_metrics(details, primary_metric=(primary_metric_name, metric))
     return evaluate_predictions(
         registered_path,
         baseline=(
@@ -188,13 +187,16 @@ def retest_baseline_metrics(
         )
         return None
     try:
-        metrics = _flatten_metrics(controller.parse_benchmark_details(output))
         primary_metric_name = (
             controller.primary_metric_name()
             if hasattr(controller, "primary_metric_name")
             else "profit_factor"
         )
         parsed = controller.parse_metric(output, name=primary_metric_name)
+        metrics = _flatten_metrics(
+            controller.parse_benchmark_details(output),
+            primary_metric=(primary_metric_name, parsed),
+        )
     except Exception as exc:  # noqa: BLE001 — fail-open: external backtest output
         log.error(
             "retest baseline rerun parse failed: %s "
@@ -202,8 +204,6 @@ def retest_baseline_metrics(
             exc,
         )
         return None
-    if parsed is not None:
-        metrics[primary_metric_name] = parsed
     return metrics
 
 
@@ -596,10 +596,14 @@ def _load_strategy_events(value: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _flatten_metrics(details: dict[str, Any]) -> dict[str, Any]:
+def _flatten_metrics(
+    details: dict[str, Any],
+    *,
+    primary_metric: tuple[str, Any] | None = None,
+) -> dict[str, Any]:
     # Merge order is precedence order: validation_metrics must win over train
-    # values and over ambiguous top-level copies, because registered
-    # predictions are judged against the validation period.
+    # values, ambiguous top-level copies, AND the parsed primary metric,
+    # because registered predictions are judged against the validation period.
     metrics: dict[str, Any] = {}
     train_metrics = details.get("train_metrics")
     if isinstance(train_metrics, dict):
@@ -610,6 +614,8 @@ def _flatten_metrics(details: dict[str, Any]) -> dict[str, Any]:
     for key, value in details.items():
         if key not in {"train_metrics", "validation_metrics", "metrics"}:
             metrics[key] = value
+    if primary_metric is not None and primary_metric[1] is not None:
+        metrics[primary_metric[0]] = primary_metric[1]
     validation_metrics = details.get("validation_metrics")
     if isinstance(validation_metrics, dict):
         metrics.update(validation_metrics)
