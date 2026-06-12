@@ -18,7 +18,10 @@ from screening import ScreeningResult
 
 log = logging.getLogger(__name__)
 
-CORPUS_RECENT_ROUNDS = 10
+# Spec contract: the corpus carries ALL prior screenings. Truncation happens
+# only at render time, oldest-first, when the rendered corpus exceeds this
+# budget — and always with an explicit marker, never silently.
+CORPUS_MAX_RENDER_CHARS = 150_000
 
 
 class Corpus(BaseModel):
@@ -28,8 +31,6 @@ class Corpus(BaseModel):
     residual_summary: list[dict] = Field(default_factory=list)
     residual_stats: dict = Field(default_factory=dict)
     screening_history: list[ScreeningResult] = Field(default_factory=list)
-    screening_history_omitted_count: int = 0
-    screening_history_omitted_verdict_counts: dict[str, int] = Field(default_factory=dict)
     harvest_verdicts: list[dict] = Field(default_factory=list)
     walkforward_reports: list[dict] = Field(default_factory=list)
     cross_family: list[CausalFactor] = Field(default_factory=list)
@@ -51,10 +52,6 @@ def build_corpus(
     model = CausalModelStore(runtime_root=runtime_root, code_root=code_root).load(family)
     features = _load_round_feature_table(runtime_root, round_number, job=job)
     residual_summary = _residual_summary(model, features) if features is not None else []
-    min_history_round = max(0, round_number - CORPUS_RECENT_ROUNDS + 1)
-    omitted_screenings = _load_screening_omission_summary(
-        runtime_root, family, min_history_round, job=job
-    )
     return Corpus(
         family=family,
         round_number=round_number,
@@ -65,11 +62,8 @@ def build_corpus(
             runtime_root,
             family,
             round_number,
-            min_round=min_history_round,
             job=job,
         ),
-        screening_history_omitted_count=sum(omitted_screenings.values()),
-        screening_history_omitted_verdict_counts=omitted_screenings,
         harvest_verdicts=_load_harvest_verdicts(runtime_root, round_number, job=job),
         walkforward_reports=_load_walkforward_reports(runtime_root, family),
         cross_family=_load_cross_family_factors(runtime_root, family),
@@ -78,6 +72,45 @@ def build_corpus(
 
 
 def render_corpus(corpus: Corpus) -> str:
+    rendered = _render_corpus_text(corpus, truncated_screenings=0)
+    if len(rendered) <= CORPUS_MAX_RENDER_CHARS:
+        return rendered
+    # Over budget: drop oldest screenings first (history is ordered oldest ->
+    # newest) until the render fits, with an explicit marker — never silently.
+    block_costs = [
+        sum(len(line) + 1 for line in _render_screening(screening))
+        for screening in corpus.screening_history
+    ]
+    overflow = len(rendered) - CORPUS_MAX_RENDER_CHARS
+    freed = 0
+    truncated = 0
+    while truncated < len(block_costs):
+        freed += block_costs[truncated]
+        truncated += 1
+        marker_cost = len(_truncation_marker(truncated)) + 1
+        if freed - marker_cost >= overflow:
+            break
+    return _render_corpus_text(corpus, truncated_screenings=truncated)
+
+
+def _truncation_marker(count: int) -> str:
+    return f"- [truncated {count} older screenings]"
+
+
+def _render_screening(screening: ScreeningResult) -> list[str]:
+    return [
+        f"### {screening.rule}",
+        f"- verdict: {screening.verdict}",
+        f"- sample_count: {screening.sample_count}",
+        f"- flagged_loss_rate: {_format_float(screening.flagged_loss_rate)}",
+        f"- base_loss_rate: {_format_float(screening.base_loss_rate)}",
+        f"- lift: {_format_float(screening.lift)}",
+        f"- p_value: {_format_float(screening.p_value)}",
+        f"- overlap_with: {screening.overlap_with or 'none'}",
+    ]
+
+
+def _render_corpus_text(corpus: Corpus, *, truncated_screenings: int) -> str:
     lines = [
         "## Corpus",
         f"- family: {corpus.family}",
@@ -108,34 +141,14 @@ def render_corpus(corpus: Corpus) -> str:
         lines.append("- none")
 
     lines.extend(["", "## Screening History"])
-    if corpus.screening_history_omitted_count:
-        verdict_counts = ", ".join(
-            f"{key}={value}"
-            for key, value in sorted(corpus.screening_history_omitted_verdict_counts.items())
-        )
-        lines.extend(
-            [
-                f"- omitted_older_screening_rows: {corpus.screening_history_omitted_count}",
-                f"- omitted_older_screening_verdict_counts: {verdict_counts}",
-            ]
-        )
-    if corpus.screening_history:
-        for screening in corpus.screening_history:
-            lines.extend(
-                [
-                    f"### {screening.rule}",
-                    f"- verdict: {screening.verdict}",
-                    f"- sample_count: {screening.sample_count}",
-                    f"- flagged_loss_rate: {_format_float(screening.flagged_loss_rate)}",
-                    f"- base_loss_rate: {_format_float(screening.base_loss_rate)}",
-                    f"- lift: {_format_float(screening.lift)}",
-                    f"- p_value: {_format_float(screening.p_value)}",
-                    f"- overlap_with: {screening.overlap_with or 'none'}",
-                ]
-            )
-    else:
-        if not corpus.screening_history_omitted_count:
-            lines.append("- none")
+    visible_screenings = corpus.screening_history[truncated_screenings:]
+    if truncated_screenings:
+        lines.append(_truncation_marker(truncated_screenings))
+    if visible_screenings:
+        for screening in visible_screenings:
+            lines.extend(_render_screening(screening))
+    elif not truncated_screenings:
+        lines.append("- none")
 
     lines.extend(["", "## Harvest Verdicts"])
     if corpus.harvest_verdicts:
@@ -244,7 +257,6 @@ def _load_screening_history(
     family: str,
     round_number: int,
     *,
-    min_round: int | None = None,
     job: int | None = None,
 ) -> list[ScreeningResult]:
     results: list[ScreeningResult] = []
@@ -262,9 +274,6 @@ def _load_screening_history(
                 base_loss_rate_select = "base_loss_rate" if "base_loss_rate" in columns else "NULL"
                 where = "round_number <= ?"
                 params: list[int] = [round_number]
-                if min_round is not None:
-                    where += " AND round_number >= ?"
-                    params.append(min_round)
                 if job is not None:
                     where += " AND job_id = ?"
                     params.append(job)
@@ -309,46 +318,6 @@ def _load_screening_history(
                 )
             )
     return results
-
-
-def _load_screening_omission_summary(
-    runtime_root: Path,
-    family: str,
-    min_round: int,
-    *,
-    job: int | None = None,
-) -> dict[str, int]:
-    if min_round <= 0:
-        return {}
-    counts: dict[str, int] = {}
-    for db_path in sorted(runtime_root.resolve().glob(f"{family}_backtest_runs.db")):
-        try:
-            with sqlite3.connect(db_path) as conn:
-                columns = {
-                    row[1] for row in conn.execute("PRAGMA table_info(screenings)").fetchall()
-                }
-                if job is not None and "job_id" not in columns:
-                    continue
-                where = "round_number < ?"
-                params: list[int] = [min_round]
-                if job is not None:
-                    where += " AND job_id = ?"
-                    params.append(job)
-                rows = conn.execute(
-                    f"""
-                    SELECT verdict, COUNT(*)
-                    FROM screenings
-                    WHERE {where}
-                    GROUP BY verdict
-                    ORDER BY verdict
-                    """,
-                    params,
-                ).fetchall()
-        except sqlite3.Error:
-            continue
-        for verdict, count in rows:
-            counts[str(verdict)] = counts.get(str(verdict), 0) + int(count)
-    return counts
 
 
 def _load_harvest_verdicts(

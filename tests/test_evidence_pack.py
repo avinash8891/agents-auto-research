@@ -7,7 +7,7 @@ import pandas as pd
 
 from backtest_run_db import BacktestRunDB
 from causal_model import save_model
-from evidence_pack import Corpus, build_corpus, render_corpus
+from evidence_pack import CORPUS_MAX_RENDER_CHARS, Corpus, build_corpus, render_corpus
 from feature_table import FeatureTableArtifact
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult, write_screenings
@@ -451,7 +451,7 @@ def test_build_corpus_screening_history_excludes_competitor_rows(
     assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
 
 
-def test_build_corpus_caps_screening_history_and_aggregates_older_verdicts(
+def test_build_corpus_includes_all_prior_screenings_without_round_cap(
     tmp_path: Path, monkeypatch
 ) -> None:
     _setup_runtime(tmp_path, monkeypatch)
@@ -473,29 +473,46 @@ def test_build_corpus_caps_screening_history_and_aggregates_older_verdicts(
     corpus = build_corpus("ema", 12, job=1)
     rendered = render_corpus(corpus)
 
-    assert corpus.screening_history_omitted_count == 2
-    assert corpus.screening_history_omitted_verdict_counts == {"kill_no_lift": 1, "pass": 1}
-    assert "rule_1" not in [item.rule for item in corpus.screening_history]
-    assert "rule_2" not in [item.rule for item in corpus.screening_history]
-    assert "rule_3" in [item.rule for item in corpus.screening_history]
-    assert "- omitted_older_screening_rows: 2" in rendered
-    assert "- omitted_older_screening_verdict_counts: kill_no_lift=1, pass=1" in rendered
+    # Spec: ALL prior screenings, both verdicts — no round-count truncation.
+    assert [item.rule for item in corpus.screening_history] == [
+        f"rule_{round_number}" for round_number in range(1, 13)
+    ]
+    assert "rule_1" in rendered
+    assert "truncated" not in rendered
 
 
-def test_render_corpus_shows_omitted_screenings_without_recent_rows() -> None:
+def test_render_corpus_truncates_oldest_screenings_only_past_max_chars() -> None:
+    long_suffix = "x" * 2_000
+    screenings = [
+        ScreeningResult(
+            rule=f"rule_{index:03d}_{long_suffix} > 0",
+            verdict="kill_no_lift",
+            sample_count=40,
+            flagged_loss_rate=0.5,
+            base_loss_rate=0.4,
+            lift=0.1,
+            p_value=0.5,
+            overlap_with=None,
+        )
+        for index in range(120)  # ~240k chars of screening blocks
+    ]
     corpus = Corpus(
         family="ema",
         round_number=14,
         model=CausalModel(family="ema", version=1),
-        screening_history=[],
-        screening_history_omitted_count=3,
-        screening_history_omitted_verdict_counts={"kill_no_lift": 2, "pass": 1},
+        screening_history=screenings,
     )
 
     rendered = render_corpus(corpus)
 
-    assert "- omitted_older_screening_rows: 3" in rendered
-    assert "- omitted_older_screening_verdict_counts: kill_no_lift=2, pass=1" in rendered
+    assert len(rendered) <= CORPUS_MAX_RENDER_CHARS
+    truncated_count = 120 - rendered.count("### rule_")
+    assert truncated_count > 0
+    # Explicit, never-silent marker naming exactly how many were dropped.
+    assert f"- [truncated {truncated_count} older screenings]" in rendered
+    # Oldest-first: the newest screening survives, the oldest goes first.
+    assert "rule_119" in rendered
+    assert "rule_000" not in rendered
 
 
 def test_render_corpus_is_deterministic_and_ordered(tmp_path: Path, monkeypatch) -> None:
