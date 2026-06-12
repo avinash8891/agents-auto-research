@@ -682,7 +682,6 @@ def test_log_research_round_persists_full_thesis_details_to_attempt(tmp_path: Pa
         config_changes={"requires_engine_change": True},
         hypothesis="opening liquidity imbalance",
         mechanism="auction imbalance decay",
-        mechanism_dimension="market_microstructure",
         thesis_details=details,
     )
 
@@ -1595,7 +1594,8 @@ def test_mechanism_proposal_compiler_payload_has_no_legacy_filler() -> None:
         thesis_id="job-1-round-1-attempt-1",
     )
 
-    assert thesis["expected_effects"] == []
+    assert "expected_effects" not in thesis
+    assert "disqualifiers" not in thesis
     assert "why_not_overfit" not in thesis
     assert "new_dimension_name" not in thesis
     assert "why_existing_dimensions_do_not_fit" not in thesis

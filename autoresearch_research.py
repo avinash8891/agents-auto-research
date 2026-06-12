@@ -191,7 +191,6 @@ def log_research_round(
     config_changes: dict[str, Any] | None = None,
     hypothesis: str = "",
     mechanism: str = "",
-    mechanism_dimension: str = "",
     thesis_details: dict[str, Any] | None = None,
     validation_failure_reason: str = "",
     usage: dict[str, Any] | None = None,
@@ -246,7 +245,6 @@ def log_research_round(
                 "strategy_family": state.get("family", ""),
                 "config_changes": config_changes or {},
                 "validator_status": outcome,
-                "mechanism_dimension": mechanism_dimension,
                 "hypothesis": hypothesis,
                 "mechanism": mechanism,
                 "thesis_details": thesis_details or {},
@@ -628,7 +626,6 @@ def _log_validation_rejection(
         config_changes=raw_thesis.get("config_changes"),
         hypothesis=raw_thesis.get("hypothesis", ""),
         mechanism=raw_thesis.get("mechanism", ""),
-        mechanism_dimension=raw_thesis.get("mechanism_dimension", ""),
         thesis_details={
             key: raw_thesis.get(key)
             for key in (
@@ -768,8 +765,6 @@ def _mechanism_proposal_to_compiler_payload(
         "hypothesis": story,
         "mechanism": story,
         "config_changes": proposed_change,
-        "expected_effects": [],
-        "disqualifiers": [],
     }
 
 
@@ -2210,7 +2205,6 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         config_changes=thesis_meta.get("config_changes"),
         hypothesis=thesis_meta.get("hypothesis", ""),
         mechanism=thesis_meta.get("mechanism", ""),
-        mechanism_dimension=thesis_meta.get("mechanism_dimension", ""),
         thesis_details={
             key: thesis_meta.get(key)
             for key in (

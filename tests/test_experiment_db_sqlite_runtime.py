@@ -179,6 +179,7 @@ def test_research_thesis_attempt_schema_has_attempt_id_and_required_indexes(
         round_index_names = {row[1] for row in conn.execute("PRAGMA index_list(research_rounds)")}
 
     assert "thesis_attempt_id" in attempt_columns
+    assert "mechanism_dimension" not in attempt_columns
     assert "idx_research_rounds_job_round" in round_index_names
     assert "idx_research_rounds_outcome" in round_index_names
     assert "idx_research_thesis_attempts_round_attempt" in attempt_index_names

@@ -685,8 +685,6 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         "hypothesis": resumed_thesis.get("hypothesis", ""),
         "mechanism": resumed_thesis.get("mechanism", ""),
         "config_changes": resumed_thesis.get("config_changes", {}),
-        "expected_effects": resumed_thesis.get("expected_effects", []),
-        "disqualifiers": resumed_thesis.get("disqualifiers", []),
         "required_diagnostics": resumed_thesis.get("required_diagnostics", []),
         "required_diagnostic_specs": resumed_thesis.get("required_diagnostic_specs", []),
     }

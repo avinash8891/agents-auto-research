@@ -31,6 +31,7 @@ class Corpus(BaseModel):
     screening_history_omitted_count: int = 0
     screening_history_omitted_verdict_counts: dict[str, int] = Field(default_factory=dict)
     harvest_verdicts: list[dict] = Field(default_factory=list)
+    walkforward_reports: list[dict] = Field(default_factory=list)
     cross_family: list[CausalFactor] = Field(default_factory=list)
     rejection_feedback: str | None = None
 
@@ -70,6 +71,7 @@ def build_corpus(
         screening_history_omitted_count=sum(omitted_screenings.values()),
         screening_history_omitted_verdict_counts=omitted_screenings,
         harvest_verdicts=_load_harvest_verdicts(runtime_root, round_number, job=job),
+        walkforward_reports=_load_walkforward_reports(runtime_root, family),
         cross_family=_load_cross_family_factors(runtime_root, family),
         rejection_feedback=_load_rejection_feedback(runtime_root, round_number, job=job),
     )
@@ -140,6 +142,15 @@ def render_corpus(corpus: Corpus) -> str:
         for verdict in corpus.harvest_verdicts:
             lines.extend(
                 _render_mapping_item(verdict, heading=f"round {verdict.get('round', 'unknown')}")
+            )
+    else:
+        lines.append("- none")
+
+    lines.extend(["", "## Walkforward Reports"])
+    if corpus.walkforward_reports:
+        for report in corpus.walkforward_reports:
+            lines.extend(
+                _render_mapping_item(report, heading=f"thesis {report.get('thesis_id', 'unknown')}")
             )
     else:
         lines.append("- none")
@@ -362,6 +373,41 @@ def _load_harvest_verdicts(
     return sorted(
         verdicts, key=lambda item: (int(item.get("round") or 0), json.dumps(item, sort_keys=True))
     )
+
+
+def _load_walkforward_reports(runtime_root: Path, family: str) -> list[dict]:
+    reports: list[dict] = []
+    for path in sorted((runtime_root / "walkforward").glob("*.json")):
+        if path.name == "errors.json":
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise TypeError("walkforward report payload must be a JSON object")
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
+            log.warning("skipping unreadable walkforward report artifact %s: %s", path, exc)
+            continue
+        if str(payload.get("family") or "") != family:
+            continue
+        reports.append(_walkforward_report_summary(payload))
+    return sorted(
+        reports,
+        key=lambda item: (str(item.get("thesis_id") or ""), str(item.get("verdict") or "")),
+    )
+
+
+def _walkforward_report_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    windows = payload.get("windows")
+    window_count = len(windows) if isinstance(windows, list) else 0
+    return {
+        "thesis_id": str(payload.get("thesis_id") or ""),
+        "verdict": str(payload.get("verdict") or ""),
+        "graduated": bool(payload.get("graduated")),
+        "survival_rate": payload.get("survival_rate"),
+        "survival_pct": payload.get("survival_pct"),
+        "usable_windows": payload.get("usable_windows"),
+        "window_count": window_count,
+    }
 
 
 def _load_cross_family_factors(runtime_root: Path, family: str) -> list[CausalFactor]:

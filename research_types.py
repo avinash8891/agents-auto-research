@@ -368,8 +368,6 @@ class BacktestContract(BaseModel):
     hypothesis: str
     mechanism: str
 
-    expected_effects: list[ExpectedEffect] = Field(default_factory=list)
-    disqualifiers: list[Disqualifier] = Field(default_factory=list)
     required_diagnostics: list[str] = Field(default_factory=list)
     required_diagnostic_specs: list[DiagnosticRequirementSpec] = Field(default_factory=list)
     missing_primitives: list[str] = Field(default_factory=list)
@@ -399,8 +397,6 @@ class BacktestContract(BaseModel):
             config_changes=sidecar.get("config_changes") or {},
             hypothesis=str(sidecar.get("hypothesis") or ""),
             mechanism=str(sidecar.get("mechanism") or ""),
-            expected_effects=sidecar.get("expected_effects") or [],
-            disqualifiers=sidecar.get("disqualifiers") or [],
             required_diagnostics=sidecar.get("required_diagnostics") or [],
             required_diagnostic_specs=build_required_diagnostic_specs(
                 sidecar.get("required_diagnostics") or [],

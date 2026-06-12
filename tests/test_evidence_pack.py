@@ -104,6 +104,36 @@ def _write_harvest(runtime_root: Path) -> None:
     )
 
 
+def _write_walkforward_report(
+    runtime_root: Path,
+    thesis_id: str,
+    *,
+    family: str = "ema",
+    verdict: str = "graduated",
+    graduated: bool = True,
+) -> None:
+    path = runtime_root / "walkforward" / f"{thesis_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""
+        {{
+          "family": "{family}",
+          "thesis_id": "{thesis_id}",
+          "survival_pct": 0.6,
+          "survival_rate": 0.75,
+          "usable_windows": 4,
+          "graduated": {str(graduated).lower()},
+          "verdict": "{verdict}",
+          "windows": [
+            {{"window": 1, "directions_hold": true}},
+            {{"window": 2, "directions_hold": false}}
+          ]
+        }}
+        """,
+        encoding="utf-8",
+    )
+
+
 def _setup_runtime(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
     save_model(
@@ -290,6 +320,38 @@ def test_build_corpus_harvest_verdicts_are_scoped_to_active_job(
     assert corpus.harvest_verdicts[0]["lesson"].startswith("Gap-down rule")
 
 
+def test_build_corpus_reads_walkforward_report_summaries(tmp_path: Path, monkeypatch) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    _write_walkforward_report(tmp_path, "ema-thesis-1", verdict="graduated", graduated=True)
+    _write_walkforward_report(
+        tmp_path,
+        "ema-thesis-2",
+        verdict="demoted",
+        graduated=False,
+    )
+    _write_walkforward_report(tmp_path, "orb-thesis-1", family="orb")
+    (tmp_path / "walkforward" / "errors.json").write_text(
+        '{"errors": [{"thesis_id": "walkforward-error-thesis"}]}',
+        encoding="utf-8",
+    )
+
+    corpus = build_corpus("ema", 2)
+    rendered = render_corpus(corpus)
+
+    assert [item["thesis_id"] for item in corpus.walkforward_reports] == [
+        "ema-thesis-1",
+        "ema-thesis-2",
+    ]
+    assert corpus.walkforward_reports[0]["graduated"] is True
+    assert corpus.walkforward_reports[1]["verdict"] == "demoted"
+    assert corpus.walkforward_reports[0]["window_count"] == 2
+    assert "## Walkforward Reports" in rendered
+    assert "### thesis ema-thesis-1" in rendered
+    assert "survival_rate: 0.75" in rendered
+    assert "orb-thesis-1" not in rendered
+    assert "walkforward-error-thesis" not in rendered
+
+
 def test_build_corpus_rejection_feedback_is_scoped_to_active_job(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -448,7 +510,8 @@ def test_render_corpus_is_deterministic_and_ordered(tmp_path: Path, monkeypatch)
     assert rendered.index("## Residual Summary") < rendered.index("## Residual Stats")
     assert rendered.index("## Residual Stats") < rendered.index("## Screening History")
     assert rendered.index("## Screening History") < rendered.index("## Harvest Verdicts")
-    assert rendered.index("## Harvest Verdicts") < rendered.index("## Cross Family")
+    assert rendered.index("## Harvest Verdicts") < rendered.index("## Walkforward Reports")
+    assert rendered.index("## Walkforward Reports") < rendered.index("## Cross Family")
     assert rendered.index("## Cross Family") < rendered.index("## Rejection Feedback")
     assert "Registered prediction missed by 23 percentage points." in rendered
     assert "gap: -0.23" in rendered

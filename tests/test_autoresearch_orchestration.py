@@ -493,7 +493,7 @@ def test_resolve_next_action_preserves_registered_prediction_retest_before_recon
             "type": "run_round",
             "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
             "source": "registered_prediction_retest",
-            "registered_prediction_retest": {"attempt": 1},
+            "registered_prediction_retest": {},
         },
     }
     controller = SimpleNamespace(

@@ -1695,7 +1695,7 @@ def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusiv
     persisted = controller.read_state()
     retest_action = persisted["next_action"]
     assert retest_action["source"] == "registered_prediction_retest"
-    assert retest_action["registered_prediction_retest"]["attempt"] == 1
+    assert "attempt" not in retest_action["registered_prediction_retest"]
     assert "_preserve_next_action_once" not in persisted
     retest_config = tmp_path / retest_action["config"]
     retest_payload = json.loads(retest_config.read_text())
@@ -1775,6 +1775,12 @@ def test_request_registered_prediction_retest_returns_explicit_transition_withou
 
     assert controller.read_state()["next_action"]["source"] == "research"
     assert retest_request.next_state["next_action"]["source"] == "registered_prediction_retest"
+    assert retest_request.next_state["next_action"]["registered_prediction_retest"] == {
+        "original_config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+        "original_validation_end": "2023-12-31",
+        "validation_end": "2024-09-30",
+        "retest_extension_months": 9,
+    }
     assert "_preserve_next_action_once" not in retest_request.next_state
 
 
@@ -1820,7 +1826,7 @@ def test_run_experiment_forces_registered_inconclusive_after_retest_once(
             "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
             "selected_thesis_id": "ema-command-inconclusive",
             "source": "registered_prediction_retest",
-            "registered_prediction_retest": {"attempt": 1},
+            "registered_prediction_retest": {},
         },
     }
     controller.write_state(state)
@@ -1871,7 +1877,7 @@ def test_forced_retest_lesson_is_not_overwritten_by_llm_synthesis(
             "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
             "selected_thesis_id": "ema-command-inconclusive",
             "source": "registered_prediction_retest",
-            "registered_prediction_retest": {"attempt": 1},
+            "registered_prediction_retest": {},
         },
     }
     controller.write_state(state)
@@ -1933,7 +1939,6 @@ def test_retest_verdict_uses_baseline_rerun_over_extended_range(
             "selected_thesis_id": "ema-command-inconclusive",
             "source": "registered_prediction_retest",
             "registered_prediction_retest": {
-                "attempt": 1,
                 "original_validation_end": "2023-12-31",
                 "validation_end": "2024-09-30",
             },

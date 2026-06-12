@@ -286,7 +286,6 @@ class BacktestRunDB:
                     strategy_family TEXT NOT NULL,
                     config_changes_json TEXT NOT NULL,
                     validator_status TEXT NOT NULL,
-                    mechanism_dimension TEXT NOT NULL,
                     hypothesis TEXT NOT NULL,
                     mechanism TEXT NOT NULL,
                     thesis_details_json TEXT NOT NULL DEFAULT '{}',
@@ -824,8 +823,8 @@ class BacktestRunDB:
                 f"""
                 SELECT a.thesis_attempt_id, a.research_round_id, a.attempt_number, a.thesis_id,
                        a.strategy_family, a.config_changes_json, a.validator_status,
-                       a.mechanism_dimension, a.hypothesis, a.mechanism,
-                       a.thesis_details_json, a.validation_failure_reason, a.selected_for_execution,
+                       a.hypothesis, a.mechanism, a.thesis_details_json,
+                       a.validation_failure_reason, a.selected_for_execution,
                        a.created_at_utc, r.job_id, r.round_number,
                        r.outcome AS round_outcome, r.run_id, r.hypothesis_id,
                        r.usage_json AS round_usage_json
@@ -862,7 +861,6 @@ class BacktestRunDB:
                 "strategy_family": row["strategy_family"],
                 "config_changes": config_changes,
                 "validator_status": row["validator_status"],
-                "mechanism_dimension": row["mechanism_dimension"],
                 "hypothesis": row["hypothesis"],
                 "mechanism": row["mechanism"],
                 "thesis_details": thesis_details if isinstance(thesis_details, dict) else {},
@@ -905,10 +903,9 @@ class BacktestRunDB:
                 """
                 INSERT OR REPLACE INTO research_thesis_attempts (
                     thesis_attempt_id, research_round_id, attempt_number, thesis_id, strategy_family,
-                    config_changes_json, validator_status, mechanism_dimension,
-                    hypothesis, mechanism, thesis_details_json, validation_failure_reason, selected_for_execution,
-                    created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    config_changes_json, validator_status, hypothesis, mechanism, thesis_details_json,
+                    validation_failure_reason, selected_for_execution, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row.get(
@@ -921,7 +918,6 @@ class BacktestRunDB:
                     row.get("strategy_family", ""),
                     json_dumps_strict(row.get("config_changes", {})),
                     row.get("validator_status", ""),
-                    row.get("mechanism_dimension", ""),
                     row.get("hypothesis", ""),
                     row.get("mechanism", ""),
                     json_dumps_strict(row.get("thesis_details", {})),
@@ -951,10 +947,9 @@ class BacktestRunDB:
                     """
                     INSERT INTO research_thesis_attempts (
                         thesis_attempt_id, research_round_id, attempt_number, thesis_id, strategy_family,
-                        config_changes_json, validator_status, mechanism_dimension,
-                        hypothesis, mechanism, thesis_details_json, validation_failure_reason, selected_for_execution,
-                        created_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        config_changes_json, validator_status, hypothesis, mechanism, thesis_details_json,
+                        validation_failure_reason, selected_for_execution, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         r.get(
@@ -967,7 +962,6 @@ class BacktestRunDB:
                         r.get("strategy_family", ""),
                         config_changes,
                         r.get("validator_status", ""),
-                        r.get("mechanism_dimension", ""),
                         r.get("hypothesis", ""),
                         r.get("mechanism", ""),
                         json_dumps_strict(r.get("thesis_details", {})),

@@ -116,7 +116,6 @@ def test_load_prior_theses_includes_code_only_emergent_thesis(tmp_path: Path) ->
                 "config_changes": {},
                 "validator_status": "halted",
                 "strategy_family": "ema",
-                "mechanism_dimension": "emergent",
                 "thesis_details": {"new_dimension_name": "liquidity_decay"},
                 "selected_for_execution": 0,
                 "created_at_utc": "2026-04-30T00:00:00+00:00",
@@ -131,13 +130,12 @@ def test_load_prior_theses_includes_code_only_emergent_thesis(tmp_path: Path) ->
             "thesis_id": "liquidity_decay_dimension",
             "config_changes": {},
             "outcome": "halted",
-            "mechanism_dimension": "emergent",
             "thesis_details": {"new_dimension_name": "liquidity_decay"},
         }
     ]
 
 
-def test_load_prior_theses_includes_code_only_emergent_alias(tmp_path: Path) -> None:
+def test_load_prior_theses_includes_code_only_new_dimension_details(tmp_path: Path) -> None:
     from backtest_run_db import BacktestRunDB
 
     db = BacktestRunDB(tmp_path / "backtest_runs.db")
@@ -150,7 +148,6 @@ def test_load_prior_theses_includes_code_only_emergent_alias(tmp_path: Path) -> 
                 "config_changes": {},
                 "validator_status": "halted",
                 "strategy_family": "ema",
-                "mechanism_dimension": "other",
                 "thesis_details": {"new_dimension_name": "liquidity_decay"},
                 "selected_for_execution": 0,
                 "created_at_utc": "2026-04-30T00:00:00+00:00",
@@ -160,7 +157,7 @@ def test_load_prior_theses_includes_code_only_emergent_alias(tmp_path: Path) -> 
 
     prior = load_prior_theses(tmp_path, db=db)
 
-    assert prior[0]["mechanism_dimension"] == "other"
+    assert "mechanism_dimension" not in prior[0]
     assert prior[0]["thesis_details"]["new_dimension_name"] == "liquidity_decay"
 
 

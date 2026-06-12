@@ -298,7 +298,6 @@ def _prior_thesis_entry(row: dict[str, Any]) -> dict[str, Any]:
         "thesis_id": row.get("thesis_id", "unknown"),
         "config_changes": row.get("config_changes") or {},
         "outcome": row.get("validator_status", "unknown"),
-        "mechanism_dimension": row.get("mechanism_dimension", ""),
         "thesis_details": details,
     }
     proposal_label = row.get("proposal_label") or details.get("proposal_label")
@@ -526,9 +525,7 @@ def load_prior_theses(
                     prior.append(_prior_thesis_entry(row))
                     continue
                 details = _prior_thesis_details(row)
-                if _normalize_mechanism_dimension_name(
-                    row.get("mechanism_dimension")
-                ) == EMERGENT_MECHANISM_DIMENSION and details.get("new_dimension_name"):
+                if details.get("new_dimension_name"):
                     prior.append(_prior_thesis_entry(row))
         return prior
 
@@ -548,9 +545,7 @@ def load_prior_theses(
             prior.append(_prior_thesis_entry(row))
             continue
         details = _prior_thesis_details(row)
-        if _normalize_mechanism_dimension_name(
-            row.get("mechanism_dimension")
-        ) == EMERGENT_MECHANISM_DIMENSION and details.get("new_dimension_name"):
+        if details.get("new_dimension_name"):
             prior.append(_prior_thesis_entry(row))
     return prior
 
