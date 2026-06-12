@@ -491,6 +491,49 @@ def test_build_corpus_includes_all_prior_screenings_without_round_cap(
     assert "truncated" not in rendered
 
 
+def test_render_corpus_stays_within_budget_even_when_non_screening_overflows() -> None:
+    # A single very long factor lesson pushes non-screening content over
+    # budget; the renderer must still respect CORPUS_MAX_RENDER_CHARS and
+    # surface the truncation, never silently exceed it.
+    bloated_factor = CausalFactor(
+        factor_id="f001",
+        story="x" * (CORPUS_MAX_RENDER_CHARS + 5_000),
+        rule="gap_pct < 0",
+        direction="loss",
+        status="supported",
+        lesson="y" * (CORPUS_MAX_RENDER_CHARS + 5_000),
+    )
+    corpus = Corpus(
+        family="ema",
+        round_number=1,
+        model=CausalModel(family="ema", version=1, factors=[bloated_factor]),
+    )
+
+    rendered = render_corpus(corpus)
+
+    assert len(rendered) <= CORPUS_MAX_RENDER_CHARS
+    # Whatever path the truncator took, the marker contract holds: the LLM
+    # must always be told something was dropped.
+    assert "truncated" in rendered
+
+
+def test_load_walkforward_reports_skips_artifacts_with_invalid_utf8(
+    tmp_path: Path, monkeypatch, caplog
+) -> None:
+    import logging
+
+    _setup_runtime(tmp_path, monkeypatch)
+    broken = tmp_path / "walkforward" / "broken.json"
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.write_bytes(b"\xff\xfe garbled bytes")
+
+    with caplog.at_level(logging.WARNING):
+        corpus = build_corpus("ema", 1)
+
+    assert corpus.walkforward_reports == []
+    assert "unreadable walkforward report" in caplog.text
+
+
 def test_render_corpus_truncates_oldest_screenings_only_past_max_chars() -> None:
     long_suffix = "x" * 2_000
     screenings = [

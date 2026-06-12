@@ -90,7 +90,23 @@ def render_corpus(corpus: Corpus) -> str:
         marker_cost = len(_truncation_marker(truncated)) + 1
         if freed - marker_cost >= overflow:
             break
-    return _render_corpus_text(corpus, truncated_screenings=truncated)
+    rendered = _render_corpus_text(corpus, truncated_screenings=truncated)
+    if len(rendered) <= CORPUS_MAX_RENDER_CHARS:
+        return rendered
+    # Estimated block costs missed the budget (e.g. non-screening content
+    # alone exceeds CORPUS_MAX_RENDER_CHARS — bloated factor stories,
+    # residual summaries). Drop ALL screenings and, if still over, hard-cut
+    # with a tail marker so the 150k contract is never silently violated.
+    rendered = _render_corpus_text(corpus, truncated_screenings=len(block_costs))
+    if len(rendered) <= CORPUS_MAX_RENDER_CHARS:
+        return rendered
+    tail = "\n" + _render_budget_marker()
+    cut = max(0, CORPUS_MAX_RENDER_CHARS - len(tail))
+    return rendered[:cut] + tail
+
+
+def _render_budget_marker() -> str:
+    return f"- [truncated corpus body to fit {CORPUS_MAX_RENDER_CHARS}-char render budget]"
 
 
 def _truncation_marker(count: int) -> str:
@@ -356,7 +372,7 @@ def _load_walkforward_reports(runtime_root: Path, family: str) -> list[dict]:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 raise TypeError("walkforward report payload must be a JSON object")
-        except (OSError, json.JSONDecodeError, TypeError) as exc:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
             log.warning("skipping unreadable walkforward report artifact %s: %s", path, exc)
             continue
         if str(payload.get("family") or "") != family:
