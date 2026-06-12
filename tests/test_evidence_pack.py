@@ -434,7 +434,7 @@ def test_build_corpus_screening_history_is_scoped_to_active_job(
     assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
 
 
-def test_build_corpus_screening_history_excludes_competitor_rows(
+def test_build_corpus_marks_competitor_rows_instead_of_hiding_them(
     tmp_path: Path, monkeypatch
 ) -> None:
     _setup_runtime(tmp_path, monkeypatch)
@@ -447,8 +447,18 @@ def test_build_corpus_screening_history_excludes_competitor_rows(
     )
 
     corpus = build_corpus("ema", 2, job=1)
+    rendered = render_corpus(corpus)
 
-    assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
+    # Spec: competitor screenings are stored AND visible — but marked, so the
+    # LLM cannot mistake a competitor pass for a proposal pass.
+    by_rule = {item.rule: item for item in corpus.screening_history}
+    assert set(by_rule) == {"gap_pct < 0", "gap_pct > 0"}
+    assert by_rule["gap_pct > 0"].is_competitor is True
+    assert by_rule["gap_pct < 0"].is_competitor is False
+    proposal_block = rendered.split("### gap_pct < 0")[1].split("###")[0]
+    competitor_block = rendered.split("### gap_pct > 0")[1].split("###")[0]
+    assert "- role: competitor_hypothesis" in competitor_block
+    assert "- role: proposal" in proposal_block
 
 
 def test_build_corpus_includes_all_prior_screenings_without_round_cap(

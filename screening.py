@@ -50,6 +50,9 @@ class ScreeningResult(BaseModel):
     lift: float
     p_value: float
     overlap_with: str | None
+    # True when this row screened the competitor hypothesis, not the proposal.
+    # Persisted to the screenings table and surfaced (marked) in the corpus.
+    is_competitor: bool = False
 
 
 def screen(

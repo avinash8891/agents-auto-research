@@ -100,6 +100,7 @@ def _truncation_marker(count: int) -> str:
 def _render_screening(screening: ScreeningResult) -> list[str]:
     return [
         f"### {screening.rule}",
+        f"- role: {'competitor_hypothesis' if screening.is_competitor else 'proposal'}",
         f"- verdict: {screening.verdict}",
         f"- sample_count: {screening.sample_count}",
         f"- flagged_loss_rate: {_format_float(screening.flagged_loss_rate)}",
@@ -277,12 +278,12 @@ def _load_screening_history(
                 if job is not None:
                     where += " AND job_id = ?"
                     params.append(job)
-                if "is_competitor" in columns:
-                    where += " AND is_competitor = 0"
+                is_competitor_select = "is_competitor" if "is_competitor" in columns else "0"
                 rows = conn.execute(
                     f"""
                     SELECT rule, verdict, sample_count, {flagged_loss_rate_select},
-                           {base_loss_rate_select}, lift, p_value, overlap_with
+                           {base_loss_rate_select}, lift, p_value, overlap_with,
+                           {is_competitor_select}
                     FROM screenings
                     WHERE {where}
                     ORDER BY round_number, created_at_utc, screening_id
@@ -300,6 +301,7 @@ def _load_screening_history(
             lift,
             p_value,
             overlap_with,
+            is_competitor,
         ) in rows:
             results.append(
                 ScreeningResult(
@@ -315,6 +317,7 @@ def _load_screening_history(
                     lift=float(lift),
                     p_value=float(p_value),
                     overlap_with=overlap_with,
+                    is_competitor=bool(is_competitor),
                 )
             )
     return results
