@@ -1,0 +1,34 @@
+tests/test_experiment_db_sqlite_runtime.py
+  s_3bfcb10840fb93::t_c6d59b3aca7661 706,724
+  s_3bfcb10840fb93::t_8073e61e17af6f 692-705,707-723,725-746
+tests/test_step0_dead_code_deletion.py
+  s_3bfcb10840fb93::t_ebac7f7ea5f43a 54-70
+backtest_run_db.py
+  s_3bfcb10840fb93::t_5843a56c403b77 449-454
+  s_3bfcb10840fb93::t_ffcba8ecb01a8a 316-319
+  s_3bfcb10840fb93::t_c6d59b3aca7661 448
+tests/test_autoresearch_experiment.py
+  s_3bfcb10840fb93::t_6b8498b43fdbcb 31
+  s_3bfcb10840fb93::t_741012d343d74a 2250-2285
+autoresearch_experiment.py
+  s_3bfcb10840fb93::t_1be62b520ef40f 18
+  s_3bfcb10840fb93::t_399fb03da5b0e3 401,403-434
+  s_3bfcb10840fb93::t_c568fcdfbecfd3 1267-1280
+  s_3bfcb10840fb93::t_0306047bf37f52 402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "738eff7022eac4dc33102cfefc5526676dc47fdf",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
