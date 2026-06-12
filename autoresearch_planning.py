@@ -19,6 +19,7 @@ from autoresearch_state import BacktestResultRecord
 from research_types import CausalModel
 from strategy_family import StrategyFamily
 from trace_sdk import trace
+from walkforward import WALKFORWARD_TERMINAL_STATUSES
 
 log = get_logger(__name__)
 
@@ -203,12 +204,19 @@ def _latest_screening_pass_rate_is_zero(
             if len(round_numbers) < plateau_rounds:
                 continue
             placeholders = ",".join("?" for _ in round_numbers)
+            # Competitor rows record the alternative hypothesis, not a
+            # successful proposal: exclude them or competitor passes keep the
+            # plateau stopper from ever firing.
+            competitor_filter = (
+                "AND COALESCE(is_competitor, 0) = 0" if "is_competitor" in columns else ""
+            )
             rows = conn.execute(
                 f"""
                 SELECT verdict
                 FROM screenings
                 WHERE round_number IN ({placeholders})
                 {"AND job_id = ?" if job is not None else ""}
+                {competitor_filter}
                 """,
                 [*round_numbers, job] if job is not None else round_numbers,
             ).fetchall()
@@ -390,7 +398,7 @@ def plan_next_action(
 ) -> dict[str, Any]:
     if (
         state.get("finished_reason") == "model_plateau_pending_walkforward"
-        and state.get("walkforward_status") == "completed"
+        and state.get("walkforward_status") in WALKFORWARD_TERMINAL_STATUSES
     ):
         state.update(_finished_state())
         state.pop("walkforward_status", None)

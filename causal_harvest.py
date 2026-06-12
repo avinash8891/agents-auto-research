@@ -87,16 +87,17 @@ def write_feature_table_artifact(
         if not events_path.is_absolute():
             events_file = str(artifact_dir / events_path)
     events = _load_strategy_events(events_file)
+    if feature_artifact is None:
+        round_root = artifact_dir.parent if artifact_dir.name == "backtest" else artifact_dir
+        feature_artifact = FeatureTableArtifact(round_root)
     table = build_feature_table(
         trades_df,
         bars_df,
         events,
         controller.family.name,
         runtime_config=runtime_config,
+        quarantine_path=feature_artifact.path.parent / "feature_table_quarantine.json",
     )
-    if feature_artifact is None:
-        round_root = artifact_dir.parent if artifact_dir.name == "backtest" else artifact_dir
-        feature_artifact = FeatureTableArtifact(round_root)
     feature_artifact.write(table)
     details["feature_table_file"] = str(feature_artifact.path)
 
@@ -106,25 +107,111 @@ def evaluate_registered_predictions(
     run_output_dir: Path,
     metric: float,
     details: dict[str, Any],
+    *,
+    baseline_override: dict[str, Any] | None = None,
 ) -> Any | None:
     registered_path = run_output_dir.parent / "registered_predictions.json"
     if not registered_path.exists():
         return None
     from experiment_evaluator import evaluate_predictions
 
-    candidate_metrics = _flatten_metrics(details)
     primary_metric_name = (
         controller.primary_metric_name()
         if hasattr(controller, "primary_metric_name")
         else "profit_factor"
     )
-    candidate_metrics[primary_metric_name] = metric
+    candidate_metrics = _flatten_metrics(details, primary_metric=(primary_metric_name, metric))
     return evaluate_predictions(
         registered_path,
-        baseline=_baseline_metrics_from_first_result(controller),
+        baseline=(
+            _baseline_metrics_from_first_result(controller)
+            if baseline_override is None
+            else baseline_override
+        ),
         candidate=candidate_metrics,
         config=_family_base_config(controller),
     )
+
+
+def retest_baseline_metrics(
+    controller: "AutoresearchController",
+    state: dict[str, Any],
+    run_output_dir: Path,
+) -> dict[str, Any] | None:
+    """Re-run the baseline over the retest's extended validation range.
+
+    A retest candidate runs on [validation_start, extended_end] while the
+    checkpoint baseline was measured on the original range — count metrics
+    like trade_count would pass their direction checks mechanically on any
+    extension. A range-matched baseline keeps the comparison honest.
+
+    Returns None (caller falls back to the checkpoint baseline) when no
+    baseline run exists or the rerun fails; the bias risk is logged loudly.
+    """
+    next_action = state.get("next_action") or {}
+    metadata = next_action.get("registered_prediction_retest") or {}
+    extended_end = str(metadata.get("validation_end") or "")
+    if not extended_end:
+        return None
+    from walkforward import latest_baseline
+
+    try:
+        current_job = int(state.get("job"))
+    except (TypeError, ValueError):
+        current_job = None
+    records = [
+        record
+        for record in controller.backtest_run_db.all()
+        if current_job is None or _record_job(record) == current_job
+    ]
+    baseline_record = latest_baseline(records)
+    if baseline_record is None:
+        log.error(
+            "retest baseline rerun skipped: no accepted baseline run in DB "
+            "| falling back to checkpoint baseline; count-metric directions may be inflated"
+        )
+        return None
+    config = dict(baseline_record.runtime_config)
+    config["validation_end"] = extended_end
+    output_dir = run_output_dir.parent / "baseline_retest"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config_path = output_dir / "config.json"
+    write_json_atomic(config_path, config)
+    command = controller.family.benchmark_command(str(config_path), output_dir=str(output_dir))
+    code, output = controller.run_command(command)
+    if code != 0:
+        log.error(
+            "retest baseline rerun failed exit=%s "
+            "| falling back to checkpoint baseline; count-metric directions may be inflated",
+            code,
+        )
+        return None
+    try:
+        primary_metric_name = (
+            controller.primary_metric_name()
+            if hasattr(controller, "primary_metric_name")
+            else "profit_factor"
+        )
+        parsed = controller.parse_metric(output, name=primary_metric_name)
+        metrics = _flatten_metrics(
+            controller.parse_benchmark_details(output),
+            primary_metric=(primary_metric_name, parsed),
+        )
+    except Exception as exc:  # noqa: BLE001 — fail-open: external backtest output
+        log.error(
+            "retest baseline rerun parse failed: %s "
+            "| falling back to checkpoint baseline; count-metric directions may be inflated",
+            exc,
+        )
+        return None
+    return metrics
+
+
+def _record_job(record: Any) -> int | None:
+    try:
+        return int(record.job)
+    except (TypeError, ValueError, AttributeError):
+        return None
 
 
 def attach_harvest_lesson(
@@ -376,12 +463,16 @@ def apply_registered_verdict_to_causal_factor(
             live_factors.append(factor)
     if not matched_live:
         live_factors.append(updated_pending_factor)
+    merged_history = list(live.accuracy_history)
+    merged_history.extend(
+        point for point in pending.accuracy_history if point not in merged_history
+    )
     store.save(
         live.model_copy(
             update={
-                "version": max(live.version, pending.version),
+                "version": live.version + 1,
                 "factors": live_factors,
-                "accuracy_history": live.accuracy_history or pending.accuracy_history,
+                "accuracy_history": merged_history,
             }
         )
     )
@@ -505,20 +596,29 @@ def _load_strategy_events(value: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _flatten_metrics(details: dict[str, Any]) -> dict[str, Any]:
+def _flatten_metrics(
+    details: dict[str, Any],
+    *,
+    primary_metric: tuple[str, Any] | None = None,
+) -> dict[str, Any]:
+    # Merge order is precedence order: validation_metrics must win over train
+    # values, ambiguous top-level copies, AND the parsed primary metric,
+    # because registered predictions are judged against the validation period.
     metrics: dict[str, Any] = {}
     train_metrics = details.get("train_metrics")
     if isinstance(train_metrics, dict):
         metrics.update(train_metrics)
-    validation_metrics = details.get("validation_metrics")
-    if isinstance(validation_metrics, dict):
-        metrics.update(validation_metrics)
     nested = details.get("metrics")
     if isinstance(nested, dict):
         metrics.update(nested)
     for key, value in details.items():
         if key not in {"train_metrics", "validation_metrics", "metrics"}:
             metrics[key] = value
+    if primary_metric is not None and primary_metric[1] is not None:
+        metrics[primary_metric[0]] = primary_metric[1]
+    validation_metrics = details.get("validation_metrics")
+    if isinstance(validation_metrics, dict):
+        metrics.update(validation_metrics)
     return metrics
 
 

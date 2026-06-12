@@ -258,6 +258,41 @@ def test_should_terminate_keeps_running_when_last_plateau_window_has_screening_p
     )
 
 
+def test_should_terminate_ignores_competitor_pass_rows_in_screening_pass_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    _save_plateau_model()
+    db_path = tmp_path / "ema_backtest_runs.db"
+    for round_number in range(1, 6):
+        # Proposal killed every round; the better competitor that killed it is
+        # persisted with verdict "pass" but must not count as a proposal pass.
+        write_screenings(
+            db_path,
+            [_killed_screening().model_copy(update={"verdict": "kill_lost_to_competitor"})],
+            round_number=round_number,
+            competitor_rule="gap_pct > 0",
+            job_id=7,
+        )
+        write_screenings(
+            db_path,
+            [
+                _killed_screening().model_copy(
+                    update={"rule": "gap_pct > 0", "verdict": "pass", "lift": 0.20, "p_value": 0.01}
+                )
+            ],
+            round_number=round_number,
+            competitor_rule="gap_pct < 0",
+            job_id=7,
+            is_competitor=True,
+        )
+
+    assert (
+        should_terminate(tmp_path, ema_family, tmp_path / "queue", tmp_path / "research", [], job=7)
+        is True
+    )
+
+
 def test_should_terminate_ignores_legacy_terminal_findings_without_model_plateau(
     tmp_path: Path, ema_family
 ) -> None:
@@ -450,6 +485,41 @@ def test_plan_next_action_finishes_after_plateau_walkforward_completes(
         "job": 3,
         "research_round": 2,
         "walkforward_status": "completed",
+        "finished_reason": "model_plateau_pending_walkforward",
+    }
+
+    out = plan_next_action(
+        state,
+        [BacktestResultRecord("configs/ema_base.yaml", 1.0, "keep", "", 1, {})],
+        tmp_path,
+        tmp_path,
+        ema_family,
+        tmp_path / "queue",
+        tmp_path / "proposals",
+        tmp_path / "research",
+    )
+
+    assert out["state"] == "finished"
+    assert out["next_action"]["type"] == "terminated"
+    assert out["finished_reason"] == "model_plateau"
+
+
+def test_plan_next_action_finishes_after_plateau_walkforward_completes_with_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ema_family
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    _save_plateau_model()
+    db_path = tmp_path / "ema_backtest_runs.db"
+    for round_number in range(1, 6):
+        write_screenings(db_path, [_killed_screening()], round_number=round_number, job_id=3)
+    state = {
+        "state": "running",
+        "job": 3,
+        "research_round": 2,
+        # Partial success is terminal: rerunning the queue would not change
+        # the failed candidates' outcome.
+        "walkforward_status": "completed_with_errors",
+        "walkforward_errors": [{"thesis_id": "thesis-broken", "error": "boom"}],
         "finished_reason": "model_plateau_pending_walkforward",
     }
 
