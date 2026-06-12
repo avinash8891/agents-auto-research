@@ -155,6 +155,56 @@ def test_run_window_backtest_validation_metrics_win_over_top_level_duplicates(
     assert metrics["median_expectancy"] == 0.42
 
 
+def test_run_window_backtest_validation_primary_metric_wins_over_parsed_metric(
+    tmp_path: Path,
+) -> None:
+    class Family:
+        name = "ema"
+
+        def benchmark_command(self, config_path: str, output_dir: str | None = None) -> str:
+            return f"{config_path}|{output_dir}"
+
+    class Controller:
+        root = tmp_path
+        runtime_root = tmp_path
+        family = Family()
+
+        def run_command(self, command: str) -> tuple[int, str]:
+            return 0, json.dumps(
+                {
+                    "profit_factor": 9.9,  # top-level/train value parse_metric sees
+                    "validation_metrics": {"profit_factor": 1.7, "trade_count": 30},
+                }
+            )
+
+        def parse_metric(self, output: str, name: str = "profit_factor") -> float:
+            return float(json.loads(output)[name])
+
+        def parse_benchmark_details(self, output: str) -> dict:
+            return json.loads(output)
+
+        def primary_metric_name(self) -> str:
+            return "profit_factor"
+
+    metrics = _run_window_backtest(
+        Controller(),
+        {"validation_start": "2020-01-01", "validation_end": "2021-04-01"},
+        "thesis-001",
+        0,
+        "candidate",
+        WalkForwardWindow(
+            train_start="2021-04-02T00:00:00+00:00",
+            train_end="2021-10-02T00:00:00+00:00",
+            test_start="2021-10-02T00:00:00+00:00",
+            test_end="2022-01-02T00:00:00+00:00",
+        ),
+    )
+
+    # The window's validation range IS the test window: an explicit
+    # validation_metrics value beats the ambiguous parsed top-level value.
+    assert metrics["profit_factor"] == 1.7
+
+
 def test_walkforward_robust_fixture_graduates_and_writes_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -573,6 +623,8 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
             "research_round": 6,
             "next_action": {"type": "walkforward"},
             "finished_reason": "model_plateau_pending_walkforward",
+            # Stale errors from a prior failed rerun must be cleared on success.
+            "walkforward_errors": [{"thesis_id": "thesis-stale", "error": "old"}],
         },
     )
 
@@ -588,6 +640,7 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
     assert report["windows"][0]["prediction_results"][1]["metric"] == "median_expectancy"
     assert report["windows"][0]["prediction_results"][1]["direction_passed"] is True
     assert written_states[-1]["walkforward_status"] == "completed"
+    assert "walkforward_errors" not in written_states[-1]
 
 
 def test_run_walkforward_queue_isolates_candidate_failures(

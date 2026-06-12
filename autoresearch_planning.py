@@ -19,6 +19,7 @@ from autoresearch_state import BacktestResultRecord
 from research_types import CausalModel
 from strategy_family import StrategyFamily
 from trace_sdk import trace
+from walkforward import WALKFORWARD_TERMINAL_STATUSES
 
 log = get_logger(__name__)
 
@@ -390,7 +391,7 @@ def plan_next_action(
 ) -> dict[str, Any]:
     if (
         state.get("finished_reason") == "model_plateau_pending_walkforward"
-        and state.get("walkforward_status") == "completed"
+        and state.get("walkforward_status") in WALKFORWARD_TERMINAL_STATUSES
     ):
         state.update(_finished_state())
         state.pop("walkforward_status", None)

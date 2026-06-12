@@ -124,7 +124,11 @@ def evaluate_registered_predictions(
     candidate_metrics[primary_metric_name] = metric
     return evaluate_predictions(
         registered_path,
-        baseline=baseline_override or _baseline_metrics_from_first_result(controller),
+        baseline=(
+            _baseline_metrics_from_first_result(controller)
+            if baseline_override is None
+            else baseline_override
+        ),
         candidate=candidate_metrics,
         config=_family_base_config(controller),
     )
@@ -150,9 +154,17 @@ def retest_baseline_metrics(
     extended_end = str(metadata.get("validation_end") or "")
     if not extended_end:
         return None
+    try:
+        current_job = int(state.get("job"))
+    except (TypeError, ValueError):
+        current_job = None
     records = controller.backtest_run_db.all()
     baselines = [
-        record for record in records if getattr(record, "is_baseline", False) and record.accepted
+        record
+        for record in records
+        if getattr(record, "is_baseline", False)
+        and record.accepted
+        and (current_job is None or _record_job(record) == current_job)
     ]
     if not baselines:
         log.error(
@@ -176,16 +188,31 @@ def retest_baseline_metrics(
             code,
         )
         return None
-    metrics = _flatten_metrics(controller.parse_benchmark_details(output))
-    primary_metric_name = (
-        controller.primary_metric_name()
-        if hasattr(controller, "primary_metric_name")
-        else "profit_factor"
-    )
-    parsed = controller.parse_metric(output, name=primary_metric_name)
+    try:
+        metrics = _flatten_metrics(controller.parse_benchmark_details(output))
+        primary_metric_name = (
+            controller.primary_metric_name()
+            if hasattr(controller, "primary_metric_name")
+            else "profit_factor"
+        )
+        parsed = controller.parse_metric(output, name=primary_metric_name)
+    except Exception as exc:  # noqa: BLE001 — fail-open: external backtest output
+        log.error(
+            "retest baseline rerun parse failed: %s "
+            "| falling back to checkpoint baseline; count-metric directions may be inflated",
+            exc,
+        )
+        return None
     if parsed is not None:
         metrics[primary_metric_name] = parsed
     return metrics
+
+
+def _record_job(record: Any) -> int | None:
+    try:
+        return int(record.job)
+    except (TypeError, ValueError, AttributeError):
+        return None
 
 
 def attach_harvest_lesson(

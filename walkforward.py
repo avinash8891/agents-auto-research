@@ -24,6 +24,11 @@ from persistence_utils import read_config_payload, write_json_atomic
 
 log = get_logger(__name__)
 
+# Terminal queue statuses: the planner finishes a plateau job on either one.
+# "completed_with_errors" means some candidates failed but the queue ran to
+# the end — rerunning it would not change the failed candidates' outcome.
+WALKFORWARD_TERMINAL_STATUSES = frozenset({"completed", "completed_with_errors"})
+
 
 @dataclass(frozen=True)
 class WalkForwardWindow:
@@ -255,6 +260,8 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
     next_state["walkforward_status"] = "completed_with_errors" if errors else "completed"
     if errors:
         next_state["walkforward_errors"] = errors
+    else:
+        next_state.pop("walkforward_errors", None)
     next_state["walkforward_reports"] = [
         str(Path(controller.runtime_root) / "walkforward" / f"{report['thesis_id']}.json")
         for report in reports
@@ -478,6 +485,11 @@ def _run_window_backtest(
             {key: value for key, value in train_metrics.items() if isinstance(value, int | float)}
         )
     metrics.update({key: value for key, value in details.items() if isinstance(value, int | float)})
+    # The parsed primary metric lands BEFORE validation_metrics so an explicit
+    # validation value still wins — the window config's validation range IS
+    # the test window, so validation_metrics is the authoritative source.
+    if metric is not None:
+        metrics[controller.primary_metric_name()] = metric
     validation_metrics = details.get("validation_metrics")
     if isinstance(validation_metrics, dict):
         metrics.update(
@@ -487,8 +499,6 @@ def _run_window_backtest(
                 if isinstance(value, int | float)
             }
         )
-    if metric is not None:
-        metrics[controller.primary_metric_name()] = metric
     return metrics
 
 

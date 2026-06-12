@@ -1406,21 +1406,24 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             ),
         )
         retest_request: RetestRequested | None = None
+        forced_after_retest = False
         if registered_verdict is not None:
             if registered_verdict.status == "inconclusive":
                 if is_registered_prediction_retest_action(state):
                     registered_verdict = force_registered_inconclusive_after_retest(
                         registered_verdict
                     )
+                    forced_after_retest = True
                     decision = "discard"
                 else:
                     retest_request = request_registered_prediction_retest(
                         controller, state, config=config
                     )
                     decision = "retest"
-            if retest_request is None:
+            if retest_request is None and not forced_after_retest:
                 # Only terminal verdicts get the paid LLM lesson; a verdict
-                # heading to retest would have its lesson overwritten anyway.
+                # heading to retest would have its lesson overwritten, and a
+                # forced-after-retest verdict must keep its audit marker.
                 registered_verdict = attach_harvest_lesson(
                     controller,
                     run_output_dir,

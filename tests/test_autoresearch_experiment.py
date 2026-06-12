@@ -2010,6 +2010,51 @@ def test_run_experiment_forces_registered_inconclusive_after_retest_once(
     assert "forced_after_retest" in updated_model.factors[0].lesson
 
 
+def test_forced_retest_lesson_is_not_overwritten_by_llm_synthesis(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    monkeypatch.setenv("AUTORESEARCH_ENABLE_HARVEST_LLM_LESSON", "1")
+    monkeypatch.setattr(
+        "causal_harvest._generate_harvest_lesson",
+        lambda **kwargs: "llm sentence that must not replace the audit marker",
+    )
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 25, "profit_factor": 2.01},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(
+        tmp_path,
+        controller,
+        selected_config_name="selected_config_retest.json",
+    )
+    round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "registered_prediction_retest",
+            "registered_prediction_retest": {"attempt": 1},
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    harvest = json.loads((round_root / "harvest_verdict.json").read_text())
+    assert harvest["status"] == "refuted"
+    assert harvest["lesson"].startswith("forced_after_retest")
+
+
 def test_retest_verdict_uses_baseline_rerun_over_extended_range(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
