@@ -76,7 +76,11 @@ def test_not_worse_than_max_drawdown_keeps_lower_is_better_direction() -> None:
     )
 
 
-def test_not_worse_than_win_loss_ratio_is_not_treated_as_lower_is_better() -> None:
+def test_not_worse_than_unknown_metric_is_inconclusive_not_guessed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
     effect = ExpectedEffect(
         metric="win_loss_ratio",
         direction="not_worse_than",
@@ -84,13 +88,42 @@ def test_not_worse_than_win_loss_ratio_is_not_treated_as_lower_is_better() -> No
         rationale="Win/loss ratio should not fall materially.",
     )
 
-    assert (
-        evaluate_effect(
+    # Custom required_diagnostics metrics are validator-legal but have no
+    # registered direction: never guess a direction, never abort the round.
+    with caplog.at_level(logging.WARNING):
+        result = evaluate_effect(
             effect,
             baseline={"win_loss_ratio": 2.0},
             candidate={"win_loss_ratio": 2.3},
         )
+
+    assert result is None
+    assert "win_loss_ratio" in caplog.text
+
+
+def test_not_worse_than_win_rate_is_treated_as_higher_is_better() -> None:
+    effect = ExpectedEffect(
+        metric="win_rate",
+        direction="not_worse_than",
+        threshold=10.0,
+        rationale="Win rate should not fall materially.",
+    )
+
+    assert (
+        evaluate_effect(
+            effect,
+            baseline={"win_rate": 0.50},
+            candidate={"win_rate": 0.55},
+        )
         is True
+    )
+    assert (
+        evaluate_effect(
+            effect,
+            baseline={"win_rate": 0.50},
+            candidate={"win_rate": 0.40},
+        )
+        is False
     )
 
 

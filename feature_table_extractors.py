@@ -44,13 +44,29 @@ def _ema_entry_features(
     runtime_config: dict[str, Any],
     feature_cache: dict[tuple[Any, ...], Any],
 ) -> dict[str, float]:
-    del symbol_bars, entry_ts, feature_cache
+    del entry_ts
     if prior_bars.empty or not np.isfinite(entry_price) or entry_price == 0:
         return {}
     ema_length = _int_or_default(runtime_config.get("ema_length", 5), 5)
     if ema_length <= 0:
         return {}
-    ema = prior_bars["close"].astype(float).ewm(span=ema_length, adjust=False).mean().iloc[-1]
+    # adjust=False EMA is a left-to-right recursion: the value at position i of
+    # the full series equals the EMA of the prefix ending at i, so the series
+    # is computed once per (symbol, length) and indexed per trade.
+    # prior_bars is always a contiguous prefix of symbol_bars (see _feature_row).
+    symbol = (
+        str(symbol_bars["symbol"].iloc[0])
+        if not symbol_bars.empty and "symbol" in symbol_bars
+        else ""
+    )
+    cache_key = ("ema_series", symbol, ema_length)
+    ema_series = feature_cache.get(cache_key)
+    if ema_series is None:
+        ema_series = (
+            symbol_bars["close"].astype(float).ewm(span=ema_length, adjust=False).mean().to_numpy()
+        )
+        feature_cache[cache_key] = ema_series
+    ema = float(ema_series[len(prior_bars) - 1])
     return {"dist_to_ema_pct": float((entry_price - ema) / entry_price * 100.0)}
 
 

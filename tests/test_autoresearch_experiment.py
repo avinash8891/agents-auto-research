@@ -48,7 +48,13 @@ from causal_harvest import (
 )
 from causal_model import load_model, save_model
 from feature_table import load_feature_table
-from research_types import BacktestContract, CausalFactor, CausalModel, HarvestVerdict
+from research_types import (
+    AccuracyPoint,
+    BacktestContract,
+    CausalFactor,
+    CausalModel,
+    HarvestVerdict,
+)
 from strategy_family import load_family
 
 
@@ -1204,13 +1210,81 @@ def test_registered_verdict_promotion_merges_into_live_model_without_snapshot_ov
     )
 
     model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
-    assert model.version == 9
+    assert model.version == 10
     assert [factor.rule for factor in model.factors] == [
         "vol_pctile_20d > 0.5",
         "gap_pct < 0",
     ]
     assert model.factors[1].status == "harvested"
     assert model.factors[1].lesson == "supported: gap rule passed"
+
+
+def test_registered_verdict_promotion_bumps_version_and_merges_accuracy_history(
+    tmp_path: Path,
+) -> None:
+    controller = _controller_for_experiment(tmp_path, "")
+    _write_causal_model_base_config(tmp_path)
+    round_root = tmp_path / "runtime/jobs/job-1/research/round-2"
+    round_root.mkdir(parents=True)
+    config_path = round_root / "selected_config.json"
+    config_path.write_text(json.dumps({"ema_length": 10}) + "\n", encoding="utf-8")
+    (round_root / "selected_thesis.json").write_text(
+        json.dumps({"thesis_id": "thesis-002", "rule": "gap_pct < 0"}) + "\n",
+        encoding="utf-8",
+    )
+    pending_point = AccuracyPoint(
+        round_number=2,
+        model_version=2,
+        pnl_weighted_accuracy=0.71,
+        naive_accuracy=0.55,
+        skill=0.16,
+        holdout_trade_count=40,
+    )
+    live_point = AccuracyPoint(
+        round_number=1,
+        model_version=1,
+        pnl_weighted_accuracy=0.62,
+        naive_accuracy=0.55,
+        skill=0.07,
+        holdout_trade_count=40,
+    )
+    pending_factor = CausalFactor(
+        factor_id="pending-gap",
+        story="Pending gap rule",
+        rule="gap_pct < 0",
+        direction="loss",
+        status="candidate",
+    )
+    PendingCausalModelArtifact(round_root).write(
+        CausalModel(
+            family="ema",
+            version=2,
+            factors=[pending_factor],
+            accuracy_history=[live_point, pending_point],
+        )
+    )
+    # Live model advanced past the pending snapshot (e.g. walkforward demotion bumped it).
+    save_model(
+        CausalModel(family="ema", version=5, factors=[], accuracy_history=[live_point]),
+        runtime_root=tmp_path,
+        code_root=tmp_path,
+    )
+
+    apply_registered_verdict_to_causal_factor(
+        controller,
+        "runtime/jobs/job-1/research/round-2/selected_config.json",
+        HarvestVerdict(
+            thesis_id="thesis-002",
+            status="supported",
+            summary="supported: gap rule passed",
+        ),
+    )
+
+    model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
+    # Distinct model state must get a distinct version, even when live already advanced.
+    assert model.version == 6
+    # Pending's newly scored accuracy point is preserved; live's history is not duplicated.
+    assert model.accuracy_history == [live_point, pending_point]
 
 
 def test_record_baseline_checkpoint_persists_critical_drift_and_clears_rerun_marker(
@@ -1797,6 +1871,50 @@ def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusiv
     assert retest_payload["validation_end"] == "2024-09-30"
 
 
+def test_lesson_synthesis_skipped_when_retest_scheduled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    monkeypatch.setenv("AUTORESEARCH_ENABLE_HARVEST_LLM_LESSON", "1")
+    lesson_calls: list[dict] = []
+
+    def _fake_generate(**kwargs: object) -> str:
+        lesson_calls.append(dict(kwargs))
+        return "llm lesson"
+
+    monkeypatch.setattr("causal_harvest._generate_harvest_lesson", _fake_generate)
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 25, "profit_factor": 2.01},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(tmp_path, controller)
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    persisted = controller.read_state()
+    assert persisted["next_action"]["source"] == "registered_prediction_retest"
+    # The verdict is heading to a retest: the paid lesson call must not run,
+    # because the retest outcome overwrites the lesson anyway.
+    assert lesson_calls == []
+
+
 def test_request_registered_prediction_retest_returns_explicit_transition_without_sentinel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1890,6 +2008,121 @@ def test_run_experiment_forces_registered_inconclusive_after_retest_once(
     updated_model = load_model("ema")
     assert updated_model.factors[0].status == "refuted"
     assert "forced_after_retest" in updated_model.factors[0].lesson
+
+
+def test_forced_retest_lesson_is_not_overwritten_by_llm_synthesis(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    monkeypatch.setenv("AUTORESEARCH_ENABLE_HARVEST_LLM_LESSON", "1")
+    monkeypatch.setattr(
+        "causal_harvest._generate_harvest_lesson",
+        lambda **kwargs: "llm sentence that must not replace the audit marker",
+    )
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 25, "profit_factor": 2.01},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(
+        tmp_path,
+        controller,
+        selected_config_name="selected_config_retest.json",
+    )
+    round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "registered_prediction_retest",
+            "registered_prediction_retest": {"attempt": 1},
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    harvest = json.loads((round_root / "harvest_verdict.json").read_text())
+    assert harvest["status"] == "refuted"
+    assert harvest["lesson"].startswith("forced_after_retest")
+
+
+def test_retest_verdict_uses_baseline_rerun_over_extended_range(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 25, "profit_factor": 2.01},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(
+        tmp_path,
+        controller,
+        selected_config_name="selected_config_retest.json",
+    )
+    round_root = tmp_path / "runtime" / "jobs" / "job-6" / "research" / "round-1"
+    controller.backtest_run_db.add_from_sqlite_fields(
+        run_id="run-baseline",
+        thesis_id="baseline",
+        config_path="runtime/jobs/job-6/research/round-0-baseline/selected_config.json",
+        runtime_config={"validation_start": "2020-01-01", "validation_end": "2023-12-31"},
+        code_commit="abc1234",
+        data_hash="data",
+        metrics={"profit_factor": 2.0, "trade_count": 25},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="supported",
+        verdict_summary="supported",
+        family="ema",
+        job_id=6,
+        primary_metric_name="profit_factor",
+        primary_metric_value=2.0,
+        research_round_id="job-6-round-0",
+        research_round_number=0,
+        is_baseline=True,
+    )
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-command-inconclusive",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
+            "selected_thesis_id": "ema-command-inconclusive",
+            "source": "registered_prediction_retest",
+            "registered_prediction_retest": {
+                "attempt": 1,
+                "original_validation_end": "2023-12-31",
+                "validation_end": "2024-09-30",
+            },
+        },
+    }
+    controller.write_state(state)
+
+    code = run_experiment(controller, state)
+
+    assert code == 0
+    rerun_config = json.loads((round_root / "baseline_retest" / "config.json").read_text())
+    # The comparison baseline is re-run over the SAME extended range as the
+    # retest candidate, not the original checkpoint range.
+    assert rerun_config["validation_end"] == "2024-09-30"
+    harvest = json.loads((round_root / "harvest_verdict.json").read_text())
+    baselines = {row["metric"]: row["baseline"] for row in harvest["registered_predictions"]}
+    # 2.01 is the rerun's value; the original checkpoint baseline was 2.0.
+    assert baselines["profit_factor"] == pytest.approx(2.01)
 
 
 def test_run_experiment_writes_feature_table_artifact(

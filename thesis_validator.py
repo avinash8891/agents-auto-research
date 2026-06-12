@@ -97,14 +97,6 @@ def _is_overlap_ignored_key(key: str) -> bool:
 
 _MIN_EXPECTED_EFFECTS = 2
 _MIN_EFFECT_RATIONALE_CHARS = 20
-_EVIDENCE_CONTEXT_TRADES: Final[str] = "trades"
-_EVIDENCE_CONTEXT_NO_TRADES: Final[str] = "no_trades"
-_EVIDENCE_CONTEXT_COLD_START: Final[str] = "cold_start"
-_EVIDENCE_SOURCES_BY_CONTEXT: Final[dict[str, frozenset[str]]] = {
-    _EVIDENCE_CONTEXT_TRADES: frozenset({"web_search", "analyst"}),
-    _EVIDENCE_CONTEXT_NO_TRADES: frozenset({"web_search", "round_result"}),
-    _EVIDENCE_CONTEXT_COLD_START: frozenset({"web_search"}),
-}
 _ALLOWED_BASE_CONFIG_PREFIXES = ("configs/",)
 
 # Removed gate: prior-winner inheritance language regex.
@@ -1007,22 +999,7 @@ def _collect_source_code_verification_failures(thesis: ResearchThesis) -> list[B
     return failures
 
 
-def _resolve_evidence_context(
-    *, require_analyst_evidence: bool, evidence_context: str | None
-) -> str:
-    if evidence_context is None:
-        return _EVIDENCE_CONTEXT_TRADES if require_analyst_evidence else _EVIDENCE_CONTEXT_NO_TRADES
-    if evidence_context not in _EVIDENCE_SOURCES_BY_CONTEXT:
-        allowed = ", ".join(sorted(_EVIDENCE_SOURCES_BY_CONTEXT))
-        raise ValueError(
-            f"Unknown evidence_context '{evidence_context}'; expected one of {allowed}"
-        )
-    return evidence_context
-
-
-def _collect_research_contract_failures(
-    thesis: ResearchThesis, *, evidence_context: str
-) -> list[BehaviorSignal]:
+def _collect_research_contract_failures(thesis: ResearchThesis) -> list[BehaviorSignal]:
     failures: list[BehaviorSignal] = []
 
     effect_metrics_are_backed = all(
@@ -1237,18 +1214,11 @@ def _collect_mechanical_config_validity_failures(thesis: ResearchThesis) -> list
 def _collect_mechanical_failures(
     thesis: ResearchThesis,
     prior_theses: list[dict[str, Any]] | None = None,
-    *,
-    evidence_context: str = _EVIDENCE_CONTEXT_TRADES,
 ) -> list[BehaviorSignal]:
     failures = _collect_inline_structural_failures(thesis, prior_theses)
     failures.extend(_collect_from_validator(lambda: _validate_thesis_specifies_change(thesis)))
     failures.extend(_collect_from_validator(lambda: _validate_expected_effects_present(thesis)))
-    failures.extend(
-        _collect_research_contract_failures(
-            thesis,
-            evidence_context=evidence_context,
-        )
-    )
+    failures.extend(_collect_research_contract_failures(thesis))
     for effect in thesis.expected_effects:
         if effect.metric in BUILTIN_METRICS:
             continue
@@ -1296,8 +1266,6 @@ def validate_research_thesis(
     prior_theses: list[dict[str, Any]] | None = None,
     *,
     tools_called: set[str] | None = None,
-    require_analyst_evidence: bool = True,
-    evidence_context: str | None = None,
     require_analyst_tool: bool = False,
 ) -> ResearchThesis:
     """Validate a research thesis. Raises ThesisValidationError if invalid.
@@ -1305,10 +1273,6 @@ def validate_research_thesis(
     Dispatches Stage 1 to four named sub-section helpers in fixed order:
     process → behavioral → mechanical.
     """
-    resolved_evidence_context = _resolve_evidence_context(
-        require_analyst_evidence=require_analyst_evidence,
-        evidence_context=evidence_context,
-    )
     if tools_called is not None:
         process_signal = _validate_process(tools_called, require_analyst_tool=require_analyst_tool)
         process_decision = _policy_decide([process_signal] if process_signal is not None else [])
@@ -1321,12 +1285,15 @@ def validate_research_thesis(
                 evidence=dict(triggering.evidence),
                 remediation_hint=_format_remediation(triggering.remediation),
             )
+        for warning in process_decision.warnings:
+            log.warning(
+                "thesis accepted with warning code=%s summary=%s | remediation=%s",
+                warning.code,
+                warning.summary,
+                _format_remediation(warning.remediation),
+            )
     _run_behavioral_pass(thesis, prior_theses)
-    mechanical_failures = _collect_mechanical_failures(
-        thesis,
-        prior_theses,
-        evidence_context=resolved_evidence_context,
-    )
+    mechanical_failures = _collect_mechanical_failures(thesis, prior_theses)
     _raise_mechanical_batch(mechanical_failures)
     return thesis
 
@@ -1339,8 +1306,6 @@ def validate_thesis_dict(
     attempt_number: int,
     assign_thesis_id: Callable[[str, int], str],
     tools_called: set[str] | None = None,
-    require_analyst_evidence: bool = True,
-    evidence_context: str | None = None,
     require_analyst_tool: bool = False,
 ) -> ResearchThesis:
     """Parse a raw dict into ResearchThesis and validate it.
@@ -1355,8 +1320,6 @@ def validate_thesis_dict(
         thesis,
         prior_theses=prior_theses,
         tools_called=tools_called,
-        require_analyst_evidence=require_analyst_evidence,
-        evidence_context=evidence_context,
         require_analyst_tool=require_analyst_tool,
     )
 
@@ -1380,8 +1343,6 @@ def validate_stage_1(
     prior_theses: list[dict[str, Any]] | None = None,
     *,
     tools_called: set[str] | None = None,
-    require_analyst_evidence: bool = True,
-    evidence_context: str | None = None,
     require_analyst_tool: bool = False,
 ) -> ResearchThesis:
     """Stage 1: pre-compile validator. Alias for `validate_research_thesis`."""
@@ -1389,8 +1350,6 @@ def validate_stage_1(
         thesis,
         prior_theses=prior_theses,
         tools_called=tools_called,
-        require_analyst_evidence=require_analyst_evidence,
-        evidence_context=evidence_context,
         require_analyst_tool=require_analyst_tool,
     )
 

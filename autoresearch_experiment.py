@@ -52,6 +52,7 @@ from causal_harvest import (
     is_registered_prediction_retest_action,
     load_runtime_config_contents,
     request_registered_prediction_retest,
+    retest_baseline_metrics,
     write_feature_table_artifact,
     write_harvest_verdict_artifact,
 )
@@ -1398,25 +1399,36 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
             run_output_dir,
             metric,
             details,
+            baseline_override=(
+                retest_baseline_metrics(controller, state, run_output_dir)
+                if is_registered_prediction_retest_action(state)
+                else None
+            ),
         )
         retest_request: RetestRequested | None = None
+        forced_after_retest = False
         if registered_verdict is not None:
-            registered_verdict = attach_harvest_lesson(
-                controller,
-                run_output_dir,
-                registered_verdict,
-            )
             if registered_verdict.status == "inconclusive":
                 if is_registered_prediction_retest_action(state):
                     registered_verdict = force_registered_inconclusive_after_retest(
                         registered_verdict
                     )
-                    decision = "keep" if registered_verdict.status == "supported" else "discard"
+                    forced_after_retest = True
+                    decision = "discard"
                 else:
                     retest_request = request_registered_prediction_retest(
                         controller, state, config=config
                     )
                     decision = "retest"
+            if retest_request is None and not forced_after_retest:
+                # Only terminal verdicts get the paid LLM lesson; a verdict
+                # heading to retest would have its lesson overwritten, and a
+                # forced-after-retest verdict must keep its audit marker.
+                registered_verdict = attach_harvest_lesson(
+                    controller,
+                    run_output_dir,
+                    registered_verdict,
+                )
             write_harvest_verdict_artifact(controller, run_output_dir, registered_verdict)
             verdict = registered_verdict
             if registered_verdict.status in {"degenerate", "refuted"}:

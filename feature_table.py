@@ -7,9 +7,16 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from autoresearch_logging import get_logger
 from autoresearch_runtime_paths import research_round_root
 from backtest.data_universe import default_data_root
 from feature_table_extractors import family_entry_features
+
+log = get_logger(__name__)
+
+# Rule I: bad external trade rows are quarantined row-by-row; above this
+# fraction the data is too corrupt to trust and the build stops loudly.
+_QUARANTINE_MAX_FRACTION = 0.01
 
 # Ordered source of truth for the feature-table schema. Outcome columns are the
 # "out_"-prefixed ones; entry-time columns are the rest. The two frozensets below
@@ -68,9 +75,49 @@ class FeatureTableArtifact:
 
 @dataclass(frozen=True)
 class SymbolBars:
+    """One symbol's bars plus precomputed arrays for O(log n) per-trade lookups."""
+
     bars: pd.DataFrame
     daily: pd.DataFrame
     timestamps: pd.Series
+    bar_dates: np.ndarray
+    daily_dates: np.ndarray
+    daily_open: np.ndarray
+    daily_high: np.ndarray
+    daily_low: np.ndarray
+    daily_close: np.ndarray
+    daily_range_pct: np.ndarray
+
+    @classmethod
+    def from_bars(cls, bars: pd.DataFrame) -> "SymbolBars":
+        daily = _daily_bars(bars)
+        daily_open = pd.to_numeric(daily.get("open"), errors="coerce").to_numpy(dtype=float)
+        daily_high = pd.to_numeric(daily.get("high"), errors="coerce").to_numpy(dtype=float)
+        daily_low = pd.to_numeric(daily.get("low"), errors="coerce").to_numpy(dtype=float)
+        daily_close = pd.to_numeric(daily.get("close"), errors="coerce").to_numpy(dtype=float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            daily_range_pct = (daily_high - daily_low) / daily_close
+        return cls(
+            bars=bars,
+            daily=daily,
+            timestamps=bars["timestamp"].reset_index(drop=True),
+            bar_dates=bars["date"].to_numpy(),
+            daily_dates=daily["date"].to_numpy(),
+            daily_open=daily_open,
+            daily_high=daily_high,
+            daily_low=daily_low,
+            daily_close=daily_close,
+            daily_range_pct=daily_range_pct,
+        )
+
+
+@dataclass(frozen=True)
+class _RegimeLookup:
+    """Regime labels sorted by date with O(log n) prior-day lookup."""
+
+    dates: np.ndarray
+    records: list[dict[str, Any]]
+    extra_columns: frozenset[str]
 
 
 def feature_table_path(round_root: Path) -> Path:
@@ -82,6 +129,14 @@ def load_feature_table(round_root: Path) -> pd.DataFrame:
 
 
 def load_regime_labels() -> pd.DataFrame:
+    """Load regime labels exported by the regime-detection repo.
+
+    Contract: each row labels date D using day D's own (full-session) data —
+    the parquet must NOT be pre-lagged. The feature table applies the
+    one-trading-day lag itself at join time (`_prior_regime_record` joins the
+    latest label strictly BEFORE the entry day). A pre-lagged parquet would be
+    double-lagged: safe against look-ahead but one day staler than intended.
+    """
     expected = default_data_root() / "regime_labels.parquet"
     if not expected.exists():
         raise FileNotFoundError(f"Missing regime labels file: {expected}")
@@ -100,19 +155,23 @@ def build_feature_table(
     events: list[dict],
     family: str,
     runtime_config: dict[str, Any] | None = None,
+    quarantine_path: Path | None = None,
 ) -> pd.DataFrame:
     bars = _normalize_bars(bars_df)
     trades = trades_df.copy()
+    trades = _quarantine_nonfinite_pnl_trades(trades, quarantine_path=quarantine_path)
     event_stops = _event_stop_prices(events)
     regime_labels = load_regime_labels()
     extra_regime_columns = _extra_regime_columns(regime_labels)
+    sorted_labels = regime_labels.sort_values("date", kind="mergesort").reset_index(drop=True)
+    regime_lookup = _RegimeLookup(
+        dates=sorted_labels["date"].to_numpy(),
+        records=sorted_labels.to_dict("records"),
+        extra_columns=extra_regime_columns,
+    )
     config = runtime_config or {}
     bars_by_symbol = {
-        str(symbol): SymbolBars(
-            bars=symbol_bars.reset_index(drop=True),
-            daily=_daily_bars(symbol_bars),
-            timestamps=symbol_bars["timestamp"].reset_index(drop=True),
-        )
+        str(symbol): SymbolBars.from_bars(symbol_bars.reset_index(drop=True))
         for symbol, symbol_bars in bars.groupby("symbol", sort=False)
     }
     feature_cache: dict[tuple[Any, ...], Any] = {}
@@ -121,7 +180,7 @@ def build_feature_table(
         _feature_row(
             trade,
             bars_by_symbol,
-            regime_labels,
+            regime_lookup,
             str(family).lower(),
             config,
             event_stops,
@@ -139,10 +198,56 @@ def build_feature_table(
     return out
 
 
+def _quarantine_nonfinite_pnl_trades(
+    trades: pd.DataFrame, *, quarantine_path: Path | None
+) -> pd.DataFrame:
+    """Drop trade rows without a finite pnl, mirroring rule I quarantine.
+
+    Uses the same column-presence fallback chain as `_feature_row`
+    (pnl -> pnl_abs -> pnl_pct). Quarantined rows are logged and written to
+    `quarantine_path`; above _QUARANTINE_MAX_FRACTION the build stops loudly.
+    """
+    if trades.empty:
+        return trades
+    pnl_column = next(
+        (column for column in ("pnl", "pnl_abs", "pnl_pct") if column in trades.columns),
+        None,
+    )
+    if pnl_column is None:
+        finite = np.zeros(len(trades), dtype=bool)
+    else:
+        pnl = pd.to_numeric(trades[pnl_column], errors="coerce")
+        finite = np.isfinite(pnl.to_numpy(dtype=float))
+    quarantined = trades.loc[~finite]
+    if quarantined.empty:
+        return trades
+    total = len(trades)
+    if quarantine_path is not None:
+        quarantine_path.parent.mkdir(parents=True, exist_ok=True)
+        quarantine_path.write_text(
+            quarantined.to_json(orient="records", date_format="iso") or "[]",
+            encoding="utf-8",
+        )
+    log.warning(
+        "feature table quarantined %d/%d trades with missing finite pnl%s "
+        "| inspect the trades artifact for malformed rows",
+        len(quarantined),
+        total,
+        f"; rows written to {quarantine_path}" if quarantine_path is not None else "",
+    )
+    if len(quarantined) / total > _QUARANTINE_MAX_FRACTION:
+        raise ValueError(
+            f"feature table quarantined {len(quarantined)}/{total} trades with "
+            f"missing finite pnl (>{_QUARANTINE_MAX_FRACTION:.0%}); "
+            "the trades artifact is too corrupt to build features from"
+        )
+    return trades.loc[finite]
+
+
 def _feature_row(
     trade: dict[str, Any],
     bars_by_symbol: dict[str, SymbolBars],
-    regime_labels: pd.DataFrame,
+    regime_lookup: _RegimeLookup,
     family: str,
     runtime_config: dict[str, Any],
     event_stops: dict[tuple[str, pd.Timestamp], float],
@@ -156,25 +261,23 @@ def _feature_row(
     entry_ts = entry_local.tz_convert("UTC")
     symbol_data = bars_by_symbol.get(symbol)
     if symbol_data is None:
-        symbol_data = SymbolBars(
-            bars=pd.DataFrame(
-                columns=["symbol", "timestamp", "date", "open", "high", "low", "close"]
-            ),
-            daily=pd.DataFrame(columns=["date", "open", "high", "low", "close"]),
-            timestamps=pd.Series(dtype="datetime64[ns, UTC]"),
+        symbol_data = SymbolBars.from_bars(
+            pd.DataFrame(columns=["symbol", "timestamp", "date", "open", "high", "low", "close"])
         )
     symbol_bars = symbol_data.bars
     entry_pos = int(symbol_data.timestamps.searchsorted(entry_ts, side="left"))
     prior_bars = symbol_bars.iloc[:entry_pos]
-    entry_bar = _last_bar_before(prior_bars, entry_ts)
+    # prior_bars is strictly before entry_ts (searchsorted side="left"), so the
+    # entry bar is simply the last prior bar.
+    entry_bar = symbol_bars.iloc[entry_pos - 1] if entry_pos > 0 else pd.Series(dtype=object)
     entry_day = entry_ts.tz_convert("America/New_York").date()
-    daily = symbol_data.daily
-    current_day = daily[daily["date"] == entry_day]
-    prior_days = daily[daily["date"] < entry_day]
-    current_open = _first_float(current_day, "open")
-    prior_close = _last_float(prior_days, "close")
-    prior_high = _last_float(prior_days, "high")
-    prior_low = _last_float(prior_days, "low")
+    daily_dates = symbol_data.daily_dates
+    day_idx = int(np.searchsorted(daily_dates, entry_day, side="left"))
+    has_current_day = day_idx < len(daily_dates) and daily_dates[day_idx] == entry_day
+    current_open = float(symbol_data.daily_open[day_idx]) if has_current_day else np.nan
+    prior_close = float(symbol_data.daily_close[day_idx - 1]) if day_idx > 0 else np.nan
+    prior_high = float(symbol_data.daily_high[day_idx - 1]) if day_idx > 0 else np.nan
+    prior_low = float(symbol_data.daily_low[day_idx - 1]) if day_idx > 0 else np.nan
 
     gap_pct = _pct(current_open - prior_close, prior_close)
     prior_day_range_pct = _pct(prior_high - prior_low, prior_close)
@@ -201,12 +304,14 @@ def _feature_row(
         "entry_ts": entry_ts,
         "time_of_day_min": _time_of_day_min(entry_ts),
         "day_of_week": entry_ts.tz_convert("America/New_York").dayofweek,
-        "bars_since_open": len(prior_bars[prior_bars["date"] == entry_day]),
+        "bars_since_open": max(
+            entry_pos - int(np.searchsorted(symbol_data.bar_dates, entry_day, side="left")), 0
+        ),
         "gap_pct": gap_pct,
         "prior_day_range_pct": prior_day_range_pct,
         "overnight_move_pct": overnight_move_pct,
-        "vol_pctile_20d": _vol_pctile_20d(daily, entry_day),
-        "regime_label": _regime_label_for_date(regime_labels, entry_day),
+        "vol_pctile_20d": _vol_pctile_20d(symbol_data.daily_range_pct, day_idx),
+        "regime_label": _regime_label_for_date(regime_lookup, entry_day),
         "stop_distance_pct": _pct(abs(entry_price - stop_price), entry_price),
         "entry_bar_range_pct": entry_bar_range_pct,
         "out_pnl": out_pnl,
@@ -231,7 +336,7 @@ def _feature_row(
             feature_cache=feature_cache,
         )
     )
-    row.update(_regime_columns_for_date(regime_labels, entry_day))
+    row.update(_regime_columns_for_date(regime_lookup, entry_day))
     return row
 
 
@@ -293,27 +398,6 @@ def _daily_bars(bars: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _last_bar_before(prior_bars: pd.DataFrame, entry_ts: pd.Timestamp) -> pd.Series:
-    if prior_bars.empty:
-        return pd.Series(dtype=object)
-    before = prior_bars[prior_bars["timestamp"] < entry_ts]
-    if before.empty:
-        return pd.Series(dtype=object)
-    return before.iloc[-1]
-
-
-def _first_float(frame: pd.DataFrame, column: str) -> float:
-    if frame.empty or column not in frame:
-        return np.nan
-    return _float_or_nan(frame[column].iloc[0])
-
-
-def _last_float(frame: pd.DataFrame, column: str) -> float:
-    if frame.empty or column not in frame:
-        return np.nan
-    return _float_or_nan(frame[column].iloc[-1])
-
-
 def _float_or_nan(value: Any) -> float:
     try:
         return float(value)
@@ -332,44 +416,41 @@ def _time_of_day_min(entry_ts: pd.Timestamp) -> int:
     return int((local.hour * 60 + local.minute) - (9 * 60 + 30))
 
 
-def _vol_pctile_20d(daily: pd.DataFrame, entry_day: object) -> float:
-    prior = daily[daily["date"] < entry_day].copy()
-    if prior.empty:
+def _vol_pctile_20d(daily_range_pct: np.ndarray, day_idx: int) -> float:
+    prior = daily_range_pct[:day_idx]
+    if prior.size == 0:
         return np.nan
-    prior = prior.assign(
-        range_pct=(prior["high"].astype(float) - prior["low"].astype(float))
-        / prior["close"].astype(float)
-    )
-    current = prior["range_pct"].iloc[-1]
-    window = prior["range_pct"].iloc[-21:-1].dropna()
-    if window.empty or not np.isfinite(current):
+    current = prior[-1]
+    window = prior[max(prior.size - 21, 0) : prior.size - 1]
+    window = window[~np.isnan(window)]
+    if window.size == 0 or not np.isfinite(current):
         return np.nan
     return float((window <= current).mean())
 
 
-def _regime_label_for_date(labels: pd.DataFrame, entry_day: object) -> str:
-    row = _prior_regime_row(labels, entry_day)
-    if row is None:
+def _regime_label_for_date(lookup: _RegimeLookup, entry_day: object) -> str:
+    record = _prior_regime_record(lookup, entry_day)
+    if record is None:
         return ""
-    return str(row["regime_label"])
+    return str(record["regime_label"])
 
 
-def _regime_columns_for_date(labels: pd.DataFrame, entry_day: object) -> dict[str, Any]:
-    columns = _extra_regime_columns(labels)
-    if not columns:
+def _regime_columns_for_date(lookup: _RegimeLookup, entry_day: object) -> dict[str, Any]:
+    if not lookup.extra_columns:
         return {}
-    row = _prior_regime_row(labels, entry_day)
-    if row is None:
-        return {column: np.nan for column in columns}
-    return {column: row[column] for column in columns}
+    record = _prior_regime_record(lookup, entry_day)
+    if record is None:
+        return {column: np.nan for column in lookup.extra_columns}
+    return {column: record[column] for column in lookup.extra_columns}
 
 
-def _prior_regime_row(labels: pd.DataFrame, entry_day: object) -> pd.Series | None:
-    prior = labels[labels["date"] < entry_day]
-    if prior.empty:
+def _prior_regime_record(lookup: _RegimeLookup, entry_day: object) -> dict[str, Any] | None:
+    # lookup.dates is sorted (stable mergesort), so the latest strictly-prior
+    # label is the record just before the insertion point of entry_day.
+    idx = int(np.searchsorted(lookup.dates, entry_day, side="left"))
+    if idx == 0:
         return None
-    latest_date = prior["date"].max()
-    return prior.loc[prior["date"] == latest_date].iloc[-1]
+    return lookup.records[idx - 1]
 
 
 def _extra_regime_columns(labels: pd.DataFrame) -> frozenset[str]:

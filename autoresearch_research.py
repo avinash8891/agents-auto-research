@@ -113,8 +113,6 @@ def _prepare_thesis_for_validation(
     prior_theses: list[dict[str, Any]] | None = None,
     allow_schema_only_code_change_fallback: bool = False,
     tools_called: frozenset[str] | set[str] | None = None,
-    require_analyst_evidence: bool = True,
-    evidence_context: str | None = None,
     require_analyst_tool: bool = False,
 ):
     from compiler_pipeline import operationalize_thesis
@@ -140,8 +138,6 @@ def _prepare_thesis_for_validation(
             attempt_number=attempt_number,
             assign_thesis_id=research_thesis_attempt_id,
             tools_called=tools_called,
-            require_analyst_evidence=require_analyst_evidence,
-            evidence_context=evidence_context,
             require_analyst_tool=require_analyst_tool,
         )
         raw_thesis["thesis_id"] = validated.thesis_id
@@ -907,7 +903,7 @@ def _screen_mechanism_proposal(
 ) -> tuple[bool, str | None, Any | None]:
     from causal_model import CausalModelStore, holdout_mask, score_on_holdout
     from feature_table import FeatureTableArtifact
-    from screening import screen, write_screenings
+    from screening import screen_pair, write_screenings
 
     runtime_root = getattr(controller, "runtime_root", None) or controller.root
     completed_round = max(int(research_round) - 1, 0)
@@ -918,14 +914,14 @@ def _screen_mechanism_proposal(
     holdout = holdout_mask(features, family=model.family, holdout_start=model.holdout_start)
     train_features = features.loc[~holdout].copy()
     config = _research_engine_config_for_family(controller.root, controller.family.name)
-    screening = screen(
+    competitor_rule = str(raw_thesis.get("competitor_rule") or "") or None
+    screening, competitor_screening = screen_pair(
         str(raw_thesis.get("rule") or ""),
-        str(raw_thesis.get("competitor_rule") or "") or None,
+        competitor_rule,
         model,
         train_features,
         config=config,
     )
-    competitor_rule = str(raw_thesis.get("competitor_rule") or "") or None
     write_screenings(
         controller.backtest_run_db.path,
         [screening],
@@ -933,20 +929,14 @@ def _screen_mechanism_proposal(
         competitor_rule=competitor_rule,
         job_id=job_id,
     )
-    if competitor_rule:
-        competitor_screening = screen(
-            competitor_rule,
-            None,
-            model,
-            train_features,
-            config=config,
-        )
+    if competitor_screening is not None:
         write_screenings(
             controller.backtest_run_db.path,
             [competitor_screening],
             round_number=research_round,
             competitor_rule=screening.rule,
             job_id=job_id,
+            is_competitor=True,
         )
     if screening.verdict != "pass":
         return (
@@ -1018,8 +1008,6 @@ def _try_one_validation_attempt(
     conductor_result: ConductorResult,
     prior_theses: Any,
     *,
-    require_analyst_evidence: bool = True,
-    evidence_context: str | None = None,
     require_analyst_tool: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None, str]:
     """One pass of the conductor-validate-compile retry loop.
@@ -1449,14 +1437,6 @@ def _call_conductor(
     )
 
 
-def _evidence_context_for_round(trades_file: str, latest_outcome: dict[str, Any]) -> str:
-    if trades_file:
-        return "trades"
-    if latest_outcome:
-        return "no_trades"
-    return "cold_start"
-
-
 def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]:
     """Drive research using the research conductor.
 
@@ -1499,7 +1479,6 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         results,
         current_job=current_job,
     )
-    evidence_context = _evidence_context_for_round(trades_file, latest_outcome)
     state["research_round_in_progress"] = research_round
     state["activity"] = _research_activity(research_round=research_round, phase="conductor_running")
     controller.write_state(state)
@@ -1575,8 +1554,6 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             attempt,
             conductor_result,
             prior_theses,
-            require_analyst_evidence=bool(trades_file),
-            evidence_context=evidence_context,
             require_analyst_tool=bool(trades_file),
         )
         if result is not None:
