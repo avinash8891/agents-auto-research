@@ -1,0 +1,40 @@
+autoresearch_planning.py
+  s_3bfcb10840fb93::t_ec8f0992252b2f 22
+  s_3bfcb10840fb93::t_70db664402136a 394
+autoresearch_experiment.py
+  s_3bfcb10840fb93::t_b7c1853bd35f73 1409,1416,1423,1425-1426
+tests/test_causal_harvest.py
+  s_3bfcb10840fb93::t_e4715417854acc 4
+  s_3bfcb10840fb93::t_3bdb12eac7eee8 11-16,20-92
+walkforward.py
+  s_3bfcb10840fb93::t_00c85dcbb7d48a 263-264
+  s_3bfcb10840fb93::t_f647ee634d7d69 27-31
+  s_3bfcb10840fb93::t_c8ffcbff459bcf 488-492
+tests/test_autoresearch_experiment.py
+  s_3bfcb10840fb93::t_8ba7f968220e01 2013-2057
+tests/test_autoresearch_planning.py
+  s_3bfcb10840fb93::t_5fb892ad6f55fd 472-506
+causal_harvest.py
+  s_3bfcb10840fb93::t_e5f16411887ed8 127-131
+  s_3bfcb10840fb93::t_0a8d4ef02aaa18 191-205,211-215
+  s_3bfcb10840fb93::t_9a0c1efe2f90ca 157-160,163-167
+tests/test_walkforward.py
+  s_3bfcb10840fb93::t_b64ba1a13e5f95 158-207
+  s_3bfcb10840fb93::t_01bc0739b14914 626-627,643
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "28098a03c01529e43f2b09c5bc44d2daa777b087",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
