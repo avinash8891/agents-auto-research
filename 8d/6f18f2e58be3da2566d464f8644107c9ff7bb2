@@ -1,0 +1,38 @@
+tests/test_autoresearch_research.py
+  s_0a6c00cf1a335c::t_a203ed589401e8 1597-1598
+evidence_pack.py
+  s_0a6c00cf1a335c::t_220a337cad5567 378-412
+  s_0a6c00cf1a335c::t_c007efc61d7809 149-157
+  s_0a6c00cf1a335c::t_6b3340530b0f35 34,74
+tests/test_autoresearch_orchestration.py
+  s_0a6c00cf1a335c::t_5d226fd4899fdc 496
+tests/test_autoresearch_experiment.py
+  s_0a6c00cf1a335c::t_5d226fd4899fdc 1698,1778-1783,1829,1880
+thesis_validator.py
+  s_0a6c00cf1a335c::t_c8f5ca576d22b2 528,548
+tests/test_error_loudness.py
+  s_0a6c00cf1a335c::t_c8f5ca576d22b2 138,160
+tests/test_evidence_pack.py
+  s_0a6c00cf1a335c::t_319003add0bd96 107-136,323-333,335-351,513-514
+  s_0a6c00cf1a335c::t_d43097465b9cc3 334,352
+backtest_run_db.py
+  s_0a6c00cf1a335c::t_8ec66c8125aa5d 826-827,906-908,950-952
+tests/test_experiment_db_sqlite_runtime.py
+  s_0a6c00cf1a335c::t_d539a022ffd538 182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "8d6f18f2e58be3da2566d464f8644107c9ff7bb2",
+  "prompts": {},
+  "sessions": {
+    "s_0a6c00cf1a335c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ebaf2-1fc2-78a0-b1de-bfbb97bb68a8",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}

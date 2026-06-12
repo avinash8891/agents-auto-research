@@ -1,0 +1,44 @@
+tests/test_behavior_signals.py
+  s_0a6c00cf1a335c::t_e5c15b0237fc5a 14,74,81,104,111,120,123,127
+tests/test_walkforward.py
+  s_0a6c00cf1a335c::t_c02c5c9dfdff28 634-637,657,789-791
+tests/test_validator_subsections.py
+  s_0a6c00cf1a335c::t_e5c15b0237fc5a 22,26,28,127-128,154,159,294,299
+tests/test_autoresearch_research_helpers.py
+  s_0a6c00cf1a335c::t_f43d886a28a9ad 37,112
+walkforward.py
+  s_0a6c00cf1a335c::t_9b1f4d9e1aea87 262-264,266-268,270
+thesis_validator.py
+  s_0a6c00cf1a335c::t_7a41ec8edf307a 54
+tests/test_validator_stages.py
+  s_0a6c00cf1a335c::t_e5c15b0237fc5a 107,109
+  s_0a6c00cf1a335c::t_962b93a6c76997 117
+tests/test_validator_gate_coverage.py
+  s_0a6c00cf1a335c::t_e5c15b0237fc5a 589
+  s_0a6c00cf1a335c::t_962b93a6c76997 560-561
+tests/test_validator_batching.py
+  s_0a6c00cf1a335c::t_e5c15b0237fc5a 149-150,271-275,277
+autoresearch_planning.py
+  s_0a6c00cf1a335c::t_6a17a9a0acbe05 229,261,292
+tests/test_stage1_rules.py
+  s_0a6c00cf1a335c::t_81f252a60b0e8b 1,179,182-183,190,194-195,198-199,210-211
+autoresearch_research.py
+  s_0a6c00cf1a335c::t_038cbaef2dc203 2213
+  s_0a6c00cf1a335c::t_fba504de633b52 631
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "c0fdc2c20e48ae5aed571e2638f1020a011503f5",
+  "prompts": {},
+  "sessions": {
+    "s_0a6c00cf1a335c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ebaf2-1fc2-78a0-b1de-bfbb97bb68a8",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}
