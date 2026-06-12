@@ -95,11 +95,13 @@ def evaluate_walkforward(
         prediction_results = [
             _prediction_result(prediction, baseline, candidate) for prediction in predictions
         ]
-        # A window where even the baseline cannot produce the predicted
-        # metrics has no evaluable data (e.g. the universe ends before the
-        # window). It is evidence about data coverage, not about the factor:
-        # exclude it from survival instead of counting it as a refutation.
-        window_inconclusive = bool(prediction_results) and all(
+        # A window where the baseline cannot produce ANY predicted metric has
+        # no fully evaluable data (e.g. the universe ends before the window,
+        # or the baseline output is sparse). Direction verdicts require every
+        # registered prediction to be judged; if even one lacks its baseline
+        # value the window can neither hold nor fail — it is evidence about
+        # data coverage, not about the factor, so exclude it from survival.
+        window_inconclusive = bool(prediction_results) and any(
             result.get("missing_baseline") for result in prediction_results
         )
         directions_hold = (

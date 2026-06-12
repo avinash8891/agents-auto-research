@@ -378,6 +378,33 @@ def test_walkforward_all_windows_without_baseline_data_is_inconclusive_not_demot
     assert model.factors[0].status == "harvested"
 
 
+def test_walkforward_partially_missing_baseline_window_is_inconclusive(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "ema_backtest_runs.db"
+    _seed_run(db_path)
+
+    # Baseline produced profit_factor but not trade_count: one of the two
+    # registered predictions is unjudgeable, so the window can neither hold
+    # nor fail — partial baseline coverage must not become a refutation.
+    report = evaluate_walkforward(
+        family="ema",
+        thesis_id="thesis-001",
+        runtime_root=tmp_path,
+        code_root=tmp_path,
+        db_path=db_path,
+        run_id="run-thesis",
+        windows=build_windows("2020-01-01", "2020-10-01"),
+        predictions=_predictions(),
+        baseline_metrics=[{"profit_factor": 1.0}],
+        candidate_metrics=[{"profit_factor": 0.5, "trade_count": 30}],
+    )
+
+    assert report["windows"][0]["inconclusive"] is True
+    assert report["usable_windows"] == 0
+    assert report["verdict"] == "inconclusive"
+
+
 def test_walkforward_candidate_only_missing_metric_still_demotes(
     tmp_path: Path,
 ) -> None:
