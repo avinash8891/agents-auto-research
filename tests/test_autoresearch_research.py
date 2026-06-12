@@ -1373,10 +1373,11 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
         tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
     )
 
-    def _legacy_validator_called(*args, **kwargs):
-        raise AssertionError("legacy thesis validator must not run for MechanismProposal")
+    # The legacy validator is structurally gone — the mechanism path cannot
+    # call it because the function no longer exists.
+    import thesis_validator
 
-    monkeypatch.setattr("thesis_validator.validate_thesis_dict", _legacy_validator_called)
+    assert not hasattr(thesis_validator, "validate_thesis_dict")
 
     result, retry_feedback, stage = _try_one_validation_attempt(
         controller,
@@ -2008,17 +2009,10 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
         def backtest_run_db(self):
             raise AssertionError("not used")
 
-    class _Validated:
-        thesis_id = "symbol_day_gate"
-
     class _Contract:
         status = "ready_to_run"
         contract_id = "exp-001"
 
-    monkeypatch.setattr(
-        "thesis_validator.validate_thesis_dict",
-        lambda raw, prior_theses=None, tools_called=None, **kwargs: _Validated(),
-    )
     monkeypatch.setattr(
         "compiler_pipeline.compile_research_thesis",
         lambda validated, root, artifact_root=None: _Contract(),

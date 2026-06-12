@@ -153,26 +153,6 @@ def _render_resolution_context(resolution_context: dict[str, Any] | None) -> str
     return "\n".join(lines)
 
 
-def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
-    """Extract single thesis dict from conductor response. Returns (thesis, validation_error).
-
-    v3 prompt contract: conductor returns exactly one thesis in suggested_theses.
-    The direct thesis-object path is kept for backward compatibility with older fixtures only.
-    """
-    theses = parsed.get("suggested_theses")
-    if theses is None:
-        if "hypothesis" in parsed or "config_changes" in parsed:
-            return parsed, ""
-        return None, "no thesis returned"
-    if not isinstance(theses, list):
-        return None, "suggested_theses must be a list"
-    if len(theses) != 1:
-        return None, f"expected exactly one thesis, got {len(theses)}"
-    if not isinstance(theses[0], dict):
-        return None, "suggested_theses[0] must be an object"
-    return theses[0], ""
-
-
 async def run_research_conductor(
     trades_file: str,
     latest_outcome: dict[str, Any],
@@ -975,7 +955,7 @@ async def run_research_conductor(
         revise={"used_feedback_retry": bool(rejection_feedback)},
         evaluate={
             "parsed": bool(parsed),
-            "has_thesis": bool(parsed.get("suggested_theses")) if parsed else False,
+            "has_thesis": bool(parsed.get("rule")) if parsed else False,
         },
     )
 

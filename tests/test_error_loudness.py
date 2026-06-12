@@ -103,7 +103,7 @@ def test_load_prior_theses_uses_runtime_root_env(
     assert prior[-1]["thesis_id"] == "runtime_prior_thesis"
 
 
-def test_load_prior_theses_includes_code_only_emergent_thesis(tmp_path: Path) -> None:
+def test_load_prior_theses_skips_config_less_rows(tmp_path: Path) -> None:
     from backtest_run_db import BacktestRunDB
 
     db = BacktestRunDB(tmp_path / "backtest_runs.db")
@@ -116,49 +116,15 @@ def test_load_prior_theses_includes_code_only_emergent_thesis(tmp_path: Path) ->
                 "config_changes": {},
                 "validator_status": "halted",
                 "strategy_family": "ema",
-                "thesis_details": {"new_dimension_name": "liquidity_decay"},
+                "thesis_details": {},
                 "selected_for_execution": 0,
                 "created_at_utc": "2026-04-30T00:00:00+00:00",
             },
         ],
     )
 
-    prior = load_prior_theses(tmp_path, db=db)
-
-    assert prior == [
-        {
-            "thesis_id": "liquidity_decay_dimension",
-            "config_changes": {},
-            "outcome": "halted",
-            "thesis_details": {"new_dimension_name": "liquidity_decay"},
-        }
-    ]
-
-
-def test_load_prior_theses_includes_code_only_new_dimension_details(tmp_path: Path) -> None:
-    from backtest_run_db import BacktestRunDB
-
-    db = BacktestRunDB(tmp_path / "backtest_runs.db")
-    db.seed_research_thesis_attempts_rows(
-        [
-            {
-                "research_round_id": "r1",
-                "attempt_number": 1,
-                "thesis_id": "liquidity_decay_dimension",
-                "config_changes": {},
-                "validator_status": "halted",
-                "strategy_family": "ema",
-                "thesis_details": {"new_dimension_name": "liquidity_decay"},
-                "selected_for_execution": 0,
-                "created_at_utc": "2026-04-30T00:00:00+00:00",
-            },
-        ],
-    )
-
-    prior = load_prior_theses(tmp_path, db=db)
-
-    assert "mechanism_dimension" not in prior[0]
-    assert prior[0]["thesis_details"]["new_dimension_name"] == "liquidity_decay"
+    # Dedupe operates on config changes; rows without any are not priors.
+    assert load_prior_theses(tmp_path, db=db) == []
 
 
 def test_baseline_drift_flags_nonnumeric_metrics(caplog: pytest.LogCaptureFixture) -> None:
