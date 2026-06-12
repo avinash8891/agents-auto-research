@@ -159,7 +159,7 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
     records = controller.backtest_run_db.all()
     if current_job is not None:
         records = [record for record in records if _coerce_job(record.job) == current_job]
-    baseline = _latest_baseline(records)
+    baseline = latest_baseline(records)
     if baseline is None:
         return _fail_walkforward(controller, state, "walkforward requires a completed baseline run")
 
@@ -377,7 +377,8 @@ def _coerce_job(value: Any) -> int | None:
         return None
 
 
-def _latest_baseline(records: Sequence[Any]) -> Any | None:
+def latest_baseline(records: Sequence[Any]) -> Any | None:
+    """Most recent accepted baseline run (max created_at_utc; rows are unordered)."""
     baselines = [record for record in records if record.accepted and record.is_baseline]
     if not baselines:
         return None

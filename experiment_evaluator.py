@@ -19,6 +19,7 @@ from autoresearch_constants import (
     research_engine_noise_floor_pct,
     research_engine_prediction_tolerance_pct,
 )
+from autoresearch_logging import get_logger
 from diagnostic_contracts import build_required_diagnostic_specs
 from research_types import (
     BacktestVerdict,
@@ -28,6 +29,8 @@ from research_types import (
     MetricName,
     ResearchThesis,
 )
+
+log = get_logger(__name__)
 
 LOWER_IS_BETTER = {"max_drawdown"}
 HIGHER_IS_BETTER = {metric.value for metric in MetricName} - LOWER_IS_BETTER
@@ -205,7 +208,15 @@ def evaluate_effect(
         # Use threshold as percent tolerance.
         # Convention: drawdown is stored as a positive fraction (0.22 = 22%)
         pct = threshold if threshold else 0
-        if _lower_is_better_metric(effect.metric):
+        try:
+            lower_is_better = _lower_is_better_metric(effect.metric)
+        except ValueError as exc:
+            # Custom required_diagnostics metrics are allowed by the validator
+            # but have no registered direction: the effect is unjudgeable, not
+            # a reason to abort the round. None means "could not evaluate".
+            log.warning("expected effect cannot be judged: %s | treating as inconclusive", exc)
+            return None
+        if lower_is_better:
             return c <= b * (1 + pct / 100)
         return c >= b * (1 - pct / 100)
 

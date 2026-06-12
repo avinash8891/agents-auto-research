@@ -44,20 +44,36 @@ def _retest_state() -> dict:
     }
 
 
-def _baseline_record(job: int, validation_start: str) -> SimpleNamespace:
+def _baseline_record(
+    job: int, validation_start: str, *, created_at_utc: str = "2026-06-10T00:00:00+00:00"
+) -> SimpleNamespace:
     return SimpleNamespace(
         job=job,
         is_baseline=True,
         accepted=True,
+        created_at_utc=created_at_utc,
+        timestamp=created_at_utc,
         runtime_config={"validation_start": validation_start, "validation_end": "2023-12-31"},
     )
 
 
-def test_retest_baseline_metrics_scopes_to_current_job(tmp_path: Path) -> None:
+def test_retest_baseline_metrics_scopes_to_current_job_and_latest_baseline(
+    tmp_path: Path,
+) -> None:
     records = [
         _baseline_record(5, "2018-01-01"),  # another job's baseline must be ignored
-        _baseline_record(6, "2020-01-01"),
-        SimpleNamespace(job=6, is_baseline=False, accepted=True, runtime_config={}),
+        # A newer baseline rerun for the same job must win over the older row,
+        # even though rows come back unordered from the DB.
+        _baseline_record(6, "2020-01-01", created_at_utc="2026-06-11T00:00:00+00:00"),
+        _baseline_record(6, "2019-01-01", created_at_utc="2026-06-01T00:00:00+00:00"),
+        SimpleNamespace(
+            job=6,
+            is_baseline=False,
+            accepted=True,
+            created_at_utc="2026-06-12T00:00:00+00:00",
+            timestamp="2026-06-12T00:00:00+00:00",
+            runtime_config={},
+        ),
     ]
     controller = _retest_controller(
         tmp_path, records, output=json.dumps({"profit_factor": 1.4, "trade_count": 40})

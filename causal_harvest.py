@@ -154,25 +154,24 @@ def retest_baseline_metrics(
     extended_end = str(metadata.get("validation_end") or "")
     if not extended_end:
         return None
+    from walkforward import latest_baseline
+
     try:
         current_job = int(state.get("job"))
     except (TypeError, ValueError):
         current_job = None
-    records = controller.backtest_run_db.all()
-    baselines = [
+    records = [
         record
-        for record in records
-        if getattr(record, "is_baseline", False)
-        and record.accepted
-        and (current_job is None or _record_job(record) == current_job)
+        for record in controller.backtest_run_db.all()
+        if current_job is None or _record_job(record) == current_job
     ]
-    if not baselines:
+    baseline_record = latest_baseline(records)
+    if baseline_record is None:
         log.error(
             "retest baseline rerun skipped: no accepted baseline run in DB "
             "| falling back to checkpoint baseline; count-metric directions may be inflated"
         )
         return None
-    baseline_record = baselines[-1]
     config = dict(baseline_record.runtime_config)
     config["validation_end"] = extended_end
     output_dir = run_output_dir.parent / "baseline_retest"
