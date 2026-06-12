@@ -34,7 +34,7 @@ def test_check_parsed_for_terminal_none_input_is_parse_failed() -> None:
     assert out is not None
     assert out["status"] == "parse_failed"
     assert out["generated_config"] is None
-    assert out["should_stop"] is False
+    assert "should_stop" not in out
     assert "validation_failure_reason" in out
 
 
@@ -109,7 +109,7 @@ def test_exhausted_retries_result_returns_thesis_id_when_present() -> None:
     assert out["status"] == "thesis_rejected"
     assert out["generated_thesis_id"] == "trailing_stop"
     assert out["validation_failure_reason"] == "validator failed: x"
-    assert out["should_stop"] is False
+    assert "should_stop" not in out
 
 
 def test_exhausted_retries_result_returns_unknown_when_no_thesis() -> None:

@@ -8,7 +8,6 @@ from research_types import Disqualifier, ExpectedEffect, ResearchThesis
 from thesis_validator import (
     ThesisValidationError,
     validate_research_thesis,
-    validate_stage_1,
 )
 
 _VALID_FALSIFICATION_TEXT = (
@@ -147,8 +146,8 @@ def test_process_gate_warns_when_tools_called_observed_empty() -> None:
     assert thesis.thesis_id == "ema-tier-batching-v1"
 
 
-def test_validate_stage_1_accepts_process_tools() -> None:
-    thesis = validate_stage_1(
+def test_validate_research_thesis_accepts_process_tools() -> None:
+    thesis = validate_research_thesis(
         _thesis(),
         tools_called={"list_round_results", "web_search"},
     )
@@ -269,14 +268,13 @@ def test_behavioral_pass_uses_first_remaining_signal_after_theme_cluster_removal
         ),
     ]
 
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_research_thesis(
-            thesis,
-            prior_theses=priors,
-            tools_called={"list_round_results", "web_search"},
-        )
+    validated = validate_research_thesis(
+        thesis,
+        prior_theses=priors,
+        tools_called={"list_round_results", "web_search"},
+    )
 
-    assert exc_info.value.rejection_code == "thesis_quality_needs_code_starvation"
+    assert validated.thesis_id == thesis.thesis_id
 
 
 def test_rethink_class_1c_config_overlap_fires_before_mechanical() -> None:

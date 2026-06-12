@@ -268,14 +268,12 @@ def test_clear_terminal_metadata_removes_only_terminal_fields(
         "state": "running",
         "job": 2,
         "finished_reason": "max_rounds",
-        "research_stop_reasoning": "manual halt",
         "next_action": {"type": "research"},
     }
 
     controller.clear_terminal_metadata(state)
 
     assert "finished_reason" not in state
-    assert "research_stop_reasoning" not in state
     assert state["next_action"] == {"type": "research"}
 
 

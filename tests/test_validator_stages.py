@@ -12,9 +12,6 @@ from thesis_validator import (
     ThesisValidationError,
 )
 from thesis_validator import validate_research_thesis as _validate_research_thesis
-from thesis_validator import (
-    validate_stage_1,
-)
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
 
@@ -107,9 +104,9 @@ def _base_thesis() -> dict:
 # ── Stage 1 sanity ────────────────────────────────────────────────────────
 
 
-def test_validate_stage_1_accepts_well_formed_thesis() -> None:
+def test_validate_research_thesis_accepts_well_formed_thesis() -> None:
     validated = validate_thesis_dict(_base_thesis())
-    out = validate_stage_1(
+    out = validate_research_thesis(
         validated,
         prior_theses=[],
         tools_called=_VALID_PROCESS_TOOLS,
@@ -117,7 +114,7 @@ def test_validate_stage_1_accepts_well_formed_thesis() -> None:
     assert out.thesis_id == "job-test-round-1-attempt-1"
 
 
-def test_validate_stage_1_rejects_missing_mechanism() -> None:
+def test_validate_thesis_dict_rejects_missing_mechanism() -> None:
     raw = _base_thesis()
     raw["mechanism"] = ""
     with pytest.raises(ThesisValidationError, match="mechanism"):

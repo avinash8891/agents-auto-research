@@ -631,6 +631,10 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
         def read_results(self) -> list:
             return []
 
+    errors_path = tmp_path / "walkforward" / "errors.json"
+    errors_path.parent.mkdir(parents=True, exist_ok=True)
+    errors_path.write_text('{"errors": [{"thesis_id": "thesis-stale", "error": "old"}]}')
+
     exit_code = run_walkforward_queue(
         Controller(),
         {
@@ -639,8 +643,6 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
             "research_round": 6,
             "next_action": {"type": "walkforward"},
             "finished_reason": "model_plateau_pending_walkforward",
-            # Stale errors from a prior failed rerun must be cleared on success.
-            "walkforward_errors": [{"thesis_id": "thesis-stale", "error": "old"}],
         },
     )
 
@@ -652,6 +654,7 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
     assert report["windows"][0]["prediction_results"][1]["direction_passed"] is True
     assert written_states[-1]["walkforward_status"] == "completed"
     assert "walkforward_errors" not in written_states[-1]
+    assert not errors_path.exists()
 
 
 def test_run_walkforward_queue_isolates_candidate_failures(
@@ -783,7 +786,9 @@ def test_run_walkforward_queue_isolates_candidate_failures(
     assert exit_code == 0
     final_state = written_states[-1]
     assert final_state["walkforward_status"] == "completed_with_errors"
-    assert final_state["walkforward_errors"][0]["thesis_id"] == "thesis-broken"
+    assert "walkforward_errors" not in final_state
+    errors = json.loads((tmp_path / "walkforward" / "errors.json").read_text())
+    assert errors["errors"][0]["thesis_id"] == "thesis-broken"
     # The healthy candidate's graduation still completed.
     healthy_report = json.loads((tmp_path / "walkforward" / "thesis-healthy.json").read_text())
     assert healthy_report["graduated"] is True

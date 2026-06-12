@@ -557,8 +557,8 @@ def test_gate_thesis_quality_theme_cluster_fixation_no_longer_rejects() -> None:
     _expect_acceptance(thesis, priors)
 
 
-def test_gate_thesis_quality_needs_code_starvation() -> None:
-    """3 consecutive priors with requires_code_change=true and no run."""
+def test_requires_code_change_streak_no_longer_rejects() -> None:
+    """Requires-code-change streaks are no longer a validator gate."""
     thesis = _minimal_valid_thesis(
         causal_cluster="opening-session noise",
         underexplored_dimensions_considered=["risk_structure"],
@@ -586,7 +586,7 @@ def test_gate_thesis_quality_needs_code_starvation() -> None:
             outcome="needs_code",
         ),
     ]
-    _expect_rejection(thesis, priors, "thesis_quality_needs_code_starvation")
+    _expect_acceptance(thesis, priors)
 
 
 def test_gate_thesis_quality_direction_whipsaw_no_longer_rejects() -> None:

@@ -19,13 +19,13 @@ from thesis_validator import (
     ThesisValidationError,
     infer_rejection_code,
 )
-from thesis_validator import validate_stage_1 as _validate_stage_1
+from thesis_validator import validate_research_thesis as _validate_research_thesis
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
 
-def validate_stage_1(*args: object, **kwargs: object) -> object:
+def validate_research_thesis(*args: object, **kwargs: object) -> object:
     kwargs.setdefault("tools_called", _VALID_PROCESS_TOOLS)
-    return _validate_stage_1(*args, **kwargs)
+    return _validate_research_thesis(*args, **kwargs)
 
 
 def validate_thesis_dict(*args: object, **kwargs: object) -> object:
@@ -124,8 +124,8 @@ def _prior(thesis_id: str, *, theme_keywords: list[str]) -> dict:
 # ── Helper existence + ordering ──────────────────────────────────────────
 
 
-def test_validate_stage_1_dispatches_to_tier_helpers_in_order() -> None:
-    """validate_stage_1 calls process → behavioral → mechanical tiers in order."""
+def test_validate_research_thesis_dispatches_to_tier_helpers_in_order() -> None:
+    """validate_research_thesis calls process -> behavioral -> mechanical tiers in order."""
     raw = _base_thesis()
     validated = validate_thesis_dict(raw)
 
@@ -151,12 +151,12 @@ def test_validate_stage_1_dispatches_to_tier_helpers_in_order() -> None:
             side_effect=record("mechanical_raise"),
         ),
     ):
-        validate_stage_1(validated, prior_theses=[], tools_called=_VALID_PROCESS_TOOLS)
+        validate_research_thesis(validated, prior_theses=[], tools_called=_VALID_PROCESS_TOOLS)
 
     assert call_order == ["process", "behavioral", "mechanical_collect", "mechanical_raise"]
 
 
-def test_validate_stage_1_helpers_are_module_level_functions() -> None:
+def test_validate_research_thesis_helpers_are_module_level_functions() -> None:
     """The tier helpers must exist as importable callables on the module."""
     assert callable(getattr(thesis_validator, "_validate_process", None))
     assert callable(getattr(thesis_validator, "_run_behavioral_pass", None))
@@ -291,12 +291,12 @@ def test_infer_rejection_code_structural_section() -> None:
     assert infer_rejection_code("Missing mechanism") == "structural_missing_mechanism"
 
 
-def test_infer_rejection_code_thesis_quality_section() -> None:
+def test_infer_rejection_code_unknown_retired_thesis_quality_message() -> None:
     assert (
         infer_rejection_code(
             "Theme-cluster fixation: 4 of last 7 theses share keywords ['x'] (overlapping...)"
         )
-        == "thesis_quality_theme_cluster_fixation"
+        == "unspecified_validation_error"
     )
 
 

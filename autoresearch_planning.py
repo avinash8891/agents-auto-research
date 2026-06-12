@@ -226,7 +226,7 @@ def _serialize_path(root: Path, path: Path) -> str:
         return path.as_posix()
 
 
-def _running_state(config: str, family: StrategyFamily, source: str) -> dict[str, Any]:
+def _running_state(config: str, source: str) -> dict[str, Any]:
     """Build the standard `state=running` dict for one of the planning
     waterfall's branches. All five 'pick this config next' branches in
     select_research_next_action share this exact shape."""
@@ -240,8 +240,6 @@ def _running_state(config: str, family: StrategyFamily, source: str) -> dict[str
         "next_action": {
             "type": "run_round",
             "config": config,
-            "benchmark_command": family.benchmark_command(config),
-            "requires_trade_analysis": True,
             "source": source,
             "selected_thesis_id": Path(config).stem,
         },
@@ -260,7 +258,7 @@ def _baseline_branch(
     baseline_config = family.baseline_config_path
     if not (root / baseline_config).exists():
         return None
-    state = _running_state(baseline_config, family, source="baseline")
+    state = _running_state(baseline_config, source="baseline")
     state["research_round"] = 0
     state["selected_config_path"] = baseline_config
     state["selected_thesis_id"] = "baseline"
@@ -291,7 +289,7 @@ def _combination_branch(
     combos = generate_combination_candidates(root, family, proposals_dir, results, job=job)
     if not combos:
         return None
-    return _running_state(combos[0], family, source="combination_phase")
+    return _running_state(combos[0], source="combination_phase")
 
 
 def select_research_next_action(
@@ -402,7 +400,6 @@ def plan_next_action(
         if baseline is not None:
             state.update(baseline)
             state.pop("finished_reason", None)
-            state.pop("research_stop_reasoning", None)
             return state
 
     raw_job = state.get("job")
@@ -427,7 +424,6 @@ def plan_next_action(
         and state.get("finished_reason") != "model_plateau_pending_walkforward"
     ):
         state.pop("finished_reason", None)
-        state.pop("research_stop_reasoning", None)
     return state
 
 
@@ -471,8 +467,6 @@ def check_baseline_rerun(
     return {
         "type": "run_round",
         "config": baseline_config,
-        "benchmark_command": family.benchmark_command(baseline_config),
-        "requires_trade_analysis": True,
         "source": "baseline",
         "baseline_rerun_for_commit": current_commit,
         "rerun_reason": reason,

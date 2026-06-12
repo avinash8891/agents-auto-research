@@ -369,7 +369,6 @@ def test_plan_next_action_runs_baseline_and_clears_terminal_metadata(
         "job": 3,
         "research_round": 9,
         "finished_reason": "old",
-        "research_stop_reasoning": "old",
     }
 
     out = plan_next_action(
@@ -386,7 +385,6 @@ def test_plan_next_action_runs_baseline_and_clears_terminal_metadata(
     assert out["state"] == "running"
     assert out["selected_thesis_id"] == "baseline"
     assert "finished_reason" not in out
-    assert "research_stop_reasoning" not in out
 
 
 def test_plan_next_action_clears_terminal_metadata_when_baseline_branch_selected(
@@ -398,7 +396,6 @@ def test_plan_next_action_clears_terminal_metadata_when_baseline_branch_selected
         "state": "finished",
         "job": 3,
         "finished_reason": "old",
-        "research_stop_reasoning": "old",
     }
 
     out = plan_next_action(
@@ -415,7 +412,6 @@ def test_plan_next_action_clears_terminal_metadata_when_baseline_branch_selected
     assert out["state"] == "running"
     assert out["selected_thesis_id"] == "baseline"
     assert "finished_reason" not in out
-    assert "research_stop_reasoning" not in out
 
 
 def test_plan_next_action_queues_walkforward_when_model_plateaus(
@@ -443,7 +439,6 @@ def test_plan_next_action_queues_walkforward_when_model_plateaus(
         "job": 3,
         "research_round": 2,
         "finished_reason": "old",
-        "research_stop_reasoning": "old",
     }
 
     out = plan_next_action(
@@ -510,7 +505,6 @@ def test_plan_next_action_finishes_after_plateau_walkforward_completes_with_erro
         # Partial success is terminal: rerunning the queue would not change
         # the failed candidates' outcome.
         "walkforward_status": "completed_with_errors",
-        "walkforward_errors": [{"thesis_id": "thesis-broken", "error": "boom"}],
         "finished_reason": "model_plateau_pending_walkforward",
     }
 

@@ -51,7 +51,7 @@ from autoresearch_logging import get_logger
 from autoresearch_runtime_paths import iter_family_backtest_db_paths
 from behavior_signals import BehaviorSignal
 from behavior_signals import decide as _policy_decide
-from research_types import EMERGENT_MECHANISM_DIMENSION, MECHANISM_DIMENSIONS, ResearchThesis
+from research_types import EMERGENT_MECHANISM_DIMENSION, ResearchThesis
 from strategy_family import load_family
 
 log = get_logger(__name__)
@@ -127,24 +127,6 @@ class ThesisValidationError(ValueError):
         self.remediation_hint = remediation_hint
 
 
-# Renames from the 2026-05-27 validator consolidation. Listed explicitly so
-# downstream consumers (drift checker, analytics, prompt-rule mappings) can
-# detect the rename rather than silently encountering an "unknown" code.
-RETIRED_REJECTION_CODES: Final[dict[str, str]] = {
-    "structural_missing_dimension_novelty": "structural_dimension_novelty_invalid",
-    "thesis_quality_dimension_novelty_too_short": "structural_dimension_novelty_invalid",
-    "structural_missing_falsification": "structural_falsification_invalid",
-    "structural_falsification_too_short": "structural_falsification_invalid",
-    "structural_missing_new_dimension_name": "structural_emergent_thesis_malformed",
-    "structural_new_dimension_name_duplicates_core": "structural_emergent_thesis_malformed",
-    "structural_emergent_field_too_short": "structural_emergent_thesis_malformed",
-    "structural_missing_underexplored_dimensions": "structural_underexplored_dimensions_invalid",
-    "structural_underexplored_dimensions_includes_chosen": "structural_underexplored_dimensions_invalid",
-    "config_validity_base_config_path_legacy_experiments": "config_validity_base_config_path_inheritance_blocked",
-    "thesis_quality_thesis_id_repeated": "structural_thesis_id_repeated",
-}
-
-
 def infer_rejection_code(message: str) -> str:
     """Best-effort mapping from a legacy ThesisValidationError message → code.
 
@@ -171,11 +153,6 @@ def infer_rejection_code(message: str) -> str:
         "malformed" in msg or "new_dimension_name" in msg or "duplicates a core" in msg
     ):
         return "structural_emergent_thesis_malformed"
-    # Each branch below maps EITHER the current message OR a legacy message
-    # from a renamed gate to the canonical rejection_code. The retired
-    # codes themselves are listed in RETIRED_REJECTION_CODES above; this
-    # function is the parallel back-compat layer for persisted rejection.json
-    # records whose `message` field was written before the rename.
     if (
         "dimension_novelty must explain" in msg
         or "dimension_novelty is empty" in msg
@@ -186,13 +163,6 @@ def infer_rejection_code(message: str) -> str:
         return "config_validity_base_config_path_inheritance_blocked"
     if "neighboring threshold" in msg:
         return "config_validity_neighboring_threshold"
-    # thesis_quality_*
-    if "theme-cluster fixation" in msg:
-        return "thesis_quality_theme_cluster_fixation"
-    if "direction whipsaw" in msg:
-        return "thesis_quality_direction_whipsaw"
-    if "needs_code starvation" in msg:
-        return "thesis_quality_needs_code_starvation"
     if "has already been proposed" in msg:
         return "structural_thesis_id_repeated"
     if "required diagnostics not present" in msg:
@@ -288,23 +258,6 @@ def _prior_thesis_details(prior: dict[str, Any]) -> dict[str, Any]:
     return details if isinstance(details, dict) else {}
 
 
-def _known_emergent_dimension_names(prior_theses: list[dict[str, Any]] | None) -> set[str]:
-    known: set[str] = set()
-    if not prior_theses:
-        return known
-    for prior in prior_theses:
-        if (
-            _normalize_mechanism_dimension_name(prior.get("mechanism_dimension"))
-            != EMERGENT_MECHANISM_DIMENSION
-        ):
-            continue
-        details = _prior_thesis_details(prior)
-        name = details.get("new_dimension_name") or prior.get("new_dimension_name")
-        if isinstance(name, str) and name.strip():
-            known.add(_dimension_slug(name))
-    return known
-
-
 VALID_PROCESS_TOOLS: Final[frozenset[str]] = frozenset(
     {
         "list_round_results",
@@ -355,43 +308,6 @@ def _prior_thesis_entry(row: dict[str, Any]) -> dict[str, Any]:
     if hypothesis:
         entry["hypothesis"] = hypothesis
     return entry
-
-
-# ---------------------------------------------------------------------------
-# Stage 1 cross-thesis rules: needs_code starvation (B3).
-# ---------------------------------------------------------------------------
-
-# B3: 3 consecutive prior theses requiring code change with no completed run
-# in between means the agent is queueing engine work without progress. Force
-# a no-code thesis to break the starvation.
-B3_NEEDS_CODE_STARVATION_LIMIT = 3
-
-
-def _theme_keywords_from_prior(prior: dict[str, Any]) -> set[str]:
-    details = _prior_thesis_details(prior)
-    raw = details.get("theme_keywords") or prior.get("theme_keywords") or []
-    if not isinstance(raw, list):
-        return set()
-    return {str(kw).strip() for kw in raw if str(kw).strip()}
-
-
-def _prior_required_code_change(prior: dict[str, Any]) -> bool:
-    details = _prior_thesis_details(prior)
-    return bool(details.get("requires_code_change") or prior.get("requires_code_change"))
-
-
-def _prior_was_run(prior: dict[str, Any]) -> bool:
-    """Heuristic: any outcome other than 'needs_code' or 'rejected*' counts as ran."""
-    outcome = str(prior.get("outcome") or "").lower()
-    if not outcome:
-        return False
-    if outcome.startswith("rejected"):
-        return False
-    if outcome == "needs_code":
-        return False
-    if outcome == "stopped":
-        return False
-    return True
 
 
 # Numeric tuning detector: same key, ratio within [1/_NEIGHBORING_RATIO,
@@ -470,44 +386,6 @@ def _detect_neighboring_threshold(
                     ratio=ratio,
                 )
     return None
-
-
-def _detect_needs_code_starvation(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]],
-) -> BehaviorSignal | None:
-    """Detect when the conductor is queueing engine work without progress.
-
-    Fires when 3+ consecutive most-recent priors required code changes
-    without a completed run between them, and this thesis also requires
-    a code change. Returns None otherwise.
-    """
-    if not thesis.requires_code_change:
-        return None
-    streak = 0
-    for prior in reversed(prior_theses):
-        if _prior_was_run(prior):
-            break
-        if _prior_required_code_change(prior):
-            streak += 1
-        else:
-            break
-        if streak >= B3_NEEDS_CODE_STARVATION_LIMIT:
-            break
-    if streak < B3_NEEDS_CODE_STARVATION_LIMIT:
-        return None
-    return BehaviorSignal(
-        code="thesis_quality_needs_code_starvation",
-        confidence=1.0,
-        severity="block",
-        summary=(
-            f"needs_code starvation: {streak} consecutive prior theses required "
-            f"engine changes without running. Propose a non-code thesis to break "
-            f"the queue (set requires_code_change=false and operate on existing config keys)."
-        ),
-        evidence={"streak": streak, "limit": B3_NEEDS_CODE_STARVATION_LIMIT},
-        remediation=("Set requires_code_change=false and use existing config keys",),
-    )
 
 
 def _slugify(text: str, max_words: int = 8) -> str:
@@ -787,62 +665,6 @@ def _raise_aggregated_validation_error(
     )
 
 
-def _describe_underexplored_issue(issue: dict[str, Any]) -> str:
-    kind = issue["kind"]
-    if kind == "empty":
-        return "must be non-empty when prior theses exist"
-    if kind == "invalid_values":
-        return f"contains invalid mechanism dimensions: {issue['invalid']}"
-    if kind == "includes_chosen":
-        return f"must not include the chosen dimension '{issue['chosen']}'"
-    return kind  # defensive: unknown kinds surface their tag
-
-
-def _validate_underexplored_dimensions(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]] | None,
-) -> None:
-    """Enforce the underexplored_dimensions_considered contract.
-
-    The contract only fires when prior theses exist (no priors = nothing to
-    have underexplored). The helper is self-guarding: it returns immediately
-    when prior_theses is None or empty, so callers don't need to wrap the
-    call in `if prior_theses:`.
-
-    When priors exist, the contract requires:
-      * Non-empty list.
-      * Every entry is a known mechanism dimension.
-      * Chosen mechanism_dimension is NOT in the list.
-
-    All failure modes share one rejection_code with structured evidence so
-    the LLM sees every issue at once instead of one per retry.
-    """
-    if not prior_theses:
-        return
-    issues: list[dict[str, Any]] = []
-    items = thesis.underexplored_dimensions_considered
-
-    if not items:
-        issues.append({"kind": "empty"})
-    else:
-        known = MECHANISM_DIMENSIONS | _known_emergent_dimension_names(prior_theses)
-        invalid = [d for d in items if d not in known]
-        if invalid:
-            issues.append({"kind": "invalid_values", "invalid": invalid, "valid": sorted(known)})
-        if thesis.mechanism_dimension in items:
-            issues.append({"kind": "includes_chosen", "chosen": thesis.mechanism_dimension})
-
-    # underexplored carries no extra_evidence: the valid-dimension list is
-    # already embedded per-issue, and there is no global threshold to surface
-    # (unlike emergent which reports min_emergent_field_chars).
-    _raise_aggregated_validation_error(
-        rejection_code="structural_underexplored_dimensions_invalid",
-        summary_prefix="underexplored_dimensions_considered invalid",
-        issues=issues,
-        describer=_describe_underexplored_issue,
-    )
-
-
 def _validate_thesis_specifies_change(thesis: ResearchThesis) -> None:
     """Validate that the thesis declares WHAT it changes.
 
@@ -1078,10 +900,6 @@ def _run_behavioral_pass(
     signals: list[BehaviorSignal] = []
 
     if prior_theses:
-        if (sig := _detect_needs_code_starvation(thesis, prior_theses)) is not None:
-            signals.append(sig)
-
-    if prior_theses:
         if (sig := _detect_neighboring_threshold(thesis, prior_theses)) is not None:
             signals.append(sig)
         if (sig := _detect_config_key_overlap(thesis, prior_theses)) is not None:
@@ -1313,36 +1131,6 @@ def validate_thesis_dict(
     normalized = normalize_thesis_payload(dict(raw))
     normalized["thesis_id"] = assign_thesis_id(research_round_id, attempt_number)
     thesis = ResearchThesis.model_validate(normalized)
-    return validate_research_thesis(
-        thesis,
-        prior_theses=prior_theses,
-        tools_called=tools_called,
-        require_analyst_tool=require_analyst_tool,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Two-stage validation
-# ---------------------------------------------------------------------------
-#
-# Stage 1 runs on the raw thesis BEFORE compile. Catches structural,
-# semantic, and historical-pattern violations that don't need the compiled
-# config. Most rules live here.
-#
-# Stage 2 runs on the compiled BacktestContract. Catches rules that require
-# the canonical resolved config (e.g. that all required diagnostics are
-# actually wired in the compiled output). Currently a no-op; rules added
-# as Stage 2 evolves.
-
-
-def validate_stage_1(
-    thesis: ResearchThesis,
-    prior_theses: list[dict[str, Any]] | None = None,
-    *,
-    tools_called: set[str] | None = None,
-    require_analyst_tool: bool = False,
-) -> ResearchThesis:
-    """Stage 1: pre-compile validator. Alias for `validate_research_thesis`."""
     return validate_research_thesis(
         thesis,
         prior_theses=prior_theses,

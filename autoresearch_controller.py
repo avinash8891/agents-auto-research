@@ -271,7 +271,6 @@ def _resume_interrupted_research_state(prior_state: dict[str, Any], job: int) ->
     state.pop("current_thesis", None)
     state.pop("thesis_statuses", None)
     state.pop("finished_reason", None)
-    state.pop("research_stop_reasoning", None)
     return state
 
 
@@ -696,7 +695,6 @@ class AutoresearchController:
     def clear_terminal_metadata(self, state: dict[str, Any]) -> None:
         """Remove terminal-only fields when a transition reactivates the run."""
         state.pop("finished_reason", None)
-        state.pop("research_stop_reasoning", None)
 
     def _ensure_job_metadata(self) -> None:
         """Validate job-scoped state before direct loop entrypoints."""

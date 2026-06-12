@@ -259,10 +259,15 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
     next_state = dict(state)
     next_state["walkforward_status"] = "completed_with_errors" if errors else "completed"
     if errors:
-        next_state["walkforward_errors"] = errors
+        errors_path = Path(controller.runtime_root) / "walkforward" / "errors.json"
+        errors_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(errors_path, {"errors": errors})
     else:
-        next_state.pop("walkforward_errors", None)
+        errors_path = Path(controller.runtime_root) / "walkforward" / "errors.json"
+        if errors_path.exists():
+            errors_path.unlink()
     next_state.pop("activity", None)
+    next_state.pop("walkforward_errors", None)
     controller.write_state(next_state)
     controller.write_current_md(next_state, controller.read_results())
     return 0

@@ -520,7 +520,6 @@ def test_check_parsed_for_terminal_preserves_conductor_validation_reason() -> No
     assert result == {
         "status": "conductor_error",
         "generated_config": None,
-        "should_stop": False,
         "validation_failure_reason": (
             "research conductor failed: validation_failed: expected exactly one thesis, got 2"
         ),
@@ -1693,7 +1692,6 @@ def test_run_research_non_actionable_mechanism_continues_without_interrupt(
                     "predictions": [],
                 }
             ],
-            "should_stop": False,
         },
     )
     monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
@@ -1748,7 +1746,6 @@ def test_run_research_success_persists_round_artifacts_and_next_action(
         {
             "reasoning": "Tighter entry filter should reduce weak crosses.",
             "suggested_theses": [proposal],
-            "should_stop": False,
         },
     )
     monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
@@ -1895,7 +1892,6 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
         {
             "reasoning": "Duplicate EMA idea.",
             "suggested_theses": [invalid_proposal],
-            "should_stop": False,
         },
     )
     monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
@@ -2357,7 +2353,6 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
         lambda result: {
             "status": "completed",
             "generated_config": "runtime/jobs/job-26/research/round-8/selected_config.json",
-            "should_stop": False,
         },
     )
 

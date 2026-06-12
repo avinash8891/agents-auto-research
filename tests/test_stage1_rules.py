@@ -1,12 +1,9 @@
-"""Tests for Stage 1 validator rules: B1 theme cluster, B3 needs_code starvation."""
+"""Tests for retained and removed Stage 1 validator rules."""
 
 from __future__ import annotations
 
-import pytest
-
 from backtest_run_db import research_thesis_attempt_id
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
-from thesis_validator import ThesisValidationError
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
 
@@ -179,27 +176,27 @@ def test_b1_does_not_fire_when_thesis_has_no_theme_keywords() -> None:
     assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
-# ── B3 needs_code starvation ───────────────────────────────────────────────
+# ── Removed requires-code-change streak gate ───────────────────────────────
 
 
-def test_b3_rejects_thesis_when_3_consecutive_needs_code_with_no_runs() -> None:
-    """3 consecutive prior theses required code change and never ran → force no-code."""
+def test_requires_code_change_streak_no_longer_rejects() -> None:
+    """Consecutive requires-code-change priors no longer force a no-code thesis."""
     prior_theses = [
         _prior("p1", theme_keywords=["a"], requires_code=True, outcome="needs_code"),
         _prior("p2", theme_keywords=["b"], requires_code=True, outcome="needs_code"),
         _prior("p3", theme_keywords=["c"], requires_code=True, outcome="needs_code"),
     ]
     new = _base_thesis("p4")
-    new["requires_code_change"] = True  # this would be the 4th in a row
+    new["requires_code_change"] = True
     new["requested_primitives"] = ["x"]
     new["config_changes"] = {"requires_engine_change": True}
 
-    with pytest.raises(ThesisValidationError, match="needs_code|engine.change"):
-        validate_thesis_dict(new, prior_theses=prior_theses)
+    obj = validate_thesis_dict(new, prior_theses=prior_theses)
+    assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
-def test_b3_accepts_no_code_thesis_after_needs_code_starvation() -> None:
-    """A no-code thesis breaks the streak — the rule allows it."""
+def test_no_code_thesis_still_valid_after_requires_code_change_streak() -> None:
+    """No-code theses remain valid after a requires-code-change streak."""
     prior_theses = [
         _prior(f"p{i}", theme_keywords=[f"k{i}"], requires_code=True, outcome="needs_code")
         for i in range(1, 4)
@@ -210,8 +207,8 @@ def test_b3_accepts_no_code_thesis_after_needs_code_starvation() -> None:
     assert obj.thesis_id == "job-test-round-1-attempt-1"
 
 
-def test_b3_does_not_fire_when_streak_was_broken_by_a_run() -> None:
-    """If one of the recent priors actually ran, the streak resets."""
+def test_requires_code_change_thesis_still_valid_after_prior_run() -> None:
+    """A prior run in the history is irrelevant after removing the streak gate."""
     prior_theses = [
         _prior("p1", theme_keywords=["a"], requires_code=True, outcome="needs_code"),
         _prior("p2", theme_keywords=["b"], requires_code=False, outcome="compiled"),  # ran

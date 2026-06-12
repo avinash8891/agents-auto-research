@@ -510,7 +510,6 @@ def _check_parsed_for_terminal(result: ConductorResult | None) -> dict[str, Any]
         return {
             "status": "parse_failed",
             "generated_config": None,
-            "should_stop": False,
             "validation_failure_reason": "research conductor returned no parseable thesis",
         }
     if result.status == "conductor_error":
@@ -529,7 +528,6 @@ def _check_parsed_for_terminal(result: ConductorResult | None) -> dict[str, Any]
         outer: dict[str, Any] = {
             "status": "conductor_error",
             "generated_config": None,
-            "should_stop": False,
             "validation_failure_reason": validation_failure_reason,
         }
         if result.validation_reason:
@@ -630,7 +628,7 @@ def _log_validation_rejection(
         config_changes=raw_thesis.get("config_changes"),
         hypothesis=raw_thesis.get("hypothesis", ""),
         mechanism=raw_thesis.get("mechanism", ""),
-        mechanism_dimension="",
+        mechanism_dimension=raw_thesis.get("mechanism_dimension", ""),
         thesis_details={
             key: raw_thesis.get(key)
             for key in (
@@ -1016,7 +1014,6 @@ def _try_mechanism_validation_attempt(
                 "attempt_number": attempt_number,
                 "thesis_id": thesis_id,
                 "thesis": raw_thesis,
-                "should_stop": False,
                 "reasoning": conductor_result.reasoning,
             },
             None,
@@ -1219,7 +1216,6 @@ def _exhausted_retries_result(
         "generated_config_needs_build": False,
         "generated_thesis_id": thesis_id,
         "validation_failure_reason": rejection_feedback,
-        "should_stop": False,
         "reasoning": conductor_result.reasoning if conductor_result else "",
         "thesis": thesis,
     }
@@ -1452,7 +1448,6 @@ def _thesis_meta_from_result(result: dict[str, Any], family_name: str) -> dict[s
         "config_changes": result.get("config_changes") or {},
         "hypothesis": result.get("hypothesis") or result.get("reasoning", ""),
         "mechanism": result.get("mechanism") or result.get("reasoning", ""),
-        "mechanism_dimension": result.get("mechanism_dimension") or "",
     }
 
 
@@ -2215,7 +2210,7 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         config_changes=thesis_meta.get("config_changes"),
         hypothesis=thesis_meta.get("hypothesis", ""),
         mechanism=thesis_meta.get("mechanism", ""),
-        mechanism_dimension="",
+        mechanism_dimension=thesis_meta.get("mechanism_dimension", ""),
         thesis_details={
             key: thesis_meta.get(key)
             for key in (
