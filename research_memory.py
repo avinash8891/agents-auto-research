@@ -303,8 +303,12 @@ def _short_text(value: Any, max_chars: int) -> str:
 
 def _learning_signal(entry: dict[str, Any]) -> str:
     status = entry.get("validator_status") or "unknown"
-    dimension = entry.get("mechanism_dimension") or "unknown_dimension"
-    return f"{status} thesis in {dimension}; inspect full details before building on it"
+    mechanism = _short_text(entry.get("mechanism") or entry.get("hypothesis"), 80)
+    if mechanism:
+        return (
+            f"{status} mechanism proposal: {mechanism}; inspect full details before building on it"
+        )
+    return f"{status} mechanism proposal; inspect full details before building on it"
 
 
 def _thesis_details(entry: dict[str, Any]) -> dict[str, Any]:
@@ -317,12 +321,9 @@ def _index_entry(entry: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(config_changes, dict):
         config_changes = {}
     details = _thesis_details(entry)
-    evidence = details.get("evidence")
-    expected_effects = details.get("expected_effects")
-    if not isinstance(evidence, list):
-        evidence = []
-    if not isinstance(expected_effects, list):
-        expected_effects = []
+    predictions = details.get("predictions")
+    if not isinstance(predictions, list):
+        predictions = []
     return {
         "thesis_id": entry.get("thesis_id", "unknown"),
         "round": entry.get("research_round_id"),
@@ -330,19 +331,16 @@ def _index_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "job_id": entry.get("job_id"),
         "strategy_family": entry.get("strategy_family", ""),
         "outcome": entry.get("validator_status", "unknown"),
-        "mechanism_dimension": entry.get("mechanism_dimension", ""),
-        "dimension_novelty": details.get("dimension_novelty", ""),
-        "new_dimension_name": details.get("new_dimension_name", ""),
         "requires_code_change": bool(details.get("requires_code_change")),
-        "expected_effect_metrics": [
-            effect.get("metric")
-            for effect in expected_effects
-            if isinstance(effect, dict) and effect.get("metric")
+        "prediction_metrics": [
+            prediction.get("metric")
+            for prediction in predictions
+            if isinstance(prediction, dict) and prediction.get("metric")
         ],
-        "evidence_count": len(evidence),
         "selected_for_execution": bool(entry.get("selected_for_execution")),
         "config_change_keys": sorted(config_changes.keys()),
         "short_hypothesis": _short_text(entry.get("hypothesis", ""), 180),
+        "short_mechanism": _short_text(entry.get("mechanism", ""), 180),
         "short_validation_failure_reason": _short_text(
             entry.get("validation_failure_reason", ""), 160
         ),
@@ -363,26 +361,18 @@ def _attempt_detail(entry: dict[str, Any]) -> dict[str, Any]:
         "config_changes": entry.get("config_changes", {}),
         "validator_status": entry.get("validator_status", ""),
         "round_outcome": entry.get("round_outcome"),
-        "mechanism_dimension": entry.get("mechanism_dimension", ""),
         "hypothesis": entry.get("hypothesis", ""),
         "mechanism": entry.get("mechanism", ""),
         "validation_failure_reason": entry.get("validation_failure_reason", ""),
         "selected_for_execution": bool(entry.get("selected_for_execution")),
         "created_at_utc": entry.get("created_at_utc"),
         "round_usage": entry.get("round_usage", {}),
-        "dimension_novelty": details.get("dimension_novelty", ""),
-        "new_dimension_name": details.get("new_dimension_name", ""),
-        "why_existing_dimensions_do_not_fit": details.get("why_existing_dimensions_do_not_fit", ""),
-        "mechanism_family_definition": details.get("mechanism_family_definition", ""),
-        "expected_reuse_across_future_theses": details.get(
-            "expected_reuse_across_future_theses", ""
-        ),
-        "evidence": details.get("evidence", []),
-        "expected_effects": details.get("expected_effects", []),
-        "disqualifiers": details.get("disqualifiers", []),
-        "why_not_overfit": details.get("why_not_overfit", ""),
         "requires_code_change": bool(details.get("requires_code_change")),
-        "required_diagnostics": details.get("required_diagnostics", []),
+        "requested_primitives": details.get("requested_primitives", []),
+        "proposed_change": details.get("proposed_change", {}),
+        "predictions": details.get("predictions", []),
+        "competitor_rule": details.get("competitor_rule", ""),
+        "competitor_story": details.get("competitor_story", ""),
     }
 
 
@@ -500,14 +490,12 @@ def latest_thesis_details(
         "config_changes": entry.get("config_changes") or {},
     }
     for key in (
-        "expected_effects",
-        "evidence",
-        "disqualifiers",
-        "evidence_strength",
-        "closest_prior_theses_considered",
-        "orthogonality_defense",
-        "falsification_or_alternative",
-        "why_not_overfit",
+        "requires_code_change",
+        "requested_primitives",
+        "proposed_change",
+        "predictions",
+        "competitor_rule",
+        "competitor_story",
     ):
         val = details.get(key)
         if val is not None:

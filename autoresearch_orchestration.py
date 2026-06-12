@@ -142,8 +142,6 @@ def _activate_builder_config(
     state["next_action"] = {
         "type": "run_round",
         "config": generated_config,
-        "benchmark_command": controller.family.benchmark_command(generated_config),
-        "requires_trade_analysis": True,
         "source": "builder",
         "builder_thesis_id": thesis_id,
         "selected_thesis_id": thesis_id,
@@ -719,8 +717,6 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
     state["next_action"] = {
         "type": "run_round",
         "config": config_path,
-        "benchmark_command": controller.family.benchmark_command(config_path),
-        "requires_trade_analysis": True,
         "source": "resumed_halted_thesis",
         "research_round": research_round,
         "selected_thesis_id": resumed_thesis.get("thesis_id", halted_id),

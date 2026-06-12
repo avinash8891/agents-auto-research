@@ -57,7 +57,6 @@ from research_types import CausalModel, ConductorResult
 from screening import ScreeningResult, write_screenings
 from strategies import STRATEGIES
 from strategy_family import load_family
-from thesis_validator import ThesisValidationError
 
 # ── notify_discord fail-open contract ────────────────────────────
 
@@ -907,13 +906,10 @@ def test_resolve_conductor_inputs_injects_previous_thesis_from_db(tmp_path: Path
             "hypothesis": "EMA crossover accelerates after news",
             "mechanism": "Momentum buildup drives short-term trend persistence",
             "thesis_details": {
-                "expected_effects": [{"metric": "profit_factor", "direction": "increase"}],
-                "evidence": ["backtested on 2024 data"],
-                "evidence_strength": "proxy",
-                "closest_prior_theses_considered": ["ema-baseline"],
-                "orthogonality_defense": "Different timing layer",
-                "falsification_or_alternative": "If ATR-based stop dominates, mechanism is wrong",
-                "why_not_overfit": "Validated on out-of-sample window",
+                "proposed_change": {"ema_length": 12},
+                "predictions": [{"metric": "profit_factor", "direction": "increase"}],
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up entries may explain the observed edge.",
             },
             "validation_failure_reason": "",
             "selected_for_execution": 1,
@@ -939,11 +935,9 @@ def test_resolve_conductor_inputs_injects_previous_thesis_from_db(tmp_path: Path
     assert prev["hypothesis"] == "EMA crossover accelerates after news"
     assert prev["mechanism"] == "Momentum buildup drives short-term trend persistence"
     assert prev["config_changes"] == {"ema_length": 12}
-    assert prev["evidence_strength"] == "proxy"
-    assert prev["closest_prior_theses_considered"] == ["ema-baseline"]
-    assert prev["falsification_or_alternative"] == "If ATR-based stop dominates, mechanism is wrong"
-    assert prev["why_not_overfit"] == "Validated on out-of-sample window"
-    assert len(prev["expected_effects"]) == 1
+    assert prev["proposed_change"] == {"ema_length": 12}
+    assert prev["predictions"][0]["metric"] == "profit_factor"
+    assert prev["competitor_rule"] == "gap_pct > 0"
 
 
 def test_resolve_conductor_inputs_no_previous_thesis_when_no_attempt_exists(
@@ -1153,7 +1147,12 @@ def _dict_to_conductor_result(d: dict) -> ConductorResult:
     """Convert test dicts using the historical suggested_theses wrapper."""
     if d.get("should_stop"):
         return ConductorResult(
-            status="should_stop", should_stop=True, reasoning=d.get("reasoning", "")
+            status="conductor_error",
+            error="validation_failed",
+            validation_reason="retired should_stop payload",
+            reasoning=d.get("reasoning", ""),
+            thesis=d,
+            tools_called=frozenset(d.get("tools_called", {"list_round_results", "web_search"})),
         )
     theses = d.get("suggested_theses") or []
     return ConductorResult(
@@ -1214,14 +1213,13 @@ def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
 
     def _run_conductor(*args, **kwargs):
         captured.update(kwargs)
-        return ConductorResult(status="should_stop", should_stop=True, reasoning="stop")
+        return ConductorResult(status="conductor_error", error="parse_failed")
 
     monkeypatch.setattr("research_conductor.run_research_conductor_sync", _run_conductor)
 
     result = execute_research_sdk(controller)
 
-    assert result["status"] == "completed"
-    assert result["should_stop"] is True
+    assert result["status"] == "conductor_error"
     assert captured["rendered_corpus"] == "RENDERED-CORPUS"
     assert all(key != "conductor" + "_mode" for key in captured)
     assert corpus_calls == [
@@ -1386,9 +1384,7 @@ def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
     monkeypatch.setattr("evidence_pack.render_corpus", lambda corpus: "RENDERED-CORPUS")
     monkeypatch.setattr(
         "research_conductor.run_research_conductor_sync",
-        lambda *args, **kwargs: ConductorResult(
-            status="should_stop", should_stop=True, reasoning="stop"
-        ),
+        lambda *args, **kwargs: ConductorResult(status="conductor_error", error="parse_failed"),
     )
 
     execute_research_sdk(controller)
@@ -1428,7 +1424,7 @@ def test_execute_research_sdk_persists_retry_feedback_for_corpus(
             reasoning="invalid first proposal",
             tools_called=frozenset({"analyze_trades"}),
         ),
-        ConductorResult(status="should_stop", should_stop=True, reasoning="stop after feedback"),
+        ConductorResult(status="conductor_error", error="parse_failed"),
     ]
     monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root, **kwargs: [])
     monkeypatch.setattr(
@@ -1446,7 +1442,7 @@ def test_execute_research_sdk_persists_retry_feedback_for_corpus(
     feedback_path = (
         tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1" / "rejection_feedback.txt"
     )
-    assert result["should_stop"] is True
+    assert result["status"] == "conductor_error"
     assert feedback_path.exists()
     assert "predicted" in feedback_path.read_text(encoding="utf-8")
 
@@ -1888,7 +1884,6 @@ def test_ready_to_run_writes_registered_predictions_before_backtest_dispatch(
         },
         thesis_id="thesis-001",
         conductor_result=ConductorResult(status="ok", reasoning="harvest now"),
-        should_stop=False,
         job_id=12,
     )
 
@@ -1922,12 +1917,11 @@ def test_ready_to_run_rejects_undeclared_multi_key_proposed_change(tmp_path: Pat
             raw_thesis={"proposed_change": {"gap_filter": True, "gap_pct": 0.01}},
             thesis_id="thesis-001",
             conductor_result=ConductorResult(status="ok", reasoning="harvest now"),
-            should_stop=False,
             job_id=12,
         )
 
 
-def test_run_research_should_stop_closes_job_with_finished_state(
+def test_run_research_should_stop_payload_is_rejected_not_terminal(
     tmp_path: Path, monkeypatch
 ) -> None:
     controller = _real_controller(tmp_path)
@@ -1959,13 +1953,10 @@ def test_run_research_should_stop_closes_job_with_finished_state(
 
     updated = run_research(controller, controller.read_state())
 
-    assert updated["state"] == "finished"
-    assert updated["finished_reason"] == "research_recommends_stop"
-    assert updated["research_stop_reasoning"] == (
-        "No remaining orthogonal mechanism has enough evidence."
-    )
+    assert updated["state"] == "interrupted"
+    assert updated["blockers"][0]["kind"] == "research_failed"
+    assert "research_stop_reasoning" not in updated
     assert "activity" not in updated
-    assert (tmp_path / "ema_autoresearch.current.md").exists()
 
 
 def test_run_research_rejected_round_blocks_with_persisted_rejection(
@@ -2186,9 +2177,7 @@ def test_try_one_validation_attempt_treats_proposed_change_error_as_retry_feedba
     assert "unsupported config key(s) for ema" in retry_feedback
 
 
-def test_handle_needs_code_uses_full_validation_contract_before_compile(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_handle_needs_code_directly_validates_before_compile(tmp_path: Path, monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     class _Controller:
@@ -2196,29 +2185,16 @@ def test_handle_needs_code_uses_full_validation_contract_before_compile(
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_operationalize(thesis):
-        updated = dict(thesis)
-        updated["requested_primitives"] = ["buffered_trailing_stop_rule"]
-        updated["config_changes"] = {"buffered_trailing_stop_rule": True}
-        return updated
-
-    class _Validated:
-        thesis_id = "buffered_trailing"
-
-    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
-        captured["validated_raw"] = dict(raw)
-        return _Validated()
-
     def fake_compile(validated, root, artifact_root=None):
         captured["compiled"] = {
             "thesis_id": validated.thesis_id,
             "root": root,
             "artifact_root": artifact_root,
+            "requested_primitives": list(validated.requested_primitives),
+            "config_changes": dict(validated.config_changes),
         }
         return None
 
-    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
-    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
     monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
     monkeypatch.setattr("autoresearch_research._close_run", lambda *args, **kwargs: None)
 
@@ -2247,22 +2223,24 @@ def test_handle_needs_code_uses_full_validation_contract_before_compile(
                 }
             ],
             "requires_code_change": True,
-            "requested_primitives": [],
+            "requested_primitives": ["buffered_trailing_stop_rule"],
+            "config_changes": {"buffered_trailing_stop_rule": True},
         },
     }
 
     updated = _handle_needs_code(_Controller(), state, result)
 
     assert updated["state"] == "halted"
-    assert captured["validated_raw"]["requested_primitives"] == [  # type: ignore[index]
-        "buffered_trailing_stop_rule"
-    ]
-    assert captured["validated_raw"]["config_changes"] == {  # type: ignore[index]
-        "buffered_trailing_stop_rule": True
+    assert captured["compiled"] == {
+        "thesis_id": "job-26-round-6-attempt-1",
+        "root": tmp_path,
+        "artifact_root": tmp_path / "research" / "round-6",
+        "requested_primitives": ["buffered_trailing_stop_rule"],
+        "config_changes": {"buffered_trailing_stop_rule": True},
     }
 
 
-def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_change_fallback(
+def test_handle_needs_code_schema_only_validation_allows_empty_requested_primitives(
     tmp_path: Path, monkeypatch
 ) -> None:
     captured: dict[str, object] = {}
@@ -2272,28 +2250,13 @@ def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_ch
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_operationalize(thesis):
-        updated = dict(thesis)
-        updated["requested_primitives"] = ["buffered_trailing_stop_rule"]
-        updated["config_changes"] = {"buffered_trailing_stop_rule": True}
-        return updated
-
-    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
-        captured["validated_raw"] = dict(raw)
-        raise ThesisValidationError("Missing mechanism_dimension")
-
     def fake_compile(validated, root, artifact_root=None):
         captured["compiled"] = {
             "thesis_id": validated.thesis_id,
-            "root": root,
-            "artifact_root": artifact_root,
-            "mechanism_dimension": validated.mechanism_dimension,
             "requested_primitives": list(validated.requested_primitives),
         }
         return None
 
-    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
-    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
     monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
     monkeypatch.setattr("autoresearch_research._close_run", lambda *args, **kwargs: None)
 
@@ -2328,15 +2291,9 @@ def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_ch
     updated = _handle_needs_code(_Controller(), state, result)
 
     assert updated["state"] == "halted"
-    assert captured["validated_raw"]["requested_primitives"] == [  # type: ignore[index]
-        "buffered_trailing_stop_rule"
-    ]
     assert captured["compiled"] == {
         "thesis_id": "job-26-round-6-attempt-1",
-        "root": tmp_path,
-        "artifact_root": tmp_path / "research" / "round-6",
-        "mechanism_dimension": "",
-        "requested_primitives": ["buffered_trailing_stop_rule"],
+        "requested_primitives": [],
     }
 
 
@@ -2350,21 +2307,10 @@ def test_handle_needs_code_preserves_retry_attempt_id_for_schema_only_fallback(
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_operationalize(thesis):
-        updated = dict(thesis)
-        updated["requested_primitives"] = ["buffered_trailing_stop_rule"]
-        updated["config_changes"] = {"buffered_trailing_stop_rule": True}
-        return updated
-
-    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
-        raise ThesisValidationError("Missing mechanism_dimension")
-
     def fake_compile(validated, root, artifact_root=None):
         captured["thesis_id"] = validated.thesis_id
         return None
 
-    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
-    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
     monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
     monkeypatch.setattr("autoresearch_research._close_run", lambda *args, **kwargs: None)
 
@@ -2391,7 +2337,8 @@ def test_handle_needs_code_preserves_retry_attempt_id_for_schema_only_fallback(
                 }
             ],
             "requires_code_change": True,
-            "requested_primitives": [],
+            "requested_primitives": ["buffered_trailing_stop_rule"],
+            "config_changes": {"buffered_trailing_stop_rule": True},
         },
     }
 
@@ -2400,7 +2347,7 @@ def test_handle_needs_code_preserves_retry_attempt_id_for_schema_only_fallback(
     assert captured["thesis_id"] == "job-26-round-6-attempt-2"
 
 
-def test_handle_needs_code_close_run_called_when_prepare_thesis_raises_type_error(
+def test_handle_needs_code_close_run_called_when_direct_validation_fails(
     tmp_path: Path, monkeypatch
 ) -> None:
     """Widened except-guard: TypeError in enrichment must not skip _close_run."""
@@ -2411,10 +2358,6 @@ def test_handle_needs_code_close_run_called_when_prepare_thesis_raises_type_erro
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_operationalize(thesis):
-        raise TypeError("unexpected NoneType in operationalize")
-
-    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
     monkeypatch.setattr(
         "autoresearch_research._close_run",
         lambda *args, **kwargs: close_run_calls.append(args),
@@ -2496,9 +2439,7 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
     monkeypatch.setattr("improvement_flags.reflexion_enabled", lambda: False)
     monkeypatch.setattr(
         "autoresearch_research._call_conductor",
-        lambda *args, **kwargs: ConductorResult(
-            status="should_stop", should_stop=True, reasoning="done"
-        ),
+        lambda *args, **kwargs: ConductorResult(status="conductor_error", error="parse_failed"),
     )
     monkeypatch.setattr(
         "autoresearch_research._check_parsed_for_terminal",

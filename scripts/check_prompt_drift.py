@@ -9,8 +9,8 @@ Compares what the system prompt CLAIMS against what the code actually does:
   2. OUTPUT schema vs ResearchThesis — every field the validator can reject
      on must be documented in the prompt's OUTPUT section.
   3. Validator rule mentions vs rejection codes — every named rule the prompt
-     references ("theme-cluster fixation", "neighboring threshold", etc.) must
-     still have a corresponding rejection_code in thesis_validator.py.
+     references ("neighboring threshold", etc.) must still have a corresponding
+     emitted rejection_code in thesis_validator.py.
 
 Exit 1 on drift. Wire into CI to prevent prompt rot.
 
@@ -42,13 +42,9 @@ MECHANISM_PROMPT_FIELDS: set[str] = set(MechanismProposal.model_fields)
 # Named rules the prompt may reference → rejection_code that must still exist
 # in thesis_validator.py for the reference to be live.
 PROMPT_RULE_NAMES_TO_CODES: dict[str, str] = {
-    "theme-cluster fixation": "thesis_quality_theme_cluster_fixation",
-    "direction whipsaw": "thesis_quality_direction_whipsaw",
-    "needs_code starvation": "thesis_quality_needs_code_starvation",
     "neighboring threshold": "config_validity_neighboring_threshold",
     "neighboring-threshold": "config_validity_neighboring_threshold",
     "config-key overlap": "config_validity_config_key_overlap_real",
-    "hypothesis-config misalignment": "hypothesis_config_misalignment",
     "thesis_id repeated": "structural_thesis_id_repeated",
 }
 
@@ -159,15 +155,13 @@ def extract_output_fields_from_prompt(prompt: str) -> set[str]:
 def discover_validator_rejection_codes(path: Path) -> set[str]:
     """Return every rejection_code literal that appears in thesis_validator.py.
 
-    Captures both kwarg-style (`rejection_code="..."`) and the return values
-    inside infer_rejection_code.
+    Captures emitted kwarg-style codes (`rejection_code="..."`). Compatibility
+    return values inside infer_rejection_code are intentionally excluded so
+    retired rules do not look live.
     """
     text = path.read_text()
     codes: set[str] = set()
     codes.update(re.findall(r'rejection_code\s*=\s*"([a-z0-9_]+)"', text))
-    codes.update(re.findall(r'return\s+"([a-z0-9_]+)"', text))
-    # Drop the catch-all sentinel
-    codes.discard("unspecified_validation_error")
     return codes
 
 

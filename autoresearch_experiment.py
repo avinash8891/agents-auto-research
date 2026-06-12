@@ -453,8 +453,6 @@ def derive_trade_analysis(
     return {
         "trade_analysis": trade_analysis,
         "insights": [f"metric={metric}", f"decision={decision}"],
-        "next_candidates": [],
-        "why_not_data_fit": "Independent thesis evaluation only.",
         "runtime_config": config_contents,
     }
 
@@ -621,22 +619,12 @@ def _build_asi_dict(
     config_changes: dict[str, Any],
     next_action: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    contract = controller.ctx.current_contract
-    identity = _resolve_identity(contract, config)
-    state = controller.read_state()
-    run_id = f"job-{state.get('job', 0)}-run-1-{identity}"
     asi = {
-        "job": state.get("job"),
-        "run_id": run_id,
-        "hypothesis_id": identity,
-        "hypothesis": identity,
         "config": config,
         "artifact_dir": serialize_artifact_path(artifact_dir, controller.root),
         "trade_analysis": analysis.get("trade_analysis", {}),
         "insights": analysis.get("insights", []),
-        "next_candidates": analysis.get("next_candidates", []),
         "next_thesis_suggestion": analysis.get("next_thesis_suggestion", ""),
-        "why_not_data_fit": analysis.get("why_not_data_fit"),
         "insight_brief": analysis.get("insight_brief", ""),
         "thesis_id": thesis_id,
         "config_changes": config_changes,

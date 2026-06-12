@@ -368,7 +368,7 @@ def _build_research_tools_mcp(
 
         Args:
             round_number: scope to one round (None = all rounds).
-            rejection_code: filter by category (e.g. "thesis_quality_theme_cluster_fixation").
+            rejection_code: filter by category (e.g. "structural_missing_requested_primitives").
             limit: cap result count (default 25).
         """
         err = _dispatch(

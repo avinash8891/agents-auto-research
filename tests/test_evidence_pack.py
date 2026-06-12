@@ -375,6 +375,24 @@ def test_build_corpus_screening_history_is_scoped_to_active_job(
     assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
 
 
+def test_build_corpus_screening_history_excludes_competitor_rows(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    write_screenings(
+        tmp_path / "ema_backtest_runs.db",
+        [_screening("gap_pct > 0", "pass")],
+        round_number=2,
+        competitor_rule="gap_pct < 0",
+        job_id=1,
+        is_competitor=True,
+    )
+
+    corpus = build_corpus("ema", 2, job=1)
+
+    assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
+
+
 def test_build_corpus_caps_screening_history_and_aggregates_older_verdicts(
     tmp_path: Path, monkeypatch
 ) -> None:

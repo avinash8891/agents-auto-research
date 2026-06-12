@@ -104,51 +104,6 @@ def _record_event_fail_open(**kwargs: Any) -> None:
         log.debug("trace event emission failed: %s", exc)
 
 
-def _prepare_thesis_for_validation(
-    thesis: dict[str, Any],
-    *,
-    strategy_family: str,
-    research_round_id: str,
-    attempt_number: int,
-    prior_theses: list[dict[str, Any]] | None = None,
-    allow_schema_only_code_change_fallback: bool = False,
-    tools_called: frozenset[str] | set[str] | None = None,
-    require_analyst_tool: bool = False,
-):
-    from compiler_pipeline import operationalize_thesis
-    from thesis_validator import (
-        ThesisValidationError,
-        normalize_thesis_payload,
-        validate_thesis_dict,
-    )
-
-    raw_thesis = dict(thesis)
-    raw_thesis["strategy_family"] = strategy_family
-    if raw_thesis.get("requires_code_change") and not raw_thesis.get("requested_primitives"):
-        operationalized = operationalize_thesis(dict(raw_thesis))
-        missing = operationalized.get("missing_primitives") or []
-        if missing and not operationalized.get("requested_primitives"):
-            operationalized["requested_primitives"] = missing
-        raw_thesis = operationalized
-    try:
-        validated = validate_thesis_dict(
-            raw_thesis,
-            prior_theses=prior_theses,
-            research_round_id=research_round_id,
-            attempt_number=attempt_number,
-            assign_thesis_id=research_thesis_attempt_id,
-            tools_called=tools_called,
-            require_analyst_tool=require_analyst_tool,
-        )
-        raw_thesis["thesis_id"] = validated.thesis_id
-    except ThesisValidationError:
-        if not (allow_schema_only_code_change_fallback and raw_thesis.get("requires_code_change")):
-            raise
-        raw_thesis["thesis_id"] = research_thesis_attempt_id(research_round_id, attempt_number)
-        validated = ResearchThesis.model_validate(normalize_thesis_payload(raw_thesis))
-    return raw_thesis, validated
-
-
 # ── Discord notification ──────────────────────────────────────────
 
 
@@ -636,14 +591,6 @@ def _check_parsed_for_terminal(result: ConductorResult | None) -> dict[str, Any]
             },
         )
         return outer
-    if result.status == "should_stop":
-        reasoning = result.reasoning or "research conductor recommends stopping"
-        return {
-            "status": "completed",
-            "generated_config": None,
-            "should_stop": True,
-            "reasoning": reasoning,
-        }
     return None
 
 
@@ -728,29 +675,16 @@ def _log_validation_rejection(
         config_changes=raw_thesis.get("config_changes"),
         hypothesis=raw_thesis.get("hypothesis", ""),
         mechanism=raw_thesis.get("mechanism", ""),
-        mechanism_dimension=raw_thesis.get("mechanism_dimension", ""),
+        mechanism_dimension="",
         thesis_details={
             key: raw_thesis.get(key)
             for key in (
-                "dimension_novelty",
-                "proposal_label",
-                "evidence",
-                "expected_effects",
-                "disqualifiers",
-                "why_not_overfit",
                 "requires_code_change",
-                "required_diagnostics",
-                "required_diagnostic_specs",
-                "new_dimension_name",
-                "why_existing_dimensions_do_not_fit",
-                "mechanism_family_definition",
-                "expected_reuse_across_future_theses",
-                # theme_keywords is read by _theme_keywords_from_prior to compute
-                # dominant-cluster overlap against future theses. Omitting it
-                # makes the computed-overlap gate silently fail-open in
-                # production (tests use hand-built priors so the bug doesn't
-                # surface). Persist it whenever the conductor proposes it.
-                "theme_keywords",
+                "requested_primitives",
+                "proposed_change",
+                "predictions",
+                "competitor_rule",
+                "competitor_story",
             )
             if key in raw_thesis
         }
@@ -775,7 +709,6 @@ def _on_ready_to_run(
     raw_thesis: dict[str, Any],
     thesis_id: str,
     conductor_result: "ConductorResult",
-    should_stop: bool,
     job_id: int = 0,
 ) -> dict[str, Any]:
     """Wire the selected round thesis into the controller."""
@@ -795,7 +728,6 @@ def _on_ready_to_run(
         "contract_id": contract.contract_id,
         "thesis_id": thesis_id,
         "thesis": raw_thesis,
-        "should_stop": should_stop,
         "reasoning": conductor_result.reasoning,
     }
 
@@ -1293,7 +1225,6 @@ def _dispatch_compiled_contract(
     research_round_id_str: str = "",
     job_id: int = 0,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    should_stop = conductor_result.should_stop
     if contract.status == "needs_code":
         return {
             "status": "completed",
@@ -1303,7 +1234,6 @@ def _dispatch_compiled_contract(
             "research_round_id": research_round_id_str,
             "attempt_number": attempt + 1,
             "thesis_id": thesis_id,
-            "should_stop": should_stop,
             "reasoning": conductor_result.reasoning,
             "thesis": raw_thesis,
         }, None
@@ -1316,7 +1246,6 @@ def _dispatch_compiled_contract(
                 raw_thesis,
                 thesis_id,
                 conductor_result,
-                should_stop,
                 job_id=job_id,
             ),
             None,
@@ -1635,24 +1564,13 @@ def _thesis_quality_dimension_scores(thesis_meta: dict[str, Any]) -> dict[str, f
     if not thesis_meta:
         return {}
 
-    closest_prior = thesis_meta.get("closest_prior_theses_considered")
-    if not isinstance(closest_prior, list):
-        closest_prior = []
     requested_primitives = thesis_meta.get("requested_primitives")
     if not isinstance(requested_primitives, list):
         requested_primitives = []
 
-    orthogonality_defense = str(thesis_meta.get("orthogonality_defense") or "").strip()
-    evidence_strength = str(thesis_meta.get("evidence_strength") or "").strip()
-    falsification = str(thesis_meta.get("falsification_or_alternative") or "").strip()
     requires_code_change = bool(thesis_meta.get("requires_code_change"))
 
-    dimension_scores = {
-        "prior_comparison": 1.0 if closest_prior else 0.0,
-        "orthogonality_defense": 1.0 if orthogonality_defense else 0.0,
-        "evidence_strength_labeled": 1.0 if evidence_strength else 0.0,
-        "falsification_discipline": 1.0 if falsification else 0.0,
-    }
+    dimension_scores: dict[str, float] = {}
     if requires_code_change:
         dimension_scores["code_change_contract"] = 1.0 if requested_primitives else 0.0
     return dimension_scores
@@ -1665,11 +1583,8 @@ def _classify_round_outcome(result: dict[str, Any]) -> str:
         OUTCOME_CONDUCTOR_ERROR,
         OUTCOME_NEEDS_CODE,
         OUTCOME_REJECTED,
-        OUTCOME_STOPPED,
     )
 
-    if result.get("should_stop"):
-        return OUTCOME_STOPPED
     if result.get("generated_config_needs_build"):
         return OUTCOME_NEEDS_CODE
     if result.get("generated_config"):
@@ -2202,29 +2117,6 @@ def _handle_max_rounds_reached(
     return state
 
 
-def _handle_should_stop(
-    controller: "AutoresearchController", state: dict[str, Any], result: dict[str, Any]
-) -> dict[str, Any]:
-    state["state"] = "finished"
-    state["finished_reason"] = "research_recommends_stop"
-    state["research_stop_reasoning"] = result.get("reasoning", "")
-    state["research_round"] = result.get("research_round", state.get("research_round", 0))
-    state.pop("research_round_in_progress", None)
-    state.pop("activity", None)
-    log.info("LOOP_STOP finished: research recommends stop")
-    best = state.get("current_best", {})
-    _close_run(
-        controller,
-        state,
-        f"✅ {controller.family.name.upper()} FINISHED — conductor says stop",
-        f"**Best config:** `{best.get('config', '?')}`\n"
-        f"**Best PF:** {best.get('metric', '?')}\n\n"
-        "Research conductor recommends stopping.",
-        DISCORD_COLOR_SUCCESS,
-    )
-    return state
-
-
 def _handle_needs_code(
     controller: "AutoresearchController", state: dict[str, Any], result: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2248,14 +2140,10 @@ def _handle_needs_code(
     state["halted_thesis"] = thesis
     try:
         research_round_id, attempt_number = _attempt_context_from_result(state, result)
-        _, validated = _prepare_thesis_for_validation(
-            thesis_payload,
-            strategy_family=controller.family.name,
-            research_round_id=research_round_id,
-            attempt_number=attempt_number,
-            prior_theses=None,
-            allow_schema_only_code_change_fallback=True,
-        )
+        from thesis_validator import normalize_thesis_payload
+
+        thesis_payload["thesis_id"] = research_thesis_attempt_id(research_round_id, attempt_number)
+        validated = ResearchThesis.model_validate(normalize_thesis_payload(thesis_payload))
     except Exception as exc:
         log.warning(
             "LOOP_HALT thesis=%s validation failed; skipping compile: %s",
@@ -2327,8 +2215,6 @@ def _handle_success(
     state["next_action"] = {
         "type": "run_round",
         "config": gen_config,
-        "benchmark_command": controller.family.benchmark_command(gen_config),
-        "requires_trade_analysis": True,
         "source": "research_conductor",
         "research_round": research_round,
         "selected_thesis_id": thesis_id,
@@ -2447,31 +2333,16 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         config_changes=thesis_meta.get("config_changes"),
         hypothesis=thesis_meta.get("hypothesis", ""),
         mechanism=thesis_meta.get("mechanism", ""),
-        mechanism_dimension=thesis_meta.get("mechanism_dimension", ""),
+        mechanism_dimension="",
         thesis_details={
             key: thesis_meta.get(key)
             for key in (
-                "dimension_novelty",
-                "proposal_label",
-                "evidence",
-                "expected_effects",
-                "disqualifiers",
-                "why_not_overfit",
                 "requires_code_change",
                 "requested_primitives",
-                "required_diagnostics",
-                "required_diagnostic_specs",
-                "closest_prior_theses_considered",
-                "orthogonality_defense",
-                "evidence_strength",
-                "falsification_or_alternative",
-                "new_dimension_name",
-                "why_existing_dimensions_do_not_fit",
-                "mechanism_family_definition",
-                "expected_reuse_across_future_theses",
-                # _theme_keywords_from_prior reads this field so accepted
-                # theses contribute to subsequent diversity checks.
-                "theme_keywords",
+                "proposed_change",
+                "predictions",
+                "competitor_rule",
+                "competitor_story",
             )
             if key in thesis_meta
         },
@@ -2486,8 +2357,6 @@ def run_research(controller: "AutoresearchController", state: dict[str, Any]) ->
         log.warning("_record_round_quality_and_bridges failed (non-fatal): %s", exc)
     _run_improvement_hooks(controller, research_round, result)
 
-    if result.get("should_stop"):
-        return _handle_should_stop(controller, state, result)
     if result.get("generated_config_needs_build"):
         state = _handle_needs_code(controller, state, result)
         return _orchestration_build_missing_primitives_for_state(

@@ -257,6 +257,8 @@ def _load_screening_history(
                 if job is not None:
                     where += " AND job_id = ?"
                     params.append(job)
+                if "is_competitor" in columns:
+                    where += " AND is_competitor = 0"
                 rows = conn.execute(
                     f"""
                     SELECT rule, verdict, sample_count, {flagged_loss_rate_select},

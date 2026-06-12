@@ -293,7 +293,7 @@ def test_conductor_reports_parse_failed_for_non_json_runner_output(
     assert out.error == "parse_failed"
 
 
-def test_conductor_honors_should_stop_response(
+def test_conductor_rejects_retired_should_stop_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_conductor_runner(monkeypatch, {"reasoning": "nothing left", "should_stop": True})
@@ -308,9 +308,9 @@ def test_conductor_honors_should_stop_response(
     )
 
     assert out is not None
-    assert out.status == "should_stop"
-    assert out.should_stop is True
-    assert out.reasoning == "nothing left"
+    assert out.status == "conductor_error"
+    assert out.error == "validation_failed"
+    assert out.thesis == {"reasoning": "nothing left", "should_stop": True}
 
 
 def test_mechanism_system_prompt_mentions_corpus_not_feature_table_schema() -> None:

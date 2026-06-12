@@ -436,16 +436,15 @@ class ConductorResult:
     """Typed return from run_research_conductor.
 
     The conductor returns one proposed thesis envelope; the system assigns thesis_id.
-    status values: "ok" — thesis ready; "should_stop" — conductor decided to quit;
-    "conductor_error" — timeout, parse failure, gate violation, or validation failure.
+    status values: "ok" — thesis ready; "conductor_error" — timeout, parse failure,
+    gate violation, or validation failure.
     """
 
-    status: Literal["ok", "should_stop", "conductor_error"]
+    status: Literal["ok", "conductor_error"]
     thesis: dict[str, Any] | None = None
     error: str = ""
     validation_reason: str = ""
     reasoning: str = ""
-    should_stop: bool = False
     # Tools the conductor invoked during this attempt. Surfaced so the outer
     # validator can enforce process-tier gates (e.g. web_search required) on
     # a retry-eligible basis instead of short-circuiting through conductor_error.
