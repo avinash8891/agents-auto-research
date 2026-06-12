@@ -8,7 +8,6 @@ import pytest
 from autoresearch_planning import (
     build_research_failure_state,
     check_baseline_rerun,
-    generate_combination_candidates,
     list_known_variant_configs,
     plan_next_action,
     select_research_next_action,
@@ -83,17 +82,6 @@ def test_thesis_family_for_uses_slug_map_without_loose_artifacts(
     assert (
         thesis_family_for("configs/variants/orb_unknown.yaml", orb_family, tmp_path, tmp_path)
         == "unknown"
-    )
-
-
-def test_generate_combination_candidates_stays_disabled(tmp_path: Path, orb_family) -> None:
-    results = [
-        BacktestResultRecord("configs/variants/orb_spy_only.yaml", 1.0, "keep", "", 1, {}),
-        BacktestResultRecord("configs/variants/orb_trailing_stop.yaml", 1.1, "keep", "", 2, {}),
-    ]
-
-    assert (
-        generate_combination_candidates(tmp_path, orb_family, tmp_path / "proposals", results) == []
     )
 
 

@@ -796,15 +796,10 @@ class AutoresearchController:
     def deduplicate_entries(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return _state_deduplicate_entries(entries)
 
-    # ── WS-5: Combination phase ───────────────────────────────────────
-
     def thesis_family_for(self, config: str) -> str:
         return _planning_thesis_family_for(
             config, self.family, self.builder_requests_dir, self.root
         )
-
-    def generate_combination_candidates(self, results: list[BacktestResultRecord]) -> list[str]:
-        return []
 
     def parse_result_json(self, output: str) -> dict[str, Any] | None:
         return _round_parse_result_json(output)

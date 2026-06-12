@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from artifact_io import write_json_artifact
 from autoresearch_artifact_schemas import RoundArtifact, write_round_artifact
 from autoresearch_artifacts import round_number_from_path as _round_number_from_artifact_path
 from autoresearch_constants import (
@@ -1789,34 +1788,7 @@ def _write_research_round_artifacts(
             created_at=iso8601_utc_now(),
             usage=round_usage if round_usage else None,
             generated_config_path=generated_config,
-            generated_configs=[generated_config] if generated_config else [],
-            new_theses_generated=1 if thesis_id else 0,
-            suggested_theses=result.get("suggested_theses") or [],
         ),
-    )
-    write_json_artifact(
-        round_root / "links.json",
-        {
-            "generated_config_path": result.get("generated_config"),
-            "selected_thesis_path": (
-                f"runtime/jobs/job-{job}/research/round-{research_round}/selected_thesis.json"
-                if thesis_id
-                else None
-            ),
-            "selected_contract_path": (
-                f"runtime/jobs/job-{job}/research/round-{research_round}/selected_contract.json"
-                if thesis_id and result.get("generated_config")
-                else None
-            ),
-            "related_trace_export_path": (
-                f"runtime/jobs/job-{job}/research/round-{research_round}/trace_exports"
-            ),
-            "related_builder_request_path": (
-                f"runtime/jobs/job-{job}/research/round-{research_round}/builder_request"
-                if thesis_id and result.get("generated_config_needs_build")
-                else None
-            ),
-        },
     )
     return round_root
 

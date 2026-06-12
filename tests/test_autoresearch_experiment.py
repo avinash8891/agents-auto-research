@@ -827,7 +827,6 @@ def test_build_asi_dict_records_baseline_rerun_and_absolute_artifact_dir(tmp_pat
         analysis={
             "trade_analysis": {"profit_factor": 1.2},
             "insights": ["metric=1.2"],
-            "why_not_data_fit": "independent",
         },
         thesis_id="baseline",
         config_changes={},
@@ -1254,8 +1253,6 @@ def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Pa
             "trade_analysis": {"verdict": {"status": "accepted", "summary": "diagnostics pass"}},
             "runtime_config": {"ema_length": 9},
             "insights": ["metric=1.9"],
-            "next_candidates": [],
-            "why_not_data_fit": "Independent thesis evaluation only.",
         },
         artifact_dir=round_root / "backtest",
     )

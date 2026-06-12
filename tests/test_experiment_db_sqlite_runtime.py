@@ -514,6 +514,8 @@ def test_backtest_runs_has_canonical_columns_and_indexes(tmp_path: Path) -> None
         "trace_run_id",
     ):
         assert col in columns, f"missing canonical column: {col}"
+    for col in ("prediction_verdict", "prediction_lesson", "lesson"):
+        assert col not in columns, f"stale shadow column should not exist: {col}"
 
     indexes = {
         row[1]

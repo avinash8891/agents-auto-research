@@ -275,6 +275,7 @@ def test_render_current_md_includes_best_and_latest_when_present() -> None:
     assert "configs/variants/ema_b.yaml" in md
     assert "## Current Best" in md
     assert "## Latest Insights" in md
+    assert "## Next-Thesis Candidates" not in md
 
 
 def test_render_current_md_uses_configured_metric_name() -> None:

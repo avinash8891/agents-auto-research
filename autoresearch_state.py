@@ -250,14 +250,6 @@ def _format_latest_lines(latest: BacktestResultRecord | None, best: dict[str, An
     return lines
 
 
-def _format_next_candidates(next_action: dict[str, Any]) -> list[str]:
-    if next_action.get("type") == "research":
-        return ["- Research pass required before new thesis generation."]
-    if next_action.get("type") == "generate_theses":
-        return ["- Research exists; controller synthesis required before queuing new variants."]
-    return ["- None"]
-
-
 def _format_thesis_status_lines(statuses: dict[str, dict[str, Any]]) -> list[str]:
     return [
         f"- `{config}`: `{meta.get('status', 'unknown')}`" for config, meta in statuses.items()
@@ -290,9 +282,6 @@ def render_current_md(
         "",
         "## Latest Insights",
         *_format_latest_lines(latest_result(results), best),
-        "",
-        "## Next-Thesis Candidates",
-        *_format_next_candidates(next_action),
         "",
         "## Thesis Statuses",
         *_format_thesis_status_lines(state.get("thesis_statuses", {})),

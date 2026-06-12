@@ -1761,8 +1761,7 @@ def test_run_research_success_persists_round_artifacts_and_next_action(
     assert updated["next_action"]["config"] == generated_config
     assert updated["activity"]["phase"] == "pending_backtest"
     assert json.loads((round_root / "round.json").read_text())["outcome"] == "compiled"
-    links = json.loads((round_root / "links.json").read_text())
-    assert links["generated_config_path"] == generated_config
+    assert not (round_root / "links.json").exists()
     attempts = controller.backtest_run_db.list_research_thesis_attempts(
         job_id=12,
         thesis_id="job-12-round-1-attempt-1",

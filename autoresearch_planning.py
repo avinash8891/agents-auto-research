@@ -84,9 +84,6 @@ def thesis_statuses(
     return statuses
 
 
-# ── Combinations ──────────────────────────────────────────────────
-
-
 def thesis_family_for(config: str, family: StrategyFamily, proposals_dir: Path, root: Path) -> str:
     """Determine the thesis family for a config path."""
     slug = family.slug_from_config(config)
@@ -94,21 +91,6 @@ def thesis_family_for(config: str, family: StrategyFamily, proposals_dir: Path, 
     if slug in thesis_family_by_slug:
         return thesis_family_by_slug[slug]
     return "unknown"
-
-
-def generate_combination_candidates(
-    root: Path,
-    family: StrategyFamily,
-    proposals_dir: Path,
-    results: list[BacktestResultRecord],
-    job: int | None = None,
-) -> list[str]:
-    """Winner-combination exploitation is disabled.
-
-    Research must test isolated mechanisms from the family baseline instead of
-    stacking previously kept configs.
-    """
-    return []
 
 
 # ── Termination + finish summary ─────────────────────────────────
@@ -277,19 +259,6 @@ def _thesis_queue_branch(
     job: int | None = None,
 ) -> dict[str, Any] | None:
     return None
-
-
-def _combination_branch(
-    root: Path,
-    family: StrategyFamily,
-    proposals_dir: Path,
-    results: list[BacktestResultRecord],
-    job: int | None = None,
-) -> dict[str, Any] | None:
-    combos = generate_combination_candidates(root, family, proposals_dir, results, job=job)
-    if not combos:
-        return None
-    return _running_state(combos[0], source="combination_phase")
 
 
 def select_research_next_action(
