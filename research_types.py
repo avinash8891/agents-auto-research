@@ -21,35 +21,6 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class ExpectedEffect(BaseModel):
-    """A measurable prediction about what a config change should do."""
-
-    metric: str
-    direction: Literal[
-        "increase",
-        "decrease",
-        "increase_or_same",
-        "decrease_or_same",
-        "not_worse_than",
-    ]
-    threshold: float | None = None
-    unit: str | None = None
-    rationale: str | None = None
-
-
-class Disqualifier(BaseModel):
-    """A condition that, if triggered, invalidates the thesis regardless of metric improvement."""
-
-    name: str
-    condition: str
-    severity: Literal["hard_fail", "soft_fail"] = "hard_fail"
-    # `kind` distinguishes pure metric-threshold disqualifiers ("PF must improve
-    # by 5%") from mechanism-evidence disqualifiers ("if up-drive mornings are
-    # NOT a bad regime in the data"). At least one mechanism_evidence
-    # disqualifier may be required by future validator rules (B5).
-    kind: Literal["metric_threshold", "mechanism_evidence"] = "metric_threshold"
-
-
 class DiagnosticRequirementSpec(BaseModel):
     """Executable diagnostic contract for builder + verifier.
 
@@ -224,8 +195,6 @@ class ResearchThesis(BaseModel):
 
     config_changes: dict[str, Any] = Field(default_factory=dict)
 
-    expected_effects: list[ExpectedEffect] = Field(default_factory=list)
-    disqualifiers: list[Disqualifier] = Field(default_factory=list)
     required_diagnostics: list[str] = Field(default_factory=list)
     required_diagnostic_specs: list[DiagnosticRequirementSpec] = Field(default_factory=list)
 

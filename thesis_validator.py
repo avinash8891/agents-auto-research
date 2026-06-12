@@ -15,8 +15,6 @@ remains is the surface the mechanism path actually uses:
 
 from __future__ import annotations
 
-import json
-import re
 from pathlib import Path
 from typing import Any
 
@@ -233,75 +231,6 @@ def _detect_neighboring_threshold(
     return None
 
 
-def _slugify(text: str, max_words: int = 8) -> str:
-    words = re.findall(r"[a-z0-9]+", text.lower())
-    return "_".join(words[:max_words]) or "disqualifier"
-
-
-def _infer_effect_metric(text: str) -> str:
-    lowered = text.lower()
-    if "trade" in lowered and ("count" in lowered or "frequency" in lowered):
-        return "trade_count"
-    if "drawdown" in lowered or "mdd" in lowered:
-        return "max_drawdown"
-    if "expectancy" in lowered or "exp" in lowered:
-        return "median_expectancy"
-    return "profit_factor"
-
-
-def _infer_effect_direction(text: str) -> str:
-    lowered = text.lower()
-    if any(term in lowered for term in ("decrease", "decline", "drop", "reduce", "fall", "lower")):
-        return "decrease"
-    if any(term in lowered for term in ("not worse", "no worse", "maintain")):
-        return "not_worse_than"
-    return "increase"
-
-
-def _normalize_expected_effect(effect: Any) -> Any:
-    if isinstance(effect, str):
-        return {
-            "metric": _infer_effect_metric(effect),
-            "direction": _infer_effect_direction(effect),
-            "rationale": effect,
-        }
-    if isinstance(effect, dict) and "direction" not in effect and effect.get("metric"):
-        normalized = dict(effect)
-        normalized["direction"] = _infer_effect_direction(json.dumps(effect))
-        return normalized
-    return effect
-
-
-def _normalize_disqualifier(disqualifier: Any) -> Any:
-    if isinstance(disqualifier, str):
-        return {
-            "name": _slugify(disqualifier),
-            "condition": disqualifier,
-            "severity": "hard_fail",
-        }
-    if isinstance(disqualifier, dict) and "name" not in disqualifier:
-        metric = str(disqualifier.get("metric") or "condition")
-        condition = disqualifier.get("condition")
-        threshold = disqualifier.get("threshold")
-        reason = disqualifier.get("reason") or ""
-        parts = [metric]
-        if condition:
-            parts.append(str(condition))
-        if threshold is not None:
-            parts.append(str(threshold))
-        normalized = {
-            "name": _slugify("_".join(parts)),
-            "condition": " ".join(
-                str(part)
-                for part in (metric, condition, threshold, reason)
-                if part not in (None, "")
-            ),
-            "severity": disqualifier.get("severity", "hard_fail"),
-        }
-        return normalized
-    return disqualifier
-
-
 def normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(raw)
     family = normalized.get("family")
@@ -314,13 +243,6 @@ def normalize_thesis_payload(raw: dict[str, Any]) -> dict[str, Any]:
         except Exception:
             # Leave the payload unchanged; validation will reject missing/invalid family.
             pass
-    normalized["expected_effects"] = [
-        _normalize_expected_effect(effect) for effect in (normalized.get("expected_effects") or [])
-    ]
-    normalized["disqualifiers"] = [
-        _normalize_disqualifier(disqualifier)
-        for disqualifier in (normalized.get("disqualifiers") or [])
-    ]
     return normalized
 
 

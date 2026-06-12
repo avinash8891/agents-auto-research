@@ -51,6 +51,27 @@ def test_step0_deleted_files_and_dead_orb_validator_are_absent() -> None:
     assert "def validate_runtime_config(" not in schema_text
 
 
+def test_expected_effects_and_disqualifier_schema_is_removed() -> None:
+    """T2.12 cleanup: the evaluator deletion left these schema items inert."""
+
+    import research_types
+    import thesis_validator
+
+    for class_name in ("ExpectedEffect", "Disqualifier"):
+        assert not hasattr(research_types, class_name), class_name
+
+    for field_name in ("expected_effects", "disqualifiers"):
+        assert field_name not in research_types.ResearchThesis.model_fields, field_name
+
+    for normalizer in (
+        "_normalize_expected_effect",
+        "_normalize_disqualifier",
+        "_infer_effect_metric",
+        "_infer_effect_direction",
+    ):
+        assert not hasattr(thesis_validator, normalizer), normalizer
+
+
 def test_orphaned_legacy_validation_surface_is_removed() -> None:
     import behavior_signals
     import research_conductor
