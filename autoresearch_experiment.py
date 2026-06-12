@@ -15,6 +15,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -395,6 +396,40 @@ def primary_metric_name(entries: list[dict[str, Any]]) -> str:
         if entry.get("type") == "config":
             return entry.get("metricName", "profit_factor")
     return "profit_factor"
+
+
+def missing_required_diagnostics(
+    specs: Sequence[Any],
+    strategy_diagnostics: dict[str, Any] | None,
+) -> list[str]:
+    """Return the keys of required diagnostics absent or unevaluable in this run.
+
+    The legacy ``evaluate_backtest`` enforced that every thesis-declared
+    required diagnostic was actually emitted by the strategy and that its
+    payload did not signal ``missing_inputs``. The v2 mechanism path replaced
+    most thesis evaluation with registered predictions, but sidecar/resume
+    contracts can still carry ``required_diagnostics`` — this helper keeps the
+    runtime enforcement so a run cannot be kept by its primary metric despite
+    a missing diagnostic the thesis explicitly required.
+
+    A spec is missing when neither its ``key`` nor any alias appears as a
+    top-level key in ``strategy_diagnostics``, OR when the matched payload is
+    a dict carrying ``missing_inputs``.
+    """
+    available = strategy_diagnostics if isinstance(strategy_diagnostics, dict) else {}
+    missing: list[str] = []
+    for spec in specs or ():
+        tokens = [getattr(spec, "key", "")]
+        aliases = getattr(spec, "aliases", None) or ()
+        tokens.extend(str(alias) for alias in aliases)
+        matched = next((token for token in tokens if token and token in available), None)
+        if matched is None:
+            missing.append(str(getattr(spec, "key", "") or ""))
+            continue
+        payload = available.get(matched)
+        if isinstance(payload, dict) and payload.get("missing_inputs"):
+            missing.append(str(getattr(spec, "key", "") or ""))
+    return [key for key in missing if key]
 
 
 def parse_metric(
@@ -1229,6 +1264,20 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         trace("LOOP", f"METRIC parsed: {metric} decision={decision} config={config}")
 
         verdict: Any | None = None
+        contract = controller.ctx.current_contract
+        required_specs = getattr(contract, "required_diagnostic_specs", None) or []
+        diagnostic_gap = missing_required_diagnostics(
+            required_specs, details.get("strategy_diagnostics")
+        )
+        if diagnostic_gap:
+            log.error(
+                "REQUIRED_DIAGNOSTICS_MISSING run=%s missing=%s "
+                "| hint=strategy did not emit diagnostics the thesis declared as required; "
+                "verdict forced to discard so the primary metric cannot mask the gap",
+                config,
+                diagnostic_gap,
+            )
+            decision = "discard"
         registered_verdict = evaluate_registered_predictions(
             controller,
             run_output_dir,

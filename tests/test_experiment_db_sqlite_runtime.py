@@ -689,3 +689,58 @@ def test_ensure_round_started_is_idempotent(tmp_path: Path) -> None:
     ).fetchall()
     conn.close()
     assert len(rows) == 1
+
+
+def test_legacy_mechanism_dimension_not_null_constraint_does_not_block_inserts(
+    tmp_path: Path,
+) -> None:
+    """A pre-v2 SQLite DB has mechanism_dimension TEXT NOT NULL with no default.
+
+    The v2 INSERT no longer supplies that column, so without a schema
+    migration every research run on an upgraded persisted DB would fail with
+    IntegrityError. The migration relaxes the NOT NULL constraint on init.
+    """
+    db_path = tmp_path / "ema_backtest_runs.db"
+    # Simulate the legacy schema shape (subset is enough to reproduce).
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE research_thesis_attempts (
+                thesis_attempt_id TEXT PRIMARY KEY,
+                research_round_id TEXT NOT NULL,
+                attempt_number INTEGER NOT NULL,
+                thesis_id TEXT NOT NULL,
+                strategy_family TEXT NOT NULL,
+                config_changes_json TEXT NOT NULL,
+                validator_status TEXT NOT NULL,
+                hypothesis TEXT NOT NULL,
+                mechanism TEXT NOT NULL,
+                mechanism_dimension TEXT NOT NULL,
+                thesis_details_json TEXT NOT NULL DEFAULT '{}',
+                validation_failure_reason TEXT NOT NULL,
+                selected_for_execution INTEGER NOT NULL,
+                created_at_utc TEXT NOT NULL,
+                UNIQUE (research_round_id, attempt_number)
+            )
+            """)
+
+    db = BacktestRunDB(db_path)
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-1-round-1",
+            "attempt_number": 1,
+            "thesis_id": "ema-001",
+            "strategy_family": "ema",
+            "config_changes": {"ema_length": 10},
+            "validator_status": "compiled",
+            "hypothesis": "A mechanism proposal",
+            "mechanism": "Story",
+            "thesis_details": {},
+            "selected_for_execution": 0,
+            "created_at_utc": "2026-06-12T00:00:00+00:00",
+        }
+    )
+
+    rows = list(db.list_research_thesis_attempts())
+    assert len(rows) == 1
+    assert rows[0]["thesis_id"] == "ema-001"

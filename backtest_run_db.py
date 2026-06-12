@@ -313,6 +313,10 @@ class BacktestRunDB:
             self._ensure_column_renamed(
                 conn, "research_thesis_attempts", "rejection_reason", "validation_failure_reason"
             )
+            # v2 dropped mechanism_dimension. Pre-v2 DBs declared the column
+            # as NOT NULL without a default; without this migration every
+            # v2 INSERT raises IntegrityError on upgraded persisted DBs.
+            self._drop_column_if_present(conn, "research_thesis_attempts", "mechanism_dimension")
             self._backfill_research_thesis_attempt_ids(conn)
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_research_rounds_job_round
@@ -440,6 +444,13 @@ class BacktestRunDB:
         columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def _drop_column_if_present(self, conn: sqlite3.Connection, table: str, column: str) -> None:
+        """Drop a legacy column from an existing table. No-op if absent."""
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            return
+        conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
 
     def _backfill_backtest_run_created_at_utc(self, conn: sqlite3.Connection) -> None:
         rows = conn.execute(f"""

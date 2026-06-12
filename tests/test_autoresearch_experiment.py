@@ -28,6 +28,7 @@ from autoresearch_experiment import (
     artifact_dir_for,
     derive_trade_analysis,
     log_experiment_result,
+    missing_required_diagnostics,
     parse_benchmark_details,
     parse_metric,
     parse_result_json,
@@ -2246,3 +2247,39 @@ def test_run_experiment_returns_one_when_family_has_no_benchmark_command(tmp_pat
     controller.write_state(state)
 
     assert run_experiment(controller, state) == 1
+
+
+def test_missing_required_diagnostics_flags_absent_keys() -> None:
+    from research_types import DiagnosticRequirementSpec
+
+    specs = [
+        DiagnosticRequirementSpec(key="max_drawdown_vs_base", aliases=["mdd_vs_base"]),
+        DiagnosticRequirementSpec(key="event_counts"),
+    ]
+    # event_counts present; max_drawdown_vs_base missing under either name.
+    strategy_diagnostics = {"event_counts": {"signals": 100}}
+
+    missing = missing_required_diagnostics(specs, strategy_diagnostics)
+
+    assert missing == ["max_drawdown_vs_base"]
+
+
+def test_missing_required_diagnostics_flags_specs_with_missing_inputs() -> None:
+    from research_types import DiagnosticRequirementSpec
+
+    specs = [DiagnosticRequirementSpec(key="max_drawdown_vs_base")]
+    # Present as a key but the payload signals that its inputs were missing
+    # at runtime — the diagnostic could not be computed, so it counts as
+    # missing for verdict purposes (v1 behavior).
+    strategy_diagnostics = {"max_drawdown_vs_base": {"missing_inputs": ["max_drawdown"]}}
+
+    assert missing_required_diagnostics(specs, strategy_diagnostics) == ["max_drawdown_vs_base"]
+
+
+def test_missing_required_diagnostics_accepts_alias_match() -> None:
+    from research_types import DiagnosticRequirementSpec
+
+    specs = [DiagnosticRequirementSpec(key="max_drawdown_vs_base", aliases=["mdd_vs_base"])]
+    strategy_diagnostics = {"mdd_vs_base": {"value": 0.12}}
+
+    assert missing_required_diagnostics(specs, strategy_diagnostics) == []

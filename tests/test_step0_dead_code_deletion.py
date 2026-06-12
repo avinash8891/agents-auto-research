@@ -51,6 +51,23 @@ def test_step0_deleted_files_and_dead_orb_validator_are_absent() -> None:
     assert "def validate_runtime_config(" not in schema_text
 
 
+def test_pyproject_py_modules_match_live_tree() -> None:
+    """py-modules must reference only real files; deletions tracked here."""
+
+    import sys
+
+    if sys.version_info >= (3, 11):
+        import tomllib
+    else:  # pragma: no cover
+        import tomli as tomllib
+
+    declared = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["setuptools"][
+        "py-modules"
+    ]
+    missing = [module for module in declared if not (ROOT / f"{module}.py").exists()]
+    assert missing == [], f"py-modules references deleted files: {missing}"
+
+
 def test_expected_effects_and_disqualifier_schema_is_removed() -> None:
     """T2.12 cleanup: the evaluator deletion left these schema items inert."""
 
