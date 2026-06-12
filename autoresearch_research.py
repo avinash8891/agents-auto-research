@@ -32,7 +32,6 @@ from autoresearch_constants import (
     MAX_VALIDATION_RETRIES,
     MAX_VALIDATION_RETRIES_COMPILE,
     MAX_VALIDATION_RETRIES_STAGE_1,
-    MAX_VALIDATION_RETRIES_STAGE_2,
     research_engine_max_retries,
 )
 from autoresearch_logging import get_logger
@@ -259,50 +258,6 @@ def log_research_round(
 
 
 # ── Pure helpers ──────────────────────────────────────────────────
-
-
-def results_to_dicts(results: list[BacktestResultRecord]) -> list[dict[str, Any]]:
-    """Convert ExperimentRecords to plain dicts for formatting."""
-    result_dicts: list[dict[str, Any]] = []
-    for r in results:
-        d: dict[str, Any] = {
-            "config": r.config,
-            "metric": r.metric,
-            "status": r.status,
-            "description": r.description,
-            "job": r.job,
-        }
-        ta = r.asi.get("trade_analysis", {})
-        if ta:
-            for key in (
-                "trade_count",
-                "profit_factor",
-                "max_drawdown",
-                "win_rate",
-                "exit_mix",
-                "regime_expectancy",
-                "why",
-                "regime_insight",
-                "trade_count_insight",
-                "mechanism_analysis",
-            ):
-                if ta.get(key) is not None:
-                    d[key] = ta[key]
-        if r.asi.get("thesis_id"):
-            d["thesis_id"] = r.asi["thesis_id"]
-        if r.asi.get("config_changes"):
-            d["config_changes"] = r.asi["config_changes"]
-        if r.asi.get("insights"):
-            d["insights"] = r.asi["insights"]
-        if r.asi.get("next_thesis_suggestion"):
-            d["next_thesis_suggestion"] = r.asi["next_thesis_suggestion"]
-        if r.asi.get("why_not_data_fit"):
-            d["why_not_data_fit"] = r.asi["why_not_data_fit"]
-        insight_brief = r.asi.get("insight_brief") or ta.get("insight_brief")
-        if insight_brief:
-            d["insight_brief"] = insight_brief
-        result_dicts.append(d)
-    return result_dicts
 
 
 def load_baseline_config(root: Path, family: StrategyFamily) -> dict[str, Any] | None:
@@ -783,24 +738,19 @@ def _write_registered_predictions(
     )
 
 
-def _per_stage_budget_exhausted(stage_1: int, stage_2: int, compile_n: int) -> bool:
+def _per_stage_budget_exhausted(stage_1: int, compile_n: int) -> bool:
     """Return True if any stage's per-failure counter has hit its budget."""
-    return (
-        stage_1 >= MAX_VALIDATION_RETRIES_STAGE_1
-        or stage_2 >= MAX_VALIDATION_RETRIES_STAGE_2
-        or compile_n >= MAX_VALIDATION_RETRIES_COMPILE
-    )
+    return stage_1 >= MAX_VALIDATION_RETRIES_STAGE_1 or compile_n >= MAX_VALIDATION_RETRIES_COMPILE
 
 
 def _retry_budget_exhausted(
     stage_1: int,
-    stage_2: int,
     compile_n: int,
     *,
     attempt: int,
     max_retries: int,
 ) -> bool:
-    return attempt >= max_retries or _per_stage_budget_exhausted(stage_1, stage_2, compile_n)
+    return attempt >= max_retries or _per_stage_budget_exhausted(stage_1, compile_n)
 
 
 def _mechanism_proposal_to_compiler_payload(
@@ -858,7 +808,6 @@ def _screen_mechanism_proposal(
         controller.backtest_run_db.path,
         [screening],
         round_number=research_round,
-        competitor_rule=competitor_rule,
         job_id=job_id,
     )
     if competitor_screening is not None:
@@ -866,7 +815,6 @@ def _screen_mechanism_proposal(
             controller.backtest_run_db.path,
             [competitor_screening],
             round_number=research_round,
-            competitor_rule=screening.rule,
             job_id=job_id,
             is_competitor=True,
         )
@@ -960,23 +908,6 @@ def _try_one_validation_attempt(
     )
 
 
-def _persist_validator_challenge(
-    controller: "AutoresearchController", raw_thesis: dict[str, Any]
-) -> None:
-    challenge_payload = raw_thesis.get("validator_challenge")
-    if not isinstance(challenge_payload, dict):
-        return
-    try:
-        from rejection_artifact import write_challenge
-
-        state = controller.read_state()
-        job_value = state.get("job") if isinstance(state, dict) else None
-        if job_value is not None:
-            write_challenge(controller.root, job=int(job_value), payload=challenge_payload)
-    except Exception as challenge_exc:  # noqa: BLE001
-        log.warning(f"failed to persist validator_challenge: {challenge_exc}")
-
-
 def _persist_rejection_feedback(
     controller: "AutoresearchController",
     research_round: int,
@@ -1000,14 +931,13 @@ def _init_attempt(
     attempt: int,
     conductor_result: ConductorResult,
 ) -> tuple[dict[str, Any], int, str, int, str]:
-    """Compute attempt IDs and persist any validator challenge embedded in the thesis."""
+    """Compute stable attempt IDs for one conductor proposal."""
     assert conductor_result.thesis is not None
     raw_thesis = conductor_result.thesis
     job_id = _controller_job_id(controller)
     research_round_id = make_research_round_id(job_id, research_round)
     attempt_number = attempt + 1
     thesis_id = research_thesis_attempt_id(research_round_id, attempt_number)
-    _persist_validator_challenge(controller, raw_thesis)
     return raw_thesis, job_id, research_round_id, attempt_number, thesis_id
 
 
@@ -1136,7 +1066,6 @@ def _try_mechanism_validation_attempt(
         research_round_id=research_round_id,
         job_id=job_id,
         pending_causal_model=pending_causal_model,
-        validate_stage_2_contract=False,
     )
 
 
@@ -1152,17 +1081,15 @@ def _compile_and_dispatch_validated_thesis(
     research_round_id: str,
     job_id: int,
     pending_causal_model: Any | None,
-    validate_stage_2_contract: bool,
 ) -> tuple[dict[str, Any] | None, str | None, str]:
     from compiler_pipeline import compile_research_thesis
-    from thesis_validator import ThesisValidationError, validate_stage_2
+    from thesis_validator import ThesisValidationError
 
     try:
         runtime_root = getattr(controller, "runtime_root", None) or controller.root
         round_root = research_round_root(runtime_root, job_id, research_round)
         contract = compile_research_thesis(validated, controller.root, artifact_root=round_root)
-        if not validate_stage_2_contract:
-            _merge_mechanism_fields_into_selected_thesis(round_root, raw_thesis)
+        _merge_mechanism_fields_into_selected_thesis(round_root, raw_thesis)
         if pending_causal_model is not None:
             from causal_harvest import PendingCausalModelArtifact
 
@@ -1179,22 +1106,6 @@ def _compile_and_dispatch_validated_thesis(
             stage="compile",
         )
         return None, f"Thesis '{thesis_id}' rejected at compile: {exc}", "compile"
-
-    if validate_stage_2_contract:
-        try:
-            contract = validate_stage_2(contract)
-        except (ThesisValidationError, ValueError) as exc:
-            _log_validation_rejection(
-                controller,
-                research_round,
-                attempt,
-                raw_thesis,
-                thesis_id,
-                str(exc),
-                exc=exc,
-                stage="stage_2",
-            )
-            return None, f"Thesis '{thesis_id}' rejected by stage_2 validator: {exc}", "stage_2"
 
     result, feedback = _dispatch_compiled_contract(
         controller,
@@ -1326,7 +1237,6 @@ def _call_conductor(
     trades_file: str,
     strategy_events_file: str,
     diagnostics_file: str,
-    round_results: Any,
     latest_outcome: dict[str, Any],
     family_name: str,
     rejection_feedback: str,
@@ -1353,7 +1263,6 @@ def _call_conductor(
     trace("CONDUCTOR", f"START {label}")
     return run_research_conductor_sync(
         trades_file=trades_file,
-        round_results=round_results,
         latest_outcome=latest_outcome,
         research_round=research_round,
         family_name=family_name,
@@ -1373,7 +1282,6 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     If validation rejects the thesis, calls the conductor AGAIN with
     the rejection reason so it can propose something different.
     """
-    from agent_formatters import format_round_results_summary
     from thesis_validator import load_prior_theses
 
     state = controller.read_state()
@@ -1390,13 +1298,6 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     if research_round is None or research_round < 1:
         research_round = state.get("research_round", 0) + 1
     results = controller.read_results()
-    result_dicts = results_to_dicts(results)
-    if current_job is not None:
-        result_dicts = [result for result in result_dicts if result.get("job") == current_job]
-    metric_direction = getattr(controller, "metric_direction", None) or getattr(
-        controller, "best_direction", None
-    )
-    round_results = format_round_results_summary(result_dicts, best_direction=metric_direction)
     runtime_root = resolve_runtime_root(getattr(controller, "runtime_root", controller.root))
     prior_theses = load_prior_theses(
         runtime_root,
@@ -1445,9 +1346,8 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             code_root=controller.root,
         )
     )
-    # Per-stage failure counters. Loop exits when any stage's budget is hit.
+    # Per-stage failure counters. Loop exits when any live stage's budget is hit.
     stage_1_failures = 0
-    stage_2_failures = 0
     compile_failures = 0
     attempt = 0
     max_retries = research_engine_max_retries(
@@ -1455,7 +1355,6 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
     )
     while not _retry_budget_exhausted(
         stage_1_failures,
-        stage_2_failures,
         compile_failures,
         attempt=attempt,
         max_retries=max_retries,
@@ -1466,7 +1365,6 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             trades_file=trades_file,
             strategy_events_file=strategy_events_file,
             diagnostics_file=diagnostics_file,
-            round_results=round_results,
             latest_outcome=latest_outcome,
             family_name=controller.family.name,
             rejection_feedback=rejection_feedback,
@@ -1489,8 +1387,6 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             return result
         if failed_stage == "stage_1":
             stage_1_failures += 1
-        elif failed_stage == "stage_2":
-            stage_2_failures += 1
         elif failed_stage == "compile":
             compile_failures += 1
         rejection_feedback = retry_feedback or rejection_feedback
@@ -1746,17 +1642,6 @@ def _harvest_verdict_payloads(
     return payloads
 
 
-def _round_findings(result: dict[str, Any], outcome: str) -> list[str]:
-    raw_findings = result.get("findings")
-    if isinstance(raw_findings, list):
-        return [str(item) for item in raw_findings if str(item).strip()]
-    if isinstance(raw_findings, str) and raw_findings.strip():
-        return [raw_findings]
-    if outcome == "research_exhausted":
-        return ["research exhausted without a runnable thesis"]
-    return []
-
-
 def _record_round_quality_and_bridges(
     controller: "AutoresearchController",
     research_round: int,
@@ -1911,14 +1796,12 @@ def _write_research_round_artifacts(
             status="completed",
             selected_thesis_id=str(thesis_id or ""),
             outcome=outcome,
-            run_id=result.get("run_id"),
             created_at=iso8601_utc_now(),
             usage=round_usage if round_usage else None,
             generated_config_path=generated_config,
             generated_configs=[generated_config] if generated_config else [],
             new_theses_generated=1 if thesis_id else 0,
             suggested_theses=result.get("suggested_theses") or [],
-            findings=_round_findings(result, outcome),
         ),
     )
     write_json_artifact(
@@ -1935,7 +1818,6 @@ def _write_research_round_artifacts(
                 if thesis_id and result.get("generated_config")
                 else None
             ),
-            "related_backtest_run_artifact_path": result.get("related_backtest_run_artifact_path"),
             "related_trace_export_path": (
                 f"runtime/jobs/job-{job}/research/round-{research_round}/trace_exports"
             ),

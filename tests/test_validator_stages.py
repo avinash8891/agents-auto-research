@@ -1,4 +1,4 @@
-"""Tests for the Stage 1 / Stage 2 validator split."""
+"""Tests for thesis validator stage-1 behavior."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 
 from backtest_run_db import research_thesis_attempt_id
-from research_types import BacktestContract, DiagnosticRequirementSpec
 from thesis_validator import VALID_PROCESS_TOOLS as _VALID_PROCESS_TOOLS
 from thesis_validator import (
     ThesisValidationError,
@@ -15,7 +14,6 @@ from thesis_validator import (
 from thesis_validator import validate_research_thesis as _validate_research_thesis
 from thesis_validator import (
     validate_stage_1,
-    validate_stage_2,
 )
 from thesis_validator import validate_thesis_dict as _validate_thesis_dict
 
@@ -106,28 +104,6 @@ def _base_thesis() -> dict:
     }
 
 
-def _make_contract(
-    *,
-    runtime_config: dict[str, Any],
-    hypothesis: str = "",
-    mechanism: str = "",
-    required_diagnostics: list[str] | None = None,
-    required_diagnostic_specs: list[DiagnosticRequirementSpec] | None = None,
-) -> BacktestContract:
-    return BacktestContract(
-        contract_id="contract-test",
-        thesis_id="stage2_test_thesis",
-        strategy_family="ema",
-        baseline_config_path="configs/ema_base.yaml",
-        runtime_config=runtime_config,
-        config_changes=dict(runtime_config),
-        hypothesis=hypothesis,
-        mechanism=mechanism,
-        required_diagnostics=list(required_diagnostics or []),
-        required_diagnostic_specs=list(required_diagnostic_specs or []),
-    )
-
-
 # ── Stage 1 sanity ────────────────────────────────────────────────────────
 
 
@@ -149,8 +125,7 @@ def test_validate_stage_1_rejects_missing_mechanism() -> None:
 
 
 def test_validate_research_thesis_does_not_run_alignment_at_stage_1() -> None:
-    """Alignment is now a Stage 2 rule. A thesis whose config_changes don't match
-    its hypothesis must still pass Stage 1 — the gate fires post-compile."""
+    """Stage 1 does not reject solely because config keys and hypothesis text diverge."""
     raw = _base_thesis()
     # Force misalignment: keys we know are in KEY_CONCEPTS but the hypothesis
     # talks about volatility, not these.
@@ -169,151 +144,3 @@ def test_validate_research_thesis_does_not_run_alignment_at_stage_1() -> None:
     # validate_research_thesis must also accept (it's the Stage 1 alias).
     again = validate_research_thesis(validated, prior_theses=[])
     assert again.thesis_id == "job-test-round-1-attempt-1"
-
-
-# ── Stage 2: legacy alignment removed ─────────────────────────────────────
-
-
-def test_validate_stage_2_no_longer_rejects_when_alignment_below_threshold() -> None:
-    runtime_config = {
-        "entry_cutoff_time": "10:00",
-        "rr_ratio": 2.5,
-        "gap_filter": True,
-        "gap_pct": 0.01,
-        "direction_bias": "long_only",
-    }
-    contract = _make_contract(
-        runtime_config=runtime_config,
-        hypothesis="Filter setups by minimum opening volatility to avoid noise.",
-        mechanism="Low-volatility opens have weaker microstructure signals.",
-    )
-
-    assert validate_stage_2(contract) is contract
-
-
-def test_validate_stage_2_accepts_when_alignment_at_or_above_threshold() -> None:
-    """When config keys match the hypothesis concepts, score ≥ threshold → accept."""
-    runtime_config = {
-        "entry_cutoff_time": "10:00",
-        "max_trades_per_day": 1,
-    }
-    contract = _make_contract(
-        runtime_config=runtime_config,
-        hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
-        mechanism="Capture the opening dislocation only and avoid lower-quality setups.",
-    )
-    out = validate_stage_2(contract)
-    assert out is contract
-
-
-def test_validate_stage_2_scores_only_contract_config_changes_not_inherited_runtime() -> None:
-    """Stage 2 evaluates the thesis delta, not inherited baseline runtime keys."""
-    contract = _make_contract(
-        runtime_config={
-            "entry_cutoff_time": "10:00",
-            "max_trades_per_day": 1,
-            "gap_filter": True,
-        },
-        hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
-        mechanism="Capture the opening dislocation only.",
-    )
-    contract.config_changes = {
-        "entry_cutoff_time": "10:00",
-        "max_trades_per_day": 1,
-    }
-
-    validate_stage_2(contract)
-
-
-def test_validate_stage_2_ignores_misaligned_config_changes_even_when_runtime_defaults_align() -> (
-    None
-):
-    contract = _make_contract(
-        runtime_config={
-            "entry_cutoff_time": "10:00",
-            "max_trades_per_day": 1,
-            "gap_filter": True,
-        },
-        hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
-        mechanism="Capture the opening dislocation only.",
-    )
-    contract.config_changes = {"gap_filter": True}
-
-    assert validate_stage_2(contract) is contract
-
-
-# ── Stage 2: required-diagnostic resolution ───────────────────────────────
-
-
-def test_validate_stage_2_rejects_when_required_diagnostic_unresolved() -> None:
-    """A required diagnostic that doesn't appear in required_diagnostic_specs
-    or in runtime_config is a contract-build bug — Stage 2 catches it."""
-    contract = _make_contract(
-        runtime_config={
-            "entry_cutoff_time": "10:00",
-            "max_trades_per_day": 1,
-        },
-        hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
-        mechanism="Capture the opening dislocation only.",
-        required_diagnostics=["volatility_quintile_pf_spread"],
-        required_diagnostic_specs=[],  # compiler dropped it
-    )
-    with pytest.raises(ThesisValidationError) as excinfo:
-        validate_stage_2(contract)
-
-    assert excinfo.value.rejection_code == "required_diagnostic_missing_post_compile"
-    assert "volatility_quintile_pf_spread" in str(excinfo.value)
-
-
-def test_validate_stage_2_accepts_when_required_diagnostic_resolves_via_spec() -> None:
-    spec = DiagnosticRequirementSpec(
-        key="volatility_quintile_pf_spread",
-        surface="strategy_diagnostics",
-    )
-    contract = _make_contract(
-        runtime_config={
-            "entry_cutoff_time": "10:00",
-            "max_trades_per_day": 1,
-        },
-        hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
-        mechanism="Capture the opening dislocation only.",
-        required_diagnostics=["volatility_quintile_pf_spread"],
-        required_diagnostic_specs=[spec],
-    )
-    validate_stage_2(contract)  # no raise
-
-
-def test_validate_stage_2_accepts_when_required_diagnostic_resolves_via_alias() -> None:
-    spec = DiagnosticRequirementSpec(
-        key="canonical_diag_key",
-        surface="strategy_diagnostics",
-        aliases=["volatility_quintile_pf_spread"],
-    )
-    contract = _make_contract(
-        runtime_config={
-            "entry_cutoff_time": "10:00",
-            "max_trades_per_day": 1,
-        },
-        hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
-        mechanism="Capture the opening dislocation only.",
-        required_diagnostics=["volatility_quintile_pf_spread"],
-        required_diagnostic_specs=[spec],
-    )
-    validate_stage_2(contract)
-
-
-def test_validate_stage_2_accepts_when_required_diagnostic_appears_in_runtime_config() -> None:
-    contract = _make_contract(
-        runtime_config={
-            "entry_cutoff_time": "10:00",
-            "max_trades_per_day": 1,
-            "diagnostics": {
-                "regime_breakdown": {"by": "session"},
-            },
-        },
-        hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
-        mechanism="Capture the opening dislocation only.",
-        required_diagnostics=["regime_breakdown"],
-        required_diagnostic_specs=[],
-    )
-    validate_stage_2(contract)

@@ -9,7 +9,6 @@ artifacts on demand. Old rounds' rejections survive process restarts.
 
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -182,113 +181,6 @@ def rejection_pattern_summary(root: Path, *, job: int, window_rounds: int = 10) 
     ]
     summary.sort(key=lambda row: row["count"], reverse=True)
     return summary
-
-
-_CHALLENGE_REQUIRED_KEYS = (
-    "challenged_round",
-    "challenged_thesis_id",
-    "challenged_rejection_code",
-    "claim",
-)
-
-
-def challenge_artifact_path(root: Path, *, job: int, round_number: int, thesis_id: str) -> Path:
-    """Path of challenge.json for one (job, round, thesis_id), next to rejection.json."""
-    return (
-        _research_round_thesis_root(root, job=job, round_number=round_number, thesis_id=thesis_id)
-        / "challenge.json"
-    )
-
-
-def write_challenge(root: Path, *, job: int, payload: dict) -> Path:
-    """Persist a conductor-authored validator_challenge payload.
-
-    Doesn't change the validator's decision; logged for human review and for
-    pattern analysis (e.g. "rule X has been challenged 12 times → revisit it").
-    """
-    missing = [k for k in _CHALLENGE_REQUIRED_KEYS if k not in payload]
-    if missing:
-        raise ValueError(f"validator_challenge payload missing required keys: {missing}")
-
-    enriched = dict(payload)
-    enriched.setdefault("created_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-
-    target = challenge_artifact_path(
-        root,
-        job=job,
-        round_number=int(payload["challenged_round"]),
-        thesis_id=str(payload["challenged_thesis_id"]),
-    )
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(enriched, indent=2))
-    os.replace(tmp, target)
-    return target
-
-
-def render_rejection_block(root: Path, *, job: int, current_round: int) -> str:
-    """Render the structured-rejection section of the per-round user prompt.
-
-    Includes:
-      - REJECTED THIS ROUND: one structured block per rejection in the current round.
-      - RECENT VALIDATOR PATTERNS: grouped counts across the last 10 rounds with
-        tool pointers for deeper inspection.
-
-    Returns an empty string when there are no rejections anywhere for this job.
-    """
-    current_items = list_rejections(root, job=job, round_number=current_round)
-    all_items = list_rejections(root, job=job)
-    if not current_items and not all_items:
-        return ""
-
-    parts: list[str] = []
-
-    if current_items:
-        parts.append("REJECTED THIS ROUND")
-        for item in current_items:
-            evidence_str = (
-                ", ".join(f"{k}={v}" for k, v in sorted(item.evidence.items()))
-                if item.evidence
-                else "(none)"
-            )
-            parts.append(f"  ─── {item.thesis_id} ───")
-            parts.append(f"    stage: {item.stage}")
-            failures = item.evidence.get("failures") if isinstance(item.evidence, dict) else None
-            if item.rejection_code == "structural_mechanical_batch_failures" and isinstance(
-                failures, list
-            ):
-                count = item.evidence.get("count", len(failures))
-                parts.append(f"    rejection_code: {item.rejection_code} ({count} failures)")
-            else:
-                parts.append(f"    rejection_code: {item.rejection_code}")
-            if item.rule_violated:
-                parts.append(f"    rule: {item.rule_violated}")
-            if item.rejection_code == "structural_mechanical_batch_failures" and isinstance(
-                failures, list
-            ):
-                parts.append("    evidence: see failure list below")
-                parts.append("    Fix all in one retry:")
-                for idx, failure in enumerate(failures, start=1):
-                    if not isinstance(failure, dict):
-                        continue
-                    code = failure.get("code", "unknown")
-                    summary_text = failure.get("summary", "")
-                    parts.append(f"      [{idx}] {code}: {summary_text}")
-            else:
-                parts.append(f"    evidence: {evidence_str}")
-            if item.remediation_hint:
-                parts.append(f"    hint: {item.remediation_hint}")
-
-    summary = rejection_pattern_summary(root, job=job, window_rounds=10)
-    if summary:
-        if parts:
-            parts.append("")
-        parts.append("RECENT VALIDATOR PATTERNS (last 10 rounds)")
-        for row in summary:
-            parts.append(f"  {row['count']} × {row['rejection_code']}")
-        parts.append("  Tools: list_rejections, get_rejection, rejection_pattern_summary")
-
-    return "\n".join(parts)
 
 
 def _round_number_from_dir_name(name: str) -> int | None:

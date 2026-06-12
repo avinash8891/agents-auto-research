@@ -175,7 +175,6 @@ def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]
 
 async def run_research_conductor(
     trades_file: str,
-    round_results: str,
     latest_outcome: dict[str, Any],
     research_round: int,
     family_name: str,
@@ -1033,7 +1032,6 @@ async def run_research_conductor(
 
 def run_research_conductor_sync(
     trades_file: str,
-    round_results: str,
     latest_outcome: dict[str, Any],
     research_round: int,
     family_name: str,
@@ -1047,7 +1045,6 @@ def run_research_conductor_sync(
     return _run_coroutine_sync(
         run_research_conductor(
             trades_file,
-            round_results,
             latest_outcome,
             research_round,
             family_name,

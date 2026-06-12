@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-import thesis_validator
 from research_types import Disqualifier, ExpectedEffect, ResearchThesis
 from thesis_validator import (
     ThesisValidationError,
     validate_research_thesis,
     validate_stage_1,
-    validate_stage_2,
 )
 
 _VALID_FALSIFICATION_TEXT = (
@@ -340,71 +337,3 @@ def test_mechanical_ignores_falsification_length_when_behavioral_silent() -> Non
     )
 
     assert validated.thesis_id == "ema-tier-batching-v1"
-
-
-def test_stage_2_misalignment_no_longer_routes_through_behavior_signal_policy(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_codes: list[str] = []
-    original_decide = thesis_validator._policy_decide
-
-    def spy_decide(signals: list[Any]) -> Any:
-        captured_codes.extend(signal.code for signal in signals)
-        return original_decide(signals)
-
-    monkeypatch.setattr(thesis_validator, "_policy_decide", spy_decide)
-    contract = SimpleNamespace(
-        runtime_config={
-            "entry_cutoff_time": "10:00",
-            "rr_ratio": 2.5,
-            "gap_filter": True,
-            "gap_pct": 0.01,
-            "direction_bias": "long_only",
-        },
-        config_changes={
-            "entry_cutoff_time": "10:00",
-            "rr_ratio": 2.5,
-            "gap_filter": True,
-            "gap_pct": 0.01,
-            "direction_bias": "long_only",
-        },
-        hypothesis="Filter setups by minimum opening volatility to avoid noise.",
-        mechanism="Low-volatility opens have weaker microstructure signals.",
-        strategy_family="ema",
-        required_diagnostics=[],
-        required_diagnostic_specs=[],
-    )
-
-    assert validate_stage_2(contract) is contract
-
-    assert captured_codes == []
-
-
-def test_stage_2_required_diagnostic_routes_through_mechanical_batch_helper(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_codes: list[str] = []
-    original_raise = thesis_validator._raise_mechanical_batch
-
-    def spy_raise(failures: list[Any]) -> None:
-        captured_codes.extend(failure.code for failure in failures)
-        original_raise(failures)
-
-    monkeypatch.setattr(thesis_validator, "_raise_mechanical_batch", spy_raise)
-    contract = SimpleNamespace(
-        runtime_config={
-            "entry_cutoff_time": "10:00",
-            "max_trades_per_day": 1,
-        },
-        hypothesis="Restrict entries to the morning entry window and keep only the first trade per day.",
-        mechanism="Capture the opening dislocation only.",
-        strategy_family="ema",
-        required_diagnostics=["volatility_quintile_pf_spread"],
-        required_diagnostic_specs=[],
-    )
-
-    with pytest.raises(ThesisValidationError) as exc_info:
-        validate_stage_2(contract)
-
-    assert exc_info.value.rejection_code == "required_diagnostic_missing_post_compile"
-    assert captured_codes == ["required_diagnostic_missing_post_compile"]

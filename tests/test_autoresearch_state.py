@@ -261,7 +261,6 @@ def test_render_current_md_includes_best_and_latest_when_present() -> None:
         "state": "running",
         "current_best": {"config": "configs/variants/ema_a.yaml", "metric": 1.5},
         "next_action": {"type": "run_round", "config": "configs/variants/ema_b.yaml"},
-        "pending_configs": [],
         "thesis_statuses": {},
         "blockers": [],
     }

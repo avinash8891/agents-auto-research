@@ -334,7 +334,6 @@ def test_launch_state_resume_interrupted_research_rewinds_to_failed_round() -> N
             "job": 6,
             "research_round": 4,
             "current_thesis": {"thesis_id": "interrupted"},
-            "pending_configs": ["stale"],
             "blockers": [{"kind": "research_failed", "detail": "agent process exited"}],
         },
         resume_current_job=True,
@@ -347,7 +346,6 @@ def test_launch_state_resume_interrupted_research_rewinds_to_failed_round() -> N
     assert state["next_action"]["reason"] == "resume_current_job_retry_interrupted_research"
     assert state["blockers"][0]["kind"] == "research_required"
     assert "current_thesis" not in state
-    assert "pending_configs" not in state
 
 
 def test_launch_state_resume_blocked_experiment_restores_running_with_source_snapshot() -> None:

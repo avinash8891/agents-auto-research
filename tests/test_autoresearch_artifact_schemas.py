@@ -29,7 +29,6 @@ def test_round_artifact_writer_shape_is_terminal_reader_shape(tmp_path: Path) ->
         generated_config_path="",
         new_theses_generated=0,
         suggested_theses=[],
-        findings=["no remaining credible thesis"],
     )
 
     write_round_artifact(round_dir / "round.json", artifact)

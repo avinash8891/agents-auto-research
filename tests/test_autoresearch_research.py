@@ -2,7 +2,7 @@
 
 The orchestrator functions (execute_research_sdk, run_research) are exercised
 end-to-end by the characterization tests; this module covers the pure helpers
-(notify_discord, accumulate_job_usage, log_research_round, results_to_dicts).
+(notify_discord, accumulate_job_usage, log_research_round).
 
 Project rule G: real outcome strings ("compiled", "needs_code", "rejected",
 "stopped"), real status keys, behavioral assertions on token totals and
@@ -45,7 +45,6 @@ from autoresearch_research import (
     execute_research_sdk,
     log_research_round,
     notify_discord,
-    results_to_dicts,
     run_research,
 )
 from autoresearch_state import BacktestResultRecord, write_state
@@ -695,63 +694,6 @@ def test_log_research_round_persists_full_thesis_details_to_attempt(tmp_path: Pa
     assert attempts[0]["thesis_details"] == details
 
 
-# ── results_to_dicts ────────────────────────────────────────────
-
-
-def test_results_to_dicts_copies_core_fields() -> None:
-    record = BacktestResultRecord(
-        config="configs/ema_base.yaml",
-        metric=1.42,
-        status="keep",
-        description="strict-native loop: ema_base",
-        timestamp=100,
-        asi={},
-    )
-    out = results_to_dicts([record])
-    assert out == [
-        {
-            "config": "configs/ema_base.yaml",
-            "metric": 1.42,
-            "status": "keep",
-            "description": "strict-native loop: ema_base",
-            "job": 0,
-        }
-    ]
-
-
-def test_results_to_dicts_includes_trade_analysis_subkeys_when_present() -> None:
-    record = BacktestResultRecord(
-        config="configs/variants/ema_aggressive.yaml",
-        metric=1.5,
-        status="keep",
-        description="",
-        timestamp=200,
-        asi={
-            "trade_analysis": {
-                "trade_count": 287,
-                "profit_factor": 1.61,
-                "max_drawdown": 0.18,
-                "exit_mix": {"target": 102, "stop": 78, "close": 107},
-                "regime_insight": "best in trending sessions",
-            },
-            "thesis_id": "ema_aggressive",
-            "config_changes": {"ema_length": 3},
-            "insights": ["metric=1.5", "decision=keep"],
-            "next_thesis_suggestion": "test ema_length=4",
-        },
-    )
-    out = results_to_dicts([record])[0]
-    assert out["trade_count"] == 287
-    assert out["profit_factor"] == 1.61
-    assert out["max_drawdown"] == 0.18
-    assert out["exit_mix"] == {"target": 102, "stop": 78, "close": 107}
-    assert out["regime_insight"] == "best in trending sessions"
-    assert out["thesis_id"] == "ema_aggressive"
-    assert out["config_changes"] == {"ema_length": 3}
-    assert out["insights"] == ["metric=1.5", "decision=keep"]
-    assert out["next_thesis_suggestion"] == "test ema_length=4"
-
-
 def test_thesis_meta_from_mechanism_result_persists_proposed_change_for_dedupe() -> None:
     result = {
         "thesis_id": "job-1-round-1-attempt-1",
@@ -766,32 +708,6 @@ def test_thesis_meta_from_mechanism_result_persists_proposed_change_for_dedupe()
 
     assert out["config_changes"] == {"ema_length": 8}
     assert out["proposed_change"] == {"ema_length": 8}
-
-
-def test_results_to_dicts_uses_insight_brief_from_either_layer() -> None:
-    """insight_brief on asi takes precedence; falls back to trade_analysis."""
-    record_top = BacktestResultRecord(
-        "c.yaml",
-        1.0,
-        "keep",
-        "",
-        100,
-        asi={"insight_brief": "from-top", "trade_analysis": {"insight_brief": "from-ta"}},
-    )
-    record_ta = BacktestResultRecord(
-        "c.yaml",
-        1.0,
-        "keep",
-        "",
-        100,
-        asi={"trade_analysis": {"insight_brief": "from-ta-only"}},
-    )
-    assert results_to_dicts([record_top])[0]["insight_brief"] == "from-top"
-    assert results_to_dicts([record_ta])[0]["insight_brief"] == "from-ta-only"
-
-
-def test_results_to_dicts_handles_empty_input() -> None:
-    assert results_to_dicts([]) == []
 
 
 def test_resolve_conductor_inputs_uses_persisted_artifacts_and_verdict_feedback(
@@ -1463,7 +1379,6 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
         raise AssertionError("legacy thesis validator must not run for MechanismProposal")
 
     monkeypatch.setattr("thesis_validator.validate_thesis_dict", _legacy_validator_called)
-    monkeypatch.setattr("thesis_validator.validate_stage_2", _legacy_validator_called)
 
     result, retry_feedback, stage = _try_one_validation_attempt(
         controller,
@@ -1519,13 +1434,13 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
     assert pending_model.accuracy_history[-1].round_number == 1
     with sqlite3.connect(controller.backtest_run_db.path) as conn:
         rows = conn.execute("""
-            SELECT rule, competitor_rule, verdict
+            SELECT rule, verdict, is_competitor
             FROM screenings
             ORDER BY rule
             """).fetchall()
     assert rows == [
-        ("gap_pct < 0", "gap_pct > 0", "pass"),
-        ("gap_pct > 0", "gap_pct < 0", "pass"),
+        ("gap_pct < 0", "pass", 0),
+        ("gap_pct > 0", "pass", 1),
     ]
 
 
@@ -1789,7 +1704,7 @@ def test_run_research_non_actionable_mechanism_continues_without_interrupt(
     model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
     with sqlite3.connect(controller.backtest_run_db.path) as conn:
         screenings = conn.execute("""
-            SELECT rule, competitor_rule, verdict
+            SELECT rule, verdict, is_competitor
             FROM screenings
             WHERE job_id = 12 AND round_number = 1
             ORDER BY rule
@@ -1799,8 +1714,8 @@ def test_run_research_non_actionable_mechanism_continues_without_interrupt(
     assert updated["next_action"]["type"] == "research"
     assert updated["blockers"][0]["kind"] == "research_required"
     assert screenings == [
-        ("gap_pct < 0", "gap_pct > 0", "pass"),
-        ("gap_pct > 0", "gap_pct < 0", "pass"),
+        ("gap_pct < 0", "pass", 0),
+        ("gap_pct > 0", "pass", 1),
     ]
     assert model.version == 1
     assert model.factors[0].rule == "gap_pct < 0"
@@ -2427,10 +2342,6 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
         def read_results(self):
             return []
 
-    monkeypatch.setattr(
-        "agent_formatters.format_round_results_summary",
-        lambda result_dicts, **kwargs: [],
-    )
     monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root, **kwargs: [])
     monkeypatch.setattr(
         "autoresearch_research._resolve_conductor_inputs",

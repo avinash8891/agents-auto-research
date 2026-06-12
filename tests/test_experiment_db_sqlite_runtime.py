@@ -145,28 +145,6 @@ def test_export_entries_use_backtest_run_type(tmp_path: Path) -> None:
     assert entries[0]["research_round_number"] == 0
 
 
-def test_export_import_round_trip_preserves_prediction_verdict_and_lesson(
-    tmp_path: Path,
-) -> None:
-    source = BacktestRunDB(tmp_path / "source.db")
-    source.init_session(name="ema", metric_name="profit_factor", direction="higher")
-    record = _record(round_number=1, job=1)
-    record.prediction_verdict = "supported"
-    record.lesson = "profit_factor direction passed"
-    source.add(record)
-
-    entries = source.export_entries()
-    exported = [entry for entry in entries if entry.get("type") == "backtest_run"][0]
-    target = BacktestRunDB(tmp_path / "target.db")
-    target.import_entries(entries)
-    imported = target.all()[0]
-
-    assert exported["prediction_verdict"] == "supported"
-    assert exported["lesson"] == "profit_factor direction passed"
-    assert imported.prediction_verdict == "supported"
-    assert imported.lesson == "profit_factor direction passed"
-
-
 def test_list_research_rounds_keeps_round_zero_baseline(tmp_path: Path) -> None:
     db = BacktestRunDB(tmp_path / "backtest_runs.db")
     db.init_session(name="ema", metric_name="profit_factor", direction="higher")

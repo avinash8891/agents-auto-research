@@ -61,16 +61,6 @@ def list_known_variant_configs(root: Path, family: StrategyFamily) -> list[str]:
     return known
 
 
-def pending_configs(
-    root: Path,
-    family: StrategyFamily,
-    run_queue_dir: Path,
-    results: list[BacktestResultRecord],
-    job: int | None = None,
-) -> list[str]:
-    return []
-
-
 def thesis_statuses(
     root: Path,
     family: StrategyFamily,

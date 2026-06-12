@@ -4,7 +4,7 @@ ResearchThesis  u2192  BacktestContract  u2192  RuntimeConfig
 
 The conductor produces a ResearchThesis (why, what should happen, what disproves it).
 The compiler converts it to an BacktestContract (executable config + research metadata).
-The evaluator checks the result against predictions and produces an BacktestVerdict.
+The evaluator checks registered predictions and produces a HarvestVerdict.
 """
 
 from __future__ import annotations
@@ -452,23 +452,6 @@ class ConductorResult:
     # by hand); the outer validator should skip the process gate. An empty
     # frozenset = the conductor ran and called no tools — gate must fire.
     tools_called: frozenset[str] | None = None
-
-
-class BacktestVerdict(BaseModel):
-    """Result of evaluating a backtest against the thesis predictions."""
-
-    contract_id: str
-    thesis_id: str
-
-    status: Literal["accepted", "rejected", "inconclusive"]
-
-    passed_effects: list[str] = Field(default_factory=list)
-    failed_effects: list[str] = Field(default_factory=list)
-    triggered_disqualifiers: list[str] = Field(default_factory=list)
-    unparsed_disqualifiers: list[str] = Field(default_factory=list)
-    missing_required_diagnostics: list[str] = Field(default_factory=list)
-
-    summary: str = ""
 
 
 class HarvestVerdict(BaseModel):

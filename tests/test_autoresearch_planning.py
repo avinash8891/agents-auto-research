@@ -10,7 +10,6 @@ from autoresearch_planning import (
     check_baseline_rerun,
     generate_combination_candidates,
     list_known_variant_configs,
-    pending_configs,
     plan_next_action,
     select_research_next_action,
     should_terminate,
@@ -57,12 +56,6 @@ def test_list_known_variant_configs_includes_existing_family_defaults_and_skips_
     assert list_known_variant_configs(tmp_path, orb_family) == [
         "configs/variants/orb_spy_only.yaml"
     ]
-
-
-def test_pending_configs_is_always_empty_when_variant_queueing_is_removed(
-    tmp_path: Path, ema_family
-) -> None:
-    assert pending_configs(tmp_path, ema_family, tmp_path / "queue", []) == []
 
 
 def test_thesis_statuses_are_derived_from_results_only(tmp_path: Path, ema_family) -> None:
@@ -271,7 +264,6 @@ def test_should_terminate_ignores_competitor_pass_rows_in_screening_pass_rate(
             db_path,
             [_killed_screening().model_copy(update={"verdict": "kill_lost_to_competitor"})],
             round_number=round_number,
-            competitor_rule="gap_pct > 0",
             job_id=7,
         )
         write_screenings(
@@ -282,7 +274,6 @@ def test_should_terminate_ignores_competitor_pass_rows_in_screening_pass_rate(
                 )
             ],
             round_number=round_number,
-            competitor_rule="gap_pct < 0",
             job_id=7,
             is_competitor=True,
         )

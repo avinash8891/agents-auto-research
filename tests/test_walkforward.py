@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -234,14 +233,9 @@ def test_walkforward_robust_fixture_graduates_and_writes_report(
     )
 
     persisted = json.loads((tmp_path / "walkforward" / "thesis-001.json").read_text())
-    with sqlite3.connect(db_path) as conn:
-        graduated = conn.execute(
-            "SELECT graduated FROM backtest_runs WHERE run_id = 'run-thesis'"
-        ).fetchone()[0]
     assert report["graduated"] is True
     assert persisted["survival_rate"] == pytest.approx(2 / 3)
     assert persisted["windows"][0]["directions_hold"] is True
-    assert graduated == 1
 
 
 def test_walkforward_curve_fit_fixture_demotes_factor_and_run(
@@ -289,14 +283,9 @@ def test_walkforward_curve_fit_fixture_demotes_factor_and_run(
         factor_rule="gap_pct < 0",
     )
 
-    with sqlite3.connect(db_path) as conn:
-        graduated = conn.execute(
-            "SELECT graduated FROM backtest_runs WHERE run_id = 'run-thesis'"
-        ).fetchone()[0]
     model = load_model("ema")
     assert report["graduated"] is False
     assert report["verdict"] == "demoted"
-    assert graduated == 0
     assert model.factors[0].status == "demoted"
     assert "survival_rate=0.333" in model.factors[0].lesson
 
@@ -655,14 +644,9 @@ def test_run_walkforward_queue_runs_windows_and_marks_graduated(
         },
     )
 
-    with sqlite3.connect(db_path) as conn:
-        graduated = conn.execute(
-            "SELECT graduated FROM backtest_runs WHERE run_id = 'run-thesis'"
-        ).fetchone()[0]
     report = json.loads((tmp_path / "walkforward" / "thesis-001.json").read_text())
     assert exit_code == 0
     assert len(commands) == 6
-    assert graduated == 1
     assert report["graduated"] is True
     assert report["windows"][0]["prediction_results"][1]["metric"] == "median_expectancy"
     assert report["windows"][0]["prediction_results"][1]["direction_passed"] is True

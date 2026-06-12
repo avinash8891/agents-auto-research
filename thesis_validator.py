@@ -195,11 +195,8 @@ def infer_rejection_code(message: str) -> str:
         return "thesis_quality_needs_code_starvation"
     if "has already been proposed" in msg:
         return "structural_thesis_id_repeated"
-    # Stage 2 (no section prefix; lives at the contract layer)
-    if "hypothesis-config misalignment" in msg:
-        return "hypothesis_config_misalignment"
     if "required diagnostics not present" in msg:
-        return "required_diagnostic_missing_post_compile"
+        return "mechanical_validation_failure"
     # structural_*
     if "missing thesis_id" in msg:
         return "structural_missing_thesis_id"
@@ -1352,111 +1349,3 @@ def validate_stage_1(
         tools_called=tools_called,
         require_analyst_tool=require_analyst_tool,
     )
-
-
-def _collect_runtime_config_keys(value: Any) -> set[str]:
-    """Return every dict key that appears anywhere in the runtime_config tree.
-
-    Used by Stage 2 to determine whether a required_diagnostic name is
-    referenced in the compiled config's diagnostic surface, even when the
-    compiler did not turn it into a structured spec.
-    """
-    keys: set[str] = set()
-
-    def walk(node: Any) -> None:
-        if isinstance(node, dict):
-            for k, v in node.items():
-                if isinstance(k, str):
-                    keys.add(k)
-                walk(v)
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
-
-    walk(value)
-    return keys
-
-
-def _collect_stage_2_required_diagnostic_failures(
-    contract: Any,
-    runtime_config: dict[str, Any],
-) -> list[BehaviorSignal]:
-    required_diagnostics = list(getattr(contract, "required_diagnostics", []) or [])
-    if not required_diagnostics:
-        return []
-
-    from diagnostic_contracts import normalize_diagnostic_requirement
-
-    specs = list(getattr(contract, "required_diagnostic_specs", []) or [])
-    resolved: set[str] = set()
-    for spec in specs:
-        spec_key = getattr(spec, "key", "") or ""
-        if spec_key:
-            resolved.add(spec_key)
-        for alias in getattr(spec, "aliases", []) or []:
-            if isinstance(alias, str) and alias:
-                resolved.add(alias)
-
-    runtime_keys = _collect_runtime_config_keys(runtime_config)
-    missing: list[str] = []
-    for name in required_diagnostics:
-        if not isinstance(name, str) or not name.strip():
-            continue
-        normalized = normalize_diagnostic_requirement(name)
-        if normalized and (
-            normalized in resolved
-            or name in resolved
-            or name in runtime_keys
-            or normalized in runtime_keys
-        ):
-            continue
-        missing.append(name)
-
-    if not missing:
-        return []
-    return [
-        BehaviorSignal(
-            code="required_diagnostic_missing_post_compile",
-            confidence=1.0,
-            severity="block",
-            summary=(
-                "Required diagnostics not present in compiled contract: "
-                f"{missing}. Each name must appear as a key/alias in "
-                "required_diagnostic_specs or as a key in runtime_config."
-            ),
-            evidence={"missing": missing},
-        )
-    ]
-
-
-def validate_stage_2(contract: Any) -> Any:
-    """Stage 2: post-compile validator. Operates on the compiled BacktestContract.
-
-    Rules that need the resolved/normalized config live here:
-      - hypothesis-config alignment scored against `contract.config_changes`
-        so inherited baseline keys do not dilute a mismatched thesis delta
-      - every entry in `thesis.required_diagnostics` (carried through to
-        `contract.required_diagnostics`) must resolve to a real diagnostic in
-        the compiled output — present in `contract.required_diagnostic_specs`
-        (key or alias) OR referenced as a key in `contract.runtime_config`.
-
-    Returns the contract on success; raises ThesisValidationError on violation.
-    """
-    if contract is None:
-        return contract
-
-    runtime_config = getattr(contract, "runtime_config", None) or {}
-    config_changes = getattr(contract, "config_changes", None) or {}
-    hypothesis = getattr(contract, "hypothesis", "") or ""
-    mechanism = getattr(contract, "mechanism", "") or ""
-    strategy_family = getattr(contract, "strategy_family", "") or ""
-
-    del config_changes, hypothesis, mechanism, strategy_family
-
-    mechanical_failures = _collect_stage_2_required_diagnostic_failures(
-        contract,
-        runtime_config if isinstance(runtime_config, dict) else {},
-    )
-    _raise_mechanical_batch(mechanical_failures)
-
-    return contract

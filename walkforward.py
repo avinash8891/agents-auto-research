@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import json
 import math
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -144,7 +143,6 @@ def evaluate_walkforward(
     report_path = runtime_root / "walkforward" / f"{thesis_id}.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(report_path, report)
-    _write_graduation_to_run_row(db_path, run_id, graduated)
     if verdict == "inconclusive":
         log.warning(
             "walkforward inconclusive for thesis=%s: no window had evaluable baseline data "
@@ -264,10 +262,6 @@ def run_walkforward_queue(controller: Any, state: dict[str, Any]) -> int:
         next_state["walkforward_errors"] = errors
     else:
         next_state.pop("walkforward_errors", None)
-    next_state["walkforward_reports"] = [
-        str(Path(controller.runtime_root) / "walkforward" / f"{report['thesis_id']}.json")
-        for report in reports
-    ]
     next_state.pop("activity", None)
     controller.write_state(next_state)
     controller.write_current_md(next_state, controller.read_results())
@@ -328,22 +322,6 @@ def _finite_metric_value(metrics: dict[str, Any], metric: str) -> float | None:
     if not math.isfinite(value):
         return None
     return value
-
-
-def _write_graduation_to_run_row(db_path: Path, run_id: str, graduated: bool) -> None:
-    with sqlite3.connect(db_path) as conn:
-        try:
-            conn.execute(
-                "ALTER TABLE backtest_runs ADD COLUMN graduated INTEGER NOT NULL DEFAULT 0"
-            )
-        except sqlite3.OperationalError as exc:
-            if "duplicate column name" not in str(exc).lower():
-                raise
-        conn.execute(
-            "UPDATE backtest_runs SET graduated = ? WHERE run_id = ?",
-            (1 if graduated else 0, run_id),
-        )
-        conn.commit()
 
 
 def _demote_factor(

@@ -1,8 +1,4 @@
-"""Tests for Stage 1 validator rules: B1 theme cluster, B3 needs_code starvation.
-
-(B4 alignment-as-gate already exists in the validator at threshold 0.4 — see
-existing tests for hypothesis_config_misalignment.)
-"""
+"""Tests for Stage 1 validator rules: B1 theme cluster, B3 needs_code starvation."""
 
 from __future__ import annotations
 

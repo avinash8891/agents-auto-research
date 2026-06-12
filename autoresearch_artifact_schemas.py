@@ -25,8 +25,6 @@ class RoundArtifact(BaseModel):
     generated_config_path: str = ""
     new_theses_generated: int = Field(default=0, ge=0)
     suggested_theses: list[dict[str, Any]] = Field(default_factory=list)
-    findings: list[str] = Field(default_factory=list)
-    run_id: str | None = None
     created_at: str = ""
     usage: dict[str, Any] | None = None
 

@@ -136,7 +136,6 @@ def _setup_runtime(tmp_path: Path, monkeypatch) -> None:
         tmp_path / "ema_backtest_runs.db",
         [_screening("gap_pct < 0", "pass")],
         round_number=2,
-        competitor_rule="gap_pct > 0",
         job_id=1,
     )
 
@@ -189,7 +188,6 @@ def test_build_corpus_uses_explicit_runtime_and_code_roots(tmp_path: Path, monke
         runtime_root / "ema_backtest_runs.db",
         [_screening("gap_pct < 0", "pass")],
         round_number=2,
-        competitor_rule="gap_pct > 0",
         job_id=1,
     )
 
@@ -366,7 +364,6 @@ def test_build_corpus_screening_history_is_scoped_to_active_job(
         tmp_path / "ema_backtest_runs.db",
         [_screening("other_job_rule", "pass")],
         round_number=2,
-        competitor_rule="gap_pct > 0",
         job_id=2,
     )
 
@@ -383,7 +380,6 @@ def test_build_corpus_screening_history_excludes_competitor_rows(
         tmp_path / "ema_backtest_runs.db",
         [_screening("gap_pct > 0", "pass")],
         round_number=2,
-        competitor_rule="gap_pct < 0",
         job_id=1,
         is_competitor=True,
     )
@@ -409,7 +405,6 @@ def test_build_corpus_caps_screening_history_and_aggregates_older_verdicts(
                 )
             ],
             round_number=round_number,
-            competitor_rule="gap_pct > 0",
             job_id=1,
         )
 
