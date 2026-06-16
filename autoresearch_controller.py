@@ -62,7 +62,6 @@ from autoresearch_research import execute_research_sdk as _research_execute_rese
 from autoresearch_research import load_baseline_config as _research_load_baseline_config
 from autoresearch_research import log_research_round as _research_log_research_round
 from autoresearch_research import notify_discord as _notify_discord
-from autoresearch_research import queue_variants as _research_queue_variants
 from autoresearch_research import results_to_dicts as _research_results_to_dicts
 from autoresearch_research import run_research as _research_run_research
 from autoresearch_runtime_paths import AutoresearchRuntimeContext
@@ -1019,25 +1018,6 @@ class AutoresearchController:
 
     def _load_baseline_config(self) -> dict[str, Any] | None:
         return _research_load_baseline_config(self.root, self.family)
-
-    def _queue_variants(
-        self,
-        variants: list[dict[str, Any]],
-        thesis: Any,
-        primary_contract: Any,
-        baseline_config: dict[str, Any],
-    ) -> None:
-        _research_queue_variants(
-            self.root,
-            self.builder_requests_dir,
-            variants,
-            thesis,
-            primary_contract,
-            baseline_config,
-            builder_requests_dir=self.builder_requests_dir,
-            job=self._current_job(),
-            created_for_commit=self.current_commit(),
-        )
 
     def _results_to_dicts(self, results: list) -> list[dict[str, Any]]:
         return _research_results_to_dicts(results)
