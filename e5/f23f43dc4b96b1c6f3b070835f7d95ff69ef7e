@@ -1,0 +1,25 @@
+autoresearch_constants.py
+  s_be8b2f455eab9f::t_22741976265b4b 77-83
+vps_runner.py
+  s_be8b2f455eab9f::t_ef04ce59759f23 645,649-661,664-665,668-669
+  s_be8b2f455eab9f::t_3104ffdde398c1 29-35
+  s_be8b2f455eab9f::t_223e09f95e55e8 662-663,666-667
+tests/test_vps_runner_config.py
+  s_be8b2f455eab9f::t_ddef6ad4660dd7 329-377
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "e5f23f43dc4b96b1c6f3b070835f7d95ff69ef7e",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
