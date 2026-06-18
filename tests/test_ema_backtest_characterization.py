@@ -112,6 +112,58 @@ def test_ema_exits_force_flat_at_session_end_before_overnight_gap() -> None:
     assert trades[0]["exit_price"] == 97.0
 
 
+def test_executed_trade_event_timestamps_are_datetime_and_parquet_writable(
+    tmp_path: Path,
+) -> None:
+    """Event timestamp columns must be datetime64, not stringified Timestamps.
+
+    Regression for the baseline-backtest crash: simulate_trades logged
+    trigger_bar_timestamp via str(index[i]), so the events frame carried an
+    object column of strings that pyarrow could not serialize:
+        ArrowInvalid: Could not convert '2020-01-03 09:35:00' ... to int64
+    """
+    index = pd.to_datetime(["2024-01-02 10:00", "2024-01-02 10:05", "2024-01-02 10:10"])
+    frame = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 100.0],
+            "high": [101.0, 102.0, 103.0],
+            "low": [99.0, 94.0, 99.0],
+            "close": [100.0, 101.0, 102.0],
+        },
+        index=index,
+    )
+    logger = StrategyEventLogger()
+
+    trades = simulate_trades(
+        frame,
+        _manual_ema_signals(frame, direction="long", entry_bar=1),
+        {"rr_ratio": 3.0, "max_hold_bars": 78, "slippage_pct": 0.0},
+        symbol="AAA",
+        event_logger=logger,
+    )
+
+    assert len(trades) == 1
+    events = logger.to_dataframe()
+    assert "executed_trade" in set(events["event_type"])
+
+    # Timestamp columns are real datetimes, not object/str.
+    assert events["trigger_bar_timestamp"].dtype == "datetime64[ns]"
+    assert events["ema.alert_bar_timestamp"].dtype == "datetime64[ns]"
+    executed = events.loc[events["event_type"] == "executed_trade"].iloc[0]
+    assert executed["trigger_bar_timestamp"] == pd.Timestamp("2024-01-02 10:05")
+    # No alert bar for a manual entry -> NaT, not a "None" string.
+    assert pd.isna(executed["ema.alert_bar_timestamp"])
+
+    # The production failure was at parquet write; prove it round-trips.
+    out = tmp_path / "strategy_events.parquet"
+    events.to_parquet(out, index=False)
+    restored = pd.read_parquet(out)
+    assert restored["trigger_bar_timestamp"].dtype == "datetime64[ns]"
+    assert restored["trigger_bar_timestamp"].iloc[
+        list(events["event_type"]).index("executed_trade")
+    ] == pd.Timestamp("2024-01-02 10:05")
+
+
 def test_ema_exits_scan_entry_bar_for_stop_loss() -> None:
     index = pd.to_datetime(
         ["2024-01-02 10:00", "2024-01-02 10:05", "2024-01-02 10:10"]

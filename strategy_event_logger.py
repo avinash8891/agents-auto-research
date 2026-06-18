@@ -71,6 +71,16 @@ class StrategyEventLogger:
     def _normalize_extra_array(values: Any, n: int) -> np.ndarray:
         if values is None:
             return np.full(n, np.nan, dtype=np.float64)
+        # Datetime-like scalars (pd.Timestamp / np.datetime64 / NaT) broadcast to
+        # a datetime64[ns] column. np.asarray() would otherwise box a Timestamp as
+        # object and collapse a NaT scalar to float NaN (its .item() is None).
+        if values is pd.NaT:
+            return np.full(n, np.datetime64("NaT"), dtype="datetime64[ns]")
+        if isinstance(values, (pd.Timestamp, np.datetime64)):
+            ts = pd.Timestamp(values)
+            if ts.tz is not None:
+                ts = ts.tz_convert("UTC").tz_localize(None)
+            return np.full(n, ts.to_datetime64(), dtype="datetime64[ns]")
         arr = np.asarray(values)
         if arr.ndim == 0:
             item = arr.item()

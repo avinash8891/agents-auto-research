@@ -75,8 +75,11 @@ def simulate_trades(
     else:
         entry_bar_index_from_open = np.arange(n, dtype=np.int64)
 
-    def _ts(bar_idx: int) -> str:
-        return str(f_idx[bar_idx]) if bar_idx < n else ""
+    def _ts(bar_idx: int) -> "pd.Timestamp":
+        # Emit the real index Timestamp (or NaT), not str(...). Stringified
+        # timestamps land in the events frame as an object column that
+        # pyarrow cannot serialize to parquet.
+        return f_idx[bar_idx] if bar_idx < n else pd.NaT
 
     def _log_rejection(
         bar_idx: int, reason: str, ep: float = float("nan"), sp: float = float("nan")
@@ -201,7 +204,7 @@ def simulate_trades(
                 rr_ratio=rr_ratio,
                 **{
                     "ema.alert_bar_timestamp": (
-                        _ts(alert_bar_idx_values[i]) if 0 <= alert_bar_idx_values[i] < n else None
+                        _ts(alert_bar_idx_values[i]) if 0 <= alert_bar_idx_values[i] < n else pd.NaT
                     )
                 },
                 trigger_bar_timestamp=_ts(i),
