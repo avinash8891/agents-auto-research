@@ -74,6 +74,13 @@ ENV_RECURSIVE_IMPROVE_TIMEOUT_SECONDS = "AUTORESEARCH_RECURSIVE_IMPROVE_TIMEOUT_
 # ── Control-plane / tracing ─────────────────────────────────────
 ENV_TRACE_MODE = "AUTORESEARCH_TRACE_MODE"
 TRACE_MODE_TRANSACTION = "transaction"
+
+# When truthy, the VPS run process is launched under cProfile, writing a
+# per-run .prof to logs/profile/. Default-off: unset means byte-identical
+# launch behavior. ponytail: cProfile covers the controller process only;
+# subprocess backtest workers show up as cumtime inside the executor call.
+ENV_PROFILE = "AUTORESEARCH_PROFILE"
+REMOTE_PROFILE_DIRNAME = "logs/profile"
 PREPARE_RESULT_MARKER = "AUTORESEARCH_PREPARE_RESULT"
 
 # Default location of the held-out task list relative to the repo root.

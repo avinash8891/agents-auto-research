@@ -26,7 +26,13 @@ from urllib.parse import urlsplit, urlunsplit
 
 import paramiko
 
-from autoresearch_constants import ENV_TRACE_MODE, PREPARE_RESULT_MARKER, TRACE_MODE_TRANSACTION
+from autoresearch_constants import (
+    ENV_PROFILE,
+    ENV_TRACE_MODE,
+    PREPARE_RESULT_MARKER,
+    REMOTE_PROFILE_DIRNAME,
+    TRACE_MODE_TRANSACTION,
+)
 from autoresearch_logging import get_logger
 from backtest.data_universe import DATA_ROOT_ENV
 from strategies import STRATEGIES
@@ -636,10 +642,31 @@ def build_remote_run_command(
         include_release_bootstrap=False,
     )
     segments.append(f"unset {ENV_TRACE_MODE} || true")
-    segments.append(
-        f'"$python_bin" autoresearch_controller.py --family {shlex.quote(family.name)} --run-current-state'
-    )
+    segments.append(_remote_run_invocation(family, resolved_sha))
     return " && ".join(segments)
+
+
+def _remote_run_invocation(family: StrategyFamily, resolved_sha: str) -> str:
+    """Build the controller run command, optionally under cProfile.
+
+    Default-off: without ENV_PROFILE the invocation is byte-identical to the
+    plain launch. When set, the run process is launched under cProfile and the
+    .prof is written to a per-run path under logs/profile/.
+    """
+    controller = (
+        f'"$python_bin" autoresearch_controller.py '
+        f"--family {shlex.quote(family.name)} --run-current-state"
+    )
+    if not os.environ.get(ENV_PROFILE):
+        return controller
+    # Unquoted so the remote shell evaluates $(date); every piece is shell-safe
+    # (constant dir, registry family name {_demo,ema,orb}, hex sha, date stamp).
+    profile_path = f"{REMOTE_PROFILE_DIRNAME}/{family.name}-{resolved_sha[:12]}-$(date -u +%Y%m%dT%H%M%SZ).prof"
+    return (
+        f"mkdir -p {shlex.quote(REMOTE_PROFILE_DIRNAME)} && "
+        f'"$python_bin" -m cProfile -o {profile_path} '
+        f"autoresearch_controller.py --family {shlex.quote(family.name)} --run-current-state"
+    )
 
 
 def build_remote_command(
