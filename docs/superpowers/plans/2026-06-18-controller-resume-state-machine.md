@@ -14,14 +14,14 @@ Implement the **first 8 candidates** from `architecture-review-20260618-213349.h
 
 | # | Candidate | Deepened module | Primary files | Status |
 |---|-----------|-----------------|---------------|--------|
-| 1 | Controller resume state machine | `autoresearch_resume.ResumeType` / `resumable_state_type` / `apply_resume_transition` | controller, orchestration, planning | **Detailed below (Tasks 1–3) — resume-classification slice** |
-| 2 | Backtest verdict decision | `DecisionFactory` + `BacktestRunDB.find_duplicate` | experiment, experiment_evaluator, backtest_run_db | Needs detailed plan |
-| 3 | Thesis validation pipeline | `ValidationPipeline` | research | Needs detailed plan |
-| 4 | Causal verdict lifecycle | `VerdictPipeline` | causal_harvest, experiment | Needs detailed plan |
+| 1 | Controller resume state machine | `autoresearch_resume.ResumeType` / `resumable_state_type` / `apply_resume_transition` | controller, orchestration, planning | **DONE** `abfdbdc` (resume-classification slice; Tasks 1–3 below). Builder-lifecycle + planning state-building halves remain follow-ons. |
+| 2 | Backtest verdict decision | `experiment_decision.decide_verdict` (DecisionFactory) | experiment, experiment_evaluator, backtest_run_db | **DONE** `801b472`. `BacktestRunDB.find_duplicate` move deferred (separate locality win). |
+| 3 | Thesis validation pipeline | `research_retry.RetryBudget` (retry/budget seam) | research | **DONE** `312a12f`. Full ValidationPipeline (conductor+validate+dispatch) is a larger follow-on; the per-stage budget leak — the report's named pain — is fixed. |
+| 4 | Causal verdict lifecycle | `causal_harvest.resolve_registered_verdict` (VerdictPipeline) | causal_harvest, experiment | **DONE** `9aa6635`. |
 | 5 | Operationalize thesis contract | `ThesisContract` | compiler_operationalize | **SKIPPED — premise false (rule L).** `operationalize_thesis`/`finalize_thesis_config_changes` have zero callers in live code or tests (only re-exported in `compiler_pipeline.__all__`); real entry point `compile_research_thesis` never operationalizes. Deepening dead code = unused abstraction. Dead-code removal deferred to a separate user-approved decision (it's a public `__all__` export). |
-| 6 | Token accumulation seam | `AccumulationRequest` + `accumulate_tokens` | agent_token_usage, agent_sdk_token_usage | Needs detailed plan |
+| 6 | Token accumulation seam | public `accumulate_usage`/`record_failed_call`/`record_unmetered_call` | agent_token_usage, agent_sdk_token_usage | **DONE** `74a66a5` (private→public promotion, rule B). Typed `AccumulationRequest` deferred until a second adapter exists. |
 | 7 | trace_sdk engine | `TraceEngine` + exporter registry | trace_sdk | **DEFERRED to dedicated staged plan.** Verified: trace state is already encapsulated in `TraceRuntimeState` (methods + contexts + exporter); the only loose globals `_PROVIDER`/`_INITIALIZED` are init-internals used in ~5 lines of one file. Exporter registry is speculative (one exporter exists today). Full TraceEngine rewrite (15+ `trace_*()` → methods) is repo-wide blast radius on load-bearing observability for low marginal value — not safe in a rapid sweep; needs its own plan with the full trace suite as oracle. |
-| 8 | Builder workspace lifecycle | `BuilderWorkspace` | compiler_builder | Needs detailed plan |
+| 8 | Builder workspace lifecycle | `BuilderWorkspace` value object | compiler_builder | **PARTIAL** `183d5d5` (path-layout value object + named segment constants). The high-value sequencing extraction (initialize/sync/record_promotion out of the ~500-line `build_missing_primitives`) is deferred to a dedicated staged plan — high blast radius, single-function caller for the path helpers. |
 
 **Sequencing constraint:** candidates #2 and #4 both modify `autoresearch_experiment.py`, and #6/#7 both touch agent-infra — these cannot run as parallel worktrees without conflict. Implement sequentially, one deliverable per commit (CLAUDE.md rule E), stopping at each candidate boundary (CLAUDE.md rule 4). Candidates #2–#8 each get their own detailed TDD plan (the report deferred interface design) before implementation.
 
