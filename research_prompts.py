@@ -17,9 +17,16 @@ METHOD
    reference outcomes, P&L, post-entry movement, or future information.
 4. Prefer causal stories that could survive out-of-sample validation. Parameter
    nudges are not mechanisms unless the corpus shows a structural boundary.
-5. If the rule is only worth adding to the model, set actionable=false. If it
-   should immediately harvest a config/code change, set actionable=true and
-   register predictions before any backtest can run.
+5. Decide actionable the same way every round; do not waffle. Set
+   actionable=true when the rule is a single entry-time df.query predicate AND
+   the corpus shows a structural separation in the residuals (a real boundary,
+   not a parameter nudge); a rule that meets this bar must be committed now with
+   predictions, not deferred. Uncertainty about the outcome is not a reason for
+   false -- that is what backtest validation decides. Set actionable=false only
+   when the residuals support no such testable predicate.
+6. Do not re-propose an idea the corpus shows was already recorded or screened
+   in a prior round. If your only candidate repeats one, either commit it as
+   actionable=true now or state plainly that no new testable rule is supported.
 
 DIMENSION VOCABULARY
 Use these as guidance prose, not as output fields: entry_timing,

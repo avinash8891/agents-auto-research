@@ -51,3 +51,14 @@ def test_safety_rails_named_in_prompts_have_production_callers() -> None:
     findings = check_safety_rail_wiring(REQUIRED_WIRED_SAFETY_RAILS)
 
     assert findings == []
+
+
+def test_mechanism_prompt_gives_deterministic_actionable_rule() -> None:
+    """Rule 5 must give a repeatable actionable criterion (commit a testable
+    rule now, don't defer on uncertainty) and forbid re-proposing an idea
+    already recorded/screened in a prior round — the anti-wobble guidance."""
+    text = _build_mechanism_system_prompt().lower()
+    assert "do not waffle" in text
+    assert "uncertainty about the outcome is not a reason" in text
+    assert "re-propose" in text
+    assert "already recorded or screened" in text
