@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-06-18-controller-resume-state-machine.md
+  s_c781025ed43a12::t_4920d82507c1eb 28-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "ca24c1d1358b5228c3cec1d62eb402b1bf026066",
+  "prompts": {},
+  "sessions": {
+    "s_c781025ed43a12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f108c0ba-5958-40c1-a798-bd54f4f4fabc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
