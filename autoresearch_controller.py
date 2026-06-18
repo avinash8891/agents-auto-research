@@ -64,6 +64,13 @@ from autoresearch_research import log_research_round as _research_log_research_r
 from autoresearch_research import notify_discord as _notify_discord
 from autoresearch_research import queue_variants as _research_queue_variants
 from autoresearch_research import run_research as _research_run_research
+from autoresearch_resume import (
+    _RESEARCH_BLOCKER_KINDS,
+    ResumeType,
+    _blocker_kinds,
+    apply_resume_transition,
+    resumable_state_type,
+)
 from autoresearch_runtime_paths import AutoresearchRuntimeContext
 from autoresearch_state import BacktestResultRecord, RunContext
 from autoresearch_state import best_result as _state_best_result
@@ -144,202 +151,10 @@ def max_consecutive_research_required() -> int:
     return value
 
 
-_RECOVERABLE_BLOCKED_RESUME_KINDS = {"builder_failed", "command_failed", "metric_parse_failed"}
-_RESEARCH_BLOCKER_KINDS = {"research_required", "research_retry_required"}
-
-
-def _blocker_kinds(state: dict[str, Any]) -> set[str]:
-    blockers = state.get("blockers")
-    if not isinstance(blockers, list):
-        return set()
-    return {
-        str(blocker.get("kind"))
-        for blocker in blockers
-        if isinstance(blocker, dict) and blocker.get("kind")
-    }
-
-
 def validate_controller_state_invariants(state: dict[str, Any]) -> None:
     """Reject contradictory controller states before they reach disk."""
     if state.get("state") == "running" and _blocker_kinds(state):
         raise ValueError("running controller state cannot carry blockers")
-
-
-def _dict_state_field(state: dict[str, Any], key: str) -> dict[str, Any]:
-    value = state.get(key)
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _is_manual_review_resume_state(state: dict[str, Any]) -> bool:
-    return (
-        state.get("state") == "blocked"
-        and isinstance(state.get("next_action"), dict)
-        and state["next_action"].get("type") == "manual_review"
-        and (
-            state.get("halted_thesis_id")
-            or state.get("manual_review_theses")
-            or state.get("halted_reason") == "requires_code_change"
-        )
-    )
-
-
-def _is_halted_code_change_resume_state(state: dict[str, Any]) -> bool:
-    return (
-        state.get("state") == "halted"
-        and state.get("halted_reason") == "requires_code_change"
-        and bool(state.get("halted_thesis_id"))
-    )
-
-
-def _is_builder_running_resume_state(state: dict[str, Any]) -> bool:
-    next_action = state.get("next_action")
-    return (
-        state.get("state") == "building"
-        and state.get("halted_reason") == "requires_code_change"
-        and bool(state.get("halted_thesis_id"))
-        and isinstance(next_action, dict)
-        and next_action.get("type") == "builder_running"
-    )
-
-
-def _is_interrupted_research_failure_state(state: dict[str, Any]) -> bool:
-    return state.get("state") == "interrupted" and "research_failed" in _blocker_kinds(state)
-
-
-def _is_blocked_research_required_resume_state(state: dict[str, Any]) -> bool:
-    if state.get("state") != "blocked":
-        return False
-    next_action = state.get("next_action")
-    if not isinstance(next_action, dict) or next_action.get("type") != "research":
-        return False
-    return bool(_RESEARCH_BLOCKER_KINDS & _blocker_kinds(state))
-
-
-def _is_blocked_failed_round_resume_state(state: dict[str, Any]) -> bool:
-    if state.get("state") != "blocked":
-        return False
-    next_action = state.get("next_action")
-    if not isinstance(next_action, dict) or next_action.get("type") not in {
-        "blocked",
-        "builder_failed",
-    }:
-        return False
-    reason = next_action.get("reason")
-    return bool(_RECOVERABLE_BLOCKED_RESUME_KINDS & _blocker_kinds(state)) or (
-        reason in _RECOVERABLE_BLOCKED_RESUME_KINDS
-    )
-
-
-def _resume_interrupted_research_state(prior_state: dict[str, Any], job: int) -> dict[str, Any]:
-    failed_round = prior_state.get("research_round", 0)
-    try:
-        retry_from_round = max(int(failed_round) - 1, 0)
-    except (TypeError, ValueError):
-        retry_from_round = 0
-
-    prior_detail = ""
-    blockers = prior_state.get("blockers")
-    if not isinstance(blockers, list):
-        blockers = []
-    for blocker in blockers:
-        if isinstance(blocker, dict) and blocker.get("kind") == "research_failed":
-            prior_detail = str(blocker.get("detail") or "")
-            break
-
-    state = dict(prior_state)
-    state.update(
-        {
-            "state": "blocked",
-            "job": job,
-            "research_round": retry_from_round,
-            "research_round_in_progress": failed_round,
-            "blockers": [
-                {
-                    "kind": "research_required",
-                    "detail": (
-                        "Retrying interrupted research failure"
-                        + (f": {prior_detail}" if prior_detail else ".")
-                    ),
-                }
-            ],
-            "next_action": {
-                "type": "research",
-                "reason": "resume_current_job_retry_interrupted_research",
-            },
-        }
-    )
-    state.pop("current_thesis", None)
-    state.pop("thesis_statuses", None)
-    state.pop("finished_reason", None)
-    return state
-
-
-def _running_resume_state(
-    prior_state: dict[str, Any],
-    job: int,
-    *,
-    preserve_resume_metadata: bool,
-    resume_previous_blocker: bool = False,
-) -> dict[str, Any]:
-    state: dict[str, Any] = {
-        "state": "running",
-        "job": job,
-        "research_round": prior_state.get("research_round", 0),
-        "job_usage": prior_state.get("job_usage"),
-        "heartbeat": _dict_state_field(prior_state, "heartbeat"),
-    }
-    for key in ("current_best", "baseline_drift"):
-        if key in prior_state:
-            state[key] = prior_state[key]
-
-    if preserve_resume_metadata:
-        blocker_snapshot = _blocker_resume_snapshot(prior_state)
-        if blocker_snapshot:
-            _record_state_history(
-                state,
-                key="last_blocker",
-                value=blocker_snapshot,
-            )
-            state["resume_context"] = {
-                "source": "resume_current_job",
-                "blocker": blocker_snapshot,
-            }
-
-    if resume_previous_blocker:
-        blocker_kinds = sorted(_blocker_kinds(prior_state))
-        state["resume_previous_blocker"] = {
-            "kind": blocker_kinds[0] if blocker_kinds else prior_state.get("state", "unknown"),
-            "next_action": prior_state.get("next_action"),
-            "current_thesis": prior_state.get("current_thesis"),
-        }
-    return state
-
-
-def _record_state_history(state: dict[str, Any], *, key: str, value: dict[str, Any]) -> None:
-    history = state.setdefault("history", {})
-    if not isinstance(history, dict):
-        history = {}
-        state["history"] = history
-    history[key] = value
-
-
-def _blocker_resume_snapshot(prior_state: dict[str, Any]) -> dict[str, Any]:
-    snapshot: dict[str, Any] = {
-        "state": prior_state.get("state"),
-        "next_action": prior_state.get("next_action"),
-        "current_thesis": prior_state.get("current_thesis"),
-    }
-    if prior_state.get("halted_reason"):
-        snapshot["halted_reason"] = prior_state.get("halted_reason")
-    if prior_state.get("halted_thesis_id"):
-        snapshot["halted_thesis_id"] = prior_state.get("halted_thesis_id")
-    if prior_state.get("halted_thesis"):
-        snapshot["halted_thesis"] = prior_state.get("halted_thesis")
-    if prior_state.get("manual_review_theses"):
-        snapshot["manual_review_theses"] = list(prior_state.get("manual_review_theses") or [])
-    if prior_state.get("builder_failed_theses"):
-        snapshot["builder_failed_theses"] = list(prior_state.get("builder_failed_theses") or [])
-    return {k: v for k, v in snapshot.items() if v not in (None, [], {})}
 
 
 def _fresh_launch_state(job: int) -> dict[str, Any]:
@@ -372,22 +187,10 @@ def normalize_controller_launch_state(
     fresh_job: int | None = None,
 ) -> tuple[dict[str, Any], int]:
     job = _state_coerce_job_to_int(prior_state.get("job"))
-    resume_manual_review = _is_manual_review_resume_state(prior_state)
-    resume_halted_code_change = _is_halted_code_change_resume_state(prior_state)
-    resume_builder_running = _is_builder_running_resume_state(prior_state)
-    resume_research_failure = _is_interrupted_research_failure_state(prior_state)
-    resume_blocked_research = _is_blocked_research_required_resume_state(prior_state)
-    resume_failed_round = _is_blocked_failed_round_resume_state(prior_state)
+    resume_type = resumable_state_type(prior_state)
 
     if resume_current_job:
-        if not (
-            resume_manual_review
-            or resume_halted_code_change
-            or resume_builder_running
-            or resume_research_failure
-            or resume_blocked_research
-            or resume_failed_round
-        ):
+        if resume_type is None:
             raise ValueError(
                 "--resume-current-job requires a recoverable halted code-change, "
                 "builder-running, manual-review, blocked research-required, "
@@ -396,46 +199,20 @@ def normalize_controller_launch_state(
             )
         if job < 1:
             job = 1
-    else:
-        # Fresh jobs start from the next job number so new launches stay
-        # distinguishable from earlier runs in traces and backtest rows.
-        job = fresh_job if fresh_job is not None else job + 1
-        if job < 1:
-            job = 1
+        return apply_resume_transition(resume_type, prior_state, job), job
 
-    if resume_current_job and resume_research_failure:
-        return _resume_interrupted_research_state(prior_state, job), job
-    if resume_current_job and resume_blocked_research:
-        state = dict(prior_state)
-        state["job"] = job
-        return state, job
-    if resume_current_job and resume_failed_round:
-        return (
-            _running_resume_state(
-                prior_state,
-                job,
-                preserve_resume_metadata=True,
-                resume_previous_blocker=True,
-            ),
-            job,
-        )
-    if resume_current_job and (
-        resume_halted_code_change or resume_builder_running or resume_manual_review
-    ):
-        return (
-            _running_resume_state(prior_state, job, preserve_resume_metadata=True),
-            job,
-        )
-
-    # Fresh jobs must be isolated from any prior resume/manual-review state.
-    # Resume metadata is intentionally preserved only in the explicit
-    # --resume-current-job branches above.
+    # Fresh jobs start from the next job number so new launches stay
+    # distinguishable from earlier runs in traces and backtest rows, and are
+    # isolated from any prior resume/manual-review state.
+    job = fresh_job if fresh_job is not None else job + 1
+    if job < 1:
+        job = 1
     return _fresh_launch_state(job), job
 
 
 def _validate_current_executable_state(prior_state: dict[str, Any]) -> int:
     job = _state_coerce_job_to_int(prior_state.get("job"))
-    executable_blocked = _is_blocked_research_required_resume_state(prior_state)
+    executable_blocked = resumable_state_type(prior_state) is ResumeType.BLOCKED_RESEARCH
     if (
         prior_state.get("state") not in {"running", "blocked"}
         or (prior_state.get("state") == "blocked" and not executable_blocked)
