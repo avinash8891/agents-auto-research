@@ -29,8 +29,6 @@ from autoresearch_constants import (
     DISCORD_HTTP_TIMEOUT_SECONDS,
     MAX_RESEARCH_ROUNDS,
     MAX_VALIDATION_RETRIES,
-    MAX_VALIDATION_RETRIES_COMPILE,
-    MAX_VALIDATION_RETRIES_STAGE_1,
     research_engine_max_retries,
 )
 from autoresearch_logging import get_logger
@@ -58,6 +56,7 @@ from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic
 from persistence_utils import write_text_atomic as _write_text_atomic
 from research_memory import latest_thesis_details as _latest_thesis_details
+from research_retry import RetryBudget
 from research_types import CausalFactor, ConductorResult, MechanismProposal, ResearchThesis
 from strategy_family import StrategyFamily
 from trace_adapters import emit_halo_event, emit_recursive_improve_event, emit_reflexio_event
@@ -732,21 +731,6 @@ def _write_registered_predictions(
     )
 
 
-def _per_stage_budget_exhausted(stage_1: int, compile_n: int) -> bool:
-    """Return True if any stage's per-failure counter has hit its budget."""
-    return stage_1 >= MAX_VALIDATION_RETRIES_STAGE_1 or compile_n >= MAX_VALIDATION_RETRIES_COMPILE
-
-
-def _retry_budget_exhausted(
-    stage_1: int,
-    compile_n: int,
-    *,
-    attempt: int,
-    max_retries: int,
-) -> bool:
-    return attempt >= max_retries or _per_stage_budget_exhausted(stage_1, compile_n)
-
-
 def _mechanism_proposal_to_compiler_payload(
     raw_thesis: dict[str, Any],
     *,
@@ -1336,22 +1320,16 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             code_root=controller.root,
         )
     )
-    # Per-stage failure counters. Loop exits when any live stage's budget is hit.
-    stage_1_failures = 0
-    compile_failures = 0
-    attempt = 0
-    max_retries = research_engine_max_retries(
-        _research_engine_config_for_family(controller.root, controller.family.name)
+    # RetryBudget owns the attempt cap and per-stage failure budgets.
+    budget = RetryBudget(
+        max_retries=research_engine_max_retries(
+            _research_engine_config_for_family(controller.root, controller.family.name)
+        )
     )
-    while not _retry_budget_exhausted(
-        stage_1_failures,
-        compile_failures,
-        attempt=attempt,
-        max_retries=max_retries,
-    ):
+    while not budget.exhausted:
         conductor_result = _call_conductor(
             research_round,
-            attempt,
+            budget.attempt,
             trades_file=trades_file,
             strategy_events_file=strategy_events_file,
             diagnostics_file=diagnostics_file,
@@ -1368,27 +1346,23 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         result, retry_feedback, failed_stage = _try_one_validation_attempt(
             controller,
             research_round,
-            attempt,
+            budget.attempt,
             conductor_result,
             prior_theses,
             require_analyst_tool=bool(trades_file),
         )
         if result is not None:
             return result
-        if failed_stage == "stage_1":
-            stage_1_failures += 1
-        elif failed_stage == "compile":
-            compile_failures += 1
         rejection_feedback = retry_feedback or rejection_feedback
         _persist_rejection_feedback(controller, research_round, rejection_feedback)
-        attempt += 1
+        budget.record_failure(failed_stage)
     job_id = coerce_job_to_int(current_job)
     research_round_id = make_research_round_id(job_id, research_round)
     return _exhausted_retries_result(
         conductor_result,
         rejection_feedback,
         research_round_id=research_round_id,
-        attempt_number=max(attempt, 1),
+        attempt_number=max(budget.attempt, 1),
     )
 
 
