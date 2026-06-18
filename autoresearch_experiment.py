@@ -56,6 +56,7 @@ from causal_harvest import (
     write_feature_table_artifact,
     write_harvest_verdict_artifact,
 )
+from diagnostic_contracts import enrich_required_diagnostics
 from feature_table import FeatureTableArtifact
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic, write_text_atomic
@@ -1266,6 +1267,13 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         verdict: Any | None = None
         contract = controller.ctx.current_contract
         required_specs = getattr(contract, "required_diagnostic_specs", None) or []
+        if required_specs:
+            details["strategy_diagnostics"] = enrich_required_diagnostics(
+                required_specs,
+                baseline_metrics=_baseline_metrics_from_first_result(controller),
+                candidate_metrics=details,
+                strategy_diagnostics=details.get("strategy_diagnostics"),
+            )
         diagnostic_gap = missing_required_diagnostics(
             required_specs, details.get("strategy_diagnostics")
         )

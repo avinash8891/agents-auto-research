@@ -13,7 +13,7 @@ RoundStatus = Literal["completed", "running", "failed"]
 class RoundArtifact(BaseModel):
     """Canonical payload stored in each research round's round.json."""
 
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="ignore", strict=True)
 
     job_id: int = Field(ge=1)
     round_number: int = Field(ge=0)

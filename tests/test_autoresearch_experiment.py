@@ -49,8 +49,10 @@ from causal_model import load_model, save_model
 from feature_table import load_feature_table
 from research_types import (
     AccuracyPoint,
+    BacktestContract,
     CausalFactor,
     CausalModel,
+    DiagnosticRequirementSpec,
     HarvestVerdict,
 )
 from strategy_family import load_family
@@ -1495,6 +1497,66 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
     assert updated_model.version == 1
     assert updated_model.factors[0].status == "harvested"
     assert updated_model.factors[0].lesson.startswith("LLM lesson: profit_factor passed")
+
+
+def test_run_experiment_enriches_required_experiment_diagnostics_before_gap_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    script = _write_registered_prediction_result_script(
+        tmp_path,
+        {"trade_count": 20, "profit_factor": 2.1, "max_drawdown": 0.18},
+    )
+    controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
+    _write_causal_model_base_config(tmp_path)
+    monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
+    _prepare_registered_prediction_round(tmp_path, controller)
+    controller.baseline_tracker.record(
+        BaselineCheckpoint(
+            code_commit="abc1234",
+            data_hash="data",
+            config_hash="config",
+            metrics={"profit_factor": 2.0, "trade_count": 20, "max_drawdown": 0.2},
+            timestamp="2026-05-09T00:00:00+00:00",
+        )
+    )
+    controller.ctx.current_contract = BacktestContract(
+        contract_id="contract-1",
+        thesis_id="ema-drawdown",
+        strategy_family="ema",
+        baseline_config_path="configs/ema_base.yaml",
+        runtime_config={"ema_length": 10},
+        hypothesis="Drawdown should improve.",
+        mechanism="Reduce adverse excursions.",
+        required_diagnostic_specs=[
+            DiagnosticRequirementSpec(
+                key="max_drawdown_vs_base",
+                surface="experiment_evaluation",
+            )
+        ],
+    )
+    state = {
+        "state": "running",
+        "job": 6,
+        "research_round": 1,
+        "selected_thesis_id": "ema-drawdown",
+        "next_action": {
+            "type": "run_round",
+            "config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+            "selected_thesis_id": "ema-drawdown",
+            "source": "research",
+        },
+    }
+    controller.write_state(state)
+
+    assert run_experiment(controller, state) == 0
+
+    record = controller.backtest_run_db.all()[0]
+    assert record.strategy_diagnostics["max_drawdown_vs_base"] == {
+        "candidate_max_drawdown": 0.18,
+        "base_max_drawdown": 0.2,
+        "delta_max_drawdown": -0.02,
+    }
 
 
 def test_run_experiment_discards_refuted_registered_predictions(

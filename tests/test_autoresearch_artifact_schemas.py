@@ -63,3 +63,32 @@ def test_round_artifact_reader_rejects_legacy_alias_payload(tmp_path: Path) -> N
 
     with pytest.raises(ValidationError, match="job_id"):
         read_round_artifact(path)
+
+
+def test_round_artifact_reader_ignores_removed_legacy_fields(tmp_path: Path) -> None:
+    from autoresearch_artifact_schemas import read_round_artifact
+
+    path = tmp_path / "round.json"
+    path.write_text(
+        json.dumps(
+            {
+                "job_id": 2,
+                "round_number": 4,
+                "outcome": "compiled",
+                "selected_thesis_id": "ema-thesis",
+                "generated_config_path": "runtime/jobs/job-2/research/round-4/selected_config.json",
+                "generated_configs": [],
+                "new_theses_generated": 0,
+                "suggested_theses": [],
+                "findings": ["legacy terminal note"],
+                "run_id": "R-old-round",
+            }
+        )
+        + "\n"
+    )
+
+    artifact = read_round_artifact(path)
+
+    assert artifact.job_id == 2
+    assert artifact.round_number == 4
+    assert artifact.to_payload()["selected_thesis_id"] == "ema-thesis"
