@@ -62,3 +62,17 @@ def test_mechanism_prompt_gives_deterministic_actionable_rule() -> None:
     assert "uncertainty about the outcome is not a reason" in text
     assert "re-propose" in text
     assert "already recorded or screened" in text
+
+
+def test_mechanism_prompt_predictions_use_real_schema_field_names() -> None:
+    """The prompt must describe predictions with the actual Pydantic field names,
+    not leak the internal type name 'MetricName' as a JSON key. Regression for the
+    ModelBehaviorError where the model emitted {"MetricName":..,"Prediction":..}
+    (8 schema validation errors) because the prompt said 'distinct MetricName
+    values' and showed only predictions:null."""
+    from research_types import Prediction
+
+    prompt = _build_mechanism_system_prompt()
+    for field in Prediction.model_fields:  # metric, direction, predicted, rationale
+        assert f'"{field}"' in prompt, f"prediction field {field!r} missing from prompt"
+    assert "MetricName" not in prompt

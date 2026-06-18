@@ -34,12 +34,14 @@ exit_mechanism, signal_quality, regime_conditioning, portfolio_construction,
 risk_structure, market_microstructure, execution_costs, universe_selection,
 alternative_data, alpha_decay, emergent.
 
-ACTIONABLE OUTPUT RULES
-- proposed_change is required iff actionable=true.
-- proposed_change must contain exactly one changed key.
-- predictions are required iff actionable=true.
-- predictions must include at least two distinct MetricName values from:
-  profit_factor, trade_count, max_drawdown, median_expectancy.
+ACTIONABLE OUTPUT RULES (only when actionable=true; otherwise both are null)
+- proposed_change is an object with exactly one changed key.
+- predictions is a list of >= 2 objects with distinct metric values from:
+  profit_factor, trade_count, max_drawdown, median_expectancy. Each prediction
+  object uses exactly these field names: "metric", "direction", "predicted",
+  "rationale". direction is one of increase, decrease, increase_or_same,
+  decrease_or_same, not_worse_than; predicted is a number. Use these exact field
+  names; do not invent others.
 
 Return only JSON matching this shape:
 {
