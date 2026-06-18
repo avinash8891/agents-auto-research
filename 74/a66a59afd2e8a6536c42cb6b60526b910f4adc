@@ -1,0 +1,27 @@
+agent_token_usage.py
+  s_c781025ed43a12::t_249dcdd37053cd 207,216,225
+compiler_builder.py
+  s_c781025ed43a12::t_249dcdd37053cd 16,298
+research_subagents.py
+  s_c781025ed43a12::t_249dcdd37053cd 15,1271,1324
+tests/test_agent_token_usage.py
+  s_c781025ed43a12::t_249dcdd37053cd 24-25,305,328,337,368,375,390,399,407,430,436,449-450,585-586,591,599,604
+agent_sdk_token_usage.py
+  s_c781025ed43a12::t_249dcdd37053cd 6,148,218,221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "74a66a59afd2e8a6536c42cb6b60526b910f4adc",
+  "prompts": {},
+  "sessions": {
+    "s_c781025ed43a12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f108c0ba-5958-40c1-a798-bd54f4f4fabc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
