@@ -920,9 +920,17 @@ async def run_research_conductor(
     except Exception as exc:
         error_text = str(exc)
         error_kind = "proxy_unavailable" if "openai-oauth proxy" in error_text else "exception"
+        # rule H: surface the actual exception type + message + traceback so an
+        # operator can act on it; a bare "ERROR: exception" is undiagnosable.
+        log.exception(
+            "CONDUCTOR agent run failed: kind=%s type=%s msg=%s",
+            error_kind,
+            type(exc).__name__,
+            error_text,
+        )
         trace(
             "CONDUCTOR",
-            f"ERROR: {error_kind}",
+            f"ERROR: {error_kind}: {type(exc).__name__}: {error_text}",
             model_provider="openai",
             model_name=_CONDUCTOR_MODEL,
         )
