@@ -781,7 +781,10 @@ def _screen_mechanism_proposal(
 
     runtime_root = getattr(controller, "runtime_root", None) or controller.root
     completed_round = max(int(research_round) - 1, 0)
-    feature_artifact = FeatureTableArtifact.for_round(runtime_root, job_id, completed_round)
+    # Resolve the most recent round that actually wrote a feature table: a prior
+    # round that proposed no change ran no experiment and wrote none, so a fixed
+    # `completed_round` lookup can hit a gap. Falls back through to the baseline.
+    feature_artifact = FeatureTableArtifact.latest_through(runtime_root, job_id, completed_round)
     features = feature_artifact.load()
     model_store = CausalModelStore(runtime_root=runtime_root, code_root=controller.root)
     model = model_store.load(controller.family.name)

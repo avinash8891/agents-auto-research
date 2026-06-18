@@ -51,6 +51,29 @@ OUTCOME_COLUMNS = frozenset(c for c in _FEATURE_COLUMNS if c.startswith("out_"))
 ENTRY_TIME_COLUMNS = frozenset(_FEATURE_COLUMNS) - OUTCOME_COLUMNS
 
 
+class FeatureTableMissingError(FileNotFoundError):
+    """A feature-table artifact was read but never written.
+
+    Feature tables are produced by the baseline backtest (round 0) and by each
+    research round that runs an experiment. A round proposing no actionable
+    change runs no experiment and writes none, so a fixed ``round N-1`` lookup
+    can point at a gap. Resolve the most recent realized round with
+    ``FeatureTableArtifact.latest_through()`` instead of assuming a round exists.
+
+    Subclasses FileNotFoundError so existing ``except FileNotFoundError``
+    handlers still catch it, but with an actionable message (CLAUDE.md rule H).
+    """
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(
+            f"No feature table at {path}. It is produced by the baseline backtest "
+            "or an actionable research round's experiment; confirm that step ran, "
+            "or resolve the most recent realized round with "
+            "FeatureTableArtifact.latest_through()."
+        )
+        self.path = path
+
+
 @dataclass(frozen=True)
 class FeatureTableArtifact:
     """Canonical feature-table artifact for one research round."""
@@ -61,11 +84,35 @@ class FeatureTableArtifact:
     def for_round(cls, runtime_root: Path, job: int, research_round: int) -> "FeatureTableArtifact":
         return cls(research_round_root(runtime_root, job, research_round))
 
+    @classmethod
+    def latest_through(
+        cls, runtime_root: Path, job: int, research_round: int
+    ) -> "FeatureTableArtifact":
+        """Most recent realized feature table at or before ``research_round``.
+
+        Walks rounds ``research_round``..0 and returns the first that exists on
+        disk. Round 0 (the baseline) is the guaranteed floor once the baseline
+        backtest has run. Rounds that proposed no change wrote no table and are
+        skipped — this is the robust alternative to assuming round N exists.
+        Raises FeatureTableMissingError if no round (not even the baseline) has
+        one, which is a real failure (the baseline never ran).
+        """
+        for candidate_round in range(int(research_round), -1, -1):
+            artifact = cls.for_round(runtime_root, job, candidate_round)
+            if artifact.exists():
+                return artifact
+        raise FeatureTableMissingError(cls.for_round(runtime_root, job, 0).path)
+
     @property
     def path(self) -> Path:
         return self.round_root / "feature_table.parquet"
 
+    def exists(self) -> bool:
+        return self.path.exists()
+
     def load(self) -> pd.DataFrame:
+        if not self.path.exists():
+            raise FeatureTableMissingError(self.path)
         return pd.read_parquet(self.path)
 
     def write(self, table: pd.DataFrame) -> None:
