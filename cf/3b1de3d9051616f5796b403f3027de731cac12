@@ -1,0 +1,19 @@
+uv.lock
+  s_3f921e45f9e131::t_153da002b334ad 1-4733
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "cf3b1de3d9051616f5796b403f3027de731cac12",
+  "prompts": {},
+  "sessions": {
+    "s_3f921e45f9e131": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ec44d-6491-7e93-95d4-12f0277218bf",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
