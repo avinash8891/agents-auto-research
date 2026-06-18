@@ -478,6 +478,73 @@ def apply_registered_verdict_to_causal_factor(
     )
 
 
+@dataclass
+class VerdictOutcome:
+    """Resolved registered-prediction verdict plus its effect on the round."""
+
+    verdict: Any | None
+    decision: str
+    retest_request: RetestRequested | None
+
+
+def resolve_registered_verdict(
+    controller: "AutoresearchController",
+    *,
+    run_output_dir: Path,
+    config: str,
+    state: dict[str, Any],
+    metric: Any,
+    details: dict[str, Any],
+    decision: str,
+) -> VerdictOutcome:
+    """Run the registered-prediction verdict lifecycle for one backtest result.
+
+    Owns the full ordering the caller used to perform by hand: evaluate (with the
+    retest baseline override) -> classify inconclusive (force-after-retest vs
+    request a retest) -> attach the paid lesson only to terminal verdicts ->
+    persist the artifact -> apply the verdict to the causal factor. Returns the
+    final verdict, the possibly-updated decision, and any retest request.
+    """
+    registered_verdict = evaluate_registered_predictions(
+        controller,
+        run_output_dir,
+        metric,
+        details,
+        baseline_override=(
+            retest_baseline_metrics(controller, state, run_output_dir)
+            if is_registered_prediction_retest_action(state)
+            else None
+        ),
+    )
+    if registered_verdict is None:
+        return VerdictOutcome(verdict=None, decision=decision, retest_request=None)
+
+    retest_request: RetestRequested | None = None
+    forced_after_retest = False
+    if registered_verdict.status == "inconclusive":
+        if is_registered_prediction_retest_action(state):
+            registered_verdict = force_registered_inconclusive_after_retest(registered_verdict)
+            forced_after_retest = True
+            decision = "discard"
+        else:
+            retest_request = request_registered_prediction_retest(controller, state, config=config)
+            decision = "retest"
+    if retest_request is None and not forced_after_retest:
+        # Only terminal verdicts get the paid LLM lesson; a verdict heading to
+        # retest would have its lesson overwritten, and a forced-after-retest
+        # verdict must keep its audit marker.
+        registered_verdict = attach_harvest_lesson(controller, run_output_dir, registered_verdict)
+    write_harvest_verdict_artifact(controller, run_output_dir, registered_verdict)
+    if registered_verdict.status in {"degenerate", "refuted"}:
+        decision = "discard"
+    apply_registered_verdict_to_causal_factor(controller, config, registered_verdict)
+    return VerdictOutcome(
+        verdict=registered_verdict,
+        decision=decision,
+        retest_request=retest_request,
+    )
+
+
 def _round_root_for_config(controller: "AutoresearchController", config: str) -> Path:
     config_path = resolve_config_path(
         config,

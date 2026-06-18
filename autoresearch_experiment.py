@@ -45,16 +45,9 @@ from backtest_run_db import (
 )
 from causal_harvest import (
     RetestRequested,
-    apply_registered_verdict_to_causal_factor,
-    attach_harvest_lesson,
-    evaluate_registered_predictions,
-    force_registered_inconclusive_after_retest,
-    is_registered_prediction_retest_action,
     load_runtime_config_contents,
-    request_registered_prediction_retest,
-    retest_baseline_metrics,
+    resolve_registered_verdict,
     write_feature_table_artifact,
-    write_harvest_verdict_artifact,
 )
 from experiment_decision import decide_verdict
 from feature_table import FeatureTableArtifact
@@ -1276,46 +1269,18 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
                 diagnostic_gap,
             )
             decision = "discard"
-        registered_verdict = evaluate_registered_predictions(
+        verdict_outcome = resolve_registered_verdict(
             controller,
-            run_output_dir,
-            metric,
-            details,
-            baseline_override=(
-                retest_baseline_metrics(controller, state, run_output_dir)
-                if is_registered_prediction_retest_action(state)
-                else None
-            ),
+            run_output_dir=run_output_dir,
+            config=config,
+            state=state,
+            metric=metric,
+            details=details,
+            decision=decision,
         )
-        retest_request: RetestRequested | None = None
-        forced_after_retest = False
-        if registered_verdict is not None:
-            if registered_verdict.status == "inconclusive":
-                if is_registered_prediction_retest_action(state):
-                    registered_verdict = force_registered_inconclusive_after_retest(
-                        registered_verdict
-                    )
-                    forced_after_retest = True
-                    decision = "discard"
-                else:
-                    retest_request = request_registered_prediction_retest(
-                        controller, state, config=config
-                    )
-                    decision = "retest"
-            if retest_request is None and not forced_after_retest:
-                # Only terminal verdicts get the paid LLM lesson; a verdict
-                # heading to retest would have its lesson overwritten, and a
-                # forced-after-retest verdict must keep its audit marker.
-                registered_verdict = attach_harvest_lesson(
-                    controller,
-                    run_output_dir,
-                    registered_verdict,
-                )
-            write_harvest_verdict_artifact(controller, run_output_dir, registered_verdict)
-            verdict = registered_verdict
-            if registered_verdict.status in {"degenerate", "refuted"}:
-                decision = "discard"
-            apply_registered_verdict_to_causal_factor(controller, config, registered_verdict)
+        verdict = verdict_outcome.verdict
+        decision = verdict_outcome.decision
+        retest_request = verdict_outcome.retest_request
 
         analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
         if verdict:
