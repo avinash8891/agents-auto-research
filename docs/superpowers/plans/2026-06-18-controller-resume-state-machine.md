@@ -25,6 +25,18 @@ Implement the **first 8 candidates** from `architecture-review-20260618-213349.h
 
 **Sequencing constraint:** candidates #2 and #4 both modify `autoresearch_experiment.py`, and #6/#7 both touch agent-infra — these cannot run as parallel worktrees without conflict. Implement sequentially, one deliverable per commit (CLAUDE.md rule E), stopping at each candidate boundary (CLAUDE.md rule 4). Candidates #2–#8 each get their own detailed TDD plan (the report deferred interface design) before implementation.
 
+## Deferred TODOs
+
+Work intentionally left out of the 2026-06-18 implementation sweep (each was scoped down to a safe, behavior-preserving slice or skipped with a verified reason). Each item below needs its own detailed TDD plan before implementation.
+
+- [ ] **#7 — TraceEngine + exporter registry** (`trace_sdk.py`). Fold `_PROVIDER`/`_INITIALIZED` into the existing `TraceRuntimeState`; add a swappable-exporter seam (test-capture + Halo) so tests stop poking module globals. **High blast radius** (15+ `trace_*()` functions imported repo-wide) on load-bearing observability — staged plan with the full trace suite as oracle. Only build the exporter registry once a second exporter actually exists (today only `JsonLineTraceExporter`).
+- [ ] **#8 sequencing half — `BuilderWorkspace` lifecycle** (`compiler_builder.py`). Extract `initialize()` / `sync_changes()` / `record_promotion()` out of the ~500-line `build_missing_primitives` onto the `BuilderWorkspace` value object already shipped in `183d5d5`. High-risk extraction from one giant function — needs strong builder-test coverage as oracle.
+- [ ] **#1 builder-lifecycle + planning halves.** Consolidate the `_mark_builder_*` / `_activate_builder_config` mutations in `autoresearch_orchestration.py`, and `build_research_failure_state` / `plan_next_action` in `autoresearch_planning.py`, behind the `autoresearch_resume` state-machine seam (`abfdbdc` did only the resume-classification half).
+- [ ] **#2 — `BacktestRunDB.find_duplicate`.** Move `_find_duplicate_artifact_output` (+ `_sha256_file`) from `autoresearch_experiment.py` onto `BacktestRunDB` so duplicate detection lives with the records it scans (`801b472` did the `decide_verdict` half; the factory already takes `duplicate` as input, so this slots in cleanly).
+- [ ] **#3 — full ValidationPipeline.** Extract the conductor→validate→screen→compile→dispatch sequence (not just the `RetryBudget` shipped in `312a12f`) out of `execute_research_sdk` into a pipeline object exposing `.attempt(conductor_result, prior_theses)`.
+- [ ] **#6 — typed `AccumulationRequest`.** When a second (non-OpenAI-SDK) token adapter appears, introduce the normalized `AccumulationRequest` dataclass so adapters build one shape feeding `accumulate_usage` (`74a66a5` promoted the seam to public; the dataclass is speculative until then).
+- [ ] **#5 — dead-code decision** (`compiler_operationalize.py`). `operationalize_thesis` / `finalize_thesis_config_changes` / `_run_operationalization_agent` / `_build_operationalization_prompt` have **zero callers** (verified) but are a `compiler_pipeline.__all__` public export. Decide with the maintainer: delete (and drop from `__all__`) or keep as intentional API. Do **not** build the `ThesisContract` abstraction — it would deepen dead code.
+
 ## Global Constraints
 
 - **Behavior preservation is the whole point.** The six existing tests in `tests/test_autoresearch_controller_characterization.py` (`test_launch_state_*`) must pass unchanged after Task 3. Do not edit them.
