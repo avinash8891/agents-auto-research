@@ -13,7 +13,7 @@ from difflib import unified_diff
 from pathlib import Path
 from typing import Any
 
-from agent_token_usage import _accumulate_usage
+from agent_token_usage import accumulate_usage
 from artifact_io import timestamp_now, write_json_artifact
 from autoresearch_logging import get_logger
 from autoresearch_paths import serialize_config_path
@@ -295,7 +295,7 @@ def _emit_builder_usage(
         "reasoning_output_tokens": int(usage.get("reasoning_output_tokens") or 0),
         "usage_source": usage_source,
     }
-    _accumulate_usage(
+    accumulate_usage(
         "builder",
         usage_payload,
         provider="codex",

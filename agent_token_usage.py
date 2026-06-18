@@ -204,7 +204,7 @@ def _emit_budget_warning_once(
     )
 
 
-def _record_failed_call(agent_type: str, dedupe_key: str | None = None) -> None:
+def record_failed_call(agent_type: str, dedupe_key: str | None = None) -> None:
     agent_type = _canonical_agent_type(agent_type)
     if dedupe_key:
         if dedupe_key in _SEEN_DEDUPE_KEYS:
@@ -213,7 +213,7 @@ def _record_failed_call(agent_type: str, dedupe_key: str | None = None) -> None:
     _ensure_entry(agent_type)["failed_calls"] += 1
 
 
-def _record_unmetered_call(agent_type: str, dedupe_key: str | None = None) -> None:
+def record_unmetered_call(agent_type: str, dedupe_key: str | None = None) -> None:
     agent_type = _canonical_agent_type(agent_type)
     if dedupe_key:
         if dedupe_key in _SEEN_DEDUPE_KEYS:
@@ -222,7 +222,7 @@ def _record_unmetered_call(agent_type: str, dedupe_key: str | None = None) -> No
     _ensure_entry(agent_type)["unmetered_calls"] += 1
 
 
-def _accumulate_usage(
+def accumulate_usage(
     agent_type: str,
     usage: dict[str, Any] | None,
     cost_usd: float | None = None,

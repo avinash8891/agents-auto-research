@@ -3,7 +3,7 @@ from __future__ import annotations
 from math import ceil
 from typing import Any, Literal
 
-from agent_token_usage import _accumulate_usage, _record_failed_call, _record_unmetered_call
+from agent_token_usage import accumulate_usage, record_failed_call, record_unmetered_call
 from autoresearch_logging import get_logger
 
 logger = get_logger(__name__)
@@ -145,7 +145,7 @@ def accumulate_agents_sdk_result_usage(
     same normalized fields without inheriting OpenAI Agents SDK assumptions.
     """
     if result is None:
-        _record_failed_call(agent_type, dedupe_key=dedupe_key)
+        record_failed_call(agent_type, dedupe_key=dedupe_key)
         return
 
     totals = {
@@ -215,10 +215,10 @@ def accumulate_agents_sdk_result_usage(
         }
     else:
         logger.warning("SDK result for %s had no provider usage and no estimate text", agent_type)
-        _record_unmetered_call(agent_type, dedupe_key=dedupe_key)
+        record_unmetered_call(agent_type, dedupe_key=dedupe_key)
         return
 
-    _accumulate_usage(
+    accumulate_usage(
         agent_type,
         normalized_usage,
         cost_usd=cost_usd,

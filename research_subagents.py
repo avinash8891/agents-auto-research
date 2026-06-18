@@ -12,7 +12,7 @@ from time import monotonic
 from typing import Any
 
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
-from agent_token_usage import _accumulate_usage
+from agent_token_usage import accumulate_usage
 from autoresearch_runtime_paths import iter_family_backtest_db_paths
 from autoresearch_state import coerce_timestamp_to_epoch_ms
 from backtest_run_db import BacktestRunDB
@@ -1268,7 +1268,7 @@ Minimum content rules:
         usage = metadata.get("usage")
         if isinstance(usage, dict):
             usage = {**usage, "usage_source": metadata.get("usage_source", "")}
-            _accumulate_usage(
+            accumulate_usage(
                 "web_researcher",
                 usage,
                 provider="openai",
@@ -1321,7 +1321,7 @@ Minimum content rules:
         usage = getattr(exc, "metadata", {}).get("usage")
         if isinstance(usage, dict):
             usage = {**usage, "usage_source": getattr(exc, "metadata", {}).get("usage_source", "")}
-            _accumulate_usage(
+            accumulate_usage(
                 "web_researcher",
                 usage,
                 provider="openai",

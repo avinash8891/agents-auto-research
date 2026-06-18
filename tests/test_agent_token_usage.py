@@ -20,9 +20,9 @@ import agent_token_usage
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import (
     _infer_provider,
-    _record_failed_call,
-    _record_unmetered_call,
     get_round_usage,
+    record_failed_call,
+    record_unmetered_call,
     reset_round_usage,
 )
 from compiler_builder import _emit_builder_usage
@@ -302,7 +302,7 @@ def test_cli_usage_emits_cached_reasoning_and_usage_source_metadata():
     with patch.object(
         agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
     ):
-        agent_token_usage._accumulate_usage(
+        agent_token_usage.accumulate_usage(
             "web-researcher",
             {
                 "input_tokens": 101,
@@ -325,7 +325,7 @@ def test_cli_usage_emits_cached_reasoning_and_usage_source_metadata():
     assert emitted[0]["trace_id"] == "trace-web-001"
 
 
-def test_accumulate_usage_emits_token_budget_warning(monkeypatch):
+def testaccumulate_usage_emits_token_budget_warning(monkeypatch):
     warnings = []
     monkeypatch.setenv("AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL", "1000")
     monkeypatch.setattr(
@@ -334,7 +334,7 @@ def test_accumulate_usage_emits_token_budget_warning(monkeypatch):
         lambda **kwargs: warnings.append(kwargs),
     )
 
-    agent_token_usage._accumulate_usage(
+    agent_token_usage.accumulate_usage(
         "analyst",
         {"input_tokens": 900, "output_tokens": 200, "total_tokens": 1100},
         provider="openai",
@@ -365,14 +365,14 @@ def test_web_researcher_agent_aliases_share_round_budget(monkeypatch):
         lambda **kwargs: warnings.append(kwargs),
     )
 
-    agent_token_usage._accumulate_usage(
+    agent_token_usage.accumulate_usage(
         "web-researcher",
         {"input_tokens": 400, "output_tokens": 100, "total_tokens": 500},
         provider="openai",
         model="gpt-5.2",
         trace_id="trace-web-1",
     )
-    agent_token_usage._accumulate_usage(
+    agent_token_usage.accumulate_usage(
         "web_researcher",
         {"input_tokens": 450, "output_tokens": 100, "total_tokens": 550},
         provider="openai",
@@ -387,7 +387,7 @@ def test_web_researcher_agent_aliases_share_round_budget(monkeypatch):
     assert warnings[0]["total_tokens"] == 1050
 
 
-def test_accumulate_usage_emits_soft_thesis_budget_warning(monkeypatch):
+def testaccumulate_usage_emits_soft_thesis_budget_warning(monkeypatch):
     warnings = []
     monkeypatch.setenv("AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL_THESIS", "1000")
     monkeypatch.setattr(
@@ -396,7 +396,7 @@ def test_accumulate_usage_emits_soft_thesis_budget_warning(monkeypatch):
         lambda **kwargs: warnings.append(kwargs),
     )
 
-    agent_token_usage._accumulate_usage(
+    agent_token_usage.accumulate_usage(
         "conductor",
         {"input_tokens": 700, "output_tokens": 100, "total_tokens": 800},
         provider="openai",
@@ -404,7 +404,7 @@ def test_accumulate_usage_emits_soft_thesis_budget_warning(monkeypatch):
         trace_id="trace-conductor-001",
         thesis_id="ema-test-thesis",
     )
-    agent_token_usage._accumulate_usage(
+    agent_token_usage.accumulate_usage(
         "analyst",
         {"input_tokens": 400, "output_tokens": 100, "total_tokens": 500},
         provider="openai",
@@ -427,13 +427,13 @@ def test_accumulate_usage_emits_soft_thesis_budget_warning(monkeypatch):
     ]
 
 
-def test_accumulate_usage_propagates_thesis_id_to_usage_trace():
+def testaccumulate_usage_propagates_thesis_id_to_usage_trace():
     emitted = []
 
     with patch.object(
         agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
     ):
-        agent_token_usage._accumulate_usage(
+        agent_token_usage.accumulate_usage(
             "analyst",
             {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
             provider="openai",
@@ -446,8 +446,8 @@ def test_accumulate_usage_propagates_thesis_id_to_usage_trace():
     assert emitted[0]["thesis_id"] == "ema-thesis-42"
 
 
-def test_accumulate_usage_preserves_explicit_zero_without_alias_fallback():
-    agent_token_usage._accumulate_usage(
+def testaccumulate_usage_preserves_explicit_zero_without_alias_fallback():
+    agent_token_usage.accumulate_usage(
         "web-researcher",
         {
             "input_tokens": 0,
@@ -582,13 +582,13 @@ def test_mixed_successful_and_failed_calls_tracked_independently():
     assert agent["total_tokens"] == 6000
 
 
-def test_record_failed_call_skips_trace():
-    """_record_failed_call must not emit a trace event and must increment failed_calls."""
+def testrecord_failed_call_skips_trace():
+    """record_failed_call must not emit a trace event and must increment failed_calls."""
     emitted = []
     with patch.object(
         agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
     ):
-        _record_failed_call("codex-analyst")
+        record_failed_call("codex-analyst")
 
     assert emitted == []
     agent = get_round_usage()["by_agent"]["codex-analyst"]
@@ -596,12 +596,12 @@ def test_record_failed_call_skips_trace():
     assert agent["calls"] == 0
 
 
-def test_record_unmetered_call_skips_trace():
+def testrecord_unmetered_call_skips_trace():
     emitted = []
     with patch.object(
         agent_token_usage, "_emit_trace_usage", side_effect=lambda *a, **kw: emitted.append(kw)
     ):
-        _record_unmetered_call("codex-analyst")
+        record_unmetered_call("codex-analyst")
 
     assert emitted == []
     agent = get_round_usage()["by_agent"]["codex-analyst"]
