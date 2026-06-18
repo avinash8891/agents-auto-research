@@ -56,6 +56,7 @@ from causal_harvest import (
     write_feature_table_artifact,
     write_harvest_verdict_artifact,
 )
+from experiment_decision import decide_verdict
 from feature_table import FeatureTableArtifact
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic, write_text_atomic
@@ -688,30 +689,27 @@ def _build_db_record(
     train_metrics = details.get("train_metrics", {})
     if not isinstance(train_metrics, dict):
         train_metrics = {}
-    verdict_status = verdict.get("status")
-    verdict_summary = verdict.get("summary", "")
-    if not verdict_status:
-        verdict_status = "accepted" if decision == "keep" else "rejected"
-    if not verdict_summary:
-        verdict_summary = (
-            "kept by primary metric improvement"
-            if decision == "keep"
-            else "rejected by primary metric comparison"
-        )
     duplicate = _find_duplicate_artifact_output(
         controller,
         runtime_config=runtime_config,
         details=details,
         state=state,
     )
-    if duplicate is not None:
-        decision = "discard"
-        verdict_status = (
-            "invalid_duplicate_result"
-            if duplicate.runtime_config == runtime_config
-            else "invalid_noop_config"
-        )
-        verdict_summary = _invalid_duplicate_result_summary(duplicate, details, runtime_config)
+    duplicate_summary = (
+        _invalid_duplicate_result_summary(duplicate, details, runtime_config)
+        if duplicate is not None
+        else ""
+    )
+    resolved = decide_verdict(
+        decision=decision,
+        registered_verdict=verdict,
+        duplicate=duplicate,
+        runtime_config=runtime_config,
+        duplicate_summary=duplicate_summary,
+    )
+    decision = resolved.decision
+    verdict_status = resolved.verdict_status
+    verdict_summary = resolved.verdict_summary
     code_commit = _executed_code_commit(controller, details)
     round_number = _coerce_research_round_number(state)
     round_id = research_round_id_or_empty(state.get("job", 0), round_number)
