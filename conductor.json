@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "setup": "$HOME/.local/bin/dev-secrets-materialize",
+    "archive": "rm -f .env .env.global .env.local"
+  }
+}
