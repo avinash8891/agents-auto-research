@@ -612,20 +612,33 @@ def _load_structured_thesis_artifacts(
     return None
 
 
-def _builder_artifact_dir(
-    root: Path, family_name: str, thesis_id: str, *, artifact_root: Path | None = None
-) -> Path:
-    if artifact_root is None:
-        raise ValueError("job-scoped artifact_root is required for builder artifacts")
-    return artifact_root / "builder_request"
+BUILDER_REQUEST_DIRNAME = "builder_request"
+BUILDER_WORKSPACE_DIRNAME = "workspace"
+BUILDER_ATTEMPT_DIR_PREFIX = "attempt-"
 
 
-def _builder_attempt_artifact_dir(artifact_dir: Path, attempt_number: int) -> Path:
-    return artifact_dir / f"attempt-{attempt_number}"
+@dataclass(frozen=True)
+class BuilderWorkspace:
+    """The on-disk layout of one job-scoped builder request.
 
+    One home for the directory naming convention the builder uses:
+    ``<artifact_root>/builder_request/`` holds the staged ``workspace/`` and
+    per-attempt ``attempt-N/`` artifact directories. Callers derive paths through
+    this object instead of re-joining the segment literals at each site.
+    """
 
-def _builder_workspace_dir(artifact_dir: Path) -> Path:
-    return artifact_dir / "workspace"
+    artifact_root: Path
+
+    @property
+    def request_dir(self) -> Path:
+        return self.artifact_root / BUILDER_REQUEST_DIRNAME
+
+    @property
+    def workspace_dir(self) -> Path:
+        return self.request_dir / BUILDER_WORKSPACE_DIRNAME
+
+    def attempt_dir(self, attempt_number: int) -> Path:
+        return self.request_dir / f"{BUILDER_ATTEMPT_DIR_PREFIX}{attempt_number}"
 
 
 def _builder_source_ignore(_dir: str, names: list[str]) -> set[str]:
@@ -1375,10 +1388,9 @@ def build_missing_primitives(
             return invalid_contract
         generated_name = (artifact_root / "selected_config.json").resolve()
         config_path = serialize_config_path(generated_name, code_root=root)
-        builder_requests_dir = artifact_root / "builder_request"
-        attempt_dir = _builder_artifact_dir(
-            root, family_name, thesis_id, artifact_root=artifact_root
-        )
+        builder_workspace = BuilderWorkspace(artifact_root=artifact_root)
+        builder_requests_dir = builder_workspace.request_dir
+        attempt_dir = builder_workspace.request_dir
     else:
         return {
             "status": "error",
@@ -1390,7 +1402,7 @@ def build_missing_primitives(
             "generated_config": None,
             "validation_passed": False,
         }
-    workspace_root = _builder_workspace_dir(attempt_dir)
+    workspace_root = builder_workspace.workspace_dir
     _copy_builder_source_tree(root, workspace_root)
     workspace_proposal_path = _copy_file_into_workspace(
         source=proposal_path,
@@ -1806,7 +1818,7 @@ def build_missing_primitives(
             out["builder_attempts"] = attempt_index + 1
             out["builder_task"] = asdict(builder_task)
             _persist_builder_attempt_bundle(
-                artifact_dir=_builder_attempt_artifact_dir(attempt_dir, attempt_index + 1),
+                artifact_dir=builder_workspace.attempt_dir(attempt_index + 1),
                 source_root=root,
                 workspace_root=workspace_root,
                 prompt=attempt_prompt,
