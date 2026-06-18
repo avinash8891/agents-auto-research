@@ -7,6 +7,7 @@ from time import monotonic
 from typing import Any
 
 from agents import Agent as OAIAgent
+from agents import AgentOutputSchema as OAIAgentOutputSchema
 from agents import ModelSettings as OAIModelSettings
 from agents import RunConfig as OAIRunConfig
 from agents import Runner as OAIRunner
@@ -65,6 +66,18 @@ from trace_sdk import (
 )
 
 log = get_logger(__name__)
+
+
+def _conductor_output_schema() -> OAIAgentOutputSchema:
+    """SDK-safe output schema for the conductor agent.
+
+    MechanismProposal.proposed_change is free-form (dict[str, Any]); the
+    openai-agents SDK's strict JSON schema mode rejects the resulting
+    additionalProperties. Disable strict so the SDK parses the model
+    non-strictly (the conductor still validates via Pydantic downstream).
+    """
+    return OAIAgentOutputSchema(MechanismProposal, strict_json_schema=False)
+
 
 __all__ = [
     "run_research_conductor",
@@ -850,15 +863,16 @@ async def run_research_conductor(
             )
             return output
 
+        output_schema = _conductor_output_schema()
         agent = OAIAgent(
             name="research-conductor",
             instructions=system_prompt,
             tools=[analyze_trades] if trades_file else [],
             model=model,
-            output_type=MechanismProposal,
+            output_type=output_schema,
         )
         if not hasattr(agent, "output_type"):
-            setattr(agent, "output_type", MechanismProposal)
+            setattr(agent, "output_type", output_schema)
 
         async with asyncio.timeout(_conductor_timeout_seconds()):
             result = OAIRunner.run_streamed(
