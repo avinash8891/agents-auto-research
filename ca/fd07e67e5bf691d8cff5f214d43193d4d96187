@@ -1,0 +1,19 @@
+RTK.md
+  s_4e1ab51268bcb3::t_b0da1337f21887 1-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "cafd07e67e5bf691d8cff5f214d43193d4d96187",
+  "prompts": {},
+  "sessions": {
+    "s_4e1ab51268bcb3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb06c-e86f-7a91-9da8-d62723bbbe11",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
