@@ -53,6 +53,11 @@ MAX_VALIDATION_RETRIES_COMPILE = 1  # compile failures rarely fix in-loop
 # and compiler operationalize pipeline.
 DEFAULT_AGENT_MODEL = "gpt-5.2"
 
+# Research-conductor model. Decoupled from DEFAULT_AGENT_MODEL so the conductor
+# can track an available served model independently. The codex-oauth proxy no
+# longer serves gpt-5.2 (it drops the stream mid-response); gpt-5.4 is served.
+CONDUCTOR_MODEL = "gpt-5.4"
+
 # ── Improvement-loop feature flags (env var names) ───────────────
 # All default off. Each flag gates exactly one arrow in the improvement
 # loop. Default-off is byte-identical to pre-improvement-loop behavior.
