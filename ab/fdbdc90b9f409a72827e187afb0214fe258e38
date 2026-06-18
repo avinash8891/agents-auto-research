@@ -1,0 +1,30 @@
+docs/superpowers/plans/2026-06-18-controller-resume-state-machine.md
+  s_c781025ed43a12::t_f03be550396ea0 1-10,28-704
+  s_c781025ed43a12::t_f1bca3dced25f8 11-27
+tests/test_autoresearch_resume.py
+  s_c781025ed43a12::t_8087003afa3325 72-139
+  s_c781025ed43a12::t_a35673fbb65988 3
+  s_c781025ed43a12::t_ade3b7acfc330a 1-2,4-71
+autoresearch_resume.py
+  s_c781025ed43a12::t_fb8267a5680cf8 1-253
+autoresearch_controller.py
+  s_c781025ed43a12::t_ca23f4735aab12 67-73
+  s_c781025ed43a12::t_e62b029400f570 190,193,202-209
+  s_c781025ed43a12::t_d57cc45c14c760 215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "abfdbdc90b9f409a72827e187afb0214fe258e38",
+  "prompts": {},
+  "sessions": {
+    "s_c781025ed43a12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f108c0ba-5958-40c1-a798-bd54f4f4fabc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
