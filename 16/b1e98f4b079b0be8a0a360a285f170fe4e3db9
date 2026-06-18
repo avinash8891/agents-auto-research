@@ -1,0 +1,24 @@
+evidence_pack.py
+  s_3bfcb10840fb93::t_c0724805989d12 103
+  s_3bfcb10840fb93::t_2bdfc2ebaf499d 281,285-286,304,320
+tests/test_evidence_pack.py
+  s_3bfcb10840fb93::t_450227c8e968e0 437,450,452-461
+screening.py
+  s_3bfcb10840fb93::t_48f8b23511407d 53-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "16b1e98f4b079b0be8a0a360a285f170fe4e3db9",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,30 @@
+experiment_evaluator.py
+  s_3bfcb10840fb93::t_daeef20e5e7895 211-219
+  s_3bfcb10840fb93::t_1c22df812f1d0e 22
+  s_3bfcb10840fb93::t_0cb9396167d6e4 33-34
+tests/test_experiment_evaluator.py
+  s_3bfcb10840fb93::t_d2f48b9d2158b0 79-83,91-94,100-101
+tests/test_causal_harvest.py
+  s_3bfcb10840fb93::t_c4e2f3b26ae819 47-49,54-55,60-62,65-76
+walkforward.py
+  s_3bfcb10840fb93::t_184fbfa384f459 380-381
+  s_3bfcb10840fb93::t_a17b6d587af8cf 162
+causal_harvest.py
+  s_3bfcb10840fb93::t_11b1a3ec3e0cce 157-158,163,165-166,168-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "3417ce7508af3bdb5613ca28c3449322dfa3d415",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

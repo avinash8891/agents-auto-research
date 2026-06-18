@@ -1,0 +1,62 @@
+tests/test_stage1_rules.py
+  s_0a6c00cf1a335c::t_13fc9ed097cfd1 1
+tests/test_research_conductor_characterization.py
+  s_0a6c00cf1a335c::t_5adff57b1492a4 58,75,91
+research_types.py
+  s_0a6c00cf1a335c::t_809dde73de8759 7
+thesis_validator.py
+  s_0a6c00cf1a335c::t_4f9d9e51baa1ab 199
+tests/test_autoresearch_research.py
+  s_0a6c00cf1a335c::t_5adff57b1492a4 5
+  s_0a6c00cf1a335c::t_86a2f59bb7bbd4 1437,1442-1443,1707,1717-1718
+autoresearch_constants.py
+  s_0a6c00cf1a335c::t_f14bc74ec609d6 52-53
+  s_0a6c00cf1a335c::t_4f9d9e51baa1ab 45,47
+tests/test_autoresearch_experiment.py
+  s_0a6c00cf1a335c::t_86399438585b4c 1675
+  s_0a6c00cf1a335c::t_e515bfafda5920 1572,1574,1693-1694
+experiment_evaluator.py
+  s_0a6c00cf1a335c::t_60fc2f3cabd9fe 1,15
+autoresearch_state.py
+  s_0a6c00cf1a335c::t_52332770643628 253,295
+tests/test_validator_stages.py
+  s_0a6c00cf1a335c::t_13fc9ed097cfd1 128
+  s_0a6c00cf1a335c::t_7ecebda00f134b 1
+tests/test_screening.py
+  s_0a6c00cf1a335c::t_f0b3b1fa1f53cd 273,278,299,308,322-323,364,422
+screening.py
+  s_0a6c00cf1a335c::t_4e067a52b96bd5 305,308
+autoresearch_research.py
+  s_0a6c00cf1a335c::t_0f03a9f8809d6c 934
+  s_0a6c00cf1a335c::t_73c050c2c3714a 1086,1092
+  s_0a6c00cf1a335c::t_4f9d9e51baa1ab 741,743,753,1349
+tests/test_experiment_evaluator.py
+  s_0a6c00cf1a335c::t_8f2117239c8bce 7
+agent_runners.py
+  s_0a6c00cf1a335c::t_f7d2f47bfa6a36 20,23-24,26-30,51
+tests/test_validation_retry_budget.py
+  s_0a6c00cf1a335c::t_7ecebda00f134b 20,23-24,27-28,34-35,44-46
+autoresearch_experiment.py
+  s_0a6c00cf1a335c::t_eaf634e8eea35e 838,844,848,890,904,908
+  s_0a6c00cf1a335c::t_f7791d6997f7c2 5
+compiler_operationalize.py
+  s_0a6c00cf1a335c::t_f7d2f47bfa6a36 174
+backtest_run_db.py
+  s_0a6c00cf1a335c::t_a7f2b6cd6d46e5 665-666,1075
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "89a218e246f969c8269f40370e0b95b732828ed6",
+  "prompts": {},
+  "sessions": {
+    "s_0a6c00cf1a335c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ebaf2-1fc2-78a0-b1de-bfbb97bb68a8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

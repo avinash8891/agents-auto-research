@@ -1,0 +1,22 @@
+causal_harvest.py
+  s_3bfcb10840fb93::t_45c73af9d894fa 379-380,384,386
+tests/test_autoresearch_experiment.py
+  s_3bfcb10840fb93::t_0f7b9c804994db 51-57
+  s_3bfcb10840fb93::t_c1e7b074f3023c 1213,1222-1287
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "b83ef1371bb88a3445183d9a2781352f9bdd28d9",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

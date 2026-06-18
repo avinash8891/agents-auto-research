@@ -1,0 +1,21 @@
+tests/test_autoresearch_experiment.py
+  s_3bfcb10840fb93::t_a4b1a0fa6fddb2 1874-1917
+autoresearch_experiment.py
+  s_3bfcb10840fb93::t_f9368eae176750 1409,1415-1422
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "6738c7205267bce29d11d8813f8fac3c919b3a3c",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

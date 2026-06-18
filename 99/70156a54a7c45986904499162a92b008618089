@@ -1,0 +1,27 @@
+.understand-anything/fingerprints.json
+  s_1450fe7f623e31::t_9978166af10a03 1-18881
+.understand-anything/meta.json
+  s_1450fe7f623e31::t_14160839131939 1-6
+.understand-anything/.understandignore
+  s_1450fe7f623e31::t_833db07be76046 1-114,117-123
+  s_1450fe7f623e31::t_10f91cd3ef4749 124-135
+  s_1450fe7f623e31::t_bedcb22bb88a53 115-116
+.understand-anything/knowledge-graph.json
+  s_1450fe7f623e31::t_9978166af10a03 1-19757
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "9970156a54a7c45986904499162a92b008618089",
+  "prompts": {},
+  "sessions": {
+    "s_1450fe7f623e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7d42f663-4248-40d9-9037-61af315b9531",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

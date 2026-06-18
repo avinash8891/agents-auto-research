@@ -1,0 +1,21 @@
+agent_prompts.py
+  s_cea1fad922bae5::t_a60b7e0b840bff 117-119
+research_prompts.py
+  s_cea1fad922bae5::t_7ed77e509783b0 123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "dddfc02cb5538cc8e68981ea57d41c4a81a3810b",
+  "prompts": {},
+  "sessions": {
+    "s_cea1fad922bae5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb13f-b2e3-7941-9881-40c2f957586d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

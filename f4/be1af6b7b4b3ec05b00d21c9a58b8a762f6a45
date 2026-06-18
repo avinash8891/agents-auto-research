@@ -1,0 +1,33 @@
+tests/test_evidence_pack.py
+  s_7b3a36a5bf11f5::t_cf69a9a047e5b3 19,21,23-28,38,47,56-59,68-71
+screening.py
+  s_7b3a36a5bf11f5::t_8b41018f326ecf 3,5,9,12-13,16-19,23,27,30,32-40,42-45,48-69,74-76,80-81,88-89,94,97-100,103-104,106,108-112,118-133,135-137,139-147,151-165,167-195,204-220,234-265,270,272,274-278,282-283
+  s_7b3a36a5bf11f5::t_8c1045a37c2f1b 70-73,77-79
+tests/test_screening.py
+  s_7b3a36a5bf11f5::t_8c1045a37c2f1b 83-89,121-122,129,133
+  s_7b3a36a5bf11f5::t_a012fdda24d78a 7,10-13,16-17,21-58,63-82,90-102,104-109,112-113,115-116,119,125,128,130-132,134-145,147
+configs/ema_base.yaml
+  s_7b3a36a5bf11f5::t_5f78ce723ce114 65-68
+evidence_pack.py
+  s_7b3a36a5bf11f5::t_138a4cda75e62a 14-19,50,83,86,88,90-93,114-119
+autoresearch_constants.py
+  s_7b3a36a5bf11f5::t_692edbb0201c8e 91-92,96,98,102-103,107,109-131
+configs/orb_base.yaml
+  s_7b3a36a5bf11f5::t_848588adf082f9 67-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "f4be1af6b7b4b3ec05b00d21c9a58b8a762f6a45",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

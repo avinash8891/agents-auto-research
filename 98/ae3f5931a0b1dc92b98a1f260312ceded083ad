@@ -1,0 +1,21 @@
+tests/test_validator_process_gate.py
+  s_2240c0cb12bd4a::t_4af66c39eeaa47 7,94-103
+thesis_validator.py
+  s_2240c0cb12bd4a::t_ae494373a391bb 331-347,352-357,359
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "98ae3f5931a0b1dc92b98a1f260312ceded083ad",
+  "prompts": {},
+  "sessions": {
+    "s_2240c0cb12bd4a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb70e-074f-7053-9a91-528a34a06a0f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

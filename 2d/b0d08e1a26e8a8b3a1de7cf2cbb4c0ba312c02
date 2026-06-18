@@ -1,0 +1,20 @@
+tests/test_step0_dead_code_deletion.py
+  s_3bfcb10840fb93::t_a04dd756b4bdba 54-59,61-74
+  s_3bfcb10840fb93::t_0e7a4f21069319 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "2db0d08e1a26e8a8b3a1de7cf2cbb4c0ba312c02",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

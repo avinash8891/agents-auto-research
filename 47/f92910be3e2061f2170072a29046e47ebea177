@@ -1,0 +1,32 @@
+research_subagents.py
+  s_7b3a36a5bf11f5::t_ff11db98253580 17,257
+thesis_validator.py
+  s_7b3a36a5bf11f5::t_e9f0442c454b40 971,973
+tests/test_research_memory.py
+  s_7b3a36a5bf11f5::t_6d2504986971d0 10,117-138
+  s_7b3a36a5bf11f5::t_f9ddd74daaa749 116
+backtest_run_db.py
+  s_7b3a36a5bf11f5::t_7ab2590f911637 12,53-58
+autoresearch_research.py
+  s_7b3a36a5bf11f5::t_fb3d4ad543de43 37,1115
+research_memory.py
+  s_7b3a36a5bf11f5::t_0f1fc4aad4a4d2 387,389-390,535-540,542-543
+tests/test_error_loudness.py
+  s_7b3a36a5bf11f5::t_c9f3dfa471f418 74-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "47f92910be3e2061f2170072a29046e47ebea177",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

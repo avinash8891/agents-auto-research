@@ -1,0 +1,31 @@
+tests/test_metrics.py
+  s_7b3a36a5bf11f5::t_ef95ef337cfaf4 18,36-37
+tests/test_orb_regime_filter.py
+  s_7b3a36a5bf11f5::t_47ff66a936aa29 7
+thesis_validator.py
+  s_7b3a36a5bf11f5::t_db89d18e935d6e 1437-1438
+tests/test_experiment_evaluator.py
+  s_7b3a36a5bf11f5::t_47ff66a936aa29 6
+tests/test_step0_dead_code_deletion.py
+  s_7b3a36a5bf11f5::t_7dc3c29f3fdea3 3,43
+  s_7b3a36a5bf11f5::t_3318db64f5d0f2 10-18,23-24
+  s_7b3a36a5bf11f5::t_1eb85ec87e891a 1-2,4-9,19-22,25-42,44-54
+tests/test_orb_backtest_characterization.py
+  s_7b3a36a5bf11f5::t_1d123e532b8b56 145-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "afeeea9ea9af0d0ff1bb2006f9f4552db18dfb60",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}

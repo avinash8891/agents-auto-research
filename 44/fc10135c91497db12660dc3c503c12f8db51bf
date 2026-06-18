@@ -1,0 +1,24 @@
+causal_model.py
+  s_2240c0cb12bd4a::t_cd32b287dd44f9 163-167,170,173
+tests/test_evidence_pack.py
+  s_2240c0cb12bd4a::t_2d6a9a3a164439 161,205,267
+tests/test_causal_model.py
+  s_2240c0cb12bd4a::t_8cd810f9fe47b3 344-345
+  s_2240c0cb12bd4a::t_1264e8985d91a8 324,338-342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "44fc10135c91497db12660dc3c503c12f8db51bf",
+  "prompts": {},
+  "sessions": {
+    "s_2240c0cb12bd4a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb70e-074f-7053-9a91-528a34a06a0f",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}

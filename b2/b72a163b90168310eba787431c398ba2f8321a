@@ -1,0 +1,42 @@
+causal_harvest.py
+  s_7a6fdaba2a4e81::t_d6d2ae727734fa 384
+  s_7a6fdaba2a4e81::t_cd0c5e5a578c09 18
+feature_table.py
+  s_7a6fdaba2a4e81::t_46eacc7fdacd5b 14-16,43-44
+walkforward.py
+  s_7a6fdaba2a4e81::t_50680fafb89a14 142
+  s_7a6fdaba2a4e81::t_e3faf7aa08bd86 317
+  s_7a6fdaba2a4e81::t_f14fe43c65eab5 21
+persistence_utils.py
+  s_7a6fdaba2a4e81::t_289df94de9bbc5 12-13,19-24
+tests/test_causal_model.py
+  s_0312dc3c57502f::t_11bdb3cf1b4a9a 141
+  s_0312dc3c57502f::t_232ccc76ac55b8 443-448,457,460
+  s_0312dc3c57502f::t_23817571c06cf8 4-5,133-140,142-158,431-442,449-456,458-459,461-482
+causal_model.py
+  s_0312dc3c57502f::t_07aa443a1bd369 9,252-262,313-317
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "b2b72a163b90168310eba787431c398ba2f8321a",
+  "prompts": {},
+  "sessions": {
+    "s_0312dc3c57502f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb6b5-e4e7-7da3-9e2e-d20ef5e81df4",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_7a6fdaba2a4e81": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5585b0ef-67da-496f-81cb-bfdb28113414",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

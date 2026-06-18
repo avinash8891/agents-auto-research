@@ -1,0 +1,52 @@
+agent_openai_calls.py
+  s_63d57846a1d3c4::t_b609186f5b046f 3,95-96
+tests/test_compiler_pipeline_characterization.py
+  s_63d57846a1d3c4::t_94f0dd47fd29e2 166-195,199-200
+  s_63d57846a1d3c4::t_18cb795b3587a1 196-198
+tests/test_autoresearch_cli.py
+  s_63d57846a1d3c4::t_45fd2cdef2d582 5,10-11,28-32
+tests/test_ema_backtest_characterization.py
+  s_63d57846a1d3c4::t_f61299c8c9399d 379-405,407-408
+  s_63d57846a1d3c4::t_18de918b959f7f 406
+data_loader.py
+  s_63d57846a1d3c4::t_3fbbf9e0e66133 138
+  s_63d57846a1d3c4::t_18cb795b3587a1 122,134-137,143-145
+  s_63d57846a1d3c4::t_accd44e963ecaa 64,68,101-102,125-126,128-133,139-142,146-158
+agent_runners.py
+  s_63d57846a1d3c4::t_1b4b1a0eb49d9b 139,154,174-179,271-275,277-278
+compiler_thesis_io.py
+  s_63d57846a1d3c4::t_f9181cdd3146fd 15,76
+tests/test_autoresearch_research_helpers.py
+  s_63d57846a1d3c4::t_352c7674b8c6eb 301,304-325,328-348
+  s_63d57846a1d3c4::t_9465f60fe9afc5 302-303,326-327
+CLAUDE.md
+  s_63d57846a1d3c4::t_f1539da0652320 74-76
+AGENTS.md
+  s_63d57846a1d3c4::t_f1539da0652320 74-76
+tests/test_agent_orchestrator_characterization.py
+  s_63d57846a1d3c4::t_e6cb8f68a40503 656-661,689-690,732-734
+  s_63d57846a1d3c4::t_cabf77fb00e14b 654-655,665
+  s_63d57846a1d3c4::t_364bf12c9c1417 907-921
+  s_63d57846a1d3c4::t_1f684536990f61 6,626-653,662-664,666-669,673-688,691-695,699-718,722-727,731,735-739,743-752
+  s_63d57846a1d3c4::t_18cb795b3587a1 670-672,696-698,719-721,728-730,740-742
+agent_memory.py
+  s_63d57846a1d3c4::t_de9b159f7a4d92 8,14-26,56,84,111
+strategies/ema/signals.py
+  s_63d57846a1d3c4::t_44e371cc15f5e3 102-103,163-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "9dd21150f5a9440301fc1dac16554dc752f0b912",
+  "prompts": {},
+  "sessions": {
+    "s_63d57846a1d3c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb16e-d081-7282-ba56-266f323d326d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

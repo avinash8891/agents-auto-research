@@ -1,0 +1,27 @@
+causal_harvest.py
+  s_2240c0cb12bd4a::t_12f82895bf3139 5,25
+  s_2240c0cb12bd4a::t_d5950ee2f6f84d 177-187
+  s_2240c0cb12bd4a::t_ea1291cbb5d138 235,241-246
+evidence_pack.py
+  s_2240c0cb12bd4a::t_f630728ff8e2c8 109-119,135-136
+tests/test_causal_harvest.py
+  s_2240c0cb12bd4a::t_94b5e3af9db4a1 1-46
+tests/test_evidence_pack.py
+  s_2240c0cb12bd4a::t_d83ba99981f206 410-425
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "6562a5aabcaaee719c97a064196a34e83362f93a",
+  "prompts": {},
+  "sessions": {
+    "s_2240c0cb12bd4a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb70e-074f-7053-9a91-528a34a06a0f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

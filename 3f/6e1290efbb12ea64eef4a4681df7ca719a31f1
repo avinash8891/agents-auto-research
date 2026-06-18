@@ -1,0 +1,44 @@
+tests/test_research_conductor_characterization.py
+  s_7b3a36a5bf11f5::t_918a75657318d1 874,922
+  s_7b3a36a5bf11f5::t_291e39d375b07c 801-807
+  s_7b3a36a5bf11f5::t_db2be1a4cf4266 12,778,795-800,808-846,1015,1032-1048
+research_conductor.py
+  s_7b3a36a5bf11f5::t_b34129e789d3c8 7,198,203-205,1251,1266
+causal_harvest.py
+  s_7b3a36a5bf11f5::t_1ff9c5fc525797 10-12,15,41-180,248-268,275-432
+  s_7b3a36a5bf11f5::t_3e34640fab48d7 269-274
+  s_7b3a36a5bf11f5::t_988b0e1b667831 1-9,13-14,16-40,181-247
+tests/test_autoresearch_experiment.py
+  s_7b3a36a5bf11f5::t_636f747ca9b224 102-110
+  s_7b3a36a5bf11f5::t_0ece3c6340e746 1749
+  s_7b3a36a5bf11f5::t_955beb7855b9f9 46
+  s_7b3a36a5bf11f5::t_9a1fd65f1b3233 45,1465,1503,1545,1756-1757
+  s_7b3a36a5bf11f5::t_e56d3c6b703ff4 1349
+  s_7b3a36a5bf11f5::t_b4b180c77df5e7 1426,1517,1678
+tests/test_autoresearch_research.py
+  s_7b3a36a5bf11f5::t_2dc24f7d11475d 51,993,1100,1109-1114
+autoresearch_experiment.py
+  s_7b3a36a5bf11f5::t_73134d457cc60f 1062-1067,1288,1292,1296,1305,1312,1314
+  s_7b3a36a5bf11f5::t_b892d18c61541f 1322
+  s_7b3a36a5bf11f5::t_a766d3d7c6865b 48-55
+autoresearch_research.py
+  s_7b3a36a5bf11f5::t_d3215a4c4160db 1317,1348
+  s_7b3a36a5bf11f5::t_89038bc3cf197d 1144,1146
+  s_7b3a36a5bf11f5::t_b49458929c1b3b 1468
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "3f6e1290efbb12ea64eef4a4681df7ca719a31f1",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}

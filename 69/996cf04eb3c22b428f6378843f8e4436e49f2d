@@ -1,0 +1,25 @@
+feature_table.py
+  s_3bfcb10840fb93::t_862db0c788b6c8 151-196
+  s_3bfcb10840fb93::t_b67156158448d1 10,15-19
+  s_3bfcb10840fb93::t_7bfabbff271440 110,114
+causal_harvest.py
+  s_3bfcb10840fb93::t_2482ff22cc7781 90-92,99
+tests/test_feature_table.py
+  s_3bfcb10840fb93::t_9a58be57ced370 209-256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "69996cf04eb3c22b428f6378843f8e4436e49f2d",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

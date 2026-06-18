@@ -1,0 +1,28 @@
+tests/test_error_loudness.py
+  s_7b3a36a5bf11f5::t_6ac64aaace7733 232-255
+old_conductor_prompt.md
+  s_7b3a36a5bf11f5::t_8fb17238c9be4e 409
+research_prompts.py
+  s_7b3a36a5bf11f5::t_33d6f1e7874c98 67
+diagnostic_contracts.py
+  s_7b3a36a5bf11f5::t_f2daa335e7f71c 30,38-39,42-43,110,113
+tests/test_autoresearch_orchestration.py
+  s_7b3a36a5bf11f5::t_c44fb38a9fe0ec 188,191,239,242,298,301
+  s_7b3a36a5bf11f5::t_50413a7f5e6721 215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "ff40bd26b51f07738ecccfbe1554d7279d20335a",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

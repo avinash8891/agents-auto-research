@@ -1,0 +1,42 @@
+tests/test_compiler_implementation_verify.py
+  s_7b3a36a5bf11f5::t_503f1d4593391d 3-4,8-19,40-62,65-73,90-107
+thesis_validator.py
+  s_7b3a36a5bf11f5::t_5f815fa8ab2e55 979
+  s_7b3a36a5bf11f5::t_4b905ff339f6c6 364
+  s_7b3a36a5bf11f5::t_f80f314d5e3366 55
+  s_7b3a36a5bf11f5::t_3cf8f8deba3223 17-18,35
+tests/test_validator_subsections.py
+  s_7b3a36a5bf11f5::t_96c6abc970ef7e 188,213-214
+tests/test_validator_gate_coverage.py
+  s_7b3a36a5bf11f5::t_5c3aecadb8b91a 537-538,541-542,559
+  s_7b3a36a5bf11f5::t_51595638e48ae6 594-595,597-599,623
+tests/test_stage1_rules_part2.py
+  s_7b3a36a5bf11f5::t_11053526e07a63 136,139-140,150-151,154,173-174
+tests/test_screening.py
+  s_7b3a36a5bf11f5::t_76c9e0ecad6905 9,26
+  s_7b3a36a5bf11f5::t_824fd16bb458c9 24-25
+tests/test_stage1_rules.py
+  s_7b3a36a5bf11f5::t_074224ab501866 130,133-134,146-147
+compiler_implementation_verify.py
+  s_7b3a36a5bf11f5::t_f58f9f4bef567b 5,603-606,608,622-647
+tests/test_validator_batching.py
+  s_7b3a36a5bf11f5::t_1d3810713df71b 238,248,251,285
+screening.py
+  s_7b3a36a5bf11f5::t_8b38afd8db0537 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "f12c16a8e9aab6ec695017d9761917e0fd09808a",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

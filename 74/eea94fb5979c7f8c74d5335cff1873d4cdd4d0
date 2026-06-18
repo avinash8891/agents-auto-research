@@ -1,0 +1,21 @@
+tests/test_diagnostic_contracts.py
+  s_2240c0cb12bd4a::t_d928dbf4669962 3-4,8-27,31,39,46-47
+diagnostic_contracts.py
+  s_2240c0cb12bd4a::t_6ccb0d1e89b536 20,79,112-113,132-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "74eea94fb5979c7f8c74d5335cff1873d4cdd4d0",
+  "prompts": {},
+  "sessions": {
+    "s_2240c0cb12bd4a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb70e-074f-7053-9a91-528a34a06a0f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

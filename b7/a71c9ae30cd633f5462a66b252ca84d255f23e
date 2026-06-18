@@ -1,0 +1,19 @@
+docs/plans/2026-06-11-v2-integrity-path-fixes.md
+  s_8c9de0adad8d14::t_9cb8e366076d1c 1-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "b7a71c9ae30cd633f5462a66b252ca84d255f23e",
+  "prompts": {},
+  "sessions": {
+    "s_8c9de0adad8d14": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb709-633c-7812-89ca-8d159981cd29",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

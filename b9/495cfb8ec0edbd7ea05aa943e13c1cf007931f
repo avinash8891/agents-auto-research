@@ -1,0 +1,49 @@
+autoresearch_research.py
+  s_0a6c00cf1a335c::t_87663097ae8682 1573
+  s_0a6c00cf1a335c::t_a2a7149f5d0364 2143-2144,2146
+  s_0a6c00cf1a335c::t_fd71c3acbd46b8 678,683-687
+  s_0a6c00cf1a335c::t_d9ea917fd593fa 2145
+  s_0a6c00cf1a335c::t_0f16d57c6d7a52 2336,2342-2345
+research_tools_mcp.py
+  s_0a6c00cf1a335c::t_54818a8ecac98b 371
+tests/test_evidence_pack.py
+  s_0a6c00cf1a335c::t_e4ae19637e6cfa 378-395
+scripts/check_prompt_drift.py
+  s_0a6c00cf1a335c::t_a842957094619a 12-13,158-160
+evidence_pack.py
+  s_0a6c00cf1a335c::t_2018943d588b1c 260-261
+research_conductor.py
+  s_0a6c00cf1a335c::t_941c8e055e88a1 743,838
+tests/test_research_conductor_characterization.py
+  s_0a6c00cf1a335c::t_3c07cea9f881f3 296,311-313
+tests/test_research_memory.py
+  s_0a6c00cf1a335c::t_1849d994fe6b28 77-80,102-104,172,178,180-181,185,187-188
+research_memory.py
+  s_0a6c00cf1a335c::t_d9ea917fd593fa 308-310
+  s_0a6c00cf1a335c::t_ebb9d9e3f07c0d 306-307,311,324-326,335-338,343,371-375,493-498
+tests/test_autoresearch_research.py
+  s_0a6c00cf1a335c::t_76e3c3a26411ca 1216,1222,1387,1427,1445,1924,1956-1958,2442
+  s_0a6c00cf1a335c::t_d9ea917fd593fa 2180,2226-2227
+  s_0a6c00cf1a335c::t_6e7c252b6cff4f 1150-1155
+  s_0a6c00cf1a335c::t_97a5fc99fe1b9f 909-912,938-940
+  s_0a6c00cf1a335c::t_887c5b571ce593 2243,2296
+  s_0a6c00cf1a335c::t_f3b31f9b4e5120 2193-2194,2234-2239,2340-2341,2350
+research_types.py
+  s_0a6c00cf1a335c::t_f4f9987f6ba158 439-440,443
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "b9495cfb8ec0edbd7ea05aa943e13c1cf007931f",
+  "prompts": {},
+  "sessions": {
+    "s_0a6c00cf1a335c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ebaf2-1fc2-78a0-b1de-bfbb97bb68a8",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}

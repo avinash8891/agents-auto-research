@@ -1,0 +1,51 @@
+screening.py
+  s_b4da382ecf54ef::t_815be338bc6246 127,134
+autoresearch_constants.py
+  s_ba7c2d2987b27e::t_5f8666126d4757 96-97,101-103,107-116,120-129,133-140,142,146-152,156,160,164,168,172,176,180,184-191
+autoresearch_experiment.py
+  s_b4da382ecf54ef::t_5b37f5781fc64c 660
+  s_b4da382ecf54ef::t_ee85768c1fa8b5 35
+causal_harvest.py
+  s_b4da382ecf54ef::t_6adf2e8bc9d07d 12
+  s_b4da382ecf54ef::t_3cd62f1e524987 285,290-296
+  s_b4da382ecf54ef::t_0c1f1bfa9d0d11 165
+  s_b4da382ecf54ef::t_d973924c4c2137 408
+autoresearch_controller.py
+  s_ba7c2d2987b27e::t_5f8666126d4757 532
+autoresearch_research.py
+  s_ba7c2d2987b27e::t_5f8666126d4757 15,1793,1796-1798,1803,1823
+walkforward.py
+  s_ba7c2d2987b27e::t_5f8666126d4757 246-251
+feature_table_extractors.py
+  s_b4da382ecf54ef::t_cd3e99a22c6fa2 26
+autoresearch_artifacts.py
+  s_b4da382ecf54ef::t_47388041895094 12
+  s_b4da382ecf54ef::t_8ff0bb2a975511 31,45
+tests/test_autoresearch_experiment.py
+  s_b4da382ecf54ef::t_8ec5a317b9d3c9 879
+  s_b4da382ecf54ef::t_bca63d1d653d71 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "4dba46b5ca96ac1e3db2697a8b567be2cae24ac0",
+  "prompts": {},
+  "sessions": {
+    "s_b4da382ecf54ef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "917d1163-b1bc-441b-a120-95e1c96e7d46",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_ba7c2d2987b27e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb6a0-bef4-7ff0-b7ef-00ab6dc3287a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

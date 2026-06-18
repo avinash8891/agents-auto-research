@@ -1,0 +1,34 @@
+research_conductor.py
+  s_3bfcb10840fb93::t_cb7cc8321f403a 958
+thesis_validator.py
+  s_3bfcb10840fb93::t_dd5de03169ab97 1-13,26,356,371
+  s_3bfcb10840fb93::t_7eef68bdc9ac92 21
+tests/test_thesis_validator.py
+  s_3bfcb10840fb93::t_9b7617fb6e2e25 3,6,212-215,218-223,227-230,232-236
+tests/test_autoresearch_research.py
+  s_3bfcb10840fb93::t_39485e02cece31 1376-1378,1380
+behavior_signals.py
+  s_3bfcb10840fb93::t_06e5f790d284ec 1,3-7,25-26,29
+tests/test_step0_dead_code_deletion.py
+  s_3bfcb10840fb93::t_5df5e722dc81f1 52-103
+tests/test_l5_neighboring_threshold.py
+  s_3bfcb10840fb93::t_d68eee0d87c8bd 1,3-5,10,12,15-16,27-30,32-41,43-50,52-59,61-62
+tests/test_error_loudness.py
+  s_3bfcb10840fb93::t_39485e02cece31 106,119,126-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "3a5326799c1283a0b39eaf575001c912f8e4221d",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

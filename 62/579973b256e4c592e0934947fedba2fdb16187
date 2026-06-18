@@ -1,0 +1,77 @@
+agent_token_usage.py
+  s_cea1fad922bae5::t_fae1b7d1f19b03 118
+rejection_artifact.py
+  s_cea1fad922bae5::t_66232938e20fcc 229,239-263
+trace_sdk.py
+  s_cea1fad922bae5::t_f98e8dcd4f1001 88-140,259-263,474-479
+strategies/ema/exits.py
+  s_cea1fad922bae5::t_39ac2bcb388d36 55,137,157,214-227,237,244-246,268,270,272,276,280,301,315-316,320,353-355
+tests/test_research_conductor_characterization.py
+  s_cea1fad922bae5::t_bd542a0561e4d1 237-272,274-278
+  s_cea1fad922bae5::t_874890a99aa07a 273
+trace_improvement_report.py
+  s_cea1fad922bae5::t_fae1b7d1f19b03 231
+compiler_research.py
+  s_cea1fad922bae5::t_9d00fc74a2ad43 211
+  s_cea1fad922bae5::t_fbe6d8cd910cba 134
+  s_cea1fad922bae5::t_bf292c469761ec 212-216
+tests/test_validator_batching.py
+  s_cea1fad922bae5::t_1861f9da86c570 375-381
+tests/test_validator_stages.py
+  s_cea1fad922bae5::t_154f736a0a9fd4 126
+  s_cea1fad922bae5::t_ca8cbe4b37352b 216-227,231-234,239-243,247-252
+  s_cea1fad922bae5::t_9d00fc74a2ad43 235-237
+thesis_validator.py
+  s_cea1fad922bae5::t_041f52755c4582 2503,2507,2576-2577,2589,2595,2598
+tests/test_escalation_directive.py
+  s_cea1fad922bae5::t_3461ed2361abf5 81-95
+tests/test_ema_backtest_characterization.py
+  s_cea1fad922bae5::t_0dbef4d3e98fec 584-600
+  s_cea1fad922bae5::t_170d56032ee64b 25,73-138
+  s_cea1fad922bae5::t_9d00fc74a2ad43 26
+scripts/token_audit.py
+  s_cea1fad922bae5::t_fae1b7d1f19b03 64
+compiler_builder.py
+  s_cea1fad922bae5::t_c39a638ec596b8 16,24,290-298,300-302,306
+autoresearch_orchestration.py
+  s_cea1fad922bae5::t_5a98f9da43fc6f 751-752
+tests/test_autoresearch_orchestration.py
+  s_cea1fad922bae5::t_e9231af6e69e8f 436-437,458-459
+tests/test_compiler_pipeline_characterization.py
+  s_cea1fad922bae5::t_1386983e2d71ab 101-121,129-130
+research_conductor.py
+  s_cea1fad922bae5::t_94de18afacde31 681,740
+  s_cea1fad922bae5::t_518d4d0daf25f9 322-323,363-364,449-460,500-503,564-565,610-611,641-642,671-675,685-686,698-708,712-713,730-735,743-744,756-765,772-773,806,832-840,877-880,920-923
+  s_cea1fad922bae5::t_7de24899e93089 988-999
+  s_cea1fad922bae5::t_dc5bcab180de96 263-265
+  s_cea1fad922bae5::t_88feee4ef958ea 5,44-57,80-111
+tests/test_trace_sdk.py
+  s_cea1fad922bae5::t_b0c00986db14f3 520-529,531-538
+  s_cea1fad922bae5::t_874890a99aa07a 530
+tests/test_token_audit_filters.py
+  s_cea1fad922bae5::t_874890a99aa07a 58
+  s_cea1fad922bae5::t_e0f9df2ea05ac4 1-57
+tests/test_alignment_family_aware.py
+  s_cea1fad922bae5::t_1861f9da86c570 41
+tests/test_agent_token_usage.py
+  s_cea1fad922bae5::t_db1cbb9f136aca 28,678-702
+strategies/ema/contract.py
+  s_cea1fad922bae5::t_9d00fc74a2ad43 50-61
+  s_cea1fad922bae5::t_5174f01d6fbed6 16-25,62-69,108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "62579973b256e4c592e0934947fedba2fdb16187",
+  "prompts": {},
+  "sessions": {
+    "s_cea1fad922bae5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb13f-b2e3-7941-9881-40c2f957586d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

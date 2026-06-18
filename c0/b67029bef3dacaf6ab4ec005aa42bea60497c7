@@ -1,0 +1,38 @@
+autoresearch_runtime_paths.py
+  s_cea1fad922bae5::t_fca252aca6f704 3,159-172,174-185
+  s_cea1fad922bae5::t_ba1a7b51a5dfbf 173
+  s_cea1fad922bae5::t_f6d04b58649241 4
+  s_cea1fad922bae5::t_0d5494977f07f6 56
+  s_cea1fad922bae5::t_961df7abea7ecf 9-55,57-81
+autoresearch_controller.py
+  s_cea1fad922bae5::t_f6d04b58649241 68
+  s_cea1fad922bae5::t_cf2cc665488b3a 455-458,460,611-623,625,628,643-645
+research_subagents.py
+  s_cea1fad922bae5::t_1126f65a9671fc 16,257
+research_memory.py
+  s_cea1fad922bae5::t_96e45507ef9fc2 11,573-574
+docs/superpowers/plans/2026-06-10-autoresearch-root-cause-hardening.md
+  s_cea1fad922bae5::t_7960112c5fae09 1-329
+thesis_validator.py
+  s_cea1fad922bae5::t_baba2179d2dc62 55,1080-1081
+tests/test_autoresearch_runtime_paths.py
+  s_cea1fad922bae5::t_0d5494977f07f6 36,63,65
+  s_cea1fad922bae5::t_79e8867001be8e 3-4,7-8,10-35,37-62,64
+  s_cea1fad922bae5::t_b8cd15fe22d194 9,66-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "c0b67029bef3dacaf6ab4ec005aa42bea60497c7",
+  "prompts": {},
+  "sessions": {
+    "s_cea1fad922bae5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb13f-b2e3-7941-9881-40c2f957586d",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}

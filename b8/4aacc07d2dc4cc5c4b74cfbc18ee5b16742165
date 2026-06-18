@@ -1,0 +1,21 @@
+walkforward.py
+  s_3bfcb10840fb93::t_46630788778720 98-104
+tests/test_walkforward.py
+  s_3bfcb10840fb93::t_ebfc4085da1758 381-407
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "b84aacc07d2dc4cc5c4b74cfbc18ee5b16742165",
+  "prompts": {},
+  "sessions": {
+    "s_3bfcb10840fb93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b8ae6e9-e26e-44f6-a317-63b83f6558f2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

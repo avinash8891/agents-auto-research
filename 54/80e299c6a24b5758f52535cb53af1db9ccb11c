@@ -1,0 +1,42 @@
+tests/test_autoresearch_controller_characterization.py
+  s_7b3a36a5bf11f5::t_383a14a63f44d6 691-712
+evidence_pack.py
+  s_7b3a36a5bf11f5::t_3ec062651d1639 12
+walkforward.py
+  s_7b3a36a5bf11f5::t_327bfa9a99d5b1 4,19,139-141,146-148,310-312
+  s_7b3a36a5bf11f5::t_e81928950662c0 3,11,127-138,142-145,149-217,286-309,313-406
+tests/test_autoresearch_artifacts.py
+  s_7b3a36a5bf11f5::t_383a14a63f44d6 72-75
+  s_7b3a36a5bf11f5::t_b3e8696fb6e974 16
+tests/test_walkforward.py
+  s_7b3a36a5bf11f5::t_b3e8696fb6e974 13-18
+  s_7b3a36a5bf11f5::t_6de43e05606092 229-376
+autoresearch_artifacts.py
+  s_7b3a36a5bf11f5::t_3ec062651d1639 58-69,73
+autoresearch_controller.py
+  s_7b3a36a5bf11f5::t_3ec062651d1639 86,1072-1074,1127-1129
+docs/superpowers/plans/2026-05-27-process-validator.md
+  s_7b3a36a5bf11f5::t_3ec062651d1639 191
+autoresearch_research.py
+  s_7b3a36a5bf11f5::t_3ec062651d1639 22
+tests/test_autoresearch_research.py
+  s_7b3a36a5bf11f5::t_327bfa9a99d5b1 60-61
+  s_7b3a36a5bf11f5::t_14b54a148da261 21
+  s_7b3a36a5bf11f5::t_383a14a63f44d6 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "5480e299c6a24b5758f52535cb53af1db9ccb11c",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,185 @@
+tests/test_feature_table.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-493
+tests/test_validator_stages.py
+  s_cea1fad922bae5::t_d6149115f1f56a 177,180,194,231,245
+.gitignore
+  s_cea1fad922bae5::t_d6149115f1f56a 245
+tests/test_reflexio_agent_reflections.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-61
+tests/test_stage1_rules_part2.py
+  s_cea1fad922bae5::t_d6149115f1f56a 110,126-127,136,139-140,150-151,154,173-174
+tests/test_walkforward.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-512
+research_memory.py
+  s_cea1fad922bae5::t_d6149115f1f56a 392-393,540-544,546-547
+autoresearch_research.py
+  s_cea1fad922bae5::t_d6149115f1f56a 12,15,23,35,41,53-57,59,62,788-789,806-843,853-1021,1040-1059,1061-1101,1108-1109,1112-1222,1254-1285,1287-1288,1290-1295,1309-1323,1464-1465,1495-1496,1539,1541,1576-1587,1593-1602,1615-1616,1640,1738,1751-1752,1758-1869,1894,1897-1903,1914,1924-1925,1928,1938,1948,1976,1997-1998,2404-2431,2542-2543
+tests/test_autoresearch_orchestration.py
+  s_cea1fad922bae5::t_d6149115f1f56a 188,191,215,239,242,298,301,489-506
+configs/ema_base.yaml
+  s_cea1fad922bae5::t_d6149115f1f56a 63-81
+tests/test_causal_rule.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-38
+tests/test_validator_subsections.py
+  s_cea1fad922bae5::t_d6149115f1f56a 188,213-214,235-239
+docs/superpowers/plans/2026-05-27-process-validator.md
+  s_cea1fad922bae5::t_d6149115f1f56a 191
+tests/test_autoresearch_research_helpers.py
+  s_cea1fad922bae5::t_d6149115f1f56a 116-120
+feature_table_extractors.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-96
+screening.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-346
+tests/test_evidence_pack.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-395
+family_research_spec.py
+  s_cea1fad922bae5::t_d6149115f1f56a 7-14,92-101
+eval_metrics.py
+  s_cea1fad922bae5::t_d6149115f1f56a 32
+autoresearch_orchestration.py
+  s_cea1fad922bae5::t_d6149115f1f56a 771-777
+tests/test_validation_retry_budget.py
+  s_cea1fad922bae5::t_d6149115f1f56a 37-50
+causal_rule.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-81
+docs/superpowers/plans/2026-05-27-behavior-signals-phase-abc.md
+  s_cea1fad922bae5::t_d6149115f1f56a 7,17,25,33,439,441,444,494,603,749,880,883,952,956,971,975,978,990,1010
+tests/test_metrics.py
+  s_cea1fad922bae5::t_d6149115f1f56a 4,19,37-62
+feature_table.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-396
+tests/test_error_loudness.py
+  s_cea1fad922bae5::t_d6149115f1f56a 74-105,232-255
+tests/test_experiment_db_sqlite_runtime.py
+  s_cea1fad922bae5::t_d6149115f1f56a 148-169
+.github/workflows/ci.yml
+  s_cea1fad922bae5::t_d6149115f1f56a 25
+tests/test_alignment_family_aware.py
+  s_cea1fad922bae5::t_d6149115f1f56a 216,219,232,240
+.compound-engineering/config.local.example.yaml
+  s_cea1fad922bae5::t_d6149115f1f56a 1-49
+tests/test_autoresearch_controller_characterization.py
+  s_cea1fad922bae5::t_d6149115f1f56a 691-712,773,803-819
+tests/test_ema_backtest_characterization.py
+  s_cea1fad922bae5::t_d6149115f1f56a 27,453-490
+tests/test_validator_batching.py
+  s_cea1fad922bae5::t_d6149115f1f56a 147,151-155,193,199-203,205,240,250,253,287,339,342-345,347,350,383,385
+tests/test_schema_additions.py
+  s_cea1fad922bae5::t_d6149115f1f56a 174,177-178
+tests/test_behavior_signals.py
+  s_cea1fad922bae5::t_d6149115f1f56a 167,172,174,177
+tests/test_research_memory.py
+  s_cea1fad922bae5::t_d6149115f1f56a 10,116-138
+research_types.py
+  s_cea1fad922bae5::t_d6149115f1f56a 13-14,17-21,120-234,463-472
+backtest/data_universe.py
+  s_cea1fad922bae5::t_d6149115f1f56a 19-21
+strategies/orb/runner.py
+  s_cea1fad922bae5::t_d6149115f1f56a 117-121
+autoresearch_artifacts.py
+  s_cea1fad922bae5::t_d6149115f1f56a 12,31,45,58-69,73
+evidence_pack.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-375
+tests/test_experiment_evaluator.py
+  s_cea1fad922bae5::t_d6149115f1f56a 3-7,12,15,19-42,46,49,53-183
+tests/test_thesis_validator.py
+  s_cea1fad922bae5::t_d6149115f1f56a 538,550,552,555,580-582,642,646-648
+tests/test_validator_gate_coverage.py
+  s_cea1fad922bae5::t_d6149115f1f56a 180-187,208,210,213,215,218,223,226,231,234,242,245,247,250,252,255,258,261,267,270,276,279,285,288,309,334,336,339,343,359,361,364,366,369,389,392,394,397,406,426-428,438,537-538,541-542,559,594-595,597-599,623,626,636,639,649,667-669,684
+diagnostic_contracts.py
+  s_cea1fad922bae5::t_d6149115f1f56a 30,38-40,43-44,111,114
+tests/test_screening.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-362
+trace_adapters/reflexio.py
+  s_cea1fad922bae5::t_d6149115f1f56a 25,29,44,49-52,61,128-132,180-237
+pyproject.toml
+  s_cea1fad922bae5::t_d6149115f1f56a 39-41,44,52,55-56,69,80
+research_prompts.py
+  s_cea1fad922bae5::t_d6149115f1f56a 33-78,134
+persistence_utils.py
+  s_cea1fad922bae5::t_d6149115f1f56a 12-13,19-24
+tests/test_autoresearch_artifact_schemas.py
+  s_cea1fad922bae5::t_d6149115f1f56a 47
+old_conductor_prompt.md
+  s_cea1fad922bae5::t_d6149115f1f56a 409
+tests/test_causal_model.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-495
+tests/test_family_research_spec.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-37
+tests/test_orb_regime_filter.py
+  s_cea1fad922bae5::t_d6149115f1f56a 8-112
+causal_model.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-321
+tests/test_trace_higher_level_modules.py
+  s_cea1fad922bae5::t_d6149115f1f56a 238-263
+tests/test_step0_dead_code_deletion.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-54
+tests/test_validator_process_gate.py
+  s_cea1fad922bae5::t_d6149115f1f56a 88-93,99-104,107,110-115,126,134-138
+causal_harvest.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-430
+experiment_evaluator.py
+  s_cea1fad922bae5::t_d6149115f1f56a 11-12,14,17-21,27,31-162
+tests/test_diagnostic_contracts.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-30
+tests/test_autoresearch_experiment.py
+  s_cea1fad922bae5::t_d6149115f1f56a 9,12,42-50,104-145,879,1074-1152,1194-1228,1285-1286,1299-1300,1351,1398-1885
+docs/superpowers/plans/2026-05-27-validator-gate-consolidation.md
+  s_cea1fad922bae5::t_d6149115f1f56a 24,54,111,113,134,136,180,212,287,333,342,436,482,600,613,680,684,691,713,778,930
+docs/superpowers/plans/2026-05-27-validator-contract-extraction.md
+  s_cea1fad922bae5::t_d6149115f1f56a 5,7,23-25,32,45,47,74,112,153,155,172,236,238,294,304,362,364,372
+compiler_implementation_verify.py
+  s_cea1fad922bae5::t_d6149115f1f56a 5,603-606,608,614,622-711
+reflexio_agent_reflections.py
+  s_cea1fad922bae5::t_d6149115f1f56a 6-10,17,25-26,29,47-51,56-57,70,74,96-99,118,122-124,128-223
+configs/orb_base.yaml
+  s_cea1fad922bae5::t_d6149115f1f56a 66-84
+tests/test_dependencies.py
+  s_cea1fad922bae5::t_d6149115f1f56a 30-38
+tests/test_research_conductor_characterization.py
+  s_cea1fad922bae5::t_d6149115f1f56a 12,15-16,734-1048
+tests/test_autoresearch_planning.py
+  s_cea1fad922bae5::t_d6149115f1f56a 22-24,166-261,279,283-284,286-287,291,295-296,298-302,395-396,398-402,434-466,469
+autoresearch_controller.py
+  s_cea1fad922bae5::t_d6149115f1f56a 85,495-496,508-510,512-514,517-519,527-532,973,984,1072-1074,1127-1129
+tests/test_autoresearch_research.py
+  s_cea1fad922bae5::t_d6149115f1f56a 15,18,21,33-36,39-41,52-56,64-67,80-91,98-110,129-357,896-902,905-951,1069-1559,1609-1671,2281
+tests/test_research_prompts.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-10
+thesis_validator.py
+  s_cea1fad922bae5::t_d6149115f1f56a 17-18,29-32,35,38,55,338,340,365,671,980,1044-1045,1664
+tests/test_orb_backtest_characterization.py
+  s_cea1fad922bae5::t_d6149115f1f56a 78-154
+autoresearch_constants.py
+  s_cea1fad922bae5::t_d6149115f1f56a 84-225
+research_conductor.py
+  s_cea1fad922bae5::t_d6149115f1f56a 7,41,57,197-198,203-212,223-225,265-269,273,278,973-990,992,994-995,1011,1015-1021,1024-1026,1098-1130,1250-1251,1265-1266
+walkforward.py
+  s_cea1fad922bae5::t_d6149115f1f56a 1-415
+tests/test_stage1_rules.py
+  s_cea1fad922bae5::t_d6149115f1f56a 130,133-134,146-147
+autoresearch_planning.py
+  s_cea1fad922bae5::t_d6149115f1f56a 5-6,10-15,17,19,134-139,141-145,147-148,150-175,177-217,313,317-329,335,338,391-397,427-430
+tests/test_autoresearch_artifacts.py
+  s_cea1fad922bae5::t_d6149115f1f56a 16,72-91
+tests/test_compiler_implementation_verify.py
+  s_cea1fad922bae5::t_d6149115f1f56a 3-4,8-19,40-157
+autoresearch_experiment.py
+  s_cea1fad922bae5::t_d6149115f1f56a 22,46-55,57,439,578-600,631,726-727,906,909,1357-1366,1394-1416,1421-1423,1438,1447-1454,1470-1471,1476-1481
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "9cb3f43f59ca2c5afaeb229f961f9e69cc5f46b6",
+  "prompts": {},
+  "sessions": {
+    "s_cea1fad922bae5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb13f-b2e3-7941-9881-40c2f957586d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

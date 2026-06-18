@@ -1,0 +1,42 @@
+tests/test_evidence_pack.py
+  s_7b3a36a5bf11f5::t_116aed505affc7 160-175
+research_conductor.py
+  s_7b3a36a5bf11f5::t_a6d908cc9d30c1 262-266,270
+  s_7b3a36a5bf11f5::t_0f093f34b47227 261
+evidence_pack.py
+  s_7b3a36a5bf11f5::t_aed9ad29708903 280-282
+autoresearch_experiment.py
+  s_7b3a36a5bf11f5::t_5959080bb613c5 19
+tests/test_screening.py
+  s_7b3a36a5bf11f5::t_0f78bfaf64c44d 141
+  s_7b3a36a5bf11f5::t_411bf230bf2974 138-140,142-152
+tests/test_research_conductor_characterization.py
+  s_7b3a36a5bf11f5::t_5959080bb613c5 954
+  s_7b3a36a5bf11f5::t_cd490a2bf28ab5 784-785,951
+  s_7b3a36a5bf11f5::t_dce8b7d0e51308 14,952-953,955-956
+tests/test_autoresearch_experiment.py
+  s_7b3a36a5bf11f5::t_59566ce33bb6a9 1496-1499,1503-1505,1507-1525,1527-1570
+  s_7b3a36a5bf11f5::t_f22d0dd3f4faf0 1526
+  s_7b3a36a5bf11f5::t_5959080bb613c5 28
+  s_7b3a36a5bf11f5::t_2557c35a65fa8a 1500-1502,1506
+screening.py
+  s_7b3a36a5bf11f5::t_56df9fea6f0909 82,86-89,95-102
+research_prompts.py
+  s_7b3a36a5bf11f5::t_896190d62e9e0e 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "603b19dd7e35b02883dfc7d64aca8452eacde41e",
+  "prompts": {},
+  "sessions": {
+    "s_7b3a36a5bf11f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb1b8-e7d5-74b1-9b17-d1b6e8bfb913",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

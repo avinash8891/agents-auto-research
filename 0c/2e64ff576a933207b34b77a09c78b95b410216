@@ -1,0 +1,57 @@
+tests/test_autoresearch_experiment.py
+  s_2240c0cb12bd4a::t_8f54f2f0e9d721 1502-1509,1584,1590,1594
+causal_harvest.py
+  s_2240c0cb12bd4a::t_1d8ccbc95480ff 6,127-140,146-225
+  s_2240c0cb12bd4a::t_424eaf670a505c 141-145
+tests/test_validator_batching.py
+  s_2240c0cb12bd4a::t_6271adfafeb68c 147-148,150
+thesis_validator.py
+  s_2240c0cb12bd4a::t_6271adfafeb68c 355
+autoresearch_research.py
+  s_2240c0cb12bd4a::t_cf380876a2d9a3 1033
+  s_2240c0cb12bd4a::t_0db1bd961bd56e 878,1182
+scripts/check_prompt_drift.py
+  s_2240c0cb12bd4a::t_388263e4b5e3f5 33-34,40,258,260,263-264,302
+tests/test_autoresearch_research.py
+  s_2240c0cb12bd4a::t_0719e5093a42f8 1737-1739
+  s_2240c0cb12bd4a::t_0db1bd961bd56e 33,1581-1582,1595-1597
+  s_2240c0cb12bd4a::t_ab0f6be77fb9d2 1085-1112,1114,1740,1745,1769,1891-1892,1897
+  s_2240c0cb12bd4a::t_424eaf670a505c 1920,1947
+  s_2240c0cb12bd4a::t_2a87568270736e 1187
+  s_2240c0cb12bd4a::t_60a4302f986e57 1237
+  s_2240c0cb12bd4a::t_4daa484198b9d0 1968,1974-1977,1986,1994-1995,2031-2034,2046,2055-2056,2059,2074-2075,2083,2092
+tests/test_research_conductor_characterization.py
+  s_2240c0cb12bd4a::t_5d339f807cf8ba 105
+  s_2240c0cb12bd4a::t_522468bf3391b9 10,23,38,47-48,50,56-58,69,98,111,146,152,245,253,256,261-262,264,268-270,273-274,276-278
+  s_2240c0cb12bd4a::t_424eaf670a505c 75,91
+tests/test_validator_process_gate.py
+  s_2240c0cb12bd4a::t_6271adfafeb68c 4,82-83,85,93,100-101,103,106-107,109-112,126-131,133-136
+tests/test_conductor_prompt_v3.py
+  s_2240c0cb12bd4a::t_22a5b0312a71e0 1,5,7,9,14-15,17-20,23-24,27-29,32-33,35,37
+docs/superpowers/specs/2026-05-28-preflight-recall-design.md
+  s_2240c0cb12bd4a::t_a60bafb1223d06 32,41
+  s_2240c0cb12bd4a::t_1d8145cfc26e3a 384,386,388,390-391,393,395,549
+research_conductor.py
+  s_2240c0cb12bd4a::t_6bfc39d9b5f262 235
+  s_2240c0cb12bd4a::t_7a6cfa50cfba57 993-1002,1011,1014-1015,1019-1022
+  s_2240c0cb12bd4a::t_12c8bb230f7001 7,40,197,199,201,207-208,222,885,887,889
+autoresearch_experiment.py
+  s_2240c0cb12bd4a::t_42afae1cb2c914 49
+  s_2240c0cb12bd4a::t_36dacab1d0b2e8 1404-1408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "0c2e64ff576a933207b34b77a09c78b95b410216",
+  "prompts": {},
+  "sessions": {
+    "s_2240c0cb12bd4a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eb70e-074f-7053-9a91-528a34a06a0f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
