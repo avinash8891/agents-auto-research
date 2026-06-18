@@ -153,29 +153,8 @@ def _render_resolution_context(resolution_context: dict[str, Any] | None) -> str
     return "\n".join(lines)
 
 
-def _extract_thesis(parsed: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
-    """Extract single thesis dict from conductor response. Returns (thesis, validation_error).
-
-    v3 prompt contract: conductor returns exactly one thesis in suggested_theses.
-    The direct thesis-object path is kept for backward compatibility with older fixtures only.
-    """
-    theses = parsed.get("suggested_theses")
-    if theses is None:
-        if "hypothesis" in parsed or "config_changes" in parsed:
-            return parsed, ""
-        return None, "no thesis returned"
-    if not isinstance(theses, list):
-        return None, "suggested_theses must be a list"
-    if len(theses) != 1:
-        return None, f"expected exactly one thesis, got {len(theses)}"
-    if not isinstance(theses[0], dict):
-        return None, "suggested_theses[0] must be an object"
-    return theses[0], ""
-
-
 async def run_research_conductor(
     trades_file: str,
-    round_results: str,
     latest_outcome: dict[str, Any],
     research_round: int,
     family_name: str,
@@ -740,7 +719,7 @@ async def run_research_conductor(
             """List validator/compile rejections for the current job.
 
             Optional filters: round_number to scope to one round; rejection_code
-            to scope to one category (e.g. thesis_quality_theme_cluster_fixation). Returns up
+            to scope to one category (e.g. structural_missing_requested_primitives). Returns up
             to `limit` records, most-recent rounds first.
             """
             from rejection_artifact import list_rejections
@@ -835,7 +814,7 @@ async def run_research_conductor(
         async def rejection_pattern_summary_tool(window_rounds: int = 10) -> str:
             """Group recent rejections by rejection_code and return counts.
 
-            Use this to detect repeating failure modes (e.g. thesis_quality_theme_cluster_fixation
+            Use this to detect repeating failure modes (e.g. structural_missing_requested_primitives
             firing 4+ times). The summary covers the last `window_rounds` rounds.
             """
             from rejection_artifact import rejection_pattern_summary
@@ -976,25 +955,11 @@ async def run_research_conductor(
         revise={"used_feedback_retry": bool(rejection_feedback)},
         evaluate={
             "parsed": bool(parsed),
-            "has_thesis": bool(parsed.get("suggested_theses")) if parsed else False,
-            "should_stop": bool(parsed.get("should_stop")) if parsed else False,
+            "has_thesis": bool(parsed.get("rule")) if parsed else False,
         },
     )
 
     if parsed:
-        if parsed.get("should_stop"):
-            _REFINEMENT_RECORDER.finish_session(
-                session_id=refinement_session["session_id"],
-                stopping_reason="should_stop",
-                final_outcome="completed",
-            )
-            session_finished = True
-            return ConductorResult(
-                status="should_stop",
-                should_stop=True,
-                reasoning=str(parsed.get("reasoning", "")),
-                tools_called=frozenset(tools_called_this_round),
-            )
         try:
             proposal = MechanismProposal.model_validate(parsed)
         except Exception as exc:
@@ -1047,7 +1012,6 @@ async def run_research_conductor(
 
 def run_research_conductor_sync(
     trades_file: str,
-    round_results: str,
     latest_outcome: dict[str, Any],
     research_round: int,
     family_name: str,
@@ -1061,7 +1025,6 @@ def run_research_conductor_sync(
     return _run_coroutine_sync(
         run_research_conductor(
             trades_file,
-            round_results,
             latest_outcome,
             research_round,
             family_name,

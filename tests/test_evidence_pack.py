@@ -7,7 +7,7 @@ import pandas as pd
 
 from backtest_run_db import BacktestRunDB
 from causal_model import save_model
-from evidence_pack import Corpus, build_corpus, render_corpus
+from evidence_pack import CORPUS_MAX_RENDER_CHARS, Corpus, build_corpus, render_corpus
 from feature_table import FeatureTableArtifact
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult, write_screenings
@@ -104,6 +104,36 @@ def _write_harvest(runtime_root: Path) -> None:
     )
 
 
+def _write_walkforward_report(
+    runtime_root: Path,
+    thesis_id: str,
+    *,
+    family: str = "ema",
+    verdict: str = "graduated",
+    graduated: bool = True,
+) -> None:
+    path = runtime_root / "walkforward" / f"{thesis_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""
+        {{
+          "family": "{family}",
+          "thesis_id": "{thesis_id}",
+          "survival_pct": 0.6,
+          "survival_rate": 0.75,
+          "usable_windows": 4,
+          "graduated": {str(graduated).lower()},
+          "verdict": "{verdict}",
+          "windows": [
+            {{"window": 1, "directions_hold": true}},
+            {{"window": 2, "directions_hold": false}}
+          ]
+        }}
+        """,
+        encoding="utf-8",
+    )
+
+
 def _setup_runtime(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
     save_model(
@@ -136,7 +166,6 @@ def _setup_runtime(tmp_path: Path, monkeypatch) -> None:
         tmp_path / "ema_backtest_runs.db",
         [_screening("gap_pct < 0", "pass")],
         round_number=2,
-        competitor_rule="gap_pct > 0",
         job_id=1,
     )
 
@@ -189,7 +218,6 @@ def test_build_corpus_uses_explicit_runtime_and_code_roots(tmp_path: Path, monke
         runtime_root / "ema_backtest_runs.db",
         [_screening("gap_pct < 0", "pass")],
         round_number=2,
-        competitor_rule="gap_pct > 0",
         job_id=1,
     )
 
@@ -292,6 +320,38 @@ def test_build_corpus_harvest_verdicts_are_scoped_to_active_job(
     assert corpus.harvest_verdicts[0]["lesson"].startswith("Gap-down rule")
 
 
+def test_build_corpus_reads_walkforward_report_summaries(tmp_path: Path, monkeypatch) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    _write_walkforward_report(tmp_path, "ema-thesis-1", verdict="graduated", graduated=True)
+    _write_walkforward_report(
+        tmp_path,
+        "ema-thesis-2",
+        verdict="demoted",
+        graduated=False,
+    )
+    _write_walkforward_report(tmp_path, "orb-thesis-1", family="orb")
+    (tmp_path / "walkforward" / "errors.json").write_text(
+        '{"errors": [{"thesis_id": "walkforward-error-thesis"}]}',
+        encoding="utf-8",
+    )
+
+    corpus = build_corpus("ema", 2)
+    rendered = render_corpus(corpus)
+
+    assert [item["thesis_id"] for item in corpus.walkforward_reports] == [
+        "ema-thesis-1",
+        "ema-thesis-2",
+    ]
+    assert corpus.walkforward_reports[0]["graduated"] is True
+    assert corpus.walkforward_reports[1]["verdict"] == "demoted"
+    assert corpus.walkforward_reports[0]["window_count"] == 2
+    assert "## Walkforward Reports" in rendered
+    assert "### thesis ema-thesis-1" in rendered
+    assert "survival_rate: 0.75" in rendered
+    assert "orb-thesis-1" not in rendered
+    assert "walkforward-error-thesis" not in rendered
+
+
 def test_build_corpus_rejection_feedback_is_scoped_to_active_job(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -366,7 +426,6 @@ def test_build_corpus_screening_history_is_scoped_to_active_job(
         tmp_path / "ema_backtest_runs.db",
         [_screening("other_job_rule", "pass")],
         round_number=2,
-        competitor_rule="gap_pct > 0",
         job_id=2,
     )
 
@@ -375,7 +434,34 @@ def test_build_corpus_screening_history_is_scoped_to_active_job(
     assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
 
 
-def test_build_corpus_caps_screening_history_and_aggregates_older_verdicts(
+def test_build_corpus_marks_competitor_rows_instead_of_hiding_them(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    write_screenings(
+        tmp_path / "ema_backtest_runs.db",
+        [_screening("gap_pct > 0", "pass")],
+        round_number=2,
+        job_id=1,
+        is_competitor=True,
+    )
+
+    corpus = build_corpus("ema", 2, job=1)
+    rendered = render_corpus(corpus)
+
+    # Spec: competitor screenings are stored AND visible — but marked, so the
+    # LLM cannot mistake a competitor pass for a proposal pass.
+    by_rule = {item.rule: item for item in corpus.screening_history}
+    assert set(by_rule) == {"gap_pct < 0", "gap_pct > 0"}
+    assert by_rule["gap_pct > 0"].is_competitor is True
+    assert by_rule["gap_pct < 0"].is_competitor is False
+    proposal_block = rendered.split("### gap_pct < 0")[1].split("###")[0]
+    competitor_block = rendered.split("### gap_pct > 0")[1].split("###")[0]
+    assert "- role: competitor_hypothesis" in competitor_block
+    assert "- role: proposal" in proposal_block
+
+
+def test_build_corpus_includes_all_prior_screenings_without_round_cap(
     tmp_path: Path, monkeypatch
 ) -> None:
     _setup_runtime(tmp_path, monkeypatch)
@@ -391,36 +477,95 @@ def test_build_corpus_caps_screening_history_and_aggregates_older_verdicts(
                 )
             ],
             round_number=round_number,
-            competitor_rule="gap_pct > 0",
             job_id=1,
         )
 
     corpus = build_corpus("ema", 12, job=1)
     rendered = render_corpus(corpus)
 
-    assert corpus.screening_history_omitted_count == 2
-    assert corpus.screening_history_omitted_verdict_counts == {"kill_no_lift": 1, "pass": 1}
-    assert "rule_1" not in [item.rule for item in corpus.screening_history]
-    assert "rule_2" not in [item.rule for item in corpus.screening_history]
-    assert "rule_3" in [item.rule for item in corpus.screening_history]
-    assert "- omitted_older_screening_rows: 2" in rendered
-    assert "- omitted_older_screening_verdict_counts: kill_no_lift=1, pass=1" in rendered
+    # Spec: ALL prior screenings, both verdicts — no round-count truncation.
+    assert [item.rule for item in corpus.screening_history] == [
+        f"rule_{round_number}" for round_number in range(1, 13)
+    ]
+    assert "rule_1" in rendered
+    assert "truncated" not in rendered
 
 
-def test_render_corpus_shows_omitted_screenings_without_recent_rows() -> None:
+def test_render_corpus_stays_within_budget_even_when_non_screening_overflows() -> None:
+    # A single very long factor lesson pushes non-screening content over
+    # budget; the renderer must still respect CORPUS_MAX_RENDER_CHARS and
+    # surface the truncation, never silently exceed it.
+    bloated_factor = CausalFactor(
+        factor_id="f001",
+        story="x" * (CORPUS_MAX_RENDER_CHARS + 5_000),
+        rule="gap_pct < 0",
+        direction="loss",
+        status="supported",
+        lesson="y" * (CORPUS_MAX_RENDER_CHARS + 5_000),
+    )
     corpus = Corpus(
         family="ema",
-        round_number=14,
-        model=CausalModel(family="ema", version=1),
-        screening_history=[],
-        screening_history_omitted_count=3,
-        screening_history_omitted_verdict_counts={"kill_no_lift": 2, "pass": 1},
+        round_number=1,
+        model=CausalModel(family="ema", version=1, factors=[bloated_factor]),
     )
 
     rendered = render_corpus(corpus)
 
-    assert "- omitted_older_screening_rows: 3" in rendered
-    assert "- omitted_older_screening_verdict_counts: kill_no_lift=2, pass=1" in rendered
+    assert len(rendered) <= CORPUS_MAX_RENDER_CHARS
+    # Whatever path the truncator took, the marker contract holds: the LLM
+    # must always be told something was dropped.
+    assert "truncated" in rendered
+
+
+def test_load_walkforward_reports_skips_artifacts_with_invalid_utf8(
+    tmp_path: Path, monkeypatch, caplog
+) -> None:
+    import logging
+
+    _setup_runtime(tmp_path, monkeypatch)
+    broken = tmp_path / "walkforward" / "broken.json"
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.write_bytes(b"\xff\xfe garbled bytes")
+
+    with caplog.at_level(logging.WARNING):
+        corpus = build_corpus("ema", 1)
+
+    assert corpus.walkforward_reports == []
+    assert "unreadable walkforward report" in caplog.text
+
+
+def test_render_corpus_truncates_oldest_screenings_only_past_max_chars() -> None:
+    long_suffix = "x" * 2_000
+    screenings = [
+        ScreeningResult(
+            rule=f"rule_{index:03d}_{long_suffix} > 0",
+            verdict="kill_no_lift",
+            sample_count=40,
+            flagged_loss_rate=0.5,
+            base_loss_rate=0.4,
+            lift=0.1,
+            p_value=0.5,
+            overlap_with=None,
+        )
+        for index in range(120)  # ~240k chars of screening blocks
+    ]
+    corpus = Corpus(
+        family="ema",
+        round_number=14,
+        model=CausalModel(family="ema", version=1),
+        screening_history=screenings,
+    )
+
+    rendered = render_corpus(corpus)
+
+    assert len(rendered) <= CORPUS_MAX_RENDER_CHARS
+    truncated_count = 120 - rendered.count("### rule_")
+    assert truncated_count > 0
+    # Explicit, never-silent marker naming exactly how many were dropped.
+    assert f"- [truncated {truncated_count} older screenings]" in rendered
+    # Oldest-first: the newest screening survives, the oldest goes first.
+    assert "rule_119" in rendered
+    assert "rule_000" not in rendered
 
 
 def test_render_corpus_is_deterministic_and_ordered(tmp_path: Path, monkeypatch) -> None:
@@ -435,7 +580,8 @@ def test_render_corpus_is_deterministic_and_ordered(tmp_path: Path, monkeypatch)
     assert rendered.index("## Residual Summary") < rendered.index("## Residual Stats")
     assert rendered.index("## Residual Stats") < rendered.index("## Screening History")
     assert rendered.index("## Screening History") < rendered.index("## Harvest Verdicts")
-    assert rendered.index("## Harvest Verdicts") < rendered.index("## Cross Family")
+    assert rendered.index("## Harvest Verdicts") < rendered.index("## Walkforward Reports")
+    assert rendered.index("## Walkforward Reports") < rendered.index("## Cross Family")
     assert rendered.index("## Cross Family") < rendered.index("## Rejection Feedback")
     assert "Registered prediction missed by 23 percentage points." in rendered
     assert "gap: -0.23" in rendered

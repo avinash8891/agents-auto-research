@@ -145,28 +145,6 @@ def test_export_entries_use_backtest_run_type(tmp_path: Path) -> None:
     assert entries[0]["research_round_number"] == 0
 
 
-def test_export_import_round_trip_preserves_prediction_verdict_and_lesson(
-    tmp_path: Path,
-) -> None:
-    source = BacktestRunDB(tmp_path / "source.db")
-    source.init_session(name="ema", metric_name="profit_factor", direction="higher")
-    record = _record(round_number=1, job=1)
-    record.prediction_verdict = "supported"
-    record.lesson = "profit_factor direction passed"
-    source.add(record)
-
-    entries = source.export_entries()
-    exported = [entry for entry in entries if entry.get("type") == "backtest_run"][0]
-    target = BacktestRunDB(tmp_path / "target.db")
-    target.import_entries(entries)
-    imported = target.all()[0]
-
-    assert exported["prediction_verdict"] == "supported"
-    assert exported["lesson"] == "profit_factor direction passed"
-    assert imported.prediction_verdict == "supported"
-    assert imported.lesson == "profit_factor direction passed"
-
-
 def test_list_research_rounds_keeps_round_zero_baseline(tmp_path: Path) -> None:
     db = BacktestRunDB(tmp_path / "backtest_runs.db")
     db.init_session(name="ema", metric_name="profit_factor", direction="higher")
@@ -201,6 +179,7 @@ def test_research_thesis_attempt_schema_has_attempt_id_and_required_indexes(
         round_index_names = {row[1] for row in conn.execute("PRAGMA index_list(research_rounds)")}
 
     assert "thesis_attempt_id" in attempt_columns
+    assert "mechanism_dimension" not in attempt_columns
     assert "idx_research_rounds_job_round" in round_index_names
     assert "idx_research_rounds_outcome" in round_index_names
     assert "idx_research_thesis_attempts_round_attempt" in attempt_index_names
@@ -535,6 +514,8 @@ def test_backtest_runs_has_canonical_columns_and_indexes(tmp_path: Path) -> None
         "trace_run_id",
     ):
         assert col in columns, f"missing canonical column: {col}"
+    for col in ("prediction_verdict", "prediction_lesson", "lesson"):
+        assert col not in columns, f"stale shadow column should not exist: {col}"
 
     indexes = {
         row[1]
@@ -708,3 +689,58 @@ def test_ensure_round_started_is_idempotent(tmp_path: Path) -> None:
     ).fetchall()
     conn.close()
     assert len(rows) == 1
+
+
+def test_legacy_mechanism_dimension_not_null_constraint_does_not_block_inserts(
+    tmp_path: Path,
+) -> None:
+    """A pre-v2 SQLite DB has mechanism_dimension TEXT NOT NULL with no default.
+
+    The v2 INSERT no longer supplies that column, so without a schema
+    migration every research run on an upgraded persisted DB would fail with
+    IntegrityError. The migration relaxes the NOT NULL constraint on init.
+    """
+    db_path = tmp_path / "ema_backtest_runs.db"
+    # Simulate the legacy schema shape (subset is enough to reproduce).
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE research_thesis_attempts (
+                thesis_attempt_id TEXT PRIMARY KEY,
+                research_round_id TEXT NOT NULL,
+                attempt_number INTEGER NOT NULL,
+                thesis_id TEXT NOT NULL,
+                strategy_family TEXT NOT NULL,
+                config_changes_json TEXT NOT NULL,
+                validator_status TEXT NOT NULL,
+                hypothesis TEXT NOT NULL,
+                mechanism TEXT NOT NULL,
+                mechanism_dimension TEXT NOT NULL,
+                thesis_details_json TEXT NOT NULL DEFAULT '{}',
+                validation_failure_reason TEXT NOT NULL,
+                selected_for_execution INTEGER NOT NULL,
+                created_at_utc TEXT NOT NULL,
+                UNIQUE (research_round_id, attempt_number)
+            )
+            """)
+
+    db = BacktestRunDB(db_path)
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    db.add_research_thesis_attempt(
+        {
+            "research_round_id": "job-1-round-1",
+            "attempt_number": 1,
+            "thesis_id": "ema-001",
+            "strategy_family": "ema",
+            "config_changes": {"ema_length": 10},
+            "validator_status": "compiled",
+            "hypothesis": "A mechanism proposal",
+            "mechanism": "Story",
+            "thesis_details": {},
+            "selected_for_execution": 0,
+            "created_at_utc": "2026-06-12T00:00:00+00:00",
+        }
+    )
+
+    rows = list(db.list_research_thesis_attempts())
+    assert len(rows) == 1
+    assert rows[0]["thesis_id"] == "ema-001"

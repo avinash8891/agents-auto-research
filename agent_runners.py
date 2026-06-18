@@ -10,94 +10,24 @@ from agents import Runner as OAIRunner
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 
 import agent_infra
-import agent_prompts
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from autoresearch_constants import DEFAULT_AGENT_MODEL
 from autoresearch_logging import get_logger
 from research_paths import _OAUTH_PROXY_URL, _extract_runner_output_text
-from thesis_validator import normalize_thesis_payload
 
 log = get_logger(__name__)
 
+DEFAULT_AGENT_RETRIES = 2
+
 
 def _validate_output(agent_name: str, parsed: dict[str, Any]) -> bool:
-    """Quality check: ensure agent output has required fields and structure."""
-    if agent_name == "diagnostic-analyst":
-        anomalies = parsed.get("key_anomalies")
-        diagnosis = parsed.get("overall_diagnosis")
-        if not isinstance(anomalies, list) or not isinstance(diagnosis, str):
-            return False
-        if not anomalies or not diagnosis:
-            return False
-        for a in anomalies:
-            if not isinstance(a, dict):
-                return False
-            if not a.get("pattern") or not a.get("numbers"):
-                return False
-        return True
+    """Generic SDK runner accepts any parsed JSON object.
 
-    if agent_name == "web-researcher":
-        findings = parsed.get("findings")
-        if not isinstance(findings, list) or not findings:
-            return False
-        for f in findings:
-            if not isinstance(f, dict):
-                return False
-            if not f.get("topic") or not f.get("finding"):
-                return False
-        return bool(parsed.get("summary"))
-
-    if agent_name == "research-agent":
-        if parsed.get("should_stop") is True:
-            return True
-        theses = parsed.get("suggested_theses")
-        if not isinstance(theses, list) or not theses:
-            return False
-        t = theses[0]
-        if not isinstance(t, dict):
-            return False
-        candidate = normalize_thesis_payload(dict(t))
-        required_scalar_fields = (
-            "hypothesis",
-            "mechanism",
-            "mechanism_dimension",
-            "dimension_novelty",
-        )
-        if any(not str(candidate.get(field) or "").strip() for field in required_scalar_fields):
-            return False
-        config_changes = candidate.get("config_changes")
-        requires_code_change = bool(candidate.get("requires_code_change"))
-        if not isinstance(config_changes, dict):
-            return False
-        if not config_changes and not requires_code_change:
-            return False
-        expected_effects = candidate.get("expected_effects")
-        if not isinstance(expected_effects, list) or not expected_effects:
-            return False
-        for effect in expected_effects:
-            if not isinstance(effect, dict):
-                return False
-            if not str(effect.get("metric") or "").strip():
-                return False
-            if not str(effect.get("direction") or "").strip():
-                return False
-        disqualifiers = candidate.get("disqualifiers")
-        if not isinstance(disqualifiers, list) or not disqualifiers:
-            return False
-        for disqualifier in disqualifiers:
-            if not isinstance(disqualifier, dict):
-                return False
-            if not str(disqualifier.get("name") or "").strip():
-                return False
-            if not str(disqualifier.get("condition") or "").strip():
-                return False
-        if requires_code_change:
-            requested_primitives = candidate.get("requested_primitives")
-            if not isinstance(requested_primitives, list) or not requested_primitives:
-                return False
-        return True
-
-    return True
+    Domain-specific schemas are enforced at the live call sites. Keeping legacy
+    agent-name branches here made retired v1 prompts look behaviorally relevant.
+    """
+    del agent_name
+    return isinstance(parsed, dict)
 
 
 async def _drain_streamed(streamed_run: Any) -> None:
@@ -118,7 +48,7 @@ async def _run_single_agent(
     name: str,
     prompt: str,
     agent_def: Any,
-    retries: int = agent_prompts.MAX_RETRIES,
+    retries: int = DEFAULT_AGENT_RETRIES,
     timeout: int = agent_infra.SDK_TIMEOUT_SECONDS,
 ) -> dict[str, Any] | None:
     """Run a single agent directly with the OpenAI Agents SDK."""

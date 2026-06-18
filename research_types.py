@@ -4,7 +4,7 @@ ResearchThesis  u2192  BacktestContract  u2192  RuntimeConfig
 
 The conductor produces a ResearchThesis (why, what should happen, what disproves it).
 The compiler converts it to an BacktestContract (executable config + research metadata).
-The evaluator checks the result against predictions and produces an BacktestVerdict.
+The evaluator checks registered predictions and produces a HarvestVerdict.
 """
 
 from __future__ import annotations
@@ -19,83 +19,6 @@ from pydantic import BaseModel, Field, model_validator
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-class ExpectedEffect(BaseModel):
-    """A measurable prediction about what a config change should do."""
-
-    metric: str
-    direction: Literal[
-        "increase",
-        "decrease",
-        "increase_or_same",
-        "decrease_or_same",
-        "not_worse_than",
-    ]
-    threshold: float | None = None
-    unit: str | None = None
-    rationale: str | None = None
-
-
-class Disqualifier(BaseModel):
-    """A condition that, if triggered, invalidates the thesis regardless of metric improvement."""
-
-    name: str
-    condition: str
-    severity: Literal["hard_fail", "soft_fail"] = "hard_fail"
-    # `kind` distinguishes pure metric-threshold disqualifiers ("PF must improve
-    # by 5%") from mechanism-evidence disqualifiers ("if up-drive mornings are
-    # NOT a bad regime in the data"). At least one mechanism_evidence
-    # disqualifier may be required by future validator rules (B5).
-    kind: Literal["metric_threshold", "mechanism_evidence"] = "metric_threshold"
-
-
-class Alternative(BaseModel):
-    """One mechanism direction the conductor considered but did not choose.
-
-    Required (>=2) per ResearchThesis when alternatives_considered is enforced
-    by the validator. Forces multi-candidate consideration before final pick
-    (legacy prompt §4 / D1 principle).
-    """
-
-    mechanism: str
-    why_rejected: str = Field(min_length=40)
-
-
-class EvidenceCitation(BaseModel):
-    """One typed evidence citation used to justify the thesis.
-
-    Replaces the legacy `evidence: list[str]` blob with source-tagged citations
-    so the validator can require minimum coverage by source (e.g. >=1 web_search,
-    >=1 analyst).
-    """
-
-    source: Literal[
-        "web_search",
-        "analyst",
-        "source_code",
-        "round_result",
-        "memory",
-    ]
-    citation: str
-
-
-class PriorLeverOutcome(BaseModel):
-    """Citation that the proposed thesis reuses a config-key concept already tested.
-
-    Required when reusing a lever in a different direction or with a similar
-    descriptor — forces the agent to confront whipsawing instead of silently
-    flipping levers across rounds.
-    """
-
-    prior_thesis_id: str
-    lever: str  # e.g. "min_stop_distance_pct" or "opening_window_end"
-    direction_then: str  # "tightened", "loosened", "filtered_in", etc.
-    outcome: str  # one-line summary of what the prior thesis produced
-    why_retry: str = Field(
-        min_length=40,
-        description="Why the lever is worth re-testing despite the prior outcome.",
-    )
 
 
 class DiagnosticRequirementSpec(BaseModel):
@@ -250,31 +173,6 @@ class MechanismProposal(BaseModel):
         return self
 
 
-EMERGENT_MECHANISM_DIMENSION = "emergent"
-
-# Stable built-in mechanism dimensions for thesis classification.
-CORE_MECHANISM_DIMENSIONS = {
-    "entry_timing",
-    "exit_mechanism",
-    "signal_quality",
-    "regime_conditioning",
-    "portfolio_construction",
-    "risk_structure",
-    "market_microstructure",
-    # Emerged from wiki ingestion of foundational literature:
-    # Almgren-Chriss/LOB practice, Lopez de Prado ML fund failures,
-    # news sentiment literature, and Grinold-Kahn FLAM.
-    "execution_costs",
-    "universe_selection",
-    "alternative_data",
-    "alpha_decay",
-}
-
-# Valid mechanism dimensions for thesis classification. The emergent path is
-# intentionally explicit so autonomous discovery is gated by validator evidence.
-MECHANISM_DIMENSIONS = CORE_MECHANISM_DIMENSIONS | {EMERGENT_MECHANISM_DIMENSION}
-
-
 class ResearchThesis(BaseModel):
     """What the conductor produces. Research-grade, not just config changes."""
 
@@ -290,23 +188,6 @@ class ResearchThesis(BaseModel):
     hypothesis: str
     mechanism: str
 
-    # Mechanism discovery fields — forces structural thinking
-    mechanism_dimension: str = ""  # core dimension, emergent, or a prior emergent name
-    dimension_novelty: str = ""  # why this is not a parameter variation of prior work
-    causal_cluster: str = ""  # causal family this thesis belongs to, for diversity audits
-    underexplored_dimensions_considered: list[str] = Field(default_factory=list)
-    novel_connection: str = ""  # why this connects evidence in a materially new way
-    closest_prior_theses_considered: list[str] = Field(default_factory=list)
-    orthogonality_defense: str = ""  # why this is orthogonal vs merely adjacent
-    evidence_strength: Literal["", "direct", "proxy", "mixed", "speculative"] = ""
-    falsification_or_alternative: str = ""  # what would weaken this mechanism
-    new_dimension_name: str = ""  # required when mechanism_dimension == emergent
-    why_existing_dimensions_do_not_fit: str = ""
-    mechanism_family_definition: str = ""
-    expected_reuse_across_future_theses: str = ""
-
-    evidence: list[str] = Field(default_factory=list)
-
     # Research theses are baseline-first. These fields remain for compatibility
     # but must stay empty (or explicitly reference the family baseline path).
     base_contract_id: str = ""
@@ -314,38 +195,11 @@ class ResearchThesis(BaseModel):
 
     config_changes: dict[str, Any] = Field(default_factory=dict)
 
-    expected_effects: list[ExpectedEffect] = Field(default_factory=list)
-    disqualifiers: list[Disqualifier] = Field(default_factory=list)
     required_diagnostics: list[str] = Field(default_factory=list)
     required_diagnostic_specs: list[DiagnosticRequirementSpec] = Field(default_factory=list)
 
     requires_code_change: bool = False
     requested_primitives: list[str] = Field(default_factory=list)
-
-    why_not_overfit: str = ""
-
-    # Theme keywords: agent-supplied tokens for cluster-fixation detection (B1).
-    # 2-3 short noun phrases that categorize the thesis (e.g. ["opening_session",
-    # "stop_distance"]). Set/list overlap on these drives the cluster-fixation rule.
-    theme_keywords: list[str] = Field(default_factory=list)
-
-    # Citations of prior theses whose config-key concepts overlap with this one.
-    # Required when reusing a lever in a different direction (B2 whipsaw rule).
-    prior_lever_outcomes: list[PriorLeverOutcome] = Field(default_factory=list)
-
-    # Alternative mechanism directions considered before the final pick.
-    # Validator requires >=2 entries (recovers legacy §4 / D1 principle).
-    alternatives_considered: list[Alternative] = Field(default_factory=list)
-
-    # Typed evidence citations. Validator requires at least one with
-    # source='web_search' AND one with source='analyst' (when applicable).
-    # Replaces the legacy `evidence: list[str]` for enforcement purposes; the
-    # legacy field is preserved above for backward compat.
-    evidence_citations: list[EvidenceCitation] = Field(default_factory=list)
-
-    # Citation of which strategy source-code file/function corroborates the
-    # mechanism. Recovers legacy §13.5 "verify mechanism in code" requirement.
-    source_code_verification: str = ""
 
 
 class BacktestContract(BaseModel):
@@ -368,8 +222,6 @@ class BacktestContract(BaseModel):
     hypothesis: str
     mechanism: str
 
-    expected_effects: list[ExpectedEffect] = Field(default_factory=list)
-    disqualifiers: list[Disqualifier] = Field(default_factory=list)
     required_diagnostics: list[str] = Field(default_factory=list)
     required_diagnostic_specs: list[DiagnosticRequirementSpec] = Field(default_factory=list)
     missing_primitives: list[str] = Field(default_factory=list)
@@ -399,8 +251,6 @@ class BacktestContract(BaseModel):
             config_changes=sidecar.get("config_changes") or {},
             hypothesis=str(sidecar.get("hypothesis") or ""),
             mechanism=str(sidecar.get("mechanism") or ""),
-            expected_effects=sidecar.get("expected_effects") or [],
-            disqualifiers=sidecar.get("disqualifiers") or [],
             required_diagnostics=sidecar.get("required_diagnostics") or [],
             required_diagnostic_specs=build_required_diagnostic_specs(
                 sidecar.get("required_diagnostics") or [],
@@ -436,16 +286,15 @@ class ConductorResult:
     """Typed return from run_research_conductor.
 
     The conductor returns one proposed thesis envelope; the system assigns thesis_id.
-    status values: "ok" — thesis ready; "should_stop" — conductor decided to quit;
-    "conductor_error" — timeout, parse failure, gate violation, or validation failure.
+    status values: "ok" — thesis ready; "conductor_error" — timeout, parse failure,
+    gate violation, or validation failure.
     """
 
-    status: Literal["ok", "should_stop", "conductor_error"]
+    status: Literal["ok", "conductor_error"]
     thesis: dict[str, Any] | None = None
     error: str = ""
     validation_reason: str = ""
     reasoning: str = ""
-    should_stop: bool = False
     # Tools the conductor invoked during this attempt. Surfaced so the outer
     # validator can enforce process-tier gates (e.g. web_search required) on
     # a retry-eligible basis instead of short-circuiting through conductor_error.
@@ -453,23 +302,6 @@ class ConductorResult:
     # by hand); the outer validator should skip the process gate. An empty
     # frozenset = the conductor ran and called no tools — gate must fire.
     tools_called: frozenset[str] | None = None
-
-
-class BacktestVerdict(BaseModel):
-    """Result of evaluating a backtest against the thesis predictions."""
-
-    contract_id: str
-    thesis_id: str
-
-    status: Literal["accepted", "rejected", "inconclusive"]
-
-    passed_effects: list[str] = Field(default_factory=list)
-    failed_effects: list[str] = Field(default_factory=list)
-    triggered_disqualifiers: list[str] = Field(default_factory=list)
-    unparsed_disqualifiers: list[str] = Field(default_factory=list)
-    missing_required_diagnostics: list[str] = Field(default_factory=list)
-
-    summary: str = ""
 
 
 class HarvestVerdict(BaseModel):

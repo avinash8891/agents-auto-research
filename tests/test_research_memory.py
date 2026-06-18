@@ -74,14 +74,10 @@ def _add_thesis_attempt(db: BacktestRunDB, thesis_id: str, **overrides: object) 
             "hypothesis": "EMA crossover predicts short-term momentum",
             "mechanism": "Trend persistence after crossover is the causal driver",
             "thesis_details": {
-                "expected_effects": [{"metric": "profit_factor", "direction": "increase"}],
-                "evidence": ["historical EMA study 2023"],
-                "evidence_strength": "proxy",
-                "closest_prior_theses_considered": ["ema-baseline"],
-                "orthogonality_defense": "Targets entry timing, not parameter tuning",
-                "falsification_or_alternative": "If volatility regime dominates, reject",
-                "why_not_overfit": "Confirmed on three separate date ranges",
-                "disqualifiers": [{"condition": "trade_count < 50", "metric": "trade_count"}],
+                "proposed_change": {"ema_length": 10},
+                "predictions": [{"metric": "profit_factor", "direction": "increase"}],
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up entries may explain the observed edge.",
             },
             "validation_failure_reason": "",
             "selected_for_execution": 1,
@@ -103,14 +99,9 @@ def test_latest_thesis_details_returns_proposal_fields(tmp_path: Path) -> None:
     assert result["hypothesis"] == "EMA crossover predicts short-term momentum"
     assert result["mechanism"] == "Trend persistence after crossover is the causal driver"
     assert result["config_changes"] == {"ema_length": 10}
-    assert result["evidence_strength"] == "proxy"
-    assert result["closest_prior_theses_considered"] == ["ema-baseline"]
-    assert result["orthogonality_defense"] == "Targets entry timing, not parameter tuning"
-    assert result["falsification_or_alternative"] == "If volatility regime dominates, reject"
-    assert result["why_not_overfit"] == "Confirmed on three separate date ranges"
-    assert len(result["expected_effects"]) == 1
-    assert result["expected_effects"][0]["metric"] == "profit_factor"
-    assert len(result["evidence"]) == 1
+    assert result["proposed_change"] == {"ema_length": 10}
+    assert result["predictions"][0]["metric"] == "profit_factor"
+    assert result["competitor_rule"] == "gap_pct > 0"
 
 
 def test_research_memory_readers_use_runtime_root_env(tmp_path: Path, monkeypatch) -> None:
@@ -178,36 +169,23 @@ def test_latest_thesis_details_returns_last_attempt_when_multiple(tmp_path: Path
     assert result["hypothesis"] == "Second attempt"
 
 
-def test_theme_keywords_round_trip_through_persistence(tmp_path: Path) -> None:
-    """`_theme_keywords_from_prior` is the source of truth for the
-    dominant-cluster overlap gate. The keyword set MUST survive the
-    log_research_round → SQLite → _iter_thesis_attempts round trip, or
-    the gate silently fails-open in production (tests would still pass
-    because they build priors by hand).
-
-    Regression: the thesis_details whitelist in autoresearch_research.py
-    used to omit theme_keywords, so production rounds persisted priors
-    without keywords and the overlap gate could never fire on real data.
-    """
+def test_prediction_metadata_round_trips_through_persistence(tmp_path: Path) -> None:
     from research_memory import _iter_thesis_attempts
-    from thesis_validator import _theme_keywords_from_prior
 
     db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
     _add_thesis_attempt(
         db,
-        "ema-overlap-source",
+        "ema-prediction-source",
         thesis_details={
-            "theme_keywords": ["entry_timing", "morning_session", "opening_volatility"]
+            "predictions": [{"metric": "profit_factor", "direction": "increase"}],
+            "competitor_rule": "gap_pct > 0",
         },
     )
 
-    entries = _iter_thesis_attempts(tmp_path, thesis_id="ema-overlap-source")
+    entries = _iter_thesis_attempts(tmp_path, thesis_id="ema-prediction-source")
     assert entries, "persisted attempt must be readable back"
-    assert _theme_keywords_from_prior(entries[0]) == {
-        "entry_timing",
-        "morning_session",
-        "opening_volatility",
-    }
+    assert entries[0]["thesis_details"]["predictions"][0]["metric"] == "profit_factor"
+    assert entries[0]["thesis_details"]["competitor_rule"] == "gap_pct > 0"
 
 
 def test_latest_thesis_details_picks_globally_latest_across_family_dbs(tmp_path: Path) -> None:

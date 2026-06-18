@@ -13,13 +13,7 @@ exclude = ["tests*", "configs*", "data*", "docs*", "experiments*", "logs*"]
 
 [tool.setuptools]
 py-modules = [
-    "agent_formatters",
     "agent_infra",
-    "agent_memory",
-    "agent_openai_calls",
-    "agent_orchestrator",
-    "agent_orchestrator_helpers",
-    "agent_prompts",
     "agent_runners",
     "agent_sdk_token_usage",
     "agent_token_usage",
@@ -45,7 +39,6 @@ py-modules = [
     "compiler_operationalize",
     "compiler_pipeline",
     "compiler_research",
-    "compiler_thesis_io",
     "config_hash",
     "data_loader",
     "backtest_run_db",
@@ -124,7 +117,6 @@ ignore = ["E402"]
 
 [tool.coverage.run]
 source = [
-    "agent_orchestrator",
     "autoresearch_controller",
     "autoresearch_state",
     "autoresearch_artifacts",

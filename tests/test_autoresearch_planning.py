@@ -8,9 +8,7 @@ import pytest
 from autoresearch_planning import (
     build_research_failure_state,
     check_baseline_rerun,
-    generate_combination_candidates,
     list_known_variant_configs,
-    pending_configs,
     plan_next_action,
     select_research_next_action,
     should_terminate,
@@ -59,12 +57,6 @@ def test_list_known_variant_configs_includes_existing_family_defaults_and_skips_
     ]
 
 
-def test_pending_configs_is_always_empty_when_variant_queueing_is_removed(
-    tmp_path: Path, ema_family
-) -> None:
-    assert pending_configs(tmp_path, ema_family, tmp_path / "queue", []) == []
-
-
 def test_thesis_statuses_are_derived_from_results_only(tmp_path: Path, ema_family) -> None:
     results = [BacktestResultRecord("configs/variants/ema_fast.yaml", 1.25, "keep", "", 100, {})]
 
@@ -90,17 +82,6 @@ def test_thesis_family_for_uses_slug_map_without_loose_artifacts(
     assert (
         thesis_family_for("configs/variants/orb_unknown.yaml", orb_family, tmp_path, tmp_path)
         == "unknown"
-    )
-
-
-def test_generate_combination_candidates_stays_disabled(tmp_path: Path, orb_family) -> None:
-    results = [
-        BacktestResultRecord("configs/variants/orb_spy_only.yaml", 1.0, "keep", "", 1, {}),
-        BacktestResultRecord("configs/variants/orb_trailing_stop.yaml", 1.1, "keep", "", 2, {}),
-    ]
-
-    assert (
-        generate_combination_candidates(tmp_path, orb_family, tmp_path / "proposals", results) == []
     )
 
 
@@ -271,7 +252,6 @@ def test_should_terminate_ignores_competitor_pass_rows_in_screening_pass_rate(
             db_path,
             [_killed_screening().model_copy(update={"verdict": "kill_lost_to_competitor"})],
             round_number=round_number,
-            competitor_rule="gap_pct > 0",
             job_id=7,
         )
         write_screenings(
@@ -282,7 +262,6 @@ def test_should_terminate_ignores_competitor_pass_rows_in_screening_pass_rate(
                 )
             ],
             round_number=round_number,
-            competitor_rule="gap_pct < 0",
             job_id=7,
             is_competitor=True,
         )
@@ -378,7 +357,6 @@ def test_plan_next_action_runs_baseline_and_clears_terminal_metadata(
         "job": 3,
         "research_round": 9,
         "finished_reason": "old",
-        "research_stop_reasoning": "old",
     }
 
     out = plan_next_action(
@@ -395,7 +373,6 @@ def test_plan_next_action_runs_baseline_and_clears_terminal_metadata(
     assert out["state"] == "running"
     assert out["selected_thesis_id"] == "baseline"
     assert "finished_reason" not in out
-    assert "research_stop_reasoning" not in out
 
 
 def test_plan_next_action_clears_terminal_metadata_when_baseline_branch_selected(
@@ -407,7 +384,6 @@ def test_plan_next_action_clears_terminal_metadata_when_baseline_branch_selected
         "state": "finished",
         "job": 3,
         "finished_reason": "old",
-        "research_stop_reasoning": "old",
     }
 
     out = plan_next_action(
@@ -424,7 +400,6 @@ def test_plan_next_action_clears_terminal_metadata_when_baseline_branch_selected
     assert out["state"] == "running"
     assert out["selected_thesis_id"] == "baseline"
     assert "finished_reason" not in out
-    assert "research_stop_reasoning" not in out
 
 
 def test_plan_next_action_queues_walkforward_when_model_plateaus(
@@ -452,7 +427,6 @@ def test_plan_next_action_queues_walkforward_when_model_plateaus(
         "job": 3,
         "research_round": 2,
         "finished_reason": "old",
-        "research_stop_reasoning": "old",
     }
 
     out = plan_next_action(
@@ -519,7 +493,6 @@ def test_plan_next_action_finishes_after_plateau_walkforward_completes_with_erro
         # Partial success is terminal: rerunning the queue would not change
         # the failed candidates' outcome.
         "walkforward_status": "completed_with_errors",
-        "walkforward_errors": [{"thesis_id": "thesis-broken", "error": "boom"}],
         "finished_reason": "model_plateau_pending_walkforward",
     }
 

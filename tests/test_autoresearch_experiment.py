@@ -17,10 +17,8 @@ from autoresearch_experiment import (
     _baseline_metrics_from_first_result,
     _build_asi_dict,
     _build_db_record,
-    _build_export_entry,
     _compute_run_output_dir,
     _contract_from_sidecar,
-    _evaluate_against_thesis,
     _find_duplicate_artifact_output,
     _invalid_duplicate_result_summary,
     _record_baseline_checkpoint,
@@ -30,6 +28,7 @@ from autoresearch_experiment import (
     artifact_dir_for,
     derive_trade_analysis,
     log_experiment_result,
+    missing_required_diagnostics,
     parse_benchmark_details,
     parse_metric,
     parse_result_json,
@@ -50,7 +49,6 @@ from causal_model import load_model, save_model
 from feature_table import load_feature_table
 from research_types import (
     AccuracyPoint,
-    BacktestContract,
     CausalFactor,
     CausalModel,
     HarvestVerdict,
@@ -779,51 +777,6 @@ def test_invalid_duplicate_summary_ignores_bool_and_nonnumeric_zero_hints() -> N
     assert "trade_rejections_due_text" not in summary
 
 
-def test_build_export_entry_uses_backtest_run_type(tmp_path: Path) -> None:
-    controller = SimpleNamespace(
-        ctx=SimpleNamespace(current_contract=None, execution_root=None),
-        root=tmp_path,
-        current_commit=lambda: "abc1234",
-    )
-    entry = _build_export_entry(
-        controller,
-        config="runtime/jobs/job-1/research/round-1/selected_config.json",
-        metric=1.2,
-        decision="keep",
-        details={"profit_factor": 1.2, "git_sha": "abc1234"},
-        asi={"artifact_dir": "runtime/jobs/job-1/research/round-1/backtest"},
-        next_run=1,
-        state={"job": 1, "research_round": 1},
-    )
-
-    assert entry["type"] == "backtest_run"
-    assert entry["backtest_run_id"] == "job-1-round-1-backtest"
-    assert entry["research_round_id"] == "job-1-round-1"
-
-
-def test_build_export_entry_preserves_round_zero_baseline_identity(tmp_path: Path) -> None:
-    controller = SimpleNamespace(
-        ctx=SimpleNamespace(current_contract=None, execution_root=None),
-        root=tmp_path,
-        current_commit=lambda: "abc1234",
-    )
-    entry = _build_export_entry(
-        controller,
-        config="runtime/jobs/job-1/research/round-0-baseline/selected_config.json",
-        metric=1.2,
-        decision="keep",
-        details={"profit_factor": 1.2, "git_sha": "abc1234"},
-        asi={"artifact_dir": "runtime/jobs/job-1/research/round-0-baseline/backtest"},
-        next_run=1,
-        state={"job": 1, "research_round": 0},
-    )
-
-    assert entry["backtest_run_id"] == "job-1-round-0-backtest"
-    assert entry["research_round_id"] == "job-1-round-0"
-    assert entry["research_round_number"] == 0
-    assert entry["is_baseline"] is True
-
-
 def test_derive_trade_analysis_loads_runtime_config_and_updates_context(tmp_path: Path) -> None:
     config_path = tmp_path / "runtime" / "jobs" / "job-2" / "research" / "round-1"
     config_path.mkdir(parents=True)
@@ -875,7 +828,6 @@ def test_build_asi_dict_records_baseline_rerun_and_absolute_artifact_dir(tmp_pat
         analysis={
             "trade_analysis": {"profit_factor": 1.2},
             "insights": ["metric=1.2"],
-            "why_not_data_fit": "independent",
         },
         thesis_id="baseline",
         config_changes={},
@@ -922,121 +874,6 @@ def test_contract_sidecar_drives_thesis_identity_and_diagnostics(tmp_path: Path)
     assert contract.thesis_id == "ema-diagnostic-gate"
     assert contract.config_changes == {"ema_length": 13}
     assert contract.required_diagnostic_specs[0].key == "regime_breakdown"
-
-
-def test_evaluate_against_thesis_rejects_missing_required_diagnostic(tmp_path: Path) -> None:
-    contract = BacktestContract(
-        contract_id="contract-1",
-        thesis_id="ema-diagnostic-gate",
-        strategy_family="ema",
-        baseline_config_path="configs/ema_base.yaml",
-        runtime_config={"ema_length": 13},
-        hypothesis="Candidate needs a regime diagnostic to validate the mechanism.",
-        mechanism="Regime conditioned entries should improve profit factor.",
-        expected_effects=[{"metric": "profit_factor", "direction": "increase", "threshold": 0.1}],
-        required_diagnostic_specs=[
-            {
-                "key": "regime_breakdown",
-                "surface": "strategy_diagnostics",
-                "payload_fields": ["bull"],
-            }
-        ],
-    )
-    controller = SimpleNamespace(
-        root=tmp_path,
-        runtime_root=tmp_path,
-        ctx=SimpleNamespace(execution_root=None),
-        baseline_tracker=None,
-        read_results=lambda: [
-            SimpleNamespace(asi={"trade_analysis": {"profit_factor": 1.0, "trade_count": 5}})
-        ],
-        primary_metric_name=lambda: "profit_factor",
-    )
-    config_dir = tmp_path / "runtime" / "jobs" / "job-5" / "research" / "round-2"
-    config_dir.mkdir(parents=True)
-
-    verdict, decision = _evaluate_against_thesis(
-        controller,
-        contract,
-        "runtime/jobs/job-5/research/round-2/selected_config.json",
-        1.3,
-        "keep",
-        {"profit_factor": 1.3, "trade_count": 6, "strategy_diagnostics": {}},
-    )
-
-    assert decision == "discard"
-    assert verdict.status == "inconclusive"
-    assert verdict.missing_required_diagnostics == ["regime_breakdown"]
-    assert (config_dir / "verdict.json").exists()
-
-
-def test_evaluate_against_thesis_applies_real_verdict_statuses(tmp_path: Path) -> None:
-    accepted_contract = BacktestContract(
-        contract_id="accepted-contract",
-        thesis_id="ema-accepted",
-        strategy_family="ema",
-        baseline_config_path="configs/ema_base.yaml",
-        runtime_config={"ema_length": 13},
-        hypothesis="Candidate improves profit factor.",
-        mechanism="Cleaner entries should raise profit factor.",
-        expected_effects=[{"metric": "profit_factor", "direction": "increase", "threshold": 0.1}],
-    )
-    controller = SimpleNamespace(
-        root=tmp_path,
-        runtime_root=tmp_path,
-        ctx=SimpleNamespace(execution_root=None),
-        baseline_tracker=None,
-        read_results=lambda: [
-            SimpleNamespace(asi={"trade_analysis": {"profit_factor": 1.0, "trade_count": 5}})
-        ],
-        primary_metric_name=lambda: "profit_factor",
-    )
-    config_dir = tmp_path / "runtime" / "jobs" / "job-5" / "research" / "round-3"
-    config_dir.mkdir(parents=True)
-
-    accepted_verdict, accepted_decision = _evaluate_against_thesis(
-        controller,
-        accepted_contract,
-        "runtime/jobs/job-5/research/round-3/selected_config.json",
-        1.3,
-        "discard",
-        {"profit_factor": 1.3, "trade_count": 6},
-    )
-
-    assert accepted_verdict.status == "accepted"
-    assert accepted_decision == "discard"
-    assert json.loads((config_dir / "verdict.json").read_text())["status"] == "accepted"
-
-    rejected_contract = BacktestContract(
-        contract_id="rejected-contract",
-        thesis_id="ema-rejected",
-        strategy_family="ema",
-        baseline_config_path="configs/ema_base.yaml",
-        runtime_config={"ema_length": 21},
-        hypothesis="Candidate improves profit factor unless drawdown explodes.",
-        mechanism="More trades should improve return quality.",
-        expected_effects=[{"metric": "profit_factor", "direction": "increase", "threshold": 0.1}],
-        disqualifiers=[
-            {
-                "name": "drawdown_limit",
-                "condition": "max_drawdown > 0.20",
-                "severity": "hard_fail",
-            }
-        ],
-    )
-
-    rejected_verdict, rejected_decision = _evaluate_against_thesis(
-        controller,
-        rejected_contract,
-        "runtime/jobs/job-5/research/round-3/selected_config.json",
-        1.4,
-        "keep",
-        {"profit_factor": 1.4, "trade_count": 7, "max_drawdown": 0.35},
-    )
-
-    assert rejected_verdict.status == "rejected"
-    assert rejected_verdict.triggered_disqualifiers == ["drawdown_limit"]
-    assert rejected_decision == "discard"
 
 
 def test_baseline_metrics_prefer_tracker_then_fall_back_to_first_result(tmp_path: Path) -> None:
@@ -1417,10 +1254,6 @@ def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Pa
             "trade_analysis": {"verdict": {"status": "accepted", "summary": "diagnostics pass"}},
             "runtime_config": {"ema_length": 9},
             "insights": ["metric=1.9"],
-            "next_candidates": [],
-            "why_not_data_fit": "Independent thesis evaluation only.",
-            "prediction_verdict": "supported",
-            "lesson": "Prediction gap confirmed the harvest.",
         },
         artifact_dir=round_root / "backtest",
     )
@@ -1433,8 +1266,6 @@ def test_log_experiment_result_persists_artifacts_and_sqlite_record(tmp_path: Pa
     assert record.accepted is True
     assert record.runtime_config == {"ema_length": 9}
     assert record.usage == {"total_tokens": 11}
-    assert record.prediction_verdict == "supported"
-    assert record.lesson == "Prediction gap confirmed the harvest."
     assert (round_root / "backtest" / "benchmark_output.txt").read_text() == (
         f"RESULT_JSON {result_path}\n"
     )
@@ -1654,8 +1485,6 @@ def test_run_experiment_uses_registered_predictions_without_force_discard(
     record = controller.backtest_run_db.all()[0]
     harvest = json.loads((round_root / "harvest_verdict.json").read_text())
     assert record.accepted is True
-    assert record.prediction_verdict == "supported"
-    assert record.lesson.startswith("LLM lesson: profit_factor passed")
     assert record.verdict_status != "inconclusive"
     assert harvest["round"] == 1
     assert harvest["status"] == "supported"
@@ -1738,8 +1567,9 @@ def test_run_experiment_discards_refuted_registered_predictions(
 
     assert code == 0
     record = controller.backtest_run_db.all()[0]
+    harvest = json.loads((round_root / "harvest_verdict.json").read_text())
     assert record.accepted is False
-    assert record.prediction_verdict == "refuted"
+    assert harvest["status"] == "refuted"
     updated_model = load_model("ema")
     assert updated_model.factors[0].status == "refuted"
 
@@ -1840,7 +1670,7 @@ def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusiv
     controller = _controller_for_experiment(tmp_path, f"{sys.executable} {script} {{output_dir}}")
     _write_causal_model_base_config(tmp_path)
     monkeypatch.setattr("autoresearch_research.notify_discord", lambda *args, **kwargs: None)
-    _prepare_registered_prediction_round(tmp_path, controller)
+    round_root = _prepare_registered_prediction_round(tmp_path, controller)
     state = {
         "state": "running",
         "job": 6,
@@ -1858,12 +1688,12 @@ def test_run_experiment_schedules_one_extended_retest_for_registered_inconclusiv
     code = run_experiment(controller, state)
 
     assert code == 0
-    record = controller.backtest_run_db.all()[0]
-    assert record.prediction_verdict == "inconclusive"
+    harvest = json.loads((round_root / "harvest_verdict.json").read_text())
+    assert harvest["status"] == "inconclusive"
     persisted = controller.read_state()
     retest_action = persisted["next_action"]
     assert retest_action["source"] == "registered_prediction_retest"
-    assert retest_action["registered_prediction_retest"]["attempt"] == 1
+    assert "attempt" not in retest_action["registered_prediction_retest"]
     assert "_preserve_next_action_once" not in persisted
     retest_config = tmp_path / retest_action["config"]
     retest_payload = json.loads(retest_config.read_text())
@@ -1943,6 +1773,12 @@ def test_request_registered_prediction_retest_returns_explicit_transition_withou
 
     assert controller.read_state()["next_action"]["source"] == "research"
     assert retest_request.next_state["next_action"]["source"] == "registered_prediction_retest"
+    assert retest_request.next_state["next_action"]["registered_prediction_retest"] == {
+        "original_config": "runtime/jobs/job-6/research/round-1/selected_config.json",
+        "original_validation_end": "2023-12-31",
+        "validation_end": "2024-09-30",
+        "retest_extension_months": 9,
+    }
     assert "_preserve_next_action_once" not in retest_request.next_state
 
 
@@ -1988,7 +1824,7 @@ def test_run_experiment_forces_registered_inconclusive_after_retest_once(
             "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
             "selected_thesis_id": "ema-command-inconclusive",
             "source": "registered_prediction_retest",
-            "registered_prediction_retest": {"attempt": 1},
+            "registered_prediction_retest": {},
         },
     }
     controller.write_state(state)
@@ -1996,10 +1832,7 @@ def test_run_experiment_forces_registered_inconclusive_after_retest_once(
     code = run_experiment(controller, state)
 
     assert code == 0
-    record = controller.backtest_run_db.all()[0]
     harvest = json.loads((round_root / "harvest_verdict.json").read_text())
-    assert record.prediction_verdict == "refuted"
-    assert "forced_after_retest" in record.lesson
     assert harvest["status"] == "refuted"
     assert "forced_after_retest" in harvest["lesson"]
     assert controller.read_state().get("next_action", {}).get("source") != (
@@ -2042,7 +1875,7 @@ def test_forced_retest_lesson_is_not_overwritten_by_llm_synthesis(
             "config": "runtime/jobs/job-6/research/round-1/selected_config_retest.json",
             "selected_thesis_id": "ema-command-inconclusive",
             "source": "registered_prediction_retest",
-            "registered_prediction_retest": {"attempt": 1},
+            "registered_prediction_retest": {},
         },
     }
     controller.write_state(state)
@@ -2104,7 +1937,6 @@ def test_retest_verdict_uses_baseline_rerun_over_extended_range(
             "selected_thesis_id": "ema-command-inconclusive",
             "source": "registered_prediction_retest",
             "registered_prediction_retest": {
-                "attempt": 1,
                 "original_validation_end": "2023-12-31",
                 "validation_end": "2024-09-30",
             },
@@ -2415,3 +2247,39 @@ def test_run_experiment_returns_one_when_family_has_no_benchmark_command(tmp_pat
     controller.write_state(state)
 
     assert run_experiment(controller, state) == 1
+
+
+def test_missing_required_diagnostics_flags_absent_keys() -> None:
+    from research_types import DiagnosticRequirementSpec
+
+    specs = [
+        DiagnosticRequirementSpec(key="max_drawdown_vs_base", aliases=["mdd_vs_base"]),
+        DiagnosticRequirementSpec(key="event_counts"),
+    ]
+    # event_counts present; max_drawdown_vs_base missing under either name.
+    strategy_diagnostics = {"event_counts": {"signals": 100}}
+
+    missing = missing_required_diagnostics(specs, strategy_diagnostics)
+
+    assert missing == ["max_drawdown_vs_base"]
+
+
+def test_missing_required_diagnostics_flags_specs_with_missing_inputs() -> None:
+    from research_types import DiagnosticRequirementSpec
+
+    specs = [DiagnosticRequirementSpec(key="max_drawdown_vs_base")]
+    # Present as a key but the payload signals that its inputs were missing
+    # at runtime — the diagnostic could not be computed, so it counts as
+    # missing for verdict purposes (v1 behavior).
+    strategy_diagnostics = {"max_drawdown_vs_base": {"missing_inputs": ["max_drawdown"]}}
+
+    assert missing_required_diagnostics(specs, strategy_diagnostics) == ["max_drawdown_vs_base"]
+
+
+def test_missing_required_diagnostics_accepts_alias_match() -> None:
+    from research_types import DiagnosticRequirementSpec
+
+    specs = [DiagnosticRequirementSpec(key="max_drawdown_vs_base", aliases=["mdd_vs_base"])]
+    strategy_diagnostics = {"mdd_vs_base": {"value": 0.12}}
+
+    assert missing_required_diagnostics(specs, strategy_diagnostics) == []

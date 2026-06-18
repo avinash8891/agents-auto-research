@@ -89,8 +89,6 @@ def _needs_code_contract(
         runtime_config={},
         hypothesis=thesis.hypothesis,
         mechanism=thesis.mechanism,
-        expected_effects=thesis.expected_effects,
-        disqualifiers=thesis.disqualifiers,
         required_diagnostics=thesis.required_diagnostics,
         required_diagnostic_specs=build_required_diagnostic_specs(
             thesis.required_diagnostics,
@@ -134,8 +132,6 @@ def _compile_runtime_config_contract(
         config_changes=dict(thesis.config_changes),
         hypothesis=thesis.hypothesis,
         mechanism=thesis.mechanism,
-        expected_effects=thesis.expected_effects,
-        disqualifiers=thesis.disqualifiers,
         required_diagnostics=thesis.required_diagnostics,
         required_diagnostic_specs=build_required_diagnostic_specs(
             thesis.required_diagnostics,

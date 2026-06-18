@@ -270,12 +270,12 @@ def test_screenings_table_exists_and_write_screenings_appends_spec_rows(tmp_path
         "gap_pct < 0", "gap_pct > 0", CausalModel(family="ema", version=1), _feature_table()
     )
 
-    write_screenings(db.path, [result], round_number=3, competitor_rule="gap_pct > 0")
+    write_screenings(db.path, [result], round_number=3)
 
     with sqlite3.connect(db.path) as conn:
         columns = [row[1] for row in conn.execute("PRAGMA table_info(screenings)")]
         rows = conn.execute("""
-            SELECT round_number, job_id, rule, competitor_rule, verdict, sample_count,
+            SELECT round_number, job_id, rule, verdict, sample_count,
                    ROUND(flagged_loss_rate, 3), ROUND(base_loss_rate, 3), ROUND(lift, 3),
                    overlap_with
             FROM screenings
@@ -286,7 +286,6 @@ def test_screenings_table_exists_and_write_screenings_appends_spec_rows(tmp_path
         "round_number",
         "job_id",
         "rule",
-        "competitor_rule",
         "verdict",
         "sample_count",
         "flagged_loss_rate",
@@ -297,7 +296,7 @@ def test_screenings_table_exists_and_write_screenings_appends_spec_rows(tmp_path
         "created_at_utc",
         "is_competitor",
     ]
-    assert rows == [(3, None, "gap_pct < 0", "gap_pct > 0", "pass", 40, 0.8, 0.56, 0.24, None)]
+    assert rows == [(3, None, "gap_pct < 0", "pass", 40, 0.8, 0.56, 0.24, None)]
 
 
 def test_write_screenings_persists_active_job_id(tmp_path: Path) -> None:
@@ -306,7 +305,7 @@ def test_write_screenings_persists_active_job_id(tmp_path: Path) -> None:
         "gap_pct < 0", "gap_pct > 0", CausalModel(family="ema", version=1), _feature_table()
     )
 
-    write_screenings(db.path, [result], round_number=3, competitor_rule="gap_pct > 0", job_id=7)
+    write_screenings(db.path, [result], round_number=3, job_id=7)
 
     with sqlite3.connect(db.path) as conn:
         rows = conn.execute("SELECT round_number, job_id, rule FROM screenings").fetchall()
@@ -320,8 +319,8 @@ def test_write_screenings_is_retry_safe_for_repeated_rule_same_round(tmp_path: P
         "gap_pct < 0", "gap_pct > 0", CausalModel(family="ema", version=1), _feature_table()
     )
 
-    write_screenings(db.path, [result], round_number=3, competitor_rule="gap_pct > 0")
-    write_screenings(db.path, [result], round_number=3, competitor_rule="gap_pct > 0")
+    write_screenings(db.path, [result], round_number=3)
+    write_screenings(db.path, [result], round_number=3)
 
     with sqlite3.connect(db.path) as conn:
         count = conn.execute("SELECT COUNT(*) FROM screenings").fetchone()[0]
@@ -362,7 +361,7 @@ def test_write_screenings_retries_insert_after_integrity_collision(
 
     monkeypatch.setattr(screening.sqlite3, "connect", CollisionConnection)
 
-    write_screenings(db.path, [result], round_number=3, competitor_rule="gap_pct > 0")
+    write_screenings(db.path, [result], round_number=3)
 
     with real_connect(db.path) as conn:
         ids = [row[0] for row in conn.execute("SELECT screening_id FROM screenings").fetchall()]
@@ -381,7 +380,6 @@ def test_write_screenings_tolerates_concurrent_job_id_migration(
                 screening_id TEXT PRIMARY KEY,
                 round_number INTEGER NOT NULL,
                 rule TEXT NOT NULL,
-                competitor_rule TEXT,
                 verdict TEXT NOT NULL,
                 sample_count INTEGER NOT NULL,
                 lift REAL NOT NULL,
@@ -421,7 +419,7 @@ def test_write_screenings_tolerates_concurrent_job_id_migration(
 
     monkeypatch.setattr(screening.sqlite3, "connect", MigrationRaceConnection)
 
-    write_screenings(db_path, [result], round_number=3, competitor_rule="gap_pct > 0", job_id=7)
+    write_screenings(db_path, [result], round_number=3, job_id=7)
 
     with real_connect(db_path) as conn:
         rows = conn.execute("SELECT job_id, rule FROM screenings").fetchall()

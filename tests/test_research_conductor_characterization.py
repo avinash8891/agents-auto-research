@@ -55,7 +55,7 @@ def _patch_conductor_runner(monkeypatch: pytest.MonkeyPatch, output: dict | str)
 
 def test_conductor_requires_rendered_corpus() -> None:
     with pytest.raises(ValueError, match="rendered_corpus"):
-        conductor.run_research_conductor_sync("", "", {}, 1, "ema")
+        conductor.run_research_conductor_sync("", {}, 1, "ema")
 
 
 def test_conductor_returns_timeout_error_when_runner_times_out(
@@ -72,7 +72,7 @@ def test_conductor_returns_timeout_error_when_runner_times_out(
 
     monkeypatch.setattr(conductor.OAIRunner, "run_streamed", _raise_timeout)
 
-    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema", rendered_corpus="## Corpus\n")
+    out = conductor.run_research_conductor_sync("", {}, 1, "ema", rendered_corpus="## Corpus\n")
 
     assert out is not None
     assert out.status == "conductor_error"
@@ -88,7 +88,7 @@ def test_conductor_marks_oauth_proxy_failure_as_proxy_unavailable(
         lambda: (_ for _ in ()).throw(RuntimeError("openai-oauth proxy unavailable")),
     )
 
-    out = conductor.run_research_conductor_sync("", "", {}, 1, "ema", rendered_corpus="## Corpus\n")
+    out = conductor.run_research_conductor_sync("", {}, 1, "ema", rendered_corpus="## Corpus\n")
 
     assert out is not None
     assert out.status == "conductor_error"
@@ -128,7 +128,6 @@ def test_conductor_uses_rendered_corpus_only_and_skips_thesis_validator(
 
     out = conductor.run_research_conductor_sync(
         "",
-        "legacy round results must not be included",
         {"status": "keep"},
         research_round=12,
         family_name="ema",
@@ -177,7 +176,6 @@ def test_conductor_exposes_analyst_tool_when_trades_are_available(
 
     out = conductor.run_research_conductor_sync(
         "trades.parquet",
-        "",
         {"status": "keep"},
         research_round=12,
         family_name="ema",
@@ -214,7 +212,6 @@ def test_conductor_accepts_structured_final_output(
 
     out = conductor.run_research_conductor_sync(
         "",
-        "legacy round results must not be included",
         {"status": "keep"},
         research_round=12,
         family_name="ema",
@@ -261,7 +258,6 @@ def test_conductor_prefers_final_output_as_over_raw_structured_output(
 
     out = conductor.run_research_conductor_sync(
         "",
-        "",
         {},
         research_round=12,
         family_name="ema",
@@ -281,7 +277,6 @@ def test_conductor_reports_parse_failed_for_non_json_runner_output(
 
     out = conductor.run_research_conductor_sync(
         "",
-        "",
         {},
         research_round=1,
         family_name="ema",
@@ -293,13 +288,12 @@ def test_conductor_reports_parse_failed_for_non_json_runner_output(
     assert out.error == "parse_failed"
 
 
-def test_conductor_honors_should_stop_response(
+def test_conductor_rejects_retired_should_stop_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_conductor_runner(monkeypatch, {"reasoning": "nothing left", "should_stop": True})
 
     out = conductor.run_research_conductor_sync(
-        "",
         "",
         {},
         research_round=1,
@@ -308,9 +302,9 @@ def test_conductor_honors_should_stop_response(
     )
 
     assert out is not None
-    assert out.status == "should_stop"
-    assert out.should_stop is True
-    assert out.reasoning == "nothing left"
+    assert out.status == "conductor_error"
+    assert out.error == "validation_failed"
+    assert out.thesis == {"reasoning": "nothing left", "should_stop": True}
 
 
 def test_mechanism_system_prompt_mentions_corpus_not_feature_table_schema() -> None:

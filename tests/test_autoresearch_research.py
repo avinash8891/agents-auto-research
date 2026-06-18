@@ -2,7 +2,7 @@
 
 The orchestrator functions (execute_research_sdk, run_research) are exercised
 end-to-end by the characterization tests; this module covers the pure helpers
-(notify_discord, accumulate_job_usage, log_research_round, results_to_dicts).
+(notify_discord, accumulate_job_usage, log_research_round).
 
 Project rule G: real outcome strings ("compiled", "needs_code", "rejected",
 "stopped"), real status keys, behavioral assertions on token totals and
@@ -45,7 +45,6 @@ from autoresearch_research import (
     execute_research_sdk,
     log_research_round,
     notify_discord,
-    results_to_dicts,
     run_research,
 )
 from autoresearch_state import BacktestResultRecord, write_state
@@ -57,7 +56,6 @@ from research_types import CausalModel, ConductorResult
 from screening import ScreeningResult, write_screenings
 from strategies import STRATEGIES
 from strategy_family import load_family
-from thesis_validator import ThesisValidationError
 
 # ── notify_discord fail-open contract ────────────────────────────
 
@@ -522,7 +520,6 @@ def test_check_parsed_for_terminal_preserves_conductor_validation_reason() -> No
     assert result == {
         "status": "conductor_error",
         "generated_config": None,
-        "should_stop": False,
         "validation_failure_reason": (
             "research conductor failed: validation_failed: expected exactly one thesis, got 2"
         ),
@@ -685,7 +682,6 @@ def test_log_research_round_persists_full_thesis_details_to_attempt(tmp_path: Pa
         config_changes={"requires_engine_change": True},
         hypothesis="opening liquidity imbalance",
         mechanism="auction imbalance decay",
-        mechanism_dimension="market_microstructure",
         thesis_details=details,
     )
 
@@ -694,63 +690,6 @@ def test_log_research_round_persists_full_thesis_details_to_attempt(tmp_path: Pa
     )
 
     assert attempts[0]["thesis_details"] == details
-
-
-# ── results_to_dicts ────────────────────────────────────────────
-
-
-def test_results_to_dicts_copies_core_fields() -> None:
-    record = BacktestResultRecord(
-        config="configs/ema_base.yaml",
-        metric=1.42,
-        status="keep",
-        description="strict-native loop: ema_base",
-        timestamp=100,
-        asi={},
-    )
-    out = results_to_dicts([record])
-    assert out == [
-        {
-            "config": "configs/ema_base.yaml",
-            "metric": 1.42,
-            "status": "keep",
-            "description": "strict-native loop: ema_base",
-            "job": 0,
-        }
-    ]
-
-
-def test_results_to_dicts_includes_trade_analysis_subkeys_when_present() -> None:
-    record = BacktestResultRecord(
-        config="configs/variants/ema_aggressive.yaml",
-        metric=1.5,
-        status="keep",
-        description="",
-        timestamp=200,
-        asi={
-            "trade_analysis": {
-                "trade_count": 287,
-                "profit_factor": 1.61,
-                "max_drawdown": 0.18,
-                "exit_mix": {"target": 102, "stop": 78, "close": 107},
-                "regime_insight": "best in trending sessions",
-            },
-            "thesis_id": "ema_aggressive",
-            "config_changes": {"ema_length": 3},
-            "insights": ["metric=1.5", "decision=keep"],
-            "next_thesis_suggestion": "test ema_length=4",
-        },
-    )
-    out = results_to_dicts([record])[0]
-    assert out["trade_count"] == 287
-    assert out["profit_factor"] == 1.61
-    assert out["max_drawdown"] == 0.18
-    assert out["exit_mix"] == {"target": 102, "stop": 78, "close": 107}
-    assert out["regime_insight"] == "best in trending sessions"
-    assert out["thesis_id"] == "ema_aggressive"
-    assert out["config_changes"] == {"ema_length": 3}
-    assert out["insights"] == ["metric=1.5", "decision=keep"]
-    assert out["next_thesis_suggestion"] == "test ema_length=4"
 
 
 def test_thesis_meta_from_mechanism_result_persists_proposed_change_for_dedupe() -> None:
@@ -767,32 +706,6 @@ def test_thesis_meta_from_mechanism_result_persists_proposed_change_for_dedupe()
 
     assert out["config_changes"] == {"ema_length": 8}
     assert out["proposed_change"] == {"ema_length": 8}
-
-
-def test_results_to_dicts_uses_insight_brief_from_either_layer() -> None:
-    """insight_brief on asi takes precedence; falls back to trade_analysis."""
-    record_top = BacktestResultRecord(
-        "c.yaml",
-        1.0,
-        "keep",
-        "",
-        100,
-        asi={"insight_brief": "from-top", "trade_analysis": {"insight_brief": "from-ta"}},
-    )
-    record_ta = BacktestResultRecord(
-        "c.yaml",
-        1.0,
-        "keep",
-        "",
-        100,
-        asi={"trade_analysis": {"insight_brief": "from-ta-only"}},
-    )
-    assert results_to_dicts([record_top])[0]["insight_brief"] == "from-top"
-    assert results_to_dicts([record_ta])[0]["insight_brief"] == "from-ta-only"
-
-
-def test_results_to_dicts_handles_empty_input() -> None:
-    assert results_to_dicts([]) == []
 
 
 def test_resolve_conductor_inputs_uses_persisted_artifacts_and_verdict_feedback(
@@ -907,13 +820,10 @@ def test_resolve_conductor_inputs_injects_previous_thesis_from_db(tmp_path: Path
             "hypothesis": "EMA crossover accelerates after news",
             "mechanism": "Momentum buildup drives short-term trend persistence",
             "thesis_details": {
-                "expected_effects": [{"metric": "profit_factor", "direction": "increase"}],
-                "evidence": ["backtested on 2024 data"],
-                "evidence_strength": "proxy",
-                "closest_prior_theses_considered": ["ema-baseline"],
-                "orthogonality_defense": "Different timing layer",
-                "falsification_or_alternative": "If ATR-based stop dominates, mechanism is wrong",
-                "why_not_overfit": "Validated on out-of-sample window",
+                "proposed_change": {"ema_length": 12},
+                "predictions": [{"metric": "profit_factor", "direction": "increase"}],
+                "competitor_rule": "gap_pct > 0",
+                "competitor_story": "Gap-up entries may explain the observed edge.",
             },
             "validation_failure_reason": "",
             "selected_for_execution": 1,
@@ -939,11 +849,9 @@ def test_resolve_conductor_inputs_injects_previous_thesis_from_db(tmp_path: Path
     assert prev["hypothesis"] == "EMA crossover accelerates after news"
     assert prev["mechanism"] == "Momentum buildup drives short-term trend persistence"
     assert prev["config_changes"] == {"ema_length": 12}
-    assert prev["evidence_strength"] == "proxy"
-    assert prev["closest_prior_theses_considered"] == ["ema-baseline"]
-    assert prev["falsification_or_alternative"] == "If ATR-based stop dominates, mechanism is wrong"
-    assert prev["why_not_overfit"] == "Validated on out-of-sample window"
-    assert len(prev["expected_effects"]) == 1
+    assert prev["proposed_change"] == {"ema_length": 12}
+    assert prev["predictions"][0]["metric"] == "profit_factor"
+    assert prev["competitor_rule"] == "gap_pct > 0"
 
 
 def test_resolve_conductor_inputs_no_previous_thesis_when_no_attempt_exists(
@@ -1153,7 +1061,12 @@ def _dict_to_conductor_result(d: dict) -> ConductorResult:
     """Convert test dicts using the historical suggested_theses wrapper."""
     if d.get("should_stop"):
         return ConductorResult(
-            status="should_stop", should_stop=True, reasoning=d.get("reasoning", "")
+            status="conductor_error",
+            error="validation_failed",
+            validation_reason="retired should_stop payload",
+            reasoning=d.get("reasoning", ""),
+            thesis=d,
+            tools_called=frozenset(d.get("tools_called", {"list_round_results", "web_search"})),
         )
     theses = d.get("suggested_theses") or []
     return ConductorResult(
@@ -1214,14 +1127,13 @@ def test_execute_research_sdk_passes_rendered_corpus_to_conductor(
 
     def _run_conductor(*args, **kwargs):
         captured.update(kwargs)
-        return ConductorResult(status="should_stop", should_stop=True, reasoning="stop")
+        return ConductorResult(status="conductor_error", error="parse_failed")
 
     monkeypatch.setattr("research_conductor.run_research_conductor_sync", _run_conductor)
 
     result = execute_research_sdk(controller)
 
-    assert result["status"] == "completed"
-    assert result["should_stop"] is True
+    assert result["status"] == "conductor_error"
     assert captured["rendered_corpus"] == "RENDERED-CORPUS"
     assert all(key != "conductor" + "_mode" for key in captured)
     assert corpus_calls == [
@@ -1386,9 +1298,7 @@ def test_execute_research_sdk_builds_corpus_from_latest_completed_round_for_job(
     monkeypatch.setattr("evidence_pack.render_corpus", lambda corpus: "RENDERED-CORPUS")
     monkeypatch.setattr(
         "research_conductor.run_research_conductor_sync",
-        lambda *args, **kwargs: ConductorResult(
-            status="should_stop", should_stop=True, reasoning="stop"
-        ),
+        lambda *args, **kwargs: ConductorResult(status="conductor_error", error="parse_failed"),
     )
 
     execute_research_sdk(controller)
@@ -1428,7 +1338,7 @@ def test_execute_research_sdk_persists_retry_feedback_for_corpus(
             reasoning="invalid first proposal",
             tools_called=frozenset({"analyze_trades"}),
         ),
-        ConductorResult(status="should_stop", should_stop=True, reasoning="stop after feedback"),
+        ConductorResult(status="conductor_error", error="parse_failed"),
     ]
     monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root, **kwargs: [])
     monkeypatch.setattr(
@@ -1446,7 +1356,7 @@ def test_execute_research_sdk_persists_retry_feedback_for_corpus(
     feedback_path = (
         tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1" / "rejection_feedback.txt"
     )
-    assert result["should_stop"] is True
+    assert result["status"] == "conductor_error"
     assert feedback_path.exists()
     assert "predicted" in feedback_path.read_text(encoding="utf-8")
 
@@ -1463,11 +1373,11 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
         tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-0-baseline"
     )
 
-    def _legacy_validator_called(*args, **kwargs):
-        raise AssertionError("legacy thesis validator must not run for MechanismProposal")
+    # The legacy validator is structurally gone — the mechanism path cannot
+    # call it because the function no longer exists.
+    import thesis_validator
 
-    monkeypatch.setattr("thesis_validator.validate_thesis_dict", _legacy_validator_called)
-    monkeypatch.setattr("thesis_validator.validate_stage_2", _legacy_validator_called)
+    assert not hasattr(thesis_validator, "validate_thesis_dict")
 
     result, retry_feedback, stage = _try_one_validation_attempt(
         controller,
@@ -1523,13 +1433,13 @@ def test_mechanism_proposal_compiles_without_legacy_thesis_validator(
     assert pending_model.accuracy_history[-1].round_number == 1
     with sqlite3.connect(controller.backtest_run_db.path) as conn:
         rows = conn.execute("""
-            SELECT rule, competitor_rule, verdict
+            SELECT rule, verdict, is_competitor
             FROM screenings
             ORDER BY rule
             """).fetchall()
     assert rows == [
-        ("gap_pct < 0", "gap_pct > 0", "pass"),
-        ("gap_pct > 0", "gap_pct < 0", "pass"),
+        ("gap_pct < 0", "pass", 0),
+        ("gap_pct > 0", "pass", 1),
     ]
 
 
@@ -1685,7 +1595,8 @@ def test_mechanism_proposal_compiler_payload_has_no_legacy_filler() -> None:
         thesis_id="job-1-round-1-attempt-1",
     )
 
-    assert thesis["expected_effects"] == []
+    assert "expected_effects" not in thesis
+    assert "disqualifiers" not in thesis
     assert "why_not_overfit" not in thesis
     assert "new_dimension_name" not in thesis
     assert "why_existing_dimensions_do_not_fit" not in thesis
@@ -1782,7 +1693,6 @@ def test_run_research_non_actionable_mechanism_continues_without_interrupt(
                     "predictions": [],
                 }
             ],
-            "should_stop": False,
         },
     )
     monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
@@ -1793,7 +1703,7 @@ def test_run_research_non_actionable_mechanism_continues_without_interrupt(
     model = load_model("ema", runtime_root=tmp_path, code_root=tmp_path)
     with sqlite3.connect(controller.backtest_run_db.path) as conn:
         screenings = conn.execute("""
-            SELECT rule, competitor_rule, verdict
+            SELECT rule, verdict, is_competitor
             FROM screenings
             WHERE job_id = 12 AND round_number = 1
             ORDER BY rule
@@ -1803,8 +1713,8 @@ def test_run_research_non_actionable_mechanism_continues_without_interrupt(
     assert updated["next_action"]["type"] == "research"
     assert updated["blockers"][0]["kind"] == "research_required"
     assert screenings == [
-        ("gap_pct < 0", "gap_pct > 0", "pass"),
-        ("gap_pct > 0", "gap_pct < 0", "pass"),
+        ("gap_pct < 0", "pass", 0),
+        ("gap_pct > 0", "pass", 1),
     ]
     assert model.version == 1
     assert model.factors[0].rule == "gap_pct < 0"
@@ -1837,7 +1747,6 @@ def test_run_research_success_persists_round_artifacts_and_next_action(
         {
             "reasoning": "Tighter entry filter should reduce weak crosses.",
             "suggested_theses": [proposal],
-            "should_stop": False,
         },
     )
     monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
@@ -1853,8 +1762,7 @@ def test_run_research_success_persists_round_artifacts_and_next_action(
     assert updated["next_action"]["config"] == generated_config
     assert updated["activity"]["phase"] == "pending_backtest"
     assert json.loads((round_root / "round.json").read_text())["outcome"] == "compiled"
-    links = json.loads((round_root / "links.json").read_text())
-    assert links["generated_config_path"] == generated_config
+    assert not (round_root / "links.json").exists()
     attempts = controller.backtest_run_db.list_research_thesis_attempts(
         job_id=12,
         thesis_id="job-12-round-1-attempt-1",
@@ -1888,7 +1796,6 @@ def test_ready_to_run_writes_registered_predictions_before_backtest_dispatch(
         },
         thesis_id="thesis-001",
         conductor_result=ConductorResult(status="ok", reasoning="harvest now"),
-        should_stop=False,
         job_id=12,
     )
 
@@ -1922,12 +1829,11 @@ def test_ready_to_run_rejects_undeclared_multi_key_proposed_change(tmp_path: Pat
             raw_thesis={"proposed_change": {"gap_filter": True, "gap_pct": 0.01}},
             thesis_id="thesis-001",
             conductor_result=ConductorResult(status="ok", reasoning="harvest now"),
-            should_stop=False,
             job_id=12,
         )
 
 
-def test_run_research_should_stop_closes_job_with_finished_state(
+def test_run_research_should_stop_payload_is_rejected_not_terminal(
     tmp_path: Path, monkeypatch
 ) -> None:
     controller = _real_controller(tmp_path)
@@ -1959,13 +1865,10 @@ def test_run_research_should_stop_closes_job_with_finished_state(
 
     updated = run_research(controller, controller.read_state())
 
-    assert updated["state"] == "finished"
-    assert updated["finished_reason"] == "research_recommends_stop"
-    assert updated["research_stop_reasoning"] == (
-        "No remaining orthogonal mechanism has enough evidence."
-    )
+    assert updated["state"] == "interrupted"
+    assert updated["blockers"][0]["kind"] == "research_failed"
+    assert "research_stop_reasoning" not in updated
     assert "activity" not in updated
-    assert (tmp_path / "ema_autoresearch.current.md").exists()
 
 
 def test_run_research_rejected_round_blocks_with_persisted_rejection(
@@ -1989,7 +1892,6 @@ def test_run_research_rejected_round_blocks_with_persisted_rejection(
         {
             "reasoning": "Duplicate EMA idea.",
             "suggested_theses": [invalid_proposal],
-            "should_stop": False,
         },
     )
     monkeypatch.setattr("research_conductor.reset_round_usage", lambda: None)
@@ -2107,17 +2009,10 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
         def backtest_run_db(self):
             raise AssertionError("not used")
 
-    class _Validated:
-        thesis_id = "symbol_day_gate"
-
     class _Contract:
         status = "ready_to_run"
         contract_id = "exp-001"
 
-    monkeypatch.setattr(
-        "thesis_validator.validate_thesis_dict",
-        lambda raw, prior_theses=None, tools_called=None, **kwargs: _Validated(),
-    )
     monkeypatch.setattr(
         "compiler_pipeline.compile_research_thesis",
         lambda validated, root, artifact_root=None: _Contract(),
@@ -2186,9 +2081,7 @@ def test_try_one_validation_attempt_treats_proposed_change_error_as_retry_feedba
     assert "unsupported config key(s) for ema" in retry_feedback
 
 
-def test_handle_needs_code_uses_full_validation_contract_before_compile(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_handle_needs_code_directly_validates_before_compile(tmp_path: Path, monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     class _Controller:
@@ -2196,29 +2089,16 @@ def test_handle_needs_code_uses_full_validation_contract_before_compile(
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_operationalize(thesis):
-        updated = dict(thesis)
-        updated["requested_primitives"] = ["buffered_trailing_stop_rule"]
-        updated["config_changes"] = {"buffered_trailing_stop_rule": True}
-        return updated
-
-    class _Validated:
-        thesis_id = "buffered_trailing"
-
-    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
-        captured["validated_raw"] = dict(raw)
-        return _Validated()
-
     def fake_compile(validated, root, artifact_root=None):
         captured["compiled"] = {
             "thesis_id": validated.thesis_id,
             "root": root,
             "artifact_root": artifact_root,
+            "requested_primitives": list(validated.requested_primitives),
+            "config_changes": dict(validated.config_changes),
         }
         return None
 
-    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
-    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
     monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
     monkeypatch.setattr("autoresearch_research._close_run", lambda *args, **kwargs: None)
 
@@ -2247,22 +2127,24 @@ def test_handle_needs_code_uses_full_validation_contract_before_compile(
                 }
             ],
             "requires_code_change": True,
-            "requested_primitives": [],
+            "requested_primitives": ["buffered_trailing_stop_rule"],
+            "config_changes": {"buffered_trailing_stop_rule": True},
         },
     }
 
     updated = _handle_needs_code(_Controller(), state, result)
 
     assert updated["state"] == "halted"
-    assert captured["validated_raw"]["requested_primitives"] == [  # type: ignore[index]
-        "buffered_trailing_stop_rule"
-    ]
-    assert captured["validated_raw"]["config_changes"] == {  # type: ignore[index]
-        "buffered_trailing_stop_rule": True
+    assert captured["compiled"] == {
+        "thesis_id": "job-26-round-6-attempt-1",
+        "root": tmp_path,
+        "artifact_root": tmp_path / "research" / "round-6",
+        "requested_primitives": ["buffered_trailing_stop_rule"],
+        "config_changes": {"buffered_trailing_stop_rule": True},
     }
 
 
-def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_change_fallback(
+def test_handle_needs_code_schema_only_validation_allows_empty_requested_primitives(
     tmp_path: Path, monkeypatch
 ) -> None:
     captured: dict[str, object] = {}
@@ -2272,28 +2154,13 @@ def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_ch
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_operationalize(thesis):
-        updated = dict(thesis)
-        updated["requested_primitives"] = ["buffered_trailing_stop_rule"]
-        updated["config_changes"] = {"buffered_trailing_stop_rule": True}
-        return updated
-
-    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
-        captured["validated_raw"] = dict(raw)
-        raise ThesisValidationError("Missing mechanism_dimension")
-
     def fake_compile(validated, root, artifact_root=None):
         captured["compiled"] = {
             "thesis_id": validated.thesis_id,
-            "root": root,
-            "artifact_root": artifact_root,
-            "mechanism_dimension": validated.mechanism_dimension,
             "requested_primitives": list(validated.requested_primitives),
         }
         return None
 
-    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
-    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
     monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
     monkeypatch.setattr("autoresearch_research._close_run", lambda *args, **kwargs: None)
 
@@ -2328,15 +2195,9 @@ def test_handle_needs_code_materializes_builder_artifacts_on_schema_only_code_ch
     updated = _handle_needs_code(_Controller(), state, result)
 
     assert updated["state"] == "halted"
-    assert captured["validated_raw"]["requested_primitives"] == [  # type: ignore[index]
-        "buffered_trailing_stop_rule"
-    ]
     assert captured["compiled"] == {
         "thesis_id": "job-26-round-6-attempt-1",
-        "root": tmp_path,
-        "artifact_root": tmp_path / "research" / "round-6",
-        "mechanism_dimension": "",
-        "requested_primitives": ["buffered_trailing_stop_rule"],
+        "requested_primitives": [],
     }
 
 
@@ -2350,21 +2211,10 @@ def test_handle_needs_code_preserves_retry_attempt_id_for_schema_only_fallback(
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_operationalize(thesis):
-        updated = dict(thesis)
-        updated["requested_primitives"] = ["buffered_trailing_stop_rule"]
-        updated["config_changes"] = {"buffered_trailing_stop_rule": True}
-        return updated
-
-    def fake_validate(raw, prior_theses=None, tools_called=None, **kwargs):
-        raise ThesisValidationError("Missing mechanism_dimension")
-
     def fake_compile(validated, root, artifact_root=None):
         captured["thesis_id"] = validated.thesis_id
         return None
 
-    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
-    monkeypatch.setattr("thesis_validator.validate_thesis_dict", fake_validate)
     monkeypatch.setattr("compiler_pipeline.compile_research_thesis", fake_compile)
     monkeypatch.setattr("autoresearch_research._close_run", lambda *args, **kwargs: None)
 
@@ -2391,7 +2241,8 @@ def test_handle_needs_code_preserves_retry_attempt_id_for_schema_only_fallback(
                 }
             ],
             "requires_code_change": True,
-            "requested_primitives": [],
+            "requested_primitives": ["buffered_trailing_stop_rule"],
+            "config_changes": {"buffered_trailing_stop_rule": True},
         },
     }
 
@@ -2400,7 +2251,7 @@ def test_handle_needs_code_preserves_retry_attempt_id_for_schema_only_fallback(
     assert captured["thesis_id"] == "job-26-round-6-attempt-2"
 
 
-def test_handle_needs_code_close_run_called_when_prepare_thesis_raises_type_error(
+def test_handle_needs_code_close_run_called_when_direct_validation_fails(
     tmp_path: Path, monkeypatch
 ) -> None:
     """Widened except-guard: TypeError in enrichment must not skip _close_run."""
@@ -2411,10 +2262,6 @@ def test_handle_needs_code_close_run_called_when_prepare_thesis_raises_type_erro
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_operationalize(thesis):
-        raise TypeError("unexpected NoneType in operationalize")
-
-    monkeypatch.setattr("compiler_pipeline.operationalize_thesis", fake_operationalize)
     monkeypatch.setattr(
         "autoresearch_research._close_run",
         lambda *args, **kwargs: close_run_calls.append(args),
@@ -2484,10 +2331,6 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
         def read_results(self):
             return []
 
-    monkeypatch.setattr(
-        "agent_formatters.format_round_results_summary",
-        lambda result_dicts, **kwargs: [],
-    )
     monkeypatch.setattr("thesis_validator.load_prior_theses", lambda _root, **kwargs: [])
     monkeypatch.setattr(
         "autoresearch_research._resolve_conductor_inputs",
@@ -2496,16 +2339,13 @@ def test_execute_research_sdk_persists_research_activity_before_conductor_call(
     monkeypatch.setattr("improvement_flags.reflexion_enabled", lambda: False)
     monkeypatch.setattr(
         "autoresearch_research._call_conductor",
-        lambda *args, **kwargs: ConductorResult(
-            status="should_stop", should_stop=True, reasoning="done"
-        ),
+        lambda *args, **kwargs: ConductorResult(status="conductor_error", error="parse_failed"),
     )
     monkeypatch.setattr(
         "autoresearch_research._check_parsed_for_terminal",
         lambda result: {
             "status": "completed",
             "generated_config": "runtime/jobs/job-26/research/round-8/selected_config.json",
-            "should_stop": False,
         },
     )
 

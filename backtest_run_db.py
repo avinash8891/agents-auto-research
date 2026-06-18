@@ -200,8 +200,6 @@ class BacktestRunRecord:
     primary_metric_value: float | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
     trade_analysis: dict[str, Any] = field(default_factory=dict)
-    prediction_verdict: str = ""
-    lesson: str = ""
 
 
 class BacktestRunDB:
@@ -288,7 +286,6 @@ class BacktestRunDB:
                     strategy_family TEXT NOT NULL,
                     config_changes_json TEXT NOT NULL,
                     validator_status TEXT NOT NULL,
-                    mechanism_dimension TEXT NOT NULL,
                     hypothesis TEXT NOT NULL,
                     mechanism TEXT NOT NULL,
                     thesis_details_json TEXT NOT NULL DEFAULT '{}',
@@ -316,6 +313,10 @@ class BacktestRunDB:
             self._ensure_column_renamed(
                 conn, "research_thesis_attempts", "rejection_reason", "validation_failure_reason"
             )
+            # v2 dropped mechanism_dimension. Pre-v2 DBs declared the column
+            # as NOT NULL without a default; without this migration every
+            # v2 INSERT raises IntegrityError on upgraded persisted DBs.
+            self._drop_column_if_present(conn, "research_thesis_attempts", "mechanism_dimension")
             self._backfill_research_thesis_attempt_ids(conn)
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_research_rounds_job_round
@@ -375,10 +376,6 @@ class BacktestRunDB:
             self._ensure_column(
                 conn, BACKTEST_RUNS_TABLE, "trace_run_id", "TEXT NOT NULL DEFAULT ''"
             )
-            self._ensure_column(
-                conn, BACKTEST_RUNS_TABLE, "prediction_verdict", "TEXT NOT NULL DEFAULT ''"
-            )
-            self._ensure_column(conn, BACKTEST_RUNS_TABLE, "lesson", "TEXT NOT NULL DEFAULT ''")
             conn.execute(f"""
                 UPDATE {BACKTEST_RUNS_TABLE}
                 SET decision_status = CASE WHEN accepted = 1 THEN 'keep' ELSE 'discard' END
@@ -447,6 +444,13 @@ class BacktestRunDB:
         columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def _drop_column_if_present(self, conn: sqlite3.Connection, table: str, column: str) -> None:
+        """Drop a legacy column from an existing table. No-op if absent."""
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            return
+        conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
 
     def _backfill_backtest_run_created_at_utc(self, conn: sqlite3.Connection) -> None:
         rows = conn.execute(f"""
@@ -591,8 +595,6 @@ class BacktestRunDB:
         research_round_id: str,
         research_round_number: int,
         is_baseline: bool = False,
-        prediction_verdict: str = "",
-        lesson: str = "",
     ) -> None:
         if not research_round_id:
             raise ValueError(
@@ -646,8 +648,6 @@ class BacktestRunDB:
                 primary_metric_value=primary_metric_value,
                 metrics=merged_metrics,
                 trade_analysis=trade_analysis,
-                prediction_verdict=prediction_verdict,
-                lesson=lesson,
             )
         )
 
@@ -672,8 +672,8 @@ class BacktestRunDB:
                 mechanism, job, usage_json, asi_json, description,
                 decision_status, created_at_utc, strategy_family, job_id,
                 primary_metric_name, primary_metric_value, metrics_json,
-                trade_analysis_json, trace_run_id, prediction_verdict, lesson
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                trade_analysis_json, trace_run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.run_id,
@@ -715,8 +715,6 @@ class BacktestRunDB:
                 json_dumps_strict(metrics),
                 json_dumps_strict(trade_analysis),
                 "",
-                record.prediction_verdict,
-                record.lesson,
             ),
         )
 
@@ -836,8 +834,8 @@ class BacktestRunDB:
                 f"""
                 SELECT a.thesis_attempt_id, a.research_round_id, a.attempt_number, a.thesis_id,
                        a.strategy_family, a.config_changes_json, a.validator_status,
-                       a.mechanism_dimension, a.hypothesis, a.mechanism,
-                       a.thesis_details_json, a.validation_failure_reason, a.selected_for_execution,
+                       a.hypothesis, a.mechanism, a.thesis_details_json,
+                       a.validation_failure_reason, a.selected_for_execution,
                        a.created_at_utc, r.job_id, r.round_number,
                        r.outcome AS round_outcome, r.run_id, r.hypothesis_id,
                        r.usage_json AS round_usage_json
@@ -874,7 +872,6 @@ class BacktestRunDB:
                 "strategy_family": row["strategy_family"],
                 "config_changes": config_changes,
                 "validator_status": row["validator_status"],
-                "mechanism_dimension": row["mechanism_dimension"],
                 "hypothesis": row["hypothesis"],
                 "mechanism": row["mechanism"],
                 "thesis_details": thesis_details if isinstance(thesis_details, dict) else {},
@@ -917,10 +914,9 @@ class BacktestRunDB:
                 """
                 INSERT OR REPLACE INTO research_thesis_attempts (
                     thesis_attempt_id, research_round_id, attempt_number, thesis_id, strategy_family,
-                    config_changes_json, validator_status, mechanism_dimension,
-                    hypothesis, mechanism, thesis_details_json, validation_failure_reason, selected_for_execution,
-                    created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    config_changes_json, validator_status, hypothesis, mechanism, thesis_details_json,
+                    validation_failure_reason, selected_for_execution, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row.get(
@@ -933,7 +929,6 @@ class BacktestRunDB:
                     row.get("strategy_family", ""),
                     json_dumps_strict(row.get("config_changes", {})),
                     row.get("validator_status", ""),
-                    row.get("mechanism_dimension", ""),
                     row.get("hypothesis", ""),
                     row.get("mechanism", ""),
                     json_dumps_strict(row.get("thesis_details", {})),
@@ -963,10 +958,9 @@ class BacktestRunDB:
                     """
                     INSERT INTO research_thesis_attempts (
                         thesis_attempt_id, research_round_id, attempt_number, thesis_id, strategy_family,
-                        config_changes_json, validator_status, mechanism_dimension,
-                        hypothesis, mechanism, thesis_details_json, validation_failure_reason, selected_for_execution,
-                        created_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        config_changes_json, validator_status, hypothesis, mechanism, thesis_details_json,
+                        validation_failure_reason, selected_for_execution, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         r.get(
@@ -979,7 +973,6 @@ class BacktestRunDB:
                         r.get("strategy_family", ""),
                         config_changes,
                         r.get("validator_status", ""),
-                        r.get("mechanism_dimension", ""),
                         r.get("hypothesis", ""),
                         r.get("mechanism", ""),
                         json_dumps_strict(r.get("thesis_details", {})),
@@ -1084,7 +1077,7 @@ class BacktestRunDB:
                        verdict_summary, parent_backtest_run_id, timestamp, family, hypothesis,
                        mechanism, job, usage_json, asi_json, description, created_at_utc,
                        primary_metric_name, primary_metric_value, metrics_json,
-                       trade_analysis_json, prediction_verdict, lesson
+                       trade_analysis_json
                 FROM backtest_runs
                 """).fetchall()
         self._records = []
@@ -1128,8 +1121,6 @@ class BacktestRunDB:
                 primary_metric_value=row["primary_metric_value"],
                 metrics=_load_metric_json(row["metrics_json"]),
                 trade_analysis=_load_json_object(row["trade_analysis_json"]),
-                prediction_verdict=row["prediction_verdict"],
-                lesson=row["lesson"],
             )
             setattr(record, "_asi_export", _load_json_object(row["asi_json"]))
             setattr(record, "_description_export", row["description"])
@@ -1550,8 +1541,6 @@ def _entry_to_record(entry: dict[str, Any]) -> BacktestRunRecord | None:
         primary_metric_value=_coerce_metric_float(primary_metric_value),
         metrics=metrics,
         trade_analysis=trade_analysis if isinstance(trade_analysis, dict) else {},
-        prediction_verdict=str(entry.get("prediction_verdict") or ""),
-        lesson=str(entry.get("lesson") or ""),
     )
     setattr(record, "_asi_export", asi)
     setattr(record, "_description_export", entry.get("description", ""))
@@ -1592,8 +1581,6 @@ def _record_to_entry(
         "timestamp": record.timestamp,
         "hypothesis": record.hypothesis,
         "mechanism": record.mechanism,
-        "prediction_verdict": record.prediction_verdict,
-        "lesson": record.lesson,
         "asi": asi,
     }
 

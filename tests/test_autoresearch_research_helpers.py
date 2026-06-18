@@ -34,7 +34,7 @@ def test_check_parsed_for_terminal_none_input_is_parse_failed() -> None:
     assert out is not None
     assert out["status"] == "parse_failed"
     assert out["generated_config"] is None
-    assert out["should_stop"] is False
+    assert "should_stop" not in out
     assert "validation_failure_reason" in out
 
 
@@ -67,35 +67,12 @@ def test_check_parsed_for_terminal_conductor_error_falls_back_to_reasoning() -> 
     assert "model returned junk" in out["validation_failure_reason"]
 
 
-def test_check_parsed_for_terminal_should_stop_returns_completed() -> None:
-    result = ConductorResult(
-        status="should_stop", should_stop=True, reasoning="nothing more to try"
-    )
-    out = _check_parsed_for_terminal(result)
-    assert out is not None
-    assert out["status"] == "completed"
-    assert out["should_stop"] is True
-    assert "nothing more to try" in out["reasoning"]
-
-
-def test_check_parsed_for_terminal_passes_should_stop_through() -> None:
-    result = ConductorResult(status="should_stop", should_stop=True)
-    out = _check_parsed_for_terminal(result)
-    assert out is not None
-    assert out["should_stop"] is True
-
-
 def test_check_parsed_for_terminal_returns_none_when_thesis_present() -> None:
     result = ConductorResult(status="ok", thesis={"thesis_id": "x"})
     assert _check_parsed_for_terminal(result) is None
 
 
 # ── _classify_round_outcome ─────────────────────────────────────
-
-
-def test_classify_round_outcome_should_stop_takes_precedence() -> None:
-    result = {"should_stop": True, "generated_config": "x", "generated_config_needs_build": True}
-    assert _classify_round_outcome(result) == "stopped"
 
 
 def test_classify_round_outcome_needs_code() -> None:
@@ -132,7 +109,7 @@ def test_exhausted_retries_result_returns_thesis_id_when_present() -> None:
     assert out["status"] == "thesis_rejected"
     assert out["generated_thesis_id"] == "trailing_stop"
     assert out["validation_failure_reason"] == "validator failed: x"
-    assert out["should_stop"] is False
+    assert "should_stop" not in out
 
 
 def test_exhausted_retries_result_returns_unknown_when_no_thesis() -> None:

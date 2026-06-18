@@ -681,7 +681,6 @@ def _write_extended_retest_config(
     retest_path = config_path.with_name("selected_config_retest.json")
     write_json_atomic(retest_path, raw)
     return retest_path, {
-        "attempt": 1,
         "original_config": serialize_artifact_path(config_path, controller.root),
         "original_validation_end": validation_end,
         "validation_end": extended,

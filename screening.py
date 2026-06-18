@@ -50,6 +50,9 @@ class ScreeningResult(BaseModel):
     lift: float
     p_value: float
     overlap_with: str | None
+    # True when this row screened the competitor hypothesis, not the proposal.
+    # Persisted to the screenings table and surfaced (marked) in the corpus.
+    is_competitor: bool = False
 
 
 def screen(
@@ -133,7 +136,6 @@ def write_screenings(
     results: Sequence[ScreeningResult],
     *,
     round_number: int,
-    competitor_rule: str | None = None,
     job_id: int | None = None,
     is_competitor: bool = False,
 ) -> None:
@@ -147,7 +149,6 @@ def write_screenings(
                 round_number=round_number,
                 job_id=job_id,
                 result=result,
-                competitor_rule=competitor_rule,
                 created_at=created_at,
                 is_competitor=is_competitor,
             )
@@ -294,7 +295,6 @@ def _insert_screening_with_retry(
     round_number: int,
     job_id: int | None,
     result: ScreeningResult,
-    competitor_rule: str | None,
     created_at: str,
     is_competitor: bool = False,
 ) -> None:
@@ -305,17 +305,16 @@ def _insert_screening_with_retry(
             conn.execute(
                 """
                 INSERT INTO screenings (
-                    screening_id, round_number, job_id, rule, competitor_rule, verdict,
+                    screening_id, round_number, job_id, rule, verdict,
                     sample_count, flagged_loss_rate, base_loss_rate, lift, p_value,
                     overlap_with, created_at_utc, is_competitor
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     screening_id,
                     round_number,
                     job_id,
                     result.rule,
-                    competitor_rule,
                     result.verdict,
                     result.sample_count,
                     result.flagged_loss_rate,
@@ -341,7 +340,6 @@ def _ensure_screenings_table(conn: sqlite3.Connection) -> None:
             round_number INTEGER NOT NULL,
             job_id INTEGER,
             rule TEXT NOT NULL,
-            competitor_rule TEXT,
             verdict TEXT NOT NULL,
             sample_count INTEGER NOT NULL,
             flagged_loss_rate REAL,

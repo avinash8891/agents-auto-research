@@ -2,8 +2,7 @@
 
 Owns the path from `next_action.config` to a logged experiment record:
 shell out via run_command, parse RESULT_JSON / metrics, decide keep/discard,
-optionally evaluate against a thesis contract, and persist to the structured
-BacktestRunDB.
+evaluate registered predictions when present, and persist to the structured BacktestRunDB.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -56,7 +56,6 @@ from causal_harvest import (
     write_feature_table_artifact,
     write_harvest_verdict_artifact,
 )
-from diagnostic_contracts import build_required_diagnostic_specs, enrich_required_diagnostics
 from feature_table import FeatureTableArtifact
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic, write_text_atomic
@@ -399,6 +398,40 @@ def primary_metric_name(entries: list[dict[str, Any]]) -> str:
     return "profit_factor"
 
 
+def missing_required_diagnostics(
+    specs: Sequence[Any],
+    strategy_diagnostics: dict[str, Any] | None,
+) -> list[str]:
+    """Return the keys of required diagnostics absent or unevaluable in this run.
+
+    The legacy ``evaluate_backtest`` enforced that every thesis-declared
+    required diagnostic was actually emitted by the strategy and that its
+    payload did not signal ``missing_inputs``. The v2 mechanism path replaced
+    most thesis evaluation with registered predictions, but sidecar/resume
+    contracts can still carry ``required_diagnostics`` — this helper keeps the
+    runtime enforcement so a run cannot be kept by its primary metric despite
+    a missing diagnostic the thesis explicitly required.
+
+    A spec is missing when neither its ``key`` nor any alias appears as a
+    top-level key in ``strategy_diagnostics``, OR when the matched payload is
+    a dict carrying ``missing_inputs``.
+    """
+    available = strategy_diagnostics if isinstance(strategy_diagnostics, dict) else {}
+    missing: list[str] = []
+    for spec in specs or ():
+        tokens = [getattr(spec, "key", "")]
+        aliases = getattr(spec, "aliases", None) or ()
+        tokens.extend(str(alias) for alias in aliases)
+        matched = next((token for token in tokens if token and token in available), None)
+        if matched is None:
+            missing.append(str(getattr(spec, "key", "") or ""))
+            continue
+        payload = available.get(matched)
+        if isinstance(payload, dict) and payload.get("missing_inputs"):
+            missing.append(str(getattr(spec, "key", "") or ""))
+    return [key for key in missing if key]
+
+
 def parse_metric(
     output: str, name: str = "profit_factor", *, allow_legacy: bool = False
 ) -> float | None:
@@ -453,8 +486,6 @@ def derive_trade_analysis(
     return {
         "trade_analysis": trade_analysis,
         "insights": [f"metric={metric}", f"decision={decision}"],
-        "next_candidates": [],
-        "why_not_data_fit": "Independent thesis evaluation only.",
         "runtime_config": config_contents,
     }
 
@@ -621,22 +652,12 @@ def _build_asi_dict(
     config_changes: dict[str, Any],
     next_action: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    contract = controller.ctx.current_contract
-    identity = _resolve_identity(contract, config)
-    state = controller.read_state()
-    run_id = f"job-{state.get('job', 0)}-run-1-{identity}"
     asi = {
-        "job": state.get("job"),
-        "run_id": run_id,
-        "hypothesis_id": identity,
-        "hypothesis": identity,
         "config": config,
         "artifact_dir": serialize_artifact_path(artifact_dir, controller.root),
         "trade_analysis": analysis.get("trade_analysis", {}),
         "insights": analysis.get("insights", []),
-        "next_candidates": analysis.get("next_candidates", []),
         "next_thesis_suggestion": analysis.get("next_thesis_suggestion", ""),
-        "why_not_data_fit": analysis.get("why_not_data_fit"),
         "insight_brief": analysis.get("insight_brief", ""),
         "thesis_id": thesis_id,
         "config_changes": config_changes,
@@ -726,8 +747,6 @@ def _build_db_record(
         research_round_id=round_id,
         research_round_number=round_number,
         is_baseline=is_baseline,
-        prediction_verdict=str(analysis.get("prediction_verdict") or ""),
-        lesson=str(analysis.get("lesson") or ""),
     )
     return record
 
@@ -851,44 +870,17 @@ def _executed_code_commit(controller: "AutoresearchController", details: dict[st
     return controller.current_commit()
 
 
-def _build_export_entry(
+def _fallback_run_identity(
     controller: "AutoresearchController",
     *,
     config: str,
-    metric: float,
-    decision: str,
-    details: dict[str, Any],
-    asi: dict[str, Any],
     next_run: int,
     state: dict[str, Any],
-) -> dict[str, Any]:
+) -> tuple[str, str]:
     contract = _contract_from_sidecar(controller, config)
     identity = _resolve_identity(contract, config)
     run_id = f"job-{state.get('job', 0)}-run-{next_run}-{identity}"
-    round_number = _coerce_research_round_number(state)
-    round_id = research_round_id_or_empty(state.get("job", 0), round_number)
-    return {
-        "type": "backtest_run",
-        "run": next_run,
-        "job": state.get("job"),
-        "run_id": run_id,
-        "backtest_run_id": f"{round_id}-backtest" if round_id else run_id,
-        "research_round_id": round_id,
-        "research_round_number": round_number,
-        "is_baseline": round_number == 0,
-        "hypothesis_id": identity,
-        "commit": _executed_code_commit(controller, details),
-        "metric": metric,
-        "metrics": details,
-        "status": decision,
-        "description": f"strict-native loop: {identity}",
-        "timestamp": iso8601_utc_now(),
-        "segment": 0,
-        "confidence": None,
-        "asi": asi,
-        "hypothesis": getattr(contract, "hypothesis", "") if contract else "",
-        "mechanism": getattr(contract, "mechanism", "") if contract else "",
-    }
+    return run_id, f"strict-native loop: {identity}"
 
 
 def _write_run_artifacts(artifact_dir: Path, output: str, analysis: dict[str, Any]) -> None:
@@ -930,13 +922,9 @@ def log_experiment_result(
     )
     next_run = 1 + controller.backtest_run_db.count()
     state = controller.read_state()
-    entry = _build_export_entry(
+    fallback_run_id, description = _fallback_run_identity(
         controller,
         config=config,
-        metric=metric,
-        decision=decision,
-        details=details,
-        asi=asi,
         next_run=next_run,
         state=state,
     )
@@ -948,11 +936,11 @@ def log_experiment_result(
         details=details,
         analysis=analysis,
         runtime_config=runtime_config,
-        fallback_run_id=entry["run_id"],
+        fallback_run_id=fallback_run_id,
         state=state,
     )
     setattr(record, "_asi_export", asi)
-    setattr(record, "_description_export", entry["description"])
+    setattr(record, "_description_export", description)
     controller.backtest_run_db.add(record)
 
 
@@ -1071,119 +1059,6 @@ def _baseline_metrics_from_first_result(controller: "AutoresearchController") ->
         if bta.get(k) is not None:
             out[k] = bta[k]
     return out
-
-
-def _build_thesis_for_eval(contract: Any) -> Any:
-    from research_types import ResearchThesis
-
-    required_diagnostic_specs = build_required_diagnostic_specs(
-        getattr(contract, "required_diagnostics", []),
-        getattr(contract, "required_diagnostic_specs", []),
-    )
-
-    return ResearchThesis(
-        thesis_id=contract.thesis_id,
-        strategy_family=contract.strategy_family,
-        hypothesis=contract.hypothesis,
-        mechanism=contract.mechanism,
-        expected_effects=contract.expected_effects,
-        disqualifiers=contract.disqualifiers,
-        required_diagnostics=contract.required_diagnostics,
-        required_diagnostic_specs=required_diagnostic_specs,
-    )
-
-
-def _persist_verdict(
-    controller: "AutoresearchController", contract: Any, verdict: Any, config: str
-) -> None:
-    experiment_dir = resolve_config_path(
-        config,
-        code_root=controller.root,
-        runtime_root=controller.runtime_root,
-        execution_root=_execution_root(controller),
-    ).parent
-    if experiment_dir.exists():
-        write_text_atomic(
-            experiment_dir / "verdict.json",
-            verdict.model_dump_json(indent=2) + "\n",
-        )
-
-
-def _evaluate_against_thesis(
-    controller: "AutoresearchController",
-    contract: Any,
-    config: str,
-    metric: float,
-    decision: str,
-    details: dict[str, Any],
-) -> tuple[Any | None, str]:
-    """Run the thesis-contract evaluator against the result. Returns
-    (verdict_or_None, possibly_overridden_decision). Fail-open: any
-    evaluator exception is logged and the decision passes through
-    unchanged."""
-    try:
-        from experiment_evaluator import evaluate_backtest
-
-        candidate_metrics = dict(details)
-        primary_metric_name = (
-            controller.primary_metric_name()
-            if hasattr(controller, "primary_metric_name")
-            else "profit_factor"
-        )
-        candidate_metrics[primary_metric_name] = metric
-        baseline_metrics = _baseline_metrics_from_first_result(controller)
-        required_diagnostic_specs = build_required_diagnostic_specs(
-            getattr(contract, "required_diagnostics", []),
-            getattr(contract, "required_diagnostic_specs", []),
-        )
-        if any(spec.surface == "experiment_evaluation" for spec in required_diagnostic_specs) and (
-            not getattr(controller, "baseline_tracker", None)
-            or controller.baseline_tracker.latest() is None
-        ):
-            raise ValueError("baseline checkpoint missing for experiment_evaluation diagnostics")
-        details["strategy_diagnostics"] = enrich_required_diagnostics(
-            required_diagnostic_specs,
-            baseline_metrics=baseline_metrics,
-            candidate_metrics=candidate_metrics,
-            strategy_diagnostics=details.get("strategy_diagnostics"),
-        )
-        verdict = evaluate_backtest(
-            thesis=_build_thesis_for_eval(contract),
-            baseline_metrics=baseline_metrics,
-            candidate_metrics=candidate_metrics,
-            contract_id=contract.contract_id,
-            strategy_diagnostics=details.get("strategy_diagnostics"),
-        )
-        trace(
-            "EVAL",
-            f"verdict={verdict.status} passed={verdict.passed_effects} "
-            f"failed={verdict.failed_effects} dq={verdict.triggered_disqualifiers}",
-        )
-        log.info(f"VERDICT {verdict.status}: {verdict.summary}")
-        _persist_verdict(controller, contract, verdict, config)
-        if verdict.status == "rejected":
-            return verdict, "discard"
-        if verdict.status == "inconclusive":
-            return verdict, "discard"
-        if verdict.status == "accepted" and decision == "discard":
-            trace("EVAL", "thesis accepted despite metric threshold")
-        return verdict, decision
-    except (
-        ImportError,
-        KeyError,
-        TypeError,
-        AttributeError,
-        ValueError,
-        ZeroDivisionError,
-        IndexError,
-    ) as exc:
-        trace("EVAL", f"evaluation error: {exc}")
-        log.error(
-            f"EVAL error (fatal): {exc} "
-            f"| hint=the thesis evaluator hit a deterministic local error; fix the thesis/evaluator "
-            f"contract instead of accepting a metric-only result"
-        )
-        raise
 
 
 def _record_baseline_checkpoint(
@@ -1390,10 +1265,19 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
 
         verdict: Any | None = None
         contract = controller.ctx.current_contract
-        if contract and contract.expected_effects:
-            verdict, decision = _evaluate_against_thesis(
-                controller, contract, config, metric, decision, details
+        required_specs = getattr(contract, "required_diagnostic_specs", None) or []
+        diagnostic_gap = missing_required_diagnostics(
+            required_specs, details.get("strategy_diagnostics")
+        )
+        if diagnostic_gap:
+            log.error(
+                "REQUIRED_DIAGNOSTICS_MISSING run=%s missing=%s "
+                "| hint=strategy did not emit diagnostics the thesis declared as required; "
+                "verdict forced to discard so the primary metric cannot mask the gap",
+                config,
+                diagnostic_gap,
             )
+            decision = "discard"
         registered_verdict = evaluate_registered_predictions(
             controller,
             run_output_dir,
@@ -1438,9 +1322,6 @@ def run_experiment(controller: "AutoresearchController", state: dict[str, Any]) 
         analysis = controller.derive_trade_analysis(config, metric, decision, output=output)
         if verdict:
             analysis["trade_analysis"]["verdict"] = verdict.model_dump()
-        if registered_verdict is not None:
-            analysis["prediction_verdict"] = registered_verdict.status
-            analysis["lesson"] = registered_verdict.lesson or registered_verdict.summary
         if controller.ctx.current_contract is None:
             controller.ctx.parent_backtest_run_id = ""
             controller.ctx.execution_root = None

@@ -171,7 +171,7 @@ def _run_operationalization_agent(thesis: dict[str, Any]) -> dict[str, Any]:
     Falls back to empty resolution if agent unavailable.
     """
     try:
-        from agent_orchestrator import _run_single_agent
+        from agent_runners import _run_single_agent
 
         agent_def = SimpleNamespace(
             description="Resolves ambiguous trading theses into exact executable contracts.",

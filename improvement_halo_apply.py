@@ -40,9 +40,9 @@ def claude_timeout_seconds() -> int:
 
 
 DEFAULT_EDIT_SCOPE = (
-    "agent_prompts.py",
-    "agent_orchestrator_helpers.py",
     "research_prompts.py",
+    "research_conductor.py",
+    "research_tools_mcp.py",
 )
 
 

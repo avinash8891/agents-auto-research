@@ -63,7 +63,6 @@ from autoresearch_research import load_baseline_config as _research_load_baselin
 from autoresearch_research import log_research_round as _research_log_research_round
 from autoresearch_research import notify_discord as _notify_discord
 from autoresearch_research import queue_variants as _research_queue_variants
-from autoresearch_research import results_to_dicts as _research_results_to_dicts
 from autoresearch_research import run_research as _research_run_research
 from autoresearch_runtime_paths import AutoresearchRuntimeContext
 from autoresearch_state import BacktestResultRecord, RunContext
@@ -270,10 +269,8 @@ def _resume_interrupted_research_state(prior_state: dict[str, Any], job: int) ->
         }
     )
     state.pop("current_thesis", None)
-    state.pop("pending_configs", None)
     state.pop("thesis_statuses", None)
     state.pop("finished_reason", None)
-    state.pop("research_stop_reasoning", None)
     return state
 
 
@@ -698,7 +695,6 @@ class AutoresearchController:
     def clear_terminal_metadata(self, state: dict[str, Any]) -> None:
         """Remove terminal-only fields when a transition reactivates the run."""
         state.pop("finished_reason", None)
-        state.pop("research_stop_reasoning", None)
 
     def _ensure_job_metadata(self) -> None:
         """Validate job-scoped state before direct loop entrypoints."""
@@ -791,17 +787,8 @@ class AutoresearchController:
     def list_known_variant_configs(self) -> list[str]:
         return _planning_list_known_variant_configs(self.root, self.family)
 
-    def pending_configs(self, results: list[BacktestResultRecord]) -> list[str]:
-        return []
-
     def thesis_statuses(self, results: list[BacktestResultRecord]) -> dict[str, dict[str, Any]]:
         return {}
-
-    def read_run_queue(self) -> list[dict[str, Any]]:
-        return []
-
-    def queue_from_thesis_artifacts(self, results: list[BacktestResultRecord]) -> list[str]:
-        return []
 
     def promote_missing_known_results(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return _state_promote_missing_known_results(entries)
@@ -809,15 +796,10 @@ class AutoresearchController:
     def deduplicate_entries(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return _state_deduplicate_entries(entries)
 
-    # ── WS-5: Combination phase ───────────────────────────────────────
-
     def thesis_family_for(self, config: str) -> str:
         return _planning_thesis_family_for(
             config, self.family, self.builder_requests_dir, self.root
         )
-
-    def generate_combination_candidates(self, results: list[BacktestResultRecord]) -> list[str]:
-        return []
 
     def parse_result_json(self, output: str) -> dict[str, Any] | None:
         return _round_parse_result_json(output)
@@ -892,7 +874,6 @@ class AutoresearchController:
         results = self.read_results()
         best = self.best_result(results)
         state["current_best"] = best
-        state["pending_configs"] = self.pending_configs(results)
         state["thesis_statuses"] = self.thesis_statuses(results)
 
         latest = self.latest_result(results)
@@ -939,7 +920,6 @@ class AutoresearchController:
         config_changes: dict[str, Any] | None = None,
         hypothesis: str = "",
         mechanism: str = "",
-        mechanism_dimension: str = "",
         thesis_details: dict[str, Any] | None = None,
         validation_failure_reason: str = "",
         usage: dict[str, Any] | None = None,
@@ -954,7 +934,6 @@ class AutoresearchController:
             config_changes=config_changes,
             hypothesis=hypothesis,
             mechanism=mechanism,
-            mechanism_dimension=mechanism_dimension,
             thesis_details=thesis_details,
             validation_failure_reason=validation_failure_reason,
             usage=usage,
@@ -1038,9 +1017,6 @@ class AutoresearchController:
             job=self._current_job(),
             created_for_commit=self.current_commit(),
         )
-
-    def _results_to_dicts(self, results: list) -> list[dict[str, Any]]:
-        return _research_results_to_dicts(results)
 
     def execute_research_one(self) -> dict[str, Any]:
         return _research_execute_research_one(self)
