@@ -1,0 +1,25 @@
+autoresearch_orchestration.py
+  s_05bb4d97d5f815::t_7ee9706a73dade 17,367-412
+tests/test_autoresearch_orchestration.py
+  s_05bb4d97d5f815::t_416703c857f0cc 72-102
+tests/test_raw_input_manifest.py
+  s_05bb4d97d5f815::t_0cd4c05bcc5ae2 1-29
+raw_input_manifest.py
+  s_05bb4d97d5f815::t_b4b11891ee9647 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "4e026204b1dd11dc1aef706ebdbca8af08e9d6c3",
+  "prompts": {},
+  "sessions": {
+    "s_05bb4d97d5f815": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee068-90d0-7391-89e3-645a7cf3e3b8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
