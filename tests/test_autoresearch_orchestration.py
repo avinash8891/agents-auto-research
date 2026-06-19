@@ -630,6 +630,35 @@ def test_resolve_next_action_preserves_registered_prediction_retest_before_recon
     assert orch.resolve_next_action(controller) is state
 
 
+def test_resolve_next_action_clears_satisfied_needs_data_halt(tmp_path: Path) -> None:
+    request_path = _write_needs_data_request(tmp_path)
+    _write_raw_input_manifest(tmp_path, ["trade_signed_volume"])
+    state = {
+        "state": "halted",
+        "job": 7,
+        "research_round": 3,
+        "halted_reason": "needs_data",
+        "halted_thesis_id": "ema-7-3-1",
+        "halted_thesis": {"thesis_id": "ema-7-3-1"},
+        "blockers": [{"kind": "manual_review"}],
+        "next_action": {"type": "manual_review"},
+        "data_requests": [{"path": request_path.relative_to(tmp_path).as_posix()}],
+    }
+    ctrl, written, _ = _controller(state, tmp_path)
+    ctrl._check_baseline_rerun = lambda: None
+    ctrl.read_results = lambda: [object()]
+    ctrl.reconcile_state = lambda: (_ for _ in ()).throw(
+        AssertionError("satisfied needs_data halt should resume before reconcile")
+    )
+    ctrl._try_resume_halted_thesis = lambda: orch.try_resume_halted_thesis(ctrl)
+
+    out = orch.resolve_next_action(ctrl)
+
+    assert out["state"] == "running"
+    assert "halted_reason" not in out
+    assert written[-1]["state"] == "running"
+
+
 def test_resolve_next_action_resumes_halted_thesis_with_real_controller(
     tmp_path: Path,
 ) -> None:

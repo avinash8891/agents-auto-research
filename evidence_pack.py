@@ -12,7 +12,11 @@ from pydantic import BaseModel, Field
 from autoresearch_artifacts import round_number_from_path as _round_number_from_path
 from autoresearch_runtime_paths import resolve_runtime_root
 from causal_model import CausalModelStore, residual_map
-from feature_table import ENTRY_TIME_COLUMNS, FeatureTableArtifact
+from feature_table import (
+    STATIC_ENTRY_TIME_COLUMNS,
+    FeatureTableArtifact,
+    entry_time_columns_for_family,
+)
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult
 
@@ -51,7 +55,15 @@ def build_corpus(
     )
     model = CausalModelStore(runtime_root=runtime_root, code_root=code_root).load(family)
     features = _load_round_feature_table(runtime_root, round_number, job=job)
-    residual_summary = _residual_summary(model, features) if features is not None else []
+    residual_summary = (
+        _residual_summary(
+            model,
+            features,
+            entry_columns=entry_time_columns_for_family(runtime_root, family),
+        )
+        if features is not None
+        else []
+    )
     return Corpus(
         family=family,
         round_number=round_number,
@@ -212,7 +224,12 @@ def _load_round_feature_table(
     return pd.read_parquet(candidates[-1])
 
 
-def _residual_summary(model: CausalModel, features: pd.DataFrame) -> list[dict]:
+def _residual_summary(
+    model: CausalModel,
+    features: pd.DataFrame,
+    *,
+    entry_columns: frozenset[str] = STATIC_ENTRY_TIME_COLUMNS,
+) -> list[dict]:
     if features.empty:
         return []
     residuals = residual_map(model, features).head(20)
@@ -231,7 +248,7 @@ def _residual_summary(model: CausalModel, features: pd.DataFrame) -> list[dict]:
         }
         if trade_id in feature_by_trade.index:
             features_row = feature_by_trade.loc[trade_id]
-            for column in sorted((ENTRY_TIME_COLUMNS & set(features.columns)) - {"trade_id"}):
+            for column in sorted((entry_columns & set(features.columns)) - {"trade_id"}):
                 item[column] = _jsonable(features_row[column])
         summary.append(item)
     return summary

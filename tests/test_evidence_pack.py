@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from agent_feature_registry import register_agent_feature
 from backtest_run_db import BacktestRunDB
 from causal_model import save_model
 from evidence_pack import CORPUS_MAX_RENDER_CHARS, Corpus, build_corpus, render_corpus
@@ -44,7 +45,10 @@ def _screening(rule: str, verdict: str) -> ScreeningResult:
     )
 
 
-def _write_feature_table(runtime_root: Path) -> None:
+def _write_feature_table(
+    runtime_root: Path, extra_entry_values: dict[str, object] | None = None
+) -> None:
+    extra_entry_values = extra_entry_values or {}
     artifact = FeatureTableArtifact.for_round(runtime_root, 1, 2)
     artifact.write(
         pd.DataFrame(
@@ -56,6 +60,7 @@ def _write_feature_table(runtime_root: Path) -> None:
                     "regime_label": "trend",
                     "out_is_loss": True,
                     "out_pnl": -2.0,
+                    **extra_entry_values,
                 },
                 {
                     "trade_id": "train-win",
@@ -64,6 +69,7 @@ def _write_feature_table(runtime_root: Path) -> None:
                     "regime_label": "chop",
                     "out_is_loss": False,
                     "out_pnl": 1.0,
+                    **extra_entry_values,
                 },
                 {
                     "trade_id": "holdout-loss",
@@ -72,6 +78,7 @@ def _write_feature_table(runtime_root: Path) -> None:
                     "regime_label": "trend",
                     "out_is_loss": True,
                     "out_pnl": -5.0,
+                    **extra_entry_values,
                 },
                 {
                     "trade_id": "holdout-win",
@@ -80,6 +87,7 @@ def _write_feature_table(runtime_root: Path) -> None:
                     "regime_label": "chop",
                     "out_is_loss": False,
                     "out_pnl": 3.0,
+                    **extra_entry_values,
                 },
             ]
         )
@@ -232,6 +240,33 @@ def test_build_corpus_uses_explicit_runtime_and_code_roots(tmp_path: Path, monke
     assert corpus.model.factors[0].factor_id == "f001"
     assert {row["trade_id"] for row in corpus.residual_summary} == {"train-loss", "train-win"}
     assert [item.rule for item in corpus.screening_history] == ["gap_pct < 0"]
+
+
+def test_build_corpus_residual_summary_includes_family_agent_features(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
+    register_agent_feature(
+        tmp_path,
+        column="rvol_spike",
+        formula="rvol / rolling_mean(rvol, 20)",
+        required_data=["ohlcv"],
+        family_name="ema",
+        thesis_id="ema-1",
+    )
+    save_model(
+        CausalModel(
+            family="ema",
+            version=1,
+            factors=[_factor("f001", "gap_pct < 0", status="supported")],
+            accuracy_history=[],
+        )
+    )
+    _write_feature_table(tmp_path, {"rvol_spike": 1.7})
+
+    corpus = build_corpus("ema", 2, job=1, runtime_root=tmp_path)
+
+    assert {row["rvol_spike"] for row in corpus.residual_summary} == {1.7}
 
 
 def test_build_corpus_keeps_harvested_cross_family_factors(tmp_path: Path, monkeypatch) -> None:

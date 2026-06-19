@@ -882,6 +882,10 @@ def resolve_next_action(controller: "AutoresearchController") -> dict[str, Any]:
         return controller.reconcile_state()
 
     halted_id = state.get("halted_thesis_id")
+    if halted_id and state.get("halted_reason") == "needs_data":
+        resumed = controller._try_resume_halted_thesis()
+        return resumed if resumed is not None else state
+
     if halted_id and state.get("halted_reason") == "requires_code_change":
         resumed = controller._try_resume_halted_thesis()
         if resumed is not None:
