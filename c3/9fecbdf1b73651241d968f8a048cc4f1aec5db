@@ -1,0 +1,21 @@
+analyst_dataframe_helpers.py
+  s_5f8dff900a45f7::t_37aa1ff9ac795a 46-48
+tests/test_vps_runner_config.py
+  s_5f8dff900a45f7::t_37aa1ff9ac795a 329-331,347,350-352
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "c39fecbdf1b73651241d968f8a048cc4f1aec5db",
+  "prompts": {},
+  "sessions": {
+    "s_5f8dff900a45f7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eddf5-4504-7102-badc-90b4e480f925",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
