@@ -1,0 +1,23 @@
+docs/research-run-prerequisites.md
+  s_be8b2f455eab9f::t_821dd9a4d2daf5 1-40
+tests/test_agent_infra_proxy.py
+  s_be8b2f455eab9f::t_6d9bacf8e43079 1-52
+agent_infra.py
+  s_be8b2f455eab9f::t_63423097fa2228 32,42,56-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "1c47cc411b5d321ae5e1a1d2a75e931f997c360d",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
