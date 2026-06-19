@@ -1,0 +1,22 @@
+docs/free-proposal-fetch-on-miss.spec.md
+  s_be8b2f455eab9f::t_46df2b82071ae9 180-189
+  s_be8b2f455eab9f::t_b75a0fcca320b8 94-114,116-117,120-121
+  s_be8b2f455eab9f::t_28b38dc9325c89 197-199
+  s_be8b2f455eab9f::t_36c95bf64fd229 137-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "7d99d67e0ce1ec4160c0b4d591eccb47a2e62b79",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
