@@ -1,0 +1,21 @@
+tests/test_compiler_builder_errors.py
+  s_be8b2f455eab9f::t_b4c1c0198e6216 17-55
+compiler_builder.py
+  s_be8b2f455eab9f::t_94077e6516c606 1201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "14b25e792463884df176d3a5eda638673cc4b79e",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
