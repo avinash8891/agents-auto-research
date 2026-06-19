@@ -4,13 +4,23 @@ from typing import Any
 
 
 def _entry_filter_columns() -> str:
-    """Render the entry-time columns a `rule` df.query may reference, sourced from
-    feature_table.RULE_QUERYABLE_COLUMNS so the prompt never drifts from the schema
-    (a new feature column becomes proposable without editing this prompt). Outcome
-    columns (out_is_loss, out_pnl) are excluded there — referencing them is look-ahead."""
+    """Render the entry-time columns a `rule` df.query may reference. Sourced from the
+    same surfaces the runtime rule validator trusts (causal_rule.validate_entry_rule_
+    references checks against the actual feature-table columns): the static queryable
+    schema (feature_table.RULE_QUERYABLE_COLUMNS) UNIONed with the regime feed's
+    discovered columns (regime_feature_columns — trend / volatility / breadth labels and
+    scores, all classified entry-time-safe by the leakage guard). Fail-open to the static
+    set if the labels feed is unreachable. Outcome columns are excluded — look-ahead."""
     from feature_table import RULE_QUERYABLE_COLUMNS
 
-    return ", ".join(sorted(RULE_QUERYABLE_COLUMNS))
+    columns = set(RULE_QUERYABLE_COLUMNS)
+    try:
+        from feature_table import regime_feature_columns
+
+        columns |= regime_feature_columns()
+    except Exception:  # noqa: BLE001 — labels parquet unreachable; static set still valid
+        pass
+    return ", ".join(sorted(columns))
 
 
 def _coupled_keys_clause(family_name: str) -> str:
@@ -94,15 +104,16 @@ the timeframe is wrong, or too many correlated trades fire. Diagnose WHICH, then
 express the fix through the channel that fits it (see OUTPUT CHANNELS).
 
 ENTRY-FILTER COLUMNS — when your fix is an entry filter (the `rule` field), it is a
-pandas df.query over ONLY these entry-time columns: {entry_filter_columns}. The regime
-feed adds MORE entry-time columns than regime_label alone (trend / volatility / breadth
-labels and score columns); these regimes are MARKET-WIDE, computed from S&P 500 data, so
-the same label applies to every symbol on a given day. Call get_regime_summary to see
-every regime dimension, its values, and each value's win-rate / profit-factor, then
-filter on whichever one separates winners from losers. Never reference outcome columns
-(out_is_loss, out_pnl) or anything known only after entry — that is look-ahead. Stop /
-target / hold / timeframe fixes are NOT entry filters; they go through proposed_change or
-requested_primitive, so this look-ahead rule does not constrain them.
+pandas df.query over the trade's entry-time columns. The available set: {entry_filter_columns}.
+Among these the regime feed contributes several dimensions beyond regime_label (trend /
+volatility / breadth labels and score columns); these regimes are MARKET-WIDE, computed
+from S&P 500 data, so the same label applies to every symbol on a given day. Call
+get_regime_summary to see each regime dimension, its values, and each value's win-rate /
+profit-factor, then filter on whichever one separates winners from losers. The only hard
+limit is causality: never reference outcome columns (out_is_loss, out_pnl) or anything
+known only after entry — that is look-ahead. Stop / target / hold / timeframe fixes are
+NOT entry filters; they go through proposed_change or requested_primitive, so this
+look-ahead rule does not constrain them.
 
 The rendered corpus in the user message is your primary evidence: causal model,
 residuals, screening history, harvest verdicts, and rejection feedback.
@@ -124,7 +135,8 @@ LOOP (each round)
    attempt at a new dimension.
 
 RULES
-- Rules are pandas df.query expressions over the entry-time columns above only.
+- Rules are pandas df.query expressions over entry-time columns only — any column in the
+  available set above, never an outcome / look-ahead column.
 - Anchor mechanism claims against the baseline (round 0); residuals are baseline-relative.
 - Do not propose finer-than-bar timing the engine cannot execute.
 - A parameter nudge is not a mechanism. Reusing a lever a prior thesis already

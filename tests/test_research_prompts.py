@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from research_prompts import _build_mechanism_system_prompt
+import feature_table
+
+from research_prompts import _build_mechanism_system_prompt, _entry_filter_columns
 
 
 def test_mechanism_prompt_matches_single_change_runtime_contract() -> None:
@@ -29,6 +31,38 @@ def test_mechanism_prompt_exposes_regime_summary_tool() -> None:
     prompt = _build_mechanism_system_prompt()
 
     assert "get_regime_summary" in prompt
+
+
+def test_entry_filter_columns_includes_discovered_regime_dimensions(monkeypatch) -> None:
+    # The runtime rule validator accepts any actual feature-table column (causal_rule),
+    # incl. the regime feed's extra dimensions. The prompt's list must include them.
+    monkeypatch.setattr(
+        feature_table,
+        "regime_feature_columns",
+        lambda: frozenset({"regime_label", "volatility_regime", "trend_label"}),
+    )
+    cols = _entry_filter_columns()
+    assert "volatility_regime" in cols
+    assert "trend_label" in cols
+    assert "day_of_week" in cols  # static queryable columns still present
+
+
+def test_entry_filter_columns_falls_back_when_regime_feed_unreachable(monkeypatch) -> None:
+    def _no_parquet():
+        raise FileNotFoundError("regime_labels.parquet missing")
+
+    monkeypatch.setattr(feature_table, "regime_feature_columns", _no_parquet)
+    cols = _entry_filter_columns()
+    assert "day_of_week" in cols  # static set still rendered, no crash
+
+
+def test_rule_column_constraint_is_causal_not_a_closed_list() -> None:
+    # The old wording ("ONLY these entry-time columns" / "above only") contradicted the
+    # validator, which allows any non-outcome feature column. Constraint must be causality.
+    prompt = _build_mechanism_system_prompt()
+    assert "over ONLY these entry-time columns" not in prompt
+    assert "the entry-time columns above only" not in prompt
+    assert "look-ahead" in prompt
 
 
 def test_mechanism_prompt_advertises_coupled_keys_for_families_that_have_them() -> None:
