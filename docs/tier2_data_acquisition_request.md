@@ -3,6 +3,12 @@
 Do not approximate these from OHLCV bars. They require new source data before the
 feature table can expose them safely.
 
+- [ ] Acquire tick-trade data for `order_flow_imbalance`.
+- [ ] Acquire tick-trade data for `signed_volume`.
+- [ ] Acquire NBBO/quote data for `bid_ask_spread`.
+- [ ] Acquire Level 2 order-book data for `book_depth`.
+- [ ] Acquire tick-trade data with signed volume buckets for `vpin`.
+
 | Feature | Minimum data required | Candidate sources |
 | --- | --- | --- |
 | `order_flow_imbalance` | Tick-level trades with aggressor side or enough quote context to infer trade sign point-in-time. | Polygon tick trades + quotes, Nasdaq TotalView/ITCH, Databento trades + quotes. |
