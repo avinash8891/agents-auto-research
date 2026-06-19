@@ -74,9 +74,9 @@ class StrategyEventLogger:
         # Datetime-like scalars (pd.Timestamp / np.datetime64 / NaT) broadcast to
         # a datetime64[ns] column. np.asarray() would otherwise box a Timestamp as
         # object and collapse a NaT scalar to float NaN (its .item() is None).
-        if values is pd.NaT:
-            return np.full(n, np.datetime64("NaT"), dtype="datetime64[ns]")
-        if isinstance(values, (pd.Timestamp, np.datetime64)):
+        # pd.NaT is its own type (not Timestamp/np.datetime64), so it needs the
+        # explicit disjunct; pd.Timestamp(pd.NaT).to_datetime64() is NaT.
+        if values is pd.NaT or isinstance(values, (pd.Timestamp, np.datetime64)):
             ts = pd.Timestamp(values)
             if ts.tz is not None:
                 ts = ts.tz_convert("UTC").tz_localize(None)

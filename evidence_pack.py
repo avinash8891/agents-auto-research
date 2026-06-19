@@ -224,13 +224,17 @@ def _load_round_feature_table(
         except FeatureTableMissingError:
             return None
         return artifact.load()
-    round_glob = "round-0-baseline" if round_number == 0 else f"round-{round_number}"
-    candidates = sorted(
-        runtime_root.glob(f"runtime/jobs/*/research/{round_glob}/feature_table.parquet")
-    )
-    if not candidates:
-        return None
-    return pd.read_parquet(candidates[-1])
+    # Job-less fallback (tests / cross-job CLI): walk rounds round_number -> 0 and
+    # take the most recent realized table, same gap-tolerance as the job branch —
+    # a decline round wrote none, so a fixed round_number lookup would miss it.
+    for candidate_round in range(int(round_number), -1, -1):
+        round_glob = "round-0-baseline" if candidate_round == 0 else f"round-{candidate_round}"
+        candidates = sorted(
+            runtime_root.glob(f"runtime/jobs/*/research/{round_glob}/feature_table.parquet")
+        )
+        if candidates:
+            return pd.read_parquet(candidates[-1])
+    return None
 
 
 def _residual_summary(model: CausalModel, features: pd.DataFrame) -> list[dict]:
