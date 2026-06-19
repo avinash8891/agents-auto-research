@@ -73,6 +73,12 @@ IMPORTANT:
             "gap_pct",
             "use_range_shift",
             "range_shift_lookback",
+            # D4 levers: let common entry-timing / gap-direction exclusions
+            # round-trip as validated config instead of invoking the builder.
+            "exclude_first_bars",
+            "gap_exclude",
+            "gap_exclude_pct",
+            "gap_exclude_direction",
         }
     ),
     resolution_config_keys=("timeframe_short", "timeframe_long"),

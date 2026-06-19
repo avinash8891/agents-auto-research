@@ -1126,3 +1126,83 @@ def test_validate_ema_rejects_non_bool_use_range_shift() -> None:
     assert not any(
         "use_range_shift" in v for v in validate_ema_runtime_config({"use_range_shift": True})
     )
+
+
+def test_exclude_signals_before_bar_drops_opening_bars_each_day() -> None:
+    """exclude_first_bars must drop entries in the first N bars of EACH trading
+    day (bars_since_open < N), matching feature_table's bars_since_open. This is
+    the D4 lever that lets 'exclude first-post-open shorts' round-trip as config."""
+    from backtest.filters import _exclude_signals_before_bar
+
+    idx = pd.to_datetime(
+        [
+            "2024-01-02 09:30",
+            "2024-01-02 09:35",
+            "2024-01-02 09:40",
+            "2024-01-03 09:30",
+            "2024-01-03 09:35",
+            "2024-01-03 09:40",
+        ]
+    )
+    frame = pd.DataFrame(
+        {"open": [10.0] * 6, "high": [11.0] * 6, "low": [9.0] * 6, "close": [10.0] * 6}, index=idx
+    )
+    signals = EMASignals(
+        entries=pd.Series([True] * 6, index=idx),
+        direction="short",
+        entry_price=pd.Series([10.0] * 6, index=idx),
+        stop_price=pd.Series([11.0] * 6, index=idx),
+        alert_bar_idx=pd.Series([-1] * 6, index=idx),
+    )
+
+    _exclude_signals_before_bar(signals, frame, min_bars=1)
+
+    # first bar of each day (positions 0 and 3) dropped; the rest remain
+    assert list(signals.entries.values) == [False, True, True, False, True, True]
+    # no-op for min_bars=0
+    again = EMASignals(
+        entries=pd.Series([True] * 6, index=idx),
+        direction="short",
+        entry_price=pd.Series([10.0] * 6, index=idx),
+        stop_price=pd.Series([11.0] * 6, index=idx),
+        alert_bar_idx=pd.Series([-1] * 6, index=idx),
+    )
+    _exclude_signals_before_bar(again, frame, min_bars=0)
+    assert all(again.entries.values)
+
+
+def test_validate_ema_accepts_d4_levers() -> None:
+    assert (
+        validate_ema_runtime_config(
+            {
+                "exclude_first_bars": 2,
+                "gap_exclude": True,
+                "gap_exclude_pct": 0.01,
+                "gap_exclude_direction": "down",
+            }
+        )
+        == []
+    )
+
+
+def test_validate_ema_rejects_bad_d4_levers() -> None:
+    assert any(
+        "exclude_first_bars" in v for v in validate_ema_runtime_config({"exclude_first_bars": -1})
+    )
+    assert any(
+        "exclude_first_bars" in v
+        for v in validate_ema_runtime_config({"exclude_first_bars": "two"})
+    )
+    assert any(
+        "gap_exclude_direction" in v
+        for v in validate_ema_runtime_config({"gap_exclude_direction": "sideways"})
+    )
+    assert any("gap_exclude" in v for v in validate_ema_runtime_config({"gap_exclude": "yes"}))
+
+
+def test_ema_d4_levers_are_research_proposable() -> None:
+    from family_research_spec import get_family_research_spec
+
+    keys = get_family_research_spec("ema").allowed_config_keys
+    for k in ("exclude_first_bars", "gap_exclude", "gap_exclude_pct", "gap_exclude_direction"):
+        assert k in keys, f"{k} not proposable"

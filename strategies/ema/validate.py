@@ -131,4 +131,26 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
     use_range_shift = config.get("use_range_shift")
     if use_range_shift is not None and not isinstance(use_range_shift, bool):
         violations.append(f"use_range_shift={use_range_shift!r}: must be a boolean (true/false)")
+    gap_exclude = config.get("gap_exclude")
+    if gap_exclude is not None and not isinstance(gap_exclude, bool):
+        violations.append(f"gap_exclude={gap_exclude!r}: must be a boolean (true/false)")
+    gap_exclude_pct = config.get("gap_exclude_pct")
+    if gap_exclude_pct is not None:
+        if not _is_number_value(gap_exclude_pct) or not (0 < float(gap_exclude_pct) <= 0.20):
+            violations.append(f"gap_exclude_pct={gap_exclude_pct!r}: must be a number in (0, 0.20]")
+    gap_exclude_direction = config.get("gap_exclude_direction")
+    if gap_exclude_direction is not None and gap_exclude_direction not in {"up", "down"}:
+        violations.append(
+            f"gap_exclude_direction={gap_exclude_direction!r}: must be 'up' or 'down'"
+        )
+    exclude_first_bars = config.get("exclude_first_bars")
+    if exclude_first_bars is not None:
+        if isinstance(exclude_first_bars, bool) or not _is_int_value(exclude_first_bars):
+            violations.append(f"exclude_first_bars={exclude_first_bars!r}: must be an integer")
+        elif exclude_first_bars < 0:
+            violations.append(f"exclude_first_bars={exclude_first_bars}: must be >= 0 (0 = off)")
+        elif exclude_first_bars > 78:
+            violations.append(
+                f"exclude_first_bars={exclude_first_bars}: must be <= 78 (one session of 5-min bars)"
+            )
     return violations
