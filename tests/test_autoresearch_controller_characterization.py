@@ -706,6 +706,65 @@ def test_execute_once_dispatches_walkforward_action(
     assert calls == [walkforward_state]
 
 
+def test_execute_once_records_autonomy_ledger_on_research_transition(
+    controller: AutoresearchController,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """execute_once must record an autonomy decision + linked audit when a
+    research-blocked state is cleared to ``running`` by a research round, then
+    dispatch the post-research state to the round handler.
+
+    Gap this closes: the baseline path (test above) asserts ``calls == []``
+    because it never enters this branch, and ``run_research`` is covered
+    directly in test_autoresearch_research.py -- but nothing exercises the
+    execute_once glue at autoresearch_controller.py:846-873 where the ledger
+    fires. Collaborators are faked by attribute assignment, the same isolation
+    style the sibling execute_once dispatch tests use.
+    """
+    controller.write_state({"state": "running", "job": 31, "research_round": 2})
+
+    blocked_state = {
+        "state": "blocked",
+        "job": 31,
+        "research_round": 2,
+        "blockers": [{"kind": "research_required", "detail": "generate next thesis"}],
+    }
+    running_state = {
+        "state": "running",
+        "job": 31,
+        "research_round": 3,
+        "blockers": [],
+        "next_action": {
+            "type": "run_round",
+            "config": "configs/variants/ema_pullback.yaml",
+            "source": "research_conductor",
+        },
+    }
+    controller._resolve_next_action = lambda: blocked_state  # type: ignore[method-assign]
+    controller._run_research = lambda state: running_state  # type: ignore[method-assign]
+    dispatched: list[dict] = []
+    controller._run_round = lambda state: dispatched.append(dict(state)) or 0  # type: ignore[method-assign]
+
+    calls: list[str] = []
+
+    class Ledger:
+        def record_decision(self, **kwargs):
+            calls.append(f"decision:{kwargs['decision_type']}:{kwargs['outcome']}")
+            return {"decision_id": "decision-31"}
+
+        def record_audit(self, **kwargs):
+            calls.append(f"audit:{kwargs['action']}:{kwargs['related_decision_id']}")
+
+    monkeypatch.setattr("autoresearch_controller._AUTONOMY_LEDGER", Ledger())
+
+    assert controller.execute_once() == 0
+    assert calls == [
+        "decision:research_transition:approved",
+        "audit:transition_to_running:decision-31",
+    ]
+    assert dispatched == [running_state]
+
+
 def test_run_controller_loop_exits_on_terminal_state(monkeypatch: pytest.MonkeyPatch) -> None:
     states = [{"state": "running"}, {"state": "finished"}]
 
