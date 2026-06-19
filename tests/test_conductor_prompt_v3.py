@@ -85,3 +85,12 @@ def test_mechanism_prompt_points_proposed_change_at_config_levers_and_decline() 
     text = _build_mechanism_system_prompt().lower()
     assert "config levers" in text
     assert "decline" in text
+
+
+def test_mechanism_prompt_describes_requested_primitive_path() -> None:
+    """The conductor must know it can request a new primitive when no lever
+    expresses its rule (route-to-builder), instead of stuffing a label into a
+    lever or declining a real edge."""
+    text = _build_mechanism_system_prompt().lower()
+    assert "requested_primitive" in text
+    assert "builder" in text

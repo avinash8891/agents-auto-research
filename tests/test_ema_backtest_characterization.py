@@ -1123,4 +1123,6 @@ def test_validate_ema_rejects_non_bool_gap_filter() -> None:
 def test_validate_ema_rejects_non_bool_use_range_shift() -> None:
     violations = validate_ema_runtime_config({"use_range_shift": "yes"})
     assert any("use_range_shift" in v for v in violations), violations
-    assert not any("use_range_shift" in v for v in validate_ema_runtime_config({"use_range_shift": True}))
+    assert not any(
+        "use_range_shift" in v for v in validate_ema_runtime_config({"use_range_shift": True})
+    )

@@ -1146,7 +1146,7 @@ def _build_builder_prompt(
 1. Read the thesis and contract artifacts from disk first.
 2. Start from the base config artifact. Preserve every base config key unless the thesis config_changes explicitly changes it.
 3. If the change is already expressible with the existing family schema, write the config artifact at the expected path and stop.
-4. Otherwise make the smallest code change needed to support the missing primitive(s), then add or update the narrowest tests that cover the new behavior.
+4. Otherwise make the smallest code change needed to support the missing primitive(s), then add or update the narrowest tests that cover the new behavior. The thesis artifact's `mechanism_rule` field (a pandas df.query expression over entry-time columns) is the EXACT entry condition the primitive must implement -- build the filter so it matches that rule.
 5. Keep the edit scope tight. Do not refactor unrelated code.
 6. Do not clean up, revert, or inspect unrelated dirty worktree changes.
 7. As soon as the expected config exists and any narrow validation you choose has run, stop and return the final report. Do not continue with broad diff review.

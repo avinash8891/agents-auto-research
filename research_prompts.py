@@ -45,6 +45,12 @@ ACTIONABLE OUTPUT RULES (only when actionable=true; otherwise both are null)
   decrease_or_same, not_worse_than; predicted is a number. Use these exact field
   names; do not invent others.
 
+IF YOUR RULE NEEDS A CAPABILITY NO CONFIG LEVER EXPRESSES (e.g. a conjunctive
+entry exclusion by gap direction and bars-since-open): set actionable=true, leave
+proposed_change null, and set requested_primitive to a short snake_case name. The
+builder will implement your exact `rule` as that primitive, then backtest it. Do
+NOT force such a rule into an existing lever. predictions are still required.
+
 TO DECLINE (no new testable rule this round): set actionable=false and set rule,
 competitor_rule, competitor_story, proposed_change, and predictions all to null;
 put your reasoning in story.
@@ -57,6 +63,7 @@ Return only JSON matching this shape:
   "competitor_story": "...",
   "actionable": false,
   "proposed_change": null,
+  "requested_primitive": null,
   "predictions": null
 }
 """
