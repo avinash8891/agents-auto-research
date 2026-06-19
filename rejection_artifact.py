@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from autoresearch_runtime_paths import research_round_root
+from autoresearch_runtime_paths import research_round_root, resolve_runtime_root
 from research_types import StructuredRejection
 
 # Avoid a hard import cycle (thesis_validator imports research_types). The
@@ -24,9 +24,15 @@ RejectionStage = Literal["stage_1", "stage_2", "compile"]
 
 
 def _research_round_thesis_root(root: Path, *, job: int, round_number: int, thesis_id: str) -> Path:
-    """Return `runtime/jobs/job-N/research/round-M/theses/<thesis_id>/`."""
+    """Return `runtime/jobs/job-N/research/round-M/theses/<thesis_id>/`.
+
+    Resolves the runtime root from ``root`` (split layout: artifacts live under
+    AUTORESEARCH_RUNTIME_ROOT, not the code/release root) so rejections are stored
+    with the rest of the job data and survive redeploys — the same policy the
+    backtest-DB readers use. No-op when code and runtime roots coincide (local)."""
     if not thesis_id:
         raise ValueError("thesis_id must be non-empty")
+    root = resolve_runtime_root(root)
     return research_round_root(root, job, round_number) / "theses" / thesis_id
 
 
@@ -106,7 +112,7 @@ def list_rejections(
     """
     from autoresearch_runtime_paths import job_research_root
 
-    research_root = job_research_root(root, job)
+    research_root = job_research_root(resolve_runtime_root(root), job)
     if not research_root.exists():
         return []
 

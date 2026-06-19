@@ -322,3 +322,30 @@ def test_persist_rejection_writes_to_round_thesis_folder(tmp_path: Path) -> None
     assert payload["rejection_code"] == "thesis_quality_theme_cluster_fixation"
     assert payload["thesis_id"] == "opening_x_stop_filter"
     assert payload["round"] == 3
+
+
+def test_rejections_resolve_runtime_root_on_split_layout(tmp_path, monkeypatch):
+    """Split layout (VPS): callers pass the CODE root, but rejections must be
+    written and read under AUTORESEARCH_RUNTIME_ROOT so they live with the rest of
+    the job data and survive a redeploy."""
+    from rejection_artifact import list_rejections, persist_rejection
+
+    code_root = tmp_path / "releases" / "sha"
+    runtime_root = tmp_path / "runtime-root"
+    code_root.mkdir(parents=True)
+    runtime_root.mkdir(parents=True)
+    monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(runtime_root))
+
+    path = persist_rejection(
+        code_root,
+        job=7,
+        round_number=2,
+        thesis_id="ema-x",
+        stage="stage_1",
+        exc=ValueError("Config-key overlap with prior thesis"),
+    )
+    # stored under runtime root, not the code root
+    assert str(runtime_root.resolve()) in str(path.resolve())
+    assert str(code_root.resolve()) not in str(path.resolve())
+    # reader given the code root still finds it (resolves runtime internally)
+    assert len(list_rejections(code_root, job=7)) == 1
