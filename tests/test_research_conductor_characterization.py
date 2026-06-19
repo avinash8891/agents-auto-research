@@ -44,7 +44,17 @@ def _patch_conductor_runner(monkeypatch: pytest.MonkeyPatch, output: dict | str)
     def _run_streamed(agent, user_prompt, max_turns, run_config):
         captured_prompts.append(user_prompt)
         assert agent.name == "research-conductor"
-        assert getattr(agent, "tools", []) == []
+        # All research tools are wired so the proposer can investigate a new
+        # dimension instead of declining; usage is measured via trace events.
+        tool_names = {getattr(t, "name", "") for t in getattr(agent, "tools", [])}
+        assert {
+            "analyze_trades",
+            "web_search",
+            "get_dimension_examples",
+            "get_tuning_examples",
+            "list_past_theses",
+            "rejection_pattern_summary",
+        } <= tool_names
         assert (
             getattr(getattr(agent, "output_type", None), "output_type", None) is MechanismProposal
         )
@@ -68,7 +78,10 @@ def test_conductor_returns_timeout_error_when_runner_times_out(
 
     def _raise_timeout(agent, user_prompt, max_turns, run_config):
         assert agent.name == "research-conductor"
-        assert getattr(agent, "tools", []) == []
+        assert {getattr(t, "name", "") for t in getattr(agent, "tools", [])} >= {
+            "analyze_trades",
+            "web_search",
+        }
         assert run_config.tracing_disabled is True
         raise asyncio.TimeoutError
 
@@ -144,7 +157,11 @@ def test_conductor_uses_rendered_corpus_only_and_skips_thesis_validator(
     assert str(captured["user_prompt"]).startswith(rendered_corpus)
     assert "prior screening killed this rule" in str(captured["user_prompt"])
     assert "legacy round results" not in str(captured["user_prompt"])
-    assert captured["tools"] == []
+    # Corpus is still the primary evidence (prompt starts with it), but the
+    # research tools are now wired even with no trades file so the proposer can
+    # investigate a new dimension instead of declining.
+    tool_names = {getattr(t, "name", "") for t in captured["tools"]}
+    assert {"analyze_trades", "web_search", "get_dimension_examples"} <= tool_names
     assert "feature_table" not in str(captured["system_prompt"])
     assert "residual" in str(captured["system_prompt"]).lower()
     assert getattr(captured["output_type"], "output_type", None) is MechanismProposal
@@ -188,8 +205,10 @@ def test_conductor_exposes_analyst_tool_when_trades_are_available(
     assert out.status == "ok"
     tools = captured["tools"]
     assert isinstance(tools, list)
-    assert len(tools) == 1
-    assert tools[0].name == "analyze_trades"
+    tool_names = {t.name for t in tools}
+    assert "analyze_trades" in tool_names
+    # Full research tool set is wired (not just the analyst).
+    assert {"web_search", "get_dimension_examples", "rejection_pattern_summary"} <= tool_names
 
 
 def test_conductor_accepts_structured_final_output(

@@ -863,11 +863,78 @@ async def run_research_conductor(
             )
             return output
 
+        @function_tool(name_override="get_dimension_examples")
+        async def get_dimension_examples_tool() -> str:
+            """Return the catalog of mechanism-research dimensions with examples.
+
+            Use when the corpus shows no new separable residual pocket and you need
+            to choose an under-explored dimension to research (entry timing, exit,
+            signal quality, regime, portfolio, risk, microstructure, emergent)."""
+            from research_doctrine import DIMENSION_EXAMPLES
+
+            tools_called_this_round.add("get_dimension_examples")
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "get_dimension_examples",
+                "",
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            trace_agent_tool_result(
+                "research-conductor", trace_id, "get_dimension_examples", DIMENSION_EXAMPLES
+            )
+            return DIMENSION_EXAMPLES
+
+        @function_tool(name_override="get_tuning_examples")
+        async def get_tuning_examples_tool() -> str:
+            """Return examples of parameter tuning vs a real mechanism change.
+
+            Consult before proposing a thesis that touches an existing config lever —
+            the validator's neighboring-threshold and config-overlap rules mirror
+            these examples, so this lets you pre-empt a tuning rejection."""
+            from research_doctrine import PARAMETER_TUNING_EXAMPLES
+
+            tools_called_this_round.add("get_tuning_examples")
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "get_tuning_examples",
+                "",
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            trace_agent_tool_result(
+                "research-conductor", trace_id, "get_tuning_examples", PARAMETER_TUNING_EXAMPLES
+            )
+            return PARAMETER_TUNING_EXAMPLES
+
+        # All conductor research tools are wired so the agent can investigate a new
+        # dimension when the rendered corpus shows no separable pocket (instead of
+        # guessing and declining). Usage is measured per call via trace_agent_tool_*
+        # (mechanical counts + semantic args) — see scripts/tool_usage_audit.py — so
+        # we prune low-value tools on real data later. analyze_trades self-guards when
+        # no trades file is available.
         output_schema = _conductor_output_schema()
         agent = OAIAgent(
             name="research-conductor",
             instructions=system_prompt,
-            tools=[analyze_trades] if trades_file else [],
+            tools=[
+                analyze_trades,
+                web_search,
+                save_finding,
+                search_findings,
+                memory_status,
+                list_past_theses,
+                get_past_thesis,
+                list_round_results,
+                get_round_result,
+                list_rejections_tool,
+                get_rejection_tool,
+                rejection_pattern_summary_tool,
+                get_dimension_examples_tool,
+                get_tuning_examples_tool,
+            ],
             model=model,
             output_type=output_schema,
         )
