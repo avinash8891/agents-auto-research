@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
+import evidence_pack
 import feature_table_extractors as extractors
+from evidence_pack import Corpus, render_corpus
 from feature_table import (
     ENTRY_TIME_COLUMNS,
     OUTCOME_COLUMNS,
@@ -16,6 +19,7 @@ from feature_table import (
     load_regime_labels,
 )
 from feature_table_extractors import family_entry_features
+from research_types import CausalModel
 
 EXPECTED_COLUMNS = [
     "trade_id",
@@ -28,8 +32,17 @@ EXPECTED_COLUMNS = [
     "gap_pct",
     "prior_day_range_pct",
     "overnight_move_pct",
+    "rvol",
+    "gap_atr",
     "or_width_pctile",
     "dist_to_ema_pct",
+    "dist_to_ema_atr",
+    "vol_of_vol",
+    "adx_14",
+    "trailing_5d_return",
+    "xs_rank_gap_pct",
+    "xs_rank_rvol",
+    "session_phase",
     "vol_pctile_20d",
     "regime_label",
     "stop_distance_pct",
@@ -98,6 +111,59 @@ def _write_regime_labels(data_root: Path, **extra_columns: object) -> None:
     pd.DataFrame(payload).to_parquet(data_root / "regime_labels.parquet", index=False)
 
 
+def _feature_expansion_bars() -> tuple[pd.DataFrame, pd.Timestamp]:
+    rows = []
+    days = pd.bdate_range("2024-01-02", periods=35)
+    entry_day = days[-1]
+    for symbol, bump, current_volume in [("AAA", 0.0, 3000), ("BBB", 20.0, 1000)]:
+        for idx, day in enumerate(days):
+            base = 100.0 + bump + idx
+            if day == entry_day:
+                prior_close = 100.0 + bump + idx
+                open_price = prior_close + (2.0 if symbol == "AAA" else 1.0)
+                volumes = [current_volume, 500]
+            else:
+                open_price = base
+                volumes = [1000, 500]
+            for minute, close, volume in [
+                (0, open_price + 0.5, volumes[0]),
+                (5, open_price + 1.0, volumes[1]),
+            ]:
+                rows.append(
+                    {
+                        "timestamp": pd.Timestamp(day.date()).tz_localize("UTC")
+                        + pd.Timedelta(hours=14, minutes=30 + minute),
+                        "symbol": symbol,
+                        "open": open_price,
+                        "high": close + 0.5,
+                        "low": close - 0.5,
+                        "close": close,
+                        "volume": volume,
+                    }
+                )
+    return pd.DataFrame(rows), pd.Timestamp(entry_day.date()).tz_localize("UTC") + pd.Timedelta(
+        hours=14, minutes=35
+    )
+
+
+def _atr_pct_from_daily(daily: pd.DataFrame, entry_day: object) -> float:
+    prior = daily[daily["date"] < entry_day].reset_index(drop=True)
+    ranges = []
+    for idx, row in prior.iterrows():
+        if idx == 0:
+            ranges.append(row["high"] - row["low"])
+        else:
+            prev_close = prior.loc[idx - 1, "close"]
+            ranges.append(
+                max(
+                    row["high"] - row["low"],
+                    abs(row["high"] - prev_close),
+                    abs(row["low"] - prev_close),
+                )
+            )
+    return float(np.mean(ranges[-14:]) / prior.iloc[-1]["close"] * 100.0)
+
+
 def test_build_feature_table_emits_exact_entry_time_and_outcome_columns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -123,6 +189,98 @@ def test_build_feature_table_emits_exact_entry_time_and_outcome_columns(
     assert row["stop_distance_pct"] == pytest.approx((1.0 / 102.6) * 100.0)
     assert row["entry_bar_range_pct"] == pytest.approx((0.8 / 102.2) * 100.0)
     assert bool(row["out_is_loss"]) is True
+
+
+def test_build_feature_table_computes_leakage_safe_feature_expansion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bars, entry_ts = _feature_expansion_bars()
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    pd.DataFrame(
+        {
+            "date": [(entry_ts - pd.Timedelta(days=1)).date()],
+            "regime_label": ["risk_on"],
+        }
+    ).to_parquet(data_root / "regime_labels.parquet", index=False)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    trades = _trades_df().assign(symbol="AAA", entry_date=entry_ts, entry_price=136.5)
+
+    table = build_feature_table(trades, bars, events=[], family="ema")
+
+    row = table.iloc[0]
+    daily = (
+        bars[bars["symbol"] == "AAA"]
+        .assign(date=bars[bars["symbol"] == "AAA"]["timestamp"].dt.date)
+        .groupby("date", sort=True)
+        .agg(
+            open=("open", "first"),
+            high=("high", "max"),
+            low=("low", "min"),
+            close=("close", "last"),
+        )
+        .reset_index()
+    )
+    atr_pct = _atr_pct_from_daily(daily, entry_ts.date())
+    prior = daily[daily["date"] < entry_ts.date()].reset_index(drop=True)
+    daily_range = ((prior["high"] - prior["low"]) / prior["close"]).to_numpy()
+
+    assert row["rvol"] == pytest.approx(3.0)
+    assert row["gap_atr"] == pytest.approx(row["gap_pct"] / atr_pct)
+    assert row["dist_to_ema_atr"] == pytest.approx(row["dist_to_ema_pct"] / atr_pct)
+    assert row["vol_of_vol"] == pytest.approx(np.std(np.diff(daily_range)[-20:], ddof=1))
+    assert row["adx_14"] == pytest.approx(100.0)
+    assert row["trailing_5d_return"] == pytest.approx(
+        (prior.iloc[-1]["close"] - prior.iloc[-6]["close"]) / prior.iloc[-6]["close"] * 100.0
+    )
+    assert row["xs_rank_gap_pct"] == pytest.approx(1.0)
+    assert row["xs_rank_rvol"] == pytest.approx(1.0)
+    assert row["session_phase"] == "open"
+    assert {"rvol", "gap_atr", "xs_rank_rvol", "session_phase"} <= ENTRY_TIME_COLUMNS
+
+
+def test_feature_expansion_columns_render_into_research_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bars, entry_ts = _feature_expansion_bars()
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    pd.DataFrame(
+        {
+            "date": [(entry_ts - pd.Timedelta(days=1)).date()],
+            "regime_label": ["risk_on"],
+        }
+    ).to_parquet(data_root / "regime_labels.parquet", index=False)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    trades = pd.concat(
+        [
+            _trades_df().assign(symbol="AAA", entry_date=entry_ts, entry_price=136.5, pnl=-2.0),
+            _trades_df().assign(
+                symbol="AAA",
+                entry_date=entry_ts + pd.Timedelta(minutes=5),
+                entry_price=136.5,
+                pnl=1.0,
+            ),
+        ],
+        ignore_index=True,
+    )
+    table = build_feature_table(trades, bars, events=[], family="ema")
+    model = CausalModel(family="ema", version=1, holdout_start="2100-01-01")
+
+    residual_summary = evidence_pack._residual_summary(model, table)
+    rendered = render_corpus(
+        Corpus(
+            family="ema",
+            round_number=1,
+            model=model,
+            residual_summary=residual_summary,
+        )
+    )
+
+    assert "- rvol:" in rendered
+    assert "- gap_atr:" in rendered
+    assert "- xs_rank_rvol:" in rendered
+    assert "- session_phase: open" in rendered
 
 
 def test_build_feature_table_reuses_orb_opening_widths_for_repeated_symbol(
