@@ -1,0 +1,21 @@
+strategies/ema/validate.py
+  s_be8b2f455eab9f::t_4cbf6972629b03 120-133
+strategies/ema/contract.py
+  s_be8b2f455eab9f::t_62276af2281890 153-159,163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "fdaf64ce2fa1efc86417af62fa871765cc5e76fd",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
