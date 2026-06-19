@@ -605,3 +605,19 @@ def test_render_corpus_lists_config_levers(tmp_path: Path, monkeypatch) -> None:
     text = render_corpus(build_corpus("ema", 2))
     assert "## Config Levers" in text
     assert "gap_filter" in text
+
+
+def test_load_round_feature_table_falls_back_to_latest_realized(tmp_path: Path) -> None:
+    """The corpus residual section must use the most recent realized feature
+    table, not a fixed round-(N-1) index. Decline rounds write no table, so the
+    fixed index returned None -> empty residuals -> the conductor had nothing to
+    propose and declined every round. It must fall back to the baseline."""
+    from evidence_pack import _load_round_feature_table
+
+    job = 7
+    table = pd.DataFrame({"trade_id": ["AAA:2024-01-04T14:35:00+00:00"], "out_pnl": [1.0]})
+    FeatureTableArtifact.for_round(tmp_path, job, 0).write(table)  # baseline only
+    # round 2 ran no experiment (decline) -> its own table is missing.
+    loaded = _load_round_feature_table(tmp_path, 2, job=job)
+    assert loaded is not None
+    assert list(loaded["trade_id"]) == ["AAA:2024-01-04T14:35:00+00:00"]

@@ -13,7 +13,7 @@ from autoresearch_artifacts import round_number_from_path as _round_number_from_
 from autoresearch_runtime_paths import resolve_runtime_root
 from causal_model import CausalModelStore, residual_map
 from family_research_spec import get_family_research_spec
-from feature_table import ENTRY_TIME_COLUMNS, FeatureTableArtifact
+from feature_table import ENTRY_TIME_COLUMNS, FeatureTableArtifact, FeatureTableMissingError
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult
 
@@ -215,8 +215,15 @@ def _load_round_feature_table(
     runtime_root: Path, round_number: int, *, job: int | None = None
 ) -> pd.DataFrame | None:
     if job is not None:
-        path = FeatureTableArtifact.for_round(runtime_root, job, round_number).path
-        return pd.read_parquet(path) if path.exists() else None
+        # Use the most recent realized feature table at or before round_number,
+        # not a fixed round index: decline rounds write none, and a fixed lookup
+        # returned None -> empty residual corpus -> the conductor declined every
+        # round. Falls back through to the baseline (round 0).
+        try:
+            artifact = FeatureTableArtifact.latest_through(runtime_root, job, round_number)
+        except FeatureTableMissingError:
+            return None
+        return artifact.load()
     round_glob = "round-0-baseline" if round_number == 0 else f"round-{round_number}"
     candidates = sorted(
         runtime_root.glob(f"runtime/jobs/*/research/{round_glob}/feature_table.parquet")
