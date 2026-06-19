@@ -11,7 +11,6 @@ from feature_table import (
     ENTRY_TIME_COLUMNS,
     OUTCOME_COLUMNS,
     regime_feature_columns,
-    regime_record_for_date,
     FeatureTableArtifact,
     FeatureTableMissingError,
     build_feature_table,
@@ -112,22 +111,6 @@ def test_regime_feature_columns_discovers_every_extra_column(
     assert regime_feature_columns() == frozenset(
         {"regime_label", "volatility_regime", "trend_label"}
     )
-
-
-def test_regime_record_for_date_returns_all_values_for_that_day(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    data_root = tmp_path / "data"
-    _write_regime_labels(data_root, volatility_regime="high_vol", trend_label="up")
-    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
-
-    assert regime_record_for_date("2024-01-03") == {
-        "regime_label": "risk_off",
-        "volatility_regime": "high_vol",
-        "trend_label": "up",
-    }
-    # A date the feed does not cover returns None, not an error.
-    assert regime_record_for_date("2024-01-04") is None
 
 
 def test_build_feature_table_emits_exact_entry_time_and_outcome_columns(

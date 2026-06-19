@@ -54,12 +54,13 @@ express the fix through the channel that fits it (see OUTPUT CHANNELS).
 ENTRY-FILTER COLUMNS — when your fix is an entry filter (the `rule` field), it is a
 pandas df.query over ONLY these entry-time columns: bars_since_open, day_of_week, dist_to_ema_pct, entry_bar_range_pct, gap_pct, or_width_pctile, overnight_move_pct, prior_day_range_pct, regime_label, side, stop_distance_pct, time_of_day_min, vol_pctile_20d. The regime
 feed adds MORE entry-time columns than regime_label alone (trend / volatility / breadth
-labels and score columns); call get_regime_summary to see every regime dimension, its
-values, and each value's win-rate / profit-factor, then filter on whichever one
-separates winners from losers. Never reference outcome columns (out_is_loss, out_pnl) or
-anything known only after entry — that is look-ahead. Stop / target / hold / timeframe
-fixes are NOT entry filters; they go through proposed_change or requested_primitive, so
-this look-ahead rule does not constrain them.
+labels and score columns); these regimes are MARKET-WIDE, computed from S&P 500 data, so
+the same label applies to every symbol on a given day. Call get_regime_summary to see
+every regime dimension, its values, and each value's win-rate / profit-factor, then
+filter on whichever one separates winners from losers. Never reference outcome columns
+(out_is_loss, out_pnl) or anything known only after entry — that is look-ahead. Stop /
+target / hold / timeframe fixes are NOT entry filters; they go through proposed_change or
+requested_primitive, so this look-ahead rule does not constrain them.
 
 The rendered corpus in the user message is your primary evidence: causal model,
 residuals, screening history, harvest verdicts, and rejection feedback.
@@ -96,10 +97,9 @@ says when to use it. The key moves: analyze_trades to TEST a specific data hypot
 (slice winners vs losers a new way — do not dredge with "show me everything");
 web_search for external market-structure / academic evidence; get_dimension_examples
 for the catalog of dimensions to explore; get_regime_summary for the per-regime-dimension
-win-rate / profit-factor split when you suspect a regime-conditioned edge, and
-get_regime_for_date to inspect every regime value on a specific day (e.g. a large
-residual loss). Ground your proposal in a data finding (analyst) and, when relevant,
-external evidence (web_search).
+win-rate / profit-factor split (market-wide S&P-500 regimes) when you suspect a
+regime-conditioned edge. Ground your proposal in a data finding (analyst) and, when
+relevant, external evidence (web_search).
 
 REFLEXION
 Prior-round critiques of the analyst and web-researcher flow into their next call
