@@ -28,8 +28,11 @@ risk_structure, market_microstructure, execution_costs, universe_selection,
 alternative_data, alpha_decay, emergent.
 
 ACTIONABLE OUTPUT RULES
-- proposed_change is required iff actionable=true.
-- proposed_change must contain exactly one changed key.
+- available entry-time columns are what exists today, not a ceiling.
+- If the mechanism needs a missing feature, set requested_primitive.
+- actionable=true requires predictions and either proposed_change or requested_primitive.
+- proposed_change must contain exactly one changed key when present.
+- requested_primitive.kind must be "entry_feature" or "management" when present.
 - predictions are required iff actionable=true.
 - predictions must include at least two distinct MetricName values from:
   profit_factor, trade_count, max_drawdown, median_expectancy.
@@ -42,6 +45,7 @@ Return only JSON matching this shape:
   "competitor_story": "...",
   "actionable": false,
   "proposed_change": null,
+  "requested_primitive": null,
   "predictions": null
 }
 """

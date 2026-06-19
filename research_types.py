@@ -124,6 +124,23 @@ class Prediction(BaseModel):
     rationale: str = ""
 
 
+class RequestedPrimitive(BaseModel):
+    name: str
+    kind: Literal["entry_feature", "management"]
+    description: str
+    required_data: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_requested_primitive(self) -> "RequestedPrimitive":
+        if not self.name.replace("_", "").isalnum() or self.name != self.name.lower():
+            raise ValueError("requested_primitive.name must be snake_case")
+        if not self.description.strip():
+            raise ValueError("requested_primitive.description is required")
+        if not all(item.strip() for item in self.required_data):
+            raise ValueError("requested_primitive.required_data entries must be non-empty")
+        return self
+
+
 class MechanismProposal(BaseModel):
     """Conductor output for the causal-engine research path."""
 
@@ -133,14 +150,17 @@ class MechanismProposal(BaseModel):
     competitor_story: str
     actionable: bool
     proposed_change: dict[str, Any] | None = None
+    requested_primitive: RequestedPrimitive | None = None
     predictions: list[Prediction] | None = None
 
     @model_validator(mode="after")
     def _validate_actionable_contract(self) -> "MechanismProposal":
         if not self.actionable:
             return self
-        if not self.proposed_change:
-            raise ValueError("proposed_change is required when actionable is true")
+        if not self.proposed_change and self.requested_primitive is None:
+            raise ValueError(
+                "proposed_change or requested_primitive is required when actionable is true"
+            )
         if self.predictions is None or len(self.predictions) < 2:
             raise ValueError(
                 "predictions must contain at least two entries when actionable is true"
