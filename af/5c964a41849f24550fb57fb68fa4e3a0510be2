@@ -1,0 +1,19 @@
+docs/tier2_data_acquisition_request.md
+  s_9a7cca10619d15::t_919819e7a909d1 6-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "af5c964a41849f24550fb57fb68fa4e3a0510be2",
+  "prompts": {},
+  "sessions": {
+    "s_9a7cca10619d15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee039-8432-76b0-95ab-c8bd26089c3c",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
