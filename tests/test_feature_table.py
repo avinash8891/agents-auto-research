@@ -113,6 +113,32 @@ def test_regime_feature_columns_discovers_every_extra_column(
     )
 
 
+def test_extra_regime_columns_flow_end_to_end_to_prompt_and_residuals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end against a REAL on-disk regime parquet (no monkeypatch): the feed's
+    extra regime dimensions must reach the feature table, the conductor prompt's
+    queryable column list, and the residual corpus surfaces."""
+    from evidence_pack import _regime_dimension_columns, _residual_entry_columns
+    from research_prompts import _entry_filter_columns
+
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root, volatility_regime="high_vol", trend_label="up")
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+
+    table = build_feature_table(_trades_df(), _bars_df(), events=[], family="ema")
+    # The real feature table carries the extra regime dimensions as entry-time columns.
+    assert {"volatility_regime", "trend_label"} <= set(table.columns)
+
+    # The conductor prompt's queryable list is built from the real parquet, not a mock.
+    cols = _entry_filter_columns()
+    assert "volatility_regime" in cols and "trend_label" in cols
+
+    # The residual surfaces (rows + per-dimension stats) carry every regime dimension.
+    assert {"volatility_regime", "trend_label"} <= set(_residual_entry_columns(table))
+    assert {"volatility_regime", "trend_label"} <= set(_regime_dimension_columns(table))
+
+
 def test_build_feature_table_emits_exact_entry_time_and_outcome_columns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
