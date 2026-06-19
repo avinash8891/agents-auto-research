@@ -654,7 +654,12 @@ def _build_asi_dict(
 ) -> dict[str, Any]:
     asi = {
         "config": config,
-        "artifact_dir": serialize_artifact_path(artifact_dir, controller.root),
+        # Serialize relative to the runtime root, where artifacts actually live
+        # (split layout); code_root-relative serialization produced an absolute
+        # path that the resolvers then rejected as "outside root".
+        "artifact_dir": serialize_artifact_path(
+            artifact_dir, getattr(controller, "runtime_root", None) or controller.root
+        ),
         "trade_analysis": analysis.get("trade_analysis", {}),
         "insights": analysis.get("insights", []),
         "next_thesis_suggestion": analysis.get("next_thesis_suggestion", ""),

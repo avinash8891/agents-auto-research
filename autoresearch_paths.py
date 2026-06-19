@@ -89,3 +89,46 @@ def path_within_allowed_roots(
         except ValueError:
             continue
     return False
+
+
+def resolve_runtime_path(
+    raw: str | Path,
+    *,
+    code_root: Path,
+    runtime_root: Path,
+    execution_root: Path | None = None,
+    must_exist: bool = True,
+) -> Path | None:
+    """Resolve a persisted runtime-artifact path against the allowed roots.
+
+    The canonical resolver for paths stored in state/asi (trade files, artifact
+    dirs). Artifacts live under the runtime root when execution and code roots are
+    split, but legacy entries may be code-root-relative or absolute — accept any
+    path that lands within the allowed roots. Runtime-first for relative paths
+    (that is where artifacts live). Best-effort: returns None on escape or, when
+    ``must_exist``, absence; never raises. This is the one home for artifact path
+    resolution — callers must not re-derive it with ``is_relative_to(code_root)``.
+    """
+    raw_path = Path(raw)
+    code_root_r = code_root.resolve()
+    runtime_root_r = runtime_root.resolve()
+    exec_r = execution_root.resolve() if execution_root is not None else None
+    candidates: list[Path] = []
+    if raw_path.is_absolute():
+        candidates.append(raw_path)
+    else:
+        bases = ([exec_r] if exec_r is not None else []) + [runtime_root_r, code_root_r]
+        candidates.extend(base / raw_path for base in bases)
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if not path_within_allowed_roots(
+            resolved, code_root=code_root_r, runtime_root=runtime_root_r, execution_root=exec_r
+        ):
+            continue
+        if must_exist and not resolved.exists():
+            continue
+        return resolved
+    return None

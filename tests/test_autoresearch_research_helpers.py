@@ -388,3 +388,47 @@ def test_queue_variants_leaves_no_artifacts_when_rejected(
 
     assert not list(tmp_path.rglob("*.tmp"))
     assert not (tmp_path / "experiments").exists()
+
+
+def test_existing_artifact_file_resolves_runtime_root_artifact_split_layout(tmp_path):
+    """Split layout (VPS): code_root != runtime_root and the trades file lives under
+    the runtime root. The resolver must find it — the old is_relative_to(code_root)
+    check rejected it, which starved analyze_trades."""
+    from autoresearch_research import _existing_artifact_file
+
+    code_root = tmp_path / "releases" / "sha123"
+    runtime_root = tmp_path / "runtime-root"
+    art_dir = runtime_root / "runtime" / "jobs" / "job-1" / "research" / "round-0-baseline"
+    art_dir.mkdir(parents=True)
+    trades = art_dir / "ema.trades.csv"
+    trades.write_text("entry_price\n100\n")
+    controller = SimpleNamespace(root=code_root, runtime_root=runtime_root, ctx=None)
+
+    # absolute (legacy serialization on split layout) and relative-to-runtime both resolve
+    assert _existing_artifact_file(controller, str(trades)) == str(trades.resolve())
+    rel = "runtime/jobs/job-1/research/round-0-baseline/ema.trades.csv"
+    assert _existing_artifact_file(controller, rel) == str(trades.resolve())
+    # a path outside both roots is rejected
+    assert _existing_artifact_file(controller, "/etc/hosts") == ""
+
+
+def test_backfill_artifact_files_scans_runtime_root_dir_split_layout(tmp_path):
+    from autoresearch_research import _backfill_artifact_files_from_latest_dir
+
+    code_root = tmp_path / "releases" / "sha123"
+    runtime_root = tmp_path / "runtime-root"
+    art_dir = runtime_root / "runtime" / "jobs" / "job-1" / "research" / "round-0-baseline"
+    art_dir.mkdir(parents=True)
+    (art_dir / "ema.trades.csv").write_text("x")
+    (art_dir / "ema.diagnostics.json").write_text("{}")
+    controller = SimpleNamespace(root=code_root, runtime_root=runtime_root, ctx=None)
+    latest = SimpleNamespace(
+        asi={"artifact_dir": "runtime/jobs/job-1/research/round-0-baseline"},
+        config="configs/ema_base.yaml",
+    )
+
+    trades, events, diagnostics = _backfill_artifact_files_from_latest_dir(
+        controller, latest, "", "", ""
+    )
+    assert trades.endswith("ema.trades.csv") and Path(trades).is_file()
+    assert diagnostics.endswith("ema.diagnostics.json")

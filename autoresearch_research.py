@@ -37,7 +37,7 @@ from autoresearch_logging import get_logger
 from autoresearch_orchestration import (
     build_missing_primitives_for_state as _orchestration_build_missing_primitives_for_state,
 )
-from autoresearch_paths import resolve_config_path, resolve_runtime_root
+from autoresearch_paths import resolve_config_path, resolve_runtime_path, resolve_runtime_root
 from autoresearch_planning import build_research_failure_state
 from autoresearch_runtime_paths import research_round_id_or_empty as make_research_round_id
 from autoresearch_runtime_paths import research_round_root
@@ -320,21 +320,19 @@ def _backfill_artifact_files_from_latest_dir(
     diagnostics_file: str,
 ) -> tuple[str, str, str]:
     """If ctx didn't carry the latest run's artifact files, look for them
-    inside the latest result's artifact_dir on disk."""
+    inside the latest result's artifact_dir on disk. Resolution goes through the
+    canonical runtime-path resolver so artifacts under the runtime root (split
+    layout) are found, not just code-root paths."""
     artifact_dir_raw = str((latest.asi or {}).get("artifact_dir") or "")
     if not artifact_dir_raw:
         return trades_file, strategy_events_file, diagnostics_file
-    root = controller.root.resolve()
-    artifact_dir = Path(artifact_dir_raw)
-    if not artifact_dir.is_absolute():
-        artifact_dir = root / artifact_dir
-    try:
-        artifact_dir = artifact_dir.resolve()
-    except OSError:
-        return trades_file, strategy_events_file, diagnostics_file
-    if not artifact_dir.is_relative_to(root):
-        return trades_file, strategy_events_file, diagnostics_file
-    if not artifact_dir.exists():
+    artifact_dir = resolve_runtime_path(
+        artifact_dir_raw,
+        code_root=controller.root,
+        runtime_root=getattr(controller, "runtime_root", None) or controller.root,
+        execution_root=getattr(getattr(controller, "ctx", None), "execution_root", None),
+    )
+    if artifact_dir is None or not artifact_dir.is_dir():
         return trades_file, strategy_events_file, diagnostics_file
     if not trades_file:
         csvs = list(artifact_dir.glob("*trades.csv"))
@@ -363,17 +361,13 @@ def _backfill_artifact_files_from_latest_dir(
 def _existing_artifact_file(controller: "AutoresearchController", raw_path: Any) -> str:
     if not isinstance(raw_path, str) or not raw_path:
         return ""
-    root = controller.root.resolve()
-    candidate = Path(raw_path)
-    if not candidate.is_absolute():
-        candidate = root / candidate
-    try:
-        candidate = candidate.resolve()
-    except OSError:
-        return ""
-    if not candidate.is_relative_to(root) or not candidate.is_file():
-        return ""
-    return str(candidate)
+    resolved = resolve_runtime_path(
+        raw_path,
+        code_root=controller.root,
+        runtime_root=getattr(controller, "runtime_root", None) or controller.root,
+        execution_root=getattr(getattr(controller, "ctx", None), "execution_root", None),
+    )
+    return str(resolved) if resolved is not None and resolved.is_file() else ""
 
 
 def _artifact_files_from_latest_record(
