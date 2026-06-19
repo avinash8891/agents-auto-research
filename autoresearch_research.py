@@ -426,6 +426,13 @@ def _resolve_conductor_inputs(
             )
         )
     latest_outcome: dict[str, Any] = {}
+    # Objective for the conductor system prompt — sourced from the DB session, not
+    # hand-typed, so it tracks the real optimization target.
+    try:
+        latest_outcome["primary_metric"] = controller.primary_metric_name()
+        latest_outcome["direction"] = controller.direction()
+    except Exception:  # noqa: BLE001 — objective is best-effort; prompt has defaults
+        pass
     if latest:
         latest_outcome["thesis_id"] = latest.asi.get("thesis_id") or Path(latest.config).parent.name
         latest_outcome["metric"] = latest.metric

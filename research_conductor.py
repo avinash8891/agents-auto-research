@@ -180,7 +180,12 @@ async def run_research_conductor(
 ) -> ConductorResult:
     if not rendered_corpus:
         raise ValueError("mechanism conductor mode requires rendered_corpus")
-    system_prompt = _build_mechanism_system_prompt()
+    system_prompt = _build_mechanism_system_prompt(
+        strategy_description=_strategy_description_for(family_name),
+        backtest_contract=_backtest_contract_for(family_name),
+        primary_metric=str(latest_outcome.get("primary_metric") or "profit_factor"),
+        direction=str(latest_outcome.get("direction") or "higher"),
+    )
 
     user_prompt = rendered_corpus
 
