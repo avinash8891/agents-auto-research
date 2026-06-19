@@ -11,6 +11,17 @@ def resolve_runtime_root(code_root: Path) -> Path:
     return Path(raw).expanduser().resolve()
 
 
+# The live family baseline can be promoted past the committed seed config. The
+# promoted copy lives under the runtime root at a path that does NOT exist in the
+# (read-only) code root, so resolve_config_path's runtime-root fallback finds it
+# without clobbering the committed configs/<family>_base.yaml on local runs.
+PROMOTED_BASELINE_DIRNAME = "promoted_baselines"
+
+
+def promoted_baseline_path(runtime_root: Path, base_config_filename: str) -> Path:
+    return runtime_root / PROMOTED_BASELINE_DIRNAME / base_config_filename
+
+
 def serialize_config_path(path: Path, *, code_root: Path) -> str:
     resolved = path.resolve()
     code_root_resolved = code_root.resolve()

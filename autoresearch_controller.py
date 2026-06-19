@@ -38,6 +38,9 @@ from autoresearch_logging import get_logger
 from autoresearch_orchestration import (
     apply_forced_baseline_rerun as _orchestration_apply_forced_baseline_rerun,
 )
+from autoresearch_orchestration import (
+    promote_baseline_if_improved as _orchestration_promote_baseline_if_improved,
+)
 from autoresearch_orchestration import resolve_next_action as _orchestration_resolve_next_action
 from autoresearch_orchestration import (
     try_resume_halted_thesis as _orchestration_try_resume_halted_thesis,
@@ -875,6 +878,10 @@ class AutoresearchController:
         best = self.best_result(results)
         state["current_best"] = best
         state["thesis_statuses"] = self.thesis_statuses(results)
+        # Promote a validated improvement into the live baseline overlay (before
+        # plan_next_action) so the next thesis compounds on it instead of the
+        # original committed seed.
+        _orchestration_promote_baseline_if_improved(self, state)
 
         latest = self.latest_result(results)
         heartbeat = state.setdefault("heartbeat", {})

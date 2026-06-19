@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from autoresearch_paths import promoted_baseline_path
 from config_hash import _config_hash
 from diagnostic_contracts import build_required_diagnostic_specs
 from persistence_utils import write_text_atomic
@@ -36,14 +37,23 @@ def _resolved_base_config_path(thesis: "ResearchThesis") -> str:
     return baseline_path
 
 
-def _load_base_runtime_config(root: Path, thesis: "ResearchThesis") -> dict:
+def _load_base_runtime_config(
+    root: Path, thesis: "ResearchThesis", runtime_root: Path | None = None
+) -> dict:
     base_path = _resolved_base_config_path(thesis)
-    path = root / base_path
     if thesis.base_config_path and thesis.base_config_path != base_path:
         raise ValueError(
             f"Base config path does not match family baseline for thesis "
             f"'{thesis.thesis_id}': {thesis.base_config_path}"
         )
+    # Read the promoted overlay when one exists so research theses compound on the
+    # latest validated baseline; the committed seed is the fallback. The logical
+    # identity (base_path) stays the committed path for validation/hashing.
+    path = root / base_path
+    if runtime_root is not None:
+        overlay = promoted_baseline_path(runtime_root, f"{thesis.strategy_family}_base.yaml")
+        if overlay.exists():
+            path = overlay
     if thesis.base_config_path and not path.exists():
         raise ValueError(
             f"Base config path does not exist for thesis '{thesis.thesis_id}': {base_path}"
@@ -71,6 +81,7 @@ def _needs_code_contract(
     *,
     artifact_root: Path | None = None,
     status: str = "needs_code",
+    runtime_root: Path | None = None,
 ) -> "BacktestContract":
     family_name = thesis.strategy_family
     contract_id = thesis.thesis_id
@@ -85,7 +96,7 @@ def _needs_code_contract(
         strategy_family=family_name,
         baseline_config_path=_resolved_base_config_path(thesis),
         base_contract_id=thesis.base_contract_id,
-        base_config_hash=_config_hash(_load_base_runtime_config(root, thesis)),
+        base_config_hash=_config_hash(_load_base_runtime_config(root, thesis, runtime_root)),
         runtime_config={},
         hypothesis=thesis.hypothesis,
         mechanism=thesis.mechanism,
@@ -107,6 +118,7 @@ def _compile_runtime_config_contract(
     runtime_config: dict,
     *,
     artifact_root: Path | None = None,
+    runtime_root: Path | None = None,
 ) -> "BacktestContract":
     family_name = thesis.strategy_family
     contract_id = _config_hash(runtime_config)
@@ -127,7 +139,7 @@ def _compile_runtime_config_contract(
         strategy_family=family_name,
         baseline_config_path=_resolved_base_config_path(thesis),
         base_contract_id=thesis.base_contract_id,
-        base_config_hash=_config_hash(_load_base_runtime_config(root, thesis)),
+        base_config_hash=_config_hash(_load_base_runtime_config(root, thesis, runtime_root)),
         runtime_config=runtime_config,
         config_changes=dict(thesis.config_changes),
         hypothesis=thesis.hypothesis,
@@ -177,12 +189,16 @@ def compile_research_thesis(
     root: Path,
     *,
     artifact_root: Path | None = None,
+    runtime_root: Path | None = None,
 ) -> "BacktestContract":
     """Convert a validated ResearchThesis into an BacktestContract.
 
     Creates round-scoped selected thesis/config/contract artifacts.
 
     The contract_id is a content hash of the runtime config.
+
+    ``runtime_root`` redirects the base-config read to the promoted baseline
+    overlay when one exists, so theses compound on the latest validated config.
     """
     family_name = thesis.strategy_family
     if not thesis.required_diagnostic_specs:
@@ -191,15 +207,19 @@ def compile_research_thesis(
         )
 
     if thesis.requires_code_change:
-        return _needs_code_contract(thesis, root, artifact_root=artifact_root)
+        return _needs_code_contract(
+            thesis, root, artifact_root=artifact_root, runtime_root=runtime_root
+        )
 
-    base_config = _load_base_runtime_config(root, thesis)
+    base_config = _load_base_runtime_config(root, thesis, runtime_root)
     runtime_config = _runtime_config_for_registered_strategy(
         family_name, thesis.config_changes, base_config
     )
     if runtime_config is not None:
         if not runtime_config:
-            return _needs_code_contract(thesis, root, artifact_root=artifact_root)
+            return _needs_code_contract(
+                thesis, root, artifact_root=artifact_root, runtime_root=runtime_root
+            )
         if runtime_config == base_config:
             raise ValueError(_format_noop_config_change_error(thesis, base_config))
         violations = STRATEGIES[family_name].validate_runtime_config(runtime_config)
@@ -215,7 +235,7 @@ def compile_research_thesis(
                 + "; ".join(violations)
             )
         return _compile_runtime_config_contract(
-            thesis, root, runtime_config, artifact_root=artifact_root
+            thesis, root, runtime_config, artifact_root=artifact_root, runtime_root=runtime_root
         )
 
     raise ValueError(f"compile_research_thesis does not support family '{family_name}' yet")

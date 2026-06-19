@@ -7,7 +7,14 @@ from typing import TYPE_CHECKING, Any
 
 _log = logging.getLogger(__name__)
 
-from autoresearch_paths import serialize_config_path
+import yaml
+
+from autoresearch_paths import (
+    PROMOTED_BASELINE_DIRNAME,
+    promoted_baseline_path,
+    resolve_config_path,
+    serialize_config_path,
+)
 from autoresearch_runtime_paths import (
     research_round_id,
     research_round_root,
@@ -42,6 +49,82 @@ RESEARCH_RETRY_BUILDER_ERROR_CODES = frozenset(
         "builder_missing_primitive_contract",
     }
 )
+
+
+def _read_runtime_config(path: Path) -> dict[str, Any]:
+    """Load a runtime-config dict from a promoted source. selected_config.json is
+    JSON; committed baselines are YAML — accept either."""
+    text = path.read_text()
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = yaml.safe_load(text) or {}
+    if not isinstance(payload, dict):
+        raise ValueError(f"baseline source config must be a mapping: {path}")
+    runtime_config = payload.get("runtime_config", payload)
+    if not isinstance(runtime_config, dict):
+        raise ValueError(f"baseline source runtime_config must be a mapping: {path}")
+    return dict(runtime_config)
+
+
+def promote_baseline_if_improved(
+    controller: "AutoresearchController", state: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Persist the validated best config as the live family baseline overlay so the
+    next thesis compounds on it instead of the original committed seed.
+
+    ``current_best`` only holds a non-baseline config when a research round beat the
+    comparison bar (best_result filters to status=="keep"), so a config that differs
+    from the family baseline is, by construction, a validated improvement.
+
+    ponytail: promotes on the in-sample "keep" verdict — the cheap version that
+    closes the compounding loop. The rigorous gate is deferred (see
+    plans/004-baseline-promotion.md):
+      TODO(walkforward-gate): promote only after walkforward graduation, not the
+        in-sample verdict.
+      TODO(builder-edges): a winning config that depended on builder-generated code
+        is only reproducible on the same release; cross-deploy code-edge promotion
+        is unhandled.
+      TODO(fresh-job-reset): decide whether --fresh-job clears the overlay or
+        continues compounding from it.
+
+    Fail-soft: a failed promotion logs loud and returns None; it never aborts the
+    research run (compounding is an enhancement, not a required sub-step).
+    """
+    best = state.get("current_best") or {}
+    config_path = best.get("config")
+    if not config_path:
+        return None
+    family = controller.family
+    overlay_rel = f"{PROMOTED_BASELINE_DIRNAME}/{family.base_config_filename}"
+    if config_path in (family.baseline_config_path, overlay_rel):
+        return None  # best is already the live baseline — nothing to compound
+    try:
+        source = resolve_config_path(
+            config_path, code_root=controller.root, runtime_root=controller.runtime_root
+        )
+        runtime_config = _read_runtime_config(source)
+        overlay = promoted_baseline_path(controller.runtime_root, family.base_config_filename)
+        _write_text_atomic(overlay, yaml.safe_dump(runtime_config, sort_keys=False))
+    except Exception:
+        _log.exception(
+            "baseline promotion failed for best=%s; continuing with un-promoted "
+            "baseline. Remediation: confirm %s is readable and runtime_root is writable",
+            config_path,
+            config_path,
+        )
+        return None
+    record = {
+        "promoted_config": overlay_rel,
+        "promoted_from": config_path,
+        "metric": best.get("metric"),
+    }
+    state["promoted_baseline"] = record
+    trace(
+        "PROMOTE_BASELINE",
+        f"family={family.name} from={config_path} metric={best.get('metric')} -> {overlay_rel}",
+    )
+    return record
 
 
 def _controller_research_artifact_dir(controller: "AutoresearchController") -> str:

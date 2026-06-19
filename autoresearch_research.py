@@ -1100,7 +1100,9 @@ def _compile_and_dispatch_validated_thesis(
     try:
         runtime_root = getattr(controller, "runtime_root", None) or controller.root
         round_root = research_round_root(runtime_root, job_id, research_round)
-        contract = compile_research_thesis(validated, controller.root, artifact_root=round_root)
+        contract = compile_research_thesis(
+            validated, controller.root, artifact_root=round_root, runtime_root=runtime_root
+        )
         _merge_mechanism_fields_into_selected_thesis(round_root, raw_thesis)
         if pending_causal_model is not None:
             from causal_harvest import PendingCausalModelArtifact
@@ -2026,7 +2028,12 @@ def _handle_needs_code(
                 if getattr(controller, "job_runtime_root", None) is not None
                 else controller.root
             )
-            compile_research_thesis(validated, controller.root, artifact_root=artifact_root)
+            compile_research_thesis(
+                validated,
+                controller.root,
+                artifact_root=artifact_root,
+                runtime_root=getattr(controller, "runtime_root", None) or controller.root,
+            )
         except Exception as exc:
             log.warning(
                 "LOOP_HALT thesis=%s could not materialize builder artifacts: %s",
