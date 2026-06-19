@@ -13,14 +13,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 import autoresearch_orchestration as orch
 import compiler_research
 from autoresearch_controller import AutoresearchController
 from autoresearch_paths import PROMOTED_BASELINE_DIRNAME
+from autoresearch_planning import should_terminate
 from autoresearch_runtime_paths import research_round_id
-from research_types import ResearchThesis
+from causal_model import save_model
+from research_types import AccuracyPoint, CausalModel, ResearchThesis
+from screening import ScreeningResult, write_screenings
 from strategies import STRATEGIES
 from strategy_family import load_family
 
@@ -175,6 +179,74 @@ def test_promote_graduated_noop_when_nothing_graduated(tmp_path: Path) -> None:
     assert not (tmp_path / PROMOTED_BASELINE_DIRNAME / "ema_base.yaml").exists()
 
 
+# ── no-loop guarantee: promotion resets the plateau so walk-forward can't re-fire ──
+
+
+def _plateau_model() -> CausalModel:
+    """A causal model whose holdout skill has flatlined for plateau_rounds (5) — the
+    condition that, with all-fail screenings, triggers the plateau → walk-forward path."""
+    return CausalModel(
+        family="ema",
+        version=5,
+        accuracy_history=[
+            AccuracyPoint(
+                round_number=n,
+                model_version=n,
+                pnl_weighted_accuracy=0.50 + skill,
+                naive_accuracy=0.50,
+                skill=skill,
+                holdout_trade_count=100,
+            )
+            for n, skill in [(1, 0.100), (2, 0.104), (3, 0.108), (4, 0.109), (5, 0.109)]
+        ],
+    )
+
+
+def test_promotion_resets_plateau_so_walkforward_does_not_re_fire(tmp_path: Path) -> None:
+    controller = _controller(tmp_path)
+    controller.write_state({"job": 9, "research_round": 5})
+    save_model(_plateau_model(), runtime_root=tmp_path)
+    db_path = tmp_path / "ema_backtest_runs.db"
+    for round_number in range(1, 6):
+        write_screenings(
+            db_path,
+            [
+                ScreeningResult(
+                    rule="side == 'short' and bars_since_open == 1",
+                    verdict="kill_no_lift",
+                    sample_count=40,
+                    flagged_loss_rate=0.51,
+                    base_loss_rate=0.50,
+                    lift=0.01,
+                    p_value=0.80,
+                    overlap_with=None,
+                )
+            ],
+            round_number=round_number,
+            job_id=9,
+        )
+    family = load_family("ema")
+
+    # Plateau holds → the engine would (correctly) go to walk-forward.
+    assert should_terminate(tmp_path, family, tmp_path / "q", tmp_path / "r", [], job=9) is True
+
+    _log_backtest(
+        controller,
+        thesis_id="opening-window-short",
+        runtime_config=_ema_runtime_config(ema_length=9),
+        metric=2.0635,
+        job=9,
+        round_number=1,
+    )
+    _write_walkforward_report(tmp_path, "opening-window-short", graduated=True)
+    assert orch.promote_graduated_and_rebaseline(controller, controller.read_state()) is not None
+
+    # After promotion the plateau window is reset, so should_terminate flips to False:
+    # research resumes against the compounded baseline instead of re-entering
+    # walk-forward forever.
+    assert should_terminate(tmp_path, family, tmp_path / "q", tmp_path / "r", [], job=9) is False
+
+
 # ── base-config reads prefer the overlay ──────────────────────────────────────
 
 
@@ -200,3 +272,28 @@ def test_load_base_runtime_config_prefers_overlay_over_committed_seed(tmp_path: 
 
     seed = compiler_research._load_base_runtime_config(tmp_path, thesis)
     assert seed["ema_length"] == 21
+
+
+def test_load_base_runtime_config_fails_loud_when_overlay_needs_absent_builder_code(
+    tmp_path: Path,
+) -> None:
+    # D guard: an overlay promoted on another release carries a key this release's
+    # strategy can't honor (the builder code is absent). Reading it must fail loud
+    # with remediation, not silently or with a misleading thesis error.
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "ema_base.yaml").write_text(yaml.safe_dump(_ema_runtime_config()))
+    overlay_dir = tmp_path / PROMOTED_BASELINE_DIRNAME
+    overlay_dir.mkdir()
+    needs_builder_code = _ema_runtime_config(primitive_not_in_this_release=True)
+    (overlay_dir / "ema_base.yaml").write_text(yaml.safe_dump(needs_builder_code))
+
+    thesis = ResearchThesis(
+        thesis_id="redeployed-without-code",
+        strategy_family="ema",
+        hypothesis="Compound on a baseline that needs a built primitive.",
+        mechanism="Reads the promoted overlay on a release missing the code.",
+        config_changes={"rr_ratio": 2.0},
+    )
+
+    with pytest.raises(ValueError, match="not supported by this release"):
+        compiler_research._load_base_runtime_config(tmp_path, thesis, runtime_root=tmp_path)

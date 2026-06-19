@@ -50,10 +50,12 @@ def _load_base_runtime_config(
     # latest validated baseline; the committed seed is the fallback. The logical
     # identity (base_path) stays the committed path for validation/hashing.
     path = root / base_path
+    reading_overlay = False
     if runtime_root is not None:
         overlay = promoted_baseline_path(runtime_root, f"{thesis.strategy_family}_base.yaml")
         if overlay.exists():
             path = overlay
+            reading_overlay = True
     if thesis.base_config_path and not path.exists():
         raise ValueError(
             f"Base config path does not exist for thesis '{thesis.thesis_id}': {base_path}"
@@ -72,6 +74,22 @@ def _load_base_runtime_config(
         raise ValueError(
             f"Base runtime config must be a mapping for thesis '{thesis.thesis_id}': {base_path}"
         )
+    # D (cross-redeploy guard): write_baseline_overlay validated the overlay on the
+    # release that wrote it. If we are reading it on a DIFFERENT release that lacks a
+    # builder-generated primitive the promoted baseline depends on, the strategy
+    # rejects the now-unsupported keys. Fail loud HERE — pointing at the real cause —
+    # instead of surfacing later as a confusing "unsupported config_changes" error
+    # against the innocent thesis, or (worse) running a baseline the code can't honor.
+    if reading_overlay and thesis.strategy_family in STRATEGIES:
+        violations = STRATEGIES[thesis.strategy_family].validate_runtime_config(runtime_config)
+        if violations:
+            raise ValueError(
+                "Promoted baseline overlay is not supported by this release "
+                f"({path}): {'; '.join(violations)}. It was promoted on a release with "
+                "builder-generated code that is absent here. Remediation: merge that "
+                "code (see runtime/builder-promotions/) and redeploy, or remove the "
+                f"overlay at {promoted_baseline_path(runtime_root, f'{thesis.strategy_family}_base.yaml')}"
+            )
     return dict(runtime_config)
 
 

@@ -79,7 +79,25 @@ table must stay mutually consistent:
   (default) vs `--reset-baseline` clears overlay + causal model together (B's
   invariant).
 
-### D. Builder-code edge promotion
+### D. Builder-code edge promotion — PARTIAL (fail-loud guard done)
+SHIPPED: a cross-redeploy **fail-loud guard** in `_load_base_runtime_config` — if the
+promoted overlay is read on a release whose strategy can't honor it (a builder
+primitive is absent), it raises a clear error with remediation instead of failing
+silently or surfacing a misleading "unsupported config_changes" error against the
+innocent thesis.
+
+DELIBERATELY NOT DONE (separate capability + safety call): auto-reproducing the
+generated code on a new release. The builder promotion queue is `queued_review` by
+design — auto-running unreviewed AI-generated code crosses that boundary. The
+responsible path is: graduation escalates the code for **merge** (auto-PR or operator
+review), the merged code ships in the next release, then the overlay validates and
+compounding continues. Until that capability exists, a code-dependent edge promotes
+on its building release and fails loud on a release missing the code. Sub-items if we
+build the capability: persist `runtime/builder-promotions/` to the **runtime root**
+(today it is written to the ephemeral code root), and either auto-apply the persisted
+files at startup or open a PR on graduation.
+
+### D-orig. Builder-code edge promotion
 - A graduated edge that depended on builder-generated code is only reproducible
   on the same release. Promote the builder promotion manifest
   (`runtime/builder-promotions/<family>/<thesis>/`) **with** the config — apply
