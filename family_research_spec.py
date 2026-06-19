@@ -73,24 +73,6 @@ def _coerce_positive_resolution_minutes(value: Any) -> int | None:
     return None
 
 
-def validate_family_config_changes(family_name: str, thesis: dict[str, Any]) -> dict[str, Any]:
-    spec = get_family_research_spec(family_name)
-    config_changes = thesis.get("config_changes") or {}
-    invalid = sorted(set(config_changes) - spec.allowed_config_keys)
-    if not invalid:
-        return thesis
-    sanitized = dict(thesis)
-    sanitized["requires_code_change"] = True
-    sanitized["invalid_config_keys"] = invalid
-    sanitized["code_change_idea"] = sanitized.get("code_change_idea") or {
-        "idea": f"{family_name} thesis requires unsupported runtime keys",
-        "what_code_needs": f"Add {', '.join(invalid)} support to the {family_name} family compiler/runtime or reformulate the thesis.",
-        "evidence": [f"Unsupported keys proposed for {family_name}: {', '.join(invalid)}"],
-    }
-    sanitized["config_changes"] = {}
-    return sanitized
-
-
 def proposed_change_is_single_or_coupled(
     family_name: str,
     proposed_change: dict[str, Any],
