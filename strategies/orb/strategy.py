@@ -8,7 +8,7 @@ from strategies.orb.contract import (
     render_contract_to_runtime_config,
     resolve_contract_support,
 )
-from strategies.orb.defaults import _get_orb_defaults
+from strategies.orb.defaults import get_orb_defaults
 from strategies.orb.prompt import DESCRIPTION_FOR_RESEARCH
 from strategies.orb.research import ORB_RESEARCH_SPEC
 from strategies.orb.runner import run_backtest
@@ -61,7 +61,7 @@ class ORBStrategy(BaseStrategy):
         return run_backtest(config)
 
     def get_defaults(self) -> dict[str, Any]:
-        return _get_orb_defaults()
+        return get_orb_defaults()
 
     def validate_runtime_config(self, config: dict[str, Any]) -> list[str]:
         return validate_orb_runtime_config(config)

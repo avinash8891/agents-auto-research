@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from numba_kernels import compute_atr_nb, njit
+from strategies.orb.defaults import get_orb_defaults
 
 
 @njit(cache=True)
@@ -280,16 +281,21 @@ def apply_exits(
     config: dict,
 ) -> pd.DataFrame:
     """Simulate trades using numba-JIT kernel."""
-    use_time_stop = config.get("use_time_stop", False)
-    use_failed_breakout = config.get("use_failed_breakout_exit", False)
-    use_vol_trail = config.get("use_volatility_trail", False)
-    use_opposite_break = config.get("use_opposite_break_exit", False)
-    time_stop_hour = config.get("time_stop_hour", 12)
-    time_stop_minute = config.get("time_stop_minute", 0)
-    vol_trail_mult = config.get("vol_trail_atr_mult", 1.0)
-    slippage = config.get("slippage_pct", 0.05) / 100.0
-    max_hold = config.get("max_hold_bars", 78)
-    conservative_sl_fill = config.get("conservative_sl_fill", False)
+    # Defaults come from the one source (configs/orb_base.yaml via get_orb_defaults),
+    # not re-declared literals — so the description, schema, and runtime cannot drift.
+    defaults = get_orb_defaults()
+    use_time_stop = config.get("use_time_stop", defaults["use_time_stop"])
+    use_failed_breakout = config.get(
+        "use_failed_breakout_exit", defaults["use_failed_breakout_exit"]
+    )
+    use_vol_trail = config.get("use_volatility_trail", defaults["use_volatility_trail"])
+    use_opposite_break = config.get("use_opposite_break_exit", defaults["use_opposite_break_exit"])
+    time_stop_hour = config.get("time_stop_hour", defaults["time_stop_hour"])
+    time_stop_minute = config.get("time_stop_minute", defaults["time_stop_minute"])
+    vol_trail_mult = config.get("vol_trail_atr_mult", defaults["vol_trail_atr_mult"])
+    slippage = config.get("slippage_pct", defaults["slippage_pct"]) / 100.0
+    max_hold = config.get("max_hold_bars", defaults["max_hold_bars"])
+    conservative_sl_fill = config.get("conservative_sl_fill", defaults["conservative_sl_fill"])
 
     close_arr = close.values
     high_arr = high.values
