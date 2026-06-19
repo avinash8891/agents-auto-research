@@ -12,3 +12,4 @@ def test_mechanism_prompt_documents_requested_primitive_contract() -> None:
         "- actionable=true requires predictions and either proposed_change or "
         "requested_primitive."
     ) in prompt
+    assert "requested_primitive.formula" in prompt

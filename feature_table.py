@@ -11,9 +11,9 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from agent_feature_registry import active_agent_feature_columns
+from agent_feature_registry import active_agent_feature_columns, active_agent_feature_definitions
 from autoresearch_logging import get_logger
-from autoresearch_runtime_paths import research_round_root
+from autoresearch_runtime_paths import research_round_root, resolve_runtime_root
 from backtest.data_universe import default_data_root
 from feature_table_extractors import family_entry_features
 
@@ -194,6 +194,7 @@ def build_feature_table(
     events: list[dict],
     family: str,
     runtime_config: dict[str, Any] | None = None,
+    runtime_root: Path | None = None,
     quarantine_path: Path | None = None,
 ) -> pd.DataFrame:
     bars = _normalize_bars(bars_df)
@@ -229,13 +230,20 @@ def build_feature_table(
         )
         for trade in trades.to_dict("records")
     ]
-    columns = _feature_columns(extra_regime_columns)
+    root = runtime_root or resolve_runtime_root(Path.cwd())
+    agent_features = active_agent_feature_definitions(root, str(family).lower())
+    agent_feature_columns = frozenset(
+        str(feature.get("column")) for feature in agent_features if feature.get("column")
+    )
+    columns = _feature_columns(extra_regime_columns, agent_feature_columns=frozenset())
     out = pd.DataFrame(rows, columns=columns)
     if out.empty:
         out = pd.DataFrame(columns=columns)
 
     out = _coerce_feature_dtypes(out)
-    _assert_leakage_guard(out, extra_entry_columns=extra_regime_columns)
+    out = _compute_agent_feature_columns(out, agent_features)
+    out = out.reindex(columns=_feature_columns(extra_regime_columns, agent_feature_columns))
+    _assert_leakage_guard(out, extra_entry_columns=extra_regime_columns | agent_feature_columns)
     return out
 
 
@@ -792,13 +800,70 @@ def _extra_regime_columns(labels: pd.DataFrame) -> frozenset[str]:
     )
 
 
-def _feature_columns(extra_regime_columns: frozenset[str]) -> list[str]:
+def _feature_columns(
+    extra_regime_columns: frozenset[str], agent_feature_columns: frozenset[str] = frozenset()
+) -> list[str]:
     columns = list(_FEATURE_COLUMNS)
     insert_at = columns.index("regime_label") + 1
     for column in sorted(extra_regime_columns):
         columns.insert(insert_at, column)
         insert_at += 1
+    insert_at = columns.index("stop_distance_pct")
+    for column in sorted(agent_feature_columns):
+        if column not in columns:
+            columns.insert(insert_at, column)
+            insert_at += 1
     return columns
+
+
+def _compute_agent_feature_columns(
+    out: pd.DataFrame, agent_features: list[dict[str, Any]]
+) -> pd.DataFrame:
+    if out.empty or not agent_features:
+        return out
+    computed = out.copy()
+    for feature in agent_features:
+        column = str(feature.get("column") or "")
+        formula = str(feature.get("formula") or "")
+        if not column or not formula:
+            continue
+        computed.loc[:, column] = _evaluate_agent_feature_formula(formula, computed)
+    return computed
+
+
+def _evaluate_agent_feature_formula(formula: str, features: pd.DataFrame) -> pd.Series:
+    local_dict: dict[str, Any] = {
+        column: pd.to_numeric(features[column], errors="coerce")
+        for column in features.columns
+        if column not in OUTCOME_COLUMNS
+    }
+    local_dict.update(
+        {
+            "abs": np.abs,
+            "max": np.maximum,
+            "min": np.minimum,
+            "rolling_mean": lambda values, window: pd.Series(values)
+            .rolling(int(window), min_periods=1)
+            .mean(),
+            "rolling_std": lambda values, window: pd.Series(values)
+            .rolling(int(window), min_periods=1)
+            .std(),
+            "rolling_rank": _rolling_rank,
+        }
+    )
+    result = pd.eval(formula, local_dict=local_dict, engine="python")
+    if isinstance(result, pd.Series):
+        return pd.to_numeric(result, errors="coerce")
+    return pd.Series([result] * len(features), index=features.index, dtype="float64")
+
+
+def _rolling_rank(values: Any, window: int) -> pd.Series:
+    series = pd.Series(values)
+    size = int(window)
+    return series.rolling(size, min_periods=1).apply(
+        lambda window_values: pd.Series(window_values).rank(pct=True).iloc[-1],
+        raw=False,
+    )
 
 
 def _int_or_default(value: object, default: int) -> int:

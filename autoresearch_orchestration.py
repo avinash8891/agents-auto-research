@@ -670,6 +670,18 @@ def build_missing_primitives_for_state(
         )
     except Exception as exc:  # noqa: BLE001 - improvement export must not block orchestration
         _log.warning("refreshing reflexio export after builder failed: %s", exc)
+    if builder_result.get("error_code") == "builder_needs_data":
+        state = _mark_needs_data_manual_review(
+            root=runtime_root,
+            state=state,
+            thesis_id=thesis_id,
+            thesis=thesis,
+            research_round=int(research_round or state.get("research_round") or 0),
+        )
+        controller.write_state(state)
+        controller.write_current_md(state, controller.read_results())
+        trace("LOOP", f"builder needs data thesis={thesis_id}; halted")
+        return state
     if builder_result.get("status") == "completed" and builder_result.get("validation_passed"):
         generated_config = builder_result.get("generated_config")
         execution_root = builder_result.get("execution_root")

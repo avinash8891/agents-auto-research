@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_feature_registry import register_agent_feature
 from backtest_run_db import BacktestRunDB
 from causal_model import load_model, save_model
 from experiment_evaluator import evaluate_predictions
@@ -210,6 +211,14 @@ def test_walkforward_robust_fixture_graduates_and_writes_report(
     monkeypatch.setenv("AUTORESEARCH_RUNTIME_ROOT", str(tmp_path))
     db_path = tmp_path / "ema_backtest_runs.db"
     _seed_run(db_path)
+    register_agent_feature(
+        tmp_path,
+        column="rvol_spike",
+        formula="rvol / rolling_mean(rvol, 20)",
+        required_data=["ohlcv"],
+        family_name="ema",
+        thesis_id="thesis-001",
+    )
 
     report = evaluate_walkforward(
         family="ema",
@@ -236,6 +245,7 @@ def test_walkforward_robust_fixture_graduates_and_writes_report(
     assert report["graduated"] is True
     assert persisted["survival_rate"] == pytest.approx(2 / 3)
     assert persisted["windows"][0]["directions_hold"] is True
+    assert '"status": "validated"' in (tmp_path / "runtime" / "agent_features.jsonl").read_text()
 
 
 def test_walkforward_curve_fit_fixture_demotes_factor_and_run(

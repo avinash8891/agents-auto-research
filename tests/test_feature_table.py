@@ -238,6 +238,34 @@ def test_entry_time_columns_for_family_include_active_agent_features(tmp_path: P
     assert "rvol_spike" not in entry_time_columns_for_family(tmp_path, "orb")
 
 
+def test_build_feature_table_computes_active_agent_feature_columns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    register_agent_feature(
+        tmp_path,
+        column="rvol_spike",
+        formula="rvol / rolling_mean(rvol, 20)",
+        required_data=["ohlcv"],
+        family_name="ema",
+        thesis_id="ema-1",
+    )
+
+    table = build_feature_table(
+        _trades_df(), _bars_df(), events=[], family="ema", runtime_root=tmp_path
+    )
+    other_family = build_feature_table(
+        _trades_df(), _bars_df(), events=[], family="orb", runtime_root=tmp_path
+    )
+
+    assert "rvol_spike" in table.columns
+    assert "rvol_spike" not in other_family.columns
+    row = table.iloc[0]
+    assert row["rvol_spike"] == pytest.approx(1.0)
+
+
 def test_build_feature_table_computes_leakage_safe_feature_expansion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

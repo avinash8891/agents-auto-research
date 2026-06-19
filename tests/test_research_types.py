@@ -37,12 +37,14 @@ def test_actionable_mechanism_allows_requested_primitive_without_proposed_change
         "kind": "entry_feature",
         "description": "Entry-time z-score of signed volume.",
         "required_data": ["trade_signed_volume"],
+        "formula": "signed_volume / rolling_mean(signed_volume, 20)",
     }
 
     proposal = MechanismProposal.model_validate(payload)
 
     assert proposal.requested_primitive is not None
     assert proposal.requested_primitive.name == "signed_volume_z"
+    assert proposal.requested_primitive.formula == "signed_volume / rolling_mean(signed_volume, 20)"
     assert proposal.proposed_change is None
 
 

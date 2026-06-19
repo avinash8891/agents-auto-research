@@ -13,6 +13,7 @@ from difflib import unified_diff
 from pathlib import Path
 from typing import Any
 
+from agent_feature_registry import register_agent_feature
 from agent_token_usage import accumulate_usage
 from artifact_io import timestamp_now, write_json_artifact
 from autoresearch_logging import get_logger
@@ -20,6 +21,7 @@ from autoresearch_paths import serialize_config_path
 from compiler_implementation_verify import verify_builder_implementation_contract
 from improvement_reflexion import build_latest_reflexion_feedback
 from persistence_utils import write_text_atomic
+from raw_input_manifest import RawInputManifestError, available_raw_inputs
 from strategy_family import load_family
 from trace_sdk import record_event, trace
 
@@ -318,6 +320,56 @@ def _resolve_missing_primitives(proposal: dict[str, Any], compilation: dict[str,
     if isinstance(mp, list):
         return mp
     return []
+
+
+def _requested_primitive(proposal: dict[str, Any]) -> dict[str, Any] | None:
+    primitive = proposal.get("requested_primitive")
+    return primitive if isinstance(primitive, dict) else None
+
+
+def _required_data_names(primitive: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for item in primitive.get("required_data") or []:
+        if isinstance(item, str) and item:
+            names.append(item)
+        elif isinstance(item, dict) and isinstance(item.get("name"), str) and item.get("name"):
+            names.append(str(item["name"]))
+    return names
+
+
+def _classify_requested_primitive_data(
+    root: Path, proposal: dict[str, Any]
+) -> dict[str, Any] | None:
+    primitive = _requested_primitive(proposal)
+    if primitive is None:
+        return None
+    required = _required_data_names(primitive)
+    if not required:
+        return None
+    try:
+        available = available_raw_inputs(root)
+    except RawInputManifestError as exc:
+        return {
+            "status": "error",
+            "error_code": "builder_raw_input_manifest_invalid",
+            "reason": str(exc),
+            "generated_config": None,
+            "validation_passed": False,
+            "required_data": required,
+        }
+    missing = sorted(set(required) - set(available))
+    if not missing:
+        return None
+    return {
+        "status": "needs_data",
+        "error_code": "builder_needs_data",
+        "reason": f"requested primitive requires unavailable raw inputs: {', '.join(missing)}",
+        "generated_config": None,
+        "validation_passed": False,
+        "requested_primitive": primitive,
+        "required_data": required,
+        "missing_raw_inputs": missing,
+    }
 
 
 def _validate_missing_primitives_contract(
@@ -907,7 +959,49 @@ def _record_builder_promotion_candidate(
     }
     write_json_artifact(promotion_root / "manifest.json", manifest)
     _append_jsonl(source_root / BUILDER_PROMOTION_QUEUE, manifest)
+    _append_builder_capability_registry(source_root, manifest=manifest, task=task)
     return manifest
+
+
+def _append_builder_capability_registry(
+    root: Path, *, manifest: dict[str, Any], task: BuilderTask
+) -> None:
+    entry = {
+        "family_name": task.family_name,
+        "kind": task.mechanism_contract_kind,
+        "missing_primitives": list(task.missing_primitives),
+        "config_change_keys": list(task.config_change_keys),
+        "diagnostic_keys": [spec.get("key", "") for spec in task.required_diagnostic_specs],
+        "promoted_files": list(manifest.get("promoted_files") or []),
+        "promotion_dir": manifest.get("promotion_dir"),
+        "thesis_id": manifest.get("thesis_id"),
+        "build_status": "passed",
+        "created_by": "agent",
+        "created_at": manifest.get("created_at") or timestamp_now(),
+    }
+    _append_jsonl(root / BUILDER_CAPABILITY_REGISTRY, entry)
+
+
+def _register_declarative_entry_feature(
+    root: Path, *, proposal: dict[str, Any], family_name: str, thesis_id: str
+) -> None:
+    primitive = _requested_primitive(proposal)
+    if primitive is None or primitive.get("kind") != "entry_feature":
+        return
+    formula = primitive.get("formula")
+    if not isinstance(formula, str) or not formula.strip():
+        return
+    name = primitive.get("name")
+    if not isinstance(name, str) or not name:
+        return
+    register_agent_feature(
+        root,
+        column=name,
+        formula=formula,
+        required_data=_required_data_names(primitive),
+        family_name=family_name,
+        thesis_id=thesis_id,
+    )
 
 
 def _ensure_workspace_generated_config(
@@ -1401,6 +1495,9 @@ def build_missing_primitives(
         )
         if invalid_contract is not None:
             return invalid_contract
+        data_classification = _classify_requested_primitive_data(root, proposal)
+        if data_classification is not None:
+            return data_classification
         generated_name = (artifact_root / "selected_config.json").resolve()
         config_path = serialize_config_path(generated_name, code_root=root)
         builder_workspace = BuilderWorkspace(artifact_root=artifact_root)
@@ -1597,6 +1694,12 @@ def build_missing_primitives(
                 workspace_root=workspace_root,
                 artifact_root=artifact_root,
                 task=builder_task,
+                thesis_id=thesis_id,
+            )
+            _register_declarative_entry_feature(
+                root,
+                proposal=proposal,
+                family_name=family_name,
                 thesis_id=thesis_id,
             )
             existing_result["execution_root"] = workspace_root.as_posix()
@@ -1824,6 +1927,12 @@ def build_missing_primitives(
                     workspace_root=workspace_root,
                     artifact_root=artifact_root,
                     task=builder_task,
+                    thesis_id=thesis_id,
+                )
+                _register_declarative_entry_feature(
+                    root,
+                    proposal=proposal,
+                    family_name=family_name,
                     thesis_id=thesis_id,
                 )
                 out["execution_root"] = workspace_root.as_posix()

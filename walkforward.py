@@ -9,6 +9,7 @@ from typing import Any, Sequence
 
 import pandas as pd
 
+from agent_feature_registry import mark_agent_features_validated
 from autoresearch_constants import (
     research_engine_walkforward_step_months,
     research_engine_walkforward_survival_pct,
@@ -151,6 +152,8 @@ def evaluate_walkforward(
         )
     if verdict == "demoted" and factor_rule:
         _demote_factor(family, factor_rule, report, runtime_root=runtime_root, code_root=code_root)
+    if verdict == "graduated":
+        mark_agent_features_validated(runtime_root, family_name=family, thesis_id=thesis_id)
     return report
 
 

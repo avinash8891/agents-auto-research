@@ -129,6 +129,7 @@ class RequestedPrimitive(BaseModel):
     kind: Literal["entry_feature", "management"]
     description: str
     required_data: list[str] = Field(default_factory=list)
+    formula: str | None = None
 
     @model_validator(mode="after")
     def _validate_requested_primitive(self) -> "RequestedPrimitive":
@@ -138,6 +139,8 @@ class RequestedPrimitive(BaseModel):
             raise ValueError("requested_primitive.description is required")
         if not all(item.strip() for item in self.required_data):
             raise ValueError("requested_primitive.required_data entries must be non-empty")
+        if self.formula is not None and not self.formula.strip():
+            raise ValueError("requested_primitive.formula must be non-empty when provided")
         return self
 
 

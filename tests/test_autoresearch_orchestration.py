@@ -485,6 +485,45 @@ def test_build_missing_primitives_routes_retryable_builder_failure_to_research(
     assert current_md[-1]["state"] == "blocked"
 
 
+def test_build_missing_primitives_routes_builder_needs_data_to_halt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = {"state": "blocked", "job": 8, "research_round": 2}
+    thesis = {
+        "thesis_id": "needs-data-thesis",
+        "requested_primitive": {
+            "name": "signed_volume_z",
+            "kind": "entry_feature",
+            "required_data": ["trade_signed_volume"],
+        },
+    }
+    ctrl, written, current_md = _controller(state, tmp_path)
+    monkeypatch.setattr(
+        "compiler_pipeline.build_missing_primitives",
+        lambda root, thesis_id, artifact_root=None, research_round_id=None: {
+            "status": "needs_data",
+            "error_code": "builder_needs_data",
+            "reason": "missing trade_signed_volume",
+            "validation_passed": False,
+        },
+    )
+
+    out = orch.build_missing_primitives_for_state(
+        ctrl,
+        state,
+        "needs-data-thesis",
+        thesis,
+        research_round=2,
+    )
+
+    request_path = tmp_path / "runtime/jobs/job-8/research/round-2/data_acquisition_request.json"
+    assert out["state"] == "halted"
+    assert out["halted_reason"] == "needs_data"
+    assert request_path.exists()
+    assert written[-1]["next_action"]["type"] == "manual_review"
+    assert current_md[-1]["halted_reason"] == "needs_data"
+
+
 def test_build_missing_primitives_records_deterministic_builder_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -33,6 +33,7 @@ ACTIONABLE OUTPUT RULES
 - actionable=true requires predictions and either proposed_change or requested_primitive.
 - proposed_change must contain exactly one changed key when present.
 - requested_primitive.kind must be "entry_feature" or "management" when present.
+- requested_primitive.formula is required for auto-persisted entry_feature columns.
 - predictions are required iff actionable=true.
 - predictions must include at least two distinct MetricName values from:
   profit_factor, trade_count, max_drawdown, median_expectancy.
@@ -48,4 +49,8 @@ Return only JSON matching this shape:
   "requested_primitive": null,
   "predictions": null
 }
+
+When requested_primitive is not null, use:
+{"name": "snake_case_feature", "kind": "entry_feature", "description": "...",
+"required_data": ["ohlcv"], "formula": "rvol / rolling_mean(rvol, 20)"}
 """
