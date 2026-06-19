@@ -215,6 +215,20 @@ def regime_feature_columns() -> frozenset[str]:
     return frozenset({"regime_label"}) | _extra_regime_columns(labels)
 
 
+def regime_record_for_date(target_date: object) -> dict[str, Any] | None:
+    """Every regime-detection value the labels feed carries for one calendar date —
+    that date's OWN (un-lagged) labels and scores, keyed by column. Returns None when no
+    row matches. Note the lag contract (see load_regime_labels): a trade entered on date
+    D is labelled with the prior session's record, so this raw day-D row is the engine's
+    view OF day D, not the value applied to a D entry."""
+    labels = load_regime_labels()
+    target = pd.to_datetime(target_date).date()
+    match = labels[labels["date"] == target]
+    if match.empty:
+        return None
+    return {key: value for key, value in match.iloc[0].to_dict().items() if key != "date"}
+
+
 def build_feature_table(
     trades_df: pd.DataFrame,
     bars_df: pd.DataFrame,

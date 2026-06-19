@@ -195,6 +195,22 @@ def _regime_summary_text(research_round: int, current_job: int | None) -> str:
         return f"Regime summary unavailable: {exc}"
 
 
+def _regime_for_date_text(date: str) -> str:
+    """Every regime value the labels feed carries for one calendar date. Fail-open:
+    a bad date or unreachable labels parquet degrades to an explanatory line."""
+    try:
+        from feature_table import regime_record_for_date
+
+        record = regime_record_for_date(date)
+        if record is None:
+            return f"No regime record for {date} (date outside the labels feed's range)."
+        fields = " | ".join(f"{key}={value}" for key, value in sorted(record.items()))
+        return f"REGIME VALUES for {date} (day's own labels; entries lag one session):\n{fields}"
+    except Exception as exc:  # noqa: BLE001 — optional context, never fatal to the round
+        log.warning("get_regime_for_date failed for %r: %s", date, exc)
+        return f"Regime values unavailable for {date}: {exc}"
+
+
 async def run_research_conductor(
     trades_file: str,
     latest_outcome: dict[str, Any],
@@ -233,6 +249,12 @@ async def run_research_conductor(
         model_provider="openai",
         model_name=_CONDUCTOR_MODEL,
     )
+    try:  # fail-open: surface the rich regime dimensions available this run
+        from feature_table import regime_feature_columns
+
+        log.info("CONDUCTOR regime dimensions available: %s", sorted(regime_feature_columns()))
+    except Exception as exc:  # noqa: BLE001
+        log.info("CONDUCTOR regime dimensions unavailable: %s", exc)
     refinement_session = _REFINEMENT_RECORDER.start_session(
         summary=f"research round {research_round}",
         objective="produce the next thesis proposal",
@@ -987,6 +1009,27 @@ async def run_research_conductor(
             trace_agent_tool_result("research-conductor", trace_id, "get_regime_summary", output)
             return output
 
+        @function_tool(name_override="get_regime_for_date")
+        async def get_regime_for_date_tool(date: str) -> str:
+            """Return every regime-detection value the labels feed has for ONE calendar
+            date (regime_label plus trend / volatility / breadth labels and score
+            columns). Use to inspect what the regime engine saw on a specific day — e.g.
+            the day of a large residual loss. NOTE: a trade entered on date D is labelled
+            with the PRIOR session's record (the feature table lags regime by one trading
+            day); this returns date D's own labels. Args: date = YYYY-MM-DD."""
+            tools_called_this_round.add("get_regime_for_date")
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "get_regime_for_date",
+                date,
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            output = _regime_for_date_text(date)
+            trace_agent_tool_result("research-conductor", trace_id, "get_regime_for_date", output)
+            return output
+
         @function_tool(name_override="get_tuning_examples")
         async def get_tuning_examples_tool() -> str:
             """Return examples of parameter tuning vs a real mechanism change.
@@ -1035,6 +1078,7 @@ async def run_research_conductor(
                 rejection_pattern_summary_tool,
                 get_dimension_examples_tool,
                 get_regime_summary_tool,
+                get_regime_for_date_tool,
                 get_tuning_examples_tool,
             ],
             model=model,

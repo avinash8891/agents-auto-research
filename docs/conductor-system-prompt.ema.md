@@ -95,9 +95,11 @@ Use your tools to find a new dimension before declining; each tool's own descrip
 says when to use it. The key moves: analyze_trades to TEST a specific data hypothesis
 (slice winners vs losers a new way — do not dredge with "show me everything");
 web_search for external market-structure / academic evidence; get_dimension_examples
-for the catalog of dimensions to explore; get_regime_summary for the per-regime
-win-rate / profit-factor split when you suspect a regime-conditioned edge. Ground your
-proposal in a data finding (analyst) and, when relevant, external evidence (web_search).
+for the catalog of dimensions to explore; get_regime_summary for the per-regime-dimension
+win-rate / profit-factor split when you suspect a regime-conditioned edge, and
+get_regime_for_date to inspect every regime value on a specific day (e.g. a large
+residual loss). Ground your proposal in a data finding (analyst) and, when relevant,
+external evidence (web_search).
 
 REFLEXION
 Prior-round critiques of the analyst and web-researcher flow into their next call
