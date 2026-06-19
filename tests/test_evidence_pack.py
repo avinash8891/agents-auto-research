@@ -97,6 +97,42 @@ def test_regime_performance_buckets_continuous_score_columns_into_terciles() -> 
     assert len(summary[0]["splits"]) == 3
 
 
+def test_residual_rows_and_stats_carry_every_regime_dimension() -> None:
+    from evidence_pack import (
+        _regime_dimension_columns,
+        _residual_entry_columns,
+        _residual_stats,
+    )
+
+    features = pd.DataFrame(
+        {
+            "trade_id": ["t1"],
+            "side": ["long"],
+            "gap_pct": [0.5],
+            "regime_label": ["risk_on"],
+            "volatility_regime": ["high_vol"],
+            "out_pnl": [1.0],
+            "out_is_loss": [False],
+        }
+    )
+
+    entry_cols = _residual_entry_columns(features)
+    # The extra regime dimension rides along; outcomes and the id key do not.
+    assert "volatility_regime" in entry_cols and "regime_label" in entry_cols
+    assert "out_pnl" not in entry_cols and "trade_id" not in entry_cols
+    assert _regime_dimension_columns(features) == ["regime_label", "volatility_regime"]
+
+    summary = [
+        {"unexplained_abs_pnl": 5.0, "regime_label": "risk_off", "volatility_regime": "high_vol"},
+        {"unexplained_abs_pnl": 3.0, "regime_label": "risk_off", "volatility_regime": "low_vol"},
+        {"unexplained_abs_pnl": 2.0, "regime_label": "risk_on", "volatility_regime": "high_vol"},
+    ]
+    stats = _residual_stats(summary, ["regime_label", "volatility_regime"])
+    # Every regime dimension gets its own split, not just regime_label.
+    assert stats["by_regime_label"] == {"risk_off": 2, "risk_on": 1}
+    assert stats["by_volatility_regime"] == {"high_vol": 2, "low_vol": 1}
+
+
 def test_regime_performance_fails_open_without_columns_or_outcomes() -> None:
     assert regime_performance(None, ["regime_label"]) == []
     assert regime_performance(pd.DataFrame(), ["regime_label"]) == []

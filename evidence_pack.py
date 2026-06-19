@@ -13,7 +13,12 @@ from autoresearch_artifacts import round_number_from_path as _round_number_from_
 from autoresearch_runtime_paths import resolve_runtime_root
 from causal_model import CausalModelStore, residual_map
 from family_research_spec import get_family_research_spec
-from feature_table import ENTRY_TIME_COLUMNS, FeatureTableArtifact, FeatureTableMissingError
+from feature_table import (
+    ENTRY_TIME_COLUMNS,
+    OUTCOME_COLUMNS,
+    FeatureTableArtifact,
+    FeatureTableMissingError,
+)
 from metrics import _profit_factor_from_pnl
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult
@@ -62,7 +67,7 @@ def build_corpus(
         round_number=round_number,
         model=model,
         residual_summary=residual_summary,
-        residual_stats=_residual_stats(residual_summary),
+        residual_stats=_residual_stats(residual_summary, _regime_dimension_columns(features)),
         screening_history=_load_screening_history(
             runtime_root,
             family,
@@ -337,13 +342,34 @@ def _residual_summary(model: CausalModel, features: pd.DataFrame) -> list[dict]:
         }
         if trade_id in feature_by_trade.index:
             features_row = feature_by_trade.loc[trade_id]
-            for column in sorted((ENTRY_TIME_COLUMNS & set(features.columns)) - {"trade_id"}):
+            for column in _residual_entry_columns(features):
                 item[column] = _jsonable(features_row[column])
         summary.append(item)
     return summary
 
 
-def _residual_stats(summary: list[dict]) -> dict:
+def _residual_entry_columns(features: pd.DataFrame) -> list[str]:
+    """Entry-time columns to carry on each residual row: the static entry schema PLUS the
+    regime feed's extra dynamic columns (everything outside ENTRY_TIME_COLUMNS|OUTCOME —
+    the leakage guard's own entry-time classification), so residual rows expose every
+    regime dimension, not just regime_label. trade_id is the key, not a feature."""
+    columns = set(features.columns)
+    extra_entry = columns - ENTRY_TIME_COLUMNS - OUTCOME_COLUMNS
+    return sorted(((ENTRY_TIME_COLUMNS | extra_entry) & columns) - {"trade_id"})
+
+
+def _regime_dimension_columns(features: pd.DataFrame | None) -> list[str]:
+    """Regime dimensions present in the feature table: regime_label plus the feed's extra
+    dynamic columns (trend / volatility / breadth labels and scores). Identified
+    structurally (outside the static entry/outcome schema), so no parquet read is needed."""
+    if features is None or features.empty:
+        return []
+    columns = set(features.columns)
+    extra_entry = columns - ENTRY_TIME_COLUMNS - OUTCOME_COLUMNS
+    return sorted(({"regime_label"} & columns) | extra_entry)
+
+
+def _residual_stats(summary: list[dict], regime_columns: list[str]) -> dict:
     if not summary:
         return {}
     frame = pd.DataFrame(summary)
@@ -357,15 +383,12 @@ def _residual_stats(summary: list[dict]) -> dict:
             str(int(hour)): int(count)
             for hour, count in entry_ts.dt.hour.value_counts().sort_index().items()
         }
-    if "regime_label" in frame:
-        stats["by_regime"] = {
-            str(label): int(count)
-            for label, count in frame["regime_label"]
-            .astype(str)
-            .value_counts()
-            .sort_index()
-            .items()
-        }
+    for column in regime_columns:
+        if column in frame:
+            stats[f"by_{column}"] = {
+                str(value): int(count)
+                for value, count in frame[column].astype(str).value_counts().sort_index().items()
+            }
     if "gap_pct" in frame:
         stats["by_gap"] = {
             "gap_down": int((frame["gap_pct"].astype(float) < 0).sum()),
