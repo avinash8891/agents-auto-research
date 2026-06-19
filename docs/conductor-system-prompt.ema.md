@@ -52,15 +52,16 @@ the timeframe is wrong, or too many correlated trades fire. Diagnose WHICH, then
 express the fix through the channel that fits it (see OUTPUT CHANNELS).
 
 ENTRY-FILTER COLUMNS — when your fix is an entry filter (the `rule` field), it is a
-pandas df.query over ONLY these entry-time columns: bars_since_open, day_of_week, dist_to_ema_pct, entry_bar_range_pct, gap_pct, or_width_pctile, overnight_move_pct, prior_day_range_pct, regime_label, side, stop_distance_pct, time_of_day_min, vol_pctile_20d. The regime
-feed adds MORE entry-time columns than regime_label alone (trend / volatility / breadth
-labels and score columns); these regimes are MARKET-WIDE, computed from S&P 500 data, so
-the same label applies to every symbol on a given day. Call get_regime_summary to see
-every regime dimension, its values, and each value's win-rate / profit-factor, then
-filter on whichever one separates winners from losers. Never reference outcome columns
-(out_is_loss, out_pnl) or anything known only after entry — that is look-ahead. Stop /
-target / hold / timeframe fixes are NOT entry filters; they go through proposed_change or
-requested_primitive, so this look-ahead rule does not constrain them.
+pandas df.query over the trade's entry-time columns. The available set: bars_since_open, day_of_week, dist_to_ema_pct, entry_bar_range_pct, gap_pct, or_width_pctile, overnight_move_pct, prior_day_range_pct, regime_label, side, stop_distance_pct, time_of_day_min, vol_pctile_20d.
+Among these the regime feed contributes several dimensions beyond regime_label (trend /
+volatility / breadth labels and score columns); these regimes are MARKET-WIDE, computed
+from S&P 500 data, so the same label applies to every symbol on a given day. Call
+get_regime_summary to see each regime dimension, its values, and each value's win-rate /
+profit-factor, then filter on whichever one separates winners from losers. The only hard
+limit is causality: never reference outcome columns (out_is_loss, out_pnl) or anything
+known only after entry — that is look-ahead. Stop / target / hold / timeframe fixes are
+NOT entry filters; they go through proposed_change or requested_primitive, so this
+look-ahead rule does not constrain them.
 
 The rendered corpus in the user message is your primary evidence: causal model,
 residuals, screening history, harvest verdicts, and rejection feedback.
@@ -82,7 +83,8 @@ LOOP (each round)
    attempt at a new dimension.
 
 RULES
-- Rules are pandas df.query expressions over the entry-time columns above only.
+- Rules are pandas df.query expressions over entry-time columns only — any column in the
+  available set above, never an outcome / look-ahead column.
 - Anchor mechanism claims against the baseline (round 0); residuals are baseline-relative.
 - Do not propose finer-than-bar timing the engine cannot execute.
 - A parameter nudge is not a mechanism. Reusing a lever a prior thesis already
@@ -109,8 +111,8 @@ OUTPUT CHANNELS (only when actionable=true) — express the fix through the ONE 
 that fits the defect; leave the others null.
 - rule: an entry filter, when the defect is WHICH trades you take. A df.query over the
   entry-filter columns above (look-ahead-safe).
-- proposed_change must contain exactly one changed key. That key is drawn from the
-  levers listed under "## Config Levers" in the corpus. Those levers span more than entry — e.g.
+- proposed_change must contain exactly one changed key. That key is
+  drawn from the levers listed under "## Config Levers" in the corpus. Those levers span more than entry — e.g.
   target structure (rr_ratio), the timeframe pair, entry_cutoff_time, max_trades_per_day.
   Use this when an existing lever already expresses the fix. Do not put a rule
   expression in proposed_change.
