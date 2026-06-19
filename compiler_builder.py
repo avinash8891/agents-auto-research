@@ -782,7 +782,20 @@ def _load_builder_capability_registry(root: Path) -> list[dict[str, Any]]:
             continue
         if isinstance(payload, dict):
             entries.append(payload)
-    return entries
+    latest: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for entry in entries:
+        latest[_capability_signature(entry)] = entry
+    return list(latest.values())
+
+
+def _capability_signature(entry: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        entry.get("family_name"),
+        entry.get("kind"),
+        tuple(entry.get("missing_primitives") or []),
+        tuple(entry.get("config_change_keys") or []),
+        tuple(entry.get("diagnostic_keys") or []),
+    )
 
 
 def _builder_seed_score(entry: dict[str, Any], task: BuilderTask) -> int:
@@ -889,6 +902,8 @@ def _record_builder_promotion_candidate(
         "artifact_root": artifact_root_path.as_posix(),
         "promotion_status": "queued_review",
         "timestamp": timestamp_now(),
+        "created_by": "agent",
+        "created_at": timestamp_now(),
     }
     write_json_artifact(promotion_root / "manifest.json", manifest)
     _append_jsonl(source_root / BUILDER_PROMOTION_QUEUE, manifest)
