@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -18,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
 from backtest.data_universe import load_universe_data
 from backtest.event_diagnostics import build_event_diagnostics, write_event_diagnostics
 from backtest.filters import _exclude_signals_on_days, _filter_signals_to_days
+from backtest.runner import main as runner_main
 from backtest.runtime_config import load_runtime_config, validate_runtime_config_scope
 from config_hash import _config_hash
 from strategies import STRATEGIES
@@ -68,6 +68,11 @@ def _write_wide_dataset(universe_path: Path, symbols: list[str]) -> None:
         )
         + "\n"
     )
+
+
+def _run_runner(monkeypatch: pytest.MonkeyPatch, output_dir: Path, *args: str) -> None:
+    monkeypatch.setattr(sys, "argv", ["backtest.runner", *args, "--output-dir", str(output_dir)])
+    runner_main()
 
 
 def _manual_ema_signals(frame: pd.DataFrame, *, direction: str, entry_bar: int) -> EMASignals:
@@ -208,19 +213,16 @@ def test_main_emits_result_json_marker_on_stdout(tmp_path: Path) -> None:
     assert f"RESULT_JSON {tmp_path / 'result.json'}" in proc.stdout
 
 
-def test_main_writes_result_json_with_full_schema(tmp_path: Path) -> None:
-    subprocess.run(
-        [
-            "python3",
-            str(REPO_ROOT / "backtest_5ema.py"),
-            "--config",
-            str(TINY_CONFIG),
-            "--output-dir",
-            str(tmp_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
+def test_main_writes_result_json_with_full_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _run_runner(
+        monkeypatch,
+        tmp_path,
+        "--strategy",
+        "ema",
+        "--config",
+        str(TINY_CONFIG),
     )
 
     payload = json.loads((tmp_path / "result.json").read_text())
@@ -273,21 +275,16 @@ def test_generic_runner_emits_result_json_marker_on_stdout(tmp_path: Path) -> No
     assert f"RESULT_JSON {tmp_path / 'result.json'}" in proc.stdout
 
 
-def test_generic_runner_writes_ema_family_result_schema(tmp_path: Path) -> None:
-    subprocess.run(
-        [
-            "python3",
-            str(REPO_ROOT / "backtest" / "runner.py"),
-            "--strategy",
-            "ema",
-            "--config",
-            str(TINY_CONFIG),
-            "--output-dir",
-            str(tmp_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
+def test_generic_runner_writes_ema_family_result_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _run_runner(
+        monkeypatch,
+        tmp_path,
+        "--strategy",
+        "ema",
+        "--config",
+        str(TINY_CONFIG),
     )
 
     payload = json.loads((tmp_path / "result.json").read_text())
@@ -783,21 +780,13 @@ def test_result_json_includes_data_provenance(
     config_path = tmp_path / "runtime.json"
     config_path.write_text(json.dumps({"runtime_config": config}) + "\n")
 
-    subprocess.run(
-        [
-            "python3",
-            str(REPO_ROOT / "backtest" / "runner.py"),
-            "--strategy",
-            "ema",
-            "--config",
-            str(config_path),
-            "--output-dir",
-            str(tmp_path / "out"),
-        ],
-        env={**os.environ, "AUTORESEARCH_DATA_ROOT": str(data_root)},
-        capture_output=True,
-        text=True,
-        check=True,
+    _run_runner(
+        monkeypatch,
+        tmp_path / "out",
+        "--strategy",
+        "ema",
+        "--config",
+        str(config_path),
     )
 
     payload = json.loads((tmp_path / "out" / "result.json").read_text())
