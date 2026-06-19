@@ -1,0 +1,58 @@
+tests/test_feature_table.py
+  s_05bb4d97d5f815::t_9732b5f91a73e3 265
+  s_05bb4d97d5f815::t_c820fd2280b0a2 241-248,251-262,267-268
+  s_05bb4d97d5f815::t_ea63d8678c4aa3 249-250,263-264,266
+tests/test_agent_feature_registry.py
+  s_05bb4d97d5f815::t_0a47f0fc67b99e 10-11,69-180
+agent_feature_registry.py
+  s_05bb4d97d5f815::t_9a2526e3baa83b 44,97-147,161-162,175,195,197-259
+  s_05bb4d97d5f815::t_cf0117d05168ad 88-96
+  s_05bb4d97d5f815::t_64c22c074f1f68 158-160
+research_prompts.py
+  s_05bb4d97d5f815::t_89f00e6d3c250e 41-50
+  s_05bb4d97d5f815::t_0826e8eddea50f 36,59-65
+autoresearch_orchestration.py
+  s_05bb4d97d5f815::t_599f18f95df4b0 673-684
+tests/test_compiler_builder.py
+  s_05bb4d97d5f815::t_1a2d4b11bfa4ba 113-116,120-133
+  s_05bb4d97d5f815::t_c83af37d5598f7 9,64-110
+  s_05bb4d97d5f815::t_72ec2c10634c43 111-112,134-153
+  s_05bb4d97d5f815::t_69e12e5ae5480e 12,117-119
+tests/test_autoresearch_orchestration.py
+  s_05bb4d97d5f815::t_fc574c4d0e283c 488-526
+research_types.py
+  s_05bb4d97d5f815::t_5e8456f04b7f26 132,142-143
+tests/test_research_prompts.py
+  s_05bb4d97d5f815::t_f380327aa37ca8 15
+tests/test_research_types.py
+  s_05bb4d97d5f815::t_5e55bc9c69985e 40,47
+walkforward.py
+  s_05bb4d97d5f815::t_3633a037d35ba3 12,155-156
+feature_table.py
+  s_05bb4d97d5f815::t_566ee56d6919de 14,16,197,233-238,244-246,803-805,811-815,819-829,831-844,851-866
+  s_05bb4d97d5f815::t_6ca433e93a0f57 830
+  s_05bb4d97d5f815::t_69e12e5ae5480e 845-850
+tests/test_walkforward.py
+  s_05bb4d97d5f815::t_ea490d3b29aad4 8,214-221,248
+compiler_builder.py
+  s_05bb4d97d5f815::t_63f3b6dbc86f5c 962,966-1004
+  s_05bb4d97d5f815::t_465ed779d7bc74 16,24,325-339,343-372
+  s_05bb4d97d5f815::t_c2f9a1d1bc8b61 1498-1500,1699-1704,1932-1935
+  s_05bb4d97d5f815::t_69e12e5ae5480e 340-342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "ca3ae0f2b25f05a80931b7cec7ad21c175be9ad0",
+  "prompts": {},
+  "sessions": {
+    "s_05bb4d97d5f815": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee068-90d0-7391-89e3-645a7cf3e3b8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
