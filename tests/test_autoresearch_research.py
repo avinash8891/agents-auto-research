@@ -2424,3 +2424,37 @@ def test_handle_round_failure_clears_activity(tmp_path: Path) -> None:
 
     assert updated["research_round"] == 8
     assert "activity" not in updated
+
+
+def test_decline_proposal_completes_without_screening(tmp_path: Path) -> None:
+    """A decline (actionable=false, rule=None) must end the round cleanly without
+    screening. No feature table exists here; if the decline path screened it
+    would raise FeatureTableMissingError, so a clean 'completed' proves it skips
+    screening (and never runs df.query on an empty rule)."""
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "No new testable rule is supported beyond the already screened one.",
+                "rule": None,
+                "competitor_rule": None,
+                "competitor_story": None,
+                "actionable": False,
+                "proposed_change": None,
+                "predictions": None,
+            },
+            reasoning="no new testable rule this round",
+        ),
+        prior_theses=[],
+    )
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert result["generated_config"] is None
+    assert retry_feedback is None

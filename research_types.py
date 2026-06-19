@@ -128,9 +128,12 @@ class MechanismProposal(BaseModel):
     """Conductor output for the causal-engine research path."""
 
     story: str
-    rule: str
-    competitor_rule: str
-    competitor_story: str
+    # rule/competitor_rule are optional so the conductor can DECLINE a round
+    # (actionable=false with no new testable rule). They are required when
+    # actionable=true; the validator below enforces that.
+    rule: str | None = None
+    competitor_rule: str | None = None
+    competitor_story: str | None = None
     actionable: bool
     proposed_change: dict[str, Any] | None = None
     predictions: list[Prediction] | None = None
@@ -139,6 +142,10 @@ class MechanismProposal(BaseModel):
     def _validate_actionable_contract(self) -> "MechanismProposal":
         if not self.actionable:
             return self
+        if not (self.rule or "").strip():
+            raise ValueError("rule is required when actionable is true")
+        if not (self.competitor_rule or "").strip():
+            raise ValueError("competitor_rule is required when actionable is true")
         if not self.proposed_change:
             raise ValueError("proposed_change is required when actionable is true")
         if self.predictions is None or len(self.predictions) < 2:

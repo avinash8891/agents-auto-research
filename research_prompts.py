@@ -35,13 +35,19 @@ risk_structure, market_microstructure, execution_costs, universe_selection,
 alternative_data, alpha_decay, emergent.
 
 ACTIONABLE OUTPUT RULES (only when actionable=true; otherwise both are null)
-- proposed_change is an object with exactly one changed key.
+- proposed_change is an object with exactly one key, and that key must be one of
+  the levers listed under "## Config Levers" in the corpus. Do not put a rule
+  expression in proposed_change.
 - predictions is a list of >= 2 objects with distinct metric values from:
   profit_factor, trade_count, max_drawdown, median_expectancy. Each prediction
   object uses exactly these field names: "metric", "direction", "predicted",
   "rationale". direction is one of increase, decrease, increase_or_same,
   decrease_or_same, not_worse_than; predicted is a number. Use these exact field
   names; do not invent others.
+
+TO DECLINE (no new testable rule this round): set actionable=false and set rule,
+competitor_rule, competitor_story, proposed_change, and predictions all to null;
+put your reasoning in story.
 
 Return only JSON matching this shape:
 {

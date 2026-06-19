@@ -76,3 +76,12 @@ def test_mechanism_prompt_predictions_use_real_schema_field_names() -> None:
     for field in Prediction.model_fields:  # metric, direction, predicted, rationale
         assert f'"{field}"' in prompt, f"prediction field {field!r} missing from prompt"
     assert "MetricName" not in prompt
+
+
+def test_mechanism_prompt_points_proposed_change_at_config_levers_and_decline() -> None:
+    """proposed_change keys must come from the corpus '## Config Levers' (the
+    conductor invented 'rule' before), and the decline shape must be stated so
+    actionable=false with null rule validates against the schema."""
+    text = _build_mechanism_system_prompt().lower()
+    assert "config levers" in text
+    assert "decline" in text

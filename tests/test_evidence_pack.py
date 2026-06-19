@@ -587,3 +587,21 @@ def test_render_corpus_is_deterministic_and_ordered(tmp_path: Path, monkeypatch)
     assert "gap: -0.23" in rendered
     assert "sample_count: 40" in rendered
     assert "generated_at" not in rendered
+
+
+def test_build_corpus_surfaces_family_config_levers(tmp_path: Path, monkeypatch) -> None:
+    """The conductor needs the family's valid proposed_change keys; the corpus
+    must surface them (it never did, so the model invented keys like 'rule')."""
+    from family_research_spec import get_family_research_spec
+
+    _setup_runtime(tmp_path, monkeypatch)
+    corpus = build_corpus("ema", 2)
+    assert corpus.config_levers == sorted(get_family_research_spec("ema").allowed_config_keys)
+    assert "gap_filter" in corpus.config_levers
+
+
+def test_render_corpus_lists_config_levers(tmp_path: Path, monkeypatch) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    text = render_corpus(build_corpus("ema", 2))
+    assert "## Config Levers" in text
+    assert "gap_filter" in text

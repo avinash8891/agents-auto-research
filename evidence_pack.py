@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from autoresearch_artifacts import round_number_from_path as _round_number_from_path
 from autoresearch_runtime_paths import resolve_runtime_root
 from causal_model import CausalModelStore, residual_map
+from family_research_spec import get_family_research_spec
 from feature_table import ENTRY_TIME_COLUMNS, FeatureTableArtifact
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult
@@ -35,6 +36,9 @@ class Corpus(BaseModel):
     walkforward_reports: list[dict] = Field(default_factory=list)
     cross_family: list[CausalFactor] = Field(default_factory=list)
     rejection_feedback: str | None = None
+    # The family's valid proposed_change keys, so the conductor proposes a real
+    # config lever (the proposed_change validator rejects anything else).
+    config_levers: list[str] = Field(default_factory=list)
 
 
 def build_corpus(
@@ -68,6 +72,7 @@ def build_corpus(
         walkforward_reports=_load_walkforward_reports(runtime_root, family),
         cross_family=_load_cross_family_factors(runtime_root, family),
         rejection_feedback=_load_rejection_feedback(runtime_root, round_number, job=job),
+        config_levers=sorted(get_family_research_spec(family).allowed_config_keys),
     )
 
 
@@ -143,6 +148,15 @@ def _render_corpus_text(corpus: Corpus, *, truncated_screenings: int) -> str:
             lines.extend(_render_factor(factor))
     else:
         lines.append("- factors: none")
+
+    lines.extend(["", "## Config Levers"])
+    if corpus.config_levers:
+        lines.append(
+            "- an actionable proposed_change must set exactly one of these keys: "
+            + ", ".join(corpus.config_levers)
+        )
+    else:
+        lines.append("- none")
 
     lines.extend(["", "## Residual Summary"])
     if corpus.residual_summary:
