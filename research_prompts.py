@@ -13,6 +13,24 @@ def _entry_filter_columns() -> str:
     return ", ".join(sorted(RULE_QUERYABLE_COLUMNS))
 
 
+def _coupled_keys_clause(family_name: str) -> str:
+    """Some families register coupled config keys the validator accepts SET TOGETHER in
+    one proposed_change (family_research_spec.COUPLED_KEYS, enforced by
+    proposed_change_is_single_or_coupled). Advertise them so the agent can propose the
+    coupled config the runtime supports instead of being told it is impossible. Derived
+    from the validator's own source; empty for families with no coupled sets."""
+    from family_research_spec import COUPLED_KEYS
+
+    coupled_sets = COUPLED_KEYS.get(family_name) or frozenset()
+    if not coupled_sets:
+        return ""
+    rendered = "; ".join(" + ".join(sorted(keys)) for keys in sorted(coupled_sets, key=sorted))
+    return (
+        " Exception for this family: you may instead set a registered coupled set together "
+        f"in one proposed_change ({rendered})."
+    )
+
+
 def _format_backtest_contract(contract: Any) -> str:
     """Render the engine's backtest-semantics contract (code-sourced) so the agent's
     rule respects how entries/stops/exits actually behave. Drift-proof relative to
@@ -57,6 +75,7 @@ def _build_mechanism_system_prompt(
         )
     contract_block = _format_backtest_contract(backtest_contract)
     entry_filter_columns = _entry_filter_columns()
+    coupled_clause = _coupled_keys_clause(family_name)
     return f"""You are a senior quantitative researcher for {family_phrase}. You understand its
 mechanics and code, study ALL its trades — winners and losers alike — and find the
 market mechanism that SEPARATES them: drawing on the trade data, the regime labels,
@@ -132,8 +151,8 @@ OUTPUT CHANNELS (only when actionable=true) — express the fix through the ONE 
 that fits the defect; leave the others null.
 - rule: an entry filter, when the defect is WHICH trades you take. A df.query over the
   entry-filter columns above (look-ahead-safe).
-- proposed_change must contain exactly one changed key. That key is drawn from the
-  levers listed under "## Config Levers" in the corpus. Those levers span more than entry — e.g.
+- proposed_change must contain exactly one changed key.{coupled_clause} That key is
+  drawn from the levers listed under "## Config Levers" in the corpus. Those levers span more than entry — e.g.
   target structure (rr_ratio), the timeframe pair, entry_cutoff_time, max_trades_per_day.
   Use this when an existing lever already expresses the fix. Do not put a rule
   expression in proposed_change.
