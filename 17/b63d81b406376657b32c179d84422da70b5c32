@@ -1,0 +1,20 @@
+docs/superpowers/plans/2026-06-19-free-proposal-fetch-on-miss.md
+  s_05bb4d97d5f815::t_7755ae7dd54f6c 1201
+  s_05bb4d97d5f815::t_1356dbb47122d2 1-1200,1202-1205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "17b63d81b406376657b32c179d84422da70b5c32",
+  "prompts": {},
+  "sessions": {
+    "s_05bb4d97d5f815": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee068-90d0-7391-89e3-645a7cf3e3b8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
