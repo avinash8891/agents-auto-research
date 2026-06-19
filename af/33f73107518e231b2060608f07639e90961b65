@@ -1,0 +1,21 @@
+rejection_artifact.py
+  s_be8b2f455eab9f::t_271498cf9aefd3 115
+  s_be8b2f455eab9f::t_bf2ee77c0237a3 17
+  s_be8b2f455eab9f::t_1b9d541570c72b 27-32,35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "af33f73107518e231b2060608f07639e90961b65",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
