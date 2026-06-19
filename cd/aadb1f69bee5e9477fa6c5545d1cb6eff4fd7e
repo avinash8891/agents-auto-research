@@ -1,0 +1,21 @@
+autoresearch_orchestration.py
+  s_be8b2f455eab9f::t_0ba57c13d6a58a 107-123
+tests/test_baseline_promotion.py
+  s_be8b2f455eab9f::t_4768242e6b3deb 80-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "cdaadb1f69bee5e9477fa6c5545d1cb6eff4fd7e",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
