@@ -16,6 +16,7 @@ from improvement_reflexion import read_validation_failure_reason
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic as _write_json_atomic
 from persistence_utils import write_text_atomic as _write_text_atomic
+from raw_input_manifest import RawInputManifestError, available_raw_inputs
 from strategies import STRATEGIES
 from trace_sdk import trace
 
@@ -412,6 +413,46 @@ def _mark_needs_data_manual_review(
     return state
 
 
+def _needs_data_can_resume(root: Path, state: dict[str, Any]) -> bool:
+    if state.get("halted_reason") != "needs_data":
+        return False
+    requests = state.get("data_requests")
+    if not isinstance(requests, list) or not requests:
+        return False
+    latest = requests[-1]
+    if not isinstance(latest, dict):
+        return False
+    raw_path = latest.get("path")
+    if not isinstance(raw_path, str) or not raw_path:
+        return False
+    expected_prefix = (
+        f"runtime/jobs/job-{state.get('job')}/research/round-{state.get('research_round')}/"
+    )
+    if not raw_path.startswith(expected_prefix):
+        return False
+    request_path = root / raw_path
+    try:
+        request = json.loads(request_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    if request.get("requesting_thesis_id") != state.get("halted_thesis_id"):
+        return False
+    raw_required = request.get("required_data")
+    if not isinstance(raw_required, list):
+        return False
+    required = {
+        item.get("name")
+        for item in raw_required
+        if isinstance(item, dict) and isinstance(item.get("name"), str) and item.get("name")
+    }
+    if not required:
+        return False
+    try:
+        return required <= available_raw_inputs(root)
+    except RawInputManifestError:
+        return False
+
+
 def _mark_builder_running(
     controller: "AutoresearchController",
     state: dict[str, Any],
@@ -685,6 +726,22 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
     """Resume a halted thesis if its runtime config is now satisfiable."""
     state = controller.read_state()
     halted_id = state.get("halted_thesis_id")
+    runtime_root = getattr(controller, "runtime_root", None) or controller.root
+    if halted_id and state.get("halted_reason") == "needs_data":
+        if not _needs_data_can_resume(Path(runtime_root), state):
+            return None
+        _archive_reactivated_blocker(state, source="needs_data_satisfied")
+        state["state"] = "running"
+        controller.clear_terminal_metadata(state)
+        state["blockers"] = []
+        state.pop("activity", None)
+        state.pop("halted_thesis_id", None)
+        state.pop("halted_reason", None)
+        state.pop("halted_thesis", None)
+        state.pop("next_action", None)
+        controller.write_state(state)
+        trace("LOOP", f"cleared needs_data halt thesis={halted_id}")
+        return state
     if not halted_id or state.get("halted_reason") != "requires_code_change":
         return None
     raw_thesis = state.get("halted_thesis", {})
@@ -718,7 +775,6 @@ def try_resume_halted_thesis(controller: "AutoresearchController") -> dict[str, 
         raise RuntimeError(
             f"halted thesis resume requires a non-baseline research round, got {raw_round!r}"
         )
-    runtime_root = getattr(controller, "runtime_root", None) or controller.root
     exp_dir = research_round_root(runtime_root, int(state.get("job")), research_round)
     exp_dir.mkdir(parents=True, exist_ok=True)
     config_abspath = exp_dir / "selected_config.json"

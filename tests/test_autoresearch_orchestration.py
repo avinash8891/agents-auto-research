@@ -98,6 +98,101 @@ def test_mark_needs_data_manual_review_writes_data_request(tmp_path: Path) -> No
     assert request["required_data"] == [{"name": "trade_signed_volume", "granularity": "unknown"}]
 
 
+def _write_needs_data_request(
+    root: Path,
+    *,
+    thesis_id: str = "ema-7-3-1",
+    required_name: str = "trade_signed_volume",
+) -> Path:
+    request_path = (
+        root
+        / "runtime"
+        / "jobs"
+        / "job-7"
+        / "research"
+        / "round-3"
+        / "data_acquisition_request.json"
+    )
+    request_path.parent.mkdir(parents=True)
+    request_path.write_text(
+        json.dumps(
+            {
+                "feature_name": "signed_volume_z",
+                "required_data": [{"name": required_name, "granularity": "unknown"}],
+                "requesting_thesis_id": thesis_id,
+            }
+        )
+        + "\n"
+    )
+    return request_path
+
+
+def _write_raw_input_manifest(root: Path, values: list[str]) -> None:
+    path = root / "runtime" / "raw_input_manifest.json"
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps({"available_raw_inputs": values}) + "\n")
+
+
+def test_needs_data_resume_guard_true_when_manifest_satisfies_request(
+    tmp_path: Path,
+) -> None:
+    request_path = _write_needs_data_request(tmp_path)
+    _write_raw_input_manifest(tmp_path, ["trade_signed_volume"])
+    state = {
+        "state": "halted",
+        "job": 7,
+        "research_round": 3,
+        "halted_reason": "needs_data",
+        "halted_thesis_id": "ema-7-3-1",
+        "data_requests": [{"path": request_path.relative_to(tmp_path).as_posix()}],
+    }
+
+    assert orch._needs_data_can_resume(tmp_path, state) is True
+
+
+def test_needs_data_resume_guard_false_on_thesis_mismatch(tmp_path: Path) -> None:
+    request_path = _write_needs_data_request(tmp_path, thesis_id="other-thesis")
+    _write_raw_input_manifest(tmp_path, ["trade_signed_volume"])
+    state = {
+        "state": "halted",
+        "job": 7,
+        "research_round": 3,
+        "halted_reason": "needs_data",
+        "halted_thesis_id": "ema-7-3-1",
+        "data_requests": [{"path": request_path.relative_to(tmp_path).as_posix()}],
+    }
+
+    assert orch._needs_data_can_resume(tmp_path, state) is False
+
+
+def test_try_resume_halted_thesis_clears_satisfied_needs_data(tmp_path: Path) -> None:
+    request_path = _write_needs_data_request(tmp_path)
+    _write_raw_input_manifest(tmp_path, ["trade_signed_volume"])
+    state = {
+        "state": "halted",
+        "job": 7,
+        "research_round": 3,
+        "halted_reason": "needs_data",
+        "halted_thesis_id": "ema-7-3-1",
+        "halted_thesis": {"thesis_id": "ema-7-3-1"},
+        "blockers": [{"kind": "manual_review"}],
+        "next_action": {"type": "manual_review"},
+        "data_requests": [{"path": request_path.relative_to(tmp_path).as_posix()}],
+    }
+    ctrl, written, _ = _controller(state, tmp_path)
+
+    out = orch.try_resume_halted_thesis(ctrl)
+
+    assert out is not None
+    assert out["state"] == "running"
+    assert out["resume_context"]["source"] == "needs_data_satisfied"
+    assert out["blockers"] == []
+    assert "halted_reason" not in out
+    assert "halted_thesis_id" not in out
+    assert "next_action" not in out
+    assert written[-1]["state"] == "running"
+
+
 def test_try_resume_halted_thesis_writes_round_selected_files(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "configs").mkdir()
     (tmp_path / "configs" / "ema_base.yaml").write_text(json.dumps({"ema_length": 5}) + "\n")
