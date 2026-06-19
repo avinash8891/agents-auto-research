@@ -153,15 +153,17 @@ def extract_output_fields_from_prompt(prompt: str) -> set[str]:
 
 
 def discover_validator_rejection_codes(path: Path) -> set[str]:
-    """Return every rejection_code literal that appears in thesis_validator.py.
+    """Return every rejection-code literal emitted by thesis_validator.py.
 
-    Captures emitted kwarg-style codes (`rejection_code="..."`). Compatibility
-    return values inside infer_rejection_code are intentionally excluded so
-    retired rules do not look live.
+    Captures both emission styles: the kwarg `rejection_code="..."` and the
+    BehaviorSignal `code="..."` (e.g. _neighboring_threshold_signal and the
+    config-key-overlap signal emit live rules this way). Compatibility return
+    values inside infer_rejection_code (`return "..."`) are intentionally excluded
+    so retired rules do not look live.
     """
     text = path.read_text()
     codes: set[str] = set()
-    codes.update(re.findall(r'rejection_code\s*=\s*"([a-z0-9_]+)"', text))
+    codes.update(re.findall(r'(?:rejection_)?code\s*=\s*"([a-z0-9_]+)"', text))
     return codes
 
 
