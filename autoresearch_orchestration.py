@@ -12,9 +12,9 @@ import yaml
 from autoresearch_paths import (
     PROMOTED_BASELINE_DIRNAME,
     promoted_baseline_path,
-    resolve_config_path,
     serialize_config_path,
 )
+from causal_model import load_model, save_model
 from autoresearch_runtime_paths import (
     research_round_id,
     research_round_root,
@@ -51,97 +51,133 @@ RESEARCH_RETRY_BUILDER_ERROR_CODES = frozenset(
 )
 
 
-def _read_runtime_config(path: Path) -> dict[str, Any]:
-    """Load a runtime-config dict from a promoted source. selected_config.json is
-    JSON; committed baselines are YAML — accept either."""
-    text = path.read_text()
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        payload = yaml.safe_load(text) or {}
-    if not isinstance(payload, dict):
-        raise ValueError(f"baseline source config must be a mapping: {path}")
-    runtime_config = payload.get("runtime_config", payload)
-    if not isinstance(runtime_config, dict):
-        raise ValueError(f"baseline source runtime_config must be a mapping: {path}")
-    return dict(runtime_config)
+def write_baseline_overlay(
+    controller: "AutoresearchController", runtime_config: dict[str, Any]
+) -> str | None:
+    """Persist ``runtime_config`` as the live family baseline overlay and return its
+    runtime-root-relative path, or None if the config is unsafe to promote.
+
+    The overlay path does not exist in the read-only code root, so the base-config
+    reads (`compiler_research._load_base_runtime_config`, `_baseline_branch`) prefer
+    it over the committed seed without clobbering the committed file on local runs.
+
+    Never overwrite the live baseline with an empty or invalid config (e.g. a builder
+    edge that references a primitive this release lacks) — a bad overlay would break
+    every subsequent thesis. Validation failures return None (skip), not raise.
+    """
+    family = controller.family
+    if not runtime_config:
+        _log.warning("baseline promotion skipped: empty runtime config")
+        return None
+    violations = STRATEGIES[family.name].validate_runtime_config(runtime_config)
+    if violations:
+        _log.warning(
+            "baseline promotion skipped: config fails validation on this release: %s",
+            "; ".join(violations),
+        )
+        return None
+    overlay = promoted_baseline_path(controller.runtime_root, family.base_config_filename)
+    _write_text_atomic(overlay, yaml.safe_dump(dict(runtime_config), sort_keys=False))
+    return f"{PROMOTED_BASELINE_DIRNAME}/{family.base_config_filename}"
 
 
-def promote_baseline_if_improved(
+def _graduated_survivor_thesis_ids(controller: "AutoresearchController") -> set[str]:
+    """Thesis ids whose walk-forward report graduated (passed out-of-sample)."""
+    walkforward_dir = Path(controller.runtime_root) / "walkforward"
+    survivors: set[str] = set()
+    if not walkforward_dir.exists():
+        return survivors
+    for report_file in walkforward_dir.glob("*.json"):
+        if report_file.name == "errors.json":
+            continue
+        try:
+            report = json.loads(report_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        if report.get("graduated") and report.get("thesis_id"):
+            survivors.add(str(report["thesis_id"]))
+    return survivors
+
+
+def _best_graduated_record(controller: "AutoresearchController") -> Any | None:
+    """The accepted backtest record, among walk-forward graduates, with the best
+    in-sample primary metric — the edge to fold into the baseline."""
+    survivors = _graduated_survivor_thesis_ids(controller)
+    if not survivors:
+        return None
+    direction = controller.direction()
+    candidates = [
+        record
+        for record in controller.backtest_run_db.all()
+        if record.accepted and record.thesis_id in survivors and record.runtime_config
+    ]
+    if not candidates:
+        return None
+
+    def _metric(record: Any) -> float:
+        value = record.primary_metric_value
+        return float(value) if value is not None else float("-inf")
+
+    return (max if direction == "higher" else min)(candidates, key=_metric)
+
+
+def promote_graduated_and_rebaseline(
     controller: "AutoresearchController", state: dict[str, Any]
 ) -> dict[str, Any] | None:
-    """Persist the validated best config as the live family baseline overlay so the
-    next thesis compounds on it instead of the original committed seed.
+    """Walk-forward-gated compounding step. After the walk-forward queue completes,
+    fold the best graduated (out-of-sample-validated) edge into the live baseline,
+    reset the plateau window, and force a re-baseline backtest so research resumes
+    against the compounded baseline's residuals instead of terminating.
 
-    ``current_best`` only holds a non-baseline config when a research round beat the
-    comparison bar (best_result filters to status=="keep"), so a config that differs
-    from the family baseline is, by construction, a validated improvement.
+    Returns the promotion record, or None when nothing graduated (caller then lets
+    the loop terminate via the normal plateau handler).
 
-    ponytail: promotes on the in-sample "keep" verdict — the cheap version that
-    closes the compounding loop. The rigorous gate is deferred (see
-    plans/004-baseline-promotion.md):
-      TODO(walkforward-gate): promote only after walkforward graduation, not the
-        in-sample verdict.
-      TODO(builder-edges): a winning config that depended on builder-generated code
-        is only reproducible on the same release; cross-deploy code-edge promotion
-        is unhandled.
-      TODO(fresh-job-reset): decide whether --fresh-job clears the overlay or
-        continues compounding from it.
-
-    Fail-soft: a failed promotion logs loud and returns None; it never aborts the
-    research run (compounding is an enhancement, not a required sub-step).
+    TODO(builder-edges): an edge that depended on builder-generated code is only
+    reproducible on the same release; write_baseline_overlay currently *skips* such
+    a config (validation fails on a release lacking the primitive) rather than
+    promoting it. Cross-deploy code-edge promotion is plans/005 item D.
     """
-    best = state.get("current_best") or {}
-    config_path = best.get("config")
-    if not config_path:
+    record = _best_graduated_record(controller)
+    if record is None:
         return None
-    family = controller.family
-    overlay_rel = f"{PROMOTED_BASELINE_DIRNAME}/{family.base_config_filename}"
-    if config_path in (family.baseline_config_path, overlay_rel):
-        return None  # best is already the live baseline — nothing to compound
+    overlay_rel = write_baseline_overlay(controller, dict(record.runtime_config))
+    if overlay_rel is None:
+        return None
+
+    # Reset the plateau window so should_terminate stops firing until plateau_rounds
+    # NEW post-promotion research rounds accumulate. The model's accuracy_history is
+    # skill on the OLD baseline's holdout; after re-baseline it is stale, so clearing
+    # it is correct, not a hack. Baseline config + causal model move as one unit.
     try:
-        source = resolve_config_path(
-            config_path, code_root=controller.root, runtime_root=controller.runtime_root
+        model = load_model(controller.family.name, runtime_root=Path(controller.runtime_root))
+        save_model(
+            model.model_copy(update={"accuracy_history": []}),
+            runtime_root=Path(controller.runtime_root),
         )
-        runtime_config = _read_runtime_config(source)
-        # Never overwrite the live baseline with an empty or invalid config (e.g. a
-        # builder round whose selected_config.json references a primitive this
-        # release lacks). A bad overlay would break every subsequent thesis.
-        if not runtime_config:
-            _log.warning(
-                "baseline promotion skipped: best=%s resolved to an empty runtime config",
-                config_path,
-            )
-            return None
-        violations = STRATEGIES[family.name].validate_runtime_config(runtime_config)
-        if violations:
-            _log.warning(
-                "baseline promotion skipped: best=%s fails validation on this release: %s",
-                config_path,
-                "; ".join(violations),
-            )
-            return None
-        overlay = promoted_baseline_path(controller.runtime_root, family.base_config_filename)
-        _write_text_atomic(overlay, yaml.safe_dump(runtime_config, sort_keys=False))
-    except Exception:
-        _log.exception(
-            "baseline promotion failed for best=%s; continuing with un-promoted "
-            "baseline. Remediation: confirm %s is readable and runtime_root is writable",
-            config_path,
-            config_path,
-        )
-        return None
-    record = {
-        "promoted_config": overlay_rel,
-        "promoted_from": config_path,
-        "metric": best.get("metric"),
-    }
-    state["promoted_baseline"] = record
+    except FileNotFoundError:
+        pass  # no model yet → nothing to reset
+
+    metric = record.primary_metric_value
     trace(
         "PROMOTE_BASELINE",
-        f"family={family.name} from={config_path} metric={best.get('metric')} -> {overlay_rel}",
+        f"family={controller.family.name} graduated_thesis={record.thesis_id} "
+        f"metric={metric} -> {overlay_rel}",
     )
-    return record
+    # Re-baseline on the promoted overlay (filename still ends _base.yaml → logged as
+    # the round-0 baseline; resolve_config_path finds it under the runtime root).
+    rebaseline_action = {
+        "type": "run_round",
+        "config": overlay_rel,
+        "source": "baseline",
+        "baseline_rerun_for_commit": f"promote:{record.thesis_id}",
+        "rerun_reason": f"promoted graduated edge {record.thesis_id}",
+    }
+    apply_forced_baseline_rerun(controller, rebaseline_action)
+    return {
+        "promoted_config": overlay_rel,
+        "promoted_from": record.thesis_id,
+        "metric": metric,
+    }
 
 
 def _controller_research_artifact_dir(controller: "AutoresearchController") -> str:

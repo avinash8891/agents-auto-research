@@ -14,6 +14,7 @@ from autoresearch_constants import (
     research_engine_plateau_rounds,
 )
 from autoresearch_logging import get_logger
+from autoresearch_paths import PROMOTED_BASELINE_DIRNAME, promoted_baseline_path
 from autoresearch_runtime_paths import iter_family_backtest_db_paths
 from autoresearch_state import BacktestResultRecord
 from research_types import CausalModel
@@ -234,11 +235,21 @@ def _baseline_branch(
     family: StrategyFamily,
     results: list[BacktestResultRecord],
     job: int | None = None,
+    runtime_root: Path | None = None,
 ) -> dict[str, Any] | None:
     if results:
         return None
     baseline_config = family.baseline_config_path
-    if not (root / baseline_config).exists():
+    chosen = root / baseline_config
+    # A fresh job continues from the promoted baseline overlay when one exists, so it
+    # benchmarks the latest compounded baseline rather than the original committed
+    # seed. The overlay filename still ends _base.yaml, so it logs as round 0.
+    if runtime_root is not None:
+        overlay = promoted_baseline_path(runtime_root, family.base_config_filename)
+        if overlay.exists():
+            baseline_config = f"{PROMOTED_BASELINE_DIRNAME}/{family.base_config_filename}"
+            chosen = overlay
+    if not chosen.exists():
         return None
     state = _running_state(baseline_config, source="baseline")
     state["research_round"] = 0
@@ -271,7 +282,7 @@ def select_research_next_action(
     results: list[BacktestResultRecord],
     job: int | None = None,
 ) -> dict[str, Any]:
-    baseline = _baseline_branch(code_root, family, results, job=job)
+    baseline = _baseline_branch(code_root, family, results, job=job, runtime_root=runtime_root)
     if baseline is not None:
         return baseline
     if should_terminate(runtime_root, family, run_queue_dir, research_dir, results, job=job):
@@ -365,7 +376,9 @@ def plan_next_action(
         return state
     # Brand-new job policy: baseline always runs first for the family.
     if not results:
-        baseline = _baseline_branch(code_root, family, results, job=state.get("job"))
+        baseline = _baseline_branch(
+            code_root, family, results, job=state.get("job"), runtime_root=runtime_root
+        )
         if baseline is not None:
             state.update(baseline)
             state.pop("finished_reason", None)

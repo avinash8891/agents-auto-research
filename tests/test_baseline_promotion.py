@@ -1,5 +1,9 @@
-"""Baseline promotion: a validated best config becomes the live family baseline
-overlay so the next thesis compounds on it instead of the frozen committed seed.
+"""Baseline promotion + walk-forward-gated compounding.
+
+A validated edge becomes the live family baseline overlay so the next thesis
+compounds on it instead of the frozen committed seed. Promotion is gated on
+walk-forward graduation (out-of-sample), then a re-baseline runs so research
+resumes against the compounded baseline.
 
 Metrics mirror the real EMA job-9 run (committed baseline profit_factor 1.8886;
 the validated opening-window edge reached 2.0635)."""
@@ -8,18 +12,18 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import yaml
 
 import autoresearch_orchestration as orch
 import compiler_research
+from autoresearch_controller import AutoresearchController
 from autoresearch_paths import PROMOTED_BASELINE_DIRNAME
+from autoresearch_runtime_paths import research_round_id
 from research_types import ResearchThesis
 from strategies import STRATEGIES
 from strategy_family import load_family
 
-COMMITTED_BASELINE = "configs/ema_base.yaml"
 OVERLAY_REL = f"{PROMOTED_BASELINE_DIRNAME}/ema_base.yaml"
 
 
@@ -29,73 +33,149 @@ def _ema_runtime_config(**overrides: object) -> dict:
     return config
 
 
-def _controller(root: Path) -> SimpleNamespace:
-    return SimpleNamespace(root=root, runtime_root=root, family=load_family("ema"))
+def _controller(tmp_path: Path) -> AutoresearchController:
+    (tmp_path / "configs").mkdir(exist_ok=True)
+    source = Path(__file__).resolve().parents[1] / "configs" / "ema_base.yaml"
+    (tmp_path / "configs" / "ema_base.yaml").write_text(source.read_text())
+    controller = AutoresearchController(
+        root=tmp_path,
+        runtime_root=tmp_path,
+        family=load_family("ema"),
+        state_path=tmp_path / "ema_autoresearch.next.json",
+        current_md_path=tmp_path / "ema_autoresearch.current.md",
+        jobs_root=tmp_path / "runtime" / "jobs",
+    )
+    controller.backtest_run_db.init_session(
+        name="ema", metric_name="profit_factor", direction="higher"
+    )
+    return controller
 
 
-def _write_validated_round_config(root: Path, runtime_config: dict) -> str:
-    round_dir = root / "runtime" / "jobs" / "job-9" / "research" / "round-1"
-    round_dir.mkdir(parents=True, exist_ok=True)
-    (round_dir / "selected_config.json").write_text(json.dumps(runtime_config) + "\n")
-    return "runtime/jobs/job-9/research/round-1/selected_config.json"
+def _write_walkforward_report(tmp_path: Path, thesis_id: str, *, graduated: bool) -> None:
+    wf_dir = tmp_path / "walkforward"
+    wf_dir.mkdir(parents=True, exist_ok=True)
+    (wf_dir / f"{thesis_id}.json").write_text(
+        json.dumps({"thesis_id": thesis_id, "graduated": graduated, "verdict": "graduated"})
+    )
 
 
-def test_promote_writes_overlay_when_research_round_beats_baseline(tmp_path: Path) -> None:
+def _log_backtest(
+    controller: AutoresearchController,
+    *,
+    thesis_id: str,
+    runtime_config: dict,
+    metric: float,
+    job: int,
+    round_number: int,
+) -> None:
+    """Log one accepted research-round backtest with a real runtime config."""
+    controller.backtest_run_db.add_from_sqlite_fields(
+        run_id=f"run-{thesis_id}",
+        thesis_id=thesis_id,
+        config_path=f"runtime/jobs/job-{job}/research/round-{round_number}/selected_config.json",
+        runtime_config=runtime_config,
+        code_commit="deadbeef",
+        data_hash="hash",
+        metrics={"profit_factor": metric},
+        trade_analysis={},
+        strategy_diagnostics={},
+        decision_status="keep",
+        verdict_status="accepted",
+        verdict_summary="validated",
+        family="ema",
+        job_id=job,
+        primary_metric_name="profit_factor",
+        primary_metric_value=metric,
+        research_round_id=research_round_id(job, round_number),
+        research_round_number=round_number,
+    )
+
+
+# ── write_baseline_overlay (the promotion primitive) ──────────────────────────
+
+
+def test_write_baseline_overlay_persists_validated_config(tmp_path: Path) -> None:
     controller = _controller(tmp_path)
     improved = _ema_runtime_config(ema_length=9)
-    config_rel = _write_validated_round_config(tmp_path, improved)
-    state = {"current_best": {"config": config_rel, "metric": 2.0635}}
 
-    record = orch.promote_baseline_if_improved(controller, state)
+    overlay_rel = orch.write_baseline_overlay(controller, improved)
 
+    assert overlay_rel == OVERLAY_REL
     overlay = tmp_path / PROMOTED_BASELINE_DIRNAME / "ema_base.yaml"
-    assert record == {
-        "promoted_config": OVERLAY_REL,
-        "promoted_from": config_rel,
-        "metric": 2.0635,
-    }
-    assert state["promoted_baseline"] == record
     assert yaml.safe_load(overlay.read_text()) == improved
 
 
-def test_promote_noop_when_best_is_the_committed_baseline(tmp_path: Path) -> None:
+def test_write_baseline_overlay_skips_empty_config(tmp_path: Path) -> None:
     controller = _controller(tmp_path)
-    state = {"current_best": {"config": COMMITTED_BASELINE, "metric": 1.8886}}
-
-    record = orch.promote_baseline_if_improved(controller, state)
-
-    assert record is None
-    assert "promoted_baseline" not in state
+    assert orch.write_baseline_overlay(controller, {}) is None
     assert not (tmp_path / PROMOTED_BASELINE_DIRNAME / "ema_base.yaml").exists()
 
 
-def test_promote_noop_when_best_already_the_overlay(tmp_path: Path) -> None:
+def test_write_baseline_overlay_skips_config_invalid_on_this_release(tmp_path: Path) -> None:
     controller = _controller(tmp_path)
-    state = {"current_best": {"config": OVERLAY_REL, "metric": 2.0635}}
-
-    assert orch.promote_baseline_if_improved(controller, state) is None
+    bad = _ema_runtime_config(primitive_not_in_this_release=True)
+    assert orch.write_baseline_overlay(controller, bad) is None
     assert not (tmp_path / PROMOTED_BASELINE_DIRNAME / "ema_base.yaml").exists()
 
 
-def test_promote_skips_empty_config_without_corrupting_baseline(tmp_path: Path) -> None:
+# ── promote_graduated_and_rebaseline (the walk-forward-gated step) ─────────────
+
+
+def test_promote_graduated_picks_best_overlay_and_forces_rebaseline(tmp_path: Path) -> None:
     controller = _controller(tmp_path)
-    config_rel = _write_validated_round_config(tmp_path, {})  # builder round, no real config
-    state = {"current_best": {"config": config_rel, "metric": 2.0635}}
-
-    assert orch.promote_baseline_if_improved(controller, state) is None
-    assert not (tmp_path / PROMOTED_BASELINE_DIRNAME / "ema_base.yaml").exists()
-
-
-def test_promote_skips_config_invalid_on_this_release(tmp_path: Path) -> None:
-    controller = _controller(tmp_path)
-    # A config that references a key the current EMA release does not support.
-    config_rel = _write_validated_round_config(
-        tmp_path, _ema_runtime_config(primitive_not_in_this_release=True)
+    controller.write_state({"job": 9, "research_round": 3})
+    # Two graduated candidates; the higher in-sample profit_factor should win.
+    _log_backtest(
+        controller,
+        thesis_id="opening-window-short",
+        runtime_config=_ema_runtime_config(ema_length=9),
+        metric=2.0635,
+        job=9,
+        round_number=1,
     )
-    state = {"current_best": {"config": config_rel, "metric": 2.0635}}
+    _log_backtest(
+        controller,
+        thesis_id="gap-filter",
+        runtime_config=_ema_runtime_config(rr_ratio=2.5),
+        metric=1.95,
+        job=9,
+        round_number=2,
+    )
+    _write_walkforward_report(tmp_path, "opening-window-short", graduated=True)
+    _write_walkforward_report(tmp_path, "gap-filter", graduated=True)
 
-    assert orch.promote_baseline_if_improved(controller, state) is None
+    record = orch.promote_graduated_and_rebaseline(controller, controller.read_state())
+
+    assert record is not None
+    assert record["promoted_from"] == "opening-window-short"
+    overlay = tmp_path / PROMOTED_BASELINE_DIRNAME / "ema_base.yaml"
+    assert yaml.safe_load(overlay.read_text())["ema_length"] == 9
+    # Re-baseline was forced on the promoted overlay, research_round reset to 0.
+    state = controller.read_state()
+    assert state["state"] == "running"
+    assert state["next_action"]["type"] == "run_round"
+    assert state["next_action"]["config"] == OVERLAY_REL
+    assert state["research_round"] == 0
+
+
+def test_promote_graduated_noop_when_nothing_graduated(tmp_path: Path) -> None:
+    controller = _controller(tmp_path)
+    controller.write_state({"job": 9, "research_round": 3})
+    _log_backtest(
+        controller,
+        thesis_id="opening-window-short",
+        runtime_config=_ema_runtime_config(ema_length=9),
+        metric=2.0635,
+        job=9,
+        round_number=1,
+    )
+    _write_walkforward_report(tmp_path, "opening-window-short", graduated=False)  # demoted
+
+    assert orch.promote_graduated_and_rebaseline(controller, controller.read_state()) is None
     assert not (tmp_path / PROMOTED_BASELINE_DIRNAME / "ema_base.yaml").exists()
+
+
+# ── base-config reads prefer the overlay ──────────────────────────────────────
 
 
 def test_load_base_runtime_config_prefers_overlay_over_committed_seed(tmp_path: Path) -> None:
@@ -118,6 +198,5 @@ def test_load_base_runtime_config_prefers_overlay_over_committed_seed(tmp_path: 
     loaded = compiler_research._load_base_runtime_config(tmp_path, thesis, runtime_root=tmp_path)
     assert loaded["ema_length"] == 9
 
-    # Without runtime_root the committed seed is used (back-compat).
     seed = compiler_research._load_base_runtime_config(tmp_path, thesis)
     assert seed["ema_length"] == 21

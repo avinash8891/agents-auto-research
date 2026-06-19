@@ -42,9 +42,15 @@ Overfit edges never promote (walk-forward gate). Termination is principled.
   no kept round → promotion never fires. **In-sample promotion alone cannot
   un-stall a fresh job.**
 
+## Status
+**A + B + C shipped** (this branch). Promotion is now walk-forward-gated and the
+plateau→walk-forward→terminate path became plateau→walk-forward→promote→re-baseline
+→resume. The in-sample `reconcile_state` promotion from 004 was removed.
+Remaining: **D** (builder-code edge promotion) and **E** (VPS end-to-end sign-off).
+
 ## Work items
 
-### A. Walk-forward-gated promotion (replaces the in-sample trigger)
+### A. Walk-forward-gated promotion (replaces the in-sample trigger) — DONE
 - Move the promotion call out of `reconcile_state` (in-sample) into the
   walk-forward terminal handler. Promote only candidates with a `graduated`
   verdict from `walkforward.run_walkforward_queue`.

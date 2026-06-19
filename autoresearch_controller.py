@@ -39,7 +39,7 @@ from autoresearch_orchestration import (
     apply_forced_baseline_rerun as _orchestration_apply_forced_baseline_rerun,
 )
 from autoresearch_orchestration import (
-    promote_baseline_if_improved as _orchestration_promote_baseline_if_improved,
+    promote_graduated_and_rebaseline as _orchestration_promote_graduated_and_rebaseline,
 )
 from autoresearch_orchestration import resolve_next_action as _orchestration_resolve_next_action
 from autoresearch_orchestration import (
@@ -878,10 +878,6 @@ class AutoresearchController:
         best = self.best_result(results)
         state["current_best"] = best
         state["thesis_statuses"] = self.thesis_statuses(results)
-        # Promote a validated improvement into the live baseline overlay (before
-        # plan_next_action) so the next thesis compounds on it instead of the
-        # original committed seed.
-        _orchestration_promote_baseline_if_improved(self, state)
 
         latest = self.latest_result(results)
         heartbeat = state.setdefault("heartbeat", {})
@@ -1053,7 +1049,13 @@ class AutoresearchController:
         return _round_run_experiment(self, state)
 
     def _run_walkforward(self, state: dict[str, Any]) -> int:
-        return _walkforward_run_walkforward_queue(self, state)
+        rc = _walkforward_run_walkforward_queue(self, state)
+        if rc == 0:
+            # Compounding: if a candidate graduated out-of-sample, fold it into the
+            # baseline and force a re-baseline so research resumes against the
+            # compounded baseline instead of terminating at plateau.
+            _orchestration_promote_graduated_and_rebaseline(self, self.read_state())
+        return rc
 
     def execute_once(self) -> int:
         """Run one iteration of the autoresearch loop.
