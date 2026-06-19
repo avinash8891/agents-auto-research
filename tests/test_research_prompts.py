@@ -65,6 +65,17 @@ def test_rule_column_constraint_is_causal_not_a_closed_list() -> None:
     assert "look-ahead" in prompt
 
 
+def test_prediction_metrics_sourced_from_canonical_constant() -> None:
+    from research_types import HARVEST_OBSERVABLE_METRIC_NAMES
+
+    prompt = _build_mechanism_system_prompt()
+    # The full observable set appears (sourced from the validator's own constant)...
+    assert ", ".join(HARVEST_OBSERVABLE_METRIC_NAMES) in prompt
+    # ...and the OBJECTIVE "other metrics" excludes the primary metric.
+    others = [m for m in HARVEST_OBSERVABLE_METRIC_NAMES if m != "profit_factor"]
+    assert f"the other metrics ({', '.join(others)})" in prompt
+
+
 def test_mechanism_prompt_advertises_coupled_keys_for_families_that_have_them() -> None:
     from family_research_spec import COUPLED_KEYS
 

@@ -83,9 +83,13 @@ def _build_mechanism_system_prompt(
             "To inspect the strategy source, ask analyze_trades — the analyst can read the "
             "strategy code; you cannot read files directly.\n\n"
         )
+    from research_types import HARVEST_OBSERVABLE_METRIC_NAMES
+
     contract_block = _format_backtest_contract(backtest_contract)
     entry_filter_columns = _entry_filter_columns()
     coupled_clause = _coupled_keys_clause(family_name)
+    observable_metrics = ", ".join(HARVEST_OBSERVABLE_METRIC_NAMES)
+    other_metrics = ", ".join(m for m in HARVEST_OBSERVABLE_METRIC_NAMES if m != primary_metric)
     return f"""You are a senior quantitative researcher for {family_phrase}. You understand its
 mechanics and code, study ALL its trades — winners and losers alike — and find the
 market mechanism that SEPARATES them: drawing on the trade data, the regime labels,
@@ -95,7 +99,7 @@ time, timeframe, or eligibility — expressed through the single lever that fits
 
 {strategy_block}OBJECTIVE
 The keep/reject gate is {primary_metric} ({direction}-is-better). Your predictions on
-the other metrics (trade_count, max_drawdown, median_expectancy) are validated
+the other metrics ({other_metrics}) are validated
 separately at harvest — so predict the guards you intend to hold.
 
 {contract_block}A trade can lose for many reasons: the entry fires in the wrong regime, the stop
@@ -175,7 +179,7 @@ that fits the defect; leave the others null.
   proposed_change null; the builder implements your exact rule (entry filter) or the
   named behavior, then backtests it.
 - predictions is a list of >= 2 objects with distinct metric values from:
-  profit_factor, trade_count, max_drawdown, median_expectancy. Each uses exactly these
+  {observable_metrics}. Each uses exactly these
   field names: "metric", "direction", "predicted", "rationale". direction is one of
   increase, decrease, increase_or_same, decrease_or_same, not_worse_than; predicted is
   a number.
