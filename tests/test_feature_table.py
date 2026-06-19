@@ -10,13 +10,13 @@ import feature_table_extractors as extractors
 from feature_table import (
     ENTRY_TIME_COLUMNS,
     OUTCOME_COLUMNS,
-    regime_feature_columns,
     FeatureTableArtifact,
     FeatureTableMissingError,
     build_feature_table,
     feature_table_path,
     load_feature_table,
     load_regime_labels,
+    regime_feature_columns,
 )
 from feature_table_extractors import family_entry_features
 

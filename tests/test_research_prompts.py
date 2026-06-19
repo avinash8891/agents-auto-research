@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import feature_table
-
 from research_prompts import _build_mechanism_system_prompt, _entry_filter_columns
 
 

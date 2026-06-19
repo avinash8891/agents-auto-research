@@ -18,6 +18,7 @@ from agent_infra import _run_coroutine_sync
 from agent_sdk_token_usage import accumulate_agents_sdk_result_usage
 from agent_token_usage import get_round_usage, reset_round_usage
 from autoresearch_logging import get_logger
+from autoresearch_runtime_paths import resolve_runtime_root
 from research_memory import (
     _palace_status,
 )
@@ -30,7 +31,6 @@ from research_memory import (
     save_research_finding,
     search_research_findings,
 )
-from autoresearch_runtime_paths import resolve_runtime_root
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,
