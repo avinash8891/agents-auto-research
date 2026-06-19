@@ -1,0 +1,25 @@
+plans/001-fix-py-modules-manifest.md
+  s_914940d87da1f4::t_b01ffcdc61cb0b 1-153
+plans/003-reconcile-tech-debt-audit.md
+  s_914940d87da1f4::t_b01ffcdc61cb0b 1-154
+plans/002-ratchet-coverage-source-and-gate.md
+  s_914940d87da1f4::t_b01ffcdc61cb0b 1-139
+plans/README.md
+  s_914940d87da1f4::t_b01ffcdc61cb0b 1-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "1fa4cc572cf74fbb06124196900a6552233888c1",
+  "prompts": {},
+  "sessions": {
+    "s_914940d87da1f4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019edb70-1b50-7860-8991-e19ce84a721d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
