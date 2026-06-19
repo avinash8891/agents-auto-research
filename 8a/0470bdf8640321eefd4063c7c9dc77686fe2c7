@@ -1,0 +1,19 @@
+strategies/orb/prompt.py
+  s_be8b2f455eab9f::t_5c1b95cd8f92e9 10-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "8a0470bdf8640321eefd4063c7c9dc77686fe2c7",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
