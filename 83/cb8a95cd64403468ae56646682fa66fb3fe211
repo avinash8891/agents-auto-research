@@ -1,0 +1,24 @@
+research_conductor.py
+  s_be8b2f455eab9f::t_e9f8b5a6255352 836-838
+  s_be8b2f455eab9f::t_df33f70a037c5c 533-534
+  s_be8b2f455eab9f::t_50063fd9f7693b 703-704
+  s_be8b2f455eab9f::t_1a074379a11128 779-783
+  s_be8b2f455eab9f::t_761f813d4a5e03 880-881
+  s_be8b2f455eab9f::t_38bb29a9d9c1a8 576
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "83cb8a95cd64403468ae56646682fa66fb3fe211",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
