@@ -177,10 +177,19 @@ def _regime_summary_text(research_round: int, current_job: int | None) -> str:
             load_round_feature_table,
             regime_performance,
         )
+        from feature_table import regime_feature_columns
 
         runtime_root = resolve_runtime_root(_ROOT)
         features = load_round_feature_table(runtime_root, research_round, job=current_job)
-        return format_regime_performance(regime_performance(features))
+        if features is None:
+            return format_regime_performance([])
+        try:
+            regime_columns = sorted(regime_feature_columns() & set(features.columns))
+        except FileNotFoundError:
+            # No labels parquet reachable from this process: fall back to whatever
+            # regime columns already landed in the feature table.
+            regime_columns = [c for c in features.columns if c == "regime_label"]
+        return format_regime_performance(regime_performance(features, regime_columns))
     except Exception as exc:  # noqa: BLE001 — optional context, never fatal to the round
         log.warning("get_regime_summary failed: %s", exc)
         return f"Regime summary unavailable: {exc}"
@@ -959,10 +968,12 @@ async def run_research_conductor(
 
         @function_tool(name_override="get_regime_summary")
         async def get_regime_summary_tool() -> str:
-            """Return this round's regime taxonomy: each regime_label with its trade
-            count, win rate, and profit factor, so a regime-conditioned entry edge can
-            be proposed from data rather than guessed. Use when you suspect the edge
-            appears or disappears by regime. Reads this round's feature table."""
+            """Return this round's regime breakdown across EVERY regime dimension the
+            labels feed provides (regime_label plus trend / volatility / breadth labels
+            and score columns), each split into trade count, win rate, and profit factor.
+            Use it to discover which regime columns exist and whether the edge appears or
+            disappears on any of them, then condition a rule on the dimension that
+            separates winners from losers. Reads this round's feature table."""
             tools_called_this_round.add("get_regime_summary")
             trace_agent_tool_call(
                 "research-conductor",

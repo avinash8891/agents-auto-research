@@ -20,42 +20,88 @@ from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult, write_screenings
 
 
-def test_regime_performance_splits_win_rate_and_profit_factor_by_regime() -> None:
+def test_regime_performance_splits_each_regime_dimension() -> None:
+    # The feed contributes more than regime_label: here regime_label AND
+    # volatility_regime (the extra column the feature table joins through).
     features = pd.DataFrame(
         {
-            "regime_label": ["risk_on", "risk_on", "risk_on", "risk_off", "risk_off"],
-            "out_pnl": [10.0, -5.0, 4.0, -2.0, -3.0],
+            "regime_label": ["risk_on", "risk_on", "risk_off", "risk_off"],
+            "volatility_regime": ["high_vol", "low_vol", "high_vol", "low_vol"],
+            "out_pnl": [10.0, -5.0, -2.0, 4.0],
         }
     )
 
-    rows = regime_performance(features)
+    summary = regime_performance(features, ["regime_label", "volatility_regime"])
 
-    # Sorted by label: risk_off before risk_on.
-    assert rows == [
+    assert summary == [
         {
-            "regime_label": "risk_off",
-            "trades": 2,
-            "win_rate": 0.0,
-            "profit_factor": 0.0,
-            "total_pnl": -5.0,
+            "column": "regime_label",
+            "splits": [
+                {
+                    "value": "risk_off",
+                    "trades": 2,
+                    "win_rate": 0.5,
+                    "profit_factor": 2.0,
+                    "total_pnl": 2.0,
+                },
+                {
+                    "value": "risk_on",
+                    "trades": 2,
+                    "win_rate": 0.5,
+                    "profit_factor": 2.0,
+                    "total_pnl": 5.0,
+                },
+            ],
         },
         {
-            "regime_label": "risk_on",
-            "trades": 3,
-            "win_rate": 0.6667,
-            "profit_factor": 2.8,  # gross profit 14 / gross loss 5
-            "total_pnl": 9.0,
+            "column": "volatility_regime",
+            "splits": [
+                {
+                    "value": "high_vol",
+                    "trades": 2,
+                    "win_rate": 0.5,
+                    "profit_factor": 5.0,
+                    "total_pnl": 8.0,
+                },
+                {
+                    "value": "low_vol",
+                    "trades": 2,
+                    "win_rate": 0.5,
+                    "profit_factor": 0.8,
+                    "total_pnl": -1.0,
+                },
+            ],
         },
     ]
-    rendered = format_regime_performance(rows)
-    assert "risk_on | 3 | 66.67% | 2.8 | 9.0" in rendered
+    rendered = format_regime_performance(summary)
+    assert "[regime_label]" in rendered
+    assert "[volatility_regime]" in rendered
+    assert "high_vol | 2 | 50.00% | 5.0 | 8.0" in rendered
 
 
-def test_regime_performance_fails_open_without_labels_or_outcomes() -> None:
-    assert regime_performance(None) == []
-    assert regime_performance(pd.DataFrame()) == []
-    # out_pnl present but no regime_label -> no per-regime split.
-    assert regime_performance(pd.DataFrame({"out_pnl": [1.0, -1.0]})) == []
+def test_regime_performance_buckets_continuous_score_columns_into_terciles() -> None:
+    # 15 distinct values (> the categorical cardinality cap) -> a continuous score.
+    scores = [round(0.01 * (i + 1), 2) for i in range(15)]
+    features = pd.DataFrame(
+        {
+            "transition_score": scores,
+            "out_pnl": [1.0 if i % 2 == 0 else -1.0 for i in range(15)],
+        }
+    )
+
+    summary = regime_performance(features, ["transition_score"])
+
+    assert len(summary) == 1
+    assert summary[0]["column"] == "transition_score"
+    # High-cardinality numeric -> three quantile buckets, not one row per value.
+    assert len(summary[0]["splits"]) == 3
+
+
+def test_regime_performance_fails_open_without_columns_or_outcomes() -> None:
+    assert regime_performance(None, ["regime_label"]) == []
+    assert regime_performance(pd.DataFrame(), ["regime_label"]) == []
+    # out_pnl present but the requested regime column is absent -> nothing to split.
+    assert regime_performance(pd.DataFrame({"out_pnl": [1.0, -1.0]}), ["regime_label"]) == []
     assert "No regime performance available" in format_regime_performance([])
 
 

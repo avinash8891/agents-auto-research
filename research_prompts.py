@@ -75,13 +75,14 @@ the timeframe is wrong, or too many correlated trades fire. Diagnose WHICH, then
 express the fix through the channel that fits it (see OUTPUT CHANNELS).
 
 ENTRY-FILTER COLUMNS — when your fix is an entry filter (the `rule` field), it is a
-pandas df.query over ONLY these entry-time columns: {entry_filter_columns}. Condition on
-regime_label when the data supports it — call get_regime_summary for the regime
-taxonomy and each regime's win-rate / profit-factor (the labels feed may also add extra
-regime_* columns). Never reference outcome columns (out_is_loss, out_pnl) or anything
-known only after entry — that is look-ahead. Stop / target / hold / timeframe fixes are
-NOT entry filters; they go through proposed_change or requested_primitive, so this
-look-ahead rule does not constrain them.
+pandas df.query over ONLY these entry-time columns: {entry_filter_columns}. The regime
+feed adds MORE entry-time columns than regime_label alone (trend / volatility / breadth
+labels and score columns); call get_regime_summary to see every regime dimension, its
+values, and each value's win-rate / profit-factor, then filter on whichever one
+separates winners from losers. Never reference outcome columns (out_is_loss, out_pnl) or
+anything known only after entry — that is look-ahead. Stop / target / hold / timeframe
+fixes are NOT entry filters; they go through proposed_change or requested_primitive, so
+this look-ahead rule does not constrain them.
 
 The rendered corpus in the user message is your primary evidence: causal model,
 residuals, screening history, harvest verdicts, and rejection feedback.

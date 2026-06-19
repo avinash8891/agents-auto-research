@@ -238,47 +238,83 @@ def load_round_feature_table(
     return None
 
 
-def regime_performance(features: pd.DataFrame | None) -> list[dict[str, Any]]:
-    """Per-regime trade performance from a round's feature table: trade count, win
-    rate, and profit factor for each regime_label, sorted by label. Fail-open —
-    returns [] when the regime labels or outcomes are unavailable (regime
-    conditioning is optional context, never a hard dependency)."""
-    if features is None or features.empty:
-        return []
-    if "regime_label" not in features.columns or "out_pnl" not in features.columns:
-        return []
-    rows: list[dict[str, Any]] = []
-    for label, group in features.groupby(features["regime_label"].astype(str)):
-        pnl = group["out_pnl"].astype(float)
-        rows.append(
+_REGIME_CATEGORICAL_MAX_CARDINALITY = 12
+
+
+def _regime_column_splits(features: pd.DataFrame, column: str) -> list[dict[str, Any]]:
+    """Win-rate / profit-factor of out_pnl split by one regime column. Low-cardinality
+    columns split by value (the regime labels); continuous score columns split into
+    quantile terciles so a monotone edge is still visible."""
+    pnl = features["out_pnl"].astype(float)
+    series = features[column]
+    if series.nunique(dropna=True) <= _REGIME_CATEGORICAL_MAX_CARDINALITY:
+        groups = [
+            (value, series.astype(str) == value)
+            for value in sorted(series.dropna().astype(str).unique())
+        ]
+    else:
+        numeric = pd.to_numeric(series, errors="coerce")
+        low, high = numeric.quantile([1 / 3, 2 / 3])
+        groups = [
+            (f"<={low:.4g}", numeric <= low),
+            (f"({low:.4g}, {high:.4g}]", (numeric > low) & (numeric <= high)),
+            (f">{high:.4g}", numeric > high),
+        ]
+    splits: list[dict[str, Any]] = []
+    for value, mask in groups:
+        group_pnl = pnl[mask.fillna(False)]
+        if group_pnl.empty:
+            continue
+        splits.append(
             {
-                "regime_label": str(label),
-                "trades": int(len(group)),
-                "win_rate": round(float((pnl > 0).mean()), 4),
-                "profit_factor": _profit_factor_from_pnl(pnl),
-                "total_pnl": round(float(pnl.sum()), 4),
+                "value": value,
+                "trades": int(len(group_pnl)),
+                "win_rate": round(float((group_pnl > 0).mean()), 4),
+                "profit_factor": _profit_factor_from_pnl(group_pnl),
+                "total_pnl": round(float(group_pnl.sum()), 4),
             }
         )
-    rows.sort(key=lambda row: row["regime_label"])
-    return rows
+    return splits
 
 
-def format_regime_performance(rows: list[dict[str, Any]]) -> str:
-    """Render regime_performance() as a compact table for the conductor tool."""
-    if not rows:
+def regime_performance(
+    features: pd.DataFrame | None, regime_columns: list[str]
+) -> list[dict[str, Any]]:
+    """Per-dimension trade performance from a round's feature table. The regime feed
+    contributes MANY columns (regime_label plus trend / volatility / breadth labels and
+    score columns); this splits out_pnl by each one so a regime-conditioned edge on any
+    dimension is visible. Fail-open — returns [] when outcomes or columns are
+    unavailable (regime conditioning is optional context, never a hard dependency)."""
+    if features is None or features.empty or "out_pnl" not in features.columns:
+        return []
+    summary: list[dict[str, Any]] = []
+    for column in regime_columns:
+        if column not in features.columns:
+            continue
+        splits = _regime_column_splits(features, column)
+        if splits:
+            summary.append({"column": column, "splits": splits})
+    summary.sort(key=lambda entry: entry["column"])
+    return summary
+
+
+def format_regime_performance(summary: list[dict[str, Any]]) -> str:
+    """Render regime_performance() as a per-dimension table for the conductor tool."""
+    if not summary:
         return (
-            "No regime performance available: regime_label / out_pnl missing, or no "
-            "realized feature table exists for this round yet."
+            "No regime performance available: out_pnl missing, no regime columns in the "
+            "feature table, or no realized feature table exists for this round yet."
         )
-    lines = [
-        "REGIME PERFORMANCE (this round's trades):",
-        "regime_label | trades | win_rate | profit_factor | total_pnl",
-    ]
-    for row in rows:
+    lines = ["REGIME PERFORMANCE (this round's trades, split by each regime dimension):"]
+    for entry in summary:
         lines.append(
-            f"{row['regime_label']} | {row['trades']} | {row['win_rate']:.2%} | "
-            f"{row['profit_factor']} | {row['total_pnl']}"
+            f"\n[{entry['column']}]  value | trades | win_rate | profit_factor | total_pnl"
         )
+        for row in entry["splits"]:
+            lines.append(
+                f"  {row['value']} | {row['trades']} | {row['win_rate']:.2%} | "
+                f"{row['profit_factor']} | {row['total_pnl']}"
+            )
     return "\n".join(lines)
 
 

@@ -205,6 +205,16 @@ def load_regime_labels() -> pd.DataFrame:
     return labels
 
 
+def regime_feature_columns() -> frozenset[str]:
+    """Every regime-derived column the labels feed contributes to the feature table:
+    `regime_label` plus all extra columns in regime_labels.parquet (trend / volatility /
+    breadth labels, score columns, ...). The feed is rich and schema-flexible, so this
+    is discovered from the parquet rather than hardcoded. Reads the parquet (raises
+    FileNotFoundError when absent — callers that treat regime as optional must catch)."""
+    labels = load_regime_labels()
+    return frozenset({"regime_label"}) | _extra_regime_columns(labels)
+
+
 def build_feature_table(
     trades_df: pd.DataFrame,
     bars_df: pd.DataFrame,
