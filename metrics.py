@@ -195,7 +195,9 @@ def compute_diagnostics(trades_df: pd.DataFrame) -> dict:
     # 10. Stop distance analysis (quintile PF)
     if all(c in trades_df.columns for c in ["entry_price", "stop", "pnl_pct"]):
         df = trades_df.copy()
-        df["stop_dist_pct"] = ((df["entry_price"] - df["stop"]).abs() / df["entry_price"]) * 100
+        df.loc[:, "stop_dist_pct"] = (
+            (df["entry_price"] - df["stop"]).abs() / df["entry_price"]
+        ) * 100
         try:
             df["stop_q"] = pd.qcut(
                 df["stop_dist_pct"],

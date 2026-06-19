@@ -39,11 +39,11 @@ def bucket_trade_performance(
             f"for {len(bins)} bins"
         )
 
-    frame = trades[[bucket_col, value_col]].copy()
-    frame[value_col] = pd.to_numeric(frame[value_col], errors="coerce")
-    frame[bucket_col] = pd.to_numeric(frame[bucket_col], errors="coerce")
+    frame = trades.loc[:, [bucket_col, value_col]].copy()
+    frame.loc[:, value_col] = pd.to_numeric(frame[value_col], errors="coerce")
+    frame.loc[:, bucket_col] = pd.to_numeric(frame[bucket_col], errors="coerce")
     frame = frame.dropna(subset=[bucket_col, value_col])
-    frame["bucket"] = pd.cut(frame[bucket_col], bins=bins, labels=labels, include_lowest=True)
+    frame.loc[:, "bucket"] = pd.cut(frame[bucket_col], bins=bins, labels=labels, include_lowest=True)
     frame = frame.dropna(subset=["bucket"])
 
     rows: list[dict[str, object]] = []
