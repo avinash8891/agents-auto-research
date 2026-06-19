@@ -95,9 +95,7 @@ def test_mark_needs_data_manual_review_writes_data_request(tmp_path: Path) -> No
     assert out["halted_thesis_id"] == "ema-7-3-1"
     assert out["next_action"]["type"] == "manual_review"
     assert out["data_requests"][0]["path"] == request_path.relative_to(tmp_path).as_posix()
-    assert request["required_data"] == [
-        {"name": "trade_signed_volume", "granularity": "unknown"}
-    ]
+    assert request["required_data"] == [{"name": "trade_signed_volume", "granularity": "unknown"}]
 
 
 def test_try_resume_halted_thesis_writes_round_selected_files(tmp_path: Path, monkeypatch) -> None:

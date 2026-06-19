@@ -378,8 +378,7 @@ def _mark_needs_data_manual_review(
         "kind": primitive.get("kind", ""),
         "description": primitive.get("description", ""),
         "required_data": [
-            {"name": name, "granularity": "unknown"}
-            for name in primitive.get("required_data", [])
+            {"name": name, "granularity": "unknown"} for name in primitive.get("required_data", [])
         ],
         "candidate_sources": [],
         "requesting_thesis_id": thesis_id,
