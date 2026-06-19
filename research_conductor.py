@@ -530,7 +530,8 @@ async def run_research_conductor(
 
         @function_tool
         async def list_past_theses(offset: int = 0, limit: int = 25) -> str:
-            """Return a bounded index of prior theses and their outcomes.
+            """Return a bounded index of prior theses and their outcomes (scoped to
+            the current job).
 
             Call this BEFORE proposing — the cumulative research ledger is the
             source of truth for what has been tried, what worked, what failed,
@@ -572,7 +573,7 @@ async def run_research_conductor(
 
         @function_tool
         async def get_past_thesis(thesis_id: str) -> str:
-            """Fetch a prior thesis's full attempt history by thesis_id.
+            """Fetch a prior thesis's full attempt history by thesis_id (current job).
 
             Use after list_past_theses to inspect a specific prior attempt before
             proposing something similar (did it already test this lever/dimension?).
@@ -699,8 +700,8 @@ async def run_research_conductor(
 
             Use after list_round_results to inspect a specific run's metrics and
             config. Args: research_round_id; detail=True includes full metrics;
-            optional job_id/family. Returns the round result (full metrics when
-            detail=True)."""
+            job_id/family default to the current job/family. Returns the round
+            result (full metrics when detail=True)."""
             started = monotonic()
             tool_input = json.dumps(
                 {
@@ -775,9 +776,11 @@ async def run_research_conductor(
         ) -> str:
             """List validator/compile rejections for the current job.
 
-            Optional filters: round_number to scope to one round; rejection_code
-            to scope to one category (e.g. structural_missing_requested_primitives). Returns up
-            to `limit` records, most-recent rounds first.
+            Scoped to the current job (returns an error envelope if there is no
+            current job). Optional filters: round_number to scope to one round;
+            rejection_code to scope to one category (e.g.
+            structural_missing_requested_primitives). Returns up to `limit` records,
+            most-recent rounds first.
             """
             from rejection_artifact import list_rejections
 
@@ -830,7 +833,9 @@ async def run_research_conductor(
 
         @function_tool(name_override="get_rejection")
         async def get_rejection_tool(round_number: int, thesis_id: str) -> str:
-            """Fetch the full rejection record for one (round, thesis_id)."""
+            """Fetch the full rejection record for one (round, thesis_id) in the
+            current job. Scoped to the current job (error envelope if none); returns
+            status='not_found' if that (round, thesis_id) has no rejection."""
             from rejection_artifact import get_rejection
 
             started = monotonic()
@@ -872,7 +877,8 @@ async def run_research_conductor(
             """Group recent rejections by rejection_code and return counts.
 
             Use this to detect repeating failure modes (e.g. structural_missing_requested_primitives
-            firing 4+ times). The summary covers the last `window_rounds` rounds.
+            firing 4+ times). Scoped to the current job (error envelope if none);
+            covers the last `window_rounds` rounds.
             """
             from rejection_artifact import rejection_pattern_summary
 
