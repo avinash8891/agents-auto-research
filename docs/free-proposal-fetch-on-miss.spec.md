@@ -91,29 +91,34 @@ human-seeded ones.
     builder compounds its own work. Every entry is tagged `created_by: "agent"` so a human
     can audit / prune the seed pool.
 
-### 4b. Promote-on-graduation auto-apply for ENTRY-FEATURES (agent-tagged)
-Give the "compounding vocabulary" safely, without auto-merging behavior code.
-  - Trigger: a thesis whose primitive `kind == "entry_feature"` reaches walkforward verdict
-    `graduated` AND the produced column passes `_assert_leakage_guard` + an auto-generated
-    point-in-time test.
-  - Apply: register the column in an **agent-feature registry** (new:
-    `runtime/agent_features.jsonl`) that the feature-table build UNIONs into the schema at
-    build time. Each record: { column, family_name, definition (extractor ref or
-    declarative formula), required_data, thesis_id, graduated_at,
-    created_by: "agent", created_at (UTC) }.
-  - Result: the column becomes a STANDING entry-time column next round/job, auto-surfaces
-    to the agent via research_prompts._entry_filter_columns (no prompt edit), and is
-    clearly TAGGED agent-created (distinguishable from hand-authored `_FEATURE_COLUMNS`,
-    auditable, prunable).
+### 4b. Persist ENTRY-FEATURE columns ON BUILD; adopt the RULE on graduation (agent-tagged)
+Key principle: **a column existing does not cause overfitting — searching many rules and
+keeping the in-sample winner does.** So gate the *hypothesis*, not the *feature*. Two
+separate events:
+
+  - ON BUILD (immediately): when an `entry_feature` primitive is computed and passes
+    `_assert_leakage_guard` + an auto-generated point-in-time test, register the column in
+    an **agent-feature registry** (new: `runtime/agent_features.jsonl`) that the
+    feature-table build UNIONs into the schema. Record:
+    { column, family_name, definition (extractor ref or declarative formula), required_data,
+      requesting_thesis_id, requesting_thesis_verdict, status: "exploratory",
+      created_by: "agent", created_at (UTC) }.
+    Effect: the column becomes a STANDING entry-time column from the NEXT round on,
+    auto-surfaces via research_prompts._entry_filter_columns (no prompt edit), and is
+    REUSABLE — another idea next round finds it already computed (no re-request, no
+    recompute) and sees the prior verdict (dedup memory). Persisting it is just caching
+    computed data; it is harmless on its own.
+  - ON GRADUATION: when a thesis USING that column reaches walkforward verdict `graduated`,
+    flip the column's `status` → "validated" and adopt the RULE/mechanism into the strategy
+    (the config change becomes live). Graduation gates *adoption of the mechanism*, NOT
+    whether the feature is available for research.
   - MANAGEMENT primitives are NOT auto-applied — generated exits/strategy behavior stays on
-    the human-reviewed promotion queue (§4 reality). Their config key may enter the
-    family's allowed_config_keys on review (mirrors how trail_after_r/gap_exclude became
-    levers).
+    the human-reviewed promotion queue (§4 reality). Their config key may enter the family's
+    allowed_config_keys on review (mirrors how trail_after_r/gap_exclude became levers).
   - Hardening note (future): prefer agent entry-features expressed as a DECLARATIVE,
     sandboxed expression over existing raw inputs (rule-like grammar for feature defs) so
-    "auto-apply" never merges arbitrary Python — only a validated spec. Until then, the
-    generated extractor is gated by graduation + leakage + point-in-time test + the
-    agent-created tag.
+    persisting a column never merges arbitrary Python — only a validated spec. Until then,
+    the generated extractor is gated by leakage + point-in-time test + the agent-created tag.
 
 ## 5. Agent-created tagging (cross-cutting)
 Every capability the agent causes to exist carries provenance: `created_by: "agent"`,
@@ -129,11 +134,28 @@ a point-in-time test (only data at/before the entry bar; prior sessions for dail
 known-in-advance dates for calendar). Free to PROPOSE; never free to leak. The rule
 validator (causal_rule.validate_entry_rule_references) stays strict.
 
-## 7. Pruning / overfitting control
-More standing columns = more multiple-testing surface. Mitigations: promote only on
-GRADUATION (not on proposal); the causal-story + holdout + harvest gates already require a
-mechanism that holds out-of-sample; an agent-created column unused by any kept thesis after
-N rounds is a prune candidate (log via the agent-feature registry, never silent-drop).
+## 7. Cost of many columns (and why it is NOT solved by hiding them)
+Persisting every built column (§4b) raises two real costs — neither is overfitting-by-
+existence, and neither is fixed by withholding columns:
+
+1. **Compute** — every round recomputes all columns, so more columns = slower runs. Fix =
+   **pruning**: an agent-created column that no kept (validated) thesis has used after N
+   rounds is a prune candidate — log it via the agent-feature registry, never silent-drop.
+   This is cache eviction (housekeeping), not correctness.
+
+2. **Holdout decay** — testing enough hypotheses against the SAME holdout means one
+   eventually looks good by pure luck, so a fixed holdout "wears out" as more ideas hit it.
+   More columns → more candidate rules → faster decay. Fix is NOT fewer columns, it is:
+   - **Forward harvest** — adoption is gated on registered predictions validated against
+     genuinely NEW future data the agent never saw (walkforward). Luck cannot pre-fit data
+     that came after the idea, so this is robust to how much was searched in-sample.
+   - **Selection-aware bar** — raise the acceptance threshold as the number of hypotheses
+     tested grows (more guesses ⇒ more flukes ⇒ demand more proof). Track the count and
+     scale the bar.
+
+So: overfitting is controlled on the HYPOTHESIS side (forward harvest + dedup +
+selection-aware bar + the causal-story requirement), and column proliferation is a
+compute/clutter concern handled by pruning — not by gating feature availability.
 
 ## 8. Affected code (anchors)
 - research_prompts.py — free-proposal reframe (keep derived column list).
@@ -155,10 +177,16 @@ N rounds is a prune candidate (log via the agent-feature registry, never silent-
   + emits acquisition request (no fabrication).
 - 4a: a passing build appends a `created_by:"agent"` capability-registry entry; a later
   related build re-seeds from it.
-- 4b: a graduated entry_feature appears in `_FEATURE_COLUMNS` (via the agent-feature
-  registry), in ENTRY_TIME_COLUMNS, in the derived prompt list, is recomputed next round
-  (real-parquet end-to-end test), and is tagged agent-created.
-- Leakage guard + point-in-time test on every promoted feature.
+- 4b (persist-on-build): a built+leakage-passing entry_feature appears in the agent-feature
+  registry with status "exploratory" and shows up in ENTRY_TIME_COLUMNS + the derived prompt
+  list the NEXT round (real-parquet end-to-end test), tagged agent-created — even when its
+  originating thesis did NOT graduate (reuse without re-request).
+- 4b (adopt-on-graduation): when a thesis using that column graduates, its status flips to
+  "validated" and the rule's config change is adopted; column availability is unchanged by
+  the verdict.
+- Pruning: an agent column unused by any validated thesis after N rounds is flagged a prune
+  candidate (logged, not silent-dropped).
+- Leakage guard + point-in-time test on every agent column at registration.
 - MANAGEMENT primitive is NOT auto-applied (stays on the promotion queue).
 - Full suite + pre-commit + scripts/check_prompt_drift.py green.
 
@@ -166,5 +194,6 @@ N rounds is a prune candidate (log via the agent-feature registry, never silent-
 1. 3a (prompt reframe) + 3b (structured requested_primitive) — low risk.
 2. 3c + 3d needs-data halt (reuses halt machinery) — medium.
 3. 4a capability-registry write (gated, agent-tagged) — medium; unlocks builder self-learning.
-4. 4b promote-on-graduation auto-apply for entry-features + agent-feature registry — highest
-   risk; do last, with the end-to-end promotion + leakage + tag tests.
+4. 4b persist-on-build entry-feature columns (agent-feature registry, leakage+PIT gated,
+   agent-tagged) + adopt-the-rule-on-graduation + pruning + selection-aware bar — highest
+   risk; do last, with the end-to-end reuse + leakage + tag tests.
