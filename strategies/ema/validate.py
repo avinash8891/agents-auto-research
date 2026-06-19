@@ -117,4 +117,18 @@ def validate_ema_runtime_config(config: dict[str, Any]) -> list[str]:
             violations.append(f"max_hold_bars={max_hold}: must be >= 1")
         elif max_hold > 390:
             violations.append(f"max_hold_bars={max_hold}: must be <= 390")
+    # Boolean levers must be real booleans. bool("any non-empty string") is True,
+    # so a descriptive value silently flips the lever on and backtests the wrong
+    # thing -- reject it loudly instead. (isinstance bool, not _is_int_value,
+    # because bool is an int subclass.)
+    gap_filter = config.get("gap_filter")
+    if gap_filter is not None and not isinstance(gap_filter, bool):
+        violations.append(
+            f"gap_filter={gap_filter!r}: must be a boolean (true/false), not a label. "
+            "A specific exclusion (e.g. by gap direction / bars since open) is not "
+            "expressible as the gap_filter flag."
+        )
+    use_range_shift = config.get("use_range_shift")
+    if use_range_shift is not None and not isinstance(use_range_shift, bool):
+        violations.append(f"use_range_shift={use_range_shift!r}: must be a boolean (true/false)")
     return violations

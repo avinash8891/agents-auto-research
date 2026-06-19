@@ -1104,3 +1104,23 @@ def test_demo_strategy_runner_succeeds(tmp_path: Path) -> None:
         event_counts={},
         rejection_breakdown={},
     )
+
+
+def test_validate_ema_rejects_non_bool_gap_filter() -> None:
+    """gap_filter is a boolean lever. A conductor that proposes a descriptive
+    string (e.g. 'exclude_gap_up_early_short_entries') must be rejected, not
+    silently coerced to True (bool('...') is True) and backtested as the wrong
+    lever. Regression for the mistranslation that produced PF 0.79 / 272% DD."""
+    violations = validate_ema_runtime_config(
+        {"gap_filter": "exclude_gap_up_early_short_entries", "gap_pct": 0.01}
+    )
+    assert any("gap_filter" in v for v in violations), violations
+    # real booleans pass
+    assert not any("gap_filter" in v for v in validate_ema_runtime_config({"gap_filter": True}))
+    assert not any("gap_filter" in v for v in validate_ema_runtime_config({"gap_filter": False}))
+
+
+def test_validate_ema_rejects_non_bool_use_range_shift() -> None:
+    violations = validate_ema_runtime_config({"use_range_shift": "yes"})
+    assert any("use_range_shift" in v for v in violations), violations
+    assert not any("use_range_shift" in v for v in validate_ema_runtime_config({"use_range_shift": True}))

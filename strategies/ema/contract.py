@@ -150,10 +150,17 @@ def map_ema_config_changes_to_contract(config_changes: dict[str, Any]) -> list[d
             {"type": "max_trades_per_day", "value": config_changes["max_trades_per_day"]}
         )
     if "gap_filter" in config_changes:
+        gap_filter_value = config_changes["gap_filter"]
+        if not isinstance(gap_filter_value, bool):
+            # Do not bool()-coerce: bool("any string") is True, which silently
+            # turns a descriptive value into "filter on" and tests the wrong lever.
+            raise ValueError(
+                f"gap_filter must be a boolean (true/false), got {gap_filter_value!r}"
+            )
         primitive_contract.append(
             {
                 "type": "gap_filter",
-                "enabled": bool(config_changes["gap_filter"]),
+                "enabled": gap_filter_value,
                 "gap_pct": config_changes.get("gap_pct"),
             }
         )
