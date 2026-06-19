@@ -1,0 +1,33 @@
+docs/free-proposal-fetch-on-miss.spec.md
+  s_05bb4d97d5f815::t_6f222eb9d66ea1 63-64,71-72
+  s_05bb4d97d5f815::t_6e3b0c68bf1d49 154-156,170,173-179,190-192,199-200,231,259,279-282,285-286,302
+  s_05bb4d97d5f815::t_c6d0da2397f2ec 91-110
+  s_05bb4d97d5f815::t_0e0b806ae3e8ea 232,254,270-275,287-290
+  s_05bb4d97d5f815::t_e938b9ad721158 25-28
+  s_05bb4d97d5f815::t_f0cc16e3d5b25a 157-159,283-284
+  s_05bb4d97d5f815::t_954ca4b083143e 161-165,185-188,194-197,204-206,211-213
+  s_05bb4d97d5f815::t_4874a33bf5785b 201-202,292-293
+CONTEXT.md
+  s_05bb4d97d5f815::t_aff3a4eaf11173 47-51
+  s_05bb4d97d5f815::t_4874a33bf5785b 39-40
+  s_05bb4d97d5f815::t_6e3b0c68bf1d49 1-38,41
+  s_05bb4d97d5f815::t_f0cc16e3d5b25a 42-46
+docs/adr/0001-global-agent-feature-identity.md
+  s_05bb4d97d5f815::t_6e3b0c68bf1d49 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "2bda4864605445b0f1110d74dcaa31d523490d0c",
+  "prompts": {},
+  "sessions": {
+    "s_05bb4d97d5f815": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee068-90d0-7391-89e3-645a7cf3e3b8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
