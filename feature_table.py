@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import calendar
+import os
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+import yaml
 
 from autoresearch_logging import get_logger
 from autoresearch_runtime_paths import research_round_root
@@ -17,6 +21,8 @@ log = get_logger(__name__)
 # Rule I: bad external trade rows are quarantined row-by-row; above this
 # fraction the data is too corrupt to trust and the build stops loudly.
 _QUARANTINE_MAX_FRACTION = 0.01
+_EVENT_CALENDAR_ENV = "AUTORESEARCH_EVENT_CALENDAR_PATH"
+_ECON_RELEASE_TYPES = frozenset({"CPI", "NFP"})
 
 # Ordered source of truth for the feature-table schema. Outcome columns are the
 # "out_"-prefixed ones; entry-time columns are the rest. The two frozensets below
@@ -48,6 +54,9 @@ _FEATURE_COLUMNS = [
     "xs_rank_gap_pct",
     "xs_rank_rvol",
     "session_phase",
+    "days_to_fomc",
+    "is_earnings_window",
+    "days_to_econ_release",
     "vol_pctile_20d",
     "regime_label",
     "stop_distance_pct",
@@ -137,6 +146,13 @@ class _RegimeLookup:
     extra_columns: frozenset[str]
 
 
+@dataclass(frozen=True)
+class _EventCalendarLookup:
+    dates: np.ndarray
+    publication_dates: np.ndarray
+    types: np.ndarray
+
+
 def feature_table_path(round_root: Path) -> Path:
     return FeatureTableArtifact(round_root).path
 
@@ -187,6 +203,7 @@ def build_feature_table(
         extra_columns=extra_regime_columns,
     )
     config = runtime_config or {}
+    event_calendar = _load_event_calendar_lookup(config)
     bars_by_symbol = {
         str(symbol): SymbolBars.from_bars(symbol_bars.reset_index(drop=True))
         for symbol, symbol_bars in bars.groupby("symbol", sort=False)
@@ -201,6 +218,7 @@ def build_feature_table(
             str(family).lower(),
             config,
             event_stops,
+            event_calendar,
             feature_cache,
         )
         for trade in trades.to_dict("records")
@@ -268,6 +286,7 @@ def _feature_row(
     family: str,
     runtime_config: dict[str, Any],
     event_stops: dict[tuple[str, pd.Timestamp], float],
+    event_calendar: _EventCalendarLookup | None,
     feature_cache: dict[tuple[Any, ...], Any],
 ) -> dict[str, Any]:
     symbol = str(trade.get("symbol", ""))
@@ -348,6 +367,13 @@ def _feature_row(
             entry_ts,
         ),
         "session_phase": _session_phase(entry_ts),
+        "days_to_fomc": _days_to_next_event(
+            event_calendar, entry_day=entry_day, event_types=frozenset({"FOMC"})
+        ),
+        "is_earnings_window": _is_earnings_window(entry_day),
+        "days_to_econ_release": _days_to_next_event(
+            event_calendar, entry_day=entry_day, event_types=_ECON_RELEASE_TYPES
+        ),
         "regime_label": _regime_label_for_date(regime_lookup, entry_day),
         "stop_distance_pct": _pct(abs(entry_price - stop_price), entry_price),
         "entry_bar_range_pct": entry_bar_range_pct,
@@ -397,6 +423,62 @@ def _event_stop_prices(events: list[dict]) -> dict[tuple[str, pd.Timestamp], flo
             timestamp = timestamp.tz_localize("America/New_York")
         stops[(symbol, timestamp.tz_convert("UTC"))] = stop_price
     return stops
+
+
+def _load_event_calendar_lookup(runtime_config: dict[str, Any]) -> _EventCalendarLookup | None:
+    path = _event_calendar_path(runtime_config)
+    if path is None:
+        return None
+    if not path.exists():
+        raise FileNotFoundError(f"event calendar file not found: {path}")
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        rows = payload.get("events", []) if isinstance(payload, dict) else payload
+        frame = pd.DataFrame(rows or [])
+    elif path.suffix.lower() == ".csv":
+        frame = pd.read_csv(path)
+    else:
+        raise ValueError(f"Unsupported event calendar file: {path}")
+    return _event_calendar_lookup_from_frame(frame)
+
+
+def _event_calendar_path(runtime_config: dict[str, Any]) -> Path | None:
+    raw = (
+        runtime_config.get("event_calendar_path")
+        or runtime_config.get("event_calendar")
+        or os.environ.get(_EVENT_CALENDAR_ENV)
+    )
+    if raw:
+        return Path(str(raw)).expanduser()
+    for candidate in (
+        default_data_root() / "event_calendar" / "us_events.yaml",
+        default_data_root() / "events" / "us_events.yaml",
+    ):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _event_calendar_lookup_from_frame(frame: pd.DataFrame) -> _EventCalendarLookup:
+    required = {"date", "type"}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(f"event calendar missing required columns: {sorted(missing)}")
+    out = frame.copy()
+    out = out.assign(
+        date=pd.to_datetime(out["date"], errors="raise").dt.date,
+        type=out["type"].astype(str),
+    )
+    if "publication_date" in out.columns:
+        out = out.assign(publication_date=pd.to_datetime(out["publication_date"]).dt.date)
+    else:
+        out = out.assign(publication_date=out["date"].map(lambda day: day - timedelta(days=90)))
+    out = out.sort_values(["date", "type"], kind="mergesort").reset_index(drop=True)
+    return _EventCalendarLookup(
+        dates=out["date"].to_numpy(),
+        publication_dates=out["publication_date"].to_numpy(),
+        types=out["type"].to_numpy(dtype=object),
+    )
 
 
 def _normalize_bars(bars_df: pd.DataFrame) -> pd.DataFrame:
@@ -471,6 +553,59 @@ def _session_phase(entry_ts: pd.Timestamp) -> str:
     if minute < 270:
         return "lunch"
     return "close"
+
+
+def _days_to_next_event(
+    lookup: _EventCalendarLookup | None, *, entry_day: date, event_types: frozenset[str]
+) -> float:
+    if lookup is None:
+        return np.nan
+    for event_day, publication_day, event_type in zip(
+        lookup.dates,
+        lookup.publication_dates,
+        lookup.types,
+        strict=True,
+    ):
+        if event_type not in event_types or event_day < entry_day or publication_day > entry_day:
+            continue
+        return float((event_day - entry_day).days)
+    return np.nan
+
+
+def _is_earnings_window(entry_day: date) -> bool:
+    start = _earnings_window_start(entry_day.year, _quarter_start_month(entry_day.month))
+    if start <= entry_day <= start + timedelta(days=35):
+        return True
+    previous_year, previous_month = _previous_quarter_start(start.year, start.month)
+    previous_start = _earnings_window_start(previous_year, previous_month)
+    return previous_start <= entry_day <= previous_start + timedelta(days=35)
+
+
+def _earnings_window_start(year: int, month: int) -> date:
+    mondays = [
+        week[calendar.MONDAY]
+        for week in calendar.monthcalendar(year, month)
+        if week[calendar.MONDAY] != 0
+    ]
+    return date(year, month, mondays[1])
+
+
+def _quarter_start_month(month: int) -> int:
+    if month >= 10:
+        return 10
+    if month >= 7:
+        return 7
+    if month >= 4:
+        return 4
+    return 1
+
+
+def _previous_quarter_start(year: int, month: int) -> tuple[int, int]:
+    quarters = (1, 4, 7, 10)
+    idx = quarters.index(month)
+    if idx == 0:
+        return year - 1, quarters[-1]
+    return year, quarters[idx - 1]
 
 
 def _rvol(symbol_bars: pd.DataFrame, entry_ts: pd.Timestamp) -> float:
@@ -691,6 +826,9 @@ def _coerce_feature_dtypes(out: pd.DataFrame) -> pd.DataFrame:
             "xs_rank_gap_pct": "float64",
             "xs_rank_rvol": "float64",
             "session_phase": "str",
+            "days_to_fomc": "float64",
+            "is_earnings_window": "bool",
+            "days_to_econ_release": "float64",
             "vol_pctile_20d": "float64",
             "regime_label": "str",
             "stop_distance_pct": "float64",

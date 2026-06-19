@@ -43,6 +43,9 @@ EXPECTED_COLUMNS = [
     "xs_rank_gap_pct",
     "xs_rank_rvol",
     "session_phase",
+    "days_to_fomc",
+    "is_earnings_window",
+    "days_to_econ_release",
     "vol_pctile_20d",
     "regime_label",
     "stop_distance_pct",
@@ -109,6 +112,34 @@ def _write_regime_labels(data_root: Path, **extra_columns: object) -> None:
     for key, value in extra_columns.items():
         payload[key] = [value]
     pd.DataFrame(payload).to_parquet(data_root / "regime_labels.parquet", index=False)
+
+
+def _write_event_calendar(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "events:",
+                '  - date: "2024-01-10"',
+                '    market: "US"',
+                '    type: "FOMC"',
+                '    importance: "high"',
+                '  - date: "2024-01-12"',
+                '    market: "US"',
+                '    type: "CPI"',
+                '    importance: "high"',
+                '  - date: "2024-01-05"',
+                '    market: "US"',
+                '    type: "NFP"',
+                '    importance: "high"',
+                '  - date: "2024-02-02"',
+                '    market: "US"',
+                '    type: "NFP"',
+                '    importance: "high"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _feature_expansion_bars() -> tuple[pd.DataFrame, pd.Timestamp]:
@@ -237,6 +268,43 @@ def test_build_feature_table_computes_leakage_safe_feature_expansion(
     assert row["xs_rank_rvol"] == pytest.approx(1.0)
     assert row["session_phase"] == "open"
     assert {"rvol", "gap_atr", "xs_rank_rvol", "session_phase"} <= ENTRY_TIME_COLUMNS
+
+
+def test_build_feature_table_uses_regime_event_calendar_features(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    calendar_path = tmp_path / "us_events.yaml"
+    _write_event_calendar(calendar_path)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+
+    table = build_feature_table(
+        _trades_df(),
+        _bars_df(),
+        events=[],
+        family="ema",
+        runtime_config={"event_calendar": str(calendar_path)},
+    )
+
+    row = table.iloc[0]
+    assert row["days_to_fomc"] == 6.0
+    assert bool(row["is_earnings_window"]) is False
+    assert row["days_to_econ_release"] == 1.0
+    assert {"days_to_fomc", "is_earnings_window", "days_to_econ_release"} <= ENTRY_TIME_COLUMNS
+
+
+def test_build_feature_table_uses_regime_earnings_season_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    _write_regime_labels(data_root)
+    monkeypatch.setenv("AUTORESEARCH_DATA_ROOT", str(data_root))
+    trades = _trades_df().assign(entry_date=pd.Timestamp("2024-01-15 14:35:00", tz="UTC"))
+
+    table = build_feature_table(trades, _bars_df(), events=[], family="ema")
+
+    assert bool(table.loc[0, "is_earnings_window"]) is True
 
 
 def test_feature_expansion_columns_render_into_research_corpus(
