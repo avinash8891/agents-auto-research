@@ -738,17 +738,26 @@ def _mechanism_proposal_to_compiler_payload(
     thesis_id: str,
 ) -> dict[str, Any]:
     proposed_change = raw_thesis.get("proposed_change")
-    if not isinstance(proposed_change, dict) or not proposed_change:
-        raise ValueError("mechanism proposal requires non-empty proposed_change")
+    requested_primitive = raw_thesis.get("requested_primitive")
+    config_changes = dict(proposed_change) if isinstance(proposed_change, dict) else {}
+    if not config_changes and not (
+        isinstance(requested_primitive, dict) and requested_primitive.get("name")
+    ):
+        raise ValueError("mechanism proposal requires proposed_change or requested_primitive")
     story = str(raw_thesis.get("story") or "")
-    return {
+    payload = {
         **raw_thesis,
         "thesis_id": thesis_id,
         "strategy_family": strategy_family,
         "hypothesis": story,
         "mechanism": story,
-        "config_changes": proposed_change,
+        "config_changes": config_changes,
     }
+    if isinstance(requested_primitive, dict) and requested_primitive.get("name"):
+        payload["requested_primitive"] = dict(requested_primitive)
+        payload["requested_primitives"] = [str(requested_primitive["name"])]
+        payload["requires_code_change"] = True
+    return payload
 
 
 def _screen_mechanism_proposal(

@@ -708,6 +708,48 @@ def test_thesis_meta_from_mechanism_result_persists_proposed_change_for_dedupe()
     assert out["proposed_change"] == {"ema_length": 8}
 
 
+def test_mechanism_proposal_to_compiler_payload_carries_requested_primitive() -> None:
+    raw = {
+        "story": "Signed volume identifies informed entries.",
+        "rule": "signed_volume_z > 1.5",
+        "competitor_rule": "signed_volume_z <= 1.5",
+        "competitor_story": "Signed volume is noise.",
+        "actionable": True,
+        "proposed_change": None,
+        "requested_primitive": {
+            "name": "signed_volume_z",
+            "kind": "entry_feature",
+            "description": "Entry-time signed volume z-score.",
+            "required_data": ["trade_signed_volume"],
+        },
+        "predictions": [
+            {
+                "metric": "profit_factor",
+                "direction": "increase",
+                "predicted": 1.4,
+                "rationale": "Filter should remove adverse entries.",
+            },
+            {
+                "metric": "trade_count",
+                "direction": "decrease",
+                "predicted": 20,
+                "rationale": "Filter should remove some entries.",
+            },
+        ],
+    }
+
+    out = _mechanism_proposal_to_compiler_payload(
+        raw,
+        strategy_family="ema",
+        thesis_id="job-1-round-1-attempt-1",
+    )
+
+    assert out["requested_primitive"] == raw["requested_primitive"]
+    assert out["requested_primitives"] == ["signed_volume_z"]
+    assert out["requires_code_change"] is True
+    assert out["config_changes"] == {}
+
+
 def test_resolve_conductor_inputs_uses_persisted_artifacts_and_verdict_feedback(
     tmp_path: Path,
 ) -> None:
