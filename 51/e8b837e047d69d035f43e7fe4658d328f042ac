@@ -1,0 +1,32 @@
+strategies/ema/validate.py
+  s_be8b2f455eab9f::t_7605071d89f18f 134-155
+strategies/ema/strategy.py
+  s_be8b2f455eab9f::t_29dd9586939083 404,408
+  s_be8b2f455eab9f::t_7f7ccd8d12fcf3 12
+  s_be8b2f455eab9f::t_bd4b2c0a743f2f 180-183
+  s_be8b2f455eab9f::t_f9106f46c72df8 207-214
+  s_be8b2f455eab9f::t_fbc48ce36c0ed8 248-264
+  s_be8b2f455eab9f::t_8eb048f789c414 368-384
+strategies/ema/research.py
+  s_be8b2f455eab9f::t_dcf19b50a69edc 76-81
+backtest/filters.py
+  s_be8b2f455eab9f::t_77bddbfc3863fe 54-75
+configs/ema_base.yaml
+  s_be8b2f455eab9f::t_bcf704b8334f35 42,44,47-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "51e8b837e047d69d035f43e7fe4658d328f042ac",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
