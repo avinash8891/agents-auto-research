@@ -429,7 +429,8 @@ async def run_research_conductor(
             Use BEFORE proposing to recall what is already known so you don't
             re-derive it or re-propose a dead idea. Args: query = what to look for;
             finding_type = optional filter (observation, validated_finding,
-            rejected_finding, ...). Returns matching findings with status and scope."""
+            rejected_finding, ...). Returns the matching findings as text, or
+            'No findings found.'"""
             started = monotonic()
             tool_input = json.dumps({"query": query, "finding_type": finding_type}, default=str)
             trace_agent_tool_call(
@@ -571,12 +572,14 @@ async def run_research_conductor(
 
         @function_tool
         async def get_past_thesis(thesis_id: str) -> str:
-            """Fetch the full record of one prior thesis — its rule, config change,
-            predictions, outcome, and verdict — by thesis_id.
+            """Fetch a prior thesis's full attempt history by thesis_id.
 
-            Use after list_past_theses to compare your candidate against a specific
-            prior attempt (did it already test this lever/dimension?). Args:
-            thesis_id. Returns the thesis detail as JSON text."""
+            Use after list_past_theses to inspect a specific prior attempt before
+            proposing something similar (did it already test this lever/dimension?).
+            Args: thesis_id. Returns JSON {status, thesis_id, job_id, attempts[]};
+            each attempt carries hypothesis, mechanism, config_changes, predictions,
+            requires_code_change, validator_status, round_outcome, and
+            validation_failure_reason. status='not_found' if the id is unknown."""
             started = monotonic()
             tool_input = json.dumps(
                 {"root": str(_ROOT), "job_id": current_job, "thesis_id": thesis_id},
