@@ -154,9 +154,7 @@ def map_ema_config_changes_to_contract(config_changes: dict[str, Any]) -> list[d
         if not isinstance(gap_filter_value, bool):
             # Do not bool()-coerce: bool("any string") is True, which silently
             # turns a descriptive value into "filter on" and tests the wrong lever.
-            raise ValueError(
-                f"gap_filter must be a boolean (true/false), got {gap_filter_value!r}"
-            )
+            raise ValueError(f"gap_filter must be a boolean (true/false), got {gap_filter_value!r}")
         primitive_contract.append(
             {
                 "type": "gap_filter",

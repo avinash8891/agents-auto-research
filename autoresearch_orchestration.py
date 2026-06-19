@@ -14,11 +14,11 @@ from autoresearch_paths import (
     promoted_baseline_path,
     serialize_config_path,
 )
-from causal_model import load_model, save_model
 from autoresearch_runtime_paths import (
     research_round_id,
     research_round_root,
 )
+from causal_model import load_model, save_model
 from improvement_reflexion import read_validation_failure_reason
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_text_atomic as _write_text_atomic
