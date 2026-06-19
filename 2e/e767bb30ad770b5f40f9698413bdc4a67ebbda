@@ -1,0 +1,21 @@
+feature_table.py
+  s_05bb4d97d5f815::t_eab28abb53fceb 14,76-80
+tests/test_feature_table.py
+  s_05bb4d97d5f815::t_0ef5125cb41f02 12,18,227-238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "2ee767bb30ad770b5f40f9698413bdc4a67ebbda",
+  "prompts": {},
+  "sessions": {
+    "s_05bb4d97d5f815": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee068-90d0-7391-89e3-645a7cf3e3b8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
