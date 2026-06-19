@@ -77,6 +77,27 @@ def test_promote_noop_when_best_already_the_overlay(tmp_path: Path) -> None:
     assert not (tmp_path / PROMOTED_BASELINE_DIRNAME / "ema_base.yaml").exists()
 
 
+def test_promote_skips_empty_config_without_corrupting_baseline(tmp_path: Path) -> None:
+    controller = _controller(tmp_path)
+    config_rel = _write_validated_round_config(tmp_path, {})  # builder round, no real config
+    state = {"current_best": {"config": config_rel, "metric": 2.0635}}
+
+    assert orch.promote_baseline_if_improved(controller, state) is None
+    assert not (tmp_path / PROMOTED_BASELINE_DIRNAME / "ema_base.yaml").exists()
+
+
+def test_promote_skips_config_invalid_on_this_release(tmp_path: Path) -> None:
+    controller = _controller(tmp_path)
+    # A config that references a key the current EMA release does not support.
+    config_rel = _write_validated_round_config(
+        tmp_path, _ema_runtime_config(primitive_not_in_this_release=True)
+    )
+    state = {"current_best": {"config": config_rel, "metric": 2.0635}}
+
+    assert orch.promote_baseline_if_improved(controller, state) is None
+    assert not (tmp_path / PROMOTED_BASELINE_DIRNAME / "ema_base.yaml").exists()
+
+
 def test_load_base_runtime_config_prefers_overlay_over_committed_seed(tmp_path: Path) -> None:
     (tmp_path / "configs").mkdir()
     committed = _ema_runtime_config(ema_length=21)

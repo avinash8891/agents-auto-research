@@ -104,6 +104,23 @@ def promote_baseline_if_improved(
             config_path, code_root=controller.root, runtime_root=controller.runtime_root
         )
         runtime_config = _read_runtime_config(source)
+        # Never overwrite the live baseline with an empty or invalid config (e.g. a
+        # builder round whose selected_config.json references a primitive this
+        # release lacks). A bad overlay would break every subsequent thesis.
+        if not runtime_config:
+            _log.warning(
+                "baseline promotion skipped: best=%s resolved to an empty runtime config",
+                config_path,
+            )
+            return None
+        violations = STRATEGIES[family.name].validate_runtime_config(runtime_config)
+        if violations:
+            _log.warning(
+                "baseline promotion skipped: best=%s fails validation on this release: %s",
+                config_path,
+                "; ".join(violations),
+            )
+            return None
         overlay = promoted_baseline_path(controller.runtime_root, family.base_config_filename)
         _write_text_atomic(overlay, yaml.safe_dump(runtime_config, sort_keys=False))
     except Exception:
