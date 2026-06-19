@@ -14,6 +14,7 @@ from autoresearch_runtime_paths import (
 )
 from improvement_reflexion import read_validation_failure_reason
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
+from persistence_utils import write_json_atomic as _write_json_atomic
 from persistence_utils import write_text_atomic as _write_text_atomic
 from strategies import STRATEGIES
 from trace_sdk import trace
@@ -360,6 +361,55 @@ def _mark_builder_manual_review(
     heartbeat["blocked_reason"] = state["next_action"]["reason"]
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
+    return state
+
+
+def _mark_needs_data_manual_review(
+    *,
+    root: Path,
+    state: dict[str, Any],
+    thesis_id: str,
+    thesis: dict[str, Any],
+    research_round: int,
+) -> dict[str, Any]:
+    primitive = thesis.get("requested_primitive") or {}
+    request = {
+        "feature_name": primitive.get("name", ""),
+        "kind": primitive.get("kind", ""),
+        "description": primitive.get("description", ""),
+        "required_data": [
+            {"name": name, "granularity": "unknown"}
+            for name in primitive.get("required_data", [])
+        ],
+        "candidate_sources": [],
+        "requesting_thesis_id": thesis_id,
+        "created_by": "agent",
+        "created_at": iso8601_utc_now(),
+    }
+    job = int(state.get("job", 0))
+    request_path = (
+        root
+        / "runtime"
+        / "jobs"
+        / f"job-{job}"
+        / "research"
+        / f"round-{research_round}"
+        / "data_acquisition_request.json"
+    )
+    _write_json_atomic(request_path, request)
+    state["state"] = "halted"
+    state["halted_reason"] = "needs_data"
+    state["halted_thesis_id"] = thesis_id
+    state["halted_thesis"] = thesis
+    data_requests = list(state.get("data_requests") or [])
+    data_requests.append({"path": request_path.relative_to(root).as_posix(), **request})
+    state["data_requests"] = data_requests
+    state["blockers"] = [{"kind": "manual_review", "detail": f"Data required for {thesis_id}"}]
+    state["next_action"] = {
+        "type": "manual_review",
+        "reason": f"Data required for {thesis_id}",
+        "requires_subagent": False,
+    }
     return state
 
 

@@ -69,6 +69,37 @@ def test_controller_research_artifact_dir_requires_research_dir(tmp_path: Path) 
         orch._controller_research_artifact_dir(controller)
 
 
+def test_mark_needs_data_manual_review_writes_data_request(tmp_path: Path) -> None:
+    state = {"state": "running", "job": 7, "research_round": 3}
+    thesis = {
+        "requested_primitive": {
+            "name": "signed_volume_z",
+            "kind": "entry_feature",
+            "description": "Entry-time signed volume z-score.",
+            "required_data": ["trade_signed_volume"],
+        }
+    }
+
+    out = orch._mark_needs_data_manual_review(
+        root=tmp_path,
+        state=state,
+        thesis_id="ema-7-3-1",
+        thesis=thesis,
+        research_round=3,
+    )
+
+    request_path = tmp_path / "runtime/jobs/job-7/research/round-3/data_acquisition_request.json"
+    request = json.loads(request_path.read_text())
+    assert out["state"] == "halted"
+    assert out["halted_reason"] == "needs_data"
+    assert out["halted_thesis_id"] == "ema-7-3-1"
+    assert out["next_action"]["type"] == "manual_review"
+    assert out["data_requests"][0]["path"] == request_path.relative_to(tmp_path).as_posix()
+    assert request["required_data"] == [
+        {"name": "trade_signed_volume", "granularity": "unknown"}
+    ]
+
+
 def test_try_resume_halted_thesis_writes_round_selected_files(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "configs").mkdir()
     (tmp_path / "configs" / "ema_base.yaml").write_text(json.dumps({"ema_length": 5}) + "\n")
