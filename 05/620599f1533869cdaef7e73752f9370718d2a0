@@ -1,0 +1,27 @@
+tests/test_baseline_promotion.py
+  s_be8b2f455eab9f::t_a86b4b07aeb5f1 23,25-27
+  s_be8b2f455eab9f::t_42a8057593fed8 275-299
+  s_be8b2f455eab9f::t_6659e8063029db 16
+  s_be8b2f455eab9f::t_fb57c06fed55f8 182-249
+plans/005-comprehensive-compounding.md
+  s_be8b2f455eab9f::t_ca1884406832a5 82-100
+compiler_research.py
+  s_be8b2f455eab9f::t_c0bfd6d26386fd 77-92
+  s_be8b2f455eab9f::t_f64522f106f2e2 53,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "05620599f1533869cdaef7e73752f9370718d2a0",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
