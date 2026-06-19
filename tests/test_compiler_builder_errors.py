@@ -14,6 +14,45 @@ def _fake_venv(tmp_path: Path) -> Path:
     return venv
 
 
+def test_builder_prompt_does_not_force_trade_management_primitives_into_entry_filters(tmp_path):
+    """A trade-management primitive (e.g. trail_after_r) must NOT be built as an entry
+    df.query filter. The builder instruction frames entry filters via mechanism_rule but
+    routes stop/target/hold/exit changes to the engine's exit path instead."""
+    task = compiler_builder.BuilderTask(
+        thesis_id="ema-trail-after-3r",
+        family_name="ema",
+        proposal_path=str(tmp_path / "proposal.json"),
+        compilation_path=str(tmp_path / "compilation.json"),
+        config_path=str(tmp_path / "config.json"),
+        base_config_path=str(tmp_path / "base_config.json"),
+        missing_primitives=["trail_after_r"],
+        required_diagnostics=[],
+        required_diagnostic_specs=[],
+        config_change_keys=[],
+        mechanism_contract_kind="missing_primitive",
+        implementation_scope=["strategies/ema/exits.py"],
+    )
+    prompt = compiler_builder._build_builder_prompt(
+        task=task,
+        thesis_id=task.thesis_id,
+        root=tmp_path,
+        proposal_path=Path(task.proposal_path),
+        compilation_path=Path(task.compilation_path),
+        config_path=task.config_path,
+        family_name=task.family_name,
+        missing_primitives=task.missing_primitives,
+        prompt_extras=[],
+        base_config_path=task.base_config_path,
+    )
+
+    # Entry filters are still built from mechanism_rule...
+    assert "When the primitive is an ENTRY filter" in prompt
+    assert "df.query expression over entry-time columns" in prompt
+    # ...but trade-management primitives go to the exit/stop path, not an entry filter.
+    assert "trade-management change (stop, target, hold time, exit, or sizing)" in prompt
+    assert "do NOT force it into an entry filter" in prompt
+
+
 def test_copy_builder_source_tree_symlinks_project_venv_into_workspace(tmp_path, monkeypatch):
     venv = _fake_venv(tmp_path)
     source = tmp_path / "source"
