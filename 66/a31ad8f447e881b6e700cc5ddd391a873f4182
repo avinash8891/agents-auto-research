@@ -1,0 +1,35 @@
+plans/005-comprehensive-compounding.md
+  s_be8b2f455eab9f::t_0a46a51b6b7ad0 45-50,53
+tests/test_baseline_promotion.py
+  s_be8b2f455eab9f::t_b1dc74cb0a0dd1 62-70,72-82,84-90
+  s_be8b2f455eab9f::t_dfad36c17cb21d 1-6,20,36-52,54-59,71,83,91,93-97,101,103,108,110,114,116-117,121-124,126-145,147-158,161,163-170,172,174,178
+  s_be8b2f455eab9f::t_8028bd969891c5 22
+autoresearch_orchestration.py
+  s_be8b2f455eab9f::t_c73e596bfda6b0 54-107,109-124,127-138,140-141,143-150,152-155,157-160,163-164,166-180
+  s_be8b2f455eab9f::t_6ca801971185d4 108
+  s_be8b2f455eab9f::t_e2f9ccbf828c00 17
+autoresearch_planning.py
+  s_be8b2f455eab9f::t_9251c94505b1e8 238,243-252
+  s_be8b2f455eab9f::t_1aa540cf891c3b 17
+  s_be8b2f455eab9f::t_fd9904b4de2da0 379-381
+  s_be8b2f455eab9f::t_d16058ad7d7559 285
+autoresearch_controller.py
+  s_be8b2f455eab9f::t_14cbba0d11cfce 42
+  s_be8b2f455eab9f::t_1b1fdb3e524f31 1052-1058
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "66a31ad8f447e881b6e700cc5ddd391a873f4182",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
