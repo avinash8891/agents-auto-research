@@ -46,13 +46,26 @@ def test_entry_filter_columns_includes_discovered_regime_dimensions(monkeypatch)
     assert "day_of_week" in cols  # static queryable columns still present
 
 
-def test_entry_filter_columns_falls_back_when_regime_feed_unreachable(monkeypatch) -> None:
+def test_entry_filter_columns_falls_back_silently_when_parquet_absent(monkeypatch) -> None:
+    # Expected case (fresh box / tests): FileNotFoundError is swallowed silently.
     def _no_parquet():
         raise FileNotFoundError("regime_labels.parquet missing")
 
     monkeypatch.setattr(feature_table, "regime_feature_columns", _no_parquet)
     cols = _entry_filter_columns()
     assert "day_of_week" in cols  # static set still rendered, no crash
+
+
+def test_entry_filter_columns_logs_unexpected_regime_failure(monkeypatch, caplog) -> None:
+    # Unexpected failure (not a missing parquet) must be surfaced, not silently eaten.
+    def _boom():
+        raise RuntimeError("regime parquet schema corrupt")
+
+    monkeypatch.setattr(feature_table, "regime_feature_columns", _boom)
+    with caplog.at_level("WARNING"):
+        cols = _entry_filter_columns()
+    assert "day_of_week" in cols  # still fails open, never blocks prompt-building
+    assert any("failed unexpectedly" in record.message for record in caplog.records)
 
 
 def test_rule_column_constraint_is_causal_not_a_closed_list() -> None:

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from autoresearch_logging import get_logger
+
+log = get_logger(__name__)
+
 
 def _entry_filter_columns() -> str:
     """Render the entry-time columns a `rule` df.query may reference. Sourced from the
@@ -18,8 +22,16 @@ def _entry_filter_columns() -> str:
         from feature_table import regime_feature_columns
 
         columns |= regime_feature_columns()
-    except Exception:  # noqa: BLE001 — labels parquet unreachable; static set still valid
+    except FileNotFoundError:
+        # Labels parquet not provisioned (tests / fresh box). Expected — the static
+        # queryable set is still valid; regime dimensions surface once the feed exists.
         pass
+    except Exception as exc:  # noqa: BLE001 — never block prompt-building, but surface real breaks
+        log.warning(
+            "regime_feature_columns() failed unexpectedly; entry-filter column list falls "
+            "back to the static schema (regime dimensions omitted this build): %s",
+            exc,
+        )
     return ", ".join(sorted(columns))
 
 
