@@ -11,13 +11,17 @@ from scripts.check_prompt_drift import (
 )
 
 
-def test_mechanism_prompt_is_short_and_corpus_only() -> None:
+def test_mechanism_prompt_is_role_grounded_and_tool_aware() -> None:
+    # The conductor prompt was rebuilt from the #69-deleted rich version: it now
+    # carries a role + objective + backtest semantics and is tool-aware (the
+    # "corpus-only, toolless" contract was deliberately reversed). The rendered
+    # corpus is still the primary evidence, but the agent has research tools.
     prompt = _build_mechanism_system_prompt()
 
-    assert prompt.count("\n") + 1 < 80
     assert "rendered corpus" in prompt.lower()
-    assert "tool results" in prompt.lower()
-    assert "analyze_trades" not in prompt
+    assert "OBJECTIVE" in prompt
+    assert "RESEARCH TOOLS" in prompt
+    assert "analyze_trades" in prompt
 
 
 def test_mechanism_prompt_mentions_residuals_and_competitor_rule() -> None:
