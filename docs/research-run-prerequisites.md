@@ -29,7 +29,9 @@ The conductor/builder reach the model via the local `openai-oauth.service`
 Model ids are account-dependent and drift; a stale id (e.g. the retired
 `gpt-5.2`) makes the upstream drop the stream mid-response. Current pins:
 `CONDUCTOR_MODEL=gpt-5.4` (`autoresearch_constants.py`),
-`BUILDER_CLI_MODEL=gpt-5.3-codex-spark` (`compiler_builder.py`). Verify with
+`BUILDER_CLI_MODEL=gpt-5.4` (`compiler_builder.py`; gpt-5.3-codex-spark returned
+empty/error generations, so the builder now uses the same served gpt-5.4 as the
+conductor). Verify with
 `curl -N -XPOST http://127.0.0.1:10531/v1/chat/completions -d '{"model":"<id>","stream":true,...}'`
 — a served model streams to `[DONE]`; a dropped one cuts off after the first chunk.
 

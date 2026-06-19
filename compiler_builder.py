@@ -27,11 +27,11 @@ log = get_logger(__name__)
 
 BUILDER_CLI_TIMEOUT_SECONDS = 900
 BUILDER_IMPLEMENTATION_RETRY_LIMIT = 1
-# Codex CLI model for the primitive builder. gpt-5.2 is no longer served (the
-# codex-oauth account offers gpt-5.5/5.4/5.4-mini/gpt-5.3-codex-spark); the dead
-# id made `codex exec` fail. gpt-5.3-codex-spark is the codex-purposed served
-# model for code generation. Tune here if the account's served set changes.
-BUILDER_CLI_MODEL = "gpt-5.3-codex-spark"
+# Codex CLI model for the primitive builder. gpt-5.3-codex-spark returned
+# status=error/empty generation on the VPS (job 13, round 2); gpt-5.4 is the
+# served model the conductor uses successfully (CONDUCTOR_MODEL), so the builder
+# uses it too. Tune here if the account's served set changes.
+BUILDER_CLI_MODEL = "gpt-5.4"
 BUILDER_CLI_REASONING_EFFORT: str | None = None
 LEGACY_NESTED_CONFIG_KEY_REQUEST = "new_config_keys_needed"
 THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change", LEGACY_NESTED_CONFIG_KEY_REQUEST})
