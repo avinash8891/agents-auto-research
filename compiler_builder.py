@@ -658,7 +658,13 @@ def _copy_builder_source_tree(root: Path, workspace_root: Path) -> None:
 
 
 def _copy_file_into_workspace(*, source: Path, source_root: Path, workspace_root: Path) -> Path:
-    relative = source.relative_to(source_root)
+    try:
+        relative = source.relative_to(source_root)
+    except ValueError:
+        # Runtime artifacts (builder_request/*) live under the runtime root, not the
+        # code/release root, in the split VPS deploy layout. Copy them in by name
+        # rather than failing -- the builder task references the returned path.
+        relative = Path(source.name)
     destination = workspace_root / relative
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
