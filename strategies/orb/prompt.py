@@ -7,8 +7,9 @@ Mechanics:
 - Short entry: first bar that breaks below OR low.
 - Stop loss: opposite side of the opening range (long stop = OR low, short stop = OR high).
 - Target = entry + risk-reward ratio * risk distance (default RR=2).
-- Exits: target hit, stop hit, time stop (default 15:30), max hold bars,
-  volatility trailing stop, failed breakout reversal, opposite-side break.
+- Exits: target hit, stop hit, optional time stop (opt-in, off by default),
+  max hold bars, volatility trailing stop, failed breakout reversal,
+  opposite-side break.
 - Regime classification: each day is classified as wide-OR, narrow-OR,
   trend-day, chop-day, or normal based on OR width and intraday behavior.
 - Regime gating: can skip or require specific regime types.
