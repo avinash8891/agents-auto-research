@@ -4,6 +4,17 @@ Supersedes the in-sample "for now" promotion in [004](004-baseline-promotion.md)
 That shipped within-job, config-only, in-sample-gated promotion. This is the
 complete design it should grow into.
 
+## Removed: fresh-job stale-model wipe (was commit 20cfc71)
+A `archive_inconsistent_model_for_fresh_job` step was added to wipe the persisted
+causal model on a fresh job so the (then toolless) conductor would rediscover from
+the seed instead of declining on already-harvested factors. It was **removed** once
+the research tools were re-wired (the conductor now researches a *new* dimension
+rather than declining on a harvested pocket — the prompt makes a harvested pocket
+the signal to explore elsewhere). Wiping the model destroyed the cross-job causal
+ledger the tools now consume. The causal model + promoted overlay should **carry
+across fresh jobs**. (The separate plateau `accuracy_history` reset on promotion is
+unrelated and stays — it is load-bearing for loop termination.)
+
 ## The core idea: a promote-and-rebaseline outer loop
 
 Today the engine runs research rounds against a **frozen** baseline until it

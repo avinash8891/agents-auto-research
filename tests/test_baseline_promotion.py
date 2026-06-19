@@ -247,52 +247,6 @@ def test_promotion_resets_plateau_so_walkforward_does_not_re_fire(tmp_path: Path
     assert should_terminate(tmp_path, family, tmp_path / "q", tmp_path / "r", [], job=9) is False
 
 
-# ── fresh-job model/baseline consistency repair (the real job-12 stall) ───────
-
-
-def _write_saturated_model(tmp_path: Path) -> Path:
-    """A persisted model that has harvested the opening-short pocket — what job 11/12
-    inherited and what made the conductor decline every round."""
-    model_path = tmp_path / "ema_causal_model.json"
-    model_path.write_text(
-        json.dumps(
-            {
-                "family": "ema",
-                "version": 3,
-                "factors": [
-                    {"rule": "side == 'short' and bars_since_open == 1", "status": "harvested"}
-                ],
-                "accuracy_history": [],
-            }
-        )
-    )
-    return model_path
-
-
-def test_fresh_job_archives_saturated_model_when_no_overlay(tmp_path: Path) -> None:
-    from autoresearch_controller import archive_inconsistent_model_for_fresh_job
-
-    model_path = _write_saturated_model(tmp_path)
-
-    archived = archive_inconsistent_model_for_fresh_job(tmp_path, "ema", "ema_base.yaml")
-
-    assert archived is not None and archived.exists()
-    assert not model_path.exists()  # moved aside so the fresh job rediscovers
-
-
-def test_fresh_job_keeps_model_when_overlay_exists(tmp_path: Path) -> None:
-    from autoresearch_controller import archive_inconsistent_model_for_fresh_job
-
-    model_path = _write_saturated_model(tmp_path)
-    overlay_dir = tmp_path / PROMOTED_BASELINE_DIRNAME
-    overlay_dir.mkdir()
-    (overlay_dir / "ema_base.yaml").write_text(yaml.safe_dump(_ema_runtime_config()))
-
-    # Overlay carries the model's edges → consistent → keep learning, don't archive.
-    assert archive_inconsistent_model_for_fresh_job(tmp_path, "ema", "ema_base.yaml") is None
-    assert model_path.exists()
-
-
 # ── base-config reads prefer the overlay ──────────────────────────────────────
 
 
