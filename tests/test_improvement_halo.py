@@ -20,6 +20,7 @@ from autoresearch_constants import ENV_IMPROVEMENT_HALO
 def _reset_env(monkeypatch):
     monkeypatch.delenv(ENV_IMPROVEMENT_HALO, raising=False)
     monkeypatch.delenv(improvement_halo.HALO_BINARY_ENV, raising=False)
+    monkeypatch.setattr(improvement_halo.agent_infra, "_ensure_oauth_proxy", lambda: None)
     yield
 
 
