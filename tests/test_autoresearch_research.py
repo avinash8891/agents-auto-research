@@ -1958,7 +1958,7 @@ def test_try_one_validation_attempt_compiles_mechanism_payload(tmp_path: Path, m
         status = "needs_code"
         contract_id = "opening_range_gate"
 
-    def fake_compile(validated, root, artifact_root=None):
+    def fake_compile(validated, root, artifact_root=None, runtime_root=None):
         captured["compiled"] = {
             "thesis_id": validated.thesis_id,
             "config_changes": dict(validated.config_changes),
@@ -2015,7 +2015,7 @@ def test_try_one_validation_attempt_preserves_thesis_metadata_on_ready_to_run(
 
     monkeypatch.setattr(
         "compiler_pipeline.compile_research_thesis",
-        lambda validated, root, artifact_root=None: _Contract(),
+        lambda validated, root, artifact_root=None, runtime_root=None: _Contract(),
     )
     monkeypatch.setattr(
         "autoresearch_research._screen_mechanism_proposal",
@@ -2089,7 +2089,7 @@ def test_handle_needs_code_directly_validates_before_compile(tmp_path: Path, mon
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_compile(validated, root, artifact_root=None):
+    def fake_compile(validated, root, artifact_root=None, runtime_root=None):
         captured["compiled"] = {
             "thesis_id": validated.thesis_id,
             "root": root,
@@ -2154,7 +2154,7 @@ def test_handle_needs_code_schema_only_validation_allows_empty_requested_primiti
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_compile(validated, root, artifact_root=None):
+    def fake_compile(validated, root, artifact_root=None, runtime_root=None):
         captured["compiled"] = {
             "thesis_id": validated.thesis_id,
             "requested_primitives": list(validated.requested_primitives),
@@ -2211,7 +2211,7 @@ def test_handle_needs_code_preserves_retry_attempt_id_for_schema_only_fallback(
         job_runtime_root = tmp_path
         family = type("Family", (), {"name": "ema", "discord_webhook": ""})()
 
-    def fake_compile(validated, root, artifact_root=None):
+    def fake_compile(validated, root, artifact_root=None, runtime_root=None):
         captured["thesis_id"] = validated.thesis_id
         return None
 
