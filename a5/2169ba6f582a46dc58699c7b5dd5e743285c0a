@@ -1,0 +1,21 @@
+analyst_dataframe_helpers.py
+  s_5f8dff900a45f7::t_a8df588497c432 42-44,46
+metrics.py
+  s_5f8dff900a45f7::t_a8df588497c432 198-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "a52169ba6f582a46dc58699c7b5dd5e743285c0a",
+  "prompts": {},
+  "sessions": {
+    "s_5f8dff900a45f7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eddf5-4504-7102-badc-90b4e480f925",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
