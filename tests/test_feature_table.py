@@ -9,11 +9,13 @@ import pytest
 
 import evidence_pack
 import feature_table_extractors as extractors
+from agent_feature_registry import register_agent_feature
 from evidence_pack import Corpus, render_corpus
 from feature_table import (
     ENTRY_TIME_COLUMNS,
     OUTCOME_COLUMNS,
     build_feature_table,
+    entry_time_columns_for_family,
     feature_table_path,
     load_feature_table,
     load_regime_labels,
@@ -220,6 +222,20 @@ def test_build_feature_table_emits_exact_entry_time_and_outcome_columns(
     assert row["stop_distance_pct"] == pytest.approx((1.0 / 102.6) * 100.0)
     assert row["entry_bar_range_pct"] == pytest.approx((0.8 / 102.2) * 100.0)
     assert bool(row["out_is_loss"]) is True
+
+
+def test_entry_time_columns_for_family_include_active_agent_features(tmp_path: Path) -> None:
+    register_agent_feature(
+        tmp_path,
+        column="rvol_spike",
+        formula="rvol / rolling_mean(rvol, 20)",
+        required_data=["ohlcv"],
+        family_name="ema",
+        thesis_id="ema-1",
+    )
+
+    assert "rvol_spike" in entry_time_columns_for_family(tmp_path, "ema")
+    assert "rvol_spike" not in entry_time_columns_for_family(tmp_path, "orb")
 
 
 def test_build_feature_table_computes_leakage_safe_feature_expansion(

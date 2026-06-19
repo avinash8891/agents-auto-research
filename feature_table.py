@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from agent_feature_registry import active_agent_feature_columns
 from autoresearch_logging import get_logger
 from autoresearch_runtime_paths import research_round_root
 from backtest.data_universe import default_data_root
@@ -72,6 +73,11 @@ _FEATURE_COLUMNS = [
 
 OUTCOME_COLUMNS = frozenset(c for c in _FEATURE_COLUMNS if c.startswith("out_"))
 ENTRY_TIME_COLUMNS = frozenset(_FEATURE_COLUMNS) - OUTCOME_COLUMNS
+STATIC_ENTRY_TIME_COLUMNS = ENTRY_TIME_COLUMNS
+
+
+def entry_time_columns_for_family(runtime_root: Path, family_name: str) -> frozenset[str]:
+    return STATIC_ENTRY_TIME_COLUMNS | active_agent_feature_columns(runtime_root, family_name)
 
 
 @dataclass(frozen=True)
