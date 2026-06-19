@@ -121,6 +121,58 @@ def test_ema_exits_force_flat_at_session_end_before_overnight_gap() -> None:
     assert trades[0]["exit_price"] == 97.0
 
 
+def test_executed_trade_event_timestamps_are_datetime_and_parquet_writable(
+    tmp_path: Path,
+) -> None:
+    """Event timestamp columns must be datetime64, not stringified Timestamps.
+
+    Regression for the baseline-backtest crash: simulate_trades logged
+    trigger_bar_timestamp via str(index[i]), so the events frame carried an
+    object column of strings that pyarrow could not serialize:
+        ArrowInvalid: Could not convert '2020-01-03 09:35:00' ... to int64
+    """
+    index = pd.to_datetime(["2024-01-02 10:00", "2024-01-02 10:05", "2024-01-02 10:10"])
+    frame = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 100.0],
+            "high": [101.0, 102.0, 103.0],
+            "low": [99.0, 94.0, 99.0],
+            "close": [100.0, 101.0, 102.0],
+        },
+        index=index,
+    )
+    logger = StrategyEventLogger()
+
+    trades = simulate_trades(
+        frame,
+        _manual_ema_signals(frame, direction="long", entry_bar=1),
+        {"rr_ratio": 3.0, "max_hold_bars": 78, "slippage_pct": 0.0},
+        symbol="AAA",
+        event_logger=logger,
+    )
+
+    assert len(trades) == 1
+    events = logger.to_dataframe()
+    assert "executed_trade" in set(events["event_type"])
+
+    # Timestamp columns are real datetimes, not object/str.
+    assert events["trigger_bar_timestamp"].dtype == "datetime64[ns]"
+    assert events["ema.alert_bar_timestamp"].dtype == "datetime64[ns]"
+    executed = events.loc[events["event_type"] == "executed_trade"].iloc[0]
+    assert executed["trigger_bar_timestamp"] == pd.Timestamp("2024-01-02 10:05")
+    # No alert bar for a manual entry -> NaT, not a "None" string.
+    assert pd.isna(executed["ema.alert_bar_timestamp"])
+
+    # The production failure was at parquet write; prove it round-trips.
+    out = tmp_path / "strategy_events.parquet"
+    events.to_parquet(out, index=False)
+    restored = pd.read_parquet(out)
+    assert restored["trigger_bar_timestamp"].dtype == "datetime64[ns]"
+    assert restored["trigger_bar_timestamp"].iloc[
+        list(events["event_type"]).index("executed_trade")
+    ] == pd.Timestamp("2024-01-02 10:05")
+
+
 def test_ema_exits_scan_entry_bar_for_stop_loss() -> None:
     index = pd.to_datetime(
         ["2024-01-02 10:00", "2024-01-02 10:05", "2024-01-02 10:10"]
@@ -1032,3 +1084,105 @@ def test_demo_strategy_runner_succeeds(
         event_counts={},
         rejection_breakdown={},
     )
+
+
+def test_validate_ema_rejects_non_bool_gap_filter() -> None:
+    """gap_filter is a boolean lever. A conductor that proposes a descriptive
+    string (e.g. 'exclude_gap_up_early_short_entries') must be rejected, not
+    silently coerced to True (bool('...') is True) and backtested as the wrong
+    lever. Regression for the mistranslation that produced PF 0.79 / 272% DD."""
+    violations = validate_ema_runtime_config(
+        {"gap_filter": "exclude_gap_up_early_short_entries", "gap_pct": 0.01}
+    )
+    assert any("gap_filter" in v for v in violations), violations
+    # real booleans pass
+    assert not any("gap_filter" in v for v in validate_ema_runtime_config({"gap_filter": True}))
+    assert not any("gap_filter" in v for v in validate_ema_runtime_config({"gap_filter": False}))
+
+
+def test_validate_ema_rejects_non_bool_use_range_shift() -> None:
+    violations = validate_ema_runtime_config({"use_range_shift": "yes"})
+    assert any("use_range_shift" in v for v in violations), violations
+    assert not any(
+        "use_range_shift" in v for v in validate_ema_runtime_config({"use_range_shift": True})
+    )
+
+
+def test_exclude_signals_before_bar_drops_opening_bars_each_day() -> None:
+    """exclude_first_bars must drop entries in the first N bars of EACH trading
+    day (bars_since_open < N), matching feature_table's bars_since_open. This is
+    the D4 lever that lets 'exclude first-post-open shorts' round-trip as config."""
+    from backtest.filters import _exclude_signals_before_bar
+
+    idx = pd.to_datetime(
+        [
+            "2024-01-02 09:30",
+            "2024-01-02 09:35",
+            "2024-01-02 09:40",
+            "2024-01-03 09:30",
+            "2024-01-03 09:35",
+            "2024-01-03 09:40",
+        ]
+    )
+    frame = pd.DataFrame(
+        {"open": [10.0] * 6, "high": [11.0] * 6, "low": [9.0] * 6, "close": [10.0] * 6}, index=idx
+    )
+    signals = EMASignals(
+        entries=pd.Series([True] * 6, index=idx),
+        direction="short",
+        entry_price=pd.Series([10.0] * 6, index=idx),
+        stop_price=pd.Series([11.0] * 6, index=idx),
+        alert_bar_idx=pd.Series([-1] * 6, index=idx),
+    )
+
+    _exclude_signals_before_bar(signals, frame, min_bars=1)
+
+    # first bar of each day (positions 0 and 3) dropped; the rest remain
+    assert list(signals.entries.values) == [False, True, True, False, True, True]
+    # no-op for min_bars=0
+    again = EMASignals(
+        entries=pd.Series([True] * 6, index=idx),
+        direction="short",
+        entry_price=pd.Series([10.0] * 6, index=idx),
+        stop_price=pd.Series([11.0] * 6, index=idx),
+        alert_bar_idx=pd.Series([-1] * 6, index=idx),
+    )
+    _exclude_signals_before_bar(again, frame, min_bars=0)
+    assert all(again.entries.values)
+
+
+def test_validate_ema_accepts_d4_levers() -> None:
+    assert (
+        validate_ema_runtime_config(
+            {
+                "exclude_first_bars": 2,
+                "gap_exclude": True,
+                "gap_exclude_pct": 0.01,
+                "gap_exclude_direction": "down",
+            }
+        )
+        == []
+    )
+
+
+def test_validate_ema_rejects_bad_d4_levers() -> None:
+    assert any(
+        "exclude_first_bars" in v for v in validate_ema_runtime_config({"exclude_first_bars": -1})
+    )
+    assert any(
+        "exclude_first_bars" in v
+        for v in validate_ema_runtime_config({"exclude_first_bars": "two"})
+    )
+    assert any(
+        "gap_exclude_direction" in v
+        for v in validate_ema_runtime_config({"gap_exclude_direction": "sideways"})
+    )
+    assert any("gap_exclude" in v for v in validate_ema_runtime_config({"gap_exclude": "yes"}))
+
+
+def test_ema_d4_levers_are_research_proposable() -> None:
+    from family_research_spec import get_family_research_spec
+
+    keys = get_family_research_spec("ema").allowed_config_keys
+    for k in ("exclude_first_bars", "gap_exclude", "gap_exclude_pct", "gap_exclude_direction"):
+        assert k in keys, f"{k} not proposable"

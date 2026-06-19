@@ -587,3 +587,37 @@ def test_render_corpus_is_deterministic_and_ordered(tmp_path: Path, monkeypatch)
     assert "gap: -0.23" in rendered
     assert "sample_count: 40" in rendered
     assert "generated_at" not in rendered
+
+
+def test_build_corpus_surfaces_family_config_levers(tmp_path: Path, monkeypatch) -> None:
+    """The conductor needs the family's valid proposed_change keys; the corpus
+    must surface them (it never did, so the model invented keys like 'rule')."""
+    from family_research_spec import get_family_research_spec
+
+    _setup_runtime(tmp_path, monkeypatch)
+    corpus = build_corpus("ema", 2)
+    assert corpus.config_levers == sorted(get_family_research_spec("ema").allowed_config_keys)
+    assert "gap_filter" in corpus.config_levers
+
+
+def test_render_corpus_lists_config_levers(tmp_path: Path, monkeypatch) -> None:
+    _setup_runtime(tmp_path, monkeypatch)
+    text = render_corpus(build_corpus("ema", 2))
+    assert "## Config Levers" in text
+    assert "gap_filter" in text
+
+
+def test_load_round_feature_table_falls_back_to_latest_realized(tmp_path: Path) -> None:
+    """The corpus residual section must use the most recent realized feature
+    table, not a fixed round-(N-1) index. Decline rounds write no table, so the
+    fixed index returned None -> empty residuals -> the conductor had nothing to
+    propose and declined every round. It must fall back to the baseline."""
+    from evidence_pack import _load_round_feature_table
+
+    job = 7
+    table = pd.DataFrame({"trade_id": ["AAA:2024-01-04T14:35:00+00:00"], "out_pnl": [1.0]})
+    FeatureTableArtifact.for_round(tmp_path, job, 0).write(table)  # baseline only
+    # round 2 ran no experiment (decline) -> its own table is missing.
+    loaded = _load_round_feature_table(tmp_path, 2, job=job)
+    assert loaded is not None
+    assert list(loaded["trade_id"]) == ["AAA:2024-01-04T14:35:00+00:00"]

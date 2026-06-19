@@ -349,7 +349,11 @@ def config_key_overlap(
                 f"Config-key overlap {jaccard:.0%} with prior thesis "
                 f"'{prior['thesis_id']}' (shared keys: {sorted(overlap)}). "
                 f"This is a parameter variation, not a new mechanism. "
-                f"Change DIFFERENT config keys to explore a new dimension."
+                f"Change DIFFERENT config keys to explore a new dimension. "
+                f"If your rule is a genuinely new entry condition no existing lever "
+                f"can express (e.g. by gap direction and bars-since-open), do NOT "
+                f"reuse this lever -- set requested_primitive and leave "
+                f"proposed_change null so the builder implements your rule."
             )
     return False, ""
 

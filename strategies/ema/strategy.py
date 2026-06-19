@@ -9,6 +9,7 @@ from backtest.data_universe import load_universe_data
 from backtest.filters import (
     _compute_gap_down_days,
     _compute_gap_up_days,
+    _exclude_signals_before_bar,
     _exclude_signals_on_days,
     _filter_signals_to_days,
 )
@@ -176,6 +177,10 @@ def run_backtest(config: dict) -> dict:
     gap_pct = config.get("gap_pct", 0.01)
     gap_exclude = config.get("gap_exclude", False)
     gap_exclude_pct = config.get("gap_exclude_pct", 0.005)
+    gap_exclude_direction = config.get("gap_exclude_direction", "up")
+    # D4 lever: exclude entries in the first N bars of each day (bars_since_open
+    # < N). 0 = off. Lets "skip first-post-open entries" be a validated config.
+    exclude_first_bars = int(config.get("exclude_first_bars", 0) or 0)
     min_stop_distance_pct = config.get("min_stop_distance_pct", None)
     if min_stop_distance_pct is not None:
         min_stop_distance_pct = float(min_stop_distance_pct)
@@ -199,9 +204,14 @@ def run_backtest(config: dict) -> dict:
 
         gap_up_days = _compute_gap_up_days(sym_open, sym_close, gap_pct) if gap_filter else None
         gap_down_days = _compute_gap_down_days(sym_open, sym_close, gap_pct) if gap_filter else None
-        gap_exclude_up_days = (
-            _compute_gap_up_days(sym_open, sym_close, gap_exclude_pct) if gap_exclude else None
-        )
+        # Signed gap exclusion: "up" excludes gap-up days, "down" excludes gap-down.
+        if gap_exclude:
+            gap_exclude_compute = (
+                _compute_gap_down_days if gap_exclude_direction == "down" else _compute_gap_up_days
+            )
+            gap_exclude_days = gap_exclude_compute(sym_open, sym_close, gap_exclude_pct)
+        else:
+            gap_exclude_days = None
 
         if direction_bias in {"both", "long_only"}:
             long_frame = build_timeframe_frame(sym_open, sym_close, sym_high, sym_low, tf_long)
@@ -234,6 +244,23 @@ def run_backtest(config: dict) -> dict:
                     symbol,
                     "long",
                     "entry_cutoff",
+                )
+            if exclude_first_bars > 0:
+                before = long_signals.entries.values.copy()
+                entry_before = long_signals.entry_price.values.copy()
+                stop_before = long_signals.stop_price.values.copy()
+                _exclude_signals_before_bar(long_signals, long_frame, exclude_first_bars)
+                _log_filter_rejections(
+                    event_logger,
+                    long_frame,
+                    long_signals,
+                    before,
+                    long_signals.entries.values,
+                    entry_before,
+                    stop_before,
+                    symbol,
+                    "long",
+                    "exclude_first_bars",
                 )
             if gap_filter:
                 before = long_signals.entries.values.copy()
@@ -338,6 +365,23 @@ def run_backtest(config: dict) -> dict:
                     "short",
                     "entry_cutoff",
                 )
+            if exclude_first_bars > 0:
+                before = short_signals.entries.values.copy()
+                entry_before = short_signals.entry_price.values.copy()
+                stop_before = short_signals.stop_price.values.copy()
+                _exclude_signals_before_bar(short_signals, short_frame, exclude_first_bars)
+                _log_filter_rejections(
+                    event_logger,
+                    short_frame,
+                    short_signals,
+                    before,
+                    short_signals.entries.values,
+                    entry_before,
+                    stop_before,
+                    symbol,
+                    "short",
+                    "exclude_first_bars",
+                )
             if gap_filter:
                 # Short on gap-up days (fade the gap — transcript core rule)
                 before = short_signals.entries.values.copy()
@@ -357,11 +401,11 @@ def run_backtest(config: dict) -> dict:
                     "gap_filter",
                 )
 
-            if gap_exclude and gap_exclude_up_days:
+            if gap_exclude and gap_exclude_days:
                 before = short_signals.entries.values.copy()
                 entry_before = short_signals.entry_price.values.copy()
                 stop_before = short_signals.stop_price.values.copy()
-                _exclude_signals_on_days(short_signals, short_frame, gap_exclude_up_days)
+                _exclude_signals_on_days(short_signals, short_frame, gap_exclude_days)
                 _log_filter_rejections(
                     event_logger,
                     short_frame,

@@ -29,7 +29,7 @@ _OAUTH_PROXY_URL = f"http://127.0.0.1:{_OAUTH_PROXY_PORT}/v1"
 
 
 def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
-    """Require the system-managed openai-oauth proxy to be reachable."""
+    """Require the system-managed openai-oauth proxy to be reachable AND authed."""
     import socket
     import time
 
@@ -39,6 +39,7 @@ def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
     while True:
         try:
             with socket.create_connection(("127.0.0.1", _OAUTH_PROXY_PORT), timeout=1):
+                _probe_oauth_proxy_auth()
                 return
         except OSError as exc:
             last_error = exc
@@ -50,6 +51,34 @@ def _ensure_oauth_proxy(timeout_seconds: float = 5.0) -> None:
     raise RuntimeError(
         "openai-oauth proxy is not available. Start openai-oauth.service before running research jobs."
     )
+
+
+def _probe_oauth_proxy_auth(timeout_seconds: float = 8.0) -> None:
+    """Verify the proxy can authenticate upstream, not just that the socket is open.
+
+    A reachable-but-unauthenticated proxy (expired OAuth session) returns 502 and
+    drops streaming responses mid-body, which otherwise surfaces as an opaque
+    httpx.RemoteProtocolError deep inside the conductor 60s+ into a run. Probe
+    /v1/models so the dead-token case fails fast with a remediation message.
+    Connection-level errors are left to the socket check / left lenient.
+    """
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"{_OAUTH_PROXY_URL}/models", timeout=timeout_seconds) as resp:
+            status = getattr(resp, "status", resp.getcode())
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+    except OSError as exc:  # transient/connection issue -> let the call proceed
+        log.warning("openai-oauth proxy auth probe could not connect: %s", exc)
+        return
+    if status != 200:
+        raise RuntimeError(
+            f"openai-oauth proxy is reachable but not authenticated (HTTP {status}); its OAuth "
+            "session is likely expired. Refresh it before running research jobs: re-auth the codex "
+            "session (~/.codex/auth.json) and `systemctl restart openai-oauth.service`."
+        )
 
 
 SDK_TIMEOUT_SECONDS = 300  # Max seconds for a single SDK agent call (analyst needs Execute time)

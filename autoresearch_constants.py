@@ -53,6 +53,11 @@ MAX_VALIDATION_RETRIES_COMPILE = 1  # compile failures rarely fix in-loop
 # and compiler operationalize pipeline.
 DEFAULT_AGENT_MODEL = "gpt-5.2"
 
+# Research-conductor model. Decoupled from DEFAULT_AGENT_MODEL so the conductor
+# can track an available served model independently. The codex-oauth proxy no
+# longer serves gpt-5.2 (it drops the stream mid-response); gpt-5.4 is served.
+CONDUCTOR_MODEL = "gpt-5.4"
+
 # ── Improvement-loop feature flags (env var names) ───────────────
 # All default off. Each flag gates exactly one arrow in the improvement
 # loop. Default-off is byte-identical to pre-improvement-loop behavior.
@@ -74,6 +79,13 @@ ENV_RECURSIVE_IMPROVE_TIMEOUT_SECONDS = "AUTORESEARCH_RECURSIVE_IMPROVE_TIMEOUT_
 # ── Control-plane / tracing ─────────────────────────────────────
 ENV_TRACE_MODE = "AUTORESEARCH_TRACE_MODE"
 TRACE_MODE_TRANSACTION = "transaction"
+
+# When truthy, the VPS run process is launched under cProfile, writing a
+# per-run .prof to logs/profile/. Default-off: unset means byte-identical
+# launch behavior. ponytail: cProfile covers the controller process only;
+# subprocess backtest workers show up as cumtime inside the executor call.
+ENV_PROFILE = "AUTORESEARCH_PROFILE"
+REMOTE_PROFILE_DIRNAME = "logs/profile"
 PREPARE_RESULT_MARKER = "AUTORESEARCH_PREPARE_RESULT"
 
 # Default location of the held-out task list relative to the repo root.

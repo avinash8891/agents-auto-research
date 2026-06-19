@@ -10,6 +10,8 @@ import feature_table_extractors as extractors
 from feature_table import (
     ENTRY_TIME_COLUMNS,
     OUTCOME_COLUMNS,
+    FeatureTableArtifact,
+    FeatureTableMissingError,
     build_feature_table,
     feature_table_path,
     load_feature_table,
@@ -693,3 +695,40 @@ def test_feature_table_path_and_load_round_trip(tmp_path: Path) -> None:
 
     assert path == tmp_path / "feature_table.parquet"
     pd.testing.assert_frame_equal(load_feature_table(tmp_path), table)
+
+
+def test_latest_through_falls_back_to_baseline_when_round_has_no_table(tmp_path: Path) -> None:
+    """A research round that proposes no actionable change runs no experiment
+    and writes no feature table; the next round's screening must fall back to
+    the most recent realized round (baseline), not assume round N-1 exists.
+    Regression for round-2 FileNotFoundError on round-1/feature_table.parquet."""
+    job = 4
+    table = pd.DataFrame({"trade_id": ["AAA:2024-01-04T14:35:00+00:00"]})
+    FeatureTableArtifact.for_round(tmp_path, job, 0).write(table)  # baseline only
+    # Round 1 wrote nothing; screening at round 2 looks back through round 1.
+    resolved = FeatureTableArtifact.latest_through(tmp_path, job, 1)
+    assert resolved.round_root == FeatureTableArtifact.for_round(tmp_path, job, 0).round_root
+    pd.testing.assert_frame_equal(resolved.load(), table)
+
+
+def test_latest_through_prefers_most_recent_realized_round(tmp_path: Path) -> None:
+    job = 4
+    baseline = pd.DataFrame({"trade_id": ["AAA:2024-01-04T14:35:00+00:00"]})
+    round2 = pd.DataFrame({"trade_id": ["BBB:2024-02-04T14:35:00+00:00"]})
+    FeatureTableArtifact.for_round(tmp_path, job, 0).write(baseline)
+    FeatureTableArtifact.for_round(tmp_path, job, 2).write(round2)
+    resolved = FeatureTableArtifact.latest_through(tmp_path, job, 2)
+    pd.testing.assert_frame_equal(resolved.load(), round2)
+
+
+def test_load_missing_feature_table_raises_actionable_error(tmp_path: Path) -> None:
+    artifact = FeatureTableArtifact.for_round(tmp_path, job=4, research_round=1)
+    with pytest.raises(FeatureTableMissingError):
+        artifact.load()
+    # backward-compatible: existing `except FileNotFoundError` handlers still catch it
+    assert issubclass(FeatureTableMissingError, FileNotFoundError)
+
+
+def test_latest_through_raises_when_no_round_has_a_table(tmp_path: Path) -> None:
+    with pytest.raises(FeatureTableMissingError):
+        FeatureTableArtifact.latest_through(tmp_path, job=4, research_round=3)

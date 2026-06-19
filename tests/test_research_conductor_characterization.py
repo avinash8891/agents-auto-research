@@ -45,7 +45,9 @@ def _patch_conductor_runner(monkeypatch: pytest.MonkeyPatch, output: dict | str)
         captured_prompts.append(user_prompt)
         assert agent.name == "research-conductor"
         assert getattr(agent, "tools", []) == []
-        assert getattr(agent, "output_type", None) is MechanismProposal
+        assert (
+            getattr(getattr(agent, "output_type", None), "output_type", None) is MechanismProposal
+        )
         assert run_config.tracing_disabled is True
         return _StreamedResult(text, agent)
 
@@ -145,7 +147,7 @@ def test_conductor_uses_rendered_corpus_only_and_skips_thesis_validator(
     assert captured["tools"] == []
     assert "feature_table" not in str(captured["system_prompt"])
     assert "residual" in str(captured["system_prompt"]).lower()
-    assert getattr(captured["output_type"], "__name__", "") == "MechanismProposal"
+    assert getattr(captured["output_type"], "output_type", None) is MechanismProposal
 
 
 def test_conductor_exposes_analyst_tool_when_trades_are_available(
@@ -313,3 +315,25 @@ def test_mechanism_system_prompt_mentions_corpus_not_feature_table_schema() -> N
     assert "rendered corpus" in prompt.lower()
     assert "story, rule, competitor_rule" in prompt
     assert "feature_table" not in prompt
+
+
+def test_conductor_output_schema_is_sdk_strict_safe() -> None:
+    """The conductor's agent output_type must satisfy the openai-agents SDK.
+
+    MechanismProposal.proposed_change is free-form (dict[str, Any]); under the
+    SDK's strict JSON schema mode that emits additionalProperties, which the SDK
+    rejects with UserError. This broke the research round before any OpenAI call
+    landed ("research conductor failed: exception"). The conductor must wrap the
+    output type non-strict.
+    """
+    from agents import Agent, AgentOutputSchema
+    from agents.exceptions import UserError
+
+    # Root cause: the raw type under strict (default) mode is rejected.
+    with pytest.raises(UserError):
+        AgentOutputSchema(MechanismProposal)
+
+    # The conductor supplies an SDK-safe output schema that the Agent accepts.
+    schema = conductor._conductor_output_schema()
+    assert isinstance(schema, AgentOutputSchema)
+    Agent(name="research-conductor", instructions="x", output_type=schema)

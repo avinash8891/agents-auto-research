@@ -39,10 +39,16 @@ max_stop_distance_pct: null
 gap_filter: false
 gap_pct: 0.01
 
-# Gap exclude: skip short entries on gap-up days (fading inflated opens is risky).
+# Gap exclude: skip entries on gap days (fading inflated opens is risky).
 # false = disabled. gap_exclude_pct = minimum gap size to trigger exclusion.
+# gap_exclude_direction: "up" excludes gap-up days, "down" excludes gap-down.
 gap_exclude: false
 gap_exclude_pct: 0.005
+gap_exclude_direction: "up"
+
+# Exclude the first N bars of each trading day (bars_since_open < N). 0 = off.
+# Lets "skip first-post-open entries" round-trip as validated config.
+exclude_first_bars: 0
 
 # Trail after R: once a trade moves this many R favorable, switch from
 # fixed target to candle-by-candle trailing stop.

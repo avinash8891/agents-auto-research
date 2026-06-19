@@ -754,17 +754,30 @@ def _mechanism_proposal_to_compiler_payload(
     thesis_id: str,
 ) -> dict[str, Any]:
     proposed_change = raw_thesis.get("proposed_change")
-    if not isinstance(proposed_change, dict) or not proposed_change:
-        raise ValueError("mechanism proposal requires non-empty proposed_change")
+    has_change = isinstance(proposed_change, dict) and bool(proposed_change)
+    requested_primitive = str(raw_thesis.get("requested_primitive") or "").strip()
+    if not has_change and not requested_primitive:
+        raise ValueError("mechanism proposal requires proposed_change or requested_primitive")
     story = str(raw_thesis.get("story") or "")
-    return {
+    payload = {
         **raw_thesis,
         "thesis_id": thesis_id,
         "strategy_family": strategy_family,
         "hypothesis": story,
         "mechanism": story,
-        "config_changes": proposed_change,
+        "config_changes": proposed_change if has_change else {},
+        # Carry the exact rule across the ResearchThesis boundary (extras are
+        # dropped) so the builder implements the precise entry condition.
+        "mechanism_rule": str(raw_thesis.get("rule") or ""),
+        "mechanism_competitor_rule": str(raw_thesis.get("competitor_rule") or ""),
     }
+    if requested_primitive:
+        # No existing lever expresses the rule: route to the builder, which
+        # implements `rule` as the named primitive. The rule rides along in the
+        # payload (ResearchThesis ignores extras) -> builder_request/thesis.json.
+        payload["requires_code_change"] = True
+        payload["requested_primitives"] = [requested_primitive]
+    return payload
 
 
 def _screen_mechanism_proposal(
@@ -781,7 +794,10 @@ def _screen_mechanism_proposal(
 
     runtime_root = getattr(controller, "runtime_root", None) or controller.root
     completed_round = max(int(research_round) - 1, 0)
-    feature_artifact = FeatureTableArtifact.for_round(runtime_root, job_id, completed_round)
+    # Resolve the most recent round that actually wrote a feature table: a prior
+    # round that proposed no change ran no experiment and wrote none, so a fixed
+    # `completed_round` lookup can hit a gap. Falls back through to the baseline.
+    feature_artifact = FeatureTableArtifact.latest_through(runtime_root, job_id, completed_round)
     features = feature_artifact.load()
     model_store = CausalModelStore(runtime_root=runtime_root, code_root=controller.root)
     model = model_store.load(controller.family.name)
@@ -984,20 +1000,25 @@ def _try_mechanism_validation_attempt(
     if not bool(raw_thesis.get("actionable")):
         from causal_model import save_model
 
-        screening_passed, screening_feedback, causal_model = _screen_mechanism_proposal(
-            controller,
-            research_round,
-            raw_thesis,
-            thesis_id,
-            job_id=job_id,
-        )
-        if not screening_passed:
-            return None, screening_feedback, "stage_1"
-        if causal_model is not None:
-            runtime_root = resolve_runtime_root(
-                getattr(controller, "runtime_root", controller.root)
+        # Non-actionable has two shapes: an INSIGHT (a rule worth recording in the
+        # causal model -> screen it) or a DECLINE (no rule -> nothing to screen or
+        # record). Only screen when a rule is present; screening an empty rule would
+        # run df.query("") and assumes a feature table the decline never needs.
+        if str(raw_thesis.get("rule") or "").strip():
+            screening_passed, screening_feedback, causal_model = _screen_mechanism_proposal(
+                controller,
+                research_round,
+                raw_thesis,
+                thesis_id,
+                job_id=job_id,
             )
-            save_model(causal_model, runtime_root=runtime_root, code_root=controller.root)
+            if not screening_passed:
+                return None, screening_feedback, "stage_1"
+            if causal_model is not None:
+                runtime_root = resolve_runtime_root(
+                    getattr(controller, "runtime_root", controller.root)
+                )
+                save_model(causal_model, runtime_root=runtime_root, code_root=controller.root)
         return (
             {
                 "status": "completed",

@@ -128,19 +128,30 @@ class MechanismProposal(BaseModel):
     """Conductor output for the causal-engine research path."""
 
     story: str
-    rule: str
-    competitor_rule: str
-    competitor_story: str
+    # rule/competitor_rule are optional so the conductor can DECLINE a round
+    # (actionable=false with no new testable rule). They are required when
+    # actionable=true; the validator below enforces that.
+    rule: str | None = None
+    competitor_rule: str | None = None
+    competitor_story: str | None = None
     actionable: bool
     proposed_change: dict[str, Any] | None = None
+    # Name of a NEW strategy capability to build when the rule cannot be expressed
+    # by existing config levers; routes the thesis to the primitive builder, which
+    # implements `rule` as that primitive. Mutually sufficient with proposed_change.
+    requested_primitive: str | None = None
     predictions: list[Prediction] | None = None
 
     @model_validator(mode="after")
     def _validate_actionable_contract(self) -> "MechanismProposal":
         if not self.actionable:
             return self
-        if not self.proposed_change:
-            raise ValueError("proposed_change is required when actionable is true")
+        if not (self.rule or "").strip():
+            raise ValueError("rule is required when actionable is true")
+        if not (self.competitor_rule or "").strip():
+            raise ValueError("competitor_rule is required when actionable is true")
+        if not self.proposed_change and not (self.requested_primitive or "").strip():
+            raise ValueError("an actionable proposal needs proposed_change or requested_primitive")
         if self.predictions is None or len(self.predictions) < 2:
             raise ValueError(
                 "predictions must contain at least two entries when actionable is true"
@@ -200,6 +211,13 @@ class ResearchThesis(BaseModel):
 
     requires_code_change: bool = False
     requested_primitives: list[str] = Field(default_factory=list)
+
+    # The conductor's df.query rule (and its competitor), carried so the builder
+    # can implement the EXACT entry condition as the requested primitive. Without
+    # a dedicated field the rule is dropped at the model boundary (extras ignored)
+    # and the builder only sees the prose mechanism.
+    mechanism_rule: str = ""
+    mechanism_competitor_rule: str = ""
 
 
 class BacktestContract(BaseModel):

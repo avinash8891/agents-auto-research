@@ -326,6 +326,55 @@ def test_remote_run_command_clears_transaction_trace_mode() -> None:
     assert "--prepare-launch-state-only" not in command
 
 
+def test_remote_run_command_omits_cprofile_when_profile_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AUTORESEARCH_PROFILE", raising=False)
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_run_command(config, family, "a" * 40)
+
+    assert "-m cProfile" not in command
+    assert "logs/profile" not in command
+    assert (
+        '"$python_bin" autoresearch_controller.py --family ema --run-current-state'
+        in command
+    )
+
+
+def test_remote_run_command_wraps_in_cprofile_when_profile_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_PROFILE", "1")
+    family = load_family("ema")
+    config = VPSConfig(
+        host="203.0.113.10",
+        user="researcher",
+        key="/tmp/key",
+        remote_dir="/srv/autoresearch",
+        git_repo="https://github.com/example/repo.git",
+        git_ref="feature/ema",
+    )
+
+    command = build_remote_run_command(config, family, "abc1234def56" + "0" * 28)
+
+    assert "mkdir -p logs/profile" in command
+    # cProfile output path: family + 12-char sha prefix + remote-evaluated UTC stamp.
+    assert (
+        '"$python_bin" -m cProfile -o logs/profile/ema-abc1234def56-'
+        "$(date -u +%Y%m%dT%H%M%SZ).prof "
+        "autoresearch_controller.py --family ema --run-current-state"
+    ) in command
+    # $(date) must stay unquoted so the remote shell evaluates it.
+    assert "'$(date" not in command
+    # The whole command must still be valid bash.
+    subprocess.run(["bash", "-n"], input=command, text=True, check=True)
+
+
 def test_remote_resume_command_can_skip_dependency_install_when_sha_is_current() -> None:
     family = load_family("ema")
     config = VPSConfig(

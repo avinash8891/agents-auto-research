@@ -27,7 +27,11 @@ log = get_logger(__name__)
 
 BUILDER_CLI_TIMEOUT_SECONDS = 900
 BUILDER_IMPLEMENTATION_RETRY_LIMIT = 1
-BUILDER_CLI_MODEL = "gpt-5.2"
+# Codex CLI model for the primitive builder. gpt-5.2 is no longer served (the
+# codex-oauth account offers gpt-5.5/5.4/5.4-mini/gpt-5.3-codex-spark); the dead
+# id made `codex exec` fail. gpt-5.3-codex-spark is the codex-purposed served
+# model for code generation. Tune here if the account's served set changes.
+BUILDER_CLI_MODEL = "gpt-5.3-codex-spark"
 BUILDER_CLI_REASONING_EFFORT: str | None = None
 LEGACY_NESTED_CONFIG_KEY_REQUEST = "new_config_keys_needed"
 THESIS_METADATA_CONFIG_KEYS = frozenset({"requires_code_change", LEGACY_NESTED_CONFIG_KEY_REQUEST})
@@ -654,7 +658,13 @@ def _copy_builder_source_tree(root: Path, workspace_root: Path) -> None:
 
 
 def _copy_file_into_workspace(*, source: Path, source_root: Path, workspace_root: Path) -> Path:
-    relative = source.relative_to(source_root)
+    try:
+        relative = source.relative_to(source_root)
+    except ValueError:
+        # Runtime artifacts (builder_request/*) live under the runtime root, not the
+        # code/release root, in the split VPS deploy layout. Copy them in by name
+        # rather than failing -- the builder task references the returned path.
+        relative = Path(source.name)
     destination = workspace_root / relative
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
@@ -1142,7 +1152,7 @@ def _build_builder_prompt(
 1. Read the thesis and contract artifacts from disk first.
 2. Start from the base config artifact. Preserve every base config key unless the thesis config_changes explicitly changes it.
 3. If the change is already expressible with the existing family schema, write the config artifact at the expected path and stop.
-4. Otherwise make the smallest code change needed to support the missing primitive(s), then add or update the narrowest tests that cover the new behavior.
+4. Otherwise make the smallest code change needed to support the missing primitive(s), then add or update the narrowest tests that cover the new behavior. The thesis artifact's `mechanism_rule` field (a pandas df.query expression over entry-time columns) is the EXACT entry condition the primitive must implement -- build the filter so it matches that rule.
 5. Keep the edit scope tight. Do not refactor unrelated code.
 6. Do not clean up, revert, or inspect unrelated dirty worktree changes.
 7. As soon as the expected config exists and any narrow validation you choose has run, stop and return the final report. Do not continue with broad diff review.

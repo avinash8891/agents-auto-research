@@ -2424,3 +2424,74 @@ def test_handle_round_failure_clears_activity(tmp_path: Path) -> None:
 
     assert updated["research_round"] == 8
     assert "activity" not in updated
+
+
+def test_decline_proposal_completes_without_screening(tmp_path: Path) -> None:
+    """A decline (actionable=false, rule=None) must end the round cleanly without
+    screening. No feature table exists here; if the decline path screened it
+    would raise FeatureTableMissingError, so a clean 'completed' proves it skips
+    screening (and never runs df.query on an empty rule)."""
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+
+    result, retry_feedback, stage = _try_one_validation_attempt(
+        controller,
+        1,
+        0,
+        ConductorResult(
+            status="ok",
+            thesis={
+                "story": "No new testable rule is supported beyond the already screened one.",
+                "rule": None,
+                "competitor_rule": None,
+                "competitor_story": None,
+                "actionable": False,
+                "proposed_change": None,
+                "predictions": None,
+            },
+            reasoning="no new testable rule this round",
+        ),
+        prior_theses=[],
+    )
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert result["generated_config"] is None
+    assert retry_feedback is None
+
+
+def test_compiler_payload_routes_requested_primitive_to_code_change() -> None:
+    """A thesis with requested_primitive (no proposed_change) must route to the
+    builder: requires_code_change=True + requested_primitives carries the name,
+    so compile takes the needs-code branch and the builder implements the rule."""
+    from autoresearch_research import _mechanism_proposal_to_compiler_payload
+
+    payload = _mechanism_proposal_to_compiler_payload(
+        {
+            "story": "needs a new primitive",
+            "rule": "side == 'short' and bars_since_open == 0 and gap_pct < 0",
+            "competitor_rule": "side == 'short' and gap_pct > 0",
+            "actionable": True,
+            "proposed_change": None,
+            "requested_primitive": "gap_down_early_short_exclusion",
+        },
+        strategy_family="ema",
+        thesis_id="t1",
+    )
+    assert payload["requires_code_change"] is True
+    assert payload["requested_primitives"] == ["gap_down_early_short_exclusion"]
+    assert payload["config_changes"] == {}
+    # the rule is carried through to the builder request
+    assert payload["rule"] == "side == 'short' and bars_since_open == 0 and gap_pct < 0"
+
+
+def test_compiler_payload_lever_change_is_not_code_change() -> None:
+    from autoresearch_research import _mechanism_proposal_to_compiler_payload
+
+    payload = _mechanism_proposal_to_compiler_payload(
+        {"story": "s", "actionable": True, "proposed_change": {"ema_length": 8}},
+        strategy_family="ema",
+        thesis_id="t2",
+    )
+    assert payload.get("requires_code_change", False) is False
+    assert payload["config_changes"] == {"ema_length": 8}

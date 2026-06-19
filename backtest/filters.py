@@ -51,3 +51,25 @@ def _exclude_signals_on_days(signals, frame: pd.DataFrame, excluded_days: set):
     signals.entry_price[mask] = np.nan
     signals.stop_price[mask] = np.nan
     return signals
+
+
+def _exclude_signals_before_bar(signals, frame: pd.DataFrame, min_bars: int):
+    """Zero out signals on the first `min_bars` bars of each trading day.
+
+    bars_since_open < min_bars are excluded (e.g. min_bars=1 drops the opening
+    bar). Position-within-day matches feature_table's bars_since_open (group by
+    calendar day, 0-indexed), so a conductor rule like bars_since_open == 0 is
+    tested faithfully. min_bars <= 0 is a no-op.
+    """
+    if not min_bars or int(min_bars) <= 0:
+        return signals
+    if not isinstance(frame.index, pd.DatetimeIndex) or len(frame.index) == 0:
+        return signals
+    bars_since_open = (
+        pd.Series(0, index=frame.index).groupby(frame.index.normalize()).cumcount().to_numpy()
+    )
+    mask = bars_since_open < int(min_bars)
+    signals.entries[mask] = False
+    signals.entry_price[mask] = np.nan
+    signals.stop_price[mask] = np.nan
+    return signals

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_infra import _OAUTH_PROXY_PORT, _OAUTH_PROXY_URL, _ensure_oauth_proxy, _get_openai_client
-from autoresearch_constants import DEFAULT_AGENT_MODEL as _CONDUCTOR_MODEL
+from autoresearch_constants import CONDUCTOR_MODEL as _CONDUCTOR_MODEL
 from autoresearch_logging import get_logger
 
 _ROOT = Path(__file__).resolve().parent

@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 from autoresearch_artifacts import round_number_from_path as _round_number_from_path
 from autoresearch_runtime_paths import resolve_runtime_root
 from causal_model import CausalModelStore, residual_map
-from feature_table import ENTRY_TIME_COLUMNS, FeatureTableArtifact
+from family_research_spec import get_family_research_spec
+from feature_table import ENTRY_TIME_COLUMNS, FeatureTableArtifact, FeatureTableMissingError
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult
 
@@ -35,6 +36,9 @@ class Corpus(BaseModel):
     walkforward_reports: list[dict] = Field(default_factory=list)
     cross_family: list[CausalFactor] = Field(default_factory=list)
     rejection_feedback: str | None = None
+    # The family's valid proposed_change keys, so the conductor proposes a real
+    # config lever (the proposed_change validator rejects anything else).
+    config_levers: list[str] = Field(default_factory=list)
 
 
 def build_corpus(
@@ -68,6 +72,7 @@ def build_corpus(
         walkforward_reports=_load_walkforward_reports(runtime_root, family),
         cross_family=_load_cross_family_factors(runtime_root, family),
         rejection_feedback=_load_rejection_feedback(runtime_root, round_number, job=job),
+        config_levers=sorted(get_family_research_spec(family).allowed_config_keys),
     )
 
 
@@ -144,6 +149,15 @@ def _render_corpus_text(corpus: Corpus, *, truncated_screenings: int) -> str:
     else:
         lines.append("- factors: none")
 
+    lines.extend(["", "## Config Levers"])
+    if corpus.config_levers:
+        lines.append(
+            "- an actionable proposed_change must set exactly one of these keys: "
+            + ", ".join(corpus.config_levers)
+        )
+    else:
+        lines.append("- none")
+
     lines.extend(["", "## Residual Summary"])
     if corpus.residual_summary:
         for item in corpus.residual_summary:
@@ -201,15 +215,26 @@ def _load_round_feature_table(
     runtime_root: Path, round_number: int, *, job: int | None = None
 ) -> pd.DataFrame | None:
     if job is not None:
-        path = FeatureTableArtifact.for_round(runtime_root, job, round_number).path
-        return pd.read_parquet(path) if path.exists() else None
-    round_glob = "round-0-baseline" if round_number == 0 else f"round-{round_number}"
-    candidates = sorted(
-        runtime_root.glob(f"runtime/jobs/*/research/{round_glob}/feature_table.parquet")
-    )
-    if not candidates:
-        return None
-    return pd.read_parquet(candidates[-1])
+        # Use the most recent realized feature table at or before round_number,
+        # not a fixed round index: decline rounds write none, and a fixed lookup
+        # returned None -> empty residual corpus -> the conductor declined every
+        # round. Falls back through to the baseline (round 0).
+        try:
+            artifact = FeatureTableArtifact.latest_through(runtime_root, job, round_number)
+        except FeatureTableMissingError:
+            return None
+        return artifact.load()
+    # Job-less fallback (tests / cross-job CLI): walk rounds round_number -> 0 and
+    # take the most recent realized table, same gap-tolerance as the job branch —
+    # a decline round wrote none, so a fixed round_number lookup would miss it.
+    for candidate_round in range(int(round_number), -1, -1):
+        round_glob = "round-0-baseline" if candidate_round == 0 else f"round-{candidate_round}"
+        candidates = sorted(
+            runtime_root.glob(f"runtime/jobs/*/research/{round_glob}/feature_table.parquet")
+        )
+        if candidates:
+            return pd.read_parquet(candidates[-1])
+    return None
 
 
 def _residual_summary(model: CausalModel, features: pd.DataFrame) -> list[dict]:
