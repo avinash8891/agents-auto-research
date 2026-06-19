@@ -326,7 +326,9 @@ def test_remote_run_command_clears_transaction_trace_mode() -> None:
     assert "--prepare-launch-state-only" not in command
 
 
-def test_remote_run_command_omits_cprofile_when_profile_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remote_run_command_omits_cprofile_when_profile_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("AUTORESEARCH_PROFILE", raising=False)
     family = load_family("ema")
     config = VPSConfig(
@@ -342,13 +344,12 @@ def test_remote_run_command_omits_cprofile_when_profile_unset(monkeypatch: pytes
 
     assert "-m cProfile" not in command
     assert "logs/profile" not in command
-    assert (
-        '"$python_bin" autoresearch_controller.py --family ema --run-current-state'
-        in command
-    )
+    assert '"$python_bin" autoresearch_controller.py --family ema --run-current-state' in command
 
 
-def test_remote_run_command_wraps_in_cprofile_when_profile_set(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remote_run_command_wraps_in_cprofile_when_profile_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("AUTORESEARCH_PROFILE", "1")
     family = load_family("ema")
     config = VPSConfig(
