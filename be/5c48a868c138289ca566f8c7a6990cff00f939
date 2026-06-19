@@ -1,0 +1,21 @@
+tests/test_compiler_builder.py
+  s_05bb4d97d5f815::t_5913a0145d8308 1-61
+compiler_builder.py
+  s_05bb4d97d5f815::t_5cf3c9915af06a 785-798,905-906
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "be5c48a868c138289ca566f8c7a6990cff00f939",
+  "prompts": {},
+  "sessions": {
+    "s_05bb4d97d5f815": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee068-90d0-7391-89e3-645a7cf3e3b8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
