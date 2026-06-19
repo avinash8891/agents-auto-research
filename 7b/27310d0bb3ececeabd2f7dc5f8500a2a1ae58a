@@ -1,0 +1,20 @@
+evidence_pack.py
+  s_be8b2f455eab9f::t_9b48d1caf52df1 218-226
+  s_be8b2f455eab9f::t_1383e89691a516 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "7b27310d0bb3ececeabd2f7dc5f8500a2a1ae58a",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
