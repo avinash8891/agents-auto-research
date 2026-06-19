@@ -1,0 +1,23 @@
+tests/test_baseline_promotion.py
+  s_be8b2f455eab9f::t_d759ad8b4162a4 250-295
+autoresearch_controller.py
+  s_be8b2f455eab9f::t_4e6c9657f51a36 1192-1196
+  s_be8b2f455eab9f::t_0050544a0f7265 48-49
+  s_be8b2f455eab9f::t_566152b4d632ce 373-416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "20cfc711104e2b0b958681c569e69b4d40926c75",
+  "prompts": {},
+  "sessions": {
+    "s_be8b2f455eab9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed2688e3-1c1f-48a8-8995-73ba96b8cf21",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
