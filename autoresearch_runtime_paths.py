@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+# Single definition lives in autoresearch_paths; re-exported here so existing
+# `from autoresearch_runtime_paths import resolve_runtime_root` importers keep working.
+from autoresearch_paths import resolve_runtime_root
 
 
 @dataclass(frozen=True)
@@ -147,13 +150,6 @@ def research_round_trace_exports_root(root: Path, job: int, round_number: int) -
 
 def job_builder_requests_root(root: Path, job: int) -> Path:
     return job_runtime_root(root, job) / "builder-requests"
-
-
-def resolve_runtime_root(code_root: Path) -> Path:
-    raw = os.environ.get("AUTORESEARCH_RUNTIME_ROOT", "").strip()
-    if not raw:
-        return code_root.resolve()
-    return Path(raw).expanduser().resolve()
 
 
 def iter_family_backtest_db_paths(root: Path, *, family: str | None = None) -> list[Path]:

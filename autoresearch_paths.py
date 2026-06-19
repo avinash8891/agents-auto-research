@@ -38,6 +38,11 @@ def resolve_config_path(
     runtime_root: Path,
     execution_root: Path | None = None,
 ) -> Path:
+    # One of the two persisted-path resolvers; both validate membership via
+    # path_within_allowed_roots. This one is config-first (prefers code_root, falls
+    # back to the committed configs/ tree) and RAISES on escape. Its sibling
+    # resolve_runtime_path is runtime-first and returns None (best-effort) — use
+    # that for state/artifact paths that live under the runtime root.
     raw = Path(config)
     code_root_resolved = code_root.resolve()
     runtime_root_resolved = runtime_root.resolve()
