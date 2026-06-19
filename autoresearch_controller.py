@@ -45,6 +45,8 @@ from autoresearch_orchestration import resolve_next_action as _orchestration_res
 from autoresearch_orchestration import (
     try_resume_halted_thesis as _orchestration_try_resume_halted_thesis,
 )
+from autoresearch_paths import PROMOTED_BASELINE_DIRNAME
+from autoresearch_paths import promoted_baseline_path as _promoted_baseline_path
 from autoresearch_paths import resolve_runtime_root as _resolve_runtime_root
 from autoresearch_planning import (
     COMBINATION_RULES,
@@ -366,6 +368,50 @@ def _next_fresh_job_for_launch(controller: Any, prior_state: dict[str, Any]) -> 
         if fresh_job >= 1:
             return fresh_job
     return max(_state_coerce_job_to_int(prior_state.get("job")) + 1, 1)
+
+
+def archive_inconsistent_model_for_fresh_job(
+    runtime_root: Path, family_name: str, base_config_filename: str
+) -> Path | None:
+    """A fresh job starts from the committed seed unless a promoted baseline overlay
+    exists. The persisted causal model describes edges relative to whatever baseline
+    produced it — so if there is NO overlay (we are starting from the seed) but the
+    model already holds harvested/refuted factors, the model is STALE relative to the
+    seed: it will make the conductor decline every residual pocket it has already
+    harvested, even though the seed baseline never absorbed those edges. That is the
+    job-11/12 stall.
+
+    Repair: when fresh + no overlay + non-empty model, archive the model aside so the
+    fresh job rediscovers from a clean slate consistent with the seed. When an overlay
+    DOES exist, model and baseline are consistent (round 0 reads the overlay) — keep
+    the model so cross-job causal learning compounds. Non-destructive (rename).
+
+    Returns the archive path if it moved one, else None.
+    """
+    overlay = _promoted_baseline_path(runtime_root, base_config_filename)
+    if overlay.exists():
+        return None  # baseline carries the model's edges → consistent → keep learning
+    model_path = runtime_root / f"{family_name}_causal_model.json"
+    if not model_path.exists():
+        return None
+    try:
+        model = json.loads(model_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not (model.get("factors") or model.get("accuracy_history")):
+        return None  # already a clean slate
+    archive = model_path.with_suffix(f".stale-v{model.get('version', 0)}.json")
+    model_path.rename(archive)
+    log.warning(
+        "FRESH_JOB reset stale causal model %s -> %s: it held %d factor(s) but no "
+        "promoted baseline overlay exists, so it was inconsistent with the committed "
+        "seed and would force the conductor to decline every already-harvested pocket. "
+        "Archived (not deleted); fresh job rediscovers from the seed.",
+        model_path.name,
+        archive.name,
+        len(model.get("factors", [])),
+    )
+    return archive
 
 
 def normalize_controller_launch_state(
@@ -1143,6 +1189,11 @@ def main() -> int:
     fresh_job = None
     if launch_fresh_job:
         fresh_job = _next_fresh_job_for_launch(controller, prior_state)
+        archive_inconsistent_model_for_fresh_job(
+            Path(controller.runtime_root),
+            controller.family.name,
+            controller.family.base_config_filename,
+        )
     try:
         state, job = normalize_controller_launch_state(
             prior_state,
