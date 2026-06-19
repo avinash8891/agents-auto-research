@@ -50,6 +50,15 @@ _FEATURE_COLUMNS = [
 OUTCOME_COLUMNS = frozenset(c for c in _FEATURE_COLUMNS if c.startswith("out_"))
 ENTRY_TIME_COLUMNS = frozenset(_FEATURE_COLUMNS) - OUTCOME_COLUMNS
 
+# Identifier columns are present in the feature table but are not market dimensions
+# a research rule should filter on: a surrogate key, the instrument, and the raw
+# timestamp (whose filterable forms are day_of_week / time_of_day_min).
+_RULE_IDENTIFIER_COLUMNS = frozenset({"trade_id", "symbol", "entry_ts"})
+# Entry-time columns a research `rule` (a pandas df.query) may reference. Single
+# source of truth for the conductor prompt's column list (research_prompts.py), so
+# adding a feature column there exposes it to the proposer without editing the prompt.
+RULE_QUERYABLE_COLUMNS = ENTRY_TIME_COLUMNS - _RULE_IDENTIFIER_COLUMNS
+
 
 class FeatureTableMissingError(FileNotFoundError):
     """A feature-table artifact was read but never written.

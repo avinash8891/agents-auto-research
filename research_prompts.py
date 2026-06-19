@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-# Entry-time columns a df.query rule may reference (kept in sync with the engine's
-# entry-feature schema in feature_table.py). Listed in the prompt so the model writes
-# valid rules instead of guessing column names. Outcome columns (out_is_loss, out_pnl)
-# are deliberately excluded — referencing them is look-ahead.
-_ENTRY_TIME_COLUMNS = (
-    "side, bars_since_open, gap_pct, dist_to_ema_pct, vol_pctile_20d, "
-    "regime_label, entry_bar_range_pct"
-)
+
+def _entry_filter_columns() -> str:
+    """Render the entry-time columns a `rule` df.query may reference, sourced from
+    feature_table.RULE_QUERYABLE_COLUMNS so the prompt never drifts from the schema
+    (a new feature column becomes proposable without editing this prompt). Outcome
+    columns (out_is_loss, out_pnl) are excluded there — referencing them is look-ahead."""
+    from feature_table import RULE_QUERYABLE_COLUMNS
+
+    return ", ".join(sorted(RULE_QUERYABLE_COLUMNS))
 
 
 def _format_backtest_contract(contract: Any) -> str:
@@ -55,6 +56,7 @@ def _build_mechanism_system_prompt(
             "strategy code; you cannot read files directly.\n\n"
         )
     contract_block = _format_backtest_contract(backtest_contract)
+    entry_filter_columns = _entry_filter_columns()
     return f"""You are a senior quantitative researcher for {family_phrase}. You understand its
 mechanics and code, study ALL its trades — winners and losers alike — and find the
 market mechanism that SEPARATES them: drawing on the trade data, the regime labels,
@@ -73,11 +75,13 @@ the timeframe is wrong, or too many correlated trades fire. Diagnose WHICH, then
 express the fix through the channel that fits it (see OUTPUT CHANNELS).
 
 ENTRY-FILTER COLUMNS — when your fix is an entry filter (the `rule` field), it is a
-pandas df.query over ONLY these entry-time columns: {_ENTRY_TIME_COLUMNS}. Condition on
-regime_label when the data supports it. Never reference outcome columns (out_is_loss,
-out_pnl) or anything known only after entry — that is look-ahead. Stop / target / hold /
-timeframe fixes are NOT entry filters; they go through proposed_change or
-requested_primitive, so this look-ahead rule does not constrain them.
+pandas df.query over ONLY these entry-time columns: {entry_filter_columns}. Condition on
+regime_label when the data supports it — call get_regime_summary for the regime
+taxonomy and each regime's win-rate / profit-factor (the labels feed may also add extra
+regime_* columns). Never reference outcome columns (out_is_loss, out_pnl) or anything
+known only after entry — that is look-ahead. Stop / target / hold / timeframe fixes are
+NOT entry filters; they go through proposed_change or requested_primitive, so this
+look-ahead rule does not constrain them.
 
 The rendered corpus in the user message is your primary evidence: causal model,
 residuals, screening history, harvest verdicts, and rejection feedback.
@@ -113,8 +117,9 @@ Use your tools to find a new dimension before declining; each tool's own descrip
 says when to use it. The key moves: analyze_trades to TEST a specific data hypothesis
 (slice winners vs losers a new way — do not dredge with "show me everything");
 web_search for external market-structure / academic evidence; get_dimension_examples
-for the catalog of dimensions to explore. Ground your proposal in a data finding
-(analyst) and, when relevant, external evidence (web_search).
+for the catalog of dimensions to explore; get_regime_summary for the per-regime
+win-rate / profit-factor split when you suspect a regime-conditioned edge. Ground your
+proposal in a data finding (analyst) and, when relevant, external evidence (web_search).
 
 REFLEXION
 Prior-round critiques of the analyst and web-researcher flow into their next call

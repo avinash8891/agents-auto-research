@@ -14,6 +14,7 @@ from autoresearch_runtime_paths import resolve_runtime_root
 from causal_model import CausalModelStore, residual_map
 from family_research_spec import get_family_research_spec
 from feature_table import ENTRY_TIME_COLUMNS, FeatureTableArtifact, FeatureTableMissingError
+from metrics import _profit_factor_from_pnl
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult
 
@@ -54,7 +55,7 @@ def build_corpus(
         runtime_root.resolve() if runtime_root is not None else resolve_runtime_root(code_root)
     )
     model = CausalModelStore(runtime_root=runtime_root, code_root=code_root).load(family)
-    features = _load_round_feature_table(runtime_root, round_number, job=job)
+    features = load_round_feature_table(runtime_root, round_number, job=job)
     residual_summary = _residual_summary(model, features) if features is not None else []
     return Corpus(
         family=family,
@@ -211,7 +212,7 @@ def _render_corpus_text(corpus: Corpus, *, truncated_screenings: int) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _load_round_feature_table(
+def load_round_feature_table(
     runtime_root: Path, round_number: int, *, job: int | None = None
 ) -> pd.DataFrame | None:
     if job is not None:
@@ -235,6 +236,50 @@ def _load_round_feature_table(
         if candidates:
             return pd.read_parquet(candidates[-1])
     return None
+
+
+def regime_performance(features: pd.DataFrame | None) -> list[dict[str, Any]]:
+    """Per-regime trade performance from a round's feature table: trade count, win
+    rate, and profit factor for each regime_label, sorted by label. Fail-open —
+    returns [] when the regime labels or outcomes are unavailable (regime
+    conditioning is optional context, never a hard dependency)."""
+    if features is None or features.empty:
+        return []
+    if "regime_label" not in features.columns or "out_pnl" not in features.columns:
+        return []
+    rows: list[dict[str, Any]] = []
+    for label, group in features.groupby(features["regime_label"].astype(str)):
+        pnl = group["out_pnl"].astype(float)
+        rows.append(
+            {
+                "regime_label": str(label),
+                "trades": int(len(group)),
+                "win_rate": round(float((pnl > 0).mean()), 4),
+                "profit_factor": _profit_factor_from_pnl(pnl),
+                "total_pnl": round(float(pnl.sum()), 4),
+            }
+        )
+    rows.sort(key=lambda row: row["regime_label"])
+    return rows
+
+
+def format_regime_performance(rows: list[dict[str, Any]]) -> str:
+    """Render regime_performance() as a compact table for the conductor tool."""
+    if not rows:
+        return (
+            "No regime performance available: regime_label / out_pnl missing, or no "
+            "realized feature table exists for this round yet."
+        )
+    lines = [
+        "REGIME PERFORMANCE (this round's trades):",
+        "regime_label | trades | win_rate | profit_factor | total_pnl",
+    ]
+    for row in rows:
+        lines.append(
+            f"{row['regime_label']} | {row['trades']} | {row['win_rate']:.2%} | "
+            f"{row['profit_factor']} | {row['total_pnl']}"
+        )
+    return "\n".join(lines)
 
 
 def _residual_summary(model: CausalModel, features: pd.DataFrame) -> list[dict]:

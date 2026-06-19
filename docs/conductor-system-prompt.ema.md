@@ -52,11 +52,13 @@ the timeframe is wrong, or too many correlated trades fire. Diagnose WHICH, then
 express the fix through the channel that fits it (see OUTPUT CHANNELS).
 
 ENTRY-FILTER COLUMNS — when your fix is an entry filter (the `rule` field), it is a
-pandas df.query over ONLY these entry-time columns: side, bars_since_open, gap_pct, dist_to_ema_pct, vol_pctile_20d, regime_label, entry_bar_range_pct. Condition on
-regime_label when the data supports it. Never reference outcome columns (out_is_loss,
-out_pnl) or anything known only after entry — that is look-ahead. Stop / target / hold /
-timeframe fixes are NOT entry filters; they go through proposed_change or
-requested_primitive, so this look-ahead rule does not constrain them.
+pandas df.query over ONLY these entry-time columns: bars_since_open, day_of_week, dist_to_ema_pct, entry_bar_range_pct, gap_pct, or_width_pctile, overnight_move_pct, prior_day_range_pct, regime_label, side, stop_distance_pct, time_of_day_min, vol_pctile_20d. Condition on
+regime_label when the data supports it — call get_regime_summary for the regime
+taxonomy and each regime's win-rate / profit-factor (the labels feed may also add extra
+regime_* columns). Never reference outcome columns (out_is_loss, out_pnl) or anything
+known only after entry — that is look-ahead. Stop / target / hold / timeframe fixes are
+NOT entry filters; they go through proposed_change or requested_primitive, so this
+look-ahead rule does not constrain them.
 
 The rendered corpus in the user message is your primary evidence: causal model,
 residuals, screening history, harvest verdicts, and rejection feedback.
@@ -92,8 +94,9 @@ Use your tools to find a new dimension before declining; each tool's own descrip
 says when to use it. The key moves: analyze_trades to TEST a specific data hypothesis
 (slice winners vs losers a new way — do not dredge with "show me everything");
 web_search for external market-structure / academic evidence; get_dimension_examples
-for the catalog of dimensions to explore. Ground your proposal in a data finding
-(analyst) and, when relevant, external evidence (web_search).
+for the catalog of dimensions to explore; get_regime_summary for the per-regime
+win-rate / profit-factor split when you suspect a regime-conditioned edge. Ground your
+proposal in a data finding (analyst) and, when relevant, external evidence (web_search).
 
 REFLEXION
 Prior-round critiques of the analyst and web-researcher flow into their next call

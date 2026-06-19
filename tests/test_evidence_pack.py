@@ -7,10 +7,56 @@ import pandas as pd
 
 from backtest_run_db import BacktestRunDB
 from causal_model import save_model
-from evidence_pack import CORPUS_MAX_RENDER_CHARS, Corpus, build_corpus, render_corpus
+from evidence_pack import (
+    CORPUS_MAX_RENDER_CHARS,
+    Corpus,
+    build_corpus,
+    format_regime_performance,
+    regime_performance,
+    render_corpus,
+)
 from feature_table import FeatureTableArtifact
 from research_types import CausalFactor, CausalModel
 from screening import ScreeningResult, write_screenings
+
+
+def test_regime_performance_splits_win_rate_and_profit_factor_by_regime() -> None:
+    features = pd.DataFrame(
+        {
+            "regime_label": ["risk_on", "risk_on", "risk_on", "risk_off", "risk_off"],
+            "out_pnl": [10.0, -5.0, 4.0, -2.0, -3.0],
+        }
+    )
+
+    rows = regime_performance(features)
+
+    # Sorted by label: risk_off before risk_on.
+    assert rows == [
+        {
+            "regime_label": "risk_off",
+            "trades": 2,
+            "win_rate": 0.0,
+            "profit_factor": 0.0,
+            "total_pnl": -5.0,
+        },
+        {
+            "regime_label": "risk_on",
+            "trades": 3,
+            "win_rate": 0.6667,
+            "profit_factor": 2.8,  # gross profit 14 / gross loss 5
+            "total_pnl": 9.0,
+        },
+    ]
+    rendered = format_regime_performance(rows)
+    assert "risk_on | 3 | 66.67% | 2.8 | 9.0" in rendered
+
+
+def test_regime_performance_fails_open_without_labels_or_outcomes() -> None:
+    assert regime_performance(None) == []
+    assert regime_performance(pd.DataFrame()) == []
+    # out_pnl present but no regime_label -> no per-regime split.
+    assert regime_performance(pd.DataFrame({"out_pnl": [1.0, -1.0]})) == []
+    assert "No regime performance available" in format_regime_performance([])
 
 
 def _factor(
@@ -607,17 +653,17 @@ def test_render_corpus_lists_config_levers(tmp_path: Path, monkeypatch) -> None:
     assert "gap_filter" in text
 
 
-def test_load_round_feature_table_falls_back_to_latest_realized(tmp_path: Path) -> None:
+def testload_round_feature_table_falls_back_to_latest_realized(tmp_path: Path) -> None:
     """The corpus residual section must use the most recent realized feature
     table, not a fixed round-(N-1) index. Decline rounds write no table, so the
     fixed index returned None -> empty residuals -> the conductor had nothing to
     propose and declined every round. It must fall back to the baseline."""
-    from evidence_pack import _load_round_feature_table
+    from evidence_pack import load_round_feature_table
 
     job = 7
     table = pd.DataFrame({"trade_id": ["AAA:2024-01-04T14:35:00+00:00"], "out_pnl": [1.0]})
     FeatureTableArtifact.for_round(tmp_path, job, 0).write(table)  # baseline only
     # round 2 ran no experiment (decline) -> its own table is missing.
-    loaded = _load_round_feature_table(tmp_path, 2, job=job)
+    loaded = load_round_feature_table(tmp_path, 2, job=job)
     assert loaded is not None
     assert list(loaded["trade_id"]) == ["AAA:2024-01-04T14:35:00+00:00"]

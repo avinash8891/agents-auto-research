@@ -30,6 +30,7 @@ from research_memory import (
     save_research_finding,
     search_research_findings,
 )
+from autoresearch_runtime_paths import resolve_runtime_root
 from research_paths import (
     _CONDUCTOR_MODEL,
     _OAUTH_PROXY_URL,
@@ -164,6 +165,25 @@ def _render_resolution_context(resolution_context: dict[str, Any] | None) -> str
     else:
         lines.append("- minimum_supported_time_bucket_minutes: unknown")
     return "\n".join(lines)
+
+
+def _regime_summary_text(research_round: int, current_job: int | None) -> str:
+    """Per-regime trade count, win rate, and profit factor for this round, loaded from
+    the same feature table the corpus uses. Fail-open: regime context is optional, so
+    any load/compute error degrades to an explanatory line instead of killing the tool."""
+    try:
+        from evidence_pack import (
+            format_regime_performance,
+            load_round_feature_table,
+            regime_performance,
+        )
+
+        runtime_root = resolve_runtime_root(_ROOT)
+        features = load_round_feature_table(runtime_root, research_round, job=current_job)
+        return format_regime_performance(regime_performance(features))
+    except Exception as exc:  # noqa: BLE001 — optional context, never fatal to the round
+        log.warning("get_regime_summary failed: %s", exc)
+        return f"Regime summary unavailable: {exc}"
 
 
 async def run_research_conductor(
@@ -937,6 +957,25 @@ async def run_research_conductor(
             )
             return DIMENSION_EXAMPLES
 
+        @function_tool(name_override="get_regime_summary")
+        async def get_regime_summary_tool() -> str:
+            """Return this round's regime taxonomy: each regime_label with its trade
+            count, win rate, and profit factor, so a regime-conditioned entry edge can
+            be proposed from data rather than guessed. Use when you suspect the edge
+            appears or disappears by regime. Reads this round's feature table."""
+            tools_called_this_round.add("get_regime_summary")
+            trace_agent_tool_call(
+                "research-conductor",
+                trace_id,
+                "get_regime_summary",
+                "",
+                model_provider="openai",
+                model_name=_CONDUCTOR_MODEL,
+            )
+            output = _regime_summary_text(research_round, current_job)
+            trace_agent_tool_result("research-conductor", trace_id, "get_regime_summary", output)
+            return output
+
         @function_tool(name_override="get_tuning_examples")
         async def get_tuning_examples_tool() -> str:
             """Return examples of parameter tuning vs a real mechanism change.
@@ -984,6 +1023,7 @@ async def run_research_conductor(
                 get_rejection_tool,
                 rejection_pattern_summary_tool,
                 get_dimension_examples_tool,
+                get_regime_summary_tool,
                 get_tuning_examples_tool,
             ],
             model=model,
