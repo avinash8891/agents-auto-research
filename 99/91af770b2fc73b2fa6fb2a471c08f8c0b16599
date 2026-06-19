@@ -1,0 +1,21 @@
+plans/controller_capability_scenarios.md
+  s_16da6da04fe395::t_3420f90a6a9c85 1-44
+tests/test_autoresearch_controller_characterization.py
+  s_16da6da04fe395::t_7237c81abad498 709-767
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "9991af770b2fc73b2fa6fb2a471c08f8c0b16599",
+  "prompts": {},
+  "sessions": {
+    "s_16da6da04fe395": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17a8247d-e189-4b76-b03d-19b61632c883",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
