@@ -279,6 +279,13 @@ async def run_research_conductor(
 
         @function_tool
         async def web_search(query: str, context: str = "") -> str:
+            """Run external web/literature research for market-mechanism evidence.
+
+            Use when the corpus shows no separable pocket and you need a dimension
+            from OUTSIDE the trade data — academic/practitioner findings on market
+            microstructure, regime behavior, opening-session effects, etc. Args:
+            query = the question to research; context = why you are asking / what you
+            already suspect. Returns the web researcher's synthesized findings as text."""
             started = monotonic()
             tool_input = json.dumps({"query": query, "context": context}, default=str)
             trace_agent_tool_call(
@@ -416,6 +423,13 @@ async def run_research_conductor(
 
         @function_tool
         async def search_findings(query: str, finding_type: str = "") -> str:
+            """Search the cross-round research memory for durable findings (dataset
+            facts, seasonal/regime patterns, prior web findings).
+
+            Use BEFORE proposing to recall what is already known so you don't
+            re-derive it or re-propose a dead idea. Args: query = what to look for;
+            finding_type = optional filter (observation, validated_finding,
+            rejected_finding, ...). Returns matching findings with status and scope."""
             started = monotonic()
             tool_input = json.dumps({"query": query, "finding_type": finding_type}, default=str)
             trace_agent_tool_call(
@@ -481,6 +495,9 @@ async def run_research_conductor(
 
         @function_tool
         async def memory_status() -> str:
+            """Report how much cross-round research memory exists (finding counts and
+            store health). Use to gauge whether search_findings is worth calling this
+            round. No args. Returns a short JSON status summary."""
             started = monotonic()
             trace_agent_tool_call(
                 "research-conductor",
@@ -554,6 +571,12 @@ async def run_research_conductor(
 
         @function_tool
         async def get_past_thesis(thesis_id: str) -> str:
+            """Fetch the full record of one prior thesis — its rule, config change,
+            predictions, outcome, and verdict — by thesis_id.
+
+            Use after list_past_theses to compare your candidate against a specific
+            prior attempt (did it already test this lever/dimension?). Args:
+            thesis_id. Returns the thesis detail as JSON text."""
             started = monotonic()
             tool_input = json.dumps(
                 {"root": str(_ROOT), "job_id": current_job, "thesis_id": thesis_id},
@@ -603,6 +626,13 @@ async def run_research_conductor(
             job_id: int | None = None,
             family: str | None = None,
         ) -> str:
+            """List prior backtest round outcomes (each row = one backtest: config,
+            metric, decision).
+
+            Use to see the metric trajectory or which configs were already run when
+            the corpus summary is not enough. Args: order ('latest' first by default),
+            offset/limit for paging, optional job_id/family (defaults to this job).
+            Returns a bounded list of round results."""
             started = monotonic()
             tool_input = json.dumps(
                 {
@@ -662,6 +692,12 @@ async def run_research_conductor(
             job_id: int | None = None,
             family: str | None = None,
         ) -> str:
+            """Fetch one round's backtest result by research_round_id.
+
+            Use after list_round_results to inspect a specific run's metrics and
+            config. Args: research_round_id; detail=True includes full metrics;
+            optional job_id/family. Returns the round result (full metrics when
+            detail=True)."""
             started = monotonic()
             tool_input = json.dumps(
                 {
