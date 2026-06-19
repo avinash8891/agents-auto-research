@@ -651,10 +651,56 @@ def _builder_source_ignore(_dir: str, names: list[str]) -> set[str]:
     return ignored
 
 
+def _resolve_project_venv_root() -> Path | None:
+    """The virtualenv that has the project deps installed, or None if we are not
+    running inside one. Prefers the exported runtime interpreter
+    (AUTORESEARCH_PYTHON_BIN, set by the VPS launcher to .venv/bin/python and
+    resolved against the release cwd), then the running interpreter. A real venv is
+    identified by its pyvenv.cfg marker."""
+    candidates: list[Path] = []
+    exported = os.environ.get("AUTORESEARCH_PYTHON_BIN")
+    if exported:
+        candidates.append(Path(exported))
+    candidates.append(Path(sys.executable))
+    for candidate in candidates:
+        try:
+            venv_root = candidate.resolve().parent.parent
+        except OSError:
+            continue
+        if (venv_root / "pyvenv.cfg").exists():
+            return venv_root
+    return None
+
+
+def _link_venv_into_workspace(workspace_root: Path) -> None:
+    """The builder workspace excludes .venv (it is a copy of the source tree), but the
+    codex agent's self-verification and the config validator need a python with the
+    project deps. Symlink the real project venv in as `.venv` so `.venv/bin/python`
+    resolves inside the workspace. Fail-open: a missing venv (e.g. local dev without
+    one) just means the builder verifies with whatever interpreter it finds."""
+    venv_root = _resolve_project_venv_root()
+    if venv_root is None:
+        return
+    dest = workspace_root / ".venv"
+    if dest.exists() or dest.is_symlink():
+        return
+    try:
+        dest.symlink_to(venv_root, target_is_directory=True)
+    except OSError as exc:  # noqa: BLE001 — fail-open, builder still attempts to verify
+        log.warning(
+            "could not link project venv into builder workspace (%s -> %s): %s; "
+            "the codex self-check may lack project deps",
+            dest,
+            venv_root,
+            exc,
+        )
+
+
 def _copy_builder_source_tree(root: Path, workspace_root: Path) -> None:
     if workspace_root.exists():
         shutil.rmtree(workspace_root)
     shutil.copytree(root, workspace_root, symlinks=True, ignore=_builder_source_ignore)
+    _link_venv_into_workspace(workspace_root)
 
 
 def _copy_file_into_workspace(*, source: Path, source_root: Path, workspace_root: Path) -> Path:
