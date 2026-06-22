@@ -12,6 +12,7 @@ from autoresearch_runtime_paths import (
     research_round_id,
     research_round_root,
 )
+from builder_lifecycle import BuilderHeartbeat, builder_result_context
 from improvement_reflexion import read_validation_failure_reason
 from persistence_utils import utc_now_iso8601 as iso8601_utc_now
 from persistence_utils import write_json_atomic as _write_json_atomic
@@ -60,27 +61,7 @@ def _controller_research_artifact_dir(controller: "AutoresearchController") -> s
 
 
 def _builder_result_context(builder_result: dict[str, Any]) -> dict[str, Any]:
-    context: dict[str, Any] = {}
-    for key in (
-        "builder_task",
-        "builder_phase",
-        "builder_self_check",
-        "builder_attempts",
-        "implementation_verification_passed",
-        "implementation_verification_failures",
-        "error_code",
-        "generated_config",
-        "execution_root",
-        "promotion_manifest",
-        "promoted_files",
-        "seeded_capability",
-        "status",
-        "validation_passed",
-        "usage",
-    ):
-        if key in builder_result:
-            context[key] = builder_result[key]
-    return context
+    return builder_result_context(builder_result)
 
 
 def _archive_reactivated_blocker(state: dict[str, Any], *, source: str) -> None:
@@ -199,21 +180,14 @@ def _mark_builder_heartbeat_finished(
     thesis_id: str,
     status: str,
 ) -> None:
-    heartbeat = state.setdefault("heartbeat", {})
-    heartbeat["builder_status"] = status
-    heartbeat["builder_thesis"] = thesis_id
-    heartbeat["builder_finished_at"] = iso8601_utc_now()
+    BuilderHeartbeat(state).mark_finished(thesis_id, status)
 
 
 def _attach_builder_runtime_context(
     state: dict[str, Any],
     builder_result: dict[str, Any],
 ) -> None:
-    context = _builder_result_context(builder_result)
-    if not context:
-        return
-    heartbeat = state.setdefault("heartbeat", {})
-    heartbeat["builder_result_context"] = context
+    BuilderHeartbeat(state).attach_result_context(builder_result)
 
 
 def _mark_builder_manual_review(
@@ -258,15 +232,17 @@ def _mark_builder_manual_review(
             "error_code": error_code,
             "builder_context": _builder_result_context(builder_result),
         }
-        heartbeat = state.setdefault("heartbeat", {})
+        heartbeat = BuilderHeartbeat(state)
         raw_builder_status = str(builder_result.get("status") or "error")
-        _mark_builder_heartbeat_finished(state, thesis_id, "research_retry_required")
-        _attach_builder_runtime_context(state, builder_result)
-        heartbeat["blocked_thesis"] = thesis_id
-        heartbeat["blocked_builder_status"] = "research_retry_required"
-        heartbeat["blocked_builder_result_status"] = raw_builder_status
-        heartbeat["blocked_reason"] = feedback
-        heartbeat["blocked_error_code"] = error_code
+        heartbeat.mark_finished(thesis_id, "research_retry_required")
+        heartbeat.attach_result_context(builder_result)
+        heartbeat.mark_blocked(
+            thesis_id,
+            builder_status="research_retry_required",
+            raw_builder_status=raw_builder_status,
+            reason=feedback,
+            error_code=error_code,
+        )
         controller.write_state(state)
         controller.write_current_md(state, controller.read_results())
         return state
@@ -308,15 +284,17 @@ def _mark_builder_manual_review(
             "artifact_dir": f"{controller.family.name}-builder-failed",
             "builder_context": _builder_result_context(builder_result),
         }
-        heartbeat = state.setdefault("heartbeat", {})
+        heartbeat = BuilderHeartbeat(state)
         raw_builder_status = str(builder_result.get("status") or "error")
-        _mark_builder_heartbeat_finished(state, thesis_id, "builder_failed")
-        _attach_builder_runtime_context(state, builder_result)
-        heartbeat["blocked_thesis"] = thesis_id
-        heartbeat["blocked_builder_status"] = "builder_failed"
-        heartbeat["blocked_builder_result_status"] = raw_builder_status
-        heartbeat["blocked_reason"] = reason
-        heartbeat["blocked_error_code"] = error_code
+        heartbeat.mark_finished(thesis_id, "builder_failed")
+        heartbeat.attach_result_context(builder_result)
+        heartbeat.mark_blocked(
+            thesis_id,
+            builder_status="builder_failed",
+            raw_builder_status=raw_builder_status,
+            reason=reason,
+            error_code=error_code,
+        )
         controller.write_state(state)
         controller.write_current_md(state, controller.read_results())
         return state
@@ -352,14 +330,16 @@ def _mark_builder_manual_review(
         "artifact_dir": f"{controller.family.name}-manual-review",
         "builder_context": _builder_result_context(builder_result),
     }
-    heartbeat = state.setdefault("heartbeat", {})
+    heartbeat = BuilderHeartbeat(state)
     raw_builder_status = str(builder_result.get("status") or "error")
-    _mark_builder_heartbeat_finished(state, thesis_id, "manual_review")
-    _attach_builder_runtime_context(state, builder_result)
-    heartbeat["blocked_thesis"] = thesis_id
-    heartbeat["blocked_builder_status"] = "manual_review"
-    heartbeat["blocked_builder_result_status"] = raw_builder_status
-    heartbeat["blocked_reason"] = state["next_action"]["reason"]
+    heartbeat.mark_finished(thesis_id, "manual_review")
+    heartbeat.attach_result_context(builder_result)
+    heartbeat.mark_blocked(
+        thesis_id,
+        builder_status="manual_review",
+        raw_builder_status=raw_builder_status,
+        reason=state["next_action"]["reason"],
+    )
     controller.write_state(state)
     controller.write_current_md(state, controller.read_results())
     return state
@@ -483,17 +463,7 @@ def _mark_builder_running(
         "builder_thesis_id": thesis_id,
         "requires_subagent": False,
     }
-    heartbeat = state.setdefault("heartbeat", {})
-    for stale_key in (
-        "blocked_builder_status",
-        "blocked_builder_result_status",
-        "blocked_reason",
-        "blocked_thesis",
-    ):
-        heartbeat.pop(stale_key, None)
-    heartbeat["builder_status"] = "running"
-    heartbeat["builder_thesis"] = thesis_id
-    heartbeat["builder_started_at"] = iso8601_utc_now()
+    BuilderHeartbeat(state).mark_running(thesis_id)
     controller.write_state(state)
     return state
 
