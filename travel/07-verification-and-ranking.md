@@ -8,7 +8,7 @@ INPUT:
 - The discovery axes (**coverage-matrix** / **admission-bar** docs) — the baseline axes in `axes-registry.md`, especially the axes tagged `role:axis-proof` and `role:saturation-weight` (these carry the operators keyword search misses; identities are READ from the registry, never named from memory).
 - Per-country verification ledger (`<country>/ledger.md`, **corpus** doc) and global registries (`axes-registry.md`, `lens-registry.md`) — READ, do not work from memory. The credential→lens table (`lens-registry.md`) is the authoritative lookup for whether a credential string satisfies the theme's lens (D.4); READ it, never judge fit from memory.
 
-OUTPUT: `rankings/<theme-id>.md` — verified ranked Top-`RANK_DEPTH` + a FLAGS block (schema in Step D). `<theme-id>` follows `THEME_ID_GRAMMAR` (`travel-config.md`).
+OUTPUT: `rankings/<theme-id>.md` — intent/lane block + verified ranked Top-`RANK_DEPTH` + evidence digest + FLAGS block (schema in Step D). `<theme-id>` follows `THEME_ID_GRAMMAR` (`travel-config.md`).
 NEXT: the **composition** doc (`doc-manifest.md`) and any country-level roll-up consume `rankings/<theme-id>.md`. Verified specifics + new operators APPEND back to the corpus (**corpus** doc) and verification ledger.
 
 MEMORY INVARIANT: nothing here lives in session memory. The candidate field, corpus rows, HTTP-status notes, and axis definitions are all READ from committed files; every verified specific and ranking is WRITTEN to `rankings/<theme-id>.md` and APPENDED to the corpus/ledger. A fresh session reproduces the same Top-`RANK_DEPTH` from the files alone. "Verified" = pasted/cited specifics in a committed file, never an in-session assertion.
@@ -18,6 +18,7 @@ COMPOUNDING: verification accrues. READ the corpus + per-country verification le
 ## PROCEDURE (start = one theme-id)
 
 1. Take the theme-id. READ its rows from the corpus (**corpus** doc), the discovered field (**theme-seeding**/**discovery-loop** docs), and the per-country verification ledger.
+1a. Write the run's **intent/lane block** before ranking: traveller intent, ranking lane, excluded formats, primary success metric, and tie-breakers. If these cannot be stated, STOP; the ranking target is underspecified.
 2. **Operator saturation (merge discovery here).** Run the axis check (**coverage-matrix** / **admission-bar** docs) over the baseline axes in `axes-registry.md`, scoped to this theme, so the candidate set is complete. Give special weight to the axes tagged `role:saturation-weight` — and confirm the axes tagged `role:convergence-gate` are dry for this theme — since those carry the operators keyword search misses. (Convergence requires every `role:convergence-gate` axis dry, not a frozen axis count; the count is derived from `axes-registry.md`.)
 3. Build the finalist set: every candidate with no known `FAIL` in tuple, credential fit, depth, or format under the rubric below, plus any UNVERIFIED/fetch-blocked row that could clear those gates if fetched. Order the verification queue by priority: corpus UNVERIFIED rows first, then fetch-blocked (403/404) operator pages.
 4. **Verify each finalist from a live source.** This step is the AUTHORITATIVE 100%-finalist-re-verify gate: **every DISPLAYED finalist is re-fetched against a live URL, no exceptions.** Spot-check SAMPLING (the **orchestration** doc) applies only to the broad corpus — never as the sole gate before ranking; the **orchestration** doc DEFERS to this step for displayed rows. Confirm and record:
@@ -82,8 +83,17 @@ Output (`rankings/IT-01.md`) contains: country + arrivals rank, theme/region, on
 ## OUTPUT SCHEMA (Step D — `rankings/<theme-id>.md`)
 
 - Country (arrivals rank) + theme/region + one-line capture statement.
+- Intent/lane block:
+  - traveller intent
+  - ranking lane (`format-class`)
+  - excluded formats
+  - primary success metric
+  - tie-breakers
 - Ranked Top-`RANK_DEPTH`, each row: operator · tour name · guide/expertise · group size · duration · approx price (with USD-equivalent + rate date, FX rule) · value note · depth/access feature · source link · `credential_source` (the independent, non-operator-domain URL corroborating the guide's credential — DISTINCT from the operator/tour URL; empty ⇒ credential is CLAIMED, capped PARTIAL).
 - One line: **why #1 wins**.
+- Evidence digest: compact table of load-bearing claims used for ranking.
+  | claim | evidence URL | rubric label | used for rank? |
+  |---|---|---|---|
 - FLAGS block: any unverified leader/departure; any `CLAIMED` load-bearing claim (seller-page-only evidence); any `credential-mismatch` (credential does not resolve to the theme's lens via the `lens-registry.md` table); any `figurehead-risk` (named expert not confirmed on this departure / only "one of our scholars"); any "credential uncorroborated" (empty `credential_source`); any `group-size-unstated` (marketing adjective, no number); any premium-for-thin-substance; any format-class mix; any THIN-NOTE (credited weight below `ADMISSION_BAR`); if rankable rows < `RANK_DEPTH`, state the count and give closest-fit rows only below the ranked list.
 
 This output schema is a versioned contract (same rule as the corpus row schema — `corpus` SCHEMA EVOLUTION): a field add/rename is lesson-tracked, the `composition` consumer is updated in lockstep, and older `rankings/<theme-id>.md` files are re-emitted (marked `dirty` for rebuild from the corpus) rather than left with a stale field set.
@@ -93,6 +103,7 @@ This output schema is a versioned contract (same rule as the corpus row schema �
 (open — this block is a VIEW of `10-lessons-log.md`; append the check when a new lesson lands, tag `Lnn`. The lessons-log is the source, this block the projection — `REGISTRY-PROTOCOL.md`.)
 
 - Ranking on memory/reputation instead of a live-verified specific (violates the memory invariant). (L1, L15)
+- Writing a ranking without an intent/lane block, or ranking a candidate whose load-bearing claims are absent from the evidence digest.
 - Rewarding price/luxury for its own sake instead of applying the value row in the Candidate Evidence Rubric.
 - Mixing format classes (group vs bespoke vs day) in one Top-`RANK_DEPTH` without flagging it. (L9)
 - Dropping a 403/404 finalist instead of keeping it UNVERIFIED with snippet evidence. (L9)
