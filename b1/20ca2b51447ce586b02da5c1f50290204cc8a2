@@ -1,0 +1,21 @@
+travel/00-overview-and-principles.md
+  s_fc23909bc640a9::t_b7f5b415214598 3-46
+travel/01-country-ranking.md
+  s_fc23909bc640a9::t_33b4ceaf63d860 3-35,38,40-43,45,47-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "b120ca2b51447ce586b02da5c1f50290204cc8a2",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
