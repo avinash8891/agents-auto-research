@@ -106,6 +106,15 @@ Append-only. Every time the method improves, record what was wrong, why, and the
 **Principle:** any tunable → a named dial in config; any enumeration → a registry under REGISTRY-PROTOCOL; any stage/role applicability → a tag, filtered not hand-named; any cross-ref → a manifest slug. Count/identity derived from the registry, never asserted in prose.
 **Caveat:** residual literals slip in (bad "1.5" arithmetic; hand-listed axis names) — verify with a banned-literal check after each rewrite.
 
+## L17 — Finish the medium/low hardcoding clusters
+Closed the remaining audit clusters (12–17):
+- **Tag vocabularies → `tags-registry.md`** (row `status`, `format-class`+rankability, `watch/leisure`, `strength`). Fixed the live drift between `corpus` and `ranking` (`private/bespoke/year-round` vs `private-bespoke-year-round`). Both now reference the registry.
+- **Operative rules single-sourced**: promotion test owned by `discovery-loop`, cross-referenced (not restated) by `admission-bar`; L7 pinned in `lessons`, cross-referenced not re-narrated.
+- **Theme-ID grammar + overflow** already moved to `THEME_ID_GRAMMAR`/`THEME_ID_OVERFLOW` (`travel-config.md`); `theme-seeding`/`corpus` cite them — silent 99-cap removed.
+- **Cross-refs** are manifest slugs; the data file `country_ranking.md` vs the method doc `01-country-ranking.md` disambiguated in `doc-manifest.md` (GLOBAL DATA ARTIFACTS).
+- **Italy specifics** removed from global prose (`11` operator names gone; rosters cite per-country files); historical figures kept only in lessons/promotion-logs.
+- **Language axis genericized**: definition is "native + relevant study-travel source languages"; per-country language set is data in `<country>/axes.md` (Italy = IT/DE/FR). DE/FR/IT in `coverage-matrix` is an example query bank only.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 

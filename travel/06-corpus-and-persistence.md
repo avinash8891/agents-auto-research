@@ -31,9 +31,9 @@ COMPOUNDING: corpus rounds and theme-map versions are APPEND-only (read prior �
 
 2. **Write every operator as a row** using the schema below. One row per operator.
 
-3. **Tag each row's `format-class`** — `fixed-departure group` | `private/bespoke/year-round` | `hybrid/course`. This affects rankability (ranking): a private/bespoke or year-round product can't be admitted on the "dated departure" basis the same way a fixed-departure tour can.
+3. **Tag each row's `format-class`** — values + rankability in `tags-registry.md` (`fixed-departure-group` / `private-bespoke` / `day-format` / `hybrid-course`). Only `fixed-departure-group` is admissible on the "dated departure" basis directly (ranking).
 
-4. **Set each row's `status`** per the status rules below.
+4. **Set each row's `status`** — values `tags-registry.md` row.status (`verified` / `UNVERIFIED` / `stale`); rules below.
 
 5. **Assign theme IDs** per THEME_ID_GRAMMAR (IDs are assigned at seed time in theme-seeding; here you preserve them and extend on split).
 
@@ -50,7 +50,8 @@ COMPOUNDING: corpus rounds and theme-map versions are APPEND-only (read prior �
 11. **Before declaring done, run the closing reconciliation** (rules below) and write it into `<country>_theme_map_FINAL.md`.
 
 ## ROW SCHEMA (every operator row)
-`Operator | Channel | Tour name | Expert (named + credential) | Format-class | CURRENT_SEASON departure? | price | group size | URL | last_checked: YYYY-MM-DD | status: verified | UNVERIFIED | stale`
+`Operator | Channel | Tour name | Expert (named + credential) | Format-class | CURRENT_SEASON departure? | price | group size | URL | last_checked: YYYY-MM-DD | status`
+(Format-class + status value sets: `tags-registry.md`. Channel = a `channel-registry.md` id.)
 
 Channel values are channel-registry.md stable ids (e.g. `academic-operator`, `luxury-bespoke`) — never positional letters.
 

@@ -43,6 +43,7 @@ Files are cited by **slug** throughout the playbook; the slug → file map (and 
 - `channel-registry.md` — provider sub-types of the `channel` axis, as stable string ids (`academic-operator` … `special-interest`), not positional letters. Count derived from the file.
 - `sources-registry.md` — ranking/verification data sources with `tier`/`lag` tags.
 - `operator-aliases.md` — sub-brand→parent absorptions + aggregator exclusions for consistent de-dup.
+- `tags-registry.md` — small tag vocabularies (row `status`, `format-class` + rankability, `watch/leisure`, theme `strength`); writer (`corpus`) and consumer (`ranking`) reference it so spellings never drift.
 
 ## Document conventions
 **These docs are AGENT EXECUTION SPECS, not human essays.** The reader is a coding/AI agent. Optimise for unambiguous execution, not narrative. Each step doc uses this structure:

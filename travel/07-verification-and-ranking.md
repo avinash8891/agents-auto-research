@@ -28,7 +28,7 @@ COMPOUNDING: verification accrues. READ the corpus + per-country verification le
    - The specific depth/access feature (exclusive site access, underground, after-hours, dig viewing, etc.).
 5. **On 403/404:** harvest date/price/guide from the search snippet; keep the row UNVERIFIED with the HTTP status + "confirmed in snippet" noted (**corpus** doc). Never silently drop a blocked page; never promote it to verified without an unblocked confirmation.
 6. **On unverifiable guide or `CURRENT_SEASON` departure:** flag the tour in the output. Never guess, never drop silently.
-7. **Tag format class** on each finalist (**corpus** doc): `fixed-departure group` / `private-bespoke-year-round` / `hybrid-course`.
+7. **Tag format class** on each finalist — values in `tags-registry.md` (written per **corpus** doc).
 8. **Rank** the verified finalists on the criteria in priority order (see DECISION RULES → ranking).
 9. APPEND every confirmed specific back to the corpus row and the per-country verification ledger (**corpus** doc). PROMOTE any new operator or reusable verification source per `REGISTRY-PROTOCOL.md`.
 10. **Write the output** to `rankings/<theme-id>.md` per Step D schema, including the FLAGS block. Stop.
@@ -44,7 +44,7 @@ COMPOUNDING: verification accrues. READ the corpus + per-country verification le
   3. Small / authentic / locally connected — private option a plus.
   4. Value for money (tie-break only): when two are comparably excellent, better value ranks higher.
 - **Value rule:** price is not a barrier — the best wins even if pricier — but cost MUST be justified by depth/expertise. A large premium for thin substance → flag it. Never reward price/luxury for its own sake (incl. the `luxury-bespoke` channel, `channel-registry.md`).
-- **Format-class mixing:** if the Top-`RANK_DEPTH` mixes format classes (e.g. a multi-day escorted tour alongside a city-based day-scholar or a bespoke private), flag the difference explicitly so the reader compares like with unlike knowingly. A private/bespoke/year-round product cannot be ranked on the same "dated departure" basis as a fixed-departure tour.
+- **Format-class mixing:** if the Top-`RANK_DEPTH` mixes format classes (e.g. a multi-day escorted tour alongside a city-based day-scholar or a bespoke private), flag the difference explicitly so the reader compares like with unlike knowingly. A non-`fixed-departure-group` product (`tags-registry.md`) cannot be ranked on the same "dated departure" basis as a `fixed-departure-group` tour.
 - **Weak theme:** if the theme cannot fill a strong Top-`RANK_DEPTH`, say so and give the closest strong fits — never pad to `RANK_DEPTH`.
 - **Trip-fit sanity:** a ranked theme must still fit one trip under `MAX_TRIP_DAYS` (`travel-config.md`); if a finalist's product implies a longer single itinerary, note it for the **composition** doc.
 

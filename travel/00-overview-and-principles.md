@@ -43,7 +43,7 @@ Emit, per theme:
 - Theme **ID** (`THEME_ID_GRAMMAR`, e.g. `IT-01`; overflow per `THEME_ID_OVERFLOW`; convention owned by `corpus`) + country (with arrivals rank + data-year) + theme/region + one-line capture statement.
 - A ranked **Top `RANK_DEPTH`** — `RANK_DEPTH` is a **ceiling, not a quota** (`config`): list fewer if fewer clear `ADMISSION_BAR`; never pad. Each entry: operator · tour name · guide/expertise · group size · duration · price · value note · depth/access feature · source URL.
 - **Price**: operator's listed currency (stated) + rough **USD-equivalent** (like-for-like comparison).
-- **Format-class flag**: if the Top-`RANK_DEPTH` mixes fixed-departure group / private-bespoke / day-format, flag it (`ranking`).
+- **Format-class flag**: if the Top-`RANK_DEPTH` mixes format-classes (`tags-registry.md`), flag it (`ranking`).
 - One line: **why #1 wins**.
 - **FLAG** any tour whose leader or `CURRENT_SEASON` (`config`) departure is unverified — never guess.
 

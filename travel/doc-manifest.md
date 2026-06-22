@@ -29,7 +29,13 @@ Single map of stage role → file. Reference docs by **role/slug** (e.g. "admiss
 | archetypes | theme-archetype library | theme-archetypes.md |
 | sources-registry | ranking data sources | sources-registry.md |
 | operator-aliases | de-dup aliases/exclusions | operator-aliases.md |
+| tags-registry | row/theme tag vocabularies (status, format-class, watch/leisure, strength) | tags-registry.md |
 | manifest | this file | doc-manifest.md |
+
+## GLOBAL DATA ARTIFACTS (outputs, not docs — don't confuse with the like-named method doc)
+| file | what | produced by |
+|------|------|-------------|
+| country_ranking.md | the ordered top-N country list (DATA) | the `country-ranking` step (01-country-ranking.md) — the METHOD doc |
 
 ## PER-COUNTRY ARTIFACTS
 `<country>/` holds: `<country>_theme_map_v0..FINAL.md`, `axes.md` ledger, `corpus/round*.md`, `rankings/<theme-id>.md`, and (freshness) `<country>_corpus_FINAL.md`, `<country>_verify_<date>.md`, `<country>_changelog.md`.
