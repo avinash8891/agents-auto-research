@@ -1,0 +1,28 @@
+travel/italy/rankings/IT-01.md
+  s_b10ea6e0b14a9b::t_71c1dcfe3454c5 1-31
+travel/italy/corpus/round6_it01_ranking_saturation.md
+  s_b10ea6e0b14a9b::t_cd2f0081a167d5 12-18
+  s_b10ea6e0b14a9b::t_71c1dcfe3454c5 1-11,19-44
+travel/italy/it01_usage_log_and_prune_proposal.md
+  s_b10ea6e0b14a9b::t_351101d7e37993 1-70
+country_ranking.md
+  s_b10ea6e0b14a9b::t_71c1dcfe3454c5 1-12
+travel/italy/ledger.md
+  s_b10ea6e0b14a9b::t_71c1dcfe3454c5 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "e5109db08b84f3c0f6a35cb8f664bd69a7b6bcc9",
+  "prompts": {},
+  "sessions": {
+    "s_b10ea6e0b14a9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef028-10f0-7e81-815f-83c5eff18633",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
