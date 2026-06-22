@@ -10,6 +10,9 @@ MEMORY INVARIANT: nothing freshness depends on lives in session memory. Every UR
 
 COMPOUNDING: the corpus is a living ledger, not a one-off deliverable. Each VERIFY pass READS rows → re-fetches → APPENDS diffs + new stamps. Each DISCOVERY pass READS registries → re-runs the critic → on any new lens/archetype/operator, PROMOTES it to the owning global registry (lens-registry.md / theme-archetypes.md / axes-registry.md) so future countries inherit it, and APPENDS a per-country changelog entry. Promotion mechanics and the promotion bar are owned by REGISTRY-PROTOCOL.md — do not restate them here. Knowledge accrues across passes and across sessions.
 
+## CONSOLIDATION (round files → locked corpus; run once before the first VERIFY)
+Merge the per-round `corpus/round<N>_<cluster>.md` files into `<country>_corpus_FINAL.md`. When merging each row, **stamp `first_seen_round`** derived mechanically from its source round-filename (`corpus` row schema) — preserves round provenance the consolidated file would otherwise lose. Dedup per `operator-aliases.md`. After this, the locked corpus is the VERIFY/DISCOVERY input.
+
 ## PROCEDURE — Loop A: VERIFY pass (cheap; `VERIFY_CADENCE`)
 URLs are already known, so this is re-fetch, not discovery. Runs on `VERIFY_CADENCE` (travel-config.md).
 1. READ every row's URL from the corpus.

@@ -50,8 +50,10 @@ COMPOUNDING: corpus rounds and theme-map versions are APPEND-only (read prior �
 11. **Before declaring done, run the closing reconciliation** (rules below) and write it into `<country>_theme_map_FINAL.md`.
 
 ## ROW SCHEMA (every operator row)
-`Operator | Channel | Tour name | Expert (named + credential) | Format-class | CURRENT_SEASON departure? | price | group size | URL | last_checked: YYYY-MM-DD | status`
+`Operator | Channel | Tour name | Expert (named + credential) | Format-class | CURRENT_SEASON departure? | price | group size | URL | last_checked: YYYY-MM-DD | status | first_seen_round`
 (Format-class + status value sets: `tags-registry.md`. Channel = a `channel-registry.md` id.)
+
+`first_seen_round` provenance: discovery agents do NOT fill this — round provenance is implicit in the `corpus/round<N>_<cluster>.md` filename while findings stay per-round. It is stamped ONLY at consolidation (when round files merge into `<country>_corpus_FINAL.md`, see freshness), **derived mechanically from the source round-filename**. Preserves which round surfaced each operator across the per-round → consolidated transition (the one place filename provenance is otherwise lost).
 
 Channel values are channel-registry.md stable ids (e.g. `academic-operator`, `luxury-bespoke`) — never positional letters.
 
