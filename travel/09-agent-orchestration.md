@@ -26,6 +26,8 @@ The orchestrator assembles the known-operator list mechanically. It is NOT from 
 4. Require each agent to close its file with a **de-dup guards** note (`corpus`): aggregators excluded, sub-brands collapsed, prior-captured excluded (alias/exclusion authority = `operator-aliases`).
 This is what makes "extend, don't re-discover" reproducible rather than a hope.
 
+SCALE NOTE (embeddings — named upgrade path, not built at pilot scale): the already-known list is passed **verbatim** today (fine at `CURRENT_SCOPE_N`). When coverage grows along `GROWTH_LADDER` and the cumulative operator list outgrows verbatim passing (too large for an agent prompt — roughly the 100+ country / thousands-of-operators range), switch to an **embedding dedup index**: vector lookup over operator names/descriptions answers "is this already known?" without shipping the whole list, and can suggest fuzzy `operator-aliases` matches the exact list misses (e.g. "Martin Randall Travel" ≈ "Martin Randall"). Embeddings are for *retrieval/dedup at scale only* — never for judgment steps (overlap, expert-fit, value), where LLM reasoning is stronger. Until that scale, do NOT add it (YAGNI).
+
 ### B. Size and dispatch the fleet
 5. Scale the fleet to the task: a few agents for a small country, more for a big diverse one. Do not over-spawn.
 6. Give each agent its own corpus file (`round<N>_<cluster>.md`) — never a shared file.

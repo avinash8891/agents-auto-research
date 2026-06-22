@@ -155,6 +155,9 @@ Closed the remaining audit clusters (12–17):
 **Emitters:** `04`, `07`. **Consumers:** `02` (+ others via the routing table). **Manifest:** `<country>/leads.md` added.
 **Principle:** the richest step must feed the whole system — no intelligence dies in a column that didn't exist.
 
+## L23 — Embeddings: one scale-hook only, not a judgment tool
+**Question:** use embeddings in the method? **Answer:** at pilot scale, no. Embeddings are cheap *retrieval/dedup*, NOT judgment — the method's overlap/expert-fit/value calls are LLM-judgment and embeddings would be a weaker proxy. One place earns it **at scale**: the cumulative already-known operator list (`orchestration`) is passed verbatim now; past ~100 countries / thousands of operators that's too big for a prompt → switch to an **embedding dedup index** (vector lookup "is this known?" + fuzzy alias suggestions). Recorded as a SCALE NOTE upgrade-path in `orchestration`, not built (YAGNI). Never use embeddings for judgment steps.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 
