@@ -5,8 +5,10 @@ The shared, evolving list of **lenses** (subject types a theme can be built on).
 Lens = a subject type that can anchor a single-lens theme. A missing lens = a systemic miss (e.g. "nature" was missed on Italy until discovery round 2).
 Promotion bar = the lens anchors ≥1 real expert-led theme (≥2 credentialed dated products) in some country.
 
+Protocol (append-only, structure, update cycle): `REGISTRY-PROTOCOL.md`. This is the sole controlled vocabulary for lenses — other docs point here, never re-list. `theme-archetypes.md` Lens column values MUST be ids from this list.
+
 ## BASELINE LENSES (check every country)
-history · archaeology · art · architecture · design · science · food · wine · religion/pilgrimage · ethnic heritage (e.g. Jewish) · military · music · wildlife/nature · geology/volcanology · gardens · maritime · literary · cinema · crafts
+history · archaeology · art · architecture · design · science · food · wine · religion/pilgrimage · ethnic heritage (e.g. Jewish) · military · music · wildlife/nature · geology/volcanology · gardens · maritime · literary · cinema · crafts · living-culture
 
 ## CANDIDATE LENSES (watchlist — test per country, promote on evidence)
 | Candidate | Would anchor | Status | Evidence |

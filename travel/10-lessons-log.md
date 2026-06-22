@@ -98,6 +98,14 @@ Append-only. Every time the method improves, record what was wrong, why, and the
 **Meta-shape:** an evolving registry = (not final) + (per-country) + (file-persisted) + (compounds via read→run→append→promote). Applies to axes, lenses, archetypes — and any future enumeration.
 **Fix:** `lens-registry.md`, `theme-archetypes.md` created; `02` reads registries + runs the diff; README principle 9; this entry.
 
+## L16 — The playbook must obey its own data-driven/self-evolving rule
+**Found by self-audit (workflow):** the playbook preached data-driven + evolving registries but its OWN values were hardcoded literals duplicated across docs — 81 issues / 17 clusters. "5 axes", channels "A–H", `<21 days`, "Top 5", admission `2.0`, `2026-27`, cadences, N (10/50), lens lists, registry protocol, sources, aliases — all restated in prose, so registry growth didn't propagate and edits drifted (format-class already diverged; README self-contradicted on "50").
+**Fix (foundation + workflow rewrite):**
+- Single-source homes: `travel-config.md` (every named dial), `REGISTRY-PROTOCOL.md` (shared mechanics), `channel-registry.md` (stable ids, not letters), `sources-registry.md`, `operator-aliases.md`, `doc-manifest.md` (role→file slugs). Axis stage/role became multi-valued **tags** in `axes-registry.md`; `theme-archetypes.md` got the registry machinery it claimed; `lens-registry.md` vocabulary reconciled (+living-culture).
+- All docs rewritten to reference names/tags/slugs, never literals; duplicated rules single-sourced + cross-referenced.
+**Principle:** any tunable → a named dial in config; any enumeration → a registry under REGISTRY-PROTOCOL; any stage/role applicability → a tag, filtered not hand-named; any cross-ref → a manifest slug. Count/identity derived from the registry, never asserted in prose.
+**Caveat:** residual literals slip in (bad "1.5" arithmetic; hand-listed axis names) — verify with a banned-literal check after each rewrite.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 
