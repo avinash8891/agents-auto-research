@@ -1,0 +1,44 @@
+travel/07-verification-and-ranking.md
+  s_fc23909bc640a9::t_d7cc96d9905a63 17-19
+  s_fc23909bc640a9::t_a8e37e19b86680 36-42
+travel/09-agent-orchestration.md
+  s_fc23909bc640a9::t_562cc4f78fadf6 41-47
+  s_fc23909bc640a9::t_2dd0712461b2e4 24-31
+travel/README.md
+  s_fc23909bc640a9::t_a719f4c2a8cf62 32-34
+travel/03-coverage-matrix.md
+  s_fc23909bc640a9::t_0c3d4e416f93cc 32-36
+travel/05-convergence-and-admission-bar.md
+  s_fc23909bc640a9::t_1f834bc964a38f 41-46,48
+  s_fc23909bc640a9::t_c1800fbc376064 14-27
+travel/italy/italy_theme_map_FINAL.md
+  s_fc23909bc640a9::t_e9fad8fdb54e37 45
+  s_fc23909bc640a9::t_dd64fe14535b1c 1,3-7
+travel/08-freshness-and-updates.md
+  s_fc23909bc640a9::t_1eef33e99e220d 30-35
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_54250967480ac0 45-66
+travel/04-discovery-loop.md
+  s_fc23909bc640a9::t_a5986e56a19b3c 16-19,22
+  s_fc23909bc640a9::t_eecb0c3f808cec 27-28
+travel/06-corpus-and-persistence.md
+  s_fc23909bc640a9::t_53c32d08a41bde 20-22
+  s_fc23909bc640a9::t_81b6ba6c29f199 51-56
+  s_fc23909bc640a9::t_c9b67bfb93d341 28-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "952e8401630dc2a786f2ffd090f17f4801a5c7af",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
