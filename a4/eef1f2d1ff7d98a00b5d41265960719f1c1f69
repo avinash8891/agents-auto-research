@@ -1,0 +1,23 @@
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_ee6a578cd87c5a 72-75
+travel/01-country-ranking.md
+  s_fc23909bc640a9::t_0126c45ba936ba 1,4-10,15-23,25,37-39,42
+travel/README.md
+  s_fc23909bc640a9::t_b95ed87b89de71 44-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "a4eef1f2d1ff7d98a00b5d41265960719f1c1f69",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
