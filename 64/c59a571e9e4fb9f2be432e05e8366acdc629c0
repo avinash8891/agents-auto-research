@@ -1,0 +1,19 @@
+travel/tags-registry.md
+  s_b10ea6e0b14a9b::t_d3a931e9c3d3e3 83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "64c59a571e9e4fb9f2be432e05e8366acdc629c0",
+  "prompts": {},
+  "sessions": {
+    "s_b10ea6e0b14a9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef028-10f0-7e81-815f-83c5eff18633",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
