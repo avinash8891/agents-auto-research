@@ -1,6 +1,6 @@
 # Global Lens Registry
 
-The shared, evolving list of **lenses** (subject types a theme can be built on). Seeds every country's theme seeding (`02`). Append-only for promotions; never silently drop. Same protocol as `axes-registry.md`.
+The shared, evolving list of **lenses** (subject types a theme can be built on). Seeds every country's theme seeding (`theme-seeding`). Mechanics (append-only, structure, update cycle): `REGISTRY-PROTOCOL.md`.
 
 Lens = a subject type that can anchor a single-lens theme. A missing lens = a systemic miss (e.g. "nature" was missed on Italy until discovery round 2).
 Promotion bar = the lens anchors ≥1 real expert-led theme (≥2 credentialed dated products) in some country.
@@ -24,8 +24,5 @@ history · archaeology · art · architecture · design · science · food · wi
 ## PROMOTION LOG
 - (Italy R2) **wildlife/nature** promoted to baseline — was absent from the seed and surfaced as a systemic miss (Apennine bear/wolf safari, volcanology). The reason this registry exists.
 
-## UPDATE PROTOCOL
-1. New country inherits BASELINE + WATCHLIST.
-2. Seeding (`02`) runs a completeness diff: every baseline lens must map to a theme or a `thin/none` justification for the country.
-3. A candidate lens that anchors a real theme in a country → move CANDIDATE→BASELINE here with a PROMOTION LOG entry citing the theme/tours.
-4. Never remove a baseline lens; if it yields nothing in a country, that country's seed marks it `thin/none`.
+## UPDATE
+Mechanics: `REGISTRY-PROTOCOL.md`. Lens-specific notes only: seeding (`theme-seeding`) runs a completeness diff (every baseline lens → a theme or a `thin/none` justification); a candidate lens that anchors a real theme promotes CANDIDATE→BASELINE with a PROMOTION LOG entry citing the theme/tours.

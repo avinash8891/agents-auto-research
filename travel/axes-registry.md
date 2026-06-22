@@ -1,6 +1,6 @@
 # Global Axis Registry
 
-The shared, evolving list of discovery axes. **Seeds every new country.** Append-only for promotions; never silently drop an axis. Per-country deviations live in `travel/<country>/axes.md` (see `03`, `06`).
+The shared, evolving list of discovery axes. **Seeds every new country.** Per-country deviations live in `travel/<country>/axes.md` (see `coverage-matrix`, `corpus`). Mechanics (append-only, structure, update cycle): `REGISTRY-PROTOCOL.md`.
 
 Axis = an independent dimension where failing to search it causes systematic (not random) misses.
 Promotion bar = provably surfaces tours no existing axis finds (cite the tours).

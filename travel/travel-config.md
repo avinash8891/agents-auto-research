@@ -12,7 +12,7 @@ All tunables live here once. Docs reference the NAME, never the literal. Change 
 - `ADMISSION_BAR` = 2.0 — credited products required to admit a theme.
 - `MIN_CREDENTIALED_PRODUCTS` = 2 — also the registry promotion bar (`REGISTRY-PROTOCOL.md`).
 - `FULL_PRODUCT_WEIGHT` = 1.0 — a product with named guide AND confirmed current-season dated departure.
-- `PARTIAL_PRODUCT_WEIGHT` = 0.5 — UNVERIFIED-date or unnamed-guide product. "1.5" fails the bar → THIN-NOTE.
+- `PARTIAL_PRODUCT_WEIGHT` = 0.5 — UNVERIFIED-date or unnamed-guide product. A near-miss total below `ADMISSION_BAR` (e.g. one `FULL_PRODUCT_WEIGHT` + one `PARTIAL_PRODUCT_WEIGHT`) fails → THIN-NOTE.
 
 ## TRIP / THEME SHAPE
 - `MAX_TRIP_DAYS` = 21 — a theme/trip must fit one trip under this.
