@@ -1,0 +1,41 @@
+travel/07-verification-and-ranking.md
+  s_fc23909bc640a9::t_aad64ec54e304d 1-35
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_7344e1b18deaac 1-51
+travel/05-convergence-and-admission-bar.md
+  s_fc23909bc640a9::t_1dc900d35d29cc 1-28
+travel/04-discovery-loop.md
+  s_fc23909bc640a9::t_44d3ebb3fb1a97 1-29
+travel/00-overview-and-principles.md
+  s_fc23909bc640a9::t_b47ff487f224af 1-37
+travel/02-theme-seeding.md
+  s_fc23909bc640a9::t_9fdb9bd250fb36 1-23
+travel/03-coverage-matrix.md
+  s_fc23909bc640a9::t_4cc01d0d571a78 1-46
+travel/README.md
+  s_fc23909bc640a9::t_d1f30e8ae683de 1-40
+travel/09-agent-orchestration.md
+  s_fc23909bc640a9::t_4a11ae1f9422d6 1-32
+travel/08-freshness-and-updates.md
+  s_fc23909bc640a9::t_ae59b2a4fcc4d0 1-33
+travel/06-corpus-and-persistence.md
+  s_fc23909bc640a9::t_0f855115a7d07d 1-30
+travel/01-country-ranking.md
+  s_fc23909bc640a9::t_b41432c3fe734b 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "ec5104a789b69a251f0ee21b30ff3da0080b78bb",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
