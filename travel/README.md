@@ -16,6 +16,7 @@ For each country: split it into distinct, non-overlapping **themes** (a theme = 
 6. **Convergence is earned, not asserted.** Stop only when a fresh adversarial critic adds nothing clearing the bar, across every axis.
 7. **Value, not luxury.** Price is not a barrier, but cost must be justified by depth/expertise delivered. Flag premium-for-thin-substance.
 8. **Single-lens themes are the ranking unit; multi-lens is a composition layer.** Group tours go deep on one subject with one expert. A traveller's multi-lens trip is built by combining ranked themes (`11`), accepting that whole-trip expert depth is recovered only per-segment or via a bespoke designer.
+9. **Nothing in memory through step 03.** Country list, lenses, theme-archetypes, axes, seed themes — all read from committed files (`country_ranking.md`, `lens-registry.md`, `theme-archetypes.md`, `axes-registry.md`, the `<country>/` artifacts) and appended back. A fresh session reproduces the same state from files alone. Every enumeration the method leans on is an **evolving registry** (not final, per-country, file-persisted, compounding) — applies to axes, lenses, and archetypes alike.
 
 ## Steps
 - `00-overview-and-principles.md` — goal, scope, output contract
@@ -30,6 +31,8 @@ For each country: split it into distinct, non-overlapping **themes** (a theme = 
 - `09-agent-orchestration.md` — how to dispatch parallel agents efficiently
 - `10-lessons-log.md` — the maturation history + every future improvement
 - `11-trip-composition.md` — consumption layer: stitch single-lens themes into a multi-lens itinerary (downstream of ranking)
+- `lens-registry.md` — **global, evolving** list of lenses (subject types); seeds theme seeding (`02`). "nature" lives here because it was a systemic miss.
+- `theme-archetypes.md` — **global, evolving** library of recurring cross-country theme patterns (wine region, wildlife circuit, pilgrimage circuit…); seeding walks it so free-recall gaps get caught.
 - `axes-registry.md` — **global, evolving** discovery-axis list (baseline 5 + candidate watchlist + cross-country promotions); seeds every country. Per-country deviations live in `<country>/axes.md`. The axis set is not final — it's a convergence target that grows per `03`.
 
 ## Document conventions

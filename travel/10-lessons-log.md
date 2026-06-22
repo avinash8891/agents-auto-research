@@ -88,6 +88,16 @@ Append-only. Every time the method improves, record what was wrong, why, and the
 **Candidates on the watchlist:** format/vehicle, affinity/audience, media/creator, season/time, price-tier.
 **Fix:** `03` axis-set-not-final + per-country/evolving sections; new `axes-registry.md`; `italy/axes.md` ledger (records that Italy converged on the baseline 5 only — format/affinity/media are known un-run dimensions); `04` axis-completeness critic; `06` persistence updated.
 
+## L15 — Every enumeration is an evolving registry; nothing in memory through step 03
+**Generalised from L14 (axes):** the same shape applies to *all* enumerations the method leans on — not just axes. Lenses and theme-archetypes were still static and in-memory → the same omission risk that missed "nature".
+**Decisions:**
+- **Lens list → `lens-registry.md`** (global, evolving): baseline lenses + candidate watchlist + promotion log. "nature/wildlife" recorded as the promotion that justifies the registry's existence.
+- **Theme-archetype library → `theme-archetypes.md`** (global): recurring cross-country patterns (wine region, wildlife circuit, pilgrimage circuit, layered-civilisations…). Seeding *walks* it so free-recall gaps are caught.
+- **Seed-completeness diff** added to `02`: enumerate baseline lenses + archetypes vs the country's draft themes; every one maps to a theme or a justified `thin/none`. Catches systemic misses at SEED, not discovery round 2.
+- **Memory invariant (steps 01–03):** nothing the method depends on lives in session memory — all read from committed files and appended back; a fresh session reproduces the same seed. Training knowledge proposes; registries + corpus are the source of truth.
+**Meta-shape:** an evolving registry = (not final) + (per-country) + (file-persisted) + (compounds via read→run→append→promote). Applies to axes, lenses, archetypes — and any future enumeration.
+**Fix:** `lens-registry.md`, `theme-archetypes.md` created; `02` reads registries + runs the diff; README principle 9; this entry.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 
