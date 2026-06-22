@@ -19,6 +19,7 @@ URLs are already known, so this is re-fetch, not discovery. Runs on `VERIFY_CADE
 2. Re-fetch each URL.
 3. **Diff** the fetched page against the stored row. Diff dimensions (open — append on discovery; REGISTRY-PROTOCOL.md): date moved · price changed · tour withdrawn · new departure added · guide changed. (provenance: Italy build / L8.)
 4. Update `last_checked` to today (`YYYY-MM-DD`). Set `status` ∈ {verified, stale, withdrawn}.
+   - **Schema backfill:** while the page is fetched, fill any `unknown` schema sentinels on this row that are now derivable (the VERIFY pass is the backfill vehicle for schema migrations — `corpus` doc SCHEMA EVOLUTION).
 5. Log every diff to the dated VERIFY report `<country>/verify_<date>.md`.
 6. Refresh the UNVERIFIED / fetch-blocked list (URLs that failed to fetch stay listed and worked next pass).
 7. Write updated rows back to `<country>/corpus_FINAL.md`. This loop is the answer to "new info after the cadence window" — it catches the changes that matter for booking.

@@ -140,6 +140,13 @@ Closed the remaining audit clusters (12–17):
 - Added a PROMOTION LOG to `tags-registry`.
 **Principle:** per-country stores follow one naming scheme (the manifest), same as global registries; every registry carries a provenance log.
 
+## L21 — Schema is a versioned contract that evolves (with a backfill path)
+**From the line of thought (everything evolves):** the corpus row schema is NOT frozen — it grew twice (`first_seen_round`, `dirty`). But it is NOT an open-append list either, because consumers read fixed columns. It's a **versioned contract**: changes are deliberate, lesson-tracked, with consumers updated in lockstep + a `schema-version` bump.
+**Backfill path (the missing piece):** adding a column must not orphan existing rows. Rule: **derive** the value where possible (e.g. `first_seen_round` from the round-filename), else set an `unknown` **sentinel** and let the VERIFY pass fill it on next touch (or a one-shot migration). Append-only/git preserves prior state.
+**Distinguishes two kinds of evolving:** open enumerations (append anytime, any agent) vs versioned-contract schema (coordinated migration). 
+**Also:** `operator-aliases` is a fact/data registry (no candidate-to-test) → intentionally no CANDIDATE WATCHLIST; noted so audits don't false-flag it.
+**Fix:** `06` SCHEMA EVOLUTION section + `08` VERIFY-pass backfill step + `operator-aliases` shape note.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 

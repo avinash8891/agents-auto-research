@@ -57,6 +57,17 @@ COMPOUNDING: corpus rounds and theme-map versions are APPEND-only (read prior �
 
 Channel values are channel-registry.md stable ids (e.g. `academic-operator`, `luxury-bespoke`) — never positional letters.
 
+## SCHEMA EVOLUTION (the schema is a versioned contract — it evolves, deliberately)
+The row schema is NOT a frozen static list (it has already grown: `first_seen_round`, the `dirty` tracker) — but it is also NOT an open-append-anytime list, because consumers (`ranking`, `freshness`) read specific columns. It is a **versioned contract**: changing it is a deliberate, lesson-tracked migration, not a casual append.
+Rules to add/change a column:
+1. **Lesson-tracked**: a schema change is recorded in `10-lessons-log.md` (what column, why); bump the `schema-version` stamped at the top of `<country>/corpus_FINAL.md`.
+2. **Consumers in lockstep**: update every reader/writer (`ranking`, `freshness`, the row schema here) in the same change — never ship a column some consumer doesn't know.
+3. **BACKFILL existing rows** (no orphaned rows):
+   - **Derive where possible** — mechanically fill from existing data (e.g. `first_seen_round` from the source round-filename at consolidation).
+   - **Sentinel otherwise** — set the new field to `unknown` (or `n/a` if it can't apply) and queue it; do NOT leave it blank/undefined.
+   - **Fill on next touch** — the VERIFY pass (`freshness`) fills `unknown` sentinels when it next re-fetches each row; a one-shot backfill migration over `<country>/corpus_FINAL.md` is the alternative for a bulk fill.
+   - **Append-only safe** — backfill adds/sets the column; git preserves prior state, so no destructive rewrite.
+
 ## DECISION RULES
 
 **Status:**
