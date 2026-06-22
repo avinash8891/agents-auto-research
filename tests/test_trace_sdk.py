@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import dataclasses
 import importlib
+import inspect
 import json
 import sys
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 
 def _load_trace_sdk(monkeypatch, tmp_path: Path):
@@ -654,3 +658,157 @@ def test_trace_ignores_closed_stdout(monkeypatch, tmp_path: Path) -> None:
 
     log_text = trace_sdk.get_log_file().read_text(encoding="utf-8")
     assert "[COMMAND] closed stdout still writes file" in log_text
+
+
+def test_register_exporter_and_select_routes_spans_without_editing_initialize(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
+
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    class HaloCaptureExporter(SpanExporter):
+        """Stands in for a future Halo backend / test-capture exporter."""
+
+        def __init__(self) -> None:
+            self.span_names: list[str] = []
+
+        def export(self, spans) -> SpanExportResult:
+            self.span_names.extend(str(span.name) for span in spans)
+            return SpanExportResult.SUCCESS
+
+        def shutdown(self) -> None:
+            return None
+
+    # The default JsonLineTraceExporter ships registered under DEFAULT_EXPORTER_NAME;
+    # the alternate backend registers WITHOUT touching _initialize_tracing.
+    initialize_source = inspect.getsource(trace_sdk._initialize_tracing)
+
+    halo = HaloCaptureExporter()
+    trace_sdk.register_exporter("halo-capture", halo)
+    assert "halo-capture" in trace_sdk.registered_exporters()
+    assert trace_sdk.DEFAULT_EXPORTER_NAME in trace_sdk.registered_exporters()
+
+    trace_sdk.select_exporter("halo-capture")
+    assert trace_sdk._STATE.exporter is halo
+
+    trace_sdk.trace_state_change("running", "blocked", "research_required")
+
+    # The chosen exporter — not the default JSONL one — received the real span.
+    assert "state.transition" in halo.span_names
+    # Selection went through the registry seam, not an edit to _initialize_tracing.
+    assert inspect.getsource(trace_sdk._initialize_tracing) == initialize_source
+    assert "halo-capture" not in initialize_source
+
+
+def test_register_exporter_accepts_factory_and_builds_lazily(monkeypatch, tmp_path: Path) -> None:
+    from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
+
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    built = {"count": 0}
+
+    class ReflexioExporter(SpanExporter):
+        def __init__(self) -> None:
+            self.span_names: list[str] = []
+
+        def export(self, spans) -> SpanExportResult:
+            self.span_names.extend(str(span.name) for span in spans)
+            return SpanExportResult.SUCCESS
+
+        def shutdown(self) -> None:
+            return None
+
+    last: dict[str, ReflexioExporter] = {}
+
+    def reflexio_factory() -> ReflexioExporter:
+        built["count"] += 1
+        instance = ReflexioExporter()
+        last["instance"] = instance
+        return instance
+
+    trace_sdk.register_exporter("reflexio", reflexio_factory)
+    # Registration alone must not invoke the factory.
+    assert built["count"] == 0
+
+    trace_sdk.select_exporter("reflexio")
+    assert built["count"] == 1
+    assert trace_sdk._STATE.exporter is last["instance"]
+
+    trace_sdk.trace("LOOP", "round started")
+    assert "trace.loop" in last["instance"].span_names
+
+
+def test_begin_round_installs_fresh_immutable_round_context(monkeypatch, tmp_path: Path) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    trace_sdk.set_family("ema", job=14)
+    trace_sdk.begin_round(7)
+    first_round = trace_sdk._ENGINE.round
+    first_run_id = first_round.run_id
+
+    # Advance the seq counter inside the first round.
+    trace_sdk.trace("LOOP", "first round started")
+    trace_sdk.trace("LOOP", "still first round")
+    assert trace_sdk._STATE.seq == 2
+
+    trace_sdk.begin_round(8)
+    second_round = trace_sdk._ENGINE.round
+
+    # A NEW immutable RoundContext object is installed (identity changed), not a
+    # mutation of the existing one.
+    assert second_round is not first_round
+    assert second_round.run_id != first_run_id
+    # The seq ordinal restarts at 0 for the fresh round.
+    assert trace_sdk._STATE.seq == 0
+    assert second_round.seq_counter is not first_round.seq_counter
+    # RoundContext identity/layout fields are frozen — assigning raises.
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        second_round.run_id = "R-tamper"
+
+    # The fresh round keeps exporting; the new run_id flows into events.
+    trace_sdk.trace("LOOP", "second round started")
+    events = [
+        json.loads(line)
+        for line in trace_sdk.get_event_file().read_text(encoding="utf-8").splitlines()
+    ]
+    assert events[-1]["run_id"] == second_round.run_id
+    assert events[-1]["run_id"] == trace_sdk.get_run_id()
+
+
+def test_engine_swaps_hypothesis_context_wholesale_per_hypothesis(
+    monkeypatch, tmp_path: Path
+) -> None:
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    trace_sdk.set_family("ema", job=14)
+    trace_sdk.begin_round(11)
+
+    baseline_id = trace_sdk.begin_hypothesis("baseline-ema-cross")
+    baseline_ctx = trace_sdk._ENGINE.round.active_hypothesis
+    assert baseline_id == "H001"
+    assert baseline_ctx.hypothesis_id == "H001"
+    assert baseline_ctx.hypothesis_name == "baseline-ema-cross"
+    # Frozen identity — assigning to the hypothesis id raises.
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        baseline_ctx.hypothesis_id = "H999"
+
+    refined_id = trace_sdk.begin_hypothesis("vol-scaled-ema-cross")
+    refined_ctx = trace_sdk._ENGINE.round.active_hypothesis
+    # A fresh HypothesisContext object replaces the previous one wholesale.
+    assert refined_ctx is not baseline_ctx
+    assert refined_id == "H002"
+    assert refined_ctx.hypothesis_name == "vol-scaled-ema-cross"
+
+    trace_sdk.end_hypothesis(decision="rejected", metric=0.9)
+    ended_ctx = trace_sdk._ENGINE.round.active_hypothesis
+    # end swaps in a fresh empty identity, clearing id/name/agent cache at once.
+    assert ended_ctx is not refined_ctx
+    assert ended_ctx.hypothesis_id is None
+    assert ended_ctx.hypothesis_name is None
+    assert ended_ctx.agent_contexts == {}
+    assert trace_sdk.current_hypothesis_id() is None
+
+    # A fresh round restarts hypothesis numbering at H001 (round-scoped counter).
+    trace_sdk.begin_round(12)
+    assert trace_sdk.begin_hypothesis("post-reset-ema-cross") == "H001"
