@@ -1,31 +1,45 @@
 # 02 — Theme Seeding (v0)
 
-## Purpose
-Produce a first-pass theme map for the country from training knowledge, BEFORE discovery. The seed is deliberately provisional — discovery will split/merge/add/demote it. Its job is to give the discovery loop a structured starting grid, not to be correct.
+AGENT SPEC. Produce a provisional theme map from training knowledge, before discovery. Output is a grid to SEARCH, not an answer to confirm.
 
-## The seed is a grid to SEARCH, not an answer to confirm
-The seed comes from training memory, so it carries the anchoring risk that sank the early Italy run (L1/L7): treating the seed as the field and just confirming it. Guard against it:
-- The seed lists **themes/cells to search**, NOT a candidate-operator list. Don't pre-name "the operators" and go verify them.
-- Discovery must **extend past the seed** (new themes, splits, whole missing lenses — "nature" was a systemic miss precisely because it wasn't seeded). A round that only confirms the seed has failed.
-- Expect the seed to be wrong at the edges; that's the point.
+INPUT: one country (from `01` in-scope list).
+OUTPUT: `<country>_theme_map_v0.md` — table of seed themes, each with ID, region(s), lens, capture line, strength, open-questions.
+NEXT: `03` (coverage matrix) + `04` (discovery loop) consume this file.
 
-## Method
-Enumerate themes across three of the five matrix axes (the other two — language, authority — are discovery tools, see `03`):
-- **Region**: list every first-level admin region; ensure none is left without a candidate theme or an explicit "thin/none" note.
-- **Lens**: for each region, ask which lenses it is genuinely best known for (history · archaeology · art · architecture · design · science · food · wine · religion/pilgrimage · ethnic heritage · military · music · wildlife · geology · gardens · maritime · literary · crafts).
-- **Channel** (sanity check): does at least one provider type plausibly sell this as an expert-led trip? If not, mark it a watch/leisure candidate.
+## PROCEDURE (start = country)
+1. Take the country.
+2. List every first-level admin region.
+3. For each region, determine what it is genuinely best known for → one or more **lenses** (history · archaeology · art · architecture · design · science · food · wine · religion/pilgrimage · ethnic heritage · military · music · wildlife · geology · gardens · maritime · literary · crafts).
+4. Emit one **candidate theme per distinct subject** (single-lens). A region with two distinct lenses emits two themes.
+5. Emit **cross-regional themes** for subjects operators sell as one trip spanning regions.
+6. Assign each theme an **ID** = `<2-letter country code>-NN` (`IT-01`, `IT-02`…). Sequential. Never renumbered later.
+7. Assign each theme a **strength guess**: Strong | Medium | Thin (expected depth of expert-led market).
+8. For any region that yields no theme, emit an explicit `thin/none` row (gap stays visible).
+9. Write all rows to `<country>_theme_map_v0.md`. Stop. Discovery (`04`) reshapes from here.
 
-## Rules
-- **Assign a theme ID to each seed theme now** — `<2-letter country code>-NN` (e.g. `IT-01`), per the convention in `06`. IDs are assigned at seed time and never renumbered on reshape; splits append letters (`IT-05a/b`).
-- **Single-lens only** (see `00`): each seed theme is one coherent subject. It may span eras or regions, but never bundle multiple lenses — those split into separate themes. Multi-lens trips are a composition layer (`11`), not a seed theme.
-- Non-overlapping by tour product (see `00`).
-- Split a region into multiple themes only when the *tours* differ (art-historian-led vs sommelier-led).
-- Mark each seed theme: **Strong / Medium / Thin** (expected depth of expert-led market) and note candidate splits/merges/cross-cuts.
-- Allow **cross-regional themes** when operators sell them as one trip (e.g. Etruscan Italy, Magna Graecia, a Caravaggio trail) — but only if they don't double-count a region's flagship.
-- Keep every theme to a single trip < 21 days.
+## DECISION RULES
+- SINGLE-LENS: a theme is one coherent subject. May span eras (Sicily: Greek→Roman→Arab-Norman→Baroque) or regions (Etruscan: Lazio+Tuscany+Umbria). MUST NOT bundle different lenses. Different lenses → different themes.
+- SPLIT a region into N themes IFF the *tours differ by expert type* (art-historian-led ≠ sommelier-led).
+- CROSS-REGIONAL theme allowed IFF operators sell it as one trip AND it does not double-count a region's flagship theme.
+- MULTI-LENS trip ≠ seed theme. It is a composition-layer artifact (`11`), never seeded here.
+- DURATION: every theme must fit one trip < 21 days.
+- ID STABILITY: assign at seed time; on later SPLIT, keep parent number + append letter (`IT-05a`/`IT-05b`); never renumber (`06`).
 
-## Worked example (Italy v0)
-19 seed themes + minors across Centre/South/Islands/North, with leisure-flags (Amalfi, Lakes, Cinque Terre) and explicit open questions (split Sicily? is Etruscan standalone? is Magna Graecia a cross-cut?). See `italy/italy_theme_map_v0.md` for the full v0; discovery later took it to 35 (see `italy/italy_theme_map_FINAL.md` and `10-lessons-log.md`) — proof the seed was meant to be outgrown.
+## EXAMPLE (input → output rows)
+Input: `Italy`. Sample output rows:
+| ID | region(s) | lens | capture | strength |
+|----|-----------|------|---------|----------|
+| IT-01 | Lazio | history/archaeology | Imperial Rome on the ground: Forum, Ostia, Tivoli | Strong |
+| IT-03 | Tuscany | art | Florentine/Tuscan Renaissance masters | Strong |
+| IT-04 | Tuscany | food/wine | Chianti/Brunello wine + Tuscan cooking | Strong |
+| IT-06 | Lazio+Tuscany+Umbria | archaeology | Pre-Roman Etruscan civilisation (cross-regional) | Medium |
+| — | Aosta Valley | (none) | thin/none — no expert-led theme surfaced | — |
+Note IT-03 vs IT-04: same region, SPLIT because the tours differ (art-historian-led vs sommelier-led) — two themes, not one.
+Full Italy v0 (19 seed themes): `italy/italy_theme_map_v0.md`. Discovery later took it to 35 (`italy/italy_theme_map_FINAL.md`) — the seed is meant to be outgrown.
 
-## Output
-`<country>_theme_map_v0.md`: themes grouped by macro-region, each with one-line capture statement, strength rating, and the open questions discovery must resolve. This file is the audit trail of where you started — keep it.
+## ANTI-PATTERNS (checks — fail the step if true)
+- Seed contains a candidate-operator list (it must list themes/cells to SEARCH, not operators to confirm — anchoring, L1/L7).
+- A theme bundles >1 lens to look comprehensive.
+- A region is silently omitted (must be a theme or a `thin/none` row).
+- A theme ID is reused or renumbered.
+- A round of discovery only confirms the seed and adds nothing (the seed was wrong at the edges by design — extend it).

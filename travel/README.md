@@ -32,7 +32,13 @@ For each country: split it into distinct, non-overlapping **themes** (a theme = 
 - `11-trip-composition.md` — consumption layer: stitch single-lens themes into a multi-lens itinerary (downstream of ranking)
 
 ## Document conventions
-Every step doc (00–10) carries: an **Anti-patterns** block (what not to do) and at least one **Italy worked example** (the real instance). When you add a step or a rule, keep both — the rule plus the worked instance is what makes it reproducible.
+**These docs are AGENT EXECUTION SPECS, not human essays.** The reader is a coding/AI agent. Optimise for unambiguous execution, not narrative. Each step doc uses this structure:
+- `INPUT` / `OUTPUT` / `NEXT` — the I/O contract (what it consumes, what file it emits, who consumes that).
+- `PROCEDURE` — ordered, imperative, deterministic steps.
+- `DECISION RULES` — checkable conditions (`X IFF Y`, `if X → Y`), not prose.
+- `EXAMPLE` — concrete input → output (Italy), not abstract description.
+- `ANTI-PATTERNS` — failure checks (fail the step if true).
+Keep "why" only where needed to disambiguate. `02-theme-seeding.md` is the reference shape.
 
 ## Per-country run order (the loop)
 1. Establish/confirm country's arrivals rank (step 01).

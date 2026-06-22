@@ -73,6 +73,11 @@ Append-only. Every time the method improves, record what was wrong, why, and the
 **Decisions:** (1) "50 countries" is an example target, not fixed — N grows 10 → 50 → 100 → 150 as the method proves out; current scope is **top 10 only** until 100% confident. (2) Country-ranking refresh is **additive**: each run fetches the current top-N and ADDS new entrants but NEVER removes a country already researched (coverage only grows; raising N later just appends). (3) Define "country" explicitly (UN Tourism entity list; SAR handling e.g. HK/Macau) so the tail is reproducible; cite ranks with their data-year.
 **Fix:** `01` rewritten — N-as-dial, additive-refresh rule, country-definition + boundary-churn + metric-caveat rules, canonical list in a stamped `country_ranking.md` (live pull, never hand-typed). README scope section added.
 
+## L13 — Docs are agent execution specs, not human essays
+**Reframe (user):** the playbook is consumed by a coding/AI agent. Optimise for execution, not reading.
+**Form:** every step doc = INPUT/OUTPUT/NEXT contract · ordered imperative PROCEDURE · DECISION RULES as checkable conditions · concrete input→output EXAMPLE · ANTI-PATTERNS as failure checks. Drop motivational prose; keep "why" only to disambiguate.
+**Fix:** `02-theme-seeding.md` rewritten as the reference shape; README "Document conventions" updated. Remaining docs (00, 01, 03–11) to be converted to the same shape.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 
