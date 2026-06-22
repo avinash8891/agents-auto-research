@@ -1,0 +1,32 @@
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_6438a2dd485d67 81-90
+travel/italy/axes.md
+  s_fc23909bc640a9::t_5e1935f37f758d 1-27
+travel/03-coverage-matrix.md
+  s_fc23909bc640a9::t_4866d85b1bffd9 1
+  s_fc23909bc640a9::t_48a6325e7abe45 47-71,77-78
+travel/axes-registry.md
+  s_fc23909bc640a9::t_9df37a5a9a76c8 1-31
+travel/04-discovery-loop.md
+  s_fc23909bc640a9::t_f2c1018e06f91f 29
+travel/06-corpus-and-persistence.md
+  s_fc23909bc640a9::t_521c273fe92974 11,15
+travel/README.md
+  s_fc23909bc640a9::t_f57afd14c770d3 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "9635a0ce25a1432919ae675321948f5baa2e75a6",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
