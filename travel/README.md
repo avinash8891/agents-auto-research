@@ -17,6 +17,9 @@ For each country: split it into distinct, non-overlapping **themes** (a theme = 
 7. **Value, not luxury.** Price is not a barrier, but cost must be justified by depth/expertise delivered. Flag premium-for-thin-substance.
 8. **Single-lens themes are the ranking unit; multi-lens is a composition layer.** Group tours go deep on one subject with one expert. A traveller's multi-lens trip is built by combining ranked themes (`composition` doc, `doc-manifest.md`), accepting that whole-trip expert depth is recovered only per-segment or via a bespoke designer.
 9. **Nothing in memory through the corpus step.** Country list, lenses, theme-archetypes, axes, seed themes — all read from committed files (`country_ranking.md`, `lens-registry.md`, `theme-archetypes.md`, `axes-registry.md`, the `<country>/` artifacts) and appended back. A fresh session reproduces the same state from files alone. Every enumeration the method leans on is an **evolving registry** governed by `REGISTRY-PROTOCOL.md` (append-only, per-country, file-persisted, compounding) — applies to axes, lenses, channels, archetypes, sources, and aliases alike.
+10. **The pipeline is a fixed-point computation, not one pass.** A downstream promotion (new axis/lens/archetype/channel) marks every dependent unit `dirty` and triggers a **scoped re-sweep of only that axis/unit**, never a global restart. A unit is not converged/done while any `dirty` flag remains (`travel-config.md` DONE; `REGISTRY-PROTOCOL.md` INVALIDATION). Within a country this is a strict fixed point; across countries it is eventual-consistency on the DISCOVERY cadence.
+11. **Tangential intelligence is captured, not lost.** Page-reading steps (discovery `04`, verification `07`) surface more than the row schema holds. Emit it as **typed leads** to `<country>/leads.md` with provenance and route each to the step/registry it fine-tunes per the routing table (`REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING). A lead implying new coverage dirties the affected unit (principle 10).
+12. **The corpus row schema is a versioned contract.** `first_seen_round` is stamped at consolidation; older rows are backfilled via the VERIFY pass, not guessed (`corpus`, `freshness`). Writer and consumers share one schema; field changes are announced, not silent.
 
 ## Steps
 Files are cited by **slug** throughout the playbook; the slug → file map (and renaming policy) lives in `doc-manifest.md`. Listed here in run order:
@@ -36,7 +39,7 @@ Files are cited by **slug** throughout the playbook; the slug → file map (and 
 
 ### Single-source registries (referenced, never re-listed)
 - `travel-config.md` — every named dial (scope, ranking, trip shape, season, cadence, identifiers, convergence). No literal lives anywhere else.
-- `REGISTRY-PROTOCOL.md` — the shared mechanics (append-only, structure, update cycle, promotion bar, multi-valued tags) for every registry below. Don't restate it — link it.
+- `REGISTRY-PROTOCOL.md` — the shared mechanics (append-only, structure, update cycle, promotion bar, multi-valued tags) PLUS the cross-cutting INTELLIGENCE CAPTURE & ROUTING (leads bus + routing table) and INVALIDATION (promotion → dirty-propagation fixed-point) sections for every registry below. Don't restate it — link it.
 - `lens-registry.md` — sole vocabulary of lenses (subject types); seeds theme seeding. "wildlife/nature" lives here because it was a systemic miss.
 - `theme-archetypes.md` — library of recurring cross-country theme patterns (wine region, wildlife circuit, pilgrimage circuit…) with its own promotion bar + log; seeding walks it so free-recall gaps get caught.
 - `axes-registry.md` — discovery axes (baseline + candidate watchlist + cross-country promotions) carrying multi-valued `stage`/`role` tags; seeds every country. Per-country deviations live in `<country>/axes.md`. The axis set is a convergence target that grows, not a frozen count — derive the count from this file.
@@ -44,6 +47,9 @@ Files are cited by **slug** throughout the playbook; the slug → file map (and 
 - `sources-registry.md` — ranking/verification data sources with `tier`/`lag` tags.
 - `operator-aliases.md` — sub-brand→parent absorptions + aggregator exclusions for consistent de-dup.
 - `tags-registry.md` — small tag vocabularies (row `status`, `format-class` + rankability, `watch/leisure`, theme `strength`); writer (`corpus`) and consumer (`ranking`) reference it so spellings never drift.
+
+### Per-country store scheme (canonical map in `doc-manifest.md`, never re-listed)
+All per-country state lives under `<country>/`: one `<country>/ledger.md` (the single per-country ledger), one locked `<country>/corpus_FINAL.md`, plus `<country>/axes.md`, `<country>/leads.md`, `<country>/rankings/`, `<country>/compositions/`, and dated `<country>/verify_<date>.md`. NORMALIZATION: a `<country>_X` reference denotes the same file as `<country>/X` (canonical form `<country>/X`). The authoritative artifacts table is `doc-manifest.md` — reference it, don't restate.
 
 ## Document conventions
 **These docs are AGENT EXECUTION SPECS, not human essays.** The reader is a coding/AI agent. Optimise for unambiguous execution, not narrative. Each step doc uses this structure:
