@@ -12,6 +12,7 @@ from strategies.orb.defaults import _get_orb_defaults
 from strategies.orb.prompt import DESCRIPTION_FOR_RESEARCH
 from strategies.orb.research import ORB_RESEARCH_SPEC
 from strategies.orb.runner import run_backtest
+from strategies.orb.schema import normalize_config_changes as _normalize_orb_config_changes
 from strategies.orb.validate import validate_orb_runtime_config
 
 
@@ -79,3 +80,6 @@ class ORBStrategy(BaseStrategy):
         self, config_changes: dict[str, Any]
     ) -> list[dict[str, Any]]:
         return [{"type": "config_changes_passthrough", "config_changes": config_changes}]
+
+    def normalize_config_changes(self, config_changes: dict[str, Any]) -> dict[str, Any]:
+        return _normalize_orb_config_changes(config_changes)
