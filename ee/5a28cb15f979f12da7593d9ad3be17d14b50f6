@@ -1,0 +1,27 @@
+compiler_research.py
+  s_c781025ed43a12::t_72050a27625e03 155-158
+tests/test_orb_config_change_safety_rail.py
+  s_c781025ed43a12::t_733fc12505c1e6 1-46
+strategies/orb/strategy.py
+  s_c781025ed43a12::t_a5c2fa4f6f32f1 15
+  s_c781025ed43a12::t_6c9b969bf810b5 83-85
+strategies/base.py
+  s_c781025ed43a12::t_0f59438690c14a 103-111
+  s_c781025ed43a12::t_e0f1f1c30a980d 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "ee5a28cb15f979f12da7593d9ad3be17d14b50f6",
+  "prompts": {},
+  "sessions": {
+    "s_c781025ed43a12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f108c0ba-5958-40c1-a798-bd54f4f4fabc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
