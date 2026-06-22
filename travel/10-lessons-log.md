@@ -174,6 +174,10 @@ Audited `11` for compounding/leads/invalidation/paths. Fixes:
 - **Leads bus**: surfaced new lens / region-anchor / glue patterns now emit typed leads to `<country>/leads.md` (new `composition-pattern` lead-type added to the routing table) instead of ad-hoc promotion.
 - **Invalidation**: a composition is a leaf citing specific rankings; when a cited ranking changes (dirty re-sweep upstream), the composition is stale → mark `dirty`, rebuild before re-use. Dirty-propagation now reaches the leaf.
 
+## L27 — Known issue-classes captured as a reusable audit (view of this log)
+Compiled every issue-class found this session (L1–L26) into `AUDIT-CHECKLIST.md` — 17 generalizable classes (anchoring, non-exhaustive coverage, fixed-when-should-evolve, lost work, relay loss, weak convergence, hardcoded literals, duplicated/drift, classification-in-prose, stale cross-refs, memory reliance, missing provenance, not-a-fixed-point, schema rigidity, intelligence leak, form/consumer mismatch, scale fit).
+**Keeping it updated = a rule, not a hook:** the checklist is a VIEW of this log (like anti-patterns). A new generalizable lesson → append a class with its `Lnn`. Enforcement travels with the repo via the doc-currency guard (L25), so it works across all agents/sessions/clones. A git pre-commit check (lessons-log changed → checklist updated?) is optional belt-and-suspenders; a Claude Code settings hook is NOT recommended (local to one harness, not portable). Two recurring doc-health guards now: static-census + AUDIT-CHECKLIST.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 

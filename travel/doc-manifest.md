@@ -31,6 +31,7 @@ Single map of stage role → file. Reference docs by **role/slug** (e.g. "admiss
 | operator-aliases | de-dup aliases/exclusions | operator-aliases.md |
 | tags-registry | row/theme tag vocabularies (status, format-class, watch/leisure, strength) | tags-registry.md |
 | manifest | this file | doc-manifest.md |
+| audit-checklist | 17 known issue-classes (view of lessons-log); recurring cross-doc audit | AUDIT-CHECKLIST.md |
 
 ## SHARED STORES (the complete set — what compounds across runs/sessions)
 Global: `travel-config.md` (dials) · `REGISTRY-PROTOCOL.md` (mechanics) · the 7 registries (`axes-registry`, `channel-registry`, `lens-registry`, `theme-archetypes`, `sources-registry`, `operator-aliases`, `tags-registry`) · `10-lessons-log.md` (the append-only **failure store**; anti-patterns are its view). Per-country: `<country>/axes.md`, `<country>/ledger.md`, `<country>/corpus_FINAL.md` (+ the artifacts table below). Every step writes its learnings to one of these — none are dead-ends.

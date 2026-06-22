@@ -37,8 +37,10 @@ Rules for an open enumeration:
 ### Anti-patterns are a view of the lessons-log
 ANTI-PATTERNS blocks are the failure-check projection of `10-lessons-log.md` (the append-only failure store). Each anti-pattern carries its `Lnn` provenance where one exists. Protocol: **a new lesson → append its check to the owning doc's ANTI-PATTERNS, tagged `Lnn`**; a lesson with no propagated check is a gap. The lessons-log is the source; the per-doc blocks are the view.
 
-### Self-check
-The static-census audit is the recurring guard: re-run it; any STATIC-SHOULD-EVOLVE construct lacking an open-tag, registry, or escape hatch is a regression.
+### Self-check (two recurring doc-health guards, both views of the lessons-log)
+1. **static-census** — re-run it; any STATIC-SHOULD-EVOLVE construct lacking an open-tag, registry, or escape hatch is a regression.
+2. **AUDIT-CHECKLIST.md** — the 17 known issue-classes; run it after any batch of doc changes to find recurrences across all docs.
+Both `AUDIT-CHECKLIST.md` and the per-doc ANTI-PATTERNS blocks are **views of `10-lessons-log.md`**: a new generalizable lesson → append a checklist class (+ the relevant anti-pattern), tagged `Lnn` (doc-currency guard, L25).
 
 ## INTELLIGENCE CAPTURE & ROUTING (leads — don't lose tangential intelligence)
 The information-richest steps (verification `07`, discovery `04`) read whole operator pages and surface far more than the row schema captures. That tangential intelligence must NOT be lost. Capture it as **typed leads** and route each to the step/registry it fine-tunes.
