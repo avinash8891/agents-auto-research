@@ -17,7 +17,7 @@ MEMORY INVARIANT (steps 01–03): nothing the method depends on lives in session
 4. **Archetype walk**: go through `theme-archetypes.md` and ask, for this country, "does it have a strong version of this archetype?" Instantiate matches as candidate themes; note misses. (Catches patterns free-recall skips — e.g. "wine region", "wildlife circuit", "pilgrimage circuit".)
 5. Emit one **candidate theme per distinct subject** (single-lens). A region with two distinct lenses emits two themes.
 6. Emit **cross-regional themes** for subjects operators sell as one trip spanning regions.
-7. **Channel sanity-check**: for each candidate theme, confirm ≥1 provider channel (`03`, A–H) plausibly sells it **expert-led**. If none plausibly does, mark it `watch/leisure` — not a theme.
+7. **Channel sanity-check (ADVISORY — tag, never kill)**: for each candidate theme, ask whether ≥1 provider channel (`03`, A–H) plausibly sells it expert-led. This is cheap triage to steer sweep effort, NOT a decision. Rules: TAG (don't delete) the obviously-pure-leisure (beaches, nightlife, shopping, generic scenery) as `watch/leisure`; discovery still checks tagged themes lightly. WHEN IN DOUBT, keep it a full theme. NEVER kill a theme here from memory — that is the anchoring sin (L1/L7; "Apennine wildlife" looked operator-less from memory yet discovery found Steppes/Exodus). The real arbiter is discovery + the admission bar (`05`) on LIVE evidence, which OVERRIDES this tag.
 8. Assign each theme an **ID** = `<2-letter country code>-NN` (`IT-01`, `IT-02`…). Sequential. Never renumbered later.
 9. Assign each theme a **strength guess**: Strong | Medium | Thin (expected depth of expert-led market).
 10. Record **open questions** per theme (candidate splits/merges/cross-cuts discovery must resolve, e.g. "split Sicily?", "is Etruscan standalone?") in the `open-questions` column.
@@ -51,6 +51,7 @@ Full Italy v0 (19 seed themes): `italy/italy_theme_map_v0.md`. Discovery later t
 - Skipping the archetype walk or the seed-completeness diff (these catch systemic misses at seed).
 - A baseline lens/archetype left with neither a theme nor a `thin/none` justification.
 - Discovering a new lens/archetype and not appending it to the global registry (no compounding).
+- Killing a theme at seed via the channel sanity-check (it is advisory — tag `watch/leisure` only; when in doubt keep; discovery + `05` decide on live evidence).
 - Seed contains a candidate-operator list (it must list themes/cells to SEARCH, not operators to confirm — anchoring, L1/L7).
 - A theme bundles >1 lens to look comprehensive.
 - A region is silently omitted (must be a theme or a `thin/none` row).
