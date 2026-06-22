@@ -80,6 +80,7 @@ DECISION: do NOT collapse `junk-saturated`/`low-signal` into `covered` (no quali
 - ([C11]) `coverage.cell-state` added — `junk-saturated`/`low-signal` cell distinct from empty-gap and covered (budget spent, only disqualified/aggregator results).
 - ([C5]/[C8]) admission.disqualifiers → non-qualifying expert reframed around independent credential corroboration + theme-fit via the credential→lens table; anti-pattern added (named local/indigenous master ≠ generic guide).
 - (post JP-01 / IT-THIN) `candidate.evidence-rating` added for the ranking rubric: `VERIFIED | CLAIMED | PARTIAL | FAIL`.
+- (2026-06-22 method proof check) `custom-multi-day` and `cruise-shore` added to `format-class` after verification found the ranking rubric referenced these lanes but the tag registry lacked them.
 
 ## UPDATE
 Mechanics: `REGISTRY-PROTOCOL.md`. Append a value when a new state is genuinely needed; never let two docs invent divergent spellings. The tag/value sets here are open enumerations — append-on-discovery with provenance (log additions above).
