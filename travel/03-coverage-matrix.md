@@ -1,4 +1,4 @@
-# 03 — The Coverage Matrix (5 axes) — the rigor core
+# 03 — The Coverage Matrix (starts at 5 axes) — the rigor core
 
 This is the heart of the method. Unknown-unknowns hide wherever an axis is unsearched. Search the **grid**, never free-associated keywords. An empty matrix cell is a **visible, provable gap** — not a silent miss.
 
@@ -44,8 +44,35 @@ Enumerate the lists that already curate quality operators, then extract names:
 - National tourism-board licensed-DMC registries.
 - UNESCO site → specialist-operator cross-references; learned-society member trips.
 
+## The axis set is NOT final (it is itself a convergence target)
+The 5 above are **current-best, empirically derived — not proven complete.** L7 already proved a smaller set (3 axes) gave a false convergence; the same can happen at 6. Do not treat "5" as axiomatic.
+- **What qualifies as an axis:** an independent dimension where *failing to search it causes systematic (not random) misses*.
+- **Promotion test:** a candidate becomes a real axis only when it **provably surfaces tours no existing axis finds** (same evidence bar as a new theme/operator — show the tours it uniquely caught).
+- **Caveat (taxonomy isn't clean):** the current axes mix two kinds — *target-properties* (channel/lens/region = what the tour is) and *search-method* (language/authority = how you look). A future refactor may re-cut them; that's expected.
+
+### Candidate axes (watchlist — not yet validated)
+- **Format/vehicle** — expedition-cruise, rail, gulet/sailing, walking-active operators who also do culture (Peter Sommer gulets were found by luck, not an axis).
+- **Affinity/audience** — alumni, religious, women-only, accessible/seniors, family (distinct operators per segment).
+- **Media/creator** — TV/author experts selling private tours (Darius Arya found via his own site, no channel).
+- **Season/time** — biennial or winter-only departures a single-season search misses.
+- **Price-tier** — ultra-luxury bespoke vs accessible expert-led.
+
+## Axes are PER-COUNTRY and EVOLVING
+The active axis set differs by country (an island nation needs Format/vehicle for cruises; a pilgrimage-heavy country needs Affinity) and keeps updating as that country's discovery runs. This knowledge lives in **committed files, not session memory**:
+- **Global registry** `travel/axes-registry.md` — baseline 5 + candidate watchlist + axes proven useful across countries. **Seeds every new country.**
+- **Per-country ledger** `travel/<country>/axes.md` — which axes are active for this country, promotions (with evidence: the tours only that axis found), pending candidates. See `06`.
+
+Update cycle (read → run → append):
+1. At session start, READ the global registry + this country's ledger (the starting knowledge).
+2. Run discovery + the axis-completeness critic (`04`).
+3. APPEND new axis findings to the country ledger.
+4. If an axis proves useful (passes the promotion test), PROMOTE it to the global registry so future countries inherit it.
+Compounding works exactly like the lessons log — via the git-committed files, not chat memory.
+
 ## Anti-patterns (banned)
 - Keyword spray not derived from a matrix cell.
 - English-only searching.
 - Anchoring on recalled operator names without an axis behind them.
 - Declaring convergence from a single axis.
+- Treating "5 axes" as final / not running the axis-completeness critic.
+- Holding evolving axis knowledge in session memory instead of the committed registry/ledger.

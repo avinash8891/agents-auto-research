@@ -30,6 +30,7 @@ For each country: split it into distinct, non-overlapping **themes** (a theme = 
 - `09-agent-orchestration.md` — how to dispatch parallel agents efficiently
 - `10-lessons-log.md` — the maturation history + every future improvement
 - `11-trip-composition.md` — consumption layer: stitch single-lens themes into a multi-lens itinerary (downstream of ranking)
+- `axes-registry.md` — **global, evolving** discovery-axis list (baseline 5 + candidate watchlist + cross-country promotions); seeds every country. Per-country deviations live in `<country>/axes.md`. The axis set is not final — it's a convergence target that grows per `03`.
 
 ## Document conventions
 **These docs are AGENT EXECUTION SPECS, not human essays.** The reader is a coding/AI agent. Optimise for unambiguous execution, not narrative. Each step doc uses this structure:

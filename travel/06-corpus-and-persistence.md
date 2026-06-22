@@ -8,9 +8,11 @@ The corpus is the durable knowledge base. It is the seed for deeper rounds, the 
 <country>_theme_map_v0.md      ← seed (audit trail)
 <country>_theme_map_v<N>.md    ← reshaped after each round (decisions)
 <country>_theme_map_FINAL.md   ← converged structure
+axes.md                        ← per-country axis ledger (active axes, promotions, pending) — see 03
 corpus/round<N>_<cluster>.md   ← raw inventories, written BY the subagents
 rankings/<theme-id>.md         ← ranked Top-5 per theme (step 07)
 ```
+Plus one global file at the playbook root: `axes-registry.md` (baseline axes + candidate watchlist + cross-country promotions). The per-country `axes.md` inherits from it and records this country's deviations; promotions flow back up to it (`03`).
 (During method development these lived under `.context/`; for delivery, keep them in the repo `travel/` tree or a per-country subfolder.)
 
 ## Subagents write their own files (the key pattern)

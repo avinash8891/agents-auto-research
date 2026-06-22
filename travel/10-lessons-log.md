@@ -78,6 +78,16 @@ Append-only. Every time the method improves, record what was wrong, why, and the
 **Form:** every step doc = INPUT/OUTPUT/NEXT contract · ordered imperative PROCEDURE · DECISION RULES as checkable conditions · concrete input→output EXAMPLE · ANTI-PATTERNS as failure checks. Drop motivational prose; keep "why" only to disambiguate.
 **Fix:** `02-theme-seeding.md` rewritten as the reference shape; README "Document conventions" updated. Remaining docs (00, 01, 03–11) to be converted to the same shape.
 
+## L14 — The axis set is itself a convergence target, and it's per-country & evolving
+**Challenge (user):** "How are you sure it's only 5 axes?" Answer: not sure. 5 is empirical, not proven — exactly the L7 trap one level up (we thought 3 was enough → false convergence → found 2 more; a 6th can exist).
+**Decisions:**
+- Treat the axis list as a convergence target. Add an **axis-completeness critic** that asks "what DIMENSION are we blind to?" Promote a candidate only when it provably surfaces tours no existing axis finds.
+- Axes are **per-country and evolving** — an island nation needs Format/vehicle (cruise); a pilgrimage-heavy country needs Affinity. The active set differs and updates as the country's discovery runs.
+- This knowledge lives in **committed files, not session memory**: global `axes-registry.md` (baseline 5 + watchlist, seeds every country) + per-country `axes.md` (active/promoted/pending). Read at session start, append at end, promote upward — compounding like the lessons log.
+- Caveat: current axes mix target-properties (channel/lens/region) and search-method (language/authority) — taxonomy may be re-cut later.
+**Candidates on the watchlist:** format/vehicle, affinity/audience, media/creator, season/time, price-tier.
+**Fix:** `03` axis-set-not-final + per-country/evolving sections; new `axes-registry.md`; `italy/axes.md` ledger (records that Italy converged on the baseline 5 only — format/affinity/media are known un-run dimensions); `04` axis-completeness critic; `06` persistence updated.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 
