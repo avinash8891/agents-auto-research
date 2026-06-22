@@ -11,6 +11,11 @@ from types import SimpleNamespace
 
 import pytest
 
+# The engine schema/machinery (JsonLineTraceExporter, TraceRuntimeState,
+# DEFAULT_EXPORTER_NAME, _TRACELOOP_INSTRUMENTS) now lives in trace_engine; the
+# facade only re-uses it. trace_engine is import-stable across trace_sdk reloads.
+import trace_engine
+
 
 def _load_trace_sdk(monkeypatch, tmp_path: Path):
     sys.modules.pop("trace_sdk", None)
@@ -56,8 +61,8 @@ def test_trace_sdk_transaction_mode_skips_provider_initialization(
 def test_trace_sdk_uses_openai_agents_not_openai_sdk_instrumentation(
     monkeypatch, tmp_path: Path
 ) -> None:
-    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
-    instrument_names = {instrument.name for instrument in trace_sdk._TRACELOOP_INSTRUMENTS}
+    _load_trace_sdk(monkeypatch, tmp_path)
+    instrument_names = {instrument.name for instrument in trace_engine._TRACELOOP_INSTRUMENTS}
     assert "OPENAI" not in instrument_names
     assert "OPENAI_AGENTS" in instrument_names
 
@@ -212,8 +217,8 @@ def test_trace_sdk_records_tool_call_and_result_sizes(monkeypatch, tmp_path: Pat
 def test_trace_sdk_exporter_exports_spans_without_autoresearch_event_id(
     monkeypatch, tmp_path: Path
 ) -> None:
-    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
-    exporter = trace_sdk.JsonLineTraceExporter(tmp_path / "events.jsonl")
+    _load_trace_sdk(monkeypatch, tmp_path)
+    exporter = trace_engine.JsonLineTraceExporter(tmp_path / "events.jsonl")
 
     skipped = SimpleNamespace(
         name="openai.chat",
@@ -459,11 +464,11 @@ def test_begin_round_refreshes_provider_without_openai_instrumentation(
 ) -> None:
     trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
     original_provider = trace_sdk._STATE.provider
-    original_instruments = trace_sdk._TRACELOOP_INSTRUMENTS
+    original_instruments = trace_engine._TRACELOOP_INSTRUMENTS
     trace_sdk.begin_round(5)
 
     assert trace_sdk._STATE.provider is not original_provider
-    assert trace_sdk._TRACELOOP_INSTRUMENTS is original_instruments
+    assert trace_engine._TRACELOOP_INSTRUMENTS is original_instruments
 
 
 def test_trace_agent_response_accepts_external_trace_id_and_links_artifact(
@@ -554,7 +559,9 @@ def test_trace_sdk_fail_opens_when_log_file_write_fails(monkeypatch, tmp_path: P
         def flush(self) -> None:
             raise OSError("disk full")
 
-    monkeypatch.setattr(trace_sdk.TraceRuntimeState, "get_log_handle", lambda self: BrokenHandle())
+    monkeypatch.setattr(
+        trace_engine.TraceRuntimeState, "get_log_handle", lambda self: BrokenHandle()
+    )
 
     trace_sdk.trace("DEPLOY", "step")
     trace_sdk.trace_ssh("echo hello", 0, stdout="ok")
@@ -687,7 +694,7 @@ def test_register_exporter_and_select_routes_spans_without_editing_initialize(
     halo = HaloCaptureExporter()
     trace_sdk.register_exporter("halo-capture", halo)
     assert "halo-capture" in trace_sdk.registered_exporters()
-    assert trace_sdk.DEFAULT_EXPORTER_NAME in trace_sdk.registered_exporters()
+    assert trace_engine.DEFAULT_EXPORTER_NAME in trace_sdk.registered_exporters()
 
     trace_sdk.select_exporter("halo-capture")
     assert trace_sdk._STATE.exporter is halo
