@@ -168,6 +168,12 @@ Closed the remaining audit clusters (12–17):
 **Guard (run after any batch of step-doc changes):** grep `09` + `README` (and `doc-manifest`) for the latest concept keywords (e.g. `leads`, `dirty`/`INVALIDATION`, `first_seen_round`, `ledger.md`, new registries); any miss → update by READING the canonical sources (not the lessons summary). The static-census + this concept-coverage grep are the two recurring doc-health guards.
 **Fix:** `09` + `README` brought current (workflow, verify 2/2); this guard recorded.
 
+## L26 — Composition (11) brought under the same lens
+Audited `11` for compounding/leads/invalidation/paths. Fixes:
+- **Path drift**: `compositions/<country>-<label>.md` / `rankings/<theme-id>.md` → canonical `<country>/compositions/<label>.md` / `<country>/rankings/<theme-id>.md`.
+- **Leads bus**: surfaced new lens / region-anchor / glue patterns now emit typed leads to `<country>/leads.md` (new `composition-pattern` lead-type added to the routing table) instead of ad-hoc promotion.
+- **Invalidation**: a composition is a leaf citing specific rankings; when a cited ranking changes (dirty re-sweep upstream), the composition is stale → mark `dirty`, rebuild before re-use. Dirty-propagation now reaches the leaf.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 

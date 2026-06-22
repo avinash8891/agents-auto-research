@@ -55,6 +55,7 @@ The information-richest steps (verification `07`, discovery `04`) read whole ope
   | disqualifier pattern | `tags-registry` `admission.disqualifiers` |
   | seasonality / access quirk | `freshness` triggers + the row's notes |
   | price–quality signal | value judgment context for `admission-bar` / `ranking` |
+  | composition-pattern (reusable region-anchor / glue) | `composition` ledger; promote to a shared pattern note if it recurs across countries |
 - **Triage:** each consuming step READS the leads routed to it as an input; PROMOTE a lead to its registry when it clears that registry's bar (`REGISTRY-PROTOCOL`); a lead implying new coverage **dirties** the affected unit (INVALIDATION) rather than sitting idle.
 - **Provenance + append-only:** leads are append-only with provenance; a promoted lead cites its originating lead row.
 
