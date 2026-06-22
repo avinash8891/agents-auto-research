@@ -1,0 +1,25 @@
+trace_sdk.py
+  s_c781025ed43a12::t_ecd6c6f07400fe 526,529,531,533,548,554-578,580
+  s_c781025ed43a12::t_bad721f174fbe7 584
+  s_c781025ed43a12::t_a5a5d3b9d52edc 171-173
+tests/test_trace_sdk.py
+  s_c781025ed43a12::t_dc930bb71047ae 562-640
+  s_c781025ed43a12::t_1e5fd4dc261741 457,461
+  s_c781025ed43a12::t_e1d1966247aa41 42-43,48-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "08169015aa0f8ced970dc4748eb29622ead0b34e",
+  "prompts": {},
+  "sessions": {
+    "s_c781025ed43a12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f108c0ba-5958-40c1-a798-bd54f4f4fabc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
