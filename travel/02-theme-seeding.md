@@ -2,6 +2,8 @@
 
 AGENT SPEC. Produce a provisional theme map from training knowledge, before discovery. Output is a grid to SEARCH, not an answer to confirm.
 
+Seeding uses **3 of the 5 matrix axes** — region × lens × channel-sanity-check. The other two (language, authority-index) are **discovery-only** tools (`03`/`04`), not used at seed time.
+
 INPUT: one country (from `01` in-scope list).
 OUTPUT: `<country>_theme_map_v0.md` — table of seed themes, each with ID, region(s), lens, capture line, strength, open-questions.
 NEXT: `03` (coverage matrix) + `04` (discovery loop) consume this file.
@@ -12,10 +14,12 @@ NEXT: `03` (coverage matrix) + `04` (discovery loop) consume this file.
 3. For each region, determine what it is genuinely best known for → one or more **lenses** (history · archaeology · art · architecture · design · science · food · wine · religion/pilgrimage · ethnic heritage · military · music · wildlife · geology · gardens · maritime · literary · crafts).
 4. Emit one **candidate theme per distinct subject** (single-lens). A region with two distinct lenses emits two themes.
 5. Emit **cross-regional themes** for subjects operators sell as one trip spanning regions.
-6. Assign each theme an **ID** = `<2-letter country code>-NN` (`IT-01`, `IT-02`…). Sequential. Never renumbered later.
-7. Assign each theme a **strength guess**: Strong | Medium | Thin (expected depth of expert-led market).
-8. For any region that yields no theme, emit an explicit `thin/none` row (gap stays visible).
-9. Write all rows to `<country>_theme_map_v0.md`. Stop. Discovery (`04`) reshapes from here.
+6. **Channel sanity-check**: for each candidate theme, confirm ≥1 provider channel (`03`, A–H) plausibly sells it **expert-led**. If none plausibly does, mark it `watch/leisure` — not a theme.
+7. Assign each theme an **ID** = `<2-letter country code>-NN` (`IT-01`, `IT-02`…). Sequential. Never renumbered later.
+8. Assign each theme a **strength guess**: Strong | Medium | Thin (expected depth of expert-led market).
+9. Record **open questions** per theme (candidate splits/merges/cross-cuts discovery must resolve, e.g. "split Sicily?", "is Etruscan standalone?") in the `open-questions` column.
+10. For any region that yields no theme, emit an explicit `thin/none` row (gap stays visible).
+11. Write all rows to `<country>_theme_map_v0.md` (group by macro-region for readability; this file is the kept audit trail of the starting point — see `06` versioning). Stop. Discovery (`04`) reshapes from here.
 
 ## DECISION RULES
 - SINGLE-LENS: a theme is one coherent subject. May span eras (Sicily: Greek→Roman→Arab-Norman→Baroque) or regions (Etruscan: Lazio+Tuscany+Umbria). MUST NOT bundle different lenses. Different lenses → different themes.

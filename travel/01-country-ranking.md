@@ -29,6 +29,7 @@ NEXT: `02` seeds themes for each `in-scope` country.
 - N-BOUNDARY = the rank-N cutoff itself churns year to year; list borderline countries so scope changes are visible.
 - RANK CITATION = always carry `data-year` ("rank 5, 2024 data") so outputs don't drift on refresh.
 - NO HAND-TYPING = populate from a live pull; never guess a rank or arrivals number.
+- METRIC CAVEATS = arrivals aren't perfectly comparable across countries: land-border-heavy counts (Mexico, Turkey), historical China HK/Macau inclusion, EU methodology differences. Note known quirks beside the affected rows; don't treat a number as gospel.
 
 ## EXAMPLE (2024 data, captured 2026-06 — illustration only)
 Top 10 (arrivals): 1 France 102.0M · 2 Spain 93.8M · 3 USA 72.4M · 4 Turkey 60.6M · 5 Italy 57.8M · 6 Mexico 45.0M · 7 UK ~39M / Germany 37.5M (contested) · 8 Germany / Japan 36.9M (contested) · 9 Greece 36.0M · 10 Thailand 35.5M.

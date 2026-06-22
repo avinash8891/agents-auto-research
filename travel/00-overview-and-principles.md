@@ -13,6 +13,18 @@ DELIVERABLE: a ranked **Top-5 tours** list per theme, expert-led, depth-first, v
 - **TWO CONSUMPTION MODES**:
   - Group-tour ranking = single-lens (this method's unit; where expert depth lives).
   - Trip composition = multi-lens, built by combining ranked themes (`11`); whole-trip expert depth recovered only per-segment or via a bespoke designer (channel F).
+- **FIRST-TRIP-REPRESENTATIVE**: within a theme, favour what is iconic and representative for a first-time visitor, done with real depth. Not obscure hyper-niche sub-specialisms.
+- **GRANULARITY**: big, diverse countries get many themes; small/single-note destinations get one or two. Match each theme to what the region is genuinely best known for.
+
+## THEME DESIGN RULES
+- **Non-overlapping by tour product**: a region with two genuine lenses (Tuscany = Renaissance art AND wine/food) gets two themes — different tours, no double-count.
+- **Cover every region**: a region with zero themes must be explicitly tested-and-justified (`thin/none`), not assumed empty (`02`).
+- **Single-lens** (see DEFINITIONS): eras/regions may span; lenses split.
+
+## EXAMPLE (themes = focused regional subjects, not whole countries)
+- India → South Indian temple trail (Tamil Nadu) · North Indian Mughal history (Delhi–Agra–Rajasthan) · Kerala food & backwaters · Ladakh Buddhist culture · Varanasi–Ganges spiritual.
+- Italy → Rome & classical antiquity · Florence/Tuscany Renaissance art · Sicily layered civilisations · Naples–Pompeii · Venetian art & lagoon · Emilia-Romagna food.
+- Kenya → regional safari circuits (Masai Mara vs Amboseli/Tsavo) led by top naturalist guides — wildlife is the standout lens, not archaeology.
 
 ## RANKING CRITERIA (priority order)
 1. **Expert guide fit** — genuinely expert, theme-appropriate, highly regarded leader (real historian/Egyptologist/naturalist/food or religion specialist). NOT a figurehead or generic coach guide.
