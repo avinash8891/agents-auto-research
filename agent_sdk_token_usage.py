@@ -3,7 +3,11 @@ from __future__ import annotations
 from math import ceil
 from typing import Any, Literal
 
-from agent_token_usage import accumulate_usage, record_failed_call, record_unmetered_call
+from agent_token_usage import (
+    AccumulationOutcome,
+    AccumulationRequest,
+    accumulate_tokens,
+)
 from autoresearch_logging import get_logger
 
 logger = get_logger(__name__)
@@ -126,7 +130,7 @@ def _add_usage_totals(totals: dict[str, int], usage: Any) -> None:
     )
 
 
-def accumulate_agents_sdk_result_usage(
+def parse_agents_sdk_result(
     agent_type: str,
     result: Any,
     *,
@@ -137,16 +141,22 @@ def accumulate_agents_sdk_result_usage(
     output_text: Any = None,
     trace_id: str = "",
     thesis_id: str | None = None,
-) -> None:
-    """Extract and record usage from an OpenAI Agents SDK result object.
+) -> AccumulationRequest:
+    """Parse an OpenAI Agents SDK result into a normalized ``AccumulationRequest``.
 
-    This adapter owns SDK result-shape details. Generic round accounting remains
-    in ``agent_token_usage`` so future Claude/other SDK adapters can record the
-    same normalized fields without inheriting OpenAI Agents SDK assumptions.
+    Pure function: no counter mutation, no trace emission. It owns SDK
+    result-shape details (raw_responses fan-out, usage/model_usage aliases,
+    cost-only fallback, estimation fast/precise selection, usage_source labels)
+    and returns a source-agnostic request that ``accumulate_tokens`` dispatches.
+    A ``result`` of ``None`` (timeout/transport error) maps to ``FAILED`` before
+    any model derivation, exactly as before.
     """
     if result is None:
-        record_failed_call(agent_type, dedupe_key=dedupe_key)
-        return
+        return AccumulationRequest(
+            agent_type=agent_type,
+            outcome=AccumulationOutcome.FAILED,
+            dedupe_key=dedupe_key,
+        )
 
     totals = {
         "input_tokens": 0,
@@ -204,7 +214,6 @@ def accumulate_agents_sdk_result_usage(
         cost_usd = sum((raw_cost or 0.0) for raw_cost in raw_costs)
     has_cost_only_usage = cost_usd_present and not saw_usage and not estimated
 
-    normalized_usage: dict[str, Any] | None = None
     if saw_usage or estimated or has_cost_only_usage:
         normalized_usage = {
             **totals,
@@ -213,18 +222,53 @@ def accumulate_agents_sdk_result_usage(
             "estimated_total_tokens": (estimated or {}).get("total_tokens", 0),
             "usage_source": usage_source or "sdk_cost_only_missing_tokens",
         }
-    else:
-        logger.warning("SDK result for %s had no provider usage and no estimate text", agent_type)
-        record_unmetered_call(agent_type, dedupe_key=dedupe_key)
-        return
+        return AccumulationRequest(
+            agent_type=agent_type,
+            outcome=AccumulationOutcome.ACCUMULATE,
+            usage=normalized_usage,
+            cost_usd=cost_usd,
+            dedupe_key=dedupe_key,
+            provider=provider,
+            model=model,
+            trace_id=trace_id,
+            thesis_id=thesis_id,
+        )
 
-    accumulate_usage(
+    logger.warning("SDK result for %s had no provider usage and no estimate text", agent_type)
+    return AccumulationRequest(
+        agent_type=agent_type,
+        outcome=AccumulationOutcome.UNMETERED,
+        dedupe_key=dedupe_key,
+    )
+
+
+def accumulate_agents_sdk_result_usage(
+    agent_type: str,
+    result: Any,
+    *,
+    dedupe_key: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    input_text: Any = None,
+    output_text: Any = None,
+    trace_id: str = "",
+    thesis_id: str | None = None,
+) -> None:
+    """Extract and record usage from an OpenAI Agents SDK result object.
+
+    This adapter owns SDK result-shape details. Generic round accounting remains
+    in ``agent_token_usage`` so future Claude/other SDK adapters can record the
+    same normalized fields without inheriting OpenAI Agents SDK assumptions.
+    """
+    request = parse_agents_sdk_result(
         agent_type,
-        normalized_usage,
-        cost_usd=cost_usd,
+        result,
         dedupe_key=dedupe_key,
         provider=provider,
         model=model,
+        input_text=input_text,
+        output_text=output_text,
         trace_id=trace_id,
         thesis_id=thesis_id,
     )
+    accumulate_tokens(request)

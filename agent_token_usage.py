@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import enum
 import os
+from dataclasses import dataclass
 from typing import Any
 
 from autoresearch_logging import get_logger
@@ -10,6 +12,63 @@ logger = get_logger(__name__)
 TOKEN_BUDGET_WARNING_ENV = "AUTORESEARCH_TOKEN_BUDGET_WARNING_TOTAL"
 
 UsageTotals = dict[str, int | float]
+
+
+class AccumulationOutcome(enum.Enum):
+    """Which round-accounting path a normalized usage request dispatches to."""
+
+    ACCUMULATE = "accumulate"
+    UNMETERED = "unmetered"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class AccumulationRequest:
+    """Normalized, source-agnostic token-accounting request.
+
+    Produced by a SDK-specific parser (e.g. ``parse_agents_sdk_result``) with no
+    counter mutation or trace emission, then handed to ``accumulate_tokens`` for
+    dispatch. ``usage`` carries the normalized usage dict for ``ACCUMULATE``; it is
+    ``None`` for ``FAILED``/``UNMETERED``, which only consume ``agent_type`` and
+    ``dedupe_key``.
+    """
+
+    agent_type: str
+    outcome: AccumulationOutcome
+    usage: dict[str, Any] | None = None
+    cost_usd: float | None = None
+    dedupe_key: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    trace_id: str = ""
+    thesis_id: str | None = None
+
+
+def accumulate_tokens(request: AccumulationRequest) -> None:
+    """Dispatch a normalized ``AccumulationRequest`` to the round-accounting path.
+
+    Single entry point over the public ``accumulate_usage`` /
+    ``record_unmetered_call`` / ``record_failed_call`` primitives. FAILED and
+    UNMETERED consume only ``agent_type`` + ``dedupe_key`` (exactly as the SDK
+    adapter did before this seam existed).
+    """
+    if request.outcome is AccumulationOutcome.FAILED:
+        record_failed_call(request.agent_type, dedupe_key=request.dedupe_key)
+        return
+    if request.outcome is AccumulationOutcome.UNMETERED:
+        record_unmetered_call(request.agent_type, dedupe_key=request.dedupe_key)
+        return
+    accumulate_usage(
+        request.agent_type,
+        request.usage,
+        cost_usd=request.cost_usd,
+        dedupe_key=request.dedupe_key,
+        provider=request.provider,
+        model=request.model,
+        trace_id=request.trace_id,
+        thesis_id=request.thesis_id,
+    )
+
 
 _ROUND_USAGE: dict[str, UsageTotals] = {}
 _THESIS_USAGE: dict[str, UsageTotals] = {}
