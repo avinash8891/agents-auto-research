@@ -2,6 +2,8 @@
 
 AGENT SPEC. Defines the deliverable, the unit of work, ranking criteria, and the output contract. Read first — every other doc references these definitions. All tunable values are named dials in `config` (travel-config.md); enumerations live in their registries (`registry-protocol`, REGISTRY-PROTOCOL.md). This doc references names and registries, never literals. Sibling docs are cited by slug, resolved via `manifest` (doc-manifest.md).
 
+The method constrains judgment and makes it auditable; it does not fully automate truth. Qualitative calls are expressed through the fixed rubric in `ranking`, not free-form confidence.
+
 INPUT: the named dials in `config`; the controlled vocabularies in `lens-registry`, `axes-registry`, `channel-registry`.
 OUTPUT: the shared definitions, ranking criteria, and per-theme output contract consumed by every downstream step.
 NEXT: `country-ranking` (build the in-scope country list), then `theme-seeding`.
@@ -39,8 +41,10 @@ DELIVERABLE: a ranked **Top-`RANK_DEPTH` tours** list per theme (`config`), expe
 ## RANKING CRITERIA (priority order)
 1. **Expert guide fit** — genuinely expert, theme-appropriate, highly regarded leader (real historian/Egyptologist/naturalist/food or religion specialist). NOT a figurehead or generic coach guide.
 2. **Depth** within the theme — beneath the surface, not a checklist.
-3. **Small / authentic / locally connected** — private-departure option a plus.
+3. **Small / authentic / locally connected** — private-departure option a plus. Operationalise with checkable signals sourced OFF the seller's page: in-country ownership/base, local guides employed-not-subcontracted, in-language operation.
 4. **Value for money (tie-break)** — price is not a barrier; the best wins even if pricier. But cost MUST be justified by depth/expertise; do NOT reward luxury for its own sake. Comparable excellence → better value ranks higher. Flag premium-for-thin-substance.
+
+**[C4] INDEP_EVIDENCE** — criteria 1 (expert guide fit / highly regarded), 2 (depth), and 3 (small/authentic/locally connected) MUST each cite at least one source whose domain is NOT the seller's own (academic/museum/excavation affiliation, authored works / ORCID, learned-society or professional register, recognised oral-tradition / lineage / guild standing, OR a cross-platform review corpus). The seller's own domain is NEVER sole evidence for reputation/depth/authenticity → cap at PARTIAL + FLAG. (Mirrors the HARD RULE "every claim traces to a URL" but REQUIRES the URL not be the seller's domain for these three.)
 
 CONSTANT TEST: *"best for a first-time visitor to this theme/region — deep, expert-led, authentic, with cost justified by what it delivers."*
 
@@ -48,7 +52,7 @@ CONSTANT TEST: *"best for a first-time visitor to this theme/region — deep, ex
 Emit, per theme:
 - Theme **ID** (`THEME_ID_GRAMMAR`, e.g. `IT-01`; overflow per `THEME_ID_OVERFLOW`; convention owned by `corpus`) + country (with arrivals rank + data-year) + theme/region + one-line capture statement.
 - A ranked **Top `RANK_DEPTH`** — `RANK_DEPTH` is a **ceiling, not a quota** (`config`): list fewer if fewer clear `ADMISSION_BAR`; never pad. Each entry: operator · tour name · guide/expertise · group size · duration · price · value note · depth/access feature · source URL.
-- **Price**: operator's listed currency (stated) + rough **USD-equivalent** (like-for-like comparison).
+- **Price**: operator's listed currency (stated) + rough **USD-equivalent** (like-for-like comparison). **[C12] FX rule** (`config` + `sources-registry`): the USD-equivalent is a COMPUTED number — it MUST cite rate source + date, display as `~USD (rate dated YYYY-MM-DD)`, refresh on `VERIFY_CADENCE`, and NEVER come from recall. `FX_SOURCE` (e.g. ECB daily reference) is the named source.
 - **Format-class flag**: if the Top-`RANK_DEPTH` mixes format-classes (`tags-registry.md`), flag it (`ranking`).
 - One line: **why #1 wins**.
 - **FLAG** any tour whose leader or `CURRENT_SEASON` (`config`) departure is unverified — never guess.
@@ -56,6 +60,7 @@ Emit, per theme:
 ## ADMISSION (owned by `admission-bar`; restated here only for the output contract)
 - A theme is admitted IFF its credited-product total ≥ `ADMISSION_BAR` (`config`). A product with a named guide AND a confirmed `CURRENT_SEASON` dated departure scores `FULL_PRODUCT_WEIGHT`; an unverified-date or unnamed-guide product scores `PARTIAL_PRODUCT_WEIGHT`. A near-miss total below `ADMISSION_BAR` (e.g. one `FULL_PRODUCT_WEIGHT` + one `PARTIAL_PRODUCT_WEIGHT`) fails → THIN-NOTE, never padded to admission.
 - Full admission mechanics, convergence, and the loop-until-dry rule live in `admission-bar`; do not duplicate them.
+- **[C9]** Convergence = search EXHAUSTION, NOT field completeness (owned by `admission-bar`): a convergence-gate axis left empty because the SOURCE base does not cover the region (not because the market is covered) does NOT count as satisfied — it raises a coverage-limitation FLAG and makes convergence PROVISIONAL.
 
 ## DECISION RULES
 The checkable conditions a fresh agent applies are stated in full in the sections above; grouped here as the canonical decision set (do not restate the prose):
@@ -77,5 +82,7 @@ View of `10-lessons-log.md` (open — append the check when a new lesson lands; 
 - Any invented/guessed guide, date, or price. (L1)
 - Rewarding price/luxury not justified by depth.
 - Mixed currencies with no USD-equivalent.
+- Reputation, depth, or authenticity asserted from the seller's OWN page with no independent (non-seller-domain) source. (C4)
+- A USD-equivalent shown with no dated rate source / recalled from memory instead of computed from `FX_SOURCE`. (C12)
 - Selling a multi-lens itinerary as a single-expert group tour (that's `composition`, with the trade-off stated). (L11)
 - Naming a literal (count, day-limit, price-tier, season, cadence) inline instead of its `config` dial, or re-listing a registry vocabulary (lenses, channels, axes) instead of pointing to the registry. (L16)
