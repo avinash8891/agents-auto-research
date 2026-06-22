@@ -6,7 +6,7 @@ Protocol (append-only, structure, update cycle): `REGISTRY-PROTOCOL.md`.
 Archetype-specific promotion bar: a pattern recurs in **≥2 countries** with cited instances → BASELINE. One-country patterns sit in CANDIDATE.
 Lens column = a **controlled-vocabulary reference**: every value MUST be an existing lens id in `lens-registry.md` (no free-text lenses).
 
-Use: for each archetype, ask "does this country have a strong version?" If yes → seed a theme (give it the country's specifics). If no → note why not (keeps the check auditable).
+Use: for each archetype, ask "does this country have a candidate match?" If yes → seed a candidate theme (give it the country's specifics). If no → note why not. `theme-seeding` proposes only; `admission-bar` decides PASS/WATCH/FAIL from live evidence.
 
 ## BASELINE ARCHETYPES (pattern → lens → instances)
 Lens values below are single `lens-registry.md` ids (primary lens of the archetype).

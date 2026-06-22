@@ -16,10 +16,10 @@ Single home for the small controlled vocabularies used as row/theme tags, so wri
 ## candidate.evidence-rating (used by `ranking` rubric)
 | value | meaning |
 |-------|---------|
-| `VERIFIED` | live-source evidence satisfies the dimension, with independent non-seller corroboration where the dimension is load-bearing |
-| `CLAIMED` | plausible but seller-domain-only or role-claimed; must be flagged and capped where load-bearing |
-| `PARTIAL` | real signal exists, but one or more required specifics are missing, weak, adjacent, stale, or ambiguous |
-| `FAIL` | does not satisfy the dimension; tuple/credential/depth/format FAIL removes the row from ranking |
+| `VERIFIED` | satisfies the dimension's `VERIFIED` cell in `07-verification-and-ranking.md` |
+| `CLAIMED` | satisfies the dimension's `CLAIMED` cell in `07-verification-and-ranking.md`; flagged and capped where load-bearing |
+| `PARTIAL` | satisfies the dimension's `PARTIAL` cell in `07-verification-and-ranking.md` |
+| `FAIL` | satisfies the dimension's `FAIL` cell in `07-verification-and-ranking.md`; tuple/credential/depth/format FAIL removes the row from ranking |
 
 ## format-class (load-bearing for rankability in `ranking`)
 | value | rankability note |

@@ -59,12 +59,8 @@ COMPOUNDING: verification accrues. READ the corpus + per-country verification le
 - **Rubric ordering:** two or more `PARTIAL` dimensions cannot outrank an otherwise comparable candidate with fewer `PARTIAL`s. A `CLAIMED` load-bearing claim always carries a FLAG and caps the row at `PARTIAL_PRODUCT_WEIGHT`.
 - **Format lanes:** rank inside one lane by default: `fixed-departure-group`, `private-bespoke`, `day-format`, or `hybrid-course`. Mixing lanes is allowed only when the output explicitly says it is comparing unlike formats; otherwise split into separate ranking/thin-note sections.
 - **Ambiguous pages:** missing fields stay missing. Do not infer date, price, guide, group size, or role assignment from snippets, co-located text, old cached copies, or marketing adjectives.
-- **Ranking priority (strict order):**
-  1. Expert guide fit — real, theme-appropriate, highly regarded — with a NON-seller-domain source for the "highly regarded" claim (INDEP_EVIDENCE). (Reject figureheads, generic coach-guides, and seller-page-only reputation.)
-  2. Depth within the theme — beneath the surface, not a checklist — evidenced by a non-seller-domain source.
-  3. Small / authentic / locally connected — private option a plus — authenticity backed by a non-seller-domain source.
-  4. Value for money (tie-break only): when two are comparably excellent, better value ranks higher.
-- **Value rule:** price is not a barrier — the best wins even if pricier — but cost MUST be justified by depth/expertise. A large premium for thin substance → flag it. Never reward price/luxury for its own sake (incl. the `luxury-bespoke` channel, `channel-registry.md`).
+- **Ranking priority (strict order):** sort by rubric labels in this order: credential fit, reputation, depth, format, then value. A `VERIFIED` label beats `CLAIMED`, `CLAIMED` beats `PARTIAL`, and any `FAIL` in tuple/credential/depth/format removes the row from the ranked list.
+- **Value rule:** value is the final tie-break only, using the value row above. Price/luxury alone never improves rank.
 - **Format-class mixing:** if the Top-`RANK_DEPTH` mixes format classes (e.g. a multi-day escorted tour alongside a city-based day-scholar or a bespoke private), flag the difference explicitly so the reader compares like with unlike knowingly. A non-`fixed-departure-group` product (`tags-registry.md`) cannot be ranked on the same "dated departure" basis as a `fixed-departure-group` tour.
 - **Weak theme:** if the theme cannot fill a strong Top-`RANK_DEPTH`, say so and give the closest strong fits — never pad to `RANK_DEPTH`.
 - **Trip-fit sanity:** a ranked theme must still fit one trip under `MAX_TRIP_DAYS` (`travel-config.md`); if a finalist's product implies a longer single itinerary, note it for the **composition** doc.
@@ -88,7 +84,7 @@ Output (`rankings/IT-01.md`) contains: country + arrivals rank, theme/region, on
 - Country (arrivals rank) + theme/region + one-line capture statement.
 - Ranked Top-`RANK_DEPTH`, each row: operator · tour name · guide/expertise · group size · duration · approx price (with USD-equivalent + rate date, FX rule) · value note · depth/access feature · source link · `credential_source` (the independent, non-operator-domain URL corroborating the guide's credential — DISTINCT from the operator/tour URL; empty ⇒ credential is CLAIMED, capped PARTIAL).
 - One line: **why #1 wins**.
-- FLAGS block: any unverified leader/departure; any `CLAIMED` load-bearing claim (seller-page-only evidence); any `credential-mismatch` (credential does not resolve to the theme's lens via the `lens-registry.md` table); any `figurehead-risk` (named expert not confirmed on this departure / only "one of our scholars"); any "credential uncorroborated" (empty `credential_source`); any `group-size-unstated` (marketing adjective, no number); any premium-for-thin-substance; any format-class mix; any THIN-NOTE (credited weight below `ADMISSION_BAR`); if the theme is weak, say so and give closest strong fits rather than padding to `RANK_DEPTH`.
+- FLAGS block: any unverified leader/departure; any `CLAIMED` load-bearing claim (seller-page-only evidence); any `credential-mismatch` (credential does not resolve to the theme's lens via the `lens-registry.md` table); any `figurehead-risk` (named expert not confirmed on this departure / only "one of our scholars"); any "credential uncorroborated" (empty `credential_source`); any `group-size-unstated` (marketing adjective, no number); any premium-for-thin-substance; any format-class mix; any THIN-NOTE (credited weight below `ADMISSION_BAR`); if rankable rows < `RANK_DEPTH`, state the count and give closest-fit rows only below the ranked list.
 
 This output schema is a versioned contract (same rule as the corpus row schema — `corpus` SCHEMA EVOLUTION): a field add/rename is lesson-tracked, the `composition` consumer is updated in lockstep, and older `rankings/<theme-id>.md` files are re-emitted (marked `dirty` for rebuild from the corpus) rather than left with a stale field set.
 
@@ -97,10 +93,10 @@ This output schema is a versioned contract (same rule as the corpus row schema �
 (open — this block is a VIEW of `10-lessons-log.md`; append the check when a new lesson lands, tag `Lnn`. The lessons-log is the source, this block the projection — `REGISTRY-PROTOCOL.md`.)
 
 - Ranking on memory/reputation instead of a live-verified specific (violates the memory invariant). (L1, L15)
-- Rewarding price/luxury for its own sake instead of cost justified by depth/expertise.
+- Rewarding price/luxury for its own sake instead of applying the value row in the Candidate Evidence Rubric.
 - Mixing format classes (group vs bespoke vs day) in one Top-`RANK_DEPTH` without flagging it. (L9)
 - Dropping a 403/404 finalist instead of keeping it UNVERIFIED with snippet evidence. (L9)
-- Padding a weak theme to `RANK_DEPTH` instead of saying so and giving closest strong fits. (L6)
+- Padding to `RANK_DEPTH` when rankable rows < `RANK_DEPTH`, instead of stating the count and separating closest-fit rows. (L6)
 - Skipping operator saturation / the `role:axis-proof`+`role:saturation-weight` axes (`axes-registry.md`), so the candidate set misses operators keyword search would not surface. (L7)
 - Naming or counting axes by hand instead of filtering `axes-registry.md` by `stage`/`role` tag (the count is derived; convergence needs every `role:convergence-gate` axis dry). (L14, L16)
 - Verifying specifics in-session and not APPENDING them back to the corpus/ledger (no compounding — next session re-verifies from scratch). (L4, L15)
@@ -113,6 +109,6 @@ This output schema is a versioned contract (same rule as the corpus row schema �
 
 ## QUALITY GATE
 
-If a Top-`RANK_DEPTH` entry would survive having its specifics replaced by a plausible guess, it isn't verified. Every claim traces to a URL — and for reputation/depth/authenticity (criteria 1–3) that URL is NOT the seller's own domain (INDEP_EVIDENCE). "Verified" requires the pasted/cited specifics in the committed file, not an assertion.
+If a Top-`RANK_DEPTH` entry would survive having its specifics replaced by invented-but-well-formed fields, it isn't verified. Every claim traces to a URL — and for reputation/depth/authenticity (criteria 1–3) that URL is NOT the seller's own domain (INDEP_EVIDENCE). "Verified" requires the pasted/cited specifics in the committed file, not an assertion.
 
 Second clause: **if the only evidence for a load-bearing claim is the seller's own page, it is `CLAIMED`, not VERIFIED** (`tags-registry.md`). Existence-verification ≠ quality-verification: a credential / who-leads / group-size / depth / reputation claim with seller-page-only evidence caps the row at `PARTIAL_PRODUCT_WEIGHT`, carries a FLAG, and is never displayed as a verified ranking specific.

@@ -80,7 +80,7 @@ View of `10-lessons-log.md` (open — append the check when a new lesson lands; 
 - A theme bundles >1 lens to look comprehensive. (L11)
 - Padding a Top-`RANK_DEPTH` list beyond the number that clear `ADMISSION_BAR`. (L6)
 - Any invented/guessed guide, date, or price. (L1)
-- Rewarding price/luxury not justified by depth.
+- Rewarding price/luxury without satisfying the value row in the `ranking` rubric.
 - Mixed currencies with no USD-equivalent.
 - Reputation, depth, or authenticity asserted from the seller's OWN page with no independent (non-seller-domain) source. (C4)
 - A USD-equivalent shown with no dated rate source / recalled from memory instead of computed from `FX_SOURCE`. (C12)
