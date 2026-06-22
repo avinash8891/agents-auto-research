@@ -1258,6 +1258,74 @@ def _call_conductor(
     )
 
 
+class ValidationPipeline:
+    """Per-round validate+feedback bookkeeping on top of a ``RetryBudget``.
+
+    Owns the one ``RetryBudget`` for a research round and encapsulates a single
+    attempt's validation: it runs ``_try_one_validation_attempt``, threads the
+    next-call rejection feedback, persists it, and charges the per-stage budget.
+    The caller keeps ``_call_conductor`` and ``_check_parsed_for_terminal`` so
+    existing monkeypatch-by-name tests still resolve those seams.
+    """
+
+    def __init__(
+        self,
+        controller: "AutoresearchController",
+        research_round: int,
+        prior_theses: Any,
+        rejection_feedback: str,
+        *,
+        max_retries: int,
+        require_analyst_tool: bool = False,
+    ) -> None:
+        self._controller = controller
+        self._research_round = research_round
+        self._prior_theses = prior_theses
+        self._require_analyst_tool = require_analyst_tool
+        self._budget = RetryBudget(max_retries=max_retries)
+        self.rejection_feedback = rejection_feedback
+
+    @property
+    def budget(self) -> RetryBudget:
+        """The single retry budget this pipeline owns for the round."""
+        return self._budget
+
+    def budget_exhausted(self) -> bool:
+        """True once the owned ``RetryBudget`` is spent."""
+        return self._budget.exhausted
+
+    @property
+    def budget_attempt(self) -> int:
+        """Current zero-based attempt index for the next conductor call."""
+        return self._budget.attempt
+
+    def attempt_number(self) -> int:
+        """One-based attempt number for the exhausted-retries result."""
+        return max(self._budget.attempt, 1)
+
+    def attempt(self, conductor_result: ConductorResult) -> dict[str, Any] | None:
+        """Validate one conductor proposal; return the result dict or ``None``.
+
+        On a non-terminal failure, thread + persist the rejection feedback and
+        charge the matching per-stage budget, then return ``None`` so the caller
+        loops. On success or a terminal validation result, return that dict.
+        """
+        result, retry_feedback, failed_stage = _try_one_validation_attempt(
+            self._controller,
+            self._research_round,
+            self._budget.attempt,
+            conductor_result,
+            self._prior_theses,
+            require_analyst_tool=self._require_analyst_tool,
+        )
+        if result is not None:
+            return result
+        self.rejection_feedback = retry_feedback or self.rejection_feedback
+        _persist_rejection_feedback(self._controller, self._research_round, self.rejection_feedback)
+        self._budget.record_failure(failed_stage)
+        return None
+
+
 def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]:
     """Drive research using the research conductor.
 
@@ -1329,22 +1397,30 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
             code_root=controller.root,
         )
     )
-    # RetryBudget owns the attempt cap and per-stage failure budgets.
-    budget = RetryBudget(
+    # ValidationPipeline owns the RetryBudget (attempt cap + per-stage budgets)
+    # plus the validate/feedback/persist bookkeeping for each attempt. The
+    # conductor call and terminal check stay here so monkeypatch-by-name tests
+    # for _call_conductor / _check_parsed_for_terminal still resolve.
+    pipeline = ValidationPipeline(
+        controller,
+        research_round,
+        prior_theses,
+        rejection_feedback,
         max_retries=research_engine_max_retries(
             _research_engine_config_for_family(controller.root, controller.family.name)
-        )
+        ),
+        require_analyst_tool=bool(trades_file),
     )
-    while not budget.exhausted:
+    while not pipeline.budget_exhausted():
         conductor_result = _call_conductor(
             research_round,
-            budget.attempt,
+            pipeline.budget_attempt,
             trades_file=trades_file,
             strategy_events_file=strategy_events_file,
             diagnostics_file=diagnostics_file,
             latest_outcome=latest_outcome,
             family_name=controller.family.name,
-            rejection_feedback=rejection_feedback,
+            rejection_feedback=pipeline.rejection_feedback,
             agent_reflexions=agent_reflexions,
             current_job=current_job,
             rendered_corpus=rendered_corpus,
@@ -1352,26 +1428,16 @@ def execute_research_sdk(controller: "AutoresearchController") -> dict[str, Any]
         terminal = _check_parsed_for_terminal(conductor_result)
         if terminal is not None:
             return terminal
-        result, retry_feedback, failed_stage = _try_one_validation_attempt(
-            controller,
-            research_round,
-            budget.attempt,
-            conductor_result,
-            prior_theses,
-            require_analyst_tool=bool(trades_file),
-        )
+        result = pipeline.attempt(conductor_result)
         if result is not None:
             return result
-        rejection_feedback = retry_feedback or rejection_feedback
-        _persist_rejection_feedback(controller, research_round, rejection_feedback)
-        budget.record_failure(failed_stage)
     job_id = coerce_job_to_int(current_job)
     research_round_id = make_research_round_id(job_id, research_round)
     return _exhausted_retries_result(
         conductor_result,
-        rejection_feedback,
+        pipeline.rejection_feedback,
         research_round_id=research_round_id,
-        attempt_number=max(budget.attempt, 1),
+        attempt_number=pipeline.attempt_number(),
     )
 
 

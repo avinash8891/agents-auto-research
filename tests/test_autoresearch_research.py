@@ -25,6 +25,7 @@ from autoresearch_research import (
     _check_parsed_for_terminal,  # keep for backward-compat callers in integration tests
 )
 from autoresearch_research import (
+    ValidationPipeline,
     _attempt_context_from_result,
     _exhausted_retries_result,
     _handle_needs_code,
@@ -561,6 +562,119 @@ def test_exhausted_retries_result_preserves_assigned_attempt_id() -> None:
     assert result["research_round_id"] == "job-5-round-3"
     assert result["attempt_number"] == 3
     assert result["thesis"]["thesis_id"] == "job-5-round-3-attempt-3"
+
+
+# ── ValidationPipeline seam (owns RetryBudget + feedback bookkeeping) ─
+
+
+def _pipeline_conductor_result() -> ConductorResult:
+    return ConductorResult(
+        status="ok",
+        thesis={
+            "story": "A smoother EMA filters weak pullback crosses.",
+            "rule": "gap_pct < 0",
+            "competitor_rule": "gap_pct > 0",
+            "competitor_story": "Gap-up continuation may be the real edge.",
+            "actionable": True,
+            "proposed_change": {"ema_length": 8},
+            "predictions": [
+                {"metric": "profit_factor", "direction": "increase", "predicted": 2.2},
+            ],
+        },
+        reasoning="candidate failed validation",
+        tools_called=frozenset({"analyze_trades"}),
+    )
+
+
+def test_validation_pipeline_returns_success_result_without_charging_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 0})
+    success = {"status": "completed", "generated_config": "round-1/selected_config.json"}
+    monkeypatch.setattr(
+        "autoresearch_research._try_one_validation_attempt",
+        lambda *args, **kwargs: (success, None, ""),
+    )
+
+    pipeline = ValidationPipeline(controller, 1, [], "", max_retries=3, require_analyst_tool=True)
+    result = pipeline.attempt(_pipeline_conductor_result())
+
+    assert result is success
+    assert pipeline.budget.attempt == 0
+    assert pipeline.budget_exhausted() is False
+
+
+def test_validation_pipeline_charges_stage_1_and_threads_feedback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 1})
+    rejection = "Mechanism proposal rejected by validator: evidence missing"
+    monkeypatch.setattr(
+        "autoresearch_research._try_one_validation_attempt",
+        lambda *args, **kwargs: (None, rejection, "stage_1"),
+    )
+
+    pipeline = ValidationPipeline(controller, 1, [], "seed-feedback", max_retries=3)
+    result = pipeline.attempt(_pipeline_conductor_result())
+
+    assert result is None
+    assert pipeline.rejection_feedback == rejection
+    assert pipeline.budget.attempt == 1
+    assert pipeline.budget.stage_1_failures == 1
+    assert pipeline.budget.compile_failures == 0
+    feedback_path = (
+        tmp_path / "runtime" / "jobs" / "job-12" / "research" / "round-1" / "rejection_feedback.txt"
+    )
+    assert feedback_path.read_text(encoding="utf-8").strip() == rejection
+
+
+def test_validation_pipeline_compile_failure_charges_compile_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 1})
+    monkeypatch.setattr(
+        "autoresearch_research._try_one_validation_attempt",
+        lambda *args, **kwargs: (None, "Thesis rejected at compile: missing primitive", "compile"),
+    )
+
+    pipeline = ValidationPipeline(controller, 1, [], "", max_retries=99)
+    pipeline.attempt(_pipeline_conductor_result())
+
+    assert pipeline.budget.compile_failures == 1
+    assert pipeline.budget.stage_1_failures == 0
+    assert pipeline.budget.attempt == 1
+
+
+def test_validation_pipeline_keeps_prior_feedback_when_attempt_returns_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 1})
+    monkeypatch.setattr(
+        "autoresearch_research._try_one_validation_attempt",
+        lambda *args, **kwargs: (None, None, "stage_1"),
+    )
+
+    pipeline = ValidationPipeline(controller, 1, [], "carried-feedback", max_retries=3)
+    pipeline.attempt(_pipeline_conductor_result())
+
+    assert pipeline.rejection_feedback == "carried-feedback"
+    assert pipeline.attempt_number() == 1
+
+
+def test_validation_pipeline_attempt_number_floors_at_one_for_unused_budget(
+    tmp_path: Path,
+) -> None:
+    controller = _real_controller(tmp_path)
+    controller.write_state({"state": "blocked", "job": 12, "research_round": 1})
+
+    pipeline = ValidationPipeline(controller, 1, [], "", max_retries=0)
+
+    assert pipeline.budget_exhausted() is True
+    assert pipeline.attempt_number() == 1
 
 
 def test_attempt_context_fallback_prefers_result_round_over_stale_state_round() -> None:
