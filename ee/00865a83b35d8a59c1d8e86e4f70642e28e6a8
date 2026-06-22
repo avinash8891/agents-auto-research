@@ -1,0 +1,24 @@
+travel/axes-registry.md
+  s_fc23909bc640a9::t_e1b2c6afde2a29 3
+travel/travel-config.md
+  s_fc23909bc640a9::t_6ccb552651a2b6 15
+travel/lens-registry.md
+  s_fc23909bc640a9::t_20efacb9d590a0 27-28
+  s_fc23909bc640a9::t_e5cb5bee5504c7 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "ee00865a83b35d8a59c1d8e86e4f70642e28e6a8",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
