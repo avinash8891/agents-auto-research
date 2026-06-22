@@ -1,0 +1,21 @@
+travel/09-agent-orchestration.md
+  s_fc23909bc640a9::t_9491c0f87d2f3f 29-30
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_b3696dd07de53e 158-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "c14f55854ac83f3d3916af23d6a8d2cdaf8aa5f3",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
