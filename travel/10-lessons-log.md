@@ -69,6 +69,10 @@ Append-only. Every time the method improves, record what was wrong, why, and the
 **Resolution:** the **theme stays single-lens** (the ranking unit, where depth + expert live). Multi-lens is a separate **trip-composition layer** (`11`) that stitches several ranked themes, with depth recovered only per-segment or via a bespoke designer — trade-off stated. A multi-era/multi-region single-subject theme (Sicily layered civilisations) is NOT multi-lens.
 **Fix:** clarified the theme definition in `00` (one coherent subject; eras/regions OK, lenses split), added a "Two consumption modes" section, and created `11-trip-composition.md`. Earlier draft wording ("composite themes") risked inviting lens-bundling — corrected.
 
+## L12 — N is a dial; refresh is additive; pilot small (from reviewing `01`)
+**Decisions:** (1) "50 countries" is an example target, not fixed — N grows 10 → 50 → 100 → 150 as the method proves out; current scope is **top 10 only** until 100% confident. (2) Country-ranking refresh is **additive**: each run fetches the current top-N and ADDS new entrants but NEVER removes a country already researched (coverage only grows; raising N later just appends). (3) Define "country" explicitly (UN Tourism entity list; SAR handling e.g. HK/Macau) so the tail is reproducible; cite ranks with their data-year.
+**Fix:** `01` rewritten — N-as-dial, additive-refresh rule, country-definition + boundary-churn + metric-caveat rules, canonical list in a stamped `country_ranking.md` (live pull, never hand-typed). README scope section added.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 

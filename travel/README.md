@@ -41,5 +41,8 @@ Every step doc (00–10) carries: an **Anti-patterns** block (what not to do) an
 4. Per theme: saturate operators (5 axes) + verify finalists → rank Top 5 (step 07).
 5. Stamp corpus; register in refresh cadence (steps 06, 08).
 
+## Scope (current)
+**Pilot = top 10 countries only.** Fine-tune the method on 10 and prove it 100% before scaling. "50" is just an example target; N is a dial that grows 50 → 100 → 150 once trusted. Refresh is **additive** — adding countries never removes existing ones (`01`).
+
 ## Status (as of 2026-06)
 Method matured and proven on **Italy** (converged at 35 themes; ~150+ operators in corpus). Output (ranked Top-5s) not yet produced — next action is IT-01 Rome antiquity as the output template. See `10-lessons-log.md` for how the method evolved.
