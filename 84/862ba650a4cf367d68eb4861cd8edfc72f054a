@@ -1,0 +1,23 @@
+travel/02-theme-seeding.md
+  s_fc23909bc640a9::t_a389848fb32cc9 3,5-7,9-18,20-26,28-38,40-45
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_fc5f2869729ad2 76-80
+travel/README.md
+  s_fc23909bc640a9::t_c6a960948a5cb2 35-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "84862ba650a4cf367d68eb4861cd8edfc72f054a",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
