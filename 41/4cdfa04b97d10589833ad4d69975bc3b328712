@@ -1,0 +1,26 @@
+agent_token_usage.py
+  s_c781025ed43a12::t_2b64dc72c0dec0 4-5,14-73
+  s_c781025ed43a12::t_92e370d5ccd538 75
+agent_sdk_token_usage.py
+  s_c781025ed43a12::t_0c82f8d5d9f19e 6-10
+  s_c781025ed43a12::t_4470288b2d610e 133,144-152,155-163,229-265,267-270,272,276-277,281
+tests/test_accumulation_request_seam.py
+  s_c781025ed43a12::t_645d69c46b364f 1-109,111-117,119-129,131-144,151-152,154-194,196-280,282-289
+  s_c781025ed43a12::t_92e370d5ccd538 110,118,130,145-150,153,195,281
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "414cdfa04b97d10589833ad4d69975bc3b328712",
+  "prompts": {},
+  "sessions": {
+    "s_c781025ed43a12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f108c0ba-5958-40c1-a798-bd54f4f4fabc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
