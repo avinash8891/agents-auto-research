@@ -1,0 +1,29 @@
+country_ranking.md
+  s_b10ea6e0b14a9b::t_5165b5b3532470 9,14
+travel/japan/rankings/JP-01.md
+  s_b10ea6e0b14a9b::t_5165b5b3532470 1-35
+travel/japan/ledger.md
+  s_b10ea6e0b14a9b::t_5165b5b3532470 1-15
+travel/japan/corpus/round1_jp01_ranking_saturation.md
+  s_b10ea6e0b14a9b::t_5165b5b3532470 1-43
+travel/italy/ledger.md
+  s_b10ea6e0b14a9b::t_5165b5b3532470 18,28
+travel/italy/thin-notes/IT-THIN-molise-samnite.md
+  s_b10ea6e0b14a9b::t_5165b5b3532470 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "dbff9b570c43c93af8b88c3dce4fbb938090daeb",
+  "prompts": {},
+  "sessions": {
+    "s_b10ea6e0b14a9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef028-10f0-7e81-815f-83c5eff18633",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
