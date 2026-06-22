@@ -52,24 +52,24 @@ COMPOUNDING: verification accrues. READ the corpus + per-country verification le
 | credential fit | named expert's credential independently corroborated and resolves to the theme lens in `lens-registry.md` | seller page names a credential string that would resolve if independently corroborated | named expert exists, but credential resolves only to an adjacent lens or is not in the table yet | no named expert, generic guide only, or `credential-mismatch` |
 | depth | itinerary has >=3 theme-specific stops/access/interpretation points, or >=2 plus a named specialist lecture/site-access element | seller-only depth claim with >=3 concrete itinerary points | theme appears as one segment or <3 concrete theme points | adjectives only, or generic sightseeing not tied to the theme |
 | reputation | >=1 independent institutional bio, publication/register, award, specialist press, or >=2-platform review corpus supports operator/expert standing | third-party directory/review only, or seller-only reputation | one stale/unclear independent mention; log source and cap | no independent signal |
-| format | same `format-class` as the ranking lane | same trip type but one comparability field missing; disclose in FLAGS | different lane (`day-format`, `private-bespoke`, `hybrid-course`) but relevant as closest-fit | wrong product type for this ranking |
+| format | same `format-class` as the ranking lane | same trip type but one comparability field missing; disclose in FLAGS | different lane (`day-format`, `private-bespoke`, `custom-multi-day`, `cruise-shore`, `hybrid-course`) but relevant as closest-fit | wrong product type for this ranking |
 | value | premium is backed by VERIFIED expertise/access/small group/duration/rare logistics; or price is lower than a comparably verified row | price is seller-justified only | price is materially higher than cleaner rows and has only PARTIAL support | premium-for-thin-substance: high price with FAIL/PARTIAL depth or credential |
 
 - **Rubric gate:** a ranked row may not contain `FAIL` for tuple, credential fit, depth, or format. `FAIL` on any of those means closest-fit or THIN-NOTE, not ranking.
 - **Rubric ordering:** two or more `PARTIAL` dimensions cannot outrank an otherwise comparable candidate with fewer `PARTIAL`s. A `CLAIMED` load-bearing claim always carries a FLAG and caps the row at `PARTIAL_PRODUCT_WEIGHT`.
-- **Format lanes:** rank inside one lane by default: `fixed-departure-group`, `private-bespoke`, `day-format`, or `hybrid-course`. Mixing lanes is allowed only when the output explicitly says it is comparing unlike formats; otherwise split into separate ranking/thin-note sections.
+- **Format lanes:** rank inside one lane by default: `fixed-departure-group`, `private-bespoke`, `day-format`, `custom-multi-day`, `cruise-shore`, or `hybrid-course`. Mixing lanes is allowed only when the output explicitly says it is comparing unlike formats; otherwise split into separate ranking/thin-note sections.
 - **Ambiguous pages:** missing fields stay missing. Do not infer date, price, guide, group size, or role assignment from snippets, co-located text, old cached copies, or marketing adjectives.
 - **Ranking priority (strict order):** sort by rubric labels in this order: credential fit, reputation, depth, format, then value. A `VERIFIED` label beats `CLAIMED`, `CLAIMED` beats `PARTIAL`, and any `FAIL` in tuple/credential/depth/format removes the row from the ranked list.
 - **Value rule:** value is the final tie-break only, using the value row above. Price/luxury alone never improves rank.
 - **Format-class mixing:** if the Top-`RANK_DEPTH` mixes format classes (e.g. a multi-day escorted tour alongside a city-based day-scholar or a bespoke private), flag the difference explicitly so the reader compares like with unlike knowingly. A non-`fixed-departure-group` product (`tags-registry.md`) cannot be ranked on the same "dated departure" basis as a `fixed-departure-group` tour.
-- **Weak theme:** if the theme cannot fill a strong Top-`RANK_DEPTH`, say so and give the closest strong fits — never pad to `RANK_DEPTH`.
+- **Thin/failed theme:** if rankable rows < `RANK_DEPTH`, state the rankable count and put closest-fit rows below the ranked list — never pad to `RANK_DEPTH`.
 - **Trip-fit sanity:** a ranked theme must still fit one trip under `MAX_TRIP_DAYS` (`travel-config.md`); if a finalist's product implies a longer single itinerary, note it for the **composition** doc.
 
 ## EXAMPLE (input → output)
 
 Theme: `IT-01` (Lazio, history/archaeology — Imperial Rome on the ground). (`IT-01` follows `THEME_ID_GRAMMAR`.)
 
-Worked tie-break: a name-brand archaeologist (Simon Elliott) with more exclusive access at ~30% lower price was ranked **above** a comparably-credentialed competitor (Martin Randall / Mark Grahame) — decided on **value**, not cheapest, not luxury, best-justified.
+Worked tie-break: a name-brand archaeologist (Simon Elliott) with more exclusive access at ~30% lower price was ranked **above** a comparably-credentialed competitor (Martin Randall / Mark Grahame) — decided by the value row, not cheapest and not luxury.
 
 Worked format-class flag: the Context Travel day-format entry (a `scholar-dmc` channel, `channel-registry.md`) was a city-based day-scholar product alongside escorted multi-day tours; the proof-of-concept flagged the format difference explicitly rather than ranking it on the same dated-departure basis.
 

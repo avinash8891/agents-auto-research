@@ -27,6 +27,8 @@ Single home for the small controlled vocabularies used as row/theme tags, so wri
 | `fixed-departure-group` | rankable on a dated departure directly |
 | `private-bespoke` | private/bespoke/year-round; can't be admitted on the "dated departure" basis the same way; flag when mixed in a Top-`RANK_DEPTH` |
 | `day-format` | day tour / stackable; not a single immersive itinerary; flag when mixed |
+| `custom-multi-day` | custom multi-day itinerary; rank only inside a custom/private lane unless explicitly flagged as closest-fit |
+| `cruise-shore` | cruise/shore excursion format; rank only inside a cruise/shore lane unless explicitly flagged as closest-fit |
 | `hybrid-course` | course/residency hybrid, not a classic escorted tour; flag when mixed |
 
 Mixing format-classes in one ranked list → flag explicitly (`ranking`).
