@@ -1,0 +1,31 @@
+travel/lens-registry.md
+  s_fc23909bc640a9::t_7cf57a41ae2703 1-29
+travel/02-theme-seeding.md
+  s_fc23909bc640a9::t_0230d3b744120d 20-27
+  s_fc23909bc640a9::t_e943c13ea50c9e 50-53
+  s_fc23909bc640a9::t_0ef7e7fa21287f 14,16-19
+  s_fc23909bc640a9::t_14f7b817c519a5 7-8,11
+travel/README.md
+  s_fc23909bc640a9::t_84e151313b1a31 19
+  s_fc23909bc640a9::t_8694bc1b42a1e1 34-35
+travel/theme-archetypes.md
+  s_fc23909bc640a9::t_40b6b04a14659e 1-33
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_dbdb90abb145e4 91-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "9d2d5bdd0af6babff4bcd3b4c9e5c23708175d5b",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
