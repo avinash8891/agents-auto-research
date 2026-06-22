@@ -104,11 +104,12 @@ De-dup applied via operator-aliases.md: aggregator excluded; absorbed sub-brand 
 Reconciliation caught: Italy FINAL initially declared "converged after 4 rounds" while the round-5 axis-proof (language / authority-index) operators sat unmerged → corrected to the two-level statement.
 
 ## ANTI-PATTERNS (fail the step if true)
-- Overwriting corpus rounds instead of appending (destroys the audit trail).
+(VIEW of the lessons-log — open — append the check when a new lesson lands; tag Lnn. Source of truth is 10-lessons-log.md; REGISTRY-PROTOCOL.md "Anti-patterns are a view of the lessons-log".)
+- Overwriting corpus rounds instead of appending (destroys the audit trail). (L4)
 - Renumbering theme IDs on reshape (breaks `rankings/<theme-id>.md` and cross-refs).
-- Dropping a 403/404 row instead of keeping it UNVERIFIED with snippet evidence.
-- Double-counting aggregators or absorbed sub-brands as separate operators (apply operator-aliases.md).
-- Promoting a snippet-sourced row to `verified` without an unblocked live-page confirmation.
-- Shipping a FINAL map that omits the `role:axis-proof` axis rounds (false convergence).
-- Findings that live only in orchestrator context instead of a committed file (breaks the memory invariant; next session starts cold).
-- A new axis found in discovery and not appended to `<country>/axes.md` / promoted to `axes-registry.md` (no compounding).
+- Dropping a 403/404 row instead of keeping it UNVERIFIED with snippet evidence. (L9)
+- Double-counting aggregators or absorbed sub-brands as separate operators (apply operator-aliases.md). (L9)
+- Promoting a snippet-sourced row to `verified` without an unblocked live-page confirmation. (L9)
+- Shipping a FINAL map that omits the `role:axis-proof` axis rounds (false convergence). (L10, L7)
+- Findings that live only in orchestrator context instead of a committed file (breaks the memory invariant; next session starts cold). (L4, L5)
+- A new axis found in discovery and not appended to `<country>/axes.md` / promoted to `axes-registry.md` (no compounding). (L14)

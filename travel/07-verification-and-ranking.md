@@ -69,14 +69,16 @@ Output (`rankings/IT-01.md`) contains: country + arrivals rank, theme/region, on
 
 ## ANTI-PATTERNS (checks — fail the step if true)
 
-- Ranking on memory/reputation instead of a live-verified specific (violates the memory invariant).
+(open — this block is a VIEW of `10-lessons-log.md`; append the check when a new lesson lands, tag `Lnn`. The lessons-log is the source, this block the projection — `REGISTRY-PROTOCOL.md`.)
+
+- Ranking on memory/reputation instead of a live-verified specific (violates the memory invariant). (L1, L15)
 - Rewarding price/luxury for its own sake instead of cost justified by depth/expertise.
-- Mixing format classes (group vs bespoke vs day) in one Top-`RANK_DEPTH` without flagging it.
-- Dropping a 403/404 finalist instead of keeping it UNVERIFIED with snippet evidence.
-- Padding a weak theme to `RANK_DEPTH` instead of saying so and giving closest strong fits.
-- Skipping operator saturation / the `role:axis-proof`+`role:saturation-weight` axes (`axes-registry.md`), so the candidate set misses operators keyword search would not surface.
-- Naming or counting axes by hand instead of filtering `axes-registry.md` by `stage`/`role` tag (the count is derived; convergence needs every `role:convergence-gate` axis dry).
-- Verifying specifics in-session and not APPENDING them back to the corpus/ledger (no compounding — next session re-verifies from scratch).
+- Mixing format classes (group vs bespoke vs day) in one Top-`RANK_DEPTH` without flagging it. (L9)
+- Dropping a 403/404 finalist instead of keeping it UNVERIFIED with snippet evidence. (L9)
+- Padding a weak theme to `RANK_DEPTH` instead of saying so and giving closest strong fits. (L6)
+- Skipping operator saturation / the `role:axis-proof`+`role:saturation-weight` axes (`axes-registry.md`), so the candidate set misses operators keyword search would not surface. (L7)
+- Naming or counting axes by hand instead of filtering `axes-registry.md` by `stage`/`role` tag (the count is derived; convergence needs every `role:convergence-gate` axis dry). (L14, L16)
+- Verifying specifics in-session and not APPENDING them back to the corpus/ledger (no compounding — next session re-verifies from scratch). (L4, L15)
 
 ## QUALITY GATE
 

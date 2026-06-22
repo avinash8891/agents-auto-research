@@ -16,6 +16,10 @@ Evidence to promote a new channel: a distinct distribution model that sells expe
 | `lifelong-learning` | lifelong-learning / continuing-ed | Road Scholar, university extension trips |
 | `special-interest` | food/wine, military, nature/wildlife, music, religious/pilgrimage specialists | Steppes, Naturetrek, Etna Wine School, 206 Tours |
 
+## `special-interest` sub-types (open — append on discovery)
+Verticals within the `special-interest` channel. Open enumeration (`REGISTRY-PROTOCOL.md`): append a vertical when a country surfaces one, with provenance.
+- food/wine · military · nature/wildlife · music · religious/pilgrimage · gardens (provenance: Italy R2–R3). Append more as found.
+
 ## CANDIDATE WATCHLIST
 | id | label | status | evidence |
 |----|-------|--------|----------|

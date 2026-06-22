@@ -58,10 +58,11 @@ Emit, per theme:
 - Cite sources; every factual claim traces to a live URL.
 
 ## ANTI-PATTERNS (failure checks)
-- A theme bundles >1 lens to look comprehensive.
-- Padding a Top-`RANK_DEPTH` list beyond the number that clear `ADMISSION_BAR`.
-- Any invented/guessed guide, date, or price.
+View of `10-lessons-log.md` (open — append the check when a new lesson lands; tag Lnn).
+- A theme bundles >1 lens to look comprehensive. (L11)
+- Padding a Top-`RANK_DEPTH` list beyond the number that clear `ADMISSION_BAR`. (L6)
+- Any invented/guessed guide, date, or price. (L1)
 - Rewarding price/luxury not justified by depth.
 - Mixed currencies with no USD-equivalent.
-- Selling a multi-lens itinerary as a single-expert group tour (that's `composition`, with the trade-off stated).
-- Naming a literal (count, day-limit, price-tier, season, cadence) inline instead of its `config` dial, or re-listing a registry vocabulary (lenses, channels, axes) instead of pointing to the registry.
+- Selling a multi-lens itinerary as a single-expert group tour (that's `composition`, with the trade-off stated). (L11)
+- Naming a literal (count, day-limit, price-tier, season, cadence) inline instead of its `config` dial, or re-listing a registry vocabulary (lenses, channels, axes) instead of pointing to the registry. (L16)

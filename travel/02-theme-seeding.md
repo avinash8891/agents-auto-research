@@ -47,14 +47,15 @@ Note IT-03 vs IT-04: same region, SPLIT because the tours differ (art-historian-
 Full Italy v0 (19 seed themes): `italy/italy_theme_map_v0.md`. Discovery later took it to 35 (`italy/italy_theme_map_FINAL.md`) — the seed is meant to be outgrown.
 
 ## ANTI-PATTERNS (checks — fail the step if true)
-- Seeding lenses/archetypes from memory instead of reading the registries (violates the memory invariant; reintroduces the omission risk that missed "nature").
-- Naming axes by hand or asserting an axis count instead of filtering `axes-registry.md` by `stage`/`role` tag and deriving the count.
-- Skipping the archetype walk or the seed-completeness diff (these catch systemic misses at seed).
-- A baseline lens/archetype left with neither a theme nor a `thin/none` justification.
-- Discovering a new lens/archetype and not appending it to the per-country ledger / promoting per `REGISTRY-PROTOCOL.md` (no compounding).
-- Killing a theme at seed via the channel sanity-check (it is advisory — tag `watch/leisure` only; when in doubt keep; discovery + `admission-bar` decide on live evidence).
-- Seed contains a candidate-operator list (it must list themes/cells to SEARCH, not operators to confirm — anchoring, L1/L7).
-- A theme bundles >1 lens to look comprehensive.
-- A region is silently omitted (must be a theme or a `thin/none` row).
-- A theme ID is reused or renumbered (violates `THEME_ID_GRAMMAR`).
-- A round of discovery only confirms the seed and adds nothing (the seed was wrong at the edges by design — extend it).
+This block is a VIEW of `10-lessons-log.md` (open — append the check when a new lesson lands; tag `Lnn`). Each check carries the `Lnn` that surfaced it where one exists.
+- Seeding lenses/archetypes from memory instead of reading the registries (violates the memory invariant; reintroduces the omission risk that missed "nature"). (L15)
+- Naming axes by hand or asserting an axis count instead of filtering `axes-registry.md` by `stage`/`role` tag and deriving the count. (L16)
+- Skipping the archetype walk or the seed-completeness diff (these catch systemic misses at seed). (L15)
+- A baseline lens/archetype left with neither a theme nor a `thin/none` justification. (L15)
+- Discovering a new lens/archetype and not appending it to the per-country ledger / promoting per `REGISTRY-PROTOCOL.md` (no compounding). (L15)
+- Killing a theme at seed via the channel sanity-check (it is advisory — tag `watch/leisure` only; when in doubt keep; discovery + `admission-bar` decide on live evidence). (L1/L7)
+- Seed contains a candidate-operator list (it must list themes/cells to SEARCH, not operators to confirm — anchoring, L1/L7). (L1/L7)
+- A theme bundles >1 lens to look comprehensive. (L11)
+- A region is silently omitted (must be a theme or a `thin/none` row). (L15)
+- A theme ID is reused or renumbered (violates `THEME_ID_GRAMMAR`). (L17)
+- A round of discovery only confirms the seed and adds nothing (the seed was wrong at the edges by design — extend it). (L10)

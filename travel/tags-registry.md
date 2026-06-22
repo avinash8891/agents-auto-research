@@ -30,5 +30,11 @@ Mixing format-classes in one ranked list → flag explicitly (`ranking`).
 |-------|---------|
 | `Strong` / `Medium` / `Thin` | expected depth of the expert-led market (a guess; discovery confirms) |
 
+## admission.disqualifiers (open — append on discovery; used by `admission-bar`)
+Open enumerations (`REGISTRY-PROTOCOL.md`) of what does NOT count toward the admission bar. Append a case when discovered, with provenance.
+- **non-qualifying product** = not a sold leisure tour: university course · master-class · lecture-residency · retreat · maker-workshop · day-activity · pilgrimage-without-study-content. (provenance: Italy R4)
+- **non-qualifying expert** = not a credentialed theme-fit scholar: title-only (name unpublished) · generic licensed city guide · artisan/trifolao (unless the craft IS the theme). (provenance: Italy R4)
+- **non-qualifying operator** = aggregator/marketplace reselling others (count the underlying operator; see `operator-aliases.md`).
+
 ## UPDATE
-Mechanics: `REGISTRY-PROTOCOL.md`. Append a value when a new state is genuinely needed; never let two docs invent divergent spellings.
+Mechanics: `REGISTRY-PROTOCOL.md`. Append a value when a new state is genuinely needed; never let two docs invent divergent spellings. The tag/value sets here are open enumerations — append-on-discovery with provenance.

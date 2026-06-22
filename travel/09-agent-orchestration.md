@@ -38,7 +38,7 @@ Travel-research discovery agent. EXHAUSTIVE discovery of expert-led tours for <c
 CLUSTER/THEME: <list themes + scope>
 METHOD: search EVERY baseline axis in axes-registry (filter the discovery sweep to axes tagged stage:discovery; run a dedicated extra sweep for each axis tagged role:axis-proof). For the CHANNEL axis sweep every channel sub-type id in channel-registry; for the LENS axis use the lenses in lens-registry; for the REGION axis use every first-level region <list>; for any axis whose values are per-country data (e.g. language set, authority-index directories) read them from <country>/axes.md. Multiple searches per axis; do NOT stop at a handful.
 ALREADY KNOWN (build beyond, don't re-report): <captured operator list>
-RESHAPE QUESTIONS: <split/merge/promote/demote tests for this cluster>
+RESHAPE QUESTIONS (open — append on discovery; REGISTRY-PROTOCOL.md; reshape actions owned by `discovery-loop`): <split/merge/promote/demote/fold-into-new tests for this cluster>
 OUTPUT: Write raw findings DIRECTLY to <abs path>/corpus/round<N>_<cluster>.md via the file-write tool. Schema (corpus doc): Operator | Channel | Tour | Expert(named) | Format | CURRENT_SEASON? | URL. End each section with a VERDICT line.
 RETURN TO ME ONLY: the verdict(s), one line each, + confirm file written.
 ```
@@ -72,13 +72,14 @@ A discovery round for Italy. The orchestrator first builds the already-known lis
 Each agent writes its file and returns one verdict line, e.g. "Centre cluster: +6 new operators (4 verified, 2 UNVERIFIED guide); confirms the Tuscan/wine seed split holds; file written." The orchestrator never sees the raw rows. Italy grew from its v0 seed (`italy/italy_theme_map_v0.md`) to the converged map (`italy/italy_theme_map_FINAL.md`) through these rounds — the corpus, not memory, carried operators forward between them.
 
 ## ANTI-PATTERNS (checks — fail the step if true)
+(open — append the check when a new lesson lands; tag `Lnn`. This block is a VIEW of `10-lessons-log.md`; the lessons-log is the source. See REGISTRY-PROTOCOL.md "Anti-patterns are a view of the lessons-log.")
 - Over-spawning agents for a small country, or under-spawning for a big diverse one (scale the fleet to the task).
-- Omitting the already-known list → agents re-discover instead of extending.
+- Omitting the already-known list → agents re-discover instead of extending (`L1`, `lessons`).
 - Omitting absolute paths → corpus writes land nowhere.
-- Letting agents return raw dumps through the orchestrator → bloats context, loses verbatim fidelity.
+- Letting agents return raw dumps through the orchestrator → bloats context, loses verbatim fidelity (`L5`, `lessons`).
 - Trusting agent findings as fact → they are hypotheses; spot-check named guides/dates before ranking (`L7`, `lessons`).
-- Letting parallel agents share one file → write collisions; one file each.
-- Building the already-known list from session memory instead of grepping the corpus → breaks the memory invariant and "extend, don't re-discover."
+- Letting parallel agents share one file → write collisions; one file each (`L5`, `lessons`).
+- Building the already-known list from session memory instead of grepping the corpus → breaks the memory invariant and "extend, don't re-discover" (`L4`, `lessons`).
 - Agents using divergent row schemas → un-mergeable corpus (`corpus`).
-- Hardcoding which axes to sweep/prove instead of filtering `axes-registry` by `stage`/`role` tags → a newly promoted axis silently goes unswept.
-- Discovering a new lens/archetype/channel/axis and not appending it to the relevant registry watchlist → no compounding (`registry-protocol`).
+- Hardcoding which axes to sweep/prove instead of filtering `axes-registry` by `stage`/`role` tags → a newly promoted axis silently goes unswept (`L7`, `L14`, `L16`, `lessons`).
+- Discovering a new lens/archetype/channel/axis and not appending it to the relevant registry watchlist → no compounding (`L15`, `registry-protocol`).

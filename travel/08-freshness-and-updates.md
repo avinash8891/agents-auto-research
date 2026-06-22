@@ -14,7 +14,7 @@ COMPOUNDING: the corpus is a living ledger, not a one-off deliverable. Each VERI
 URLs are already known, so this is re-fetch, not discovery. Runs on `VERIFY_CADENCE` (travel-config.md).
 1. READ every row's URL from the corpus.
 2. Re-fetch each URL.
-3. **Diff** the fetched page against the stored row. Diff dimensions: date moved · price changed · tour withdrawn · new departure added · guide changed.
+3. **Diff** the fetched page against the stored row. Diff dimensions (open — append on discovery; REGISTRY-PROTOCOL.md): date moved · price changed · tour withdrawn · new departure added · guide changed. (provenance: Italy build / L8.)
 4. Update `last_checked` to today (`YYYY-MM-DD`). Set `status` ∈ {verified, stale, withdrawn}.
 5. Log every diff to the dated VERIFY report `<country>_verify_<YYYY-MM-DD>.md`.
 6. Refresh the UNVERIFIED / fetch-blocked list (URLs that failed to fetch stay listed and worked next pass).
@@ -53,11 +53,11 @@ Runs on `DISCOVERY_CADENCE` (travel-config.md).
 - Re-rank countries (country-ranking doc) IFF a new `tier=primary` ranking source has landed (`RERANK_CADENCE`).
 - Roll `CURRENT_SEASON` in travel-config.md once per cycle here; nowhere else.
 
-### Triggers — run Loop B off-cadence if any holds
-- New UNESCO inscription, or a major site/museum reopening.
-- A new excavation or discovery that spawns tours.
-- An anniversary / jubilee year that creates one-off departures (e.g. 2025 Catholic Jubilee, 800th St Francis 2026).
-- A major operator launch or closure.
+### Triggers — run Loop B off-cadence if any holds (open — append on discovery; REGISTRY-PROTOCOL.md)
+- New UNESCO inscription, or a major site/museum reopening. (provenance: Italy build)
+- A new excavation or discovery that spawns tours. (provenance: Italy build)
+- An anniversary / jubilee year that creates one-off departures (e.g. 2025 Catholic Jubilee, 800th St Francis 2026). (provenance: Italy build)
+- A major operator launch or closure. (provenance: Italy build)
 
 ## EXAMPLE (input → output)
 Input: locked `italy/italy_corpus_FINAL.md` with rows stamped `last_checked: 2026-06-22` (Italy roster cited per-country in `italy/` artifacts; this global doc stays example-light).
@@ -65,10 +65,11 @@ Input: locked `italy/italy_corpus_FINAL.md` with rows stamped `last_checked: 202
 - Trigger fires (2026, 800th anniversary of St Francis): run Loop B off-cadence. Re-run the completeness-critic across the baseline axes in axes-registry.md; new Franciscan-pilgrimage one-off departures clear the `ADMISSION_BAR` (admission-bar doc) → run a full round for the Umbria pilgrimage slice, reshape the corpus, and write a changelog entry to `italy/italy_changelog.md`. If "Sacred / pilgrimage circuit" were a not-yet-registered archetype, PROMOTE it to theme-archetypes.md per REGISTRY-PROTOCOL.md so the next country inherits it.
 
 ## ANTI-PATTERNS (checks — fail the step if true)
-- Treating the corpus as a static one-off deliverable (it rots — dates/prices/departures churn).
-- Running the expensive DISCOVERY loop when the cheap VERIFY loop suffices.
-- Re-fetching without diffing/stamping (no record of what changed or when last checked).
-- Letting `stale` or UNVERIFIED rows accumulate unworked between passes.
-- Holding corpus state in session memory instead of reading/writing the committed corpus file (violates the memory invariant — a fresh session could not reproduce the refresh).
-- Discovering a new lens/archetype/operator in Loop B and not promoting it to the owning global registry (no compounding).
-- Rolling `CURRENT_SEASON` in any doc other than travel-config.md, or in more than one place per cycle (drift).
+(open — append the check when a new lesson lands; tag Lnn. This block is a VIEW of 10-lessons-log.md; REGISTRY-PROTOCOL.md "Anti-patterns are a view of the lessons-log".)
+- Treating the corpus as a static one-off deliverable (it rots — dates/prices/departures churn). (L8)
+- Running the expensive DISCOVERY loop when the cheap VERIFY loop suffices. (L8)
+- Re-fetching without diffing/stamping (no record of what changed or when last checked). (L8)
+- Letting `stale` or UNVERIFIED rows accumulate unworked between passes. (L8)
+- Holding corpus state in session memory instead of reading/writing the committed corpus file (violates the memory invariant — a fresh session could not reproduce the refresh). (L15)
+- Discovering a new lens/archetype/operator in Loop B and not promoting it to the owning global registry (no compounding). (L15)
+- Rolling `CURRENT_SEASON` in any doc other than travel-config.md, or in more than one place per cycle (drift). (L16)

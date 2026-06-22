@@ -32,22 +32,22 @@ COMPOUNDING: lenses, archetypes, channels, and axes follow read → run → APPE
 
 ## DECISION RULES
 
-### Round type — pick per round
-- **Cluster sweep** (typically rounds 1–2): broad coverage by region cluster.
-- **Completeness-critic round**: adversarial agents whose only job is to find what's missing — one per `role:convergence-gate` axis (lenses, channels/operators, regions), plus one for borderline validation. These catch the long tail.
-- **Axis-proof round**: explicitly run every axis tagged `role:axis-proof` in `axes-registry.md` as its own sweep — the axes most often skipped and most likely to break a false convergence.
+### Round type — pick per round (open — append on discovery; `REGISTRY-PROTOCOL.md`)
+- **Cluster sweep** (typically rounds 1–2): broad coverage by region cluster. (provenance: Italy R1–R2)
+- **Completeness-critic round**: adversarial agents whose only job is to find what's missing — one per `role:convergence-gate` axis (lenses, channels/operators, regions), plus one for borderline validation. These catch the long tail. (provenance: L6, Italy R3–R4)
+- **Axis-proof round**: explicitly run every axis tagged `role:axis-proof` in `axes-registry.md` as its own sweep — the axes most often skipped and most likely to break a false convergence. (provenance: L7, Italy R5)
 
 ### Completeness-critic mechanics
 - **Lens-completeness is enumerate-and-diff, not vibes**: the lens-critic must list the FULL lens inventory from `lens-registry.md` against the current theme map and flag every lens with **zero themes** for a justified test. This is the mechanism that would have caught "nature was a systemic miss" on round 1 instead of round 2.
-- **Pre-sweep overlap declaration**: before counting products for a candidate lens, write an explicit overlap check distinguishing it from every adjacent existing theme by period / ideology / region / discipline (e.g. "Gardens ≠ Lakes villas&gardens; Galileo ≠ Florence Renaissance art; WW1 Alpine Front ≠ Sicily WWII Husky; Jewish heritage ≠ Christian/papal Rome"). Stops re-discovering a covered theme under a new label.
+- **Pre-sweep overlap declaration**: before counting products for a candidate lens, write an explicit overlap check distinguishing it from every adjacent existing theme along the overlap dimensions (open — append on discovery; `REGISTRY-PROTOCOL.md`): period / ideology / region / discipline (provenance: L9, Italy R3) (e.g. "Gardens ≠ Lakes villas&gardens; Galileo ≠ Florence Renaissance art; WW1 Alpine Front ≠ Sicily WWII Husky; Jewish heritage ≠ Christian/papal Rome"). Stops re-discovering a covered theme under a new label.
 - **Axis-completeness critic**: one critic asks not "what operator/theme did we miss?" but **"what DIMENSION are we blind to?"** — test the candidate axes from `axes-registry.md` (the CANDIDATE WATCHLIST) for this country. PROMOTE a candidate axis IFF it provably surfaces tours no existing axis finds → record in `<country>/axes.md`, then escalate (PROMOTE) to the global `axes-registry.md` per `REGISTRY-PROTOCOL.md` (a promoted candidate must declare its `stage`/`role` tags so the gates/sweeps pick it up automatically).
 
-### Reshape actions (apply after each round)
-- **ADD / SPLIT** a theme IFF discovery reveals a deep, distinct expert-led market the seed missed (e.g. Umbria → art vs St-Francis pilgrimage; Sicily WWII Husky as its own theme).
-- **MERGE** two themes IFF their tour products are really the same.
-- **DEMOTE / FOLD** a theme IFF it has no real expert-led depth (e.g. Amalfi/Capri → folds into Naples; Cinque Terre → leisure).
-- **FOLD-INTO-NEW (reframe-and-absorb)**: when a candidate fails `ADMISSION_BAR` standalone but is real material that belongs in a *newly-framed* parent theme that doesn't yet exist (e.g. Rationalist/Fascist architecture → folded into a new "Milan & 20th-c architecture & design" theme, keeping Como/Terragni as its spine). Distinct from folding into an existing theme.
-- **CROSS-CUT**: keep cross-regional themes IFF operators sell them as one trip within `MAX_TRIP_DAYS` (Etruscan, Magna Graecia, Caravaggio trail, opera).
+### Reshape actions (apply after each round) (open — append on discovery; `REGISTRY-PROTOCOL.md`)
+- **ADD / SPLIT** a theme IFF discovery reveals a deep, distinct expert-led market the seed missed (e.g. Umbria → art vs St-Francis pilgrimage; Sicily WWII Husky as its own theme). (provenance: L3, Italy R1)
+- **MERGE** two themes IFF their tour products are really the same. (provenance: L3)
+- **DEMOTE / FOLD** a theme IFF it has no real expert-led depth (e.g. Amalfi/Capri → folds into Naples; Cinque Terre → leisure). (provenance: L3)
+- **FOLD-INTO-NEW (reframe-and-absorb)**: when a candidate fails `ADMISSION_BAR` standalone but is real material that belongs in a *newly-framed* parent theme that doesn't yet exist (e.g. Rationalist/Fascist architecture → folded into a new "Milan & 20th-c architecture & design" theme, keeping Como/Terragni as its spine). Distinct from folding into an existing theme. (provenance: L9, Italy)
+- **CROSS-CUT**: keep cross-regional themes IFF operators sell them as one trip within `MAX_TRIP_DAYS` (Etruscan, Magna Graecia, Caravaggio trail, opera). (provenance: Italy)
 
 ### PROMOTE a sub-tag to a theme — IFF it passes BOTH promotion tests (not bare non-overlap)
 This promotion test is owned here; other docs cross-ref it rather than restating it.
@@ -66,13 +66,14 @@ This promotion test is owned here; other docs cross-ref it rather than restating
 - Full trail in `italy/italy_theme_map_v0..FINAL.md` and `italy/corpus/`.
 
 ## ANTI-PATTERNS (checks — fail the round if true)
-- An agent relays findings through the orchestrator instead of writing them verbatim to its own `corpus/round<N>_<cluster>.md` (relay loss; violates the memory invariant).
+This block is a VIEW of `10-lessons-log.md` (open — append the check when a new lesson lands; tag `Lnn`; `REGISTRY-PROTOCOL.md`).
+- An agent relays findings through the orchestrator instead of writing them verbatim to its own `corpus/round<N>_<cluster>.md` (relay loss; violates the memory invariant). (L5)
 - An operator/tour reported without a live URL, or with an unconfirmed named guide / `CURRENT_SEASON` dated departure not marked **UNVERIFIED**.
 - Inventing an operator, tour, or departure.
-- Stopping at a handful of searches per axis instead of running multiple.
-- Lens-critic judging completeness by vibes instead of enumerating the full `lens-registry.md` inventory and diffing against the theme map.
-- Counting products for a candidate lens without first writing the pre-sweep overlap declaration (re-discovers a covered theme under a new label).
-- PROMOTING a sub-tag to a theme on bare non-overlap, without BOTH promotion tests (standalone multi-day spine AND distinct buyer + supplier).
-- Skipping the `role:axis-proof` sweeps (these break false convergence).
-- Discovering a new lens/archetype/channel/axis and not appending it to the per-country ledger and promoting to the owning global registry per `REGISTRY-PROTOCOL.md` (no compounding).
-- A round that only confirms the seed and adds nothing (the seed is wrong at the edges by design — extend it).
+- Stopping at a handful of searches per axis instead of running multiple. (L2)
+- Lens-critic judging completeness by vibes instead of enumerating the full `lens-registry.md` inventory and diffing against the theme map. (L9, L15)
+- Counting products for a candidate lens without first writing the pre-sweep overlap declaration (re-discovers a covered theme under a new label). (L9)
+- PROMOTING a sub-tag to a theme on bare non-overlap, without BOTH promotion tests (standalone multi-day spine AND distinct buyer + supplier). (L9)
+- Skipping the `role:axis-proof` sweeps (these break false convergence). (L7)
+- Discovering a new lens/archetype/channel/axis and not appending it to the per-country ledger and promoting to the owning global registry per `REGISTRY-PROTOCOL.md` (no compounding). (L14, L15)
+- A round that only confirms the seed and adds nothing (the seed is wrong at the edges by design — extend it). (L1, L10)

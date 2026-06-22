@@ -17,7 +17,7 @@ MEMORY INVARIANT: nothing this step depends on lives in session memory. Themes, 
 COMPOUNDING / SELF-LEARNING: read `compositions/<country>-*.md` (per-country ledger) before composing; run the procedure; APPEND the new itinerary as a new ledger file. If composing surfaces a reusable region-anchor pattern, a recurring glue pattern, or a new lens not yet in `lens-registry.md`, PROMOTE it per the shared mechanics in `REGISTRY-PROTOCOL.md`: a new lens → APPEND to `lens-registry.md`; a reusable composition pattern → note in the per-country ledger so future trips inherit it. Knowledge accrues across sessions via the ledger + global registry.
 
 ## CORE TRADE-OFF (state it in every composition)
-A single expert guide cannot lead a multi-lens trip without degrading to a generalist. Whole-trip multi-lens therefore **forfeits unified expert depth**. There are exactly two ways to keep depth:
+A single expert guide cannot lead a multi-lens trip without degrading to a generalist. Whole-trip multi-lens therefore **forfeits unified expert depth**. There are exactly two ways to keep depth (STATIC-OK — append if a new case emerges; `REGISTRY-PROTOCOL.md`):
 1. **Per-segment specialists** — the traveller (or a local fixer) takes each theme's ranked expert for its leg; a generalist/driver bridges the gaps. Depth preserved *per segment*, not across the trip. Cheapest path to multi-lens-with-depth; most self-assembly effort.
 2. **Bespoke designer (`luxury-bespoke` channel, `channel-registry.md`)** — luxury-bespoke operators sequence multiple theme-experts into one private itinerary. Multi-lens *with* expertise, logistics handled; you pay a premium for the orchestration, not for the expertise itself — flag that premium explicitly (same value rule as `overview`).
 
@@ -37,7 +37,7 @@ A single expert guide cannot lead a multi-lens trip without degrading to a gener
 - LENS BOUNDS: between `MIN_LENSES_PER_TRIP` and `MAX_LENSES_PER_TRIP` per trip (`travel-config.md`). Exceeding `MAX_LENSES_PER_TRIP` → breadth-over-depth → cap it.
 - DURATION: the whole composed trip must fit `MAX_TRIP_DAYS` (`travel-config.md`).
 - SEGMENT SOURCE: every depth segment maps to exactly one ranked theme's #1 (or best-fit) tour from `rankings/<theme-id>.md`. Glue days map to no theme.
-- DELIVERY MODE: depth-with-multi-lens is available ONLY via (1) per-segment specialists or (2) bespoke designer (`luxury-bespoke`, `channel-registry.md`). Whole-trip single-guide depth across multiple lenses is NOT available — state this.
+- DELIVERY MODE (STATIC-OK — append if a new case emerges; `REGISTRY-PROTOCOL.md`): depth-with-multi-lens is available ONLY via (1) per-segment specialists or (2) bespoke designer (`luxury-bespoke`, `channel-registry.md`). Whole-trip single-guide depth across multiple lenses is NOT available — state this.
 - BESPOKE PREMIUM: if delivery mode = bespoke designer → flag the orchestration premium explicitly (the premium buys sequencing, not the expertise).
 - MISSING EXPERT: if no ranked expert covers a segment's dates → flag the gap. Never silently substitute a generic guide.
 - NO UPSTREAM EDITS: composition never bundles lenses into a theme upstream and never re-ranks. Themes stay single-lens (`theme-seeding`, `doc-manifest.md`).
@@ -52,11 +52,12 @@ Output `compositions/italy-sicily-history-food.md`:
 - Trade-off stated: whole-trip single-guide depth is NOT available across both lenses.
 
 ## ANTI-PATTERNS (checks — fail the step if true)
-- Composing from memory instead of reading `rankings/<theme-id>.md`, the foundation registries, and the existing `compositions/<country>-*.md` ledger (violates the memory invariant).
-- Bundling lenses into one "theme" upstream to avoid composition (corrupts the ranking unit — keep themes single-lens).
-- Presenting a multi-lens trip as expert-led-throughout (it isn't; name the trade-off).
+(open — append the check when a new lesson lands; tag `Lnn`. This block is a VIEW of `10-lessons-log.md`; `REGISTRY-PROTOCOL.md`.)
+- Composing from memory instead of reading `rankings/<theme-id>.md`, the foundation registries, and the existing `compositions/<country>-*.md` ledger (violates the memory invariant). (L15)
+- Bundling lenses into one "theme" upstream to avoid composition (corrupts the ranking unit — keep themes single-lens). (L11)
+- Presenting a multi-lens trip as expert-led-throughout (it isn't; name the trade-off). (L11)
 - Stitching geographically scattered themes into one trip under `MAX_TRIP_DAYS` (transfer-heavy, shallow).
 - Substituting a generic guide for a missing segment expert without flagging it.
-- Treating a multi-era or multi-region single-subject trip as multi-lens (it is one theme — no composition needed).
+- Treating a multi-era or multi-region single-subject trip as multi-lens (it is one theme — no composition needed). (L11)
 - Bespoke-designer delivery without flagging the orchestration premium.
 - Discovering a new lens or reusable pattern during composition and not promoting it per `REGISTRY-PROTOCOL.md` (new lens → `lens-registry.md`; pattern → ledger) (no compounding).

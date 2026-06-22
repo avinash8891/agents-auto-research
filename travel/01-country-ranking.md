@@ -29,7 +29,10 @@ NEXT: `theme-seeding` seeds themes for each `in-scope` country.
 - N-BOUNDARY = the `CURRENT_SCOPE_N` cutoff itself churns year to year; list borderline countries so scope changes are visible.
 - RANK CITATION = always carry `data-year` ("rank 5, 2024 data") so outputs don't drift on refresh.
 - NO HAND-TYPING = populate from a live pull; never guess a rank or arrivals number.
-- METRIC CAVEATS = arrivals aren't perfectly comparable across countries: land-border-heavy counts (Mexico, Turkey), historical China HK/Macau inclusion, EU methodology differences. Note known quirks beside the affected rows; don't treat a number as gospel.
+- METRIC CAVEATS (open — append on discovery; `REGISTRY-PROTOCOL.md`) = arrivals aren't perfectly comparable across countries. Note known quirks beside the affected rows; don't treat a number as gospel. Append a caveat with provenance (country/run or `Lnn`) when a new one surfaces:
+  - land-border-heavy counts (Mexico, Turkey) (provenance: L12)
+  - historical China HK/Macau inclusion (provenance: L12)
+  - EU methodology differences (provenance: L12)
 
 ## EXAMPLE (2024 data, captured 2026-06 — illustration only)
 Top `CURRENT_SCOPE_N` (arrivals): 1 France 102.0M · 2 Spain 93.8M · 3 USA 72.4M · 4 Turkey 60.6M · 5 Italy 57.8M · 6 Mexico 45.0M · 7 UK ~39M / Germany 37.5M (contested) · 8 Germany / Japan 36.9M (contested) · 9 Greece 36.0M · 10 Thailand 35.5M.
@@ -37,12 +40,13 @@ Flag: the lower ranks swap between UK/Germany/Japan/Greece depending on arrivals
 Sources: see `sources-registry` (do not re-list inline).
 
 ## ANTI-PATTERNS (failure checks)
-- Quoting a single secondary source as authoritative.
+A VIEW of the lessons-log (`10-lessons-log.md`) (open — append the check when a new lesson lands; tag `Lnn`).
+- Quoting a single secondary source as authoritative. (L1)
 - Mixing metrics (arrivals vs receipts) across rows.
 - Resolving a contested rank silently.
-- Hardcoding N=`TARGET_SCALE` (it's a dial; current scope is `CURRENT_SCOPE_N`).
-- Removing a country on refresh because it slipped out of top-N (refresh is additive).
-- Counting territories/SARs inconsistently across runs.
+- Hardcoding N=`TARGET_SCALE` (it's a dial; current scope is `CURRENT_SCOPE_N`). (L12, L16)
+- Removing a country on refresh because it slipped out of top-N (refresh is additive). (L12)
+- Counting territories/SARs inconsistently across runs. (L12)
 - Hand-typing/guessing ranks instead of a live pull.
 
 ## REFRESH

@@ -33,9 +33,9 @@ COMPOUNDING: thin-notes carry a **re-test trigger** (read → run → APPEND to 
 - COUNT a product as `PARTIAL_PRODUCT_WEIGHT` IFF it has the right structure but an UNVERIFIED date OR an unnamed guide.
 - A score of one `FULL_PRODUCT_WEIGHT` + one `PARTIAL_PRODUCT_WEIGHT` (i.e. below `ADMISSION_BAR`) FAILS the bar → record a THIN-NOTE (not a theme) with a re-test trigger (re-evaluate if the operator later publishes a dated/named departure). Failing-the-bar items become **sub-tags** under an existing theme or are folded/demoted.
 - ANNUAL-CATALOGUE EXCEPTION: an operator that demonstrably runs the trip *every year* but has not yet published the specific `CURRENT_SEASON` date counts as a **full product for THEME admission** (the theme clearly exists), but the row stays **UNVERIFIED for RANKING** (the ranking step) until a dated departure is confirmed. Note the basis explicitly ("annual catalogue, date pending"). Resolves the apparent conflict between "dated `CURRENT_SEASON`" and admitting annual-catalogue houses.
-- QUALIFYING PRODUCT IFF it is a sold leisure tour. NOT a university course / master-class / lecture-residency / retreat / maker-workshop / day-activity / pilgrimage-without-study-content.
-- QUALIFYING OPERATOR IFF it is a tour operator, NOT an aggregator/marketplace reselling other operators' trips (count the underlying operator, not the platform). Collapse absorbed sub-brands into the parent operator per `operator-aliases.md` to avoid double-counting.
-- QUALIFYING EXPERT IFF a NAMED, credentialed scholar/specialist whose expertise fits the theme. NOT a title-only listing ("a Professor of X, name not published"), NOT a generic licensed city guide, NOT an artisan/trifolao — unless the theme is the craft itself.
+- QUALIFYING PRODUCT IFF it is a sold leisure tour. The exclusion list (university course / master-class / lecture-residency / retreat / maker-workshop / day-activity / pilgrimage-without-study-content) is owned by `tags-registry.md` `admission.disqualifiers` (non-qualifying product) — open enumeration, append a case there on discovery, do not restate inline.
+- QUALIFYING OPERATOR IFF it is a tour operator, NOT an aggregator/marketplace reselling other operators' trips (count the underlying operator, not the platform; `tags-registry.md` `admission.disqualifiers` non-qualifying operator). Collapse absorbed sub-brands into the parent operator per `operator-aliases.md` to avoid double-counting.
+- QUALIFYING EXPERT IFF a NAMED, credentialed scholar/specialist whose expertise fits the theme. The exclusion list (title-only listing "a Professor of X, name not published" / generic licensed city guide / artisan/trifolao — unless the theme is the craft itself) is owned by `tags-registry.md` `admission.disqualifiers` (non-qualifying expert) — open enumeration, append on discovery, do not restate inline.
 - PROMOTE sub-tag → theme IFF non-overlapping AND has a standalone multi-day spine AND has a distinct buyer + supplier base (test owned by the discovery-loop step; resolve via `doc-manifest.md`).
 - COUNTRY IS DONE IFF BOTH: (a) `THEME_CONVERGED` — a fresh adversarial completeness-critic admits 0 themes clearing `ADMISSION_BAR`; AND (b) `OPERATOR_CONVERGED` — every BASELINE axis (`axes-registry.md`, count derived) returns dry for that theme (no new credentialed operator).
 - If declaring convergence → every axis tagged `role:axis-proof` AND every axis tagged `role:convergence-gate` in `axes-registry.md` must show dry in the per-axis tracker. Missing any = NOT converged.
@@ -46,11 +46,13 @@ COMPOUNDING: thin-notes carry a **re-test trigger** (read → run → APPEND to 
 - **False-convergence trap fired:** the Italy run declared convergence at round 4 — wrong. Round 5 ran the axes tagged `role:axis-proof` (per the Italy promotion log in `axes-registry.md`, Language + Authority-index) and added 26 operators. Verdict: always run every `role:axis-proof` and `role:convergence-gate` axis to dry before declaring DONE.
 
 ## ANTI-PATTERNS (checks — fail the step if true)
-- Declaring convergence from a single axis (an English-only / operator-keyword sweep) — the false-convergence trap; axes tagged `role:axis-proof` not proven dry.
-- Counting an unnamed-guide or undated product as a full (`FULL_PRODUCT_WEIGHT`) product toward `ADMISSION_BAR`.
-- Padding a theme that fails the bar instead of recording a THIN-NOTE (+ re-test trigger).
-- Asserting "converged" without the auditable per-axis dry tracker in the corpus.
-- Counting an aggregator/platform instead of the underlying operator, or double-counting an absorbed sub-brand against its parent (apply `operator-aliases.md`).
-- Admitting on bare non-overlap without a standalone multi-day spine + distinct buyer/supplier base.
+This block is a VIEW of `10-lessons-log.md` (open — append the check when a new lesson lands; tag `Lnn`). Each check carries its lesson provenance where one exists; a lesson with no propagated check here is a gap.
+- Declaring convergence from a single axis (an English-only / operator-keyword sweep) — the false-convergence trap; axes tagged `role:axis-proof` not proven dry. (L7)
+- Writing a CONVERGED verdict to FINAL that was not reconciled against all later axis-proof rounds. (L10)
+- Counting an unnamed-guide or undated product as a full (`FULL_PRODUCT_WEIGHT`) product toward `ADMISSION_BAR`. (L6)
+- Padding a theme that fails the bar instead of recording a THIN-NOTE (+ re-test trigger). (L6)
+- Asserting "converged" without the auditable per-axis dry tracker in the corpus. (L7)
+- Counting an aggregator/platform instead of the underlying operator, or double-counting an absorbed sub-brand against its parent (apply `operator-aliases.md`). (L16)
+- Admitting on bare non-overlap without a standalone multi-day spine + distinct buyer/supplier base. (L9)
 - Running a separate giant final operator sweep instead of folding the baseline-axes check into ranking per theme.
-- Failing to APPEND a thin-note's re-test trigger to `<country>_ledger.md`, or not PROMOTING a new rule to the owning registry per `REGISTRY-PROTOCOL.md` (no compounding).
+- Failing to APPEND a thin-note's re-test trigger to `<country>_ledger.md`, or not PROMOTING a new rule to the owning registry per `REGISTRY-PROTOCOL.md` (no compounding). (L18)

@@ -115,6 +115,16 @@ Closed the remaining audit clusters (12–17):
 - **Italy specifics** removed from global prose (`11` operator names gone; rosters cite per-country files); historical figures kept only in lessons/promotion-logs.
 - **Language axis genericized**: definition is "native + relevant study-travel source languages"; per-country language set is data in `<country>/axes.md` (Italy = IT/DE/FR). DE/FR/IT in `coverage-matrix` is an example query bank only.
 
+## L18 — Anti-patterns weren't the only static class; OPEN ENUMERATIONS convention
+**Found by the static-census audit (workflow, 321 constructs read across all files):** 15 STATIC-SHOULD-EVOLVE constructs, only ~3 of them anti-patterns. The other 12 are growable domain vocabularies with no compounding wire — round types, reshape actions, off-cadence triggers, diff dimensions, metric caveats, overlap dimensions, admission exclusion lists, special-interest sub-types, delivery modes. Plus a real drift: `REGISTRY-PROTOCOL` inlined 6 registries while `doc-manifest` had more — already drifted.
+**Fix (tiered, not 12 new files):**
+- **OPEN ENUMERATION** convention added to `REGISTRY-PROTOCOL`: a discovered-knowledge list stays in-doc but is `(open — append on discovery)`, each entry carries `Lnn`/country provenance, grows via read→run→append; promote to a full registry only on cross-doc reuse; a closed set is STATIC-OK with an escape hatch.
+- **Anti-patterns = a view of the lessons-log**: each carries `Lnn` provenance; new lesson → append its check to the owning doc's ANTI-PATTERNS.
+- **Promoted** the 2 that earned it: special-interest sub-types → `channel-registry`; admission disqualifier lists → `tags-registry`.
+- **Fixed the drift**: `REGISTRY-PROTOCOL` derives its governed-registry list from `doc-manifest`, not inline.
+- **The census is now the recurring guard**: any STATIC-SHOULD-EVOLVE lacking an open-tag/registry/escape = regression.
+**Principle:** every enumeration the method leans on is either a registry, an open-in-doc append-list, or an explicitly-closed set with an escape hatch — never an unmarked static list.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 

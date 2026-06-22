@@ -80,13 +80,14 @@ Run: pre-populate channel/lens/region cells from training knowledge; then sweep.
 Output: populated Italy matrix; `italy/axes.md` records the active set + any pending candidates with the tours each uniquely caught; an axis that passes the promotion bar is copied up to `axes-registry.md` for the next country.
 
 ## ANTI-PATTERNS (checks — fail the step if true)
+(open — a VIEW of `10-lessons-log.md`; append the check when a new lesson lands, tag `Lnn`; `REGISTRY-PROTOCOL.md`.)
 - Keyword spray not derived from a matrix cell.
-- English-only searching.
-- Anchoring on recalled operator names without an axis behind them.
-- Ranking on memory — admitting any operator/guide/date/price not confirmed by a live source.
-- Declaring convergence from a single axis.
-- Treating the axis count as final / not running the axis-completeness critic (`discovery-loop`) / skipping any axis tagged `role:axis-proof`.
-- Holding evolving axis knowledge in session memory instead of the committed registry/ledger.
-- Cross-referencing a channel by positional letter instead of its `channel-registry.md` stable id.
-- Discovering a useful new axis and not APPENDING it to `<country>/axes.md` (no per-country accrual) or not PROMOTING a proven one to `axes-registry.md` (no cross-country compounding).
+- English-only searching. (L7)
+- Anchoring on recalled operator names without an axis behind them. (L1)
+- Ranking on memory — admitting any operator/guide/date/price not confirmed by a live source. (L1)
+- Declaring convergence from a single axis. (L7)
+- Treating the axis count as final / not running the axis-completeness critic (`discovery-loop`) / skipping any axis tagged `role:axis-proof`. (L7)
+- Holding evolving axis knowledge in session memory instead of the committed registry/ledger. (L16)
+- Cross-referencing a channel by positional letter instead of its `channel-registry.md` stable id. (L16)
+- Discovering a useful new axis and not APPENDING it to `<country>/axes.md` (no per-country accrual) or not PROMOTING a proven one to `axes-registry.md` (no cross-country compounding). (L16)
 - A skipped region or empty cell that is not recorded as an explicit gap.
