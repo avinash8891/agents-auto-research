@@ -42,6 +42,11 @@ Rubrics are append-only decision aids, not free-form judgment. When a run expose
 4. Cite the run/artifact that forced the change in the rubric row or its local evolution log.
 5. Never loosen a gate to make one candidate rank or one theme admit.
 
+### Rubric Evolution Log
+| date | run/artifact | ambiguity | change |
+|---|---|---|---|
+| 2026-06-22 | IT-01 / JP-01 / IT-THIN method pass | Rubrics existed but some executable docs still used free-form ranking/admission/format language. | Added admission, reshape, ranking, and format-lane rubric gates; future changes must append here or cite the changed row. |
+
 ### Anti-patterns are a view of the lessons-log
 ANTI-PATTERNS blocks are the failure-check projection of `10-lessons-log.md` (the append-only failure store). Each anti-pattern carries its `Lnn` provenance where one exists. Protocol: **a new lesson → append its check to the owning doc's ANTI-PATTERNS, tagged `Lnn`**; a lesson with no propagated check is a gap. The lessons-log is the source; the per-doc blocks are the view.
 
