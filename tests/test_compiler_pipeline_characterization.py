@@ -70,6 +70,24 @@ def test_legacy_compiler_entrypoints_are_not_exported() -> None:
     assert "derive_thesis_artifacts" not in compiler_pipeline.__all__
 
 
+def test_dead_operationalize_thesis_entrypoint_is_not_exported() -> None:
+    # operationalize_thesis (and its private helpers) were dead with zero live
+    # or test callers; the facade must no longer re-export it.
+    assert "operationalize_thesis" not in compiler_pipeline.__all__
+    assert not hasattr(compiler_pipeline, "operationalize_thesis")
+
+
+def test_live_compiler_pipeline_exports_are_preserved() -> None:
+    assert compiler_pipeline.__all__ == [
+        "compile_research_thesis",
+        "thesis_needs_operationalization",
+        "build_missing_primitives",
+    ]
+    assert hasattr(compiler_pipeline, "thesis_needs_operationalization")
+    assert hasattr(compiler_pipeline, "compile_research_thesis")
+    assert hasattr(compiler_pipeline, "build_missing_primitives")
+
+
 def test_compile_research_thesis_writes_round_selected_artifacts(tmp_path: Path) -> None:
     _write_ema_baseline(tmp_path)
     round_root = tmp_path / "runtime" / "jobs" / "job-1" / "research" / "round-1"
