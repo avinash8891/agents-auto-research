@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from dataclasses import asdict, dataclass, field
@@ -154,6 +155,68 @@ def _strategy_family_from_path(path: Path | None) -> str:
     if stem.endswith(suffix):
         return stem[: -len(suffix)]
     return ""
+
+
+def _sha256_file(path_value: Any) -> str:
+    if not isinstance(path_value, str) or not path_value:
+        return ""
+    path = Path(path_value)
+    if not path.exists() or not path.is_file():
+        return ""
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return ""
+
+
+def _coerce_int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def find_duplicate_in_records(
+    records: list[BacktestRunRecord],
+    *,
+    family: str,
+    runtime_config: dict[str, Any],
+    details: dict[str, Any],
+    job: Any,
+) -> BacktestRunRecord | None:
+    """Scan prior records for a backtest whose artifacts are byte-identical.
+
+    A match means the candidate reran without producing distinct output: same
+    family/job/trade_count/strategy_diagnostics and byte-identical trades and
+    diagnostics files. Returns the most recent matching record, or None.
+    """
+    trades_hash = _sha256_file(details.get("trades_file"))
+    diagnostics_hash = _sha256_file(details.get("diagnostics_file"))
+    if not trades_hash or not diagnostics_hash:
+        return None
+    current_job = _coerce_int_or_none(job)
+    current_trade_count = _coerce_int_or_none(details.get("trade_count", 0) or 0)
+    if current_trade_count is None:
+        return None
+    for previous in reversed(records):
+        if previous.family and previous.family != family:
+            continue
+        if current_job is not None and previous.job != current_job:
+            continue
+        if previous.trade_count != current_trade_count:
+            continue
+        if previous.strategy_diagnostics != details.get("strategy_diagnostics", {}):
+            continue
+        if _sha256_file(previous.trades_file) != trades_hash:
+            continue
+        if _sha256_file(previous.diagnostics_file) != diagnostics_hash:
+            continue
+        return previous
+    return None
 
 
 @dataclass
@@ -1168,6 +1231,23 @@ class BacktestRunDB:
 
     def all(self) -> list[BacktestRunRecord]:
         return list(self._load())
+
+    def find_duplicate(
+        self,
+        *,
+        family: str,
+        runtime_config: dict[str, Any],
+        details: dict[str, Any],
+        job: Any,
+    ) -> BacktestRunRecord | None:
+        """Return a prior record with byte-identical artifacts, or None."""
+        return find_duplicate_in_records(
+            self.all(),
+            family=family,
+            runtime_config=runtime_config,
+            details=details,
+            job=job,
+        )
 
     def latest(self, n: int = 1) -> list[BacktestRunRecord]:
         records = self._load()

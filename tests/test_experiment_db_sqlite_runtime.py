@@ -744,3 +744,122 @@ def test_legacy_mechanism_dimension_not_null_constraint_does_not_block_inserts(
     rows = list(db.list_research_thesis_attempts())
     assert len(rows) == 1
     assert rows[0]["thesis_id"] == "ema-001"
+
+
+def _persisted_record_with_artifacts(
+    db: BacktestRunDB,
+    *,
+    run_id: str,
+    family: str,
+    job: int,
+    trade_count: int,
+    strategy_diagnostics: dict,
+    trades_file: Path,
+    diagnostics_file: Path,
+) -> BacktestRunRecord:
+    record = BacktestRunRecord(
+        run_id=run_id,
+        thesis_id=run_id,
+        config_path=f"runtime/jobs/job-{job}/research/round-1/selected_config.json",
+        runtime_config={"ema_length": 5},
+        code_commit="abc1234",
+        data_hash="data",
+        train_metrics={},
+        validation_metrics={"profit_factor": 1.5},
+        trade_count=trade_count,
+        trades_file=str(trades_file),
+        strategy_events_file="",
+        diagnostics_file=str(diagnostics_file),
+        strategy_diagnostics=strategy_diagnostics,
+        accepted=True,
+        rejection_reason="",
+        verdict_status="accepted",
+        verdict_summary="ok",
+        parent_backtest_run_id="",
+        timestamp="2026-05-09T00:00:00+00:00",
+        family=family,
+        hypothesis="h",
+        mechanism="m",
+        job=job,
+    )
+    db.add(record)
+    return record
+
+
+def test_find_duplicate_returns_prior_record_with_byte_identical_artifacts(
+    tmp_path: Path,
+) -> None:
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    prior_trades = tmp_path / "prior_trades.csv"
+    prior_diagnostics = tmp_path / "prior_diagnostics.json"
+    prior_trades.write_text("entry_date,pnl_pct\n2026-01-01,1.0\n")
+    prior_diagnostics.write_text('{"accepted": 12}\n')
+    expected = _persisted_record_with_artifacts(
+        db,
+        run_id="job-9-round-1-backtest",
+        family="ema",
+        job=9,
+        trade_count=12,
+        strategy_diagnostics={"accepted": 12},
+        trades_file=prior_trades,
+        diagnostics_file=prior_diagnostics,
+    )
+
+    current_trades = tmp_path / "current_trades.csv"
+    current_diagnostics = tmp_path / "current_diagnostics.json"
+    current_trades.write_text(prior_trades.read_text())
+    current_diagnostics.write_text(prior_diagnostics.read_text())
+
+    duplicate = db.find_duplicate(
+        family="ema",
+        runtime_config={"ema_length": 7},
+        details={
+            "trade_count": 12,
+            "trades_file": str(current_trades),
+            "diagnostics_file": str(current_diagnostics),
+            "strategy_diagnostics": {"accepted": 12},
+        },
+        job=9,
+    )
+
+    assert duplicate is not None
+    assert duplicate.run_id == expected.run_id
+
+
+def test_find_duplicate_returns_none_when_artifacts_differ(tmp_path: Path) -> None:
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    prior_trades = tmp_path / "prior_trades.csv"
+    prior_diagnostics = tmp_path / "prior_diagnostics.json"
+    prior_trades.write_text("entry_date,pnl_pct\n2026-01-01,1.0\n")
+    prior_diagnostics.write_text('{"accepted": 12}\n')
+    _persisted_record_with_artifacts(
+        db,
+        run_id="job-9-round-1-backtest",
+        family="ema",
+        job=9,
+        trade_count=12,
+        strategy_diagnostics={"accepted": 12},
+        trades_file=prior_trades,
+        diagnostics_file=prior_diagnostics,
+    )
+
+    current_trades = tmp_path / "current_trades.csv"
+    current_diagnostics = tmp_path / "current_diagnostics.json"
+    current_trades.write_text("entry_date,pnl_pct\n2026-02-02,-1.0\n")
+    current_diagnostics.write_text('{"accepted": 9}\n')
+
+    duplicate = db.find_duplicate(
+        family="ema",
+        runtime_config={"ema_length": 7},
+        details={
+            "trade_count": 12,
+            "trades_file": str(current_trades),
+            "diagnostics_file": str(current_diagnostics),
+            "strategy_diagnostics": {"accepted": 12},
+        },
+        job=9,
+    )
+
+    assert duplicate is None

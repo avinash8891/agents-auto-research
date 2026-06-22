@@ -7,7 +7,6 @@ evaluate registered predictions when present, and persist to the structured Back
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import re
@@ -42,6 +41,7 @@ from backtest_run_db import (
     BaselineCheckpoint,
     build_config_hash,
     build_data_hash,
+    find_duplicate_in_records,
 )
 from causal_harvest import (
     RetestRequested,
@@ -742,29 +742,6 @@ def _build_db_record(
     return record
 
 
-def _sha256_file(path_value: Any) -> str:
-    if not isinstance(path_value, str) or not path_value:
-        return ""
-    path = Path(path_value)
-    if not path.exists() or not path.is_file():
-        return ""
-    try:
-        digest = hashlib.sha256()
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-        return digest.hexdigest()
-    except OSError:
-        return ""
-
-
-def _coerce_int_or_none(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _coerce_research_round_number(state: dict[str, Any]) -> int:
     raw_round = state.get("research_round", -1)
     if raw_round in (None, ""):
@@ -785,29 +762,13 @@ def _find_duplicate_artifact_output(
     backtest_run_db = getattr(controller, "backtest_run_db", None)
     if backtest_run_db is None or not hasattr(backtest_run_db, "all"):
         return None
-    trades_hash = _sha256_file(details.get("trades_file"))
-    diagnostics_hash = _sha256_file(details.get("diagnostics_file"))
-    if not trades_hash or not diagnostics_hash:
-        return None
-    current_job = _coerce_int_or_none(state.get("job", 0) or 0)
-    current_trade_count = _coerce_int_or_none(details.get("trade_count", 0) or 0)
-    if current_trade_count is None:
-        return None
-    for previous in reversed(backtest_run_db.all()):
-        if previous.family and previous.family != controller.family.name:
-            continue
-        if current_job is not None and previous.job != current_job:
-            continue
-        if previous.trade_count != current_trade_count:
-            continue
-        if previous.strategy_diagnostics != details.get("strategy_diagnostics", {}):
-            continue
-        if _sha256_file(previous.trades_file) != trades_hash:
-            continue
-        if _sha256_file(previous.diagnostics_file) != diagnostics_hash:
-            continue
-        return previous
-    return None
+    return find_duplicate_in_records(
+        backtest_run_db.all(),
+        family=controller.family.name,
+        runtime_config=runtime_config,
+        details=details,
+        job=state.get("job", 0) or 0,
+    )
 
 
 def _zero_rejection_diagnostic_hints(strategy_diagnostics: dict[str, Any]) -> list[str]:
