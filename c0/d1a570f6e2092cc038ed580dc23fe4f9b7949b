@@ -1,0 +1,19 @@
+tests/test_compiler_pipeline_characterization.py
+  s_c781025ed43a12::t_2d6d716a3a15ca 73-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "c0d1a570f6e2092cc038ed580dc23fe4f9b7949b",
+  "prompts": {},
+  "sessions": {
+    "s_c781025ed43a12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f108c0ba-5958-40c1-a798-bd54f4f4fabc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
