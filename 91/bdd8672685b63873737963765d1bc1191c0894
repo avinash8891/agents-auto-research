@@ -1,0 +1,25 @@
+travel/doc-manifest.md
+  s_fc23909bc640a9::t_4af77c0e729804 34
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_41500f42dafbb5 177-180
+travel/REGISTRY-PROTOCOL.md
+  s_fc23909bc640a9::t_aae85eb4920da9 40-43
+travel/AUDIT-CHECKLIST.md
+  s_fc23909bc640a9::t_5f84ff497a956b 1-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "91bdd8672685b63873737963765d1bc1191c0894",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
