@@ -1,0 +1,58 @@
+travel/06-corpus-and-persistence.md
+  s_fc23909bc640a9::t_b12614fa82a4c0 107-108,110-115
+travel/00-overview-and-principles.md
+  s_fc23909bc640a9::t_170a9665a0796d 61-64,67-68
+travel/05-convergence-and-admission-bar.md
+  s_fc23909bc640a9::t_68359e85eeb2dd 49-56,58
+  s_fc23909bc640a9::t_9bf37b7a59c51a 36-38
+travel/tags-registry.md
+  s_fc23909bc640a9::t_a61731493acc69 33-38,40
+travel/01-country-ranking.md
+  s_fc23909bc640a9::t_bfc1f9e6de881a 43-44,47-49
+  s_fc23909bc640a9::t_b025333f88cc5d 32-35
+travel/09-agent-orchestration.md
+  s_fc23909bc640a9::t_d45097ef5084ec 75,77,79,81-82,84-85
+  s_fc23909bc640a9::t_a2ffd202df178d 41
+travel/03-coverage-matrix.md
+  s_fc23909bc640a9::t_86a703380f35ba 83,85-92
+travel/11-trip-composition.md
+  s_fc23909bc640a9::t_8181374cc692ab 40
+  s_fc23909bc640a9::t_18485be35b1218 55-58,61
+  s_fc23909bc640a9::t_93b0a87d032a83 20
+travel/02-theme-seeding.md
+  s_fc23909bc640a9::t_f5c206cefe4be8 50-61
+travel/04-discovery-loop.md
+  s_fc23909bc640a9::t_6a2f02c615944d 42
+  s_fc23909bc640a9::t_55ee094da20cf0 35-38
+  s_fc23909bc640a9::t_e691b481ef2386 45-50
+  s_fc23909bc640a9::t_5f33d27d31ac70 69-70,73-79
+travel/08-freshness-and-updates.md
+  s_fc23909bc640a9::t_55c571d471697a 17
+  s_fc23909bc640a9::t_1626b61ee7441e 56-60
+  s_fc23909bc640a9::t_a8c77f671da878 68-75
+travel/channel-registry.md
+  s_fc23909bc640a9::t_565dd0e0504190 19-22
+travel/07-verification-and-ranking.md
+  s_fc23909bc640a9::t_102caa8d8430b2 72-74,76-81
+travel/REGISTRY-PROTOCOL.md
+  s_fc23909bc640a9::t_49d7c64398d61d 26-40
+  s_fc23909bc640a9::t_7f823490d98c50 3
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_48994b7254deda 118-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "675b24ebcc84665f8625f4c95b0734390a9ffc2c",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
