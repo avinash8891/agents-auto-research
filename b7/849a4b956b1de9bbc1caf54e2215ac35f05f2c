@@ -1,0 +1,34 @@
+travel/04-discovery-loop.md
+  s_fc23909bc640a9::t_e9d4baa515eb15 65
+  s_fc23909bc640a9::t_1c0c5db683dc05 3-64,66-77
+travel/09-agent-orchestration.md
+  s_fc23909bc640a9::t_5fcff9c7be9372 3,5-13,17-27,29-34,46-70,72-81
+travel/06-corpus-and-persistence.md
+  s_fc23909bc640a9::t_abb9d24c63b108 3-24,28,30-42,44,46,48,50,52-63,65-100,105,107-108
+travel/07-verification-and-ranking.md
+  s_fc23909bc640a9::t_de4167492d3101 3,5-9,11-12,14,16,18,20-59,62,64,66-69,73-76,78
+travel/11-trip-composition.md
+  s_fc23909bc640a9::t_73732f836e7c9c 3,5-9,11,13,15,17-22,24-47,51-52,54-55,60-62
+travel/05-convergence-and-admission-bar.md
+  s_fc23909bc640a9::t_3d5df74b164af9 3-56
+travel/03-coverage-matrix.md
+  s_fc23909bc640a9::t_a90a606d47ff9b 1,3,5-12,14,16,18,20-51,54,57,59-60,65,74-83,85,92-99,101,103,107,109,111-112
+travel/08-freshness-and-updates.md
+  s_fc23909bc640a9::t_62f5b34a69dd86 3,5-13,15-51,53,56-59,61,66-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "b7849a4b956b1de9bbc1caf54e2215ac35f05f2c",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
