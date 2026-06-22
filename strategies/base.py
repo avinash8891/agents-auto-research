@@ -54,7 +54,6 @@ class Strategy(Protocol):
     def map_config_changes_to_contract(
         self, config_changes: dict[str, Any]
     ) -> list[dict[str, Any]]: ...
-    def normalize_config_changes(self, config_changes: dict[str, Any]) -> dict[str, Any]: ...
     @property
     def family_dirnames(self) -> FamilyDirnames: ...
     @property
@@ -99,15 +98,6 @@ class BaseStrategy:
 
     def get_defaults(self) -> dict[str, Any]:
         return load_strategy_defaults(self.name, self.family_dirnames.base_config_filename)
-
-    def normalize_config_changes(self, config_changes: dict[str, Any]) -> dict[str, Any]:
-        """Validate + normalize a thesis's proposed config_changes before merge.
-
-        Default passthrough. Families that constrain their config surface
-        (e.g. ORB) override this to reject unsupported keys — a safety rail
-        wired at the runtime-config merge point in compiler_research.
-        """
-        return config_changes
 
     def render_contract_to_runtime_config(self, contract: list[dict[str, Any]]) -> dict[str, Any]:
         compilation = self.compile_contract(contract)  # type: ignore[attr-defined]

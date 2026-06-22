@@ -49,7 +49,7 @@ PROMPT_RULE_NAMES_TO_CODES: dict[str, str] = {
 }
 
 REQUIRED_WIRED_SAFETY_RAILS: dict[str, str] = {
-    "normalize_config_changes": "strategies/orb/schema.py",
+    "validate_orb_runtime_config": "strategies/orb/validate.py",
     "_enforce_tool_models": "research_tools_mcp.py",
 }
 

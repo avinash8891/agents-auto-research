@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 CANONICAL_REGIMES: tuple[str, ...] = (
     "chop",
     "high-vol",
@@ -91,24 +89,3 @@ def normalize_regime_name(name: str) -> str:
         return REGIME_ALIASES[name]
     except KeyError as exc:
         raise ValueError(f"Unsupported regime value: {name}") from exc
-
-
-def _normalize_regime_list(values: list[Any]) -> list[str]:
-    normalized: list[str] = []
-    for value in values:
-        canonical = normalize_regime_name(str(value))
-        if canonical not in normalized:
-            normalized.append(canonical)
-    return normalized
-
-
-def normalize_config_changes(config_changes: dict[str, Any]) -> dict[str, Any]:
-    unknown = sorted(set(config_changes) - set(SUPPORTED_CONFIG_KEYS))
-    if unknown:
-        raise ValueError(f"Unsupported config keys: {', '.join(unknown)}")
-
-    normalized = dict(config_changes)
-    for key in ("skip_regimes", "require_regimes"):
-        if key in normalized and normalized[key] is not None:
-            normalized[key] = _normalize_regime_list(list(normalized[key]))
-    return normalized

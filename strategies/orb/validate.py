@@ -2,11 +2,52 @@ from __future__ import annotations
 
 from typing import Any
 
+from strategies.orb.defaults import _get_orb_defaults
+from strategies.orb.schema import SUPPORTED_CONFIG_KEYS, normalize_regime_name
 from strategies.validate_utils import _is_int_value, _is_number_value
+
+# Runtime keys that are not strategy config but legitimately ride along on a
+# rendered ORB runtime config (mirrors the EMA validator's metadata set).
+_RUNTIME_METADATA_KEYS = frozenset(
+    {"allow_unbounded_research_backtest", "data_provenance", "family"}
+)
+
+
+def supported_orb_runtime_keys() -> frozenset[str]:
+    """Every key allowed in a rendered ORB runtime config.
+
+    Derived from the defaults + the curated thesis-settable surface + ride-along
+    metadata, so it cannot drift out of sync with the defaults the way a
+    hand-maintained list does.
+    """
+    return frozenset(set(_get_orb_defaults()) | set(SUPPORTED_CONFIG_KEYS) | _RUNTIME_METADATA_KEYS)
+
+
+def _validate_supported_keys(config: dict[str, Any]) -> list[str]:
+    unknown = sorted(set(config) - supported_orb_runtime_keys())
+    if not unknown:
+        return []
+    return [f"Unsupported ORB runtime config keys: {', '.join(unknown)}"]
+
+
+def _validate_regime_values(config: dict[str, Any]) -> list[str]:
+    violations: list[str] = []
+    for key in ("skip_regimes", "require_regimes"):
+        values = config.get(key)
+        if not values:
+            continue
+        for value in values:
+            try:
+                normalize_regime_name(str(value))
+            except ValueError as exc:
+                violations.append(str(exc))
+    return violations
 
 
 def validate_orb_runtime_config(config: dict[str, Any]) -> list[str]:
     violations: list[str] = []
+    violations.extend(_validate_supported_keys(config))
+    violations.extend(_validate_regime_values(config))
     or_min = config.get("or_minutes", 30)
     if not _is_int_value(or_min):
         violations.append(f"or_minutes={or_min!r}: must be an integer")

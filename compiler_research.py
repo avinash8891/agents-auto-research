@@ -152,10 +152,7 @@ def _runtime_config_for_registered_strategy(
     strategy = STRATEGIES.get(family_name)
     if strategy is None:
         return None
-    # Safety rail: reject/normalize unsupported config keys the thesis proposed
-    # before they merge into the runtime config and silently no-op.
-    normalized_changes = strategy.normalize_config_changes(config_changes)
-    return {**base_config, **normalized_changes}
+    return {**base_config, **config_changes}
 
 
 def _format_noop_config_change_error(thesis: "ResearchThesis", base_config: dict) -> str:
