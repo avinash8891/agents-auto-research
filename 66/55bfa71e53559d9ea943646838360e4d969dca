@@ -1,0 +1,25 @@
+travel/06-corpus-and-persistence.md
+  s_fc23909bc640a9::t_a879b72e4e605c 60-70
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_d809297bbe6b42 143-149
+travel/08-freshness-and-updates.md
+  s_fc23909bc640a9::t_6d0818d5a56830 22
+travel/operator-aliases.md
+  s_fc23909bc640a9::t_5301c5ebc34e8d 5-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "6655bfa71e53559d9ea943646838360e4d969dca",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
