@@ -15,6 +15,7 @@ For each country: split it into distinct, non-overlapping **themes** (a theme = 
 5. **Training knowledge builds the frames; the web populates and verifies.** Use latent knowledge to enumerate channels/lenses/regions/languages/authorities and pre-fill candidates; use live search to confirm and to catch what you didn't know.
 6. **Convergence is earned, not asserted.** Stop only when a fresh adversarial critic adds nothing clearing the bar, across every axis.
 7. **Value, not luxury.** Price is not a barrier, but cost must be justified by depth/expertise delivered. Flag premium-for-thin-substance.
+8. **Single-lens themes are the ranking unit; multi-lens is a composition layer.** Group tours go deep on one subject with one expert. A traveller's multi-lens trip is built by combining ranked themes (`11`), accepting that whole-trip expert depth is recovered only per-segment or via a bespoke designer.
 
 ## Steps
 - `00-overview-and-principles.md` — goal, scope, output contract
@@ -28,6 +29,7 @@ For each country: split it into distinct, non-overlapping **themes** (a theme = 
 - `08-freshness-and-updates.md` — keep it current (verify + discovery cadences, cron)
 - `09-agent-orchestration.md` — how to dispatch parallel agents efficiently
 - `10-lessons-log.md` — the maturation history + every future improvement
+- `11-trip-composition.md` — consumption layer: stitch single-lens themes into a multi-lens itinerary (downstream of ranking)
 
 ## Document conventions
 Every step doc (00–10) carries: an **Anti-patterns** block (what not to do) and at least one **Italy worked example** (the real instance). When you add a step or a rule, keep both — the rule plus the worked instance is what makes it reproducible.

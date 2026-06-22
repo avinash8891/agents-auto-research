@@ -64,6 +64,11 @@ Append-only. Every time the method improves, record what was wrong, why, and the
 **Why:** No step forced the FINAL artifact to reconcile against all later rounds.
 **Fix:** Added the **closing-reconciliation rule** (`06`): FINAL must list every corpus round incl. axis-proofs and state convergence as two-level. FINAL header corrected to "theme-converged R4; operator-converged after R5."
 
+## L11 — Two consumption modes: single-lens ranking vs multi-lens composition
+**Insight (from reviewing `00`):** a traveller genuinely wants a multi-lens trip (Sicily = history + food + coast), but an expert-led *group tour* cannot be multi-lens without degrading to a generalist — that's breadth-over-depth. The two needs are different products, not a contradiction.
+**Resolution:** the **theme stays single-lens** (the ranking unit, where depth + expert live). Multi-lens is a separate **trip-composition layer** (`11`) that stitches several ranked themes, with depth recovered only per-segment or via a bespoke designer — trade-off stated. A multi-era/multi-region single-subject theme (Sicily layered civilisations) is NOT multi-lens.
+**Fix:** clarified the theme definition in `00` (one coherent subject; eras/regions OK, lenses split), added a "Two consumption modes" section, and created `11-trip-composition.md`. Earlier draft wording ("composite themes") risked inviting lens-bundling — corrected.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 
