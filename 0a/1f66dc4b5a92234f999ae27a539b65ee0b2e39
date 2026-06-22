@@ -1,0 +1,68 @@
+travel/04-discovery-loop.md
+  s_566ada83aacba6::t_ca1543b0559a90 26
+  s_566ada83aacba6::t_52dcb73b07a39b 27
+  s_566ada83aacba6::t_88d464dad04d2e 35-40
+  s_566ada83aacba6::t_18aad1d523ddd4 94-96
+  s_b10ea6e0b14a9b::t_a4a975e1893eb5 31,54-57,60-71,78
+travel/05-convergence-and-admission-bar.md
+  s_b10ea6e0b14a9b::t_08065f4372a79b 23,31,51-65
+travel/07-verification-and-ranking.md
+  s_b10ea6e0b14a9b::t_597b3629369f39 22,52-56
+travel/02-theme-seeding.md
+  s_566ada83aacba6::t_7e4998aae9ccdb 7
+  s_b10ea6e0b14a9b::t_63b4d1e58d3876 16-17,20,30
+travel/03-coverage-matrix.md
+  s_566ada83aacba6::t_321bd00adb6775 53-55
+  s_566ada83aacba6::t_362a6e99c7417c 33-35
+  s_566ada83aacba6::t_140d8301a12f32 60-61
+  s_566ada83aacba6::t_1af3766d84b6bd 27-29
+  s_566ada83aacba6::t_793822b1da108c 67-68
+  s_566ada83aacba6::t_ec32146013251e 101-104
+  s_b10ea6e0b14a9b::t_118f045fb4f11a 22,25,49,70
+travel/00-overview-and-principles.md
+  s_b10ea6e0b14a9b::t_c07614283296bd 5,28-29,42-43,45,49,67,75
+travel/REGISTRY-PROTOCOL.md
+  s_b10ea6e0b14a9b::t_b645ec3797562e 37-44
+  s_566ada83aacba6::t_d6422a620173f3 50
+travel/README.md
+  s_566ada83aacba6::t_0c8b316ed11d8c 76
+  s_566ada83aacba6::t_49e6553d0a98e6 67
+  s_566ada83aacba6::t_509b06c5486340 49
+  s_b10ea6e0b14a9b::t_7d320879b6223f 8,11-12,17
+  s_566ada83aacba6::t_a5ee9b327d99ab 16
+  s_566ada83aacba6::t_1ab0b5629ee25f 77-86
+travel/09-agent-orchestration.md
+  s_566ada83aacba6::t_3d999580c9dbd4 85
+  s_566ada83aacba6::t_eb2cdea700396a 104-107
+  s_566ada83aacba6::t_c75acbc3daaac9 75-76
+  s_b10ea6e0b14a9b::t_ac63cf12912646 35,66
+  s_566ada83aacba6::t_9d9c72ec810682 54
+  s_566ada83aacba6::t_c4b2731c71481f 73-74
+  s_b10ea6e0b14a9b::t_3082075257b861 89
+  s_566ada83aacba6::t_29165383d736d8 63-64
+  s_566ada83aacba6::t_af2854e588390b 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "0a1f66dc4b5a92234f999ae27a539b65ee0b2e39",
+  "prompts": {},
+  "sessions": {
+    "s_566ada83aacba6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d274a164-b19c-4883-8f17-840e432f966d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_b10ea6e0b14a9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef028-10f0-7e81-815f-83c5eff18633",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
