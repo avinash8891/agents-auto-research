@@ -1,0 +1,31 @@
+travel/05-convergence-and-admission-bar.md
+  s_fc23909bc640a9::t_26538565cf16c1 40-41
+travel/04-discovery-loop.md
+  s_fc23909bc640a9::t_d4bf8531f22e36 30
+travel/travel-config.md
+  s_fc23909bc640a9::t_dcd777ae3ccc91 33-34
+travel/REGISTRY-PROTOCOL.md
+  s_fc23909bc640a9::t_610a9d7a58fe4f 42-51
+travel/06-corpus-and-persistence.md
+  s_fc23909bc640a9::t_3424557612d901 86
+travel/08-freshness-and-updates.md
+  s_fc23909bc640a9::t_7f1615a711236f 64
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_b105296f444ba0 129-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "1845f662005e8e0f6bbb9025bff47a17529ff913",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
