@@ -1,0 +1,20 @@
+travel/02-theme-seeding.md
+  s_fc23909bc640a9::t_ede870de67297b 54
+  s_fc23909bc640a9::t_7d17f07fd12415 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "207a59f8e0a016ae100ee87f14b9794a215139b7",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
