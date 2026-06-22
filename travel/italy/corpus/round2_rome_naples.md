@@ -1,0 +1,56 @@
+# Italy — Discovery Corpus, Round 2 (targeted)
+
+Two sub-tag promotion decisions: (1) UNDERGROUND ROME, (2) NAPLES-CITY ART (not Pompeii).
+Method: exhaustive 8-channel sweep (A academic cultural ops · B US learned-society/university/museum · C Italy scholar-guide DMC · D named individual expert · E credentialed marketplace · F luxury bespoke · G lifelong-learning · H special-interest). Every row surfaced via live WebSearch/WebFetch with a real URL. UNVERIFIED = real operator/tour but named per-departure guide and/or 2026-27 dated departure not confirmed from a fetched page. Nothing invented. Round-1 anchors (Walks "Rome Underground", Walks Inside Rome, Context underground, Eyes of Rome, Vatican Museum Guide; Context "Caravaggio & the Baroque in Naples", Federico Poole PhD) are NOT re-reported; this builds beyond them.
+
+---
+
+## TARGET 1 — UNDERGROUND ROME (catacombs · Appian Way · San Clemente strata · aqueducts · Domus Aurea · Colosseum underground)
+
+| Operator | Channel | Tour | Expert (named) | Format (day/multi) | 2026-27? | URL |
+|---|---|---|---|---|---|---|
+| Context Travel | C | Underground Archaeology Tour: Rome (Vicus Caprarius + Aqua Virgo aqueduct under Rinascente Tritone + Stadium of Domitian exclusive École Française access) | archaeologists Priscilla, Simona, Philip, Alessandro, Giulia, Paolo, Francesca; art historians Dony, Sandro, Olivia, Cecilia (assigned post-booking) | Day (3 hrs) | Y "booking for summer and fall" 2026 (fetched) | contexttravel.com/cities/rome/tours/underground-rome-tour |
+| Context Travel | C | Appian Way Tour of Rome's Countryside and Catacombs | experienced archaeologist or historian (not named on listing) | Day (3 hrs) | Y live 2026 | contexttravel.com/cities/rome/tours/the-appian-way-tour |
+| Context Travel | C | San Clemente Underground Tour ("Fall and Rise of Rome") — 12c basilica / 4c church / 1c Roman house + Mithraeum strata | PhD/MA scholar (assigned post-booking) | Day | Y live 2026 | contexttravel.com/cities/rome/tours/san-clemente-underground-rome-history-tour |
+| Context Travel | G | Online Lecture: Rome's Catacombs (lifelong-learning adjunct, same scholar pool) | scholar lecturer (not named on listing) | Lecture | Y live | contexttravel.com/lectures/rome-catacombs |
+| Through Eternity | C | Underground Rome Private Tour with Catacombs ("the Invisible City by Car" — temples, houses, ancient streets, catacombs) | archaeologist guide (art-historical/cultural training; max 15; not named on listing) | Day (private, by car) | Y 2026 | througheternity.com/rome/underground-rome-private-tour |
+| Through Eternity | C | Domus Aurea Tour: Nero's Golden Palace | expert archaeologist (mandatory guided entry; not named) | Day | Y 2026 | througheternity.com/en/rome-tours/domus-aurea-tour.html |
+| Darius Arya / AIRC (Ancient Rome Live) | D | Bespoke underground Rome (rappelled caverns, underground churches, wells, lost temples, ancient sewers) | Darius Arya PhD (excavated Rome & Ostia, Fulbright, AAR fellow, TV host) | Day/bespoke | Y ongoing | dariusaryadigs.com ; romanculture.org |
+| Darius Arya (ICAA event) | B/G | "7 Wonders of the Ancient Roman World" (Institute of Classical Architecture & Art) — learned-society lecture pairing | Darius Arya PhD | Lecture/event | dates UNVERIFIED | classicist.org/calendar/events/7-wonders-of-the-ancient-roman-world-with-darius-arya/ |
+| Domus Aurea (Parco Colosseo, official) | A | Domus Aurea guided tour + monthly in-depth thematic "previously unseen itineraries" (3rd Thursday/month) | expert archaeologist (mandatory; official site management) | Day | Y 2026 (€39 standard / €50 VR) | archeoroma.org/tickets/domus-aurea-guided-tour/ ; turismoroma.it/en/events/domus-aurea-highlights-2026 |
+| Avventure Bellissime (Tours-Italy) | C/E | Underground Rome: History of Subterranean Rome | professional guide (not named on listing) | Day | dates UNVERIFIED | tours-italy.com/discover-your-italy/guide-ancient-rome/underground-rome |
+| Essence of Rome | D/C | Rome Underground and Ancient Appian Way (catacombs + Appian) | "expert tour guide" branding; named guide UNVERIFIED | Day | dates UNVERIFIED | essenceofrome.com/tour/catacombs-and-ancient-appian-way/ |
+| Crazy4Rome | E | Ancient Dark Rome: Catacombs, Appian Way & Aqueducts Park | guide UNVERIFIED | Day | dates UNVERIFIED | crazy4rome.com/tour/catacombs-undergrounds-rome/ |
+| Discovery Guided Tours | E | Rome's Underground: Ancient Crypts and Catacombs (San Clemente / Capuchin Crypt / catacombs) | "professional archaeologist or local expert"; not named | Day | dates UNVERIFIED | discoveryguidedtours.com/blog/rome-underground/ |
+
+Notes:
+- No Martin Randall / Peter Sommer / Andante / Cultural Experience *standalone* multi-day "Underground Rome" study tour was found — searches for these returned their general Rome/Etruscan/Early-Christian tours (underground appears only as embedded site visits, e.g. Colosseum hypogeum, Appian catacombs inside "Early Christian & Medieval Rome"). So the credentialed *multi-day* anchor is absent in Channels A/B; the multi-stop credentialed depth is concentrated in Channel C/D (Context bundles ≥3 distinct underground products with PhD/archaeologist guides; Darius Arya bespoke; Through Eternity).
+- The "Domus Aurea / Colosseum underground" facet is structurally gated to *single-site* guided entry by the Parco Colosseo (no operator can sell it as a roaming multi-stop) — it recurs across operators but as a fixed-site add-on, not as the spine of a dedicated theme.
+
+**VERDICT 1: KEEP-AS-SUBTAG.** Deep, credentialed *day-product* supply (Context's 3+ distinct PhD/archaeologist underground tours, Darius Arya bespoke, Through Eternity, official Domus Aurea archaeologist entry) but NO standalone multi-day scholar-led "Underground Rome" itinerary exists in Channels A/B — the sites are sold either à la carte (day) or absorbed into IT-01 antiquity (Colosseum/Domus/Vicus Caprarius) and IT-02 Christian Rome (catacombs/San Clemente Mithraeum), so it lacks the independent multi-day spine that defines a theme.
+
+---
+
+## TARGET 2 — NAPLES-CITY ART (not Pompeii) — Caravaggio in Naples · Sansevero Chapel / Veiled Christ · underground Naples (Napoli Sotterranea, San Gennaro catacombs) · Naples Archaeological Museum (MANN) · Capodimonte
+
+| Operator | Channel | Tour | Expert (named) | Format (day/multi) | 2026-27? | URL |
+|---|---|---|---|---|---|---|
+| ACE Cultural Tours | A | **Art Treasures of Naples: Painters & Patrons of the Baroque** (standalone Naples-city art, NOT Pompeii) | Tour Director **Alex Koller PhD** (Hist. of Art, Magdalene College Cambridge; led tours since 1998) | Multi (~7d, 15-21 Mar 2027) | Y 15-21 Mar 2027 | aceculturaltours.co.uk/2027 ; aceculturaltours.co.uk/by-destination/europe/italy |
+| ACE Cultural Tours | A | **Ancient Treasures of Naples: Competition, Leisure & Vice** (Naples city + MANN-centric antiquity, distinct from baroque tour) | Tour Director **Eireann Marshall** (ancient historian) | Multi | Y Dec 2026 | aceculturaltours.co.uk/by-date ; aceculturaltours.co.uk/2026-tour-schedule-details |
+| Martin Randall | A | Caravaggio (Milan→Rome→Naples; Naples day = Martyrdom of St Ursula + Seven Acts of Mercy at Pio Monte) | art historian **Lucy Davis** | Multi (cross-regional, Naples is 1 day) | Y (live tour page) | martinrandall.com/en-us/tours/caravaggio |
+| Context Travel | C | Naples with Fiorella — private tour with an art historian | **Fiorella** (BA modern languages & art history, Orientale Univ. Naples; education dept Capodimonte & San Martino) | Day (private) | Y live | contexttravel.com/cities/naples/tours/naples-with-fiorella-art-historian |
+| Smithsonian Associates | G | Caravaggio lecture series ("The Rebel Who Changed Baroque Art"; "Masterpieces and Mayhem"; "The Caravaggio Case") | scholar lecturers (lifelong-learning, online) | Lecture | Y 2026 | smithsonianassociates.org/ticketing/programs/caravaggio-rebel-baroque-art |
+| Smithsonian Journeys | B | Highlights of Italy (Naples + Caravaggio galleries embedded, not Naples-dedicated) | scholar leader UNVERIFIED | Multi (bundled) | dates UNVERIFIED | smithsonianjourneys.org/tours/italy/itinerary/ |
+| ToursByLocals (Roberto M.) | E | Discover Naples, in search of Caravaggio | Roberto M. (local expert; credential detail UNVERIFIED) | Day (private) | Y 2026 | toursbylocals.com/tours/italy/napoli/tour-details/discover-naples-in-search-of-caravaggio-with-roberto-your-local-expert-guide-664d2381f7e596905bdb4a2d |
+| Musement (DMC product) | E | Capodimonte National Gallery tour with an art historian | art historian (not named) | Day | Y live | musement.com/us/naples/capodimonte-national-gallery-tour-with-an-art-historian-221825/ |
+| Viator (DMC product) | E | Capodimonte Museum Private Tour with Art Historian Guide | art historian (not named) | Day | Y 2026 | viator.com/tours/Naples/National-Gallery-Capodimonte-Museum-with-an-art-historian/d508-101020P10 |
+| Catacombe di Napoli (official, San Gennaro/San Gaudioso) | A/C | Official guided tour, San Gennaro catacombs (early-Christian frescoes, bishops' crypts; part of MANN Obvia network) | authorized expert guide (mandatory; not named) | Day (60 min) | Y 2026 | catacombedinapoli.it/en/planning-guided-tour-naples/ |
+| Napoli Sotterranea (official) | A/C | Naples Underground guided tour (Greco-Roman aqueduct/cisterns/WWII shelters under the city) | authorized guide (mandatory; not named) | Day (~1.5 hr) | Y 2026 | tickets-naples.com/naples-underground/napoli-sotterranea/ |
+| Sansevero Chapel / Veiled Christ (museum + DMC products) | E | Sansevero Chapel & Veiled Christ historian-led tour (Veiled Christ, Pudicizia, Disinganno, anatomical machines) | licensed art historian / historian guide (not named) | Day | Y 2026 | getyourguide.com/naples-l162/naples-old-town-and-veiled-christ-tour-t377729/ |
+
+Notes:
+- Alex Koller PhD also surfaces in Channel D as a named individual Naples art-history expert (Vienna/Salzburg/Cambridge PhD, Pio Monte + Capodimonte itineraries since 1998), independent of the ACE directorship — so the named-expert depth is real beyond the operator.
+- Crucial distinction from IT-07 (Pompeii archaeology): ACE sells TWO separate Naples-*city* multi-day tours (Koller baroque art 2027; Marshall ancient/MANN 2026) that never depend on Pompeii as the spine; the city's own dense supply (Caravaggio at Pio Monte/Capodimonte, Sansevero Veiled Christ, San Gennaro catacombs + Napoli Sotterranea underground, MANN) sustains standalone scholar product. Pompeii is a separable day-trip, not the organizing logic.
+- This is also distinct from cross-regional IT-23 (Caravaggio trail Milan→Rome→Naples→Sicily): Martin Randall's Caravaggio tour treats Naples as one stop, whereas ACE's "Art Treasures of Naples" is Naples-resident for the whole tour.
+
+**VERDICT 2: PROMOTE-TO-THEME.** Two standalone multi-day scholar-led Naples-*city* tours with named PhD/historian directors (ACE Alex Koller PhD, baroque, Mar 2027; ACE Eireann Marshall, ancient/MANN, Dec 2026) plus a dense day-product layer (Context's Fiorella, Capodimonte art-historian tours, official San Gennaro/Napoli Sotterranea underground, Sansevero/Veiled Christ) prove the city carries an art/city theme that does not depend on Pompeii as its spine — distinct from IT-07.
