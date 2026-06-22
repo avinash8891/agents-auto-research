@@ -31,6 +31,7 @@ Runs on `DISCOVERY_CADENCE` (travel-config.md).
 3. For any slice that clears the `ADMISSION_BAR` (admission-bar doc; `ADMISSION_BAR` / `MIN_CREDENTIALED_PRODUCTS`, travel-config.md): run a full discovery round for that slice and reshape the corpus.
 4. If the pass surfaces a new lens / archetype / operator-pattern not in the registries → PROMOTE it to the owning global registry per REGISTRY-PROTOCOL.md (lens → lens-registry.md, archetype → theme-archetypes.md, axis/pattern → axes-registry.md) so future countries inherit it. The per-registry promotion test (e.g. an axis must surface tours no existing axis finds; an archetype must recur across ≥2 countries) is owned by REGISTRY-PROTOCOL.md and the discovery-loop doc — apply it, don't restate it.
 5. Write a changelog entry to `<country>/ledger.md` describing what DISCOVERY reshaped. This loop catches genuinely new operators, themes, and market entrants.
+6. **Capture leads:** both loops read live pages — emit typed leads to `<country>/leads.md` with provenance for any tangential signal (a refetch revealing a guide change that links themes, a new sub-tour, a seasonality/access quirk; a re-discovery surfacing a channel/affinity/archetype/authority signal), per `REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING. Route each; new-coverage leads dirty the affected unit.
 
 ## PROCEDURE — Stamping (enables mechanical refresh)
 1. Ensure every row carries `last_checked: YYYY-MM-DD` and `status`.

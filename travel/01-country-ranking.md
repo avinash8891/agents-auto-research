@@ -19,7 +19,8 @@ NEXT: `theme-seeding` seeds themes for each `in-scope` country.
 5. Order by arrivals; take the top `CURRENT_SCOPE_N` for current scope; mark each row `in-scope` (within N) or not.
 6. Where a rank is contested (the band straddling the N-boundary), record BOTH values + set `contested?`.
 7. **Merge ADDITIVELY** into `country_ranking.md`: add newly-qualifying countries; NEVER remove a country already present (even if it dropped out of top-N). Coverage only grows.
-8. Stamp each row with `data-year` + `source` + `last_checked`. Write file. Stop.
+8. Stamp each row with `data-year` + `source` + `last_checked`. Write file.
+9. **Capture leads:** if a new authoritative ranking/arrivals source surfaces (not in `sources-registry`), emit it as a typed lead (authority/source) per `REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING → `sources-registry` candidate. Stop.
 
 ## DECISION RULES
 - METRIC = international tourist arrivals (overnight) only; never mix with receipts/same-day across rows.

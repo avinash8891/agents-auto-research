@@ -158,6 +158,11 @@ Closed the remaining audit clusters (12–17):
 ## L23 — Embeddings: one scale-hook only, not a judgment tool
 **Question:** use embeddings in the method? **Answer:** at pilot scale, no. Embeddings are cheap *retrieval/dedup*, NOT judgment — the method's overlap/expert-fit/value calls are LLM-judgment and embeddings would be a weaker proxy. One place earns it **at scale**: the cumulative already-known operator list (`orchestration`) is passed verbatim now; past ~100 countries / thousands of operators that's too big for a prompt → switch to an **embedding dedup index** (vector lookup "is this known?" + fuzzy alias suggestions). Recorded as a SCALE NOTE upgrade-path in `orchestration`, not built (YAGNI). Never use embeddings for judgment steps.
 
+## L24 — Every page-reading step must emit leads (not just 04/07)
+**Class check (which steps read live source pages but don't emit leads):** L22 wired emit at `04`/`07`, but `08` reads pages too (VERIFY re-fetch + DISCOVERY re-run) and wasn't emitting → refresh-time intelligence could be lost. Minor: `01` reads ranking sources and could surface a new authoritative source.
+**Fix:** `08` emits typed leads in both loops; `01` emits a source lead when a new authoritative ranking source surfaces. Already-covered (no change): `05` appends disqualifiers to `tags-registry` on discovery; `11` promotes new lens/composition-pattern; `02/03/06/09` don't read live external pages.
+**Rule going forward:** any step that reads live external source material is a leads emitter (`REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING).
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 
