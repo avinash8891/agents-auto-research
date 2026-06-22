@@ -73,14 +73,19 @@ Note on axis stages: seeding (`theme-seeding`) consumes only axes tagged `stage:
 **Pilot = `CURRENT_SCOPE_N` countries only.** Fine-tune the method and prove it 100% before scaling. `TARGET_SCALE` is an illustrative example, not a hard contract; the live count is `CURRENT_SCOPE_N`, raised only along `GROWTH_LADDER` once trusted. Refresh is **additive** — adding countries never removes existing ones (`country-ranking`).
 
 ## Status (as of `CURRENT_SEASON`, 2026-06)
-**Italy is THEME-MAPPED only.** The theme map converged (~35 themes; ~150+ operators discovered into the corpus), but operator-saturation + ranking are **INCOMPLETE** and **ZERO** ranked Top-`RANK_DEPTH` lists have been produced. The method is **proven for anglophone + Western-European Latin-script rich markets only — global pilot pending** (non-anglophone destination-side authority/language sweeps are specified but unexercised). Next action is theme `IT-01` (Rome antiquity, per `THEME_ID_GRAMMAR`) as the **first real output** — the first end-to-end saturate→verify→rank run. The full Italy roster lives in the per-country `italy/` artifacts; see the `lessons` doc (`doc-manifest.md`) for how the method evolved.
+The method has four real proof artifacts:
+- `italy/rankings/IT-01.md` — Rome/classical antiquity fixed-departure ranking.
+- `italy/rankings/IT-07.md` — Pompeii/Herculaneum ranking with a hybrid-format flag.
+- `japan/rankings/JP-01.md` — non-Western first-trip Japan ranking.
+- `italy/thin-notes/IT-THIN-molise-samnite.md` — thin/failed theme note, not padded into Top-`RANK_DEPTH`.
 
-## REMOVAL CANDIDATES (decide after first real run)
-**NOTE, not an action. Delete-nothing.** The following machinery has never been executed end-to-end. List it here so it can be **reconsidered only AFTER a real `IT-01` run proves it unused** — pruning waits for evidence from the first run, never before. All of it is **KEPT for now**:
-- **Dirty-propagation / INVALIDATION fixed-point** (`REGISTRY-PROTOCOL.md` INVALIDATION; principle 10) — the scoped re-sweep + `dirty`-flag fixed point has never fired on a real promotion.
-- **The typed leads bus + routing table** (`REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING; `<country>/leads.md`; principle 11) — no lead has been emitted or routed by a real run.
-- **Corpus schema-versioning** (`corpus`; `first_seen_round` backfill; principle 12) — no second schema version has existed, so the versioned-contract machinery is untested.
-- **`AUDIT-CHECKLIST.md` + the static-census guard + the doc-currency (L25) guard** — the audit/census/currency guards have never gated a real artifact.
-- **Surplus tag-filtering ceremony** — the `role:`/`stage:` tag-filter indirection over an axis set where today every baseline axis also carries `role:convergence-gate` (behaviour currently identical to naming axes directly).
+The method is now proven for a small set of audited rankings, not for global scale. Italy has real outputs beyond theme mapping; Japan has one non-Western proof run; destination-side authority, local-direct, native-idiom, and non-Western credential handling still need more countries before global trust.
 
-These are removal *candidates*, not removals. Keep every cross-reference working; revisit only with first-run evidence.
+## POST-RUN PRUNE EVIDENCE
+**Evidence, not automatic deletion.** Repeated runs show the core that earns its keep: broad discovery, hard finalist verification, `VERIFIED`/`CLAIMED`/`PARTIAL`/`FAIL` rubric labels, independent credential evidence, format lanes, ledgers, and thin notes.
+
+Scale-deferred or friction at current scale:
+- **Dirty-propagation / INVALIDATION fixed-point** (`REGISTRY-PROTOCOL.md` INVALIDATION; principle 10) — no run promoted a new global axis/lens/channel after prior units were finalized, so no dirty re-sweep fired. Keep as scale-deferred.
+- **Typed `leads.md` bus + routing table** (`REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING; principle 11) — repeated runs used `<country>/ledger.md` for retest debt and format/credential notes; no `leads.md` file was created. Demote or fold into ledger unless routed leads outgrow the ledger.
+- **`corpus_FINAL.md` consolidation / schema-versioning** (`corpus`; `freshness`; principle 12) — proof runs used round files and rankings, not a locked refreshable corpus. Keep as scale-deferred for country-level refresh.
+- **Audit/static-census/doc-currency guards** — useful for batch doc work, but not part of per-theme ranking execution.
