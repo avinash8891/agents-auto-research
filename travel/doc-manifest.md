@@ -53,5 +53,6 @@ All per-country files live under `<country>/`. NORMALIZATION: a `<country>_X` re
 | `<country>/rankings/<theme-id>.md` | ranked Top-`RANK_DEPTH` per theme | ranking |
 | `<country>/compositions/<label>.md` | multi-lens itineraries | composition |
 | `<country>/verify_<date>.md` | dated VERIFY-pass diff report | freshness |
+| `<country>/leads.md` | typed intelligence capture (tangential signals from verification/discovery) + routing to the step/registry each fine-tunes | discovery-loop, ranking (emit); seeding/freshness/registries (consume) — see `REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING |
 
 Rule: when a step doc cites another, use the slug; resolve via this table. Renaming a file = edit one row here.

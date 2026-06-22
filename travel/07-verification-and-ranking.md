@@ -31,6 +31,7 @@ COMPOUNDING: verification accrues. READ the corpus + per-country verification le
 7. **Tag format class** on each finalist — values in `tags-registry.md` (written per **corpus** doc).
 8. **Rank** the verified finalists on the criteria in priority order (see DECISION RULES → ranking).
 9. APPEND every confirmed specific back to the corpus row and the per-country verification ledger (**corpus** doc). PROMOTE any new operator or reusable verification source per `REGISTRY-PROTOCOL.md`.
+9a. **Capture leads (don't lose tangential intelligence).** Verification reads whole operator pages — emit every signal that doesn't fit the row schema as a **typed lead** in `<country>/leads.md` with provenance (URL + theme-id + run), per `REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING: theme/sub-lens hints, a guide who leads other themes, channel/affinity signals, authority leads, new archetype instances, disqualifier patterns, seasonality/access quirks. Route each per the table; a lead implying new coverage **dirties** the affected unit.
 10. **Write the output** to `rankings/<theme-id>.md` per Step D schema, including the FLAGS block. Stop.
 
 ## DECISION RULES

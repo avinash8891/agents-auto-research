@@ -4,7 +4,7 @@ AGENT SPEC. Produce a provisional theme map from training knowledge, before disc
 
 Seeding uses only the **axes tagged `stage:seed`** in `axes-registry.md` — region × lens × channel sanity-check. Axes tagged `stage:discovery`-only (e.g. the `axis-proof` pair) are **discovery-only** tools (`coverage-matrix`/`discovery-loop`), not used at seed time. Filter by tag; never name axes by hand, and never assert an axis count — derive it from the registry.
 
-INPUT: one country (from `country-ranking`'s in-scope list) + the global registries `lens-registry.md`, `theme-archetypes.md`, `axes-registry.md` (read them — do NOT seed from memory).
+INPUT: one country (from `country-ranking`'s in-scope list) + the global registries `lens-registry.md`, `theme-archetypes.md`, `axes-registry.md` (read them — do NOT seed from memory) + any `<country>/leads.md` rows routed to seeding (theme/sub-lens/archetype hints, per `REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING — a re-seed may be triggered by leads from a prior run's verification).
 OUTPUT: `<country>_theme_map_v0.md` — table of seed themes (ID, region(s), lens, capture line, strength, open-questions) + a **seed-completeness diff** section.
 NEXT: `coverage-matrix` + `discovery-loop` consume this file.
 

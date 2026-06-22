@@ -40,6 +40,24 @@ ANTI-PATTERNS blocks are the failure-check projection of `10-lessons-log.md` (th
 ### Self-check
 The static-census audit is the recurring guard: re-run it; any STATIC-SHOULD-EVOLVE construct lacking an open-tag, registry, or escape hatch is a regression.
 
+## INTELLIGENCE CAPTURE & ROUTING (leads — don't lose tangential intelligence)
+The information-richest steps (verification `07`, discovery `04`) read whole operator pages and surface far more than the row schema captures. That tangential intelligence must NOT be lost. Capture it as **typed leads** and route each to the step/registry it fine-tunes.
+- **Capture:** any signal that doesn't fit the row schema → a typed row in `<country>/leads.md`, with **provenance** (source URL + theme-id + run/round). Capture typed *signals*, not raw page dumps (preserve intelligence without hoarding).
+- **Lead types → destination (routing table):**
+  | lead type | routes to / fine-tunes |
+  |-----------|------------------------|
+  | theme-hint / sub-lens-hint | `theme-seeding` + `discovery-loop` (may **dirty** the region/theme) |
+  | new lens | `lens-registry` |
+  | archetype-instance | `theme-archetypes` (promote at ≥2 countries) |
+  | guide-leads-multiple-themes | cross-theme guide index (note in `<country>/leads.md`; promote if recurring) |
+  | channel / affinity signal | `channel-registry` (sub-type) / `axes-registry` (candidate axis, e.g. affinity) |
+  | authority lead ("partners with the Met") | `sources-registry` |
+  | disqualifier pattern | `tags-registry` `admission.disqualifiers` |
+  | seasonality / access quirk | `freshness` triggers + the row's notes |
+  | price–quality signal | value judgment context for `admission-bar` / `ranking` |
+- **Triage:** each consuming step READS the leads routed to it as an input; PROMOTE a lead to its registry when it clears that registry's bar (`REGISTRY-PROTOCOL`); a lead implying new coverage **dirties** the affected unit (INVALIDATION) rather than sitting idle.
+- **Provenance + append-only:** leads are append-only with provenance; a promoted lead cites its originating lead row.
+
 ## INVALIDATION (promotion → dirty-propagation)
 The pipeline is a **fixed-point computation**, not a one-pass: a downstream promotion can invalidate upstream coverage. Whenever an entry is PROMOTED (a new axis/lens/archetype/channel), it **marks every dependent unit dirty** — units that were finalized before the new entry existed and were therefore covered on a smaller set:
 - New **axis** promoted → every already-swept theme is `dirty` on that axis (it was never swept on it). Re-sweep **only that axis** for each theme (targeted, not a full re-discovery).

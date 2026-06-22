@@ -147,6 +147,14 @@ Closed the remaining audit clusters (12–17):
 **Also:** `operator-aliases` is a fact/data registry (no candidate-to-test) → intentionally no CANDIDATE WATCHLIST; noted so audits don't false-flag it.
 **Fix:** `06` SCHEMA EVOLUTION section + `08` VERIFY-pass backfill step + `operator-aliases` shape note.
 
+## L22 — Capture rich per-tour intelligence and route it to fine-tune every step
+**Insight:** verification (`07`) and discovery (`04`) read whole operator pages — the information-richest steps — but the row schema captured only fixed columns + promoted operators/sources. All tangential intelligence (a guide who leads other themes, a sub-theme hint, channel/affinity/authority signals, archetype instances, disqualifier patterns, seasonality) was **lost**.
+**Fix — two mechanisms (a feedback bus, reusing existing registries + dirty-propagation + promotion):**
+1. **Capture:** typed leads → `<country>/leads.md` with provenance (URL + theme-id + run); typed signals, not raw dumps.
+2. **Route to every step:** a routing table (`REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING) maps each lead type to the step/registry it fine-tunes — theme/lens hints → seeding/discovery (+dirty), archetype → theme-archetypes, channel/affinity → channel/axes registries, authority → sources, disqualifier → tags, seasonality → freshness. Consumers READ their routed leads as input; promote on bar; dirty on new coverage.
+**Emitters:** `04`, `07`. **Consumers:** `02` (+ others via the routing table). **Manifest:** `<country>/leads.md` added.
+**Principle:** the richest step must feed the whole system — no intelligence dies in a column that didn't exist.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 
