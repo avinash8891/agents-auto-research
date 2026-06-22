@@ -168,7 +168,9 @@ class TraceRuntimeState:
     current_hypothesis_id: str | None = None
     current_hypothesis_name: str | None = None
     event_counter: count = field(default_factory=lambda: count(1))
-    exporter: JsonLineTraceExporter | None = None
+    exporter: SpanExporter | None = None
+    provider: TracerProvider | None = field(default=None, compare=False)
+    initialized: bool = field(default=False, compare=False)
     log_handle: IO[str] | None = field(default=None, compare=False)
     round_context: Context | None = field(default=None, compare=False)
     current_hypothesis_context: Context | None = field(default=None, compare=False)
@@ -252,8 +254,6 @@ class TraceRuntimeState:
 
 
 _STATE = TraceRuntimeState(log_dir=_LOG_DIR, session_id=_SESSION_ID)
-_PROVIDER: TracerProvider | None = None
-_INITIALIZED = False
 _TRACELOOP_INSTRUMENTS = {
     Instruments.OPENAI_AGENTS,
     Instruments.REQUESTS,
@@ -523,15 +523,14 @@ def _build_provider() -> TracerProvider:
 
 
 def _initialize_tracing() -> None:
-    global _PROVIDER, _INITIALIZED
-    if _INITIALIZED:
+    if _STATE.initialized:
         return
     if os.getenv(ENV_TRACE_MODE) == TRACE_MODE_TRANSACTION:
-        _INITIALIZED = True
+        _STATE.initialized = True
         return
-    _PROVIDER = _build_provider()
+    _STATE.provider = _build_provider()
     if os.getenv("AUTORESEARCH_TRACING_DISABLED"):
-        _INITIALIZED = True
+        _STATE.initialized = True
         return
     try:
         Traceloop.init(
@@ -546,19 +545,43 @@ def _initialize_tracing() -> None:
         )
     except Exception as exc:
         _log.warning("Traceloop.init failed (suppressed): %s", exc)
-    _INITIALIZED = True
+    _STATE.initialized = True
 
 
 _initialize_tracing()
 
 
+def configure_exporter(exporter: SpanExporter) -> None:
+    """Swap the active span exporter and rebuild the provider around it.
+
+    This is the public seam for tests and alternate backends to inject a
+    ``SpanExporter`` without monkeypatching module internals. The new exporter
+    takes effect immediately for spans started through ``_tracer()``.
+    """
+    _STATE.exporter = exporter
+    _STATE.provider = _build_provider()
+
+
+def reset_tracing(*, exporter: SpanExporter | None = None) -> None:
+    """Reset the init-once lifecycle, optionally swapping the exporter first.
+
+    Clears the ``initialized`` flag and provider so the next
+    ``_initialize_tracing()`` re-runs from scratch with the same env-driven
+    semantics (transaction-mode skip, tracing-disabled, ``Traceloop.init``).
+    """
+    if exporter is not None:
+        _STATE.exporter = exporter
+    _STATE.initialized = False
+    _STATE.provider = None
+    _initialize_tracing()
+
+
 def _reset_provider_for_current_state() -> None:
-    global _PROVIDER
-    _PROVIDER = _build_provider()
+    _STATE.provider = _build_provider()
 
 
 def _tracer():
-    return otel_trace.get_tracer("agents-auto-research.trace_sdk", tracer_provider=_PROVIDER)
+    return otel_trace.get_tracer("agents-auto-research.trace_sdk", tracer_provider=_STATE.provider)
 
 
 def _parent_context_for_event(

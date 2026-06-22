@@ -39,14 +39,14 @@ def test_trace_sdk_transaction_mode_skips_provider_initialization(
         return object()
 
     monkeypatch.setattr(trace_sdk, "_build_provider", fake_build_provider)
-    trace_sdk._INITIALIZED = False
-    trace_sdk._PROVIDER = None
+    trace_sdk._STATE.initialized = False
+    trace_sdk._STATE.provider = None
 
     trace_sdk._initialize_tracing()
 
     assert built["count"] == 0
-    assert trace_sdk._PROVIDER is None
-    assert trace_sdk._INITIALIZED is True
+    assert trace_sdk._STATE.provider is None
+    assert trace_sdk._STATE.initialized is True
 
 
 def test_trace_sdk_uses_openai_agents_not_openai_sdk_instrumentation(
@@ -454,11 +454,11 @@ def test_begin_round_refreshes_provider_without_openai_instrumentation(
     monkeypatch, tmp_path: Path
 ) -> None:
     trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
-    original_provider = trace_sdk._PROVIDER
+    original_provider = trace_sdk._STATE.provider
     original_instruments = trace_sdk._TRACELOOP_INSTRUMENTS
     trace_sdk.begin_round(5)
 
-    assert trace_sdk._PROVIDER is not original_provider
+    assert trace_sdk._STATE.provider is not original_provider
     assert trace_sdk._TRACELOOP_INSTRUMENTS is original_instruments
 
 
@@ -557,6 +557,85 @@ def test_trace_sdk_fail_opens_when_log_file_write_fails(monkeypatch, tmp_path: P
     trace_id = trace_sdk.trace_agent_prompt("agent", "prompt")
 
     assert trace_id
+
+
+def test_configure_exporter_swaps_backend_without_touching_globals(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
+
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    class CapturingExporter(SpanExporter):
+        def __init__(self) -> None:
+            self.span_names: list[str] = []
+
+        def export(self, spans) -> SpanExportResult:
+            self.span_names.extend(str(span.name) for span in spans)
+            return SpanExportResult.SUCCESS
+
+        def shutdown(self) -> None:
+            return None
+
+    capturing = CapturingExporter()
+    trace_sdk.configure_exporter(capturing)
+
+    assert trace_sdk._STATE.exporter is capturing
+
+    trace_sdk.trace("BUILDER", "builder started")
+
+    # The injected SpanExporter — not the default JsonLineTraceExporter — receives
+    # the span emitted by the real trace() path through the rebuilt provider.
+    assert "trace.builder" in capturing.span_names
+
+
+def test_reset_tracing_reinitializes_lifecycle_with_injected_exporter(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
+
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    class CapturingExporter(SpanExporter):
+        def __init__(self) -> None:
+            self.span_names: list[str] = []
+
+        def export(self, spans) -> SpanExportResult:
+            self.span_names.extend(str(span.name) for span in spans)
+            return SpanExportResult.SUCCESS
+
+        def shutdown(self) -> None:
+            return None
+
+    capturing = CapturingExporter()
+    trace_sdk.reset_tracing(exporter=capturing)
+
+    assert trace_sdk._STATE.exporter is capturing
+    assert trace_sdk._STATE.initialized is True
+    assert trace_sdk._STATE.provider is not None
+
+    trace_sdk.trace_state_change("running", "blocked", "research_required")
+
+    assert "state.transition" in capturing.span_names
+
+
+def test_reset_tracing_preserves_transaction_mode_skip(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AUTORESEARCH_TRACE_MODE", "transaction")
+    trace_sdk = _load_trace_sdk(monkeypatch, tmp_path)
+
+    built = {"count": 0}
+
+    def fake_build_provider():
+        built["count"] += 1
+        return object()
+
+    monkeypatch.setattr(trace_sdk, "_build_provider", fake_build_provider)
+
+    trace_sdk.reset_tracing()
+
+    assert built["count"] == 0
+    assert trace_sdk._STATE.provider is None
+    assert trace_sdk._STATE.initialized is True
 
 
 def test_trace_ignores_closed_stdout(monkeypatch, tmp_path: Path) -> None:
