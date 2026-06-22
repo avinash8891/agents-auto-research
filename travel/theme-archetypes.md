@@ -1,6 +1,6 @@
 # Global Theme-Archetype Library
 
-Recurring theme patterns that appear across many countries. Seeding (`02`) checks each archetype against the country — so seeds start from proven patterns, not only free recall (anti-anchoring, anti-omission).
+Recurring theme patterns that appear across many countries. Seeding (`theme-seeding`) checks each archetype against the country — so seeds start from proven patterns, not only free recall (anti-anchoring, anti-omission).
 
 Protocol (append-only, structure, update cycle): `REGISTRY-PROTOCOL.md`.
 Archetype-specific promotion bar: a pattern recurs in **≥2 countries** with cited instances → BASELINE. One-country patterns sit in CANDIDATE.

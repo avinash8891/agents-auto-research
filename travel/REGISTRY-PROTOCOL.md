@@ -25,7 +25,7 @@ One protocol for every evolving enumeration. The registries it governs are the C
 - Entries may carry multi-valued, growable tags (e.g. an axis `stage:[seed,discovery]`, `role:[axis-proof,convergence-gate]`). Consuming docs filter by tag — they never hardcode which entries apply where. New tag values may be added as the method grows.
 
 ## OPEN ENUMERATIONS (lists of discovered knowledge that live in-doc, not in a full registry)
-Not every growable list earns its own registry file. A list of *discovered domain knowledge* — exclusion lists, off-cadence triggers, reshape actions, round types, metric caveats, overlap dimensions, special-interest sub-types, ANTI-PATTERNS — is an **OPEN ENUMERATION**: it stays in its owning doc but is explicitly append-on-discovery.
+Not every growable list earns its own registry file. A list of *discovered domain knowledge* — exclusion lists, off-cadence triggers, reshape actions, round types, metric caveats, overlap dimensions, special-interest sub-types, lead types, ANTI-PATTERNS — is an **OPEN ENUMERATION**: it stays in its owning doc but is explicitly append-on-discovery.
 *(This catalogue of open-enumeration kinds is itself open — append a new growable list-type here when one surfaces; provenance `Lnn`.)*
 Rules for an open enumeration:
 1. Mark it `(open — append on discovery)` so it never reads as a closed set.
@@ -43,9 +43,9 @@ ANTI-PATTERNS blocks are the failure-check projection of `10-lessons-log.md` (th
 Both `AUDIT-CHECKLIST.md` and the per-doc ANTI-PATTERNS blocks are **views of `10-lessons-log.md`**: a new generalizable lesson → append a checklist class (+ the relevant anti-pattern), tagged `Lnn` (doc-currency guard, L25).
 
 ## INTELLIGENCE CAPTURE & ROUTING (leads — don't lose tangential intelligence)
-The information-richest steps (verification `07`, discovery `04`) read whole operator pages and surface far more than the row schema captures. That tangential intelligence must NOT be lost. Capture it as **typed leads** and route each to the step/registry it fine-tunes.
+The information-richest steps (verification — `ranking`, discovery — `discovery-loop`) read whole operator pages and surface far more than the row schema captures. That tangential intelligence must NOT be lost. Capture it as **typed leads** and route each to the step/registry it fine-tunes.
 - **Capture:** any signal that doesn't fit the row schema → a typed row in `<country>/leads.md`, with **provenance** (source URL + theme-id + run/round). Capture typed *signals*, not raw page dumps (preserve intelligence without hoarding).
-- **Lead types → destination (routing table):**
+- **Lead types → destination (routing table)** (open — append on discovery; REGISTRY-PROTOCOL.md):
   | lead type | routes to / fine-tunes |
   |-----------|------------------------|
   | theme-hint / sub-lens-hint | `theme-seeding` + `discovery-loop` (may **dirty** the region/theme) |
@@ -58,6 +58,7 @@ The information-richest steps (verification `07`, discovery `04`) read whole ope
   | seasonality / access quirk | `freshness` triggers + the row's notes |
   | price–quality signal | value judgment context for `admission-bar` / `ranking` |
   | composition-pattern (reusable region-anchor / glue) | `composition` ledger; promote to a shared pattern note if it recurs across countries |
+  Provenance: base rows L22; `composition-pattern` row L26. Append a row + its Lnn/country when a new lead type surfaces.
 - **Triage:** each consuming step READS the leads routed to it as an input; PROMOTE a lead to its registry when it clears that registry's bar (`REGISTRY-PROTOCOL`); a lead implying new coverage **dirties** the affected unit (INVALIDATION) rather than sitting idle.
 - **Provenance + append-only:** leads are append-only with provenance; a promoted lead cites its originating lead row.
 
@@ -65,6 +66,7 @@ The information-richest steps (verification `07`, discovery `04`) read whole ope
 The pipeline is a **fixed-point computation**, not a one-pass: a downstream promotion can invalidate upstream coverage. Whenever an entry is PROMOTED (a new axis/lens/archetype/channel), it **marks every dependent unit dirty** — units that were finalized before the new entry existed and were therefore covered on a smaller set:
 - New **axis** promoted → every already-swept theme is `dirty` on that axis (it was never swept on it). Re-sweep **only that axis** for each theme (targeted, not a full re-discovery).
 - New **lens/archetype** promoted → re-run the seed-completeness diff; it may spawn new themes (existing themes stay clean unless the lens overlaps).
+- New **channel** sub-type promoted → every already-swept theme is `dirty` on the CHANNEL axis restricted to the new sub-type id. Re-sweep **only that channel sub-type** for each theme (targeted, exactly like the axis case).
 Rules:
 1. A unit cannot be declared converged/done while it carries a `dirty` flag (see `travel-config.md` DONE).
 2. Re-processing is **scoped to the dirty axis/unit**, never a global restart.

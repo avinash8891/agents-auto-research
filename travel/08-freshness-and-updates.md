@@ -18,7 +18,7 @@ URLs are already known, so this is re-fetch, not discovery. Runs on `VERIFY_CADE
 1. READ every row's URL from the corpus.
 2. Re-fetch each URL.
 3. **Diff** the fetched page against the stored row. Diff dimensions (open — append on discovery; REGISTRY-PROTOCOL.md): date moved · price changed · tour withdrawn · new departure added · guide changed. (provenance: Italy build / L8.)
-4. Update `last_checked` to today (`YYYY-MM-DD`). Set `status` ∈ {verified, stale, withdrawn}.
+4. Update `last_checked` to today (`YYYY-MM-DD`). Set `status` per `tags-registry.md` row.status.
    - **Schema backfill:** while the page is fetched, fill any `unknown` schema sentinels on this row that are now derivable (the VERIFY pass is the backfill vehicle for schema migrations — `corpus` doc SCHEMA EVOLUTION).
 5. Log every diff to the dated VERIFY report `<country>/verify_<date>.md`.
 6. Refresh the UNVERIFIED / fetch-blocked list (URLs that failed to fetch stay listed and worked next pass).
@@ -41,7 +41,7 @@ Runs on `DISCOVERY_CADENCE` (travel-config.md).
 
 ## PROCEDURE — Season roll (this doc owns it)
 1. `CURRENT_SEASON` (travel-config.md) is the prioritised departure window. Roll it forward in ONE place — travel-config.md — once per cycle. No other doc edits the season.
-2. After a roll, products dated only to the prior season lose `FULL_PRODUCT_WEIGHT` standing on the next VERIFY pass: an out-of-season-only or now-UNVERIFIED-date product counts at `PARTIAL_PRODUCT_WEIGHT` (travel-config.md) until a current-season dated departure is re-confirmed.
+2. After a roll, products dated only to the prior season lose `FULL_PRODUCT_WEIGHT` standing on the next VERIFY pass: an out-of-season-only product becomes UNVERIFIED-date until a current-season dated departure is re-confirmed; its credited weight then follows the rule owned by `admission-bar` (`ranking`).
 
 ## PROCEDURE — Embedding it (automation)
 1. The `VERIFY_CADENCE` pass is a **scheduled cloud agent (cron routine)**: it reads corpus URLs, re-fetches, posts a diff report unattended.
@@ -68,7 +68,7 @@ Runs on `DISCOVERY_CADENCE` (travel-config.md).
 ## EXAMPLE (input → output)
 Input: locked `italy/italy_corpus_FINAL.md` with rows stamped `last_checked: 2026-06-22` (Italy roster cited per-country in `italy/` artifacts; this global doc stays example-light).
 - Loop A (one `VERIFY_CADENCE` step on): re-fetch each row's URL. Row for an Etruscan-circuit operator shows a price increase and a withdrawn September departure; another operator added a new October departure. → update those rows' fields, advance `last_checked`, set `status: verified` (price/date rows) and `status: withdrawn` (the pulled departure); log all three diffs to the dated `italy/italy_verify_<YYYY-MM-DD>.md`. A fetch-blocked operator URL stays on the UNVERIFIED list.
-- Trigger fires (2026, 800th anniversary of St Francis): run Loop B off-cadence. Re-run the completeness-critic across the baseline axes in axes-registry.md; new Franciscan-pilgrimage one-off departures clear the `ADMISSION_BAR` (admission-bar doc) → run a full round for the Umbria pilgrimage slice, reshape the corpus, and write a changelog entry to `italy/italy_changelog.md`. If "Sacred / pilgrimage circuit" were a not-yet-registered archetype, PROMOTE it to theme-archetypes.md per REGISTRY-PROTOCOL.md so the next country inherits it.
+- Trigger fires (2026, 800th anniversary of St Francis): run Loop B off-cadence. Re-run the completeness-critic across the baseline axes in axes-registry.md; new Franciscan-pilgrimage one-off departures clear the `ADMISSION_BAR` (admission-bar doc) → run a full round for the Umbria pilgrimage slice, reshape the corpus, and write a changelog entry to `italy/ledger.md` (the changelog section of the single per-country ledger). If "Sacred / pilgrimage circuit" were a not-yet-registered archetype, PROMOTE it to theme-archetypes.md per REGISTRY-PROTOCOL.md so the next country inherits it.
 
 ## ANTI-PATTERNS (checks — fail the step if true)
 (open — append the check when a new lesson lands; tag Lnn. This block is a VIEW of 10-lessons-log.md; REGISTRY-PROTOCOL.md "Anti-patterns are a view of the lessons-log".)

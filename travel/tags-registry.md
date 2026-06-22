@@ -8,6 +8,7 @@ Single home for the small controlled vocabularies used as row/theme tags, so wri
 | `verified` | named guide + confirmed `CURRENT_SEASON` dated departure + price, all from a live page |
 | `UNVERIFIED` | operator/tour real, but guide and/or dated departure unconfirmed (incl. 403/404 kept via snippet) |
 | `stale` | `last_checked` older than `VERIFY_CADENCE` window (`travel-config.md`) |
+| `withdrawn` | tour/departure confirmed pulled by the operator on a VERIFY re-fetch (was live, now removed) |
 
 ## format-class (load-bearing for rankability in `ranking`)
 | value | rankability note |
@@ -34,11 +35,12 @@ Mixing format-classes in one ranked list → flag explicitly (`ranking`).
 Open enumerations (`REGISTRY-PROTOCOL.md`) of what does NOT count toward the admission bar. Append a case when discovered, with provenance.
 - **non-qualifying product** = not a sold leisure tour: university course · master-class · lecture-residency · retreat · maker-workshop · day-activity · pilgrimage-without-study-content. (provenance: Italy R4)
 - **non-qualifying expert** = not a credentialed theme-fit scholar: title-only (name unpublished) · generic licensed city guide · artisan/trifolao (unless the craft IS the theme). (provenance: Italy R4)
-- **non-qualifying operator** = aggregator/marketplace reselling others (count the underlying operator; see `operator-aliases.md`).
+- **non-qualifying operator** = aggregator/marketplace reselling others (count the underlying operator; see `operator-aliases.md`). (provenance: Italy R4)
 
 ## PROMOTION LOG
 - (seed) Baseline tag vocabularies (row.status, format-class, theme.seed-tag, theme.strength) established.
 - (Italy R4) admission.disqualifiers seeded (non-qualifying product/operator/expert).
+- (L8 / Italy freshness) `withdrawn` added to row.status — a VERIFY re-fetch can confirm a departure was pulled.
 
 ## UPDATE
 Mechanics: `REGISTRY-PROTOCOL.md`. Append a value when a new state is genuinely needed; never let two docs invent divergent spellings. The tag/value sets here are open enumerations — append-on-discovery with provenance (log additions above).

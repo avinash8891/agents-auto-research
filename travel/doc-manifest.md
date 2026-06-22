@@ -47,7 +47,7 @@ All per-country files live under `<country>/`. NORMALIZATION: a `<country>_X` re
 | file | what | written by |
 |------|------|-----------|
 | `<country>/theme_map_v0..FINAL.md` | seed → reshaped → converged theme map + convergence tracker | theme-seeding, discovery-loop, admission-bar |
-| `<country>/axes.md` | per-country axis ledger (active/promoted/pending axes + language set) | coverage-matrix, discovery-loop |
+| `<country>/axes.md` | per-country axis ledger (active/promoted/pending axes + language set + region-axis values) | theme-seeding (first-populates region values), coverage-matrix, discovery-loop |
 | `<country>/ledger.md` | **the single per-country ledger** — thin-notes + re-test triggers (admission-bar) · verification debt / UNVERIFIED + 403-blocked (corpus, ranking) · changelog (freshness). Replaces `_ledger`/`_verification_ledger`/`_changelog`. | admission-bar, ranking, freshness |
 | `<country>/corpus/round<N>_<cluster>.md` | working raw inventories (per round) | discovery-loop subagents |
 | `<country>/corpus_FINAL.md` | consolidated, locked corpus (round files merged, `first_seen_round` stamped) | freshness consolidation |

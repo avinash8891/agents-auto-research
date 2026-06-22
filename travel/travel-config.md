@@ -4,7 +4,7 @@ All tunables live here once. Docs reference the NAME, never the literal. Change 
 
 ## SCOPE
 - `CURRENT_SCOPE_N` = 10 — countries researched now (pilot; prove the method before scaling).
-- `GROWTH_LADDER` = 10 → 50 → 100 → 150 — raise only when confident; refresh is additive (`01`).
+- `GROWTH_LADDER` = 10 → 50 → 100 → 150 — raise only when confident; refresh is additive (`country-ranking`).
 - `TARGET_SCALE` = example target, NOT a fixed contract. "50" anywhere is illustrative.
 
 ## RANKING / ADMISSION
@@ -16,22 +16,22 @@ All tunables live here once. Docs reference the NAME, never the literal. Change 
 
 ## TRIP / THEME SHAPE
 - `MAX_TRIP_DAYS` = 21 — a theme/trip must fit one trip under this.
-- `MIN_LENSES_PER_TRIP` = 2, `MAX_LENSES_PER_TRIP` = 4 — composition bounds (`11`).
+- `MIN_LENSES_PER_TRIP` = 2, `MAX_LENSES_PER_TRIP` = 4 — composition bounds (`composition`).
 
 ## SEASON / CADENCE (roll forward per run)
-- `CURRENT_SEASON` = 2026–2027 — the prioritised departure window. Roll in ONE place per cycle (`08`).
+- `CURRENT_SEASON` = 2026–2027 — the prioritised departure window. Roll in ONE place per cycle (`freshness`).
 - `VERIFY_CADENCE` = monthly + before each booking window.
 - `DISCOVERY_CADENCE` = quarterly or on-trigger.
 - `RERANK_CADENCE` = annual (when the new UN Tourism Barometer lands).
 
 ## IDENTIFIERS
-- `THEME_ID_GRAMMAR` = `<CC>-NN` — 2-letter country code + sequential number; SPLIT keeps parent number + lowercase suffix (`IT-05a`/`IT-05b`); assigned at seed, never renumbered (`06`).
+- `THEME_ID_GRAMMAR` = `<CC>-NN` — 2-letter country code + sequential number; SPLIT keeps parent number + lowercase suffix (`IT-05a`/`IT-05b`); assigned at seed, never renumbered (`corpus`).
 - `THEME_ID_OVERFLOW` = if a country exceeds 99 themes, widen to 3 digits (`IT-100`); never recycle a retired ID.
 
 ## CONVERGENCE
 - `THEME_CONVERGED` = a fresh adversarial completeness-critic admits 0 themes clearing `ADMISSION_BAR`.
 - `OPERATOR_CONVERGED` = every BASELINE axis (`axes-registry.md`) returns dry for the theme AND the theme carries no `dirty` flag (no un-re-swept promotion — see `REGISTRY-PROTOCOL.md` INVALIDATION).
-- Country DONE = both, across all baseline axes (count derived from the registry, never asserted as a literal), with zero dirty units.
+- `DONE` = both `THEME_CONVERGED` and `OPERATOR_CONVERGED`, across all baseline axes (count derived from the registry, never asserted as a literal), with zero dirty units.
 
 ## NOTES
 - Numbers here are tunables, not law — but changing one is a config edit, not a prose hunt.

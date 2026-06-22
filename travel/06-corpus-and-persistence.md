@@ -31,9 +31,9 @@ COMPOUNDING: corpus rounds and theme-map versions are APPEND-only (read prior �
 
 2. **Write every operator as a row** using the schema below. One row per operator.
 
-3. **Tag each row's `format-class`** — values + rankability in `tags-registry.md` (`fixed-departure-group` / `private-bespoke` / `day-format` / `hybrid-course`). Only `fixed-departure-group` is admissible on the "dated departure" basis directly (ranking).
+3. **Tag each row's `format-class`** per `tags-registry.md` format-class (values + rankability owned there); only the rankable-on-dated-departure class is admissible on that basis directly (ranking).
 
-4. **Set each row's `status`** — values `tags-registry.md` row.status (`verified` / `UNVERIFIED` / `stale`); rules below.
+4. **Set each row's `status`** per `tags-registry.md` row.status (rules below).
 
 5. **Assign theme IDs** per THEME_ID_GRAMMAR (IDs are assigned at seed time in theme-seeding; here you preserve them and extend on split).
 
@@ -79,11 +79,11 @@ Rules to add/change a column:
 These row statuses feed the credited-product weights at ranking: a verified row earns FULL_PRODUCT_WEIGHT, an UNVERIFIED row earns PARTIAL_PRODUCT_WEIGHT against the ADMISSION_BAR — owned by ranking, cross-ref only here.
 
 **Theme-ID convention (THEME_ID_GRAMMAR):**
-- Format: 2-letter country code + sequential number (e.g. `IT-01`).
+- Format: per `THEME_ID_GRAMMAR` (`travel-config.md`), e.g. `IT-01`.
 - Assign IDs at seed time (theme-seeding) and NEVER renumber on reshape — stable IDs are the audit trail and the `rankings/<theme-id>.md` filename.
-- On SPLIT → keep the parent number, append lowercase letters: `IT-05a` (Umbria art) / `IT-05b` (St Francis).
+- On SPLIT → per `THEME_ID_GRAMMAR` (`travel-config.md`): keep the parent number + lowercase suffix (e.g. Umbria art / St Francis).
 - On fold/demote → the ID keeps its place in the DEMOTED audit trail.
-- New themes found in later rounds get the next free number (don't reuse). Per THEME_ID_OVERFLOW, a country exceeding the two-digit range widens digits rather than recycling. Without stable IDs, parallel agents/sessions invent conflicting IDs and ranking files collide.
+- New themes found in later rounds get the next free number (don't reuse). Per `THEME_ID_OVERFLOW` (`travel-config.md`). Without stable IDs, parallel agents/sessions invent conflicting IDs and ranking files collide.
 
 **De-dup guards (each axis-proof file must end with these):**
 - Aggregators/resellers excluded — count the underlying operator, not the marketplace.

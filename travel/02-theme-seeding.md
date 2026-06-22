@@ -12,14 +12,14 @@ MEMORY INVARIANT (steps `overview`–`coverage-matrix`): nothing the method depe
 
 ## PROCEDURE (start = country)
 1. Take the country. READ `lens-registry.md`, `theme-archetypes.md`, `axes-registry.md`.
-2. List every first-level admin region (the `region` axis as a checklist).
+2. READ/confirm the first-level admin regions from `<country>/axes.md` (the `region`-axis values); for a fresh country where the file/section is absent, first-populate it by enumerating the country's first-level admin regions (the one deterministic axis) and WRITE them there. Append any new region on discovery — do not keep the set only in memory.
 3. For each region, determine what it is genuinely best known for → one or more **lenses** taken from `lens-registry.md` (baseline + candidates). Do not use an inline/remembered lens list — the registry is the source of truth.
 4. **Archetype walk**: go through `theme-archetypes.md` and ask, for this country, "does it have a strong version of this archetype?" Instantiate matches as candidate themes; note misses. (Catches patterns free-recall skips — e.g. "wine region", "wildlife circuit", "pilgrimage circuit".)
 5. Emit one **candidate theme per distinct subject** (single-lens). A region with two distinct lenses emits two themes.
 6. Emit **cross-regional themes** for subjects operators sell as one trip spanning regions.
 7. **Channel sanity-check (ADVISORY — tag, never kill)**: for each candidate theme, ask whether ≥1 provider channel (`channel-registry.md` ids) plausibly sells it expert-led. This is the `channel` axis used in its `stage:seed` advisory mode (its full sweep is `stage:discovery`); cheap triage to steer sweep effort, NOT a decision. Rules: TAG (don't delete) the obviously-pure-leisure (beaches, nightlife, shopping, generic scenery) as `watch/leisure` (`tags-registry.md` theme.seed-tag); discovery still checks tagged themes lightly. WHEN IN DOUBT, keep it a full theme. NEVER kill a theme here from memory — that is the anchoring sin (L1/L7); "Apennine wildlife" looked operator-less from memory yet discovery found Steppes/Exodus under the `special-interest` channel. The real arbiter is discovery + the admission bar (`admission-bar`) on LIVE evidence, which OVERRIDES this tag.
 8. Assign each theme an **ID** per `THEME_ID_GRAMMAR` (`travel-config.md`). Sequential. Never renumbered later. Past the per-country ceiling, apply `THEME_ID_OVERFLOW`.
-9. Assign each theme a **strength guess** — `tags-registry.md` theme.strength (`Strong` | `Medium` | `Thin`; a guess, discovery confirms).
+9. Assign each theme a **strength guess** per `tags-registry.md` theme.strength (a guess; discovery confirms).
 10. Record **open questions** per theme (candidate splits/merges/cross-cuts discovery must resolve, e.g. "split Sicily?", "is Etruscan standalone?") in the `open-questions` column.
 11. For any region that yields no theme, emit an explicit `thin/none` row (gap stays visible).
 12. **Seed-completeness diff (enumerate-and-diff at seed time):** list every BASELINE LENS (`lens-registry.md`) and every ARCHETYPE walked (`theme-archetypes.md`); for each, point to the seed theme that covers it OR a one-line `thin/none` justification. A baseline lens/archetype with neither = an unjustified gap → fix before writing. This is the check that would have caught "nature" at seed instead of discovery round 2.
@@ -32,7 +32,7 @@ MEMORY INVARIANT (steps `overview`–`coverage-matrix`): nothing the method depe
 - CROSS-REGIONAL theme allowed IFF operators sell it as one trip AND it does not double-count a region's flagship theme.
 - MULTI-LENS trip ≠ seed theme. It is a composition-layer artifact (`composition`), never seeded here. Composition bounds (`MIN_LENSES_PER_TRIP`/`MAX_LENSES_PER_TRIP`, `travel-config.md`) live there, not here.
 - DURATION: every theme must fit one trip under `MAX_TRIP_DAYS` (`travel-config.md`).
-- ID STABILITY: assign per `THEME_ID_GRAMMAR` at seed time; on later SPLIT, keep parent number + append lowercase suffix (`IT-05a`/`IT-05b`); never renumber (`corpus`).
+- ID STABILITY: assign per `THEME_ID_GRAMMAR` at seed time; on later SPLIT follow `THEME_ID_GRAMMAR` (`travel-config.md`); never renumber (`corpus`).
 
 ## EXAMPLE (input → output rows)
 Input: `Italy`. Sample output rows:

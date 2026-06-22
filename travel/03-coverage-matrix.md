@@ -23,7 +23,7 @@ MEMORY INVARIANT: nothing the method depends on lives in session memory. The cou
 3. For each baseline axis, enumerate its values and fill cells. Each axis defines its own enumeration in its registry — do not inline-list here:
    - **CHANNEL** (`channel`): provider sub-types are the stable IDs in `channel-registry.md` (count derived there, never asserted). See DECISION RULES.
    - **LENS** (`lens`): experience type — the vocabulary in `lens-registry.md`; prune to what is real per country.
-   - **REGION** (`region`): every first-level admin region as a checklist.
+   - **REGION** (`region`): the country's first-level admin regions, READ from `<country>/axes.md` (per-country `region`-axis values), not recalled.
    - **LANGUAGE** (`language`): native + study-travel-market languages; commonly missed. Tagged `role:axis-proof` — gets its own sweep.
    - **AUTHORITY-INDEX** (`authority-index`): mine curated directories (`sources-registry.md`) for operator names; commonly missed. Tagged `role:axis-proof` — gets its own sweep.
    (Run the dedicated sweeps for every axis tagged `role:axis-proof` in `axes-registry.md` — do not name them by hand; filter by tag.)
@@ -44,7 +44,7 @@ The axes themselves and their `stage`/`role` tags are defined once in `axes-regi
 
 - **CHANNEL** (`channel`) → provider sub-types are stable IDs in `channel-registry.md`. Cross-reference channels by id (e.g. `luxury-bespoke`), never by a positional letter.
 - **LENS** (`lens`) → the lenses in `lens-registry.md`. Prune to what's real per country.
-- **REGION** (`region`) → every first-level admin region of `<country>` as a checklist. A region with 0 themes must be explicitly tested-and-justified.
+- **REGION** (`region`) → the country's first-level admin regions are per-country *data* in `<country>/axes.md` (read at session start, appended on discovery), parallel to the LANGUAGE axis. A region with 0 themes must be explicitly tested-and-justified.
 - **LANGUAGE** (`language`) → the destination's language AND the major study-travel markets' languages. The per-country language set is *data* in `<country>/axes.md`, not a literal here. (For Europe this typically adds German — Studienreisen — and French — maisons culturelles; for LATAM Spanish/Portuguese; for East Asia the local language.) English-only search misses entire high-quality segments.
 
   LANGUAGE query bank (what a real language sweep looks like — vary per theme):

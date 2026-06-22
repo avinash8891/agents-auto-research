@@ -46,7 +46,7 @@ A single expert guide cannot lead a multi-lens trip without degrading to a gener
 
 ## EXAMPLE (input → output, illustrative — build against live rankings)
 Input: Sicily, ~10 days (within `MAX_TRIP_DAYS`), history + food lenses (see Italy rankings under `italy/` for the live roster).
-Output `compositions/italy-sicily-history-food.md`:
+Output `italy/compositions/sicily-history-food.md`:
 - Segment A (5–6 days): `IT-11` layered civilisations — the ranked #1 archaeologist-led tour (Greek temples → Roman villa → Arab-Norman Palermo).
 - Segment B (1–2 days): `IT-27` Etna food & wine — the ranked sommelier-led day(s).
 - Glue: 1–2 coast/leisure days (no expert — leisure, not a theme).

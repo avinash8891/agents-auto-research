@@ -24,7 +24,7 @@ Run this after any batch of doc changes, before declaring the playbook healthy. 
 17. **Scale fit** (L23) — premature complexity, or a known scale ceiling (verbatim list, single-region assumption) not marked with an upgrade path.
 
 ## HOW TO RUN
-For EACH class, scan EVERY document (`00`–`11`, README, all registries/config/manifest). Report per instance: `class # · file:line · the problem · proposed fix`. Dedupe into prioritized clusters. Ground every finding in actual file text (read it). Flag false positives. Report only — do not fix in this pass.
+For EACH class, scan EVERY document (every step doc in the STEP DOCS table of `doc-manifest.md`, README, and all registries/config/manifest). Report per instance: `class # · file:line · the problem · proposed fix`. Dedupe into prioritized clusters. Ground every finding in actual file text (read it). Flag false positives. Report only — do not fix in this pass.
 
 ## KEEPING THIS UPDATED
 - This checklist is a VIEW of `10-lessons-log.md`. When a new lesson generalizes to a recurring issue-class → append it here with its `Lnn`.

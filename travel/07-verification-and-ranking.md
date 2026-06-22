@@ -68,6 +68,8 @@ Output (`rankings/IT-01.md`) contains: country + arrivals rank, theme/region, on
 - One line: **why #1 wins**.
 - FLAGS block: any unverified leader/departure; any premium-for-thin-substance; any format-class mix; any THIN-NOTE (credited weight below `ADMISSION_BAR`); if the theme is weak, say so and give closest strong fits rather than padding to `RANK_DEPTH`.
 
+This output schema is a versioned contract (same rule as the corpus row schema — `corpus` SCHEMA EVOLUTION): a field add/rename is lesson-tracked, the `composition` consumer is updated in lockstep, and older `rankings/<theme-id>.md` files are re-emitted (marked `dirty` for rebuild from the corpus) rather than left with a stale field set.
+
 ## ANTI-PATTERNS (checks — fail the step if true)
 
 (open — this block is a VIEW of `10-lessons-log.md`; append the check when a new lesson lands, tag `Lnn`. The lessons-log is the source, this block the projection — `REGISTRY-PROTOCOL.md`.)

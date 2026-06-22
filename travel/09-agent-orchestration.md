@@ -17,7 +17,7 @@ COMPOUNDING / SELF-LEARNING: corpus accrues across rounds. Read prior corpus →
 - **Critic fan-out** (convergence): parallel adversarial agents, each owning one axis from `axes-registry` (lenses, channels/operators, regions, borderline validation).
 - **Axis-proof fan-out** (anti-false-convergence): a dedicated agent per axis tagged `role:axis-proof` in `axes-registry` — these are the false-convergence gate. Do not name the proof axes by hand; read them off the tag filter so a newly promoted axis-proof axis is swept automatically.
 - **Per-theme ranking**: one agent per theme (or small cluster) — saturates axes + verifies + ranks, writing to `<country>/rankings/<theme-id>.md` (theme-id follows `THEME_ID_GRAMMAR`, `config`). Saturation runs per theme until the theme's axes return dry (`OPERATOR_CONVERGED`, `config`).
-- **Dirty-unit re-sweep** (INVALIDATION): when a promotion marks units dirty (`REGISTRY-PROTOCOL.md` INVALIDATION), the orchestrator DISPATCHES a re-sweep agent **scoped to the new axis/unit only** — a new baseline axis → one agent per already-swept theme sweeping just that axis; a new lens/archetype → re-run the seed-completeness diff. Never a full re-discovery. A unit stays not-converged while it carries a `dirty` flag (`config` DONE).
+- **Dirty-unit re-sweep** (INVALIDATION): when a promotion marks units dirty (`REGISTRY-PROTOCOL.md` INVALIDATION), the orchestrator DISPATCHES a re-sweep agent **scoped to the new axis/unit only** — a new baseline axis → one agent per already-swept theme sweeping just that axis; a new lens/archetype → re-run the seed-completeness diff; a new **channel** sub-type → one agent per already-swept theme sweeping just that channel sub-type id on the CHANNEL axis. Never a full re-discovery. A unit stays not-converged while it carries a `dirty` flag (`config` DONE).
 
 ## PROCEDURE
 
@@ -26,7 +26,7 @@ The orchestrator assembles the known-operator list mechanically. It is NOT from 
 1. Grep/concatenate the **Operator column** from every prior `<country>/corpus/round*.md`.
 2. Dedup into a flat name list, collapsing absorbed/sub-brands → parent and dropping aggregators per `operator-aliases`.
 3. Pass it **verbatim** to every agent as the `ALREADY KNOWN — build beyond, don't re-report` block.
-4. Require each agent to close its file with a **de-dup guards** note (`corpus`): aggregators excluded, sub-brands collapsed, prior-captured excluded (alias/exclusion authority = `operator-aliases`).
+4. Require each agent to close its file with the **de-dup guards** note defined in `corpus` (alias/exclusion authority = `operator-aliases`).
 This is what makes "extend, don't re-discover" reproducible rather than a hope.
 
 SCALE NOTE (embeddings — named upgrade path, not built at pilot scale): the already-known list is passed **verbatim** today (fine at `CURRENT_SCOPE_N`). When coverage grows along `GROWTH_LADDER` and the cumulative operator list outgrows verbatim passing (too large for an agent prompt — roughly the 100+ country / thousands-of-operators range), switch to an **embedding dedup index**: vector lookup over operator names/descriptions answers "is this already known?" without shipping the whole list, and can suggest fuzzy `operator-aliases` matches the exact list misses (e.g. "Martin Randall Travel" ≈ "Martin Randall"). Embeddings are for *retrieval/dedup at scale only* — never for judgment steps (overlap, expert-fit, value), where LLM reasoning is stronger. Until that scale, do NOT add it (YAGNI).

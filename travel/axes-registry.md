@@ -8,8 +8,8 @@ Promotion bar = provably surfaces tours no existing axis finds (cite the tours).
 Protocol (append-only, structure, update cycle): `REGISTRY-PROTOCOL.md`. Consuming docs filter axes by the `stage`/`role` tags below — they never hardcode which axes apply where, nor assert an axis count (derive it from this file).
 
 ## TAG VOCABULARY (multi-valued, growable)
-- `stage`: `seed` (used at theme seeding `02`) · `discovery` (run in discovery sweeps `04`).
-- `role`: `axis-proof` (gets its own dedicated sweep; the false-convergence gate) · `convergence-gate` (must be dry to declare operator-convergence) · `saturation-weight` (weighted at ranking saturation `07`).
+- `stage`: `seed` (used at theme seeding `theme-seeding`) · `discovery` (run in discovery sweeps `discovery-loop`).
+- `role`: `axis-proof` (gets its own dedicated sweep; the false-convergence gate) · `convergence-gate` (must be dry to declare operator-convergence) · `saturation-weight` (weighted at ranking saturation `ranking`).
 New tag values may be added as the method grows.
 
 ## BASELINE AXES (active for all countries)
@@ -21,7 +21,7 @@ New tag values may be added as the method grows.
 | `language` | Language | native + relevant study-travel source languages (per-country set is data in `<country>/axes.md`) | discovery | axis-proof, convergence-gate |
 | `authority-index` | Authority-index | directories that list quality operators (awards, AITO/Virtuoso, university-alumni & museum travel partners, UNESCO) | discovery | axis-proof, convergence-gate |
 
-Note: `channel` carries `stage:seed` only as the advisory sanity-check (`02`); its full sweep is `stage:discovery`.
+Note: `channel` carries `stage:seed` only as the advisory sanity-check (`theme-seeding`); its full sweep is `stage:discovery`.
 
 ## CANDIDATE WATCHLIST (test per country; promote on evidence)
 | id | what it would catch | proposed tags | status | evidence so far |
@@ -35,7 +35,8 @@ Note: `channel` carries `stage:seed` only as the advisory sanity-check (`02`); i
 A promoted candidate MUST declare its `stage`/`role` tags in the PROMOTION LOG so the gates/sweeps pick it up automatically.
 
 ## PROMOTION LOG (axis → baseline, with evidence)
+- (seed) Baseline axes (channel, lens, region) established from the initial cross-country method.
 - (Italy R5) Language + Authority-index promoted from candidate to baseline — together surfaced 26 operators 4 prior English/operator-keyword rounds missed.
 
 ## UPDATE
-Mechanics: `REGISTRY-PROTOCOL.md`. Axis-specific evidence to promote = the candidate provably surfaces tours no existing axis finds (cite them). The axis-completeness critic (`04`) tests candidates per country; results append to `travel/<country>/axes.md`; a pass promotes here with declared `stage`/`role` tags.
+Mechanics: `REGISTRY-PROTOCOL.md`. Axis-specific evidence to promote = the candidate provably surfaces tours no existing axis finds (cite them). The axis-completeness critic (`discovery-loop`) tests candidates per country; results append to `travel/<country>/axes.md`; a pass promotes here with declared `stage`/`role` tags.

@@ -3,7 +3,7 @@
 AGENT SPEC. Build/refresh the ordered list of most-visited countries up to `CURRENT_SCOPE_N` (`config`); it sets the work order and the arrivals rank cited in every output.
 
 INPUT: none (live web sources) + current `country_ranking.md` if it exists.
-OUTPUT: `country_ranking.md` — stamped table, columns: `rank · country · arrivals · metric · data-year · source · contested? · in-scope?`.
+OUTPUT: `country_ranking.md` — stamped table, columns: `rank · country · arrivals · metric · data-year · source · last_checked · contested? · in-scope?`. The column set is a versioned contract: add/rename a column per `corpus` SCHEMA EVOLUTION (schema-version bump + backfill older additively-merged rows by re-pull on the next `RERANK_CADENCE` pass, else `unknown` sentinel).
 NEXT: `theme-seeding` seeds themes for each `in-scope` country.
 
 ## N IS A DIAL (not a constant)
@@ -20,7 +20,7 @@ NEXT: `theme-seeding` seeds themes for each `in-scope` country.
 6. Where a rank is contested (the band straddling the N-boundary), record BOTH values + set `contested?`.
 7. **Merge ADDITIVELY** into `country_ranking.md`: add newly-qualifying countries; NEVER remove a country already present (even if it dropped out of top-N). Coverage only grows.
 8. Stamp each row with `data-year` + `source` + `last_checked`. Write file.
-9. **Capture leads:** if a new authoritative ranking/arrivals source surfaces (not in `sources-registry`), emit it as a typed lead (authority/source) per `REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING → `sources-registry` candidate. Stop.
+9. **Capture leads:** if a new authoritative ranking/arrivals source surfaces (not in `sources-registry`), APPEND a typed authority/source lead row to `<country>/leads.md` with provenance (source URL + run), then route it to a `sources-registry` candidate per `REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING. Stop.
 
 ## DECISION RULES
 - METRIC = international tourist arrivals (overnight) only; never mix with receipts/same-day across rows.

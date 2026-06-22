@@ -10,6 +10,12 @@ SCOPE: the most-visited countries, sized to `CURRENT_SCOPE_N` (`config`; current
 UNIT: a **theme** (single-lens regional experience), not a country.
 DELIVERABLE: a ranked **Top-`RANK_DEPTH` tours** list per theme (`config`), expert-led, depth-first, value-justified.
 
+## PROCEDURE (start = the named dials + controlled vocabularies; produce the shared contract a downstream step consumes)
+1. READ the named dials in `config` and the controlled vocabularies in `lens-registry`, `axes-registry`, `channel-registry` — do NOT operate from memory.
+2. For each in-scope country (sized to `CURRENT_SCOPE_N`; list built by `country-ranking`), emit the per-theme **OUTPUT CONTRACT** below — one ranked block per theme, applying the **DECISION RULES** (RANKING CRITERIA priority order, THEME DESIGN RULES, ADMISSION).
+3. **FLAG** any tour whose leader or `CURRENT_SEASON` departure is unverified — never guess (see HARD RULES).
+4. Hand off to `country-ranking` (build the in-scope country list), then `theme-seeding`.
+
 ## DEFINITIONS
 - **THEME** = one coherent subject, doable as a single trip within `MAX_TRIP_DAYS` (`config`). May span multiple **eras** (Sicily: Greek→Roman→Arab-Norman→Baroque) or **regions** (Etruscan: Lazio+Tuscany+Umbria). MUST NOT bundle multiple lenses.
 - **LENS** = the subject type. The sole controlled vocabulary is `lens-registry` (lens-registry.md) — never re-list lenses here.
@@ -50,6 +56,13 @@ Emit, per theme:
 ## ADMISSION (owned by `admission-bar`; restated here only for the output contract)
 - A theme is admitted IFF its credited-product total ≥ `ADMISSION_BAR` (`config`). A product with a named guide AND a confirmed `CURRENT_SEASON` dated departure scores `FULL_PRODUCT_WEIGHT`; an unverified-date or unnamed-guide product scores `PARTIAL_PRODUCT_WEIGHT`. A near-miss total below `ADMISSION_BAR` (e.g. one `FULL_PRODUCT_WEIGHT` + one `PARTIAL_PRODUCT_WEIGHT`) fails → THIN-NOTE, never padded to admission.
 - Full admission mechanics, convergence, and the loop-until-dry rule live in `admission-bar`; do not duplicate them.
+
+## DECISION RULES
+The checkable conditions a fresh agent applies are stated in full in the sections above; grouped here as the canonical decision set (do not restate the prose):
+- **Rank** by the RANKING CRITERIA priority order (expert guide fit → depth → small/authentic → value-for-money tie-break); a pricier option wins IFF comparable excellence and cost justified by depth/expertise.
+- **Theme** per THEME DESIGN RULES: distinct lenses → distinct themes (single-lens); eras/regions may span but lenses split; a region with zero themes → explicitly test-and-justify, not assume empty.
+- **Admit** a theme IFF its credited-product total ≥ `ADMISSION_BAR` (ADMISSION; mechanics owned by `admission-bar`); a below-bar near-miss → THIN-NOTE, never pad.
+- **FLAG** per HARD RULES: if a leader or `CURRENT_SEASON` departure is unverified → say so; if a claim lacks a live URL → do not assert it.
 
 ## HARD RULES
 - Never invent guides, dates, prices, claims. Unverified → say so.

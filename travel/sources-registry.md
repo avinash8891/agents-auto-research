@@ -1,6 +1,6 @@
 # Global Sources Registry
 
-Authoritative data sources for country ranking (`01`) and verification. Tier/lag carried as tags, not prose. Protocol: `REGISTRY-PROTOCOL.md`. Docs say "prefer `tier=primary`", never re-list sources inline.
+Authoritative data sources for country ranking (`country-ranking`) and verification. Tier/lag carried as tags, not prose. Protocol: `REGISTRY-PROTOCOL.md`. Docs say "prefer `tier=primary`", never re-list sources inline.
 
 ## SOURCES
 | id | source | use | tier | lag |

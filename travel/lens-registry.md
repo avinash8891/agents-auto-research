@@ -22,6 +22,7 @@ history · archaeology · art · architecture · design · science · food · wi
 | dark tourism | conflict/disaster sites with historian | candidate | overlaps military |
 
 ## PROMOTION LOG
+- (seed) Baseline lenses established from the initial cross-country pattern scan.
 - (Italy R2) **wildlife/nature** promoted to baseline — was absent from the seed and surfaced as a systemic miss (Apennine bear/wolf safari, volcanology). The reason this registry exists.
 
 ## UPDATE
