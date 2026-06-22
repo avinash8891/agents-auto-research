@@ -124,6 +124,7 @@ Closed the remaining audit clusters (12–17):
 - **Fixed the drift**: `REGISTRY-PROTOCOL` derives its governed-registry list from `doc-manifest`, not inline.
 - **The census is now the recurring guard**: any STATIC-SHOULD-EVOLVE lacking an open-tag/registry/escape = regression.
 **Principle:** every enumeration the method leans on is either a registry, an open-in-doc append-list, or an explicitly-closed set with an escape hatch — never an unmarked static list.
+*(Lists named above — reshape actions, round types, triggers, diff dimensions, metric caveats, overlap dimensions — are illustrative pointers; each lives tagged `(open — append on discovery)` in its home doc: reshape/round/overlap in `discovery-loop`, triggers/diff-dims in `freshness`, caveats in `country-ranking`. This entry is the historical record, not the authoritative list.)*
 
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.

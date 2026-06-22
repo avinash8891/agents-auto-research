@@ -26,6 +26,7 @@ One protocol for every evolving enumeration. The registries it governs are the C
 
 ## OPEN ENUMERATIONS (lists of discovered knowledge that live in-doc, not in a full registry)
 Not every growable list earns its own registry file. A list of *discovered domain knowledge* — exclusion lists, off-cadence triggers, reshape actions, round types, metric caveats, overlap dimensions, special-interest sub-types, ANTI-PATTERNS — is an **OPEN ENUMERATION**: it stays in its owning doc but is explicitly append-on-discovery.
+*(This catalogue of open-enumeration kinds is itself open — append a new growable list-type here when one surfaces; provenance `Lnn`.)*
 Rules for an open enumeration:
 1. Mark it `(open — append on discovery)` so it never reads as a closed set.
 2. Each entry carries **provenance**: the lesson id (`Lnn`) or the country/run that surfaced it.
