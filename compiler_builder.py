@@ -677,9 +677,17 @@ class BuilderWorkspace:
     ``<artifact_root>/builder_request/`` holds the staged ``workspace/`` and
     per-attempt ``attempt-N/`` artifact directories. Callers derive paths through
     this object instead of re-joining the segment literals at each site.
+
+    The lifecycle methods (``stage_inputs`` ... ``record_promotion``) delegate
+    one-for-one to the module-level builder helpers; they hold the
+    ``source_root`` and ``workspace_dir`` arguments those helpers share so
+    ``build_missing_primitives`` does not thread them through every call.
+    ``source_root`` defaults to ``None`` for path-only callers that never invoke
+    the lifecycle methods (e.g. layout assertions).
     """
 
     artifact_root: Path
+    source_root: Path | None = None
 
     @property
     def request_dir(self) -> Path:
@@ -691,6 +699,79 @@ class BuilderWorkspace:
 
     def attempt_dir(self, attempt_number: int) -> Path:
         return self.request_dir / f"{BUILDER_ATTEMPT_DIR_PREFIX}{attempt_number}"
+
+    def _require_source_root(self) -> Path:
+        if self.source_root is None:
+            raise ValueError("BuilderWorkspace lifecycle methods require source_root")
+        return self.source_root
+
+    def stage_inputs(
+        self,
+        *,
+        proposal_path: Path,
+        compilation_path: Path,
+        config_path: str,
+    ) -> tuple[Path, Path]:
+        """Copy the source tree, proposal, and compilation into the workspace.
+
+        Mirrors the inline staging block in ``build_missing_primitives``: copy the
+        builder source tree, copy the proposal/compilation artifacts into their
+        source-relative locations, then create the generated-config parent dir.
+        """
+        source_root = self._require_source_root()
+        workspace_root = self.workspace_dir
+        _copy_builder_source_tree(source_root, workspace_root)
+        workspace_proposal_path = _copy_file_into_workspace(
+            source=proposal_path,
+            source_root=source_root,
+            workspace_root=workspace_root,
+        )
+        workspace_compilation_path = _copy_file_into_workspace(
+            source=compilation_path,
+            source_root=source_root,
+            workspace_root=workspace_root,
+        )
+        (workspace_root / Path(config_path).parent).mkdir(parents=True, exist_ok=True)
+        return workspace_proposal_path, workspace_compilation_path
+
+    def seed_from_capability(self, *, seed_entry: dict[str, Any] | None) -> list[str]:
+        return _seed_workspace_from_capability(
+            source_root=self._require_source_root(),
+            workspace_root=self.workspace_dir,
+            seed_entry=seed_entry,
+        )
+
+    def snapshot_sources(self) -> dict[str, tuple[int, int]]:
+        return _snapshot_promotable_source_state(self._require_source_root())
+
+    def ensure_generated_config(
+        self,
+        *,
+        config_path: str,
+        source_snapshot: dict[str, tuple[int, int]],
+    ) -> Path:
+        return _ensure_workspace_generated_config(
+            source_root=self._require_source_root(),
+            workspace_root=self.workspace_dir,
+            config_path=config_path,
+            source_snapshot=source_snapshot,
+        )
+
+    def sync_root_changes(self, *, source_snapshot: dict[str, tuple[int, int]]) -> None:
+        _sync_root_promotable_changes_into_workspace(
+            source_root=self._require_source_root(),
+            workspace_root=self.workspace_dir,
+            source_snapshot=source_snapshot,
+        )
+
+    def record_promotion(self, *, task: BuilderTask, thesis_id: str) -> dict[str, Any]:
+        return _record_builder_promotion_candidate(
+            source_root=self._require_source_root(),
+            workspace_root=self.workspace_dir,
+            artifact_root=self.artifact_root,
+            task=task,
+            thesis_id=thesis_id,
+        )
 
 
 def _builder_source_ignore(_dir: str, names: list[str]) -> set[str]:
@@ -1500,7 +1581,7 @@ def build_missing_primitives(
             return data_classification
         generated_name = (artifact_root / "selected_config.json").resolve()
         config_path = serialize_config_path(generated_name, code_root=root)
-        builder_workspace = BuilderWorkspace(artifact_root=artifact_root)
+        builder_workspace = BuilderWorkspace(artifact_root=artifact_root, source_root=root)
         builder_requests_dir = builder_workspace.request_dir
         attempt_dir = builder_workspace.request_dir
     else:
@@ -1515,18 +1596,11 @@ def build_missing_primitives(
             "validation_passed": False,
         }
     workspace_root = builder_workspace.workspace_dir
-    _copy_builder_source_tree(root, workspace_root)
-    workspace_proposal_path = _copy_file_into_workspace(
-        source=proposal_path,
-        source_root=root,
-        workspace_root=workspace_root,
+    workspace_proposal_path, workspace_compilation_path = builder_workspace.stage_inputs(
+        proposal_path=proposal_path,
+        compilation_path=compilation_path,
+        config_path=config_path,
     )
-    workspace_compilation_path = _copy_file_into_workspace(
-        source=compilation_path,
-        source_root=root,
-        workspace_root=workspace_root,
-    )
-    (workspace_root / Path(config_path).parent).mkdir(parents=True, exist_ok=True)
     builder_task = _build_builder_task(
         thesis_id=thesis_id,
         family_name=family_name,
@@ -1539,11 +1613,7 @@ def build_missing_primitives(
         missing_primitives=missing_primitives,
     )
     seeded_capability = _best_seeded_capability(root, builder_task)
-    seeded_files = _seed_workspace_from_capability(
-        source_root=root,
-        workspace_root=workspace_root,
-        seed_entry=seeded_capability,
-    )
+    seeded_files = builder_workspace.seed_from_capability(seed_entry=seeded_capability)
     request_payload = {
         "thesis_id": thesis_id,
         "family": family_name,
@@ -1580,11 +1650,9 @@ def build_missing_primitives(
         model_name=BUILDER_CLI_MODEL,
     )
 
-    config_abspath = _ensure_workspace_generated_config(
-        source_root=root,
-        workspace_root=workspace_root,
+    config_abspath = builder_workspace.ensure_generated_config(
         config_path=config_path,
-        source_snapshot=_snapshot_promotable_source_state(root),
+        source_snapshot=builder_workspace.snapshot_sources(),
     )
     prompt_extras = []
     builder_reflexion = build_latest_reflexion_feedback(root, agent="builder")
@@ -1689,10 +1757,7 @@ def build_missing_primitives(
         )
         assert existing_result is not None
         if existing_result["status"] != "error":
-            promotion_manifest = _record_builder_promotion_candidate(
-                source_root=root,
-                workspace_root=workspace_root,
-                artifact_root=artifact_root,
+            promotion_manifest = builder_workspace.record_promotion(
                 task=builder_task,
                 thesis_id=thesis_id,
             )
@@ -1762,7 +1827,7 @@ def build_missing_primitives(
                     previous_result=out,
                 )
             last_prompt = attempt_prompt
-            source_snapshot = _snapshot_promotable_source_state(root)
+            source_snapshot = builder_workspace.snapshot_sources()
             try:
                 proc = subprocess.run(
                     builder_cmd,
@@ -1784,14 +1849,8 @@ def build_missing_primitives(
                     if output_path is not None and output_path.exists()
                     else ""
                 )
-                _sync_root_promotable_changes_into_workspace(
-                    source_root=root,
-                    workspace_root=workspace_root,
-                    source_snapshot=source_snapshot,
-                )
-                config_abspath = _ensure_workspace_generated_config(
-                    source_root=root,
-                    workspace_root=workspace_root,
+                builder_workspace.sync_root_changes(source_snapshot=source_snapshot)
+                config_abspath = builder_workspace.ensure_generated_config(
                     config_path=config_path,
                     source_snapshot=source_snapshot,
                 )
@@ -1858,14 +1917,8 @@ def build_missing_primitives(
                     if output_path is not None and output_path.exists()
                     else ""
                 )
-                _sync_root_promotable_changes_into_workspace(
-                    source_root=root,
-                    workspace_root=workspace_root,
-                    source_snapshot=source_snapshot,
-                )
-                config_abspath = _ensure_workspace_generated_config(
-                    source_root=root,
-                    workspace_root=workspace_root,
+                builder_workspace.sync_root_changes(source_snapshot=source_snapshot)
+                config_abspath = builder_workspace.ensure_generated_config(
                     config_path=config_path,
                     source_snapshot=source_snapshot,
                 )
@@ -1922,10 +1975,7 @@ def build_missing_primitives(
                 if workspace_config_path.exists():
                     source_config_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(workspace_config_path, source_config_path)
-                promotion_manifest = _record_builder_promotion_candidate(
-                    source_root=root,
-                    workspace_root=workspace_root,
-                    artifact_root=artifact_root,
+                promotion_manifest = builder_workspace.record_promotion(
                     task=builder_task,
                     thesis_id=thesis_id,
                 )
