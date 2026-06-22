@@ -3,29 +3,29 @@
 AGENT SPEC. Decide, deterministically, whether a candidate subject is admitted as a THEME, demoted to a sub-tag/thin-note, and whether a country's research run is DONE. "Loop until no new information" is infinite (someone always sells one obscure single-operator tour); convergence is a **quality bar**, not a zero-count. Chasing literal zero pads the map with thin themes — violates depth-over-breadth and the "don't pad" rules.
 
 INPUT:
-- `<country>_corpus.md` — per-theme operator/product rows with axis dry-status (from the discovery-loop step).
+- `<country>/corpus_FINAL.md` — per-theme operator/product rows with axis dry-status (from the discovery-loop step).
 - `<country>_theme_map_*.md` — current theme map (from theme-seeding / discovery-loop).
 - Global registries (read for names/definitions; do NOT operate from memory): `axes-registry.md` (the baseline axes and their `stage`/`role` tags — axis count is DERIVED there), `theme-archetypes.md`, `lens-registry.md` (the sole lens vocabulary).
-- `<country>_ledger.md` — per-country lessons/thin-notes/re-test triggers (append target).
+- `<country>/ledger.md` — per-country lessons/thin-notes/re-test triggers (append target).
 
-OUTPUT: `<country>_theme_map_FINAL.md` containing a **convergence tracker** (per round: themes added/folded; per axis: dry status) + an explicit two-level `CONVERGED` statement citing (a) the completeness-critic's empty result AND (b) the axis-proof sweep — every axis tagged `role:axis-proof` in `axes-registry.md` shown dry. Thin-notes + re-test triggers APPENDED to `<country>_ledger.md`; any new operative rule PROMOTED to the owning registry per `REGISTRY-PROTOCOL.md`.
+OUTPUT: `<country>_theme_map_FINAL.md` containing a **convergence tracker** (per round: themes added/folded; per axis: dry status) + an explicit two-level `CONVERGED` statement citing (a) the completeness-critic's empty result AND (b) the axis-proof sweep — every axis tagged `role:axis-proof` in `axes-registry.md` shown dry. Thin-notes + re-test triggers APPENDED to `<country>/ledger.md`; any new operative rule PROMOTED to the owning registry per `REGISTRY-PROTOCOL.md`.
 
 NEXT: the corpus step (audit trail) and the ranking step (consumes admission/count status; UNVERIFIED rows are admitted but not ranked) consume this file. Resolve slugs via `doc-manifest.md`.
 
-MEMORY INVARIANT: nothing here lives in session memory. Admission counts, per-axis dry status, thin-notes, and re-test triggers are READ from `<country>_corpus.md`/`<country>_ledger.md` and WRITTEN back to `<country>_theme_map_FINAL.md`/`<country>_ledger.md`. A fresh session reproduces the same CONVERGED verdict from files alone. Convergence must be **auditable, not asserted** — if it is not in the corpus's per-axis dry tracker, it did not happen.
+MEMORY INVARIANT: nothing here lives in session memory. Admission counts, per-axis dry status, thin-notes, and re-test triggers are READ from `<country>/corpus_FINAL.md`/`<country>/ledger.md` and WRITTEN back to `<country>_theme_map_FINAL.md`/`<country>/ledger.md`. A fresh session reproduces the same CONVERGED verdict from files alone. Convergence must be **auditable, not asserted** — if it is not in the corpus's per-axis dry tracker, it did not happen.
 
-COMPOUNDING: thin-notes carry a **re-test trigger** (read → run → APPEND to `<country>_ledger.md` → re-evaluate next session when the operator publishes a dated/named departure). A new admission/count rule discovered for one country is PROMOTED to the owning registry (global registry + per-country ledger pattern; mechanics in `REGISTRY-PROTOCOL.md`) so future countries inherit it.
+COMPOUNDING: thin-notes carry a **re-test trigger** (read → run → APPEND to `<country>/ledger.md` → re-evaluate next session when the operator publishes a dated/named departure). A new admission/count rule discovered for one country is PROMOTED to the owning registry (global registry + per-country ledger pattern; mechanics in `REGISTRY-PROTOCOL.md`) so future countries inherit it.
 
 ## PROCEDURE (start = a candidate subject + its corpus rows)
-1. READ `<country>_corpus.md` rows for the candidate, `axes-registry.md` (the baseline axes), and `<country>_ledger.md` (existing thin-notes/re-test triggers).
+1. READ `<country>/corpus_FINAL.md` rows for the candidate, `axes-registry.md` (the baseline axes), and `<country>/ledger.md` (existing thin-notes/re-test triggers).
 2. **Score each product** toward `ADMISSION_BAR` (see DECISION RULES: `FULL_PRODUCT_WEIGHT` / `PARTIAL_PRODUCT_WEIGHT` / annual-catalogue exception). Apply the inclusion/exclusion definitions (qualifying product / operator / expert) before scoring — a non-qualifying row scores 0.
-3. **Sum the score.** If below `ADMISSION_BAR` after applying the rules → the subject does NOT clear the bar. Record a THIN-NOTE with a re-test trigger in `<country>_ledger.md`; do NOT pad it into a theme. Stop for this candidate.
+3. **Sum the score.** If below `ADMISSION_BAR` after applying the rules → the subject does NOT clear the bar. Record a THIN-NOTE with a re-test trigger in `<country>/ledger.md`; do NOT pad it into a theme. Stop for this candidate.
 4. If the sum reaches `ADMISSION_BAR`, apply the remaining admission tests: **non-overlapping** (not a sub-fold of an existing theme) and **first-trip-representative** (iconic + deep, not hyper-niche). Fail either → fold/demote to a sub-tag under the existing theme.
 5. If admitting a sub-tag → theme (promotion), apply the promotion test owned by the discovery-loop step (cross-ref via `doc-manifest.md`): a **standalone multi-day spine** AND a **distinct buyer + supplier base** (bare non-overlap is insufficient).
-6. For each admitted theme, **fold operator-saturation into ranking**: run the baseline-axes check scoped to that theme and record per-axis dry/not-dry in `<country>_corpus.md`. Do not defer to a separate giant final sweep — discovery and ranking merge.
+6. For each admitted theme, **fold operator-saturation into ranking**: run the baseline-axes check scoped to that theme and record per-axis dry/not-dry in `<country>/corpus_FINAL.md`. Do not defer to a separate giant final sweep — discovery and ranking merge.
 7. **False-convergence check (mandatory):** before declaring the country DONE, confirm every axis tagged `role:axis-proof` in `axes-registry.md` has been run as its own dedicated sweep and returned dry. Theme convergence inside one axis (e.g. an English-only / operator-keyword sweep) is NOT global convergence.
 8. **Two-level convergence test:** declare DONE only when BOTH `THEME_CONVERGED` and `OPERATOR_CONVERGED` hold (see DECISION RULES). Run a fresh adversarial completeness-critic for the THEME level.
-9. WRITE the convergence tracker + the two-level `CONVERGED` statement to `<country>_theme_map_FINAL.md`. APPEND thin-notes/re-test triggers to `<country>_ledger.md`. PROMOTE any newly discovered rule to the owning registry per `REGISTRY-PROTOCOL.md`.
+9. WRITE the convergence tracker + the two-level `CONVERGED` statement to `<country>_theme_map_FINAL.md`. APPEND thin-notes/re-test triggers to `<country>/ledger.md`. PROMOTE any newly discovered rule to the owning registry per `REGISTRY-PROTOCOL.md`.
 
 ## DECISION RULES
 - ADMIT a new THEME IFF ALL THREE hold: (1) score reaches `ADMISSION_BAR` in credentialed, dated `CURRENT_SEASON` expert-led products — a named scholar/guide (not a figurehead), a real departure (not "ongoing"); (2) non-overlapping (not a sub-fold of an existing theme); (3) first-trip-representative (iconic + deep for the region, not hyper-niche).
@@ -56,4 +56,4 @@ This block is a VIEW of `10-lessons-log.md` (open — append the check when a ne
 - Counting an aggregator/platform instead of the underlying operator, or double-counting an absorbed sub-brand against its parent (apply `operator-aliases.md`). (L16)
 - Admitting on bare non-overlap without a standalone multi-day spine + distinct buyer/supplier base. (L9)
 - Running a separate giant final operator sweep instead of folding the baseline-axes check into ranking per theme.
-- Failing to APPEND a thin-note's re-test trigger to `<country>_ledger.md`, or not PROMOTING a new rule to the owning registry per `REGISTRY-PROTOCOL.md` (no compounding). (L18)
+- Failing to APPEND a thin-note's re-test trigger to `<country>/ledger.md`, or not PROMOTING a new rule to the owning registry per `REGISTRY-PROTOCOL.md` (no compounding). (L18)

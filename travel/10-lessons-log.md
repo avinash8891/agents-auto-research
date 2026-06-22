@@ -132,6 +132,14 @@ Closed the remaining audit clusters (12–17):
 **Gap it closed:** the docs enforced "all axes dry before ranking" but never modeled *invalidation* — an early theme could ship under-swept after a late promotion (the Italy R4→R5 trap, generalized).
 **Fix:** `REGISTRY-PROTOCOL.md` INVALIDATION section (canonical); `travel-config.md` DONE requires zero `dirty` units; `discovery-loop` marks themes dirty + re-sweeps on promotion; `admission-bar` DIRTY GATE; `corpus` dry-tracker carries a `dirty` state; `freshness` cross-country re-open trigger.
 
+## L20 — Shared-store audit: consolidate per-country ledgers, complete the manifest
+**Audit (verify which docs write to shared stores):** every step DOES persist its learnings (no dead-ends), but the **per-country artifacts had drifted** into 4+ ad-hoc names — `<country>_ledger.md` (05), `<country>_verification_ledger.md` (07), `<country>/axes.md` (04/06), `<country>_corpus.md` vs `<country>_corpus_FINAL.md` — mixing `<country>_X` and `<country>/X` styles. And `tags-registry` had no PROMOTION LOG (provenance gap).
+**Fix:**
+- `doc-manifest.md` now pins the canonical per-country scheme (all under `<country>/`) with a NORMALIZATION rule (`<country>_X` ≡ `<country>/X`), and carries a comprehensive SHARED STORES list (config, protocol, 7 registries, lessons-log as the failure store, per-country ledgers).
+- Consolidated the per-country ledger: one `<country>/ledger.md` (thin-notes + re-test triggers + verification debt + changelog); `<country>/corpus_FINAL.md` is the single consolidated-corpus name. Reconciled refs in 05/06/07/08.
+- Added a PROMOTION LOG to `tags-registry`.
+**Principle:** per-country stores follow one naming scheme (the manifest), same as global registries; every registry carries a provenance log.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 

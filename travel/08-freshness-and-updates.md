@@ -2,8 +2,8 @@
 
 AGENT SPEC. Keep a locked corpus correct over time. Two refresh loops (cheap VERIFY, expensive DISCOVERY) re-fetch known rows and re-discover the market on different cadences. The corpus is a point-in-time snapshot; "correct now" is wrong two months later unless refreshed. `CURRENT_SEASON` (travel-config.md) rolls forward here — this is the ONE doc that owns the season roll-per-cycle.
 
-INPUT: the locked corpus `<country>_corpus_FINAL.md` (rows carry URL, stored fields, `last_checked`, `status`) + the UNVERIFIED / fetch-blocked list. Loop B additionally READS the global registries lens-registry.md, theme-archetypes.md, axes-registry.md and the admission bar from the admission-bar doc. Country re-ranking READS the ranking sources tagged `tier=primary` in sources-registry.md via the country-ranking doc. Read everything from these committed files — do NOT carry corpus state in session memory.
-OUTPUT: updated corpus rows (new `last_checked` + `status`) written back to `<country>_corpus_FINAL.md`; a dated diff report per VERIFY pass `<country>_verify_<YYYY-MM-DD>.md`; a changelog entry `<country>_changelog.md` when DISCOVERY reshapes anything; the refreshed UNVERIFIED / fetch-blocked list.
+INPUT: the locked corpus `<country>/corpus_FINAL.md` (rows carry URL, stored fields, `last_checked`, `status`) + the UNVERIFIED / fetch-blocked list. Loop B additionally READS the global registries lens-registry.md, theme-archetypes.md, axes-registry.md and the admission bar from the admission-bar doc. Country re-ranking READS the ranking sources tagged `tier=primary` in sources-registry.md via the country-ranking doc. Read everything from these committed files — do NOT carry corpus state in session memory.
+OUTPUT: updated corpus rows (new `last_checked` + `status`) written back to `<country>/corpus_FINAL.md`; a dated diff report per VERIFY pass `<country>/verify_<date>.md`; a changelog entry `<country>/ledger.md` when DISCOVERY reshapes anything; the refreshed UNVERIFIED / fetch-blocked list.
 NEXT: booking/use-of-corpus and trip composition (composition doc) consume the freshest verified rows; DISCOVERY reshapes feed back through the round machinery (discovery-loop / admission-bar docs) and the ID/audit trail (corpus doc); the prompts to run both loops live in the orchestration doc.
 
 MEMORY INVARIANT: nothing freshness depends on lives in session memory. Every URL, stored field, `last_checked`, `status`, and the UNVERIFIED list are READ from the committed corpus and the diffs/changelog are WRITTEN back to committed files. A fresh session reproduces the same VERIFY/DISCOVERY result from the files alone — the corpus + registries are the source of truth, not recall (README principle 9; REGISTRY-PROTOCOL.md source-of-truth invariant).
@@ -11,7 +11,7 @@ MEMORY INVARIANT: nothing freshness depends on lives in session memory. Every UR
 COMPOUNDING: the corpus is a living ledger, not a one-off deliverable. Each VERIFY pass READS rows → re-fetches → APPENDS diffs + new stamps. Each DISCOVERY pass READS registries → re-runs the critic → on any new lens/archetype/operator, PROMOTES it to the owning global registry (lens-registry.md / theme-archetypes.md / axes-registry.md) so future countries inherit it, and APPENDS a per-country changelog entry. Promotion mechanics and the promotion bar are owned by REGISTRY-PROTOCOL.md — do not restate them here. Knowledge accrues across passes and across sessions.
 
 ## CONSOLIDATION (round files → locked corpus; run once before the first VERIFY)
-Merge the per-round `corpus/round<N>_<cluster>.md` files into `<country>_corpus_FINAL.md`. When merging each row, **stamp `first_seen_round`** derived mechanically from its source round-filename (`corpus` row schema) — preserves round provenance the consolidated file would otherwise lose. Dedup per `operator-aliases.md`. After this, the locked corpus is the VERIFY/DISCOVERY input.
+Merge the per-round `corpus/round<N>_<cluster>.md` files into `<country>/corpus_FINAL.md`. When merging each row, **stamp `first_seen_round`** derived mechanically from its source round-filename (`corpus` row schema) — preserves round provenance the consolidated file would otherwise lose. Dedup per `operator-aliases.md`. After this, the locked corpus is the VERIFY/DISCOVERY input.
 
 ## PROCEDURE — Loop A: VERIFY pass (cheap; `VERIFY_CADENCE`)
 URLs are already known, so this is re-fetch, not discovery. Runs on `VERIFY_CADENCE` (travel-config.md).
@@ -19,9 +19,9 @@ URLs are already known, so this is re-fetch, not discovery. Runs on `VERIFY_CADE
 2. Re-fetch each URL.
 3. **Diff** the fetched page against the stored row. Diff dimensions (open — append on discovery; REGISTRY-PROTOCOL.md): date moved · price changed · tour withdrawn · new departure added · guide changed. (provenance: Italy build / L8.)
 4. Update `last_checked` to today (`YYYY-MM-DD`). Set `status` ∈ {verified, stale, withdrawn}.
-5. Log every diff to the dated VERIFY report `<country>_verify_<YYYY-MM-DD>.md`.
+5. Log every diff to the dated VERIFY report `<country>/verify_<date>.md`.
 6. Refresh the UNVERIFIED / fetch-blocked list (URLs that failed to fetch stay listed and worked next pass).
-7. Write updated rows back to `<country>_corpus_FINAL.md`. This loop is the answer to "new info after the cadence window" — it catches the changes that matter for booking.
+7. Write updated rows back to `<country>/corpus_FINAL.md`. This loop is the answer to "new info after the cadence window" — it catches the changes that matter for booking.
 
 ## PROCEDURE — Loop B: DISCOVERY pass (expensive; `DISCOVERY_CADENCE`)
 Runs on `DISCOVERY_CADENCE` (travel-config.md).
@@ -29,7 +29,7 @@ Runs on `DISCOVERY_CADENCE` (travel-config.md).
 2. Re-run the final adversarial completeness-critic + a dry-check across the baseline axes in axes-registry.md (count derived from the registry; the convergence-gate is "every axis tagged `role:convergence-gate` returns dry," not a frozen axis count — `OPERATOR_CONVERGED`, travel-config.md). Give axes tagged `role:axis-proof` their own dedicated sweep (the false-convergence gate).
 3. For any slice that clears the `ADMISSION_BAR` (admission-bar doc; `ADMISSION_BAR` / `MIN_CREDENTIALED_PRODUCTS`, travel-config.md): run a full discovery round for that slice and reshape the corpus.
 4. If the pass surfaces a new lens / archetype / operator-pattern not in the registries → PROMOTE it to the owning global registry per REGISTRY-PROTOCOL.md (lens → lens-registry.md, archetype → theme-archetypes.md, axis/pattern → axes-registry.md) so future countries inherit it. The per-registry promotion test (e.g. an axis must surface tours no existing axis finds; an archetype must recur across ≥2 countries) is owned by REGISTRY-PROTOCOL.md and the discovery-loop doc — apply it, don't restate it.
-5. Write a changelog entry to `<country>_changelog.md` describing what DISCOVERY reshaped. This loop catches genuinely new operators, themes, and market entrants.
+5. Write a changelog entry to `<country>/ledger.md` describing what DISCOVERY reshaped. This loop catches genuinely new operators, themes, and market entrants.
 
 ## PROCEDURE — Stamping (enables mechanical refresh)
 1. Ensure every row carries `last_checked: YYYY-MM-DD` and `status`.

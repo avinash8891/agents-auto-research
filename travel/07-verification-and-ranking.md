@@ -6,7 +6,7 @@ INPUT:
 - `<country>_theme_map_FINAL.md` — the discovered field (themes + candidate operators) from the **theme-seeding**/**discovery-loop** docs (`doc-manifest.md`).
 - The corpus rows for this theme (**corpus** doc) — including UNVERIFIED rows and fetch-blocked (403/404) operator pages, with their HTTP status notes.
 - The discovery axes (**coverage-matrix** / **admission-bar** docs) — the baseline axes in `axes-registry.md`, especially the axes tagged `role:axis-proof` and `role:saturation-weight` (these carry the operators keyword search misses; identities are READ from the registry, never named from memory).
-- Per-country verification ledger (`<country>_verification_ledger.md`, **corpus** doc) and global registries (`axes-registry.md`) — READ, do not work from memory.
+- Per-country verification ledger (`<country>/ledger.md`, **corpus** doc) and global registries (`axes-registry.md`) — READ, do not work from memory.
 
 OUTPUT: `rankings/<theme-id>.md` — verified ranked Top-`RANK_DEPTH` + a FLAGS block (schema in Step D). `<theme-id>` follows `THEME_ID_GRAMMAR` (`travel-config.md`).
 NEXT: the **composition** doc (`doc-manifest.md`) and any country-level roll-up consume `rankings/<theme-id>.md`. Verified specifics + new operators APPEND back to the corpus (**corpus** doc) and verification ledger.

@@ -36,5 +36,9 @@ Open enumerations (`REGISTRY-PROTOCOL.md`) of what does NOT count toward the adm
 - **non-qualifying expert** = not a credentialed theme-fit scholar: title-only (name unpublished) · generic licensed city guide · artisan/trifolao (unless the craft IS the theme). (provenance: Italy R4)
 - **non-qualifying operator** = aggregator/marketplace reselling others (count the underlying operator; see `operator-aliases.md`).
 
+## PROMOTION LOG
+- (seed) Baseline tag vocabularies (row.status, format-class, theme.seed-tag, theme.strength) established.
+- (Italy R4) admission.disqualifiers seeded (non-qualifying product/operator/expert).
+
 ## UPDATE
-Mechanics: `REGISTRY-PROTOCOL.md`. Append a value when a new state is genuinely needed; never let two docs invent divergent spellings. The tag/value sets here are open enumerations — append-on-discovery with provenance.
+Mechanics: `REGISTRY-PROTOCOL.md`. Append a value when a new state is genuinely needed; never let two docs invent divergent spellings. The tag/value sets here are open enumerations — append-on-discovery with provenance (log additions above).

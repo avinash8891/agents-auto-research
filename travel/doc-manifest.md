@@ -32,12 +32,26 @@ Single map of stage role → file. Reference docs by **role/slug** (e.g. "admiss
 | tags-registry | row/theme tag vocabularies (status, format-class, watch/leisure, strength) | tags-registry.md |
 | manifest | this file | doc-manifest.md |
 
+## SHARED STORES (the complete set — what compounds across runs/sessions)
+Global: `travel-config.md` (dials) · `REGISTRY-PROTOCOL.md` (mechanics) · the 7 registries (`axes-registry`, `channel-registry`, `lens-registry`, `theme-archetypes`, `sources-registry`, `operator-aliases`, `tags-registry`) · `10-lessons-log.md` (the append-only **failure store**; anti-patterns are its view). Per-country: `<country>/axes.md`, `<country>/ledger.md`, `<country>/corpus_FINAL.md` (+ the artifacts table below). Every step writes its learnings to one of these — none are dead-ends.
+
 ## GLOBAL DATA ARTIFACTS (outputs, not docs — don't confuse with the like-named method doc)
 | file | what | produced by |
 |------|------|-------------|
 | country_ranking.md | the ordered top-N country list (DATA) | the `country-ranking` step (01-country-ranking.md) — the METHOD doc |
 
-## PER-COUNTRY ARTIFACTS
-`<country>/` holds: `<country>_theme_map_v0..FINAL.md`, `axes.md` ledger, `corpus/round*.md`, `rankings/<theme-id>.md`, and (freshness) `<country>_corpus_FINAL.md`, `<country>_verify_<date>.md`, `<country>_changelog.md`.
+## PER-COUNTRY ARTIFACTS (canonical scheme — single source)
+All per-country files live under `<country>/`. NORMALIZATION: a `<country>_X` reference anywhere in the docs denotes the same file as `<country>/X` — canonical form is `<country>/X`; treat the prefix style as shorthand.
+
+| file | what | written by |
+|------|------|-----------|
+| `<country>/theme_map_v0..FINAL.md` | seed → reshaped → converged theme map + convergence tracker | theme-seeding, discovery-loop, admission-bar |
+| `<country>/axes.md` | per-country axis ledger (active/promoted/pending axes + language set) | coverage-matrix, discovery-loop |
+| `<country>/ledger.md` | **the single per-country ledger** — thin-notes + re-test triggers (admission-bar) · verification debt / UNVERIFIED + 403-blocked (corpus, ranking) · changelog (freshness). Replaces `_ledger`/`_verification_ledger`/`_changelog`. | admission-bar, ranking, freshness |
+| `<country>/corpus/round<N>_<cluster>.md` | working raw inventories (per round) | discovery-loop subagents |
+| `<country>/corpus_FINAL.md` | consolidated, locked corpus (round files merged, `first_seen_round` stamped) | freshness consolidation |
+| `<country>/rankings/<theme-id>.md` | ranked Top-`RANK_DEPTH` per theme | ranking |
+| `<country>/compositions/<label>.md` | multi-lens itineraries | composition |
+| `<country>/verify_<date>.md` | dated VERIFY-pass diff report | freshness |
 
 Rule: when a step doc cites another, use the slug; resolve via this table. Renaming a file = edit one row here.
