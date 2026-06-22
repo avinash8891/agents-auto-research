@@ -126,6 +126,12 @@ Closed the remaining audit clusters (12–17):
 **Principle:** every enumeration the method leans on is either a registry, an open-in-doc append-list, or an explicitly-closed set with an escape hatch — never an unmarked static list.
 *(Lists named above — reshape actions, round types, triggers, diff dimensions, metric caveats, overlap dimensions — are illustrative pointers; each lives tagged `(open — append on discovery)` in its home doc: reshape/round/overlap in `discovery-loop`, triggers/diff-dims in `freshness`, caveats in `country-ranking`. This entry is the historical record, not the authoritative list.)*
 
+## L19 — The pipeline is a fixed point; promotions must dirty-propagate
+**From first principles (not the old docs):** one-pass-and-compound is wrong — a downstream promotion (new axis/lens) invalidates upstream coverage (themes finalized earlier were swept on a smaller set). Naive full-recursion is also wrong (wasteful, may not terminate). Correct = **fixed-point with monotonic append-only state + dirty-propagation**: a promotion marks only dependent units `dirty`; re-sweep just the new axis/unit; done when a full pass changes nothing. Append-only + a fixed admission bar over finite supply ⇒ monotone toward a ceiling ⇒ terminates (mutable edits could oscillate).
+**Scope:** within a country = strict fixed point (re-sweep dirty themes before convergence); across countries = eventual-consistency (a promotion re-opens prior countries lazily on the DISCOVERY cadence — immediate global re-run too costly).
+**Gap it closed:** the docs enforced "all axes dry before ranking" but never modeled *invalidation* — an early theme could ship under-swept after a late promotion (the Italy R4→R5 trap, generalized).
+**Fix:** `REGISTRY-PROTOCOL.md` INVALIDATION section (canonical); `travel-config.md` DONE requires zero `dirty` units; `discovery-loop` marks themes dirty + re-sweeps on promotion; `admission-bar` DIRTY GATE; `corpus` dry-tracker carries a `dirty` state; `freshness` cross-country re-open trigger.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 

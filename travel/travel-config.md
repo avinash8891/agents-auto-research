@@ -30,8 +30,8 @@ All tunables live here once. Docs reference the NAME, never the literal. Change 
 
 ## CONVERGENCE
 - `THEME_CONVERGED` = a fresh adversarial completeness-critic admits 0 themes clearing `ADMISSION_BAR`.
-- `OPERATOR_CONVERGED` = every BASELINE axis (`axes-registry.md`) returns dry for the theme.
-- Country DONE = both, across all baseline axes (count derived from the registry, never asserted as a literal).
+- `OPERATOR_CONVERGED` = every BASELINE axis (`axes-registry.md`) returns dry for the theme AND the theme carries no `dirty` flag (no un-re-swept promotion — see `REGISTRY-PROTOCOL.md` INVALIDATION).
+- Country DONE = both, across all baseline axes (count derived from the registry, never asserted as a literal), with zero dirty units.
 
 ## NOTES
 - Numbers here are tunables, not law — but changing one is a config edit, not a prose hunt.

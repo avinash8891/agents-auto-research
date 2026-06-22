@@ -61,6 +61,7 @@ Runs on `DISCOVERY_CADENCE` (travel-config.md).
 - A new excavation or discovery that spawns tours. (provenance: Italy build)
 - An anniversary / jubilee year that creates one-off departures (e.g. 2025 Catholic Jubilee, 800th St Francis 2026). (provenance: Italy build)
 - A major operator launch or closure. (provenance: Italy build)
+- A new axis/lens/channel/archetype PROMOTED in any country (cross-country INVALIDATION, `REGISTRY-PROTOCOL.md`): prior finished countries were swept on a smaller set → mark them `dirty` and re-sweep the new entry on the next DISCOVERY pass. Eventual-consistency: lazy here by cost trade-off, not immediate. (provenance: L19)
 
 ## EXAMPLE (input → output)
 Input: locked `italy/italy_corpus_FINAL.md` with rows stamped `last_checked: 2026-06-22` (Italy roster cited per-country in `italy/` artifacts; this global doc stays example-light).

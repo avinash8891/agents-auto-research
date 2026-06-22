@@ -27,7 +27,7 @@ COMPOUNDING: lenses, archetypes, channels, and axes follow read → run → APPE
 4. Each agent **writes raw findings directly to its own corpus file** (`corpus/round<N>_<cluster>.md`) and returns only a short verdict summary. Keeps orchestrator context lean and the save verbatim (`corpus`).
 5. Agents report operators/tours ONLY via a live URL. Named guide and/or `CURRENT_SEASON` dated departure unconfirmed → mark **UNVERIFIED**. Invent nothing.
 6. After the agents return, apply the **reshape actions** (ADD/SPLIT, MERGE, DEMOTE/FOLD, FOLD-INTO-NEW, PROMOTE, CROSS-CUT — see DECISION RULES) to the theme map.
-7. If a new lens/archetype/channel/axis surfaced, APPEND it to the per-country ledger and PROMOTE to the owning global registry (COMPOUNDING; mechanics per `REGISTRY-PROTOCOL.md`).
+7. If a new lens/archetype/channel/axis surfaced, APPEND it to the per-country ledger and PROMOTE to the owning global registry (COMPOUNDING; mechanics per `REGISTRY-PROTOCOL.md`). **On promotion, apply INVALIDATION (`REGISTRY-PROTOCOL.md`): mark every already-swept theme `dirty` on the new axis and re-sweep that axis for them in a later round before convergence.** A new axis at round 5 means rounds 1–4 themes were under-swept — re-sweep, don't ship them stale.
 8. WRITE the result to a new `<country>_theme_map_v<N>.md` (decisions + rationale). Leave the corpus files in place. Stop; hand to `admission-bar` to test convergence.
 
 ## DECISION RULES

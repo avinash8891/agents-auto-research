@@ -83,6 +83,7 @@ These row statuses feed the credited-product weights at ranking: a verified row 
 **Closing reconciliation (`*_theme_map_FINAL.md` MUST):**
 1. List every corpus round, INCLUDING the rounds for axes tagged `role:axis-proof` in axes-registry.md — not just the early cluster rounds.
 2. State convergence as two-level: "theme-converged at round N; operator-converged after the axis-proof rounds." Operator-convergence requires every axis tagged `role:convergence-gate` to return dry — not a frozen round count (per OPERATOR_CONVERGED, axes-registry).
+3. The per-axis dry tracker carries a `dirty` state per (theme, axis): a promotion (`REGISTRY-PROTOCOL.md` INVALIDATION) sets earlier themes `dirty` on the new axis; a `dirty` cell is NOT dry. FINAL may only declare DONE when zero cells are `dirty` (per DONE, `travel-config.md`).
 - Skipping this silently reproduces the false-convergence lesson L7 (pinned in lessons) that the reconciliation exists to prevent — the Italy FINAL initially said "converged after 4 rounds" while a later axis-proof round's operators sat unmerged. Always reconcile before declaring done.
 
 ## EXAMPLE (Italy)

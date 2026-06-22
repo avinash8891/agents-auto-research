@@ -39,3 +39,13 @@ ANTI-PATTERNS blocks are the failure-check projection of `10-lessons-log.md` (th
 
 ### Self-check
 The static-census audit is the recurring guard: re-run it; any STATIC-SHOULD-EVOLVE construct lacking an open-tag, registry, or escape hatch is a regression.
+
+## INVALIDATION (promotion → dirty-propagation)
+The pipeline is a **fixed-point computation**, not a one-pass: a downstream promotion can invalidate upstream coverage. Whenever an entry is PROMOTED (a new axis/lens/archetype/channel), it **marks every dependent unit dirty** — units that were finalized before the new entry existed and were therefore covered on a smaller set:
+- New **axis** promoted → every already-swept theme is `dirty` on that axis (it was never swept on it). Re-sweep **only that axis** for each theme (targeted, not a full re-discovery).
+- New **lens/archetype** promoted → re-run the seed-completeness diff; it may spawn new themes (existing themes stay clean unless the lens overlaps).
+Rules:
+1. A unit cannot be declared converged/done while it carries a `dirty` flag (see `travel-config.md` DONE).
+2. Re-processing is **scoped to the dirty axis/unit**, never a global restart.
+3. **Termination is guaranteed** because state is append-only and the admission bar is a fixed filter over finite real-world supply — coverage is monotone toward a ceiling, so dirty-propagation cannot oscillate.
+4. **Scope:** *within a country* this is a strict fixed point (re-sweep dirty themes before convergence). *Across countries* it is eventual-consistency — a promotion marks prior finished countries dirty, re-swept lazily on the DISCOVERY cadence (`freshness`), not immediately (cost trade-off).
