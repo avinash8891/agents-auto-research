@@ -1,0 +1,30 @@
+travel/09-agent-orchestration.md
+  s_fc23909bc640a9::t_e32c9a9c40f82a 55-57
+  s_fc23909bc640a9::t_c6675fcecd5b2e 26
+  s_fc23909bc640a9::t_bfe9d0de8b059e 36
+  s_fc23909bc640a9::t_b218497da50cc2 13
+  s_fc23909bc640a9::t_2e720f6a52c599 47-49
+  s_fc23909bc640a9::t_271ae5983c0b9c 77-78,80
+  s_fc23909bc640a9::t_1b170a6a242cac 19-20
+  s_fc23909bc640a9::t_0689e4d9f53309 94-98
+travel/README.md
+  s_fc23909bc640a9::t_aa2411d9eb9e05 20-22
+  s_fc23909bc640a9::t_ab12b4369b9f47 51-53
+  s_fc23909bc640a9::t_68faa006ceee27 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "b2e46b188072cbcf83124ec2cdf2c709180c2b7d",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
