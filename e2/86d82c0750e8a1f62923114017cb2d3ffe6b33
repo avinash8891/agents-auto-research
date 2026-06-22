@@ -1,0 +1,29 @@
+travel/tags-registry.md
+  s_b10ea6e0b14a9b::t_4879cbaf805fbd 19-22
+travel/07-verification-and-ranking.md
+  s_b10ea6e0b14a9b::t_034c23e9c822de 62-63
+  s_b10ea6e0b14a9b::t_0fd10af229b4b5 87,96,99,112
+travel/theme-archetypes.md
+  s_b10ea6e0b14a9b::t_ed8a2cb6ac0b05 9
+travel/00-overview-and-principles.md
+  s_b10ea6e0b14a9b::t_a9eaa97a2b217a 83
+travel/05-convergence-and-admission-bar.md
+  s_b10ea6e0b14a9b::t_c3147ac8c567e1 88
+  s_b10ea6e0b14a9b::t_4f72f65b9e3042 47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "e286d82c0750e8a1f62923114017cb2d3ffe6b33",
+  "prompts": {},
+  "sessions": {
+    "s_b10ea6e0b14a9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef028-10f0-7e81-815f-83c5eff18633",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
