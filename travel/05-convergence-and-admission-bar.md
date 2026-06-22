@@ -20,7 +20,7 @@ COMPOUNDING: thin-notes carry a **re-test trigger** (read → run → APPEND to 
 1. READ the per-round corpus files `<country>/corpus/round<N>_<cluster>.md` rows for the candidate, `axes-registry.md` (the baseline axes), and `<country>/ledger.md` (existing thin-notes/re-test triggers).
 2. **Score each product** toward `ADMISSION_BAR` (see DECISION RULES: `FULL_PRODUCT_WEIGHT` / `PARTIAL_PRODUCT_WEIGHT` / annual-catalogue exception). Apply the inclusion/exclusion definitions (qualifying product / operator / expert) before scoring — a non-qualifying row scores 0.
 3. **Sum the score.** If below `ADMISSION_BAR` after applying the rules → the subject does NOT clear the bar. Record a THIN-NOTE with a re-test trigger in `<country>/ledger.md`; do NOT pad it into a theme. Stop for this candidate.
-4. If the sum reaches `ADMISSION_BAR`, apply the remaining admission tests: **non-overlapping** (not a sub-fold of an existing theme) and **first-trip-representative** (iconic + deep, not hyper-niche). Fail either → fold/demote to a sub-tag under the existing theme.
+4. If the sum reaches `ADMISSION_BAR`, apply the **Theme Selection / Admission Rubric** below. Fail any gate → fold/demote to a sub-tag under the existing theme or record a THIN-NOTE.
 5. If admitting a sub-tag → theme (promotion), apply the sub-tag→theme promotion test owned by `discovery-loop` (resolve via `doc-manifest.md`); bare non-overlap is insufficient.
 6. For each admitted theme, **fold operator-saturation into ranking**: run the baseline-axes check scoped to that theme and record per-axis dry/not-dry in `<country>_theme_map_FINAL.md`. Do not defer to a separate giant final sweep — discovery and ranking merge.
 7. **False-convergence check (mandatory):** before declaring the country DONE, confirm every axis tagged `role:axis-proof` in `axes-registry.md` has been run as its own dedicated sweep and returned dry. Theme convergence inside one axis (e.g. an English-only / operator-keyword sweep) is NOT global convergence.
@@ -28,7 +28,7 @@ COMPOUNDING: thin-notes carry a **re-test trigger** (read → run → APPEND to 
 9. WRITE the convergence tracker + the two-level `CONVERGED` statement to `<country>_theme_map_FINAL.md`. APPEND thin-notes/re-test triggers to `<country>/ledger.md`. PROMOTE any newly discovered rule to the owning registry per `REGISTRY-PROTOCOL.md`.
 
 ## DECISION RULES
-- ADMIT a new THEME IFF ALL THREE hold: (1) score reaches `ADMISSION_BAR` in credentialed, dated `CURRENT_SEASON` expert-led products — a named scholar/guide (not a figurehead), a real departure (not "ongoing"); (2) non-overlapping (not a sub-fold of an existing theme); (3) first-trip-representative (iconic + deep for the region, not hyper-niche).
+- ADMIT a new THEME IFF ALL THREE hold: (1) score reaches `ADMISSION_BAR` in credentialed, dated `CURRENT_SEASON` expert-led products — a named scholar/guide (not a figurehead), a real departure (not "ongoing"); (2) it passes the non-overlap gate in the Theme Selection / Admission Rubric; (3) it passes the representative gate in that rubric.
 - EMIT a ranked list only if at least 3 candidates clear the `ranking` rubric gate in `07-verification-and-ranking.md`; fewer than 3 admitted/rankable candidates means THIN-NOTE or "best that exists", not a padded Top-`RANK_DEPTH`.
 - COUNT a product as `FULL_PRODUCT_WEIGHT` IFF it has BOTH a named credentialed guide AND a confirmed `CURRENT_SEASON` dated departure, simultaneously.
 - COUNT a product as `PARTIAL_PRODUCT_WEIGHT` IFF it has the right structure but an UNVERIFIED date OR an unnamed guide.
@@ -47,6 +47,22 @@ COMPOUNDING: thin-notes carry a **re-test trigger** (read → run → APPEND to 
 - [C9] AVAILABILITY-BIAS GATE (coverage ≠ best): "dry" = search EXHAUSTION, NOT field completeness. Before declaring a theme converged, REQUIRE ≥1 destination-language / destination-platform sweep AND a plausibility probe ("for a theme this iconic, is it plausible the best operator is unindexed in English?"). A convergence-gate axis empty because the SOURCE base does not cover the region (not because the market is covered) does NOT count as satisfied — it raises a `coverage-limitation` FLAG and makes convergence PROVISIONAL. State the basis: "dry = search exhaustion, not field completeness."
 - [C10] COUNTRY-LEVEL VERDICT (parallel to the theme THIN-NOTE): set `country.outcome` (`tags-registry.md`: `rich | partial | thin-market | no-expert-led-market`). When a country falls below `MIN_THEMES_PER_COUNTRY` or `MIN_COUNTRY_CREDITED_WEIGHT` (`travel-config.md`), emit a country-level note. The FINAL must DISTINGUISH converged-rich from converged-thin and state the honest ceiling ("could NOT do this well — here's why: …, real ceiling not a research gap"), and surface the single best below-bar option labelled "best that exists".
 - [C11] NON-CONVERGENCE STOP: the loop-until-dry terminates on EITHER dry OR budget-exhausted (`travel-config.md` COST/BUDGET: `MAX_DISCOVERY_ROUNDS`, `MAX_SEARCHES_PER_AXIS`, `MAX_AGENTS_PER_COUNTRY`, `PER_COUNTRY_SEARCH_BUDGET`). Budget-exhausted-before-convergence ⇒ stamp the artifact `INCOMPLETE` with a logged residual (which axes/regions/themes are unfinished). The fixed-point termination proof (DIRTY GATE) is NOT a substitute for an operational budget.
+
+### Theme Selection / Admission Rubric
+Use this rubric for "first-trip representative", "iconic", "hyper-niche", and "honest ceiling" calls. If evidence is unclear, choose the lower label and log the ambiguity in `<country>/ledger.md` per `REGISTRY-PROTOCOL.md` rubric evolution.
+
+| dimension | PASS | WATCH | FAIL |
+|---|---|---|---|
+| representative | covered by at least one destination authority, UNESCO/site/museum program, or >=2 specialist operators as a named subject | covered by one specialist operator or one credible authority only | only agent recall/training-memory, no live source |
+| market supply | credited product score reaches `ADMISSION_BAR` and at least 3 candidates can proceed to ranking or closest-fit review | credited score reaches `ADMISSION_BAR`, but fewer than 3 rankable candidates | credited score below `ADMISSION_BAR` |
+| lens clarity | one primary `lens-registry.md` lens; secondary eras/regions do not change the expert type | adjacent lenses but separable by products/experts | bundles unrelated lenses or requires a generalist expert |
+| overlap | products/operators are distinct from any existing theme | subject is a sub-tag with some distinct products | same products/operators as an existing theme |
+| trip shape | sold as a coherent trip or segment within `MAX_TRIP_DAYS` | needs composition/private assembly | not a coherent trip/segment |
+
+Theme gate:
+- Admit only if representative, market supply, lens clarity, overlap, and trip shape are not FAIL.
+- A WATCH on market supply may emit "best that exists" or THIN-NOTE; it does not force a padded Top-`RANK_DEPTH`.
+- A WATCH on lens clarity or overlap must be resolved by the `discovery-loop` reshape rubric before final admission.
 
 ## EXAMPLE (Italy worked example)
 - **Molise Samnite** and **Cremona violins**: each scored one `FULL_PRODUCT_WEIGHT` + one `PARTIAL_PRODUCT_WEIGHT` (below `ADMISSION_BAR`) → FAILED the bar → recorded as THIN-NOTES with re-test triggers, not themes. Cremona violins became a sub-tag under opera. (Full Italy roster: per-country files.)

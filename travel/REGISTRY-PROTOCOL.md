@@ -34,12 +34,20 @@ Rules for an open enumeration:
 4. **Promote to a full registry** only when the list earns cross-doc reuse (referenced by ≥2 docs) — then move it out and reference by name.
 5. A genuinely closed set (intended not to grow) is `STATIC-OK` but still carries an escape hatch: "append if a new case emerges."
 
+### Rubrics evolve like registries
+Rubrics are append-only decision aids, not free-form judgment. When a run exposes an ambiguity:
+1. Resolve the current row conservatively using the lower label.
+2. Record the ambiguous case in `<country>/ledger.md` with source URL, theme-id, and the label chosen.
+3. Change a rubric only when the case is repeatable or high-impact.
+4. Cite the run/artifact that forced the change in the rubric row or its local evolution log.
+5. Never loosen a gate to make one candidate rank or one theme admit.
+
 ### Anti-patterns are a view of the lessons-log
 ANTI-PATTERNS blocks are the failure-check projection of `10-lessons-log.md` (the append-only failure store). Each anti-pattern carries its `Lnn` provenance where one exists. Protocol: **a new lesson → append its check to the owning doc's ANTI-PATTERNS, tagged `Lnn`**; a lesson with no propagated check is a gap. The lessons-log is the source; the per-doc blocks are the view.
 
 ### Self-check (two recurring doc-health guards, both views of the lessons-log)
 1. **static-census** — re-run it; any STATIC-SHOULD-EVOLVE construct lacking an open-tag, registry, or escape hatch is a regression.
-2. **AUDIT-CHECKLIST.md** — the 17 known issue-classes; run it after any batch of doc changes to find recurrences across all docs.
+2. **AUDIT-CHECKLIST.md** — the known issue-classes (open list — process-integrity classes 1–17 + output-quality/bias/cost classes 18–23; count derived, not frozen); run it after any batch of doc changes to find recurrences across all docs.
 Both `AUDIT-CHECKLIST.md` and the per-doc ANTI-PATTERNS blocks are **views of `10-lessons-log.md`**: a new generalizable lesson → append a checklist class (+ the relevant anti-pattern), tagged `Lnn` (doc-currency guard, L25).
 
 ## INTELLIGENCE CAPTURE & ROUTING (leads — don't lose tangential intelligence)

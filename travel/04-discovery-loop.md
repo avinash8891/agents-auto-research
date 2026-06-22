@@ -23,13 +23,20 @@ COMPOUNDING: lenses, archetypes, channels, and axes follow read → run → APPE
 ## PROCEDURE (one round; repeat until `admission-bar` says dry)
 1. READ the latest `<country>_theme_map_v<N>.md`, the coverage matrix (`coverage-matrix`), and the registries. Pick the round TYPE (see DECISION RULES: cluster sweep, completeness-critic, or axis-proof).
 2. **Cluster the themes** (e.g. by macro-region) and dispatch one discovery agent per cluster, in parallel (`orchestration`).
-3. Each agent runs the matrix for its cluster: every channel sub-type in `channel-registry.md`, the relevant lenses in `lens-registry.md`, every region, plus the axes tagged `role:axis-proof` (run as their own passes). Multiple searches per axis — never stop at a handful.
+3. Each agent runs the matrix for its cluster: every channel sub-type in `channel-registry.md`, the relevant lenses in `lens-registry.md`, every region, plus the axes tagged `role:axis-proof` (run as their own passes). Multiple searches per axis — be exhaustive, never stop at a handful — but BOUNDED by `MAX_SEARCHES_PER_AXIS` (`travel-config.md` COST/BUDGET): the per-axis search count is capped at the dial, not open-ended.
+3a. **Per-cell search-effort budget.** Each matrix cell (axis × region) carries `PER_COUNTRY_SEARCH_BUDGET`-derived effort. When a cell hits its budget with ONLY disqualified/aggregator results (no admissible operator), mark it `junk-saturated`/`low-signal` (`tags-registry.md`) WITH provenance (queries run, what disqualified each hit) and STOP searching that cell — do NOT keep burning budget on it. `junk-saturated`/`low-signal` is distinct from empty-gap (no result at all) and covered (admissible result found). Surface every `junk-saturated` cell in the country verdict (`tags-registry.md`, country `outcome`).
 4. Each agent **writes raw findings directly to its own corpus file** (`corpus/round<N>_<cluster>.md`) and returns only a short verdict summary. Keeps orchestrator context lean and the save verbatim (`corpus`).
 5. Agents report operators/tours ONLY via a live URL. Named guide and/or `CURRENT_SEASON` dated departure unconfirmed → mark **UNVERIFIED**. Invent nothing.
 5a. **Capture leads:** signals that don't fit the row schema (theme/sub-lens hints, channel/affinity/archetype/authority signals, a guide spanning themes) → typed rows in `<country>/leads.md` with provenance, per `REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING. Route each; new-coverage leads dirty the affected unit.
-6. After the agents return, apply the **reshape actions** (ADD/SPLIT, MERGE, DEMOTE/FOLD, FOLD-INTO-NEW, PROMOTE, CROSS-CUT — see DECISION RULES) to the theme map.
+6. After the agents return, apply the **Reshape Rubric** below before any reshape action (ADD/SPLIT, MERGE, DEMOTE/FOLD, FOLD-INTO-NEW, PROMOTE, CROSS-CUT).
 7. If a new lens/archetype/channel/axis surfaced, APPEND it to the per-country ledger and PROMOTE to the owning global registry (COMPOUNDING; mechanics per `REGISTRY-PROTOCOL.md`). **On promotion, apply INVALIDATION (`REGISTRY-PROTOCOL.md`): mark every already-swept theme `dirty` on the new axis (or, for a promoted **channel** sub-type, on the CHANNEL axis restricted to that sub-type) and re-sweep only the new entry for them in a later round before convergence.** A new axis at round 5 means rounds 1–4 themes were under-swept — re-sweep, don't ship them stale.
 8. WRITE the result to a new `<country>_theme_map_v<N>.md` (decisions + rationale). Leave the corpus files in place. Stop; hand to `admission-bar` to test convergence.
+
+### Loop termination (the round loop, bounded)
+The round loop terminates on EITHER condition (`travel-config.md` COST/BUDGET dials — `MAX_DISCOVERY_ROUNDS`, `MAX_SEARCHES_PER_AXIS`, `MAX_AGENTS_PER_COUNTRY`, `PER_COUNTRY_SEARCH_BUDGET` — referenced here, `admission-bar`, `orchestration`):
+- **discovery-dry** — `admission-bar` says dry (the convergence path); OR
+- **budget-exhausted-with-logged-residual** — a dial (`MAX_DISCOVERY_ROUNDS` / `PER_COUNTRY_SEARCH_BUDGET` / `MAX_AGENTS_PER_COUNTRY`) is hit before dry. This is the explicit **NON-CONVERGENCE STOP**: it is only valid with a LOGGED residual (which axes / regions / themes remain unfinished). Budget-exhausted-before-convergence ⇒ the artifact is stamped **INCOMPLETE** (naming the unfinished axes/regions/themes).
+- NOTE: the fixed-point "termination proof" (the loop provably ends because the axis set itself converges, COMPOUNDING) is a correctness argument, NOT an operational budget — it does not bound spend. The dials above are the operational stop; the proof is not a substitute for them.
 
 ## DECISION RULES
 
@@ -44,11 +51,23 @@ COMPOUNDING: lenses, archetypes, channels, and axes follow read → run → APPE
 - **Axis-completeness critic**: one critic asks not "what operator/theme did we miss?" but **"what DIMENSION are we blind to?"** — test the candidate axes from `axes-registry.md` (the CANDIDATE WATCHLIST) for this country. PROMOTE a candidate axis IFF it provably surfaces tours no existing axis finds → record in `<country>/axes.md`, then escalate (PROMOTE) to the global `axes-registry.md` per `REGISTRY-PROTOCOL.md` (a promoted candidate must declare its `stage`/`role` tags so the gates/sweeps pick it up automatically).
 
 ### Reshape actions (apply after each round) (open — append on discovery; `REGISTRY-PROTOCOL.md`)
-- **ADD / SPLIT** a theme IFF discovery reveals a deep, distinct expert-led market the seed missed (e.g. Umbria → art vs St-Francis pilgrimage; Sicily WWII Husky as its own theme). (provenance: L3, Italy R1)
-- **MERGE** two themes IFF their tour products are really the same. (provenance: L3)
-- **DEMOTE / FOLD** a theme IFF it has no real expert-led depth (e.g. Amalfi/Capri → folds into Naples; Cinque Terre → leisure). (provenance: L3)
-- **FOLD-INTO-NEW (reframe-and-absorb)**: when a candidate fails `ADMISSION_BAR` standalone but is real material that belongs in a *newly-framed* parent theme that doesn't yet exist (e.g. Rationalist/Fascist architecture → folded into a new "Milan & 20th-c architecture & design" theme, keeping Como/Terragni as its spine). Distinct from folding into an existing theme. (provenance: L9, Italy)
+- **ADD / SPLIT** a theme IFF the Reshape Rubric action is `ADD/SPLIT`. (provenance: L3, Italy R1)
+- **MERGE** two themes IFF the Reshape Rubric action is `MERGE`. (provenance: L3)
+- **DEMOTE / FOLD** a theme IFF the Reshape Rubric action is `DEMOTE/FOLD`. (provenance: L3)
+- **FOLD-INTO-NEW (reframe-and-absorb)** IFF the Reshape Rubric action is `FOLD-INTO-NEW`. Distinct from folding into an existing theme. (provenance: L9, Italy)
 - **CROSS-CUT**: keep cross-regional themes IFF operators sell them as one trip within `MAX_TRIP_DAYS` (Etruscan, Magna Graecia, Caravaggio trail, opera). (provenance: Italy)
+
+### Reshape Rubric
+Apply this table using live-source rows from the corpus. If unclear, keep the current structure and log the ambiguity; do not promote on taste.
+
+| action | required evidence | blocked by |
+|---|---|---|
+| ADD/SPLIT | candidate has a distinct primary lens or expert type from `lens-registry.md`, >= `MIN_CREDENTIALED_PRODUCTS` credited products, and at least one operator/product not shared with the parent theme | same expert type and same products as parent; only one partial product |
+| MERGE | >=80% of rankable products/operators overlap, or the same product would rank in both themes | different primary lens, different expert type, or different buyer/supplier base |
+| DEMOTE/FOLD | credited score below `ADMISSION_BAR`, or only day/private fragments where the parent theme supplies the multi-day spine | >= `ADMISSION_BAR` plus distinct lens/expert/product base |
+| FOLD-INTO-NEW | candidate fails standalone but supplies a spine for a broader parent not currently present; at least one multi-day product anchors the broader parent | no multi-day spine, or an existing parent already covers the products |
+| CROSS-CUT | >=2 regions are sold as one product within `MAX_TRIP_DAYS` and share one primary lens/expert type | region combination requires multiple lenses or composition |
+| KEEP-AS-IS | evidence changes no gate above | unresolved ambiguity; log it instead of reshaping |
 
 ### PROMOTE a sub-tag to a theme — IFF it passes BOTH promotion tests (not bare non-overlap)
 This promotion test is owned here; other docs cross-ref it rather than restating it.
@@ -56,7 +75,7 @@ This promotion test is owned here; other docs cross-ref it rather than restating
 2. **Distinct buyer + distinct supplier base** from the parent (WWII Husky = military-history buyer + military-specialist operators; Etna wine = oenophile buyer + DOC-estate/sommelier suppliers; Palladio = architecture buyer + architectural-historian leaders — none served by the generalist parent theme).
 
 ### Framing override
-- The **first-trip-representative** clause can fail on *framing/reputational* grounds, not only on depth — a standalone "fascist architecture" theme is awkward for a first trip even where products exist, so it is reframed (FOLD-INTO-NEW), not stood up.
+- Framing/reputation can only override a candidate via `FOLD-INTO-NEW` when the Reshape Rubric shows a broader parent spine and the admission rubric marks the standalone frame WATCH/FAIL on representative fit.
 
 ## EXAMPLE (Italy — round-by-round input → output)
 - R1 cluster sweeps (one agent per region cluster) → +6 themes/reshapes.
@@ -72,6 +91,9 @@ This block is a VIEW of `10-lessons-log.md` (open — append the check when a ne
 - An operator/tour reported without a live URL, or with an unconfirmed named guide / `CURRENT_SEASON` dated departure not marked **UNVERIFIED**.
 - Inventing an operator, tour, or departure.
 - Stopping at a handful of searches per axis instead of running multiple. (L2)
+- Looping past `MAX_SEARCHES_PER_AXIS` on a cell, or continuing to burn budget on a cell already marked `junk-saturated`/`low-signal` (`tags-registry.md`) instead of stopping it and surfacing it in the country verdict. (C11)
+- Declaring failure-to-converge / a NON-CONVERGENCE STOP (budget-exhausted) without LOGGING the residual (which axes/regions/themes unfinished) and stamping the artifact INCOMPLETE. (C11)
+- Treating the fixed-point termination proof as an operational budget (it bounds correctness, not spend — the COST/BUDGET dials bound spend). (C11)
 - Lens-critic judging completeness by vibes instead of enumerating the full `lens-registry.md` inventory and diffing against the theme map. (L9, L15)
 - Counting products for a candidate lens without first writing the pre-sweep overlap declaration (re-discovers a covered theme under a new label). (L9)
 - PROMOTING a sub-tag to a theme on bare non-overlap, without BOTH promotion tests (standalone multi-day spine AND distinct buyer + supplier). (L9)
