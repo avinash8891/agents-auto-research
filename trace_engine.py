@@ -437,9 +437,6 @@ class _ExporterRegistry:
     def names(self) -> list[str]:
         return sorted(self._entries)
 
-    def has(self, name: str) -> bool:
-        return name in self._entries
-
     def create(self, name: str) -> SpanExporter:
         try:
             entry = self._entries[name]
