@@ -1,0 +1,26 @@
+compiler_research.py
+  s_c781025ed43a12::t_0238b3f2512971 155
+scripts/check_prompt_drift.py
+  s_c781025ed43a12::t_8289610a5c11c8 52
+tests/test_orb_config_change_safety_rail.py
+  s_c781025ed43a12::t_287cb643d9eddb 10-12
+  s_c781025ed43a12::t_427aeb6961188e 4-5,8-9,15-21,24-25,28-30,33-40
+strategies/orb/validate.py
+  s_c781025ed43a12::t_16557205da77eb 5-6,9-45,49-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "b9031ba17d79bcc311ceea3398ff21246c833e76",
+  "prompts": {},
+  "sessions": {
+    "s_c781025ed43a12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f108c0ba-5958-40c1-a798-bd54f4f4fabc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
