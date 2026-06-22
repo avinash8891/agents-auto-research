@@ -1,0 +1,26 @@
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_1e4ca3331263f5 171-176
+travel/REGISTRY-PROTOCOL.md
+  s_fc23909bc640a9::t_961be865cbb528 58
+travel/11-trip-composition.md
+  s_fc23909bc640a9::t_6e5faac7273a26 65-66
+  s_fc23909bc640a9::t_fa208f93865132 6,8,11,15,27,30,35,41,58
+  s_fc23909bc640a9::t_0c1f5a66f8e273 17-19
+  s_fc23909bc640a9::t_955ecb59a8f83e 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "090ac0bdc35d6bf3084700708b6005884608d457",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
