@@ -1,0 +1,21 @@
+travel/CHANGELOG-2026-06-step2.md
+  s_b10ea6e0b14a9b::t_aa90c28540d5a3 1-6
+travel/italy/SEARCH_PROTOCOL.md
+  s_b10ea6e0b14a9b::t_aa90c28540d5a3 1,3,5-13,15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "ab787547bdd68b5cd11e670258e366ca181fa00f",
+  "prompts": {},
+  "sessions": {
+    "s_b10ea6e0b14a9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef028-10f0-7e81-815f-83c5eff18633",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
