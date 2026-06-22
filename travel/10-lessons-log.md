@@ -163,6 +163,11 @@ Closed the remaining audit clusters (12–17):
 **Fix:** `08` emits typed leads in both loops; `01` emits a source lead when a new authoritative ranking source surfaces. Already-covered (no change): `05` appends disqualifiers to `tags-registry` on discovery; `11` promotes new lens/composition-pattern; `02/03/06/09` don't read live external pages.
 **Rule going forward:** any step that reads live external source material is a leads emitter (`REGISTRY-PROTOCOL.md` INTELLIGENCE CAPTURE & ROUTING).
 
+## L25 — Doc-currency guard: cross-cutting docs lag step-doc changes
+**Found:** after a batch of changes to step docs 00–08 (leads bus, dirty-propagation, schema contract, ledger scheme), the cross-cutting docs `09-orchestration` and `README` were stale — they still described the old paths/flow. Index/orchestration docs don't get touched per-change, so they silently drift behind.
+**Guard (run after any batch of step-doc changes):** grep `09` + `README` (and `doc-manifest`) for the latest concept keywords (e.g. `leads`, `dirty`/`INVALIDATION`, `first_seen_round`, `ledger.md`, new registries); any miss → update by READING the canonical sources (not the lessons summary). The static-census + this concept-coverage grep are the two recurring doc-health guards.
+**Fix:** `09` + `README` brought current (workflow, verify 2/2); this guard recorded.
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 
