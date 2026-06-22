@@ -37,7 +37,7 @@ from autoresearch_experiment import (
     run_experiment,
 )
 from autoresearch_paths import resolve_config_path
-from backtest_run_db import BacktestRunRecord, BaselineCheckpoint
+from backtest_run_db import BacktestRunDB, BacktestRunRecord, BaselineCheckpoint
 from causal_harvest import (
     PendingCausalModelArtifact,
     apply_registered_verdict_to_causal_factor,
@@ -666,6 +666,58 @@ def test_duplicate_artifact_detection_skips_nonmatching_prior_records(tmp_path: 
     )
 
     assert duplicate is expected
+
+
+def test_find_duplicate_routes_through_backtest_run_db_find_duplicate(tmp_path: Path) -> None:
+    trades = tmp_path / "trades.csv"
+    diagnostics = tmp_path / "diagnostics.json"
+    trades.write_text("entry_date,pnl_pct\n2026-01-01,1.0\n")
+    diagnostics.write_text('{"accepted": 12}\n')
+    db = BacktestRunDB(tmp_path / "ema_backtest_runs.db")
+    db.init_session(name="ema", metric_name="profit_factor", direction="higher")
+    db.add(
+        BacktestRunRecord(
+            run_id="job-9-round-1-backtest",
+            thesis_id="prior",
+            config_path="runtime/jobs/job-9/research/round-1/selected_config.json",
+            runtime_config={"ema_length": 5},
+            code_commit="abc1234",
+            data_hash="data",
+            train_metrics={},
+            validation_metrics={"profit_factor": 1.5},
+            trade_count=12,
+            trades_file=str(trades),
+            strategy_events_file="",
+            diagnostics_file=str(diagnostics),
+            strategy_diagnostics={"accepted": 12},
+            accepted=True,
+            rejection_reason="",
+            verdict_status="accepted",
+            verdict_summary="ok",
+            parent_backtest_run_id="",
+            timestamp="2026-05-09T00:00:00+00:00",
+            family="ema",
+            hypothesis="h",
+            mechanism="m",
+            job=9,
+        )
+    )
+    controller = SimpleNamespace(backtest_run_db=db, family=SimpleNamespace(name="ema"))
+
+    duplicate = _find_duplicate_artifact_output(
+        controller,
+        runtime_config={"ema_length": 7},
+        details={
+            "trade_count": 12,
+            "trades_file": str(trades),
+            "diagnostics_file": str(diagnostics),
+            "strategy_diagnostics": {"accepted": 12},
+        },
+        state={"job": 9},
+    )
+
+    assert duplicate is not None
+    assert duplicate.run_id == "job-9-round-1-backtest"
 
 
 def test_build_db_record_preserves_round_zero_baseline_identity(tmp_path: Path) -> None:

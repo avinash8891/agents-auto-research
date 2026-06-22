@@ -760,14 +760,27 @@ def _find_duplicate_artifact_output(
     state: dict[str, Any],
 ) -> BacktestRunRecord | None:
     backtest_run_db = getattr(controller, "backtest_run_db", None)
-    if backtest_run_db is None or not hasattr(backtest_run_db, "all"):
+    if backtest_run_db is None:
+        return None
+    job = state.get("job", 0) or 0
+    finder = getattr(backtest_run_db, "find_duplicate", None)
+    if callable(finder):
+        return finder(
+            family=controller.family.name,
+            runtime_config=runtime_config,
+            details=details,
+            job=job,
+        )
+    # ponytail: fallback for db doubles in tests that expose only .all();
+    # the real BacktestRunDB.find_duplicate delegates to the same scanner.
+    if not hasattr(backtest_run_db, "all"):
         return None
     return find_duplicate_in_records(
         backtest_run_db.all(),
         family=controller.family.name,
         runtime_config=runtime_config,
         details=details,
-        job=state.get("job", 0) or 0,
+        job=job,
     )
 
 
