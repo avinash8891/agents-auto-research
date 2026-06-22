@@ -15,6 +15,7 @@
 | IT-07 | Andante group size | unverified | Re-check before booking or on next VERIFY pass. |
 | IT-07 | Travel Editions Pompeii & Herculaneum lead | tuple incomplete | Re-test when the "Life, Death and Discovery" page exposes date, price, group size, and exact leader evidence. |
 | IT-07 | Campania day/private archaeologist products | format-class mismatch / assigned guide incomplete | Reconsider only for a day/private ranking or if listings expose named assigned guide + price/date/group tuple. |
+| IT-THIN | Molise Samnite archaeology | FAILED admission | Re-test if Andante exposes a current dated "The Samnites" departure with named guide/price/group size, or a second dated named-expert operator appears. |
 
 ## Thin Notes / Re-Test Triggers
 
@@ -24,3 +25,4 @@
 
 - 2026-06-22: First real IT-01 ranking emitted at `travel/italy/rankings/IT-01.md`; supporting saturation rows written to `travel/italy/corpus/round6_it01_ranking_saturation.md`.
 - 2026-06-22: IT-07 ranking emitted at `travel/italy/rankings/IT-07.md`; supporting saturation rows written to `travel/italy/corpus/round7_it07_ranking_saturation.md`.
+- 2026-06-22: Molise Samnite archaeology thin/failed note emitted at `travel/italy/thin-notes/IT-THIN-molise-samnite.md`.
