@@ -27,6 +27,12 @@ Every row carries `last_checked: YYYY-MM-DD` and `status`. Rows older than the c
 ## Embedding it (automation)
 The monthly VERIFY pass is a natural **scheduled cloud agent** (a cron routine): it reads corpus URLs, re-fetches, posts a diff report unattended. The quarterly DISCOVERY pass likewise. Until scheduled, run both on demand with the prompts in `09`. Recommended: wire the monthly VERIFY as a routine once the first country's rankings lock, and re-run country ranking (`01`) annually when the new UN Tourism Barometer lands.
 
+## Anti-patterns
+- Treating the corpus as a static one-off deliverable (it rots — dates/prices/departures churn).
+- Running the expensive DISCOVERY loop when the cheap VERIFY loop suffices.
+- Re-fetching without diffing/stamping (no record of what changed or when last checked).
+- Letting `stale` or UNVERIFIED rows accumulate unworked between passes.
+
 ## Output
 - A dated diff report per VERIFY pass (what changed).
 - Updated corpus rows (new `last_checked`/`status`).

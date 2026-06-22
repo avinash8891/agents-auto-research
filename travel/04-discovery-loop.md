@@ -13,12 +13,19 @@ Surface the *whole field* of expert-led tours per theme by running the 5-axis ma
 - **ADD / SPLIT** a theme when discovery reveals a deep, distinct expert-led market the seed missed (e.g. Umbria → art vs St-Francis pilgrimage; Sicily WWII Husky as its own theme).
 - **MERGE** when two themes' tour products are really the same.
 - **DEMOTE / FOLD** when a theme has no real expert-led depth (e.g. Amalfi/Capri → folds into Naples; Cinque Terre → leisure).
-- **PROMOTE** a sub-tag to a theme when it clears the bar (`05`).
+- **FOLD-INTO-NEW (reframe-and-absorb)** when a candidate fails the bar standalone but is real material that belongs in a *newly-framed* parent theme that doesn't yet exist (e.g. Rationalist/Fascist architecture → folded into a new "Milan & 20th-c architecture & design" theme, keeping Como/Terragni as its spine). Distinct from folding into an existing theme.
+- **PROMOTE** a sub-tag to a theme — only when it passes the **promotion tests** (not bare non-overlap):
+  1. **Standalone multi-day spine exists** — there is at least one multi-day itinerary built around the sub-tag. If the sites are only sold à la carte / as day-products / embedded inside another theme's tour, it **stays a sub-tag** (Underground Rome failed this → kept sub-tag; Naples-city art passed → promoted).
+  2. **Distinct buyer + distinct supplier base** from the parent (WWII Husky = military-history buyer + military-specialist operators; Etna wine = oenophile buyer + DOC-estate/sommelier suppliers; Palladio = architecture buyer + architectural-historian leaders — none served by the generalist parent theme).
 - **CROSS-CUT**: keep cross-regional themes when operators sell them as one trip (Etruscan, Magna Graecia, Caravaggio trail, opera).
+
+Note: the **first-trip-representative** clause can fail on *framing/reputational* grounds, not only on depth — a standalone "fascist architecture" theme is awkward for a first trip even where products exist, so it was reframed, not stood up.
 
 ## Round types
 - **Cluster sweeps** (rounds 1–2 typically): broad coverage by region cluster.
 - **Completeness-critic rounds**: adversarial agents whose only job is to find what's missing — one for LENSES, one for CHANNELS/operators, one for REGIONS, one for borderline validation. These catch the long tail.
+  - **Lens-completeness is enumerate-and-diff, not vibes**: the lens-critic must list the FULL lens inventory from `03` against the current theme map and flag every lens with **zero themes** for a justified test. This is the mechanism that would have caught "nature was a systemic miss" on round 1 instead of round 2.
+  - **Pre-sweep overlap declaration**: before counting products for a candidate lens, the agent must write an explicit overlap check distinguishing it from every adjacent existing theme by period / ideology / region / discipline (e.g. "Gardens ≠ Lakes villas&gardens; Galileo ≠ Florence Renaissance art; WW1 Alpine Front ≠ Sicily WWII Husky; Jewish heritage ≠ Christian/papal Rome"). This stops re-discovering a covered theme under a new label.
 - **Axis-proof rounds**: explicitly run LANGUAGE and AUTHORITY-INDEX as their own sweeps — these are the axes most often skipped and most likely to break a false convergence.
 
 ## Worked example (Italy)

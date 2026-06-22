@@ -21,6 +21,14 @@ OUTPUT: Write raw findings DIRECTLY to <abs path>/corpus/round<N>_<cluster>.md v
 RETURN TO ME ONLY: the verdict(s), one line each, + confirm file written.
 ```
 
+## Building the cumulative "already-known" list (source of truth)
+Before each round, the orchestrator assembles the known-operator list mechanically — it is not from memory:
+1. Grep/concatenate the **Operator column** from every prior `corpus/round*.md`.
+2. Dedup into a flat name list (collapse absorbed brands → parent, e.g. Dr. Tigges → Gebeco).
+3. Pass it **verbatim** to every agent as the "ALREADY KNOWN — build beyond, don't re-report" block.
+4. Each agent must close its file with a **de-dup guards** note (`06`): aggregators excluded, sub-brands collapsed, prior-captured excluded.
+This is what makes "extend, don't re-discover" reproducible rather than a hope.
+
 ## Rules
 - Always pass the **already-known operator list** so agents extend rather than re-discover.
 - Always pass **absolute file paths** for the corpus write.
@@ -30,3 +38,10 @@ RETURN TO ME ONLY: the verdict(s), one line each, + confirm file written.
 
 ## Cost discipline
 Discovery is the expensive phase. Reuse the corpus as the seed (don't re-discover), merge operator-saturation into ranking (`05`), and run the cheap VERIFY loop far more often than the expensive DISCOVERY loop (`08`).
+
+## Anti-patterns
+- Over-spawning agents for a small country (scale the fleet to the task).
+- Omitting the already-known list (agents re-discover instead of extending) or absolute paths (corpus writes land nowhere).
+- Letting agents return raw dumps through the orchestrator (bloats context; lose verbatim fidelity).
+- Trusting agent findings as fact — they are hypotheses; spot-check named guides/dates before ranking.
+- Letting parallel agents share one file (collisions) instead of one file each.

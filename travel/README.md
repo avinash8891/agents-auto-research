@@ -29,6 +29,9 @@ For each country: split it into distinct, non-overlapping **themes** (a theme = 
 - `09-agent-orchestration.md` — how to dispatch parallel agents efficiently
 - `10-lessons-log.md` — the maturation history + every future improvement
 
+## Document conventions
+Every step doc (00–10) carries: an **Anti-patterns** block (what not to do) and at least one **Italy worked example** (the real instance). When you add a step or a rule, keep both — the rule plus the worked instance is what makes it reproducible.
+
 ## Per-country run order (the loop)
 1. Establish/confirm country's arrivals rank (step 01).
 2. Seed theme map v0 (step 02).

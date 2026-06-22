@@ -1,6 +1,10 @@
-# Italy — Theme Map FINAL (converged after 4 discovery rounds)
+# Italy — Theme Map FINAL (theme-converged R4; operator-converged after R5 axis-proof)
 
-CONVERGENCE: round-4 fresh adversarial critic returned "no new themes clear the bar" (corpus/round4_final_critic.md). Admission bar = >=2 credentialed dated 2026-27 expert-led products, non-overlapping, first-trip-representative. Loop history: R1 +6 · R2 +6 (nature systemic miss) · R3 +4 · R4 +2, then dry.
+CONVERGENCE (two-level):
+- THEME convergence: round-4 fresh adversarial critic returned "no new themes clear the bar" (corpus/round4_final_critic.md). Admission bar = >=2 credentialed dated 2026-27 expert-led products, non-overlapping, first-trip-representative.
+- OPERATOR convergence: required a 5th round on the LANGUAGE + AUTHORITY-INDEX axes (corpus/round5_language_axis.md, round5_authority_axis.md), which added ~26 operators the English/operator-keyword rounds missed (Gebeco, Intermèdes, Clio, Arrangements Abroad/Met curators, Distant Horizons, Temple World, …). These add NO new themes but DO change per-theme ranking inputs — fold them in before ranking.
+Loop history: R1 +6 · R2 +6 (nature systemic miss) · R3 +4 · R4 +2 (theme-dry) · R5 +26 operators (operator-dry on language+authority).
+LESSON: declaring "converged after R4" before running R5 was a false convergence (see ../10-lessons-log.md L7). This header is the reconciliation required by ../06-corpus-and-persistence.md.
 
 ## FINAL: 35 themes (30 regional + 5 cross-regional)
 
@@ -38,7 +42,7 @@ Underground Rome · Cilento–Paestum · Gran Paradiso/Po Delta/Pollino/Sibillin
 history · archaeology · art · architecture · design · science · food · wine · religion · pilgrimage · Jewish heritage · military (WWI+WWII) · music · wildlife · volcanology · gardens. All user-named dimensions + organically-surfaced ones.
 
 ## CORPUS (durable, feeds verification + ranking)
-italy_discovery_corpus.md (R1, ~110 operators) · corpus/round2_*.md · corpus/round3_*.md · corpus/round4_*.md. ~150+ operators total with URLs + verification-debt flags.
+italy_discovery_corpus.md (R1, ~110 operators) · corpus/round2_*.md · corpus/round3_*.md · corpus/round4_*.md · corpus/round5_language_axis.md · corpus/round5_authority_axis.md. ~175+ operators total with URLs + verification-debt flags.
 
 ## NEXT PHASE: verification + ranking (per theme)
 For each of 35 themes: verify finalists (named per-departure guide + 2026-27 dated departure + price + group size; priority UNVERIFIED rows + 403'd pages Peter Sommer/Smithsonian), then rank Top 5 on (1) expert guide fit, (2) depth, (3) small/authentic/private-option, (4) value tie-break. ~35 themes x5 = ~175 verified tours for Italy.

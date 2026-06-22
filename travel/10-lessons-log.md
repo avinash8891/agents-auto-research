@@ -42,6 +42,28 @@ Append-only. Every time the method improves, record what was wrong, why, and the
 **Why:** Dates/prices/departures churn; "correct in June" is wrong by August.
 **Fix:** Two refresh loops (cheap monthly VERIFY by re-fetching known URLs + diffing; expensive quarterly/on-trigger DISCOVERY), row stamping, and a scheduled cron for the VERIFY pass (`08`).
 
+## L9 — Document the operative HOW, not just the WHAT (found by self-audit)
+**Wrong:** The first playbook draft captured every named practice (36/37 PRESENT) but left the *operative decision rules* implicit — the actual tests the run applied lived only in the Italy corpus verdicts, not the method docs.
+**Why:** A practice named ("admission bar ≥2 products") isn't reproducible without its arithmetic ("how do you count an undated annual-catalogue product?"). A fresh agent would diverge.
+**How found:** ran a Workflow audit — 6 coverage agents (37 practices) + 2 adversarial gap-critics comparing method docs vs the Italy worked example. It surfaced 15 procedural gaps that were back-filled:
+- promotion = standalone multi-day spine + distinct buyer + supplier base (not bare non-overlap)
+- FOLD-INTO-NEW (reframe-and-absorb) reshape action; first-trip clause can fail on framing/reputational grounds
+- admission-bar counting arithmetic (1.0 / 0.5 / "1.5 = THIN"); annual-catalogue exception
+- inclusion/exclusion definitions (tour-not-course; operator-not-aggregator; named-not-title-only expert)
+- 403/404 fallback (snippet-as-secondary-source, keep UNVERIFIED) + verification-debt artifact with HTTP status
+- de-dup guards (aggregators, absorbed sub-brands) + how the cumulative known-list is assembled
+- format-class field (group / bespoke-year-round / hybrid-course) affecting rankability
+- theme-ID convention (assign at seed, never renumber, IT-05a/b on split)
+- lens-completeness = enumerate-and-diff; pre-sweep overlap declaration
+- concrete native-language example queries per axis
+- closing reconciliation: FINAL must list all axis rounds + state two-level convergence
+**Fix:** all 15 folded into docs 03–09; convention (anti-patterns + worked example per doc) made uniform.
+
+## L10 — The deliverable itself reproduced the false convergence it warned against
+**Wrong:** `italy_theme_map_FINAL.md` was written after round 4 and said "converged after 4 rounds"; round 5 (language+authority, +26 operators) ran later and was never folded back into FINAL. The method taught L7 but the artifact violated it.
+**Why:** No step forced the FINAL artifact to reconcile against all later rounds.
+**Fix:** Added the **closing-reconciliation rule** (`06`): FINAL must list every corpus round incl. axis-proofs and state convergence as two-level. FINAL header corrected to "theme-converged R4; operator-converged after R5."
+
 ## Meta-lesson
 The **process** was the real first deliverable. It matured step-by-step from user corrections (each lesson above maps to one). Output (ranked Top-5s) comes *after* the method is right, because errors in the method multiply 50×. Get the method right on one country, then scale.
 

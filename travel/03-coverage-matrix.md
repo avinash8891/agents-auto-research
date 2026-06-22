@@ -29,6 +29,11 @@ Every first-level admin region as a checklist. A region with 0 themes must be ex
 
 ### 4. LANGUAGE — native + study-travel source languages  *(commonly missed)*
 Search in the destination's language AND the major study-travel markets' languages. For Europe add **German** (Studienreisen — Studiosus, Gebeco, Karawane) and **French** (maisons culturelles — Intermèdes, Clio). For LATAM add Spanish/Portuguese; for East Asia the local language; etc. English-only search misses entire high-quality segments.
+Concrete matrix-derived queries (what a real language sweep looks like — vary per theme):
+- DE: `Studienreise <region> Archäologie 2026`, `Studienreiseleiter Italien Kunsthistoriker`, `wissenschaftliche Reiseleitung Sizilien`
+- FR: `voyage culturel <region> conférencier`, `Étrusques voyage accompagné archéologue`, `voyage conférencier historien de l'art Italie`
+- IT: `viaggi con l'archeologo <region>`, `viaggi studio archeologia`, `viaggi culturali accompagnati da storico dell'arte`
+These idioms (Studienreise, conférencier, "con l'archeologo") are how the segment self-describes; they surface operators no English query returns.
 
 ### 5. AUTHORITY-INDEX — mine the directories, don't guess operators  *(commonly missed)*
 Enumerate the lists that already curate quality operators, then extract names:

@@ -14,7 +14,9 @@ For every candidate that could plausibly make the Top 5, confirm from a **live s
 - Group size (and whether a private-departure option exists).
 - The specific depth/access feature (exclusive site access, underground, after-hours, dig viewing, etc.).
 
-Priority queue: the corpus UNVERIFIED rows and any fetch-blocked (403) operator pages. If a guide or a 2026–27 departure **cannot** be verified, the tour is **flagged** in the output — never guessed, never dropped silently.
+Priority queue: the corpus UNVERIFIED rows and any fetch-blocked (403/404) operator pages. **403/404 fallback:** harvest date/price/guide from the search snippet, keep the row UNVERIFIED with the HTTP status + "confirmed in snippet" noted (`06`); never silently drop a blocked page, never promote it to verified without an unblocked confirmation. If a guide or a 2026–27 departure **cannot** be verified at all, the tour is **flagged** in the output — never guessed, never dropped silently.
+
+**Format-class matters for rankability.** Tag each finalist (`06`): fixed-departure group / private-bespoke-year-round / hybrid-course. A private/bespoke/year-round product can't be ranked on the same "dated departure" basis as a fixed-departure tour. If a Top-5 mixes format classes (e.g. a multi-day escorted tour alongside a city-based day-scholar or a bespoke private), **flag the difference explicitly** so the reader compares like with unlike knowingly — as the proof-of-concept did for the Context Travel day-format entry.
 
 ## Step C — rank on the criteria (priority order)
 1. **Expert guide fit** (real, theme-appropriate, highly regarded).
@@ -30,6 +32,13 @@ Worked tie-break (Italy IT-01 proof): a name-brand archaeologist (Simon Elliott)
 - Ranked Top 5: operator · tour name · guide/expertise · group size · duration · approx price · value note · depth/access feature · source link.
 - One line: **why #1 wins**.
 - A FLAGS block: any unverified leader/departure; any premium-for-thin-substance; if the theme is weak, say so and give closest strong fits rather than padding.
+
+## Anti-patterns
+- Ranking on memory/reputation instead of a live-verified specific.
+- Rewarding price/luxury for its own sake (reward only cost justified by depth/expertise).
+- Mixing format classes (group vs bespoke vs day) in one Top-5 without flagging it.
+- Dropping a 403/404 finalist instead of keeping it UNVERIFIED with snippet evidence.
+- Padding a weak theme to five instead of saying so and giving closest strong fits.
 
 ## Quality gate
 If a Top-5 entry would survive having its specifics replaced by a plausible guess, it isn't verified. Every claim traces to a URL. "Verified" requires the pasted/cited specifics, not an assertion.
