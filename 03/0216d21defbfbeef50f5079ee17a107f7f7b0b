@@ -1,0 +1,23 @@
+travel/audit/panel2-output-review.js
+  s_fc23909bc640a9::t_67735547c0c2a6 1-61
+travel/audit/panel1-structure-review.js
+  s_fc23909bc640a9::t_67735547c0c2a6 1-78
+travel/audit/README.md
+  s_fc23909bc640a9::t_52fc5c00113d42 1-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "030216d21defbfbeef50f5079ee17a107f7f7b0b",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
