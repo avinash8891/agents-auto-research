@@ -1,0 +1,19 @@
+travel/07-verification-and-ranking.md
+  s_b10ea6e0b14a9b::t_641dc0c6084544 11,21,86-91,94-96,106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "3855e38d0467aba4fe8c19b1cd495223cf1d3c24",
+  "prompts": {},
+  "sessions": {
+    "s_b10ea6e0b14a9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef028-10f0-7e81-815f-83c5eff18633",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
