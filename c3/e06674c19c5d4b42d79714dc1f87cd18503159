@@ -1,0 +1,29 @@
+travel/doc-manifest.md
+  s_fc23909bc640a9::t_ad300e97457920 56
+travel/04-discovery-loop.md
+  s_fc23909bc640a9::t_6b17493f29fdfa 29
+travel/02-theme-seeding.md
+  s_fc23909bc640a9::t_e24df39bdab1cc 7
+travel/REGISTRY-PROTOCOL.md
+  s_fc23909bc640a9::t_2986d6527015dc 43-60
+travel/07-verification-and-ranking.md
+  s_fc23909bc640a9::t_2cb25bb5d364b3 34
+travel/10-lessons-log.md
+  s_fc23909bc640a9::t_8a63ea7c878159 150-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "c3e06674c19c5d4b42d79714dc1f87cd18503159",
+  "prompts": {},
+  "sessions": {
+    "s_fc23909bc640a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4dc0ec0-454a-45ec-adbb-cde4f6195be9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
