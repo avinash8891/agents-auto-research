@@ -1,0 +1,98 @@
+travel/04-discovery-loop.md
+  s_0a3f18ae374135::t_d0ac8220a4bf3f 31
+travel/10-lessons-log.md
+  s_0a3f18ae374135::t_a5aa28e53e16b2 181-187
+travel/06-corpus-and-persistence.md
+  s_0a3f18ae374135::t_9559aea899ba01 86
+  s_0a3f18ae374135::t_3162ca4f254b3f 84
+  s_0a3f18ae374135::t_bc201570dee8e5 34
+  s_0a3f18ae374135::t_29183685a66b1c 36
+  s_0a3f18ae374135::t_e6492a1e2f0c7d 82
+travel/axes-registry.md
+  s_0a3f18ae374135::t_0340143e7e7b08 11
+  s_0a3f18ae374135::t_78f3b4ebf71597 38
+  s_0a3f18ae374135::t_7a5e003c8c0f51 42
+  s_0a3f18ae374135::t_bc16c538f2e697 12
+  s_0a3f18ae374135::t_58cdb0497d8451 24
+travel/07-verification-and-ranking.md
+  s_0a3f18ae374135::t_2676d2187ffd51 71-72
+travel/theme-archetypes.md
+  s_0a3f18ae374135::t_e8ae5b3c13c5a9 3
+travel/lens-registry.md
+  s_0a3f18ae374135::t_500430b8110769 25
+travel/operator-aliases.md
+  s_0a3f18ae374135::t_472cdc1f68a1de 3
+travel/doc-manifest.md
+  s_0a3f18ae374135::t_21e9716845327c 50
+travel/README.md
+  s_0a3f18ae374135::t_4a1bedbe59f430 68
+  s_0a3f18ae374135::t_ed3b96a4c1cfe5 67
+  s_0a3f18ae374135::t_c704d6119beb83 20
+  s_0a3f18ae374135::t_20810c950e137f 21
+  s_0a3f18ae374135::t_36b644fe0caec7 16
+travel/11-trip-composition.md
+  s_0a3f18ae374135::t_ad1c640748a8cf 49
+travel/sources-registry.md
+  s_0a3f18ae374135::t_1d03f21c297954 3
+travel/03-coverage-matrix.md
+  s_0a3f18ae374135::t_2b251731dd0635 26
+  s_0a3f18ae374135::t_88351f09cb5a48 47
+travel/09-agent-orchestration.md
+  s_0a3f18ae374135::t_5172b68b6adb3f 29
+  s_0a3f18ae374135::t_6d0c41988a72c7 20
+travel/00-overview-and-principles.md
+  s_0a3f18ae374135::t_4127d9c9e3dd28 60-65
+  s_0a3f18ae374135::t_e1e47270537f2b 13-18
+travel/REGISTRY-PROTOCOL.md
+  s_0a3f18ae374135::t_9bfa2e1d6b96a8 69
+  s_0a3f18ae374135::t_4bf7c20c0a47d3 28
+  s_0a3f18ae374135::t_89580e3b03a218 46
+  s_0a3f18ae374135::t_6a769d3973985a 48
+  s_0a3f18ae374135::t_866b4f1b5b4eaa 61
+travel/05-convergence-and-admission-bar.md
+  s_0a3f18ae374135::t_d0f767b7635416 39
+  s_0a3f18ae374135::t_4171feee48bac3 15
+  s_0a3f18ae374135::t_d89fa03670d00b 24
+  s_0a3f18ae374135::t_9fc09aa33414ae 20
+  s_0a3f18ae374135::t_e05426cd61f049 6
+  s_0a3f18ae374135::t_409f7a6c862da0 25
+travel/AUDIT-CHECKLIST.md
+  s_0a3f18ae374135::t_6eb74e7ee5e02b 27
+travel/08-freshness-and-updates.md
+  s_0a3f18ae374135::t_66510188fe51d5 44
+  s_0a3f18ae374135::t_cae2a2ebe23b1b 71
+  s_0a3f18ae374135::t_db771663c1c106 21
+travel/travel-config.md
+  s_0a3f18ae374135::t_843b74be1cc92e 19
+  s_0a3f18ae374135::t_acedb3c2a5f41c 22
+  s_0a3f18ae374135::t_65522706e84df2 7
+  s_0a3f18ae374135::t_4774161a7f8b2c 28
+  s_0a3f18ae374135::t_45eb9802a1706a 34
+travel/02-theme-seeding.md
+  s_0a3f18ae374135::t_38ea08152a5a4f 22
+  s_0a3f18ae374135::t_6514753af0189e 35
+  s_0a3f18ae374135::t_2b4a96bc9c5c02 15
+travel/01-country-ranking.md
+  s_0a3f18ae374135::t_e5ea54f05b6564 6
+  s_0a3f18ae374135::t_48f9fa38699d91 23
+travel/tags-registry.md
+  s_0a3f18ae374135::t_7328fd6956c04a 38
+  s_0a3f18ae374135::t_33672996a97467 43
+  s_0a3f18ae374135::t_8db77fd7214a89 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "efb305a531a4e2e61099500335a84369ad611990",
+  "prompts": {},
+  "sessions": {
+    "s_0a3f18ae374135": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bef70faf-31d4-4e3d-b98f-96a28636015f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
