@@ -1,0 +1,21 @@
+travel/tags-registry.md
+  s_b10ea6e0b14a9b::t_f8ab7fdb84922a 30-31
+travel/07-verification-and-ranking.md
+  s_b10ea6e0b14a9b::t_3ac494dda8e117 55,60,65,72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "8cfe906588de19a27ab6df7421e5ff79caf697b3",
+  "prompts": {},
+  "sessions": {
+    "s_b10ea6e0b14a9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef028-10f0-7e81-815f-83c5eff18633",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
