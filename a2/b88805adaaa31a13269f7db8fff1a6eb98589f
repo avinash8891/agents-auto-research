@@ -1,0 +1,29 @@
+compiler_builder.py
+  s_c781025ed43a12::t_ae2c0cc80979ba 1978
+  s_c781025ed43a12::t_7b210b647fa893 1616
+  s_c781025ed43a12::t_45412dcf9d9401 680-686,690,703-774
+  s_c781025ed43a12::t_bc906bc7cee976 1852-1853,1920-1921
+  s_c781025ed43a12::t_2e9e2217d9b20a 1599-1602
+  s_c781025ed43a12::t_a65a06cb573bb2 1653,1655
+  s_c781025ed43a12::t_0e3e4c35fbefa9 1584
+  s_c781025ed43a12::t_3c62b34f544b03 1830
+  s_c781025ed43a12::t_5569444f6255db 1760
+tests/test_builder_workspace.py
+  s_c781025ed43a12::t_9952c327c006df 3,6-13,30-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "a2b88805adaaa31a13269f7db8fff1a6eb98589f",
+  "prompts": {},
+  "sessions": {
+    "s_c781025ed43a12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f108c0ba-5958-40c1-a798-bd54f4f4fabc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
